@@ -150,4 +150,21 @@ mod TestExplore {
         let dt = 1.0 / 60.0;
         let a = List.range(0, 600) |> List.foldLeft((acc, _) -> TownCamera.lookAhead(1.5, 2.0, 3.46, (1.73 * dt, 0.0), dt, acc), (0.0, 0.0));
         Assert.assertTrue(near(fst(a), 0.75))
+
+    // ── クレジット ──
+
+    def music(): ExploreDoc.Music =
+        { sound = "bgm", volume = 0.35, credit = "a" :: Nil, creditFrom = 1.5, creditSec = 8.0, fadeSec = 0.8 }
+
+    @Test
+    def testCreditIsHiddenBeforeItsStart(): Unit \ Assert = Assert.assertTrue(near(Explore.creditAlpha(music(), 1.0), 0.0))
+
+    @Test
+    def testCreditIsFullyShownInTheMiddle(): Unit \ Assert = Assert.assertTrue(near(Explore.creditAlpha(music(), 5.0), 1.0))
+
+    @Test
+    def testCreditIsHalfwayThroughItsFadeIn(): Unit \ Assert = Assert.assertTrue(near(Explore.creditAlpha(music(), 1.9), 0.5))
+
+    @Test
+    def testCreditIsGoneAfterItsTime(): Unit \ Assert = Assert.assertTrue(near(Explore.creditAlpha(music(), 10.0), 0.0))
 }

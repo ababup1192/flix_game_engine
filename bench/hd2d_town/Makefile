@@ -107,26 +107,38 @@ final-video:
 
 # 昼の町を歩き回る場面（src/Explore.flix・つまみは assets/explore.json・キーは assets/explore.keys.json）。
 #   make explore        … ウィンドウを開いて歩く（矢印・WASD・パッドの左スティック。重さは SHADOW_MAP=2048 DOF=0 POST=0 で落とす）
-#   make explore-web    … ブラウザ版へ書き出す（build/web・bin/fge export-web）。web/measure.js を index.html に差し込む
+#   make explore-web    … ブラウザ版へ書き出す（build/web・bin/fge export-web）。web/measure.js を index.html に差し込む。
+#                         曲（WEB_BGM・PeriTune「Firmament3」のループ版）は git に入れず、build/web-stage に写したゲームにだけ足す（無ければ音なし・WEB_BGM= で音なし）
+#   make explore-web-public … 公開の場所へ置く物を build/web-public に書き出す（WEB_BGM を空にして音なし・束に音のファイルが残っていたら止める）
 #   make explore-serve  … 書き出した物を手元のサーバーで配る（PORT・既定 8765。スマホは同じ Wi-Fi で http://<この機械の IP>:<PORT>/）
 #   make explore-grid   … 通れるマスの格子を字で出す（# 地図と建物・+ 建物の北に隠れるので塞いだ・d 広場のにぎやかし・ウィンドウを開かない）
 #   make explore-record … ブラウザ版をヘッドレスの Chrome でキーを押して歩かせ、debug/web_walk.mp4 にする（手順書は bin/web_walk_demo.json・
 #                         先に make explore-serve を別に立てておく・URL の query は QUERY）
 PORT ?= 8765
-QUERY ?= backend=webgl2
+QUERY ?=
+WEB_BGM ?= $(HD2D_LAB)/audio/bgm_loop/PerituneMaterial_Firmament3_Active_loop.ogg
+WEB_OUT ?= build/web
 
-.PHONY: explore explore-web explore-serve explore-grid explore-record
+.PHONY: explore explore-web explore-web-public explore-serve explore-grid explore-record
 
 explore:
 	../../bin/headless-run --build-only
 	../../bin/headless-run --window Explore.main
 
 explore-web:
-	../../bin/fge export-web . --out build/web $(EXPORT_FLAGS)
-	cp web/measure.js build/web/measure.js
-	perl -0pi -e 's|<script>\n\(function \(\) \{\n  var baked|<script src="measure.js"></script>\n$$&|' build/web/index.html
-	@grep -q 'measure.js' build/web/index.html || { echo "[explore-web] index.html に fge-web.js を読む script が無く、measure.js を差し込めない"; exit 1; }
-	@echo "[explore-web] build/web（make explore-serve で配る）"
+	bin/web_stage.sh "$(WEB_BGM)"
+	../../bin/fge export-web build/web-stage --out $(WEB_OUT) --work build/web-export --id hd2d_town $(EXPORT_FLAGS)
+	cp web/measure.js $(WEB_OUT)/measure.js
+	perl -0pi -e 's|<script>\n\(function \(\) \{\n  var baked|<script src="measure.js"></script>\n$$&|' $(WEB_OUT)/index.html
+	@grep -q 'measure.js' $(WEB_OUT)/index.html || { echo "[explore-web] index.html に fge-web.js を読む script が無く、measure.js を差し込めない"; exit 1; }
+	@echo "[explore-web] $(WEB_OUT)（make explore-serve で配る）"
+
+explore-web-public:
+	$(MAKE) --no-print-directory explore-web WEB_BGM= WEB_OUT=build/web-public
+	@left=$$(find build/web-public -type f \( -iname '*.ogg' -o -iname '*.mp3' -o -iname '*.m4a' -o -iname '*.wav' -o -iname '*.opus' -o -iname '*.webm' \)); \
+	if [ -n "$$left" ]; then echo "[explore-web-public] 束に音のファイルが残っている（公開しない・前の書き出しの残りなら build/web-public を消して流し直す）: $$left"; exit 1; fi
+	@grep -q '"sounds": *\[\]' build/web-public/bundle.json || { echo "[explore-web-public] bundle.json の sounds が空でない（公開しない）"; exit 1; }
+	@echo "[explore-web-public] build/web-public（音なし・公開の場所へ置くのはこちら）"
 
 explore-serve:
 	@echo "[explore-serve] http://localhost:$(PORT)/ ・スマホは http://$$(ipconfig getifaddr en0 2>/dev/null || echo '<この機械の IP>'):$(PORT)/?fps=1&measure=1"

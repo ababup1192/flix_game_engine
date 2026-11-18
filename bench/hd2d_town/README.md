@@ -185,11 +185,13 @@ Blender の夜は地図の差分（hd2d_lab の town_avenue.map.json の variant
 
 | 口 | 中身 |
 |---|---|
-| `make explore` | ウィンドウを開いて歩く（矢印・WASD・パッドの左スティック）。重さは `SHADOW_MAP=2048 DOF=0 POST=0` で落とす |
-| `make explore-web` | ブラウザ版へ書き出す（`build/web`・`bin/fge export-web`）。`web/measure.js` を index.html に差し込む |
+| `make explore` | ウィンドウを開いて歩く（矢印・WASD・パッドの左スティック）。重さは `SHADOW_MAP=2048 DOF=0 POST=0` で落とす。曲は鳴らない（下の「曲」） |
+| `make explore-web` | ブラウザ版へ書き出す（`build/web`・`bin/fge export-web`）。`bin/web_stage.sh` が `build/web-stage` に写したゲームへ曲を足してから書き出し、`web/measure.js` を index.html に差し込む |
+| `make explore-web WEB_BGM=` | 曲を入れずに（音なしで）書き出す |
+| `make explore-web-public` | 公開の場所へ置く物を `build/web-public` に書き出す（WEB_BGM を空にして音なし・束に音のファイルが残っていたら止める）。**曲の入った `build/web` は公開の場所（gh-pages・GitHub・テンプレート）へ置かない** |
 | `make explore-serve` | 書き出した物を手元のサーバーで配る（`PORT`・既定 8765・`0.0.0.0` で待つ） |
 | `make explore-grid` | 通れるマスの格子を字で出す（`#` 地図と建物・`+` 建物の北に隠れるので塞いだ・`d` 広場のにぎやかし） |
-| `make explore-record` | ヘッドレスの Chrome（CDP）でキーを押して歩かせ `debug/web_walk.mp4` にする（手順書は `bin/web_walk_demo.json`・先に explore-serve を立てる） |
+| `make explore-record` | ヘッドレスの Chrome（CDP）でキーを押して歩かせ `debug/web_walk.mp4` にする（手順書は `bin/web_walk_demo.json`・先に explore-serve を立てる）。頁の音も録る（`audio.webm`） |
 
 - 作り: `src/Explore.flix`（App・World は先頭の位置・向き・道・歩きの時計・カメラの先読みと高さ・時刻だけ。町・格子・Doc は Res）・
   `src/CollisionGrid.flix`（通れるマスの格子と、半径 0.3 m の円を通れないマスの四角から押し出して壁に沿って滑らせる動き）・
@@ -197,6 +199,15 @@ Blender の夜は地図の差分（hd2d_lab の town_avenue.map.json の variant
 - カメラ（C3）: 横と奥は先頭へ合わせ、歩く向きへ `aheadMeters`（1.5 m）先をなめらかに見せる（止まると戻る）。高さは足元を遅れて追う。
 - 建物に隠れる所（H1）は格子で塞ぐ。地図の写しは最終動画と共有なので直さない。建物の高さ（階・屋根）とカメラの角度から、足元から `seenHeight`（0.9 m）の点が
   隠れる行を出す（1 階の建物で北の 2 行・2 階で 6 行）。軒の出っ張り・キャラの板の幅・カメラが横へ先を見せる分だけ、脇の列も塞ぐ。
+- 曲（ブラウザ版だけ）: PeriTune「Firmament3」のループ版（OGG）を `App.withSustained` で音量 0.35 のまま鳴らし続ける（ループは全体を頭へ戻す）。
+  曲のファイルは git に入れない（公開のリポジトリで、二次配布の扱いは人が確かめるまで保留）。`make explore-web` の時だけ
+  `WEB_BGM`（既定 `$(HD2D_LAB)/audio/bgm_loop/PerituneMaterial_Firmament3_Active_loop.ogg`）を `build/web-stage/assets/bgm/` に写し、
+  写した project.json の `sounds`（ループ）と `web.deferred`（押して始めるのを待たずに後から取る）に足す。曲が無ければ音なしで書き出して 1 行言う。
+  鳴らすかは project.json に曲の名前があるかで決める（`ExploreDoc.isSoundDeclared`）ので、手元の `make explore` と最終動画の撮り方は今までどおり音なしで動く。
+  ブラウザの音は「タッチして開始」の後に鳴る（engine の頁が押した時に AudioContext を起こす）。
+- クレジット: 始めて 1.5 秒後から 8 秒、画面の右下にカードで出して消す（文言とつまみは `assets/explore.json` の `music`・字は PixelMplus10）。
+- 継ぎ目: Chrome の decodeAudioData で OGG も MP3 も 5,722,878 サンプル（119.226625 秒・元の OGG と同じ長さ）に解け、頭と終わりの無音は 0 サンプル。
+  終わりの 3 秒前から鳴らして頭へ戻る所を録っても、無音や音の落ち込みは無い。OGG を使う（MP3 も継ぎ目は出なかった）。
 - 残り: 建物の真横（同じ行）に立つと、横へ先を見せるカメラの線で 2 階の建物の軒にかかる事がある（北の行しか塞いでいない）。
 
 ### スマホの重さを測る段取り（人と一緒に）
@@ -217,8 +228,12 @@ Blender の夜は地図の差分（hd2d_lab の town_avenue.map.json の variant
 | `backend=webgl2` | WebGPU でなく WebGL2 で描く |
 
    例: `http://<IP>:8765/?fps=1&measure=1&shadow=2048&dof=0&dpr=1`。既定の値は `assets/explore.json` の `quality`（実機は環境変数 `SHADOW_MAP`・`DOF`・`POST`）。
-5. 既定の WebGPU では、広場より北で engine の材質の値の置き場（64 KB）が溢れて GPUValidationError が出て、画面が数秒止まる（engine の 5459049e の直しが要る）。
-   直しが入るまでは `backend=webgl2` で測る。
+5. 描き手は既定の WebGPU で測る（engine の材質の値の置き場の直し 5459049e を取り込んだ後は、歩いても GPUValidationError は 0 件）。
+   WebGL2 と並べたい時だけ `backend=webgl2` を足す。
+
+## ブラウザ版の曲のクレジット
+
+音楽：PeriTune（Firmament3・CC BY 4.0・https://peritune.com/blog/2020/07/01/firmament3/ ）
 
 ## engine に相談する事
 

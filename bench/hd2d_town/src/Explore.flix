@@ -3,7 +3,7 @@
 // App の w は Resources.With[Res, World]: 地図・絵・格子・Doc は Res、遊びで変わる物（先頭・向き・道・カメラ・時刻）は World。
 
 mod Explore {
-    use fge::{App, ImageData, LoadProgress, LwjglLayer, Num, Render, Resources, Scene3d, Vec2}
+    use fge::{App, Color, ImageData, LoadProgress, LwjglLayer, Num, Render, Resources, Scene3d, Text, Vec2}
     use fge::GameEngine.Key
     use Route.{Dir}
 
@@ -12,10 +12,11 @@ mod Explore {
 
     /// 描く元。town = 組んだ町・boards = 動かない板（読み込みで 1 回作る）・grid = 通れるマスの格子・doc・keys・plan = Doc・
     /// lens・eye = カメラのレンズと、地図の frame に合わせた目の位置・groundZ = 立ち始めの床の高さ・feetDepth = 足元が画面の feetV に来る奥行き・
-    /// quality = 描き方の重さ・hide = 建物の北に隠れるマスの決め方。
+    /// quality = 描き方の重さ・hide = 建物の北に隠れるマスの決め方・music = 鳴らす曲とクレジット（project.json に曲が無ければ None）。
     pub type alias Res = { town = TownScene.Res, boards = List[Scene3d.Billboard3d], grid = CollisionGrid.Grid, doc = ExploreDoc.Rec,
                            keys = ExploreDoc.Keys, plan = Buildup.Plan, lens = TownCamera.Lens, eye = TownCamera.Eye, groundZ = Float64,
-                           feetDepth = Float64, quality = ExploreDoc.Quality, hide = CollisionGrid.HideRule }
+                           feetDepth = Float64, quality = ExploreDoc.Quality, hide = CollisionGrid.HideRule,
+                           music = Option[ExploreDoc.Music] }
 
     /// カメラの遅れて追う物。ahead = 先頭から先へ見せる量（m・地図の座標）・height = 遅れて追う床の高さ（m）。
     pub type alias CameraState = { ahead = (Float64, Float64), height = Float64 }
@@ -30,6 +31,7 @@ mod Explore {
         let doc = ExploreDoc.loadOr(ExploreDoc.path());
         let keys = ExploreDoc.loadKeys(ExploreDoc.keysPath());
         let quality = ExploreDoc.qualityWith(knobs, doc#quality);
+        let music = if (ExploreDoc.isSoundDeclared(doc#music#sound)) Some(doc#music) else None;
         let look0 = TownLook.loadOr(doc#look);
         let look = { billboardTextures = TownScene.BillboardTextures.ProjectTextures, shadowMapSize = quality#shadowMapSize,
                      fStop = if (quality#depthOfField) look0#fStop else 0.0 | look0 };
@@ -51,7 +53,7 @@ mod Explore {
             { town = town, boards = TownScene.staticBoards(town),
               grid = CollisionGrid.build(m, Some(m#walk#col), decorWidth, d -> Set.memberOf(d#sprite, doc#passDecor), Some(hide)),
               doc = doc, keys = keys, plan = plan, lens = lens, eye = eye, groundZ = groundZ,
-              feetDepth = feetDepth, quality = quality, hide = hide }
+              feetDepth = feetDepth, quality = quality, hide = hide, music = music }
         }
 
     /// 隊列の歩きの絵の 1 コマの横幅の半分（m・一番広い人）。
@@ -163,11 +165,79 @@ mod Explore {
         let shadows = List.append(List.flatMap(snd, members), List.filterMap(snd, decor));
         { time = w#time | TownScene.sceneOfBoards(town, res#boards, camera, size(), billboards, shadows) }
 
+    /// このコマに鳴らし続ける曲（0 か 1 本・ループ）。
+    pub def musicOf(res: Res): List[App.Sustain] =
+        res#music |> Option.map(mu -> { name = mu#sound, volume = mu#volume, pitch = 1.0 }) |> Option.toList
+
+    /// クレジットの濃さ（0〜1）。始めて creditFrom 秒後から fadeSec かけて出し、creditSec 秒出して、fadeSec かけて消す。
+    pub def creditAlpha(mu: ExploreDoc.Music, t: Float64): Float64 =
+        let u = t - mu#creditFrom;
+        let fade = Float64.max(0.001, mu#fadeSec);
+        Num.clamp(0.0, 1.0, Float64.min(u / fade, (mu#creditSec - u) / fade))
+
+    /// クレジットのカード（画面の右下・HUD）。暖かい暗い色の上から下への階調の板に角丸と落ち影、左に差し色の縦の線、
+    /// 出る時は下から少し上がって濃くなる。
+    def creditItems(ctx: App.ViewCtx, res: Res, w: World): List[Render.PlacedItem] =
+        res#music |> Option.map(mu -> {
+            let a = creditAlpha(mu, w#time);
+            if (a <= 0.0 or List.isEmpty(mu#credit)) Nil else creditPlate(ctx, mu#credit, a)
+        }) |> Option.getWithDefault(Nil)
+
+    def creditPlate(ctx: App.ViewCtx, lines: List[String], a: Float64): List[Render.PlacedItem] =
+        let atlas = ctx#fontOf(creditFont());
+        let fontSize = 20.0;
+        let lineGap = 6.0;
+        let sizes = lines |> List.map(l -> Text.measure(Text.make(l, atlas, fontSize)));
+        let textW = sizes |> List.map(v -> v#x) |> List.foldLeft(Float64.max, 0.0);
+        let textH = sizes |> List.map(v -> v#y + lineGap) |> List.foldLeft((acc, h) -> acc + h, 0.0) - lineGap;
+        let pad = { x = 22.0, y = 14.0 };
+        let plate = { x = textW + pad#x * 2.0 + 18.0, y = textH + pad#y * 2.0 };
+        let rise = (1.0 - a) * 12.0;
+        let origin = { x = size()#x - plate#x - 24.0, y = size()#y - plate#y - 24.0 + rise };
+        let shift = (d: Vec2.Vec2) -> { x = origin#x + d#x, y = origin#y + d#y };
+        let shadow = Render.at(shift({ x = 0.0, y = 4.0 }), roundedPlate(plate, 12.0, Color.rgb(0.0, 0.0, 0.0), Color.rgb(0.0, 0.0, 0.0), 0.35, 10));
+        let body = Render.at(origin, roundedPlate(plate, 12.0, Color.rgb(0.25, 0.2, 0.15), Color.rgb(0.1, 0.08, 0.07), 0.85, 11));
+        let rim = Render.at(shift({ x = 12.0, y = 1.0 }),
+            Render.vgrad({ x = plate#x - 24.0, y = 1.0 }, { top = Color.rgb(1.0, 0.9, 0.7), bottom = Color.rgb(1.0, 0.9, 0.7) }, 12) |> Render.fade(0.3));
+        let accent = Render.at(shift({ x = 12.0, y = pad#y }),
+            Render.vgrad({ x = 3.0, y = textH }, { top = Color.rgb(0.98, 0.78, 0.36), bottom = Color.rgb(0.86, 0.5, 0.24) }, 12) |> Render.rounded(1.5));
+        let tints = Color.rgb(0.97, 0.93, 0.85) :: Color.rgb(0.8, 0.76, 0.68) :: Nil;
+        let tops = List.scanLeft((acc, v) -> acc + v#y + lineGap, 0.0, sizes);
+        let texts = List.zip(lines, tops) |> List.mapWithIndex((i, lt) -> {
+            let (line, y) = lt;
+            let tint = List.drop(Int32.min(i, 1), tints) |> List.head |> Option.getWithDefault(Color.rgb(1.0, 1.0, 1.0));
+            Render.at(shift({ x = pad#x + 6.0, y = pad#y + y }), Render.textTinted(line, atlas, fontSize, tint, 13))
+        });
+        Render.fadeAll(a, shadow :: body :: rim :: accent :: texts)
+
+    /// 角を丸めた上から下への階調の板（左上が原点）。
+    // WhyNot: Render.vgrad に Render.rounded を掛けない — rounded は Box にだけ効き、階調の板は四角のまま残る。
+    def roundedPlate(size: Vec2.Vec2, radius: Float64, top: Color, bottom: Color, alpha: Float64, z: Int32): Render.Item =
+        let r = Float64.min(radius, Float64.min(size#x, size#y) / 2.0);
+        let steps = 6;
+        let corners = ({ x = r, y = r }, 180.0) :: ({ x = size#x - r, y = r }, 270.0) :: ({ x = size#x - r, y = size#y - r }, 0.0) :: ({ x = r, y = size#y - r }, 90.0) :: Nil;
+        let vertices = corners |> List.flatMap(ca -> {
+            let (c, startDeg) = ca;
+            List.range(0, steps + 1) |> List.map(i -> {
+                let deg = startDeg + 90.0 * Int32.toFloat64(i) / Int32.toFloat64(steps);
+                let rad = deg * Num.pi() / 180.0;
+                let pos = { x = c#x + Num.cos(rad) * r, y = c#y + Num.sin(rad) * r };
+                { pos = pos, color = Color.mix(top, bottom, pos#y / Float64.max(1.0, size#y)), alpha = alpha }
+            })
+        });
+        Render.gradPolygon(vertices, z)
+
+    /// クレジットの字のフォント（project.json の fonts の名前）。
+    pub def creditFont(): String = "credit"
+
     /// 遊べる App（実機のウィンドウとブラウザで同じ）。描き方の重さの post が偽なら後がけを掛けない。
     pub def appOf(res: Res): App.App[Resources.With[Res, World], {}] =
         let app = App.make(Resources.of(res, initial(res)))
             |> App.addSystem(Resources.system(step))
-            |> App.withView(Resources.view((_ctx, r, w) -> Render.scene3d(Vec2.zero(), sceneOf(r, w)) :: Nil));
+            |> App.withView(Resources.view((_ctx, r, w) -> Render.scene3d(Vec2.zero(), sceneOf(r, w)) :: Nil))
+            |> App.withFonts(creditFont() :: Nil)
+            |> App.withHudView(Resources.view(creditItems))
+            |> App.withSustained(Resources.read((r, _) -> musicOf(r)));
         if (res#quality#post) app |> App.withPostStack(Resources.read((r, w) -> TownScene.postAt(r#town#look, focusOf(r, w), w#time, size()#x)))
         else app
 

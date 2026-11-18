@@ -4,6 +4,7 @@
 #   手順書 = [[始まりの秒, 終わりの秒, ["ArrowUp", ...]], ...]（押している間のキー・最初のコマからの秒）。無ければ bin/web_walk_demo.json
 #   （水路の脇の低木に当たって滑り、広場を抜けて大通りを北へ・池に当たって回り込み・木と建物に当たる）。
 #   出力: <フォルダ>/f0000.jpg … と frames.txt（ffmpeg の concat の形・1 枚ごとの長さ）。最後に頁の console の行を console.txt へ。
+#   頁の音（engine の音の出口 fgeAudio.master）を最初のコマから録って audio.webm へ書く（音が無い頁は書かない）。
 # 起こした Chrome はプロセスの組ごと止め、使い捨ての user-data-dir を消す（人の Chrome には触らない）。
 # WhyNot: bin/fge web-capture を 1 コマずつ呼ばない — 1 回の起動で 1 枚しか撮れず、キーも押せない。
 import base64, json, os, shutil, signal, socket, struct, subprocess, sys, tempfile, time, urllib.request
@@ -12,6 +13,33 @@ CHROME = os.environ.get("FGE_CHROME", "/Applications/Google Chrome.app/Contents/
 FPS = 15.0
 KEYS = {"ArrowLeft": 37, "ArrowUp": 38, "ArrowRight": 39, "ArrowDown": 40, "KeyA": 65, "KeyD": 68, "KeyS": 83, "KeyW": 87}
 DEMO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web_walk_demo.json")
+
+
+# 音の出口を MediaStreamDestination にも繋いで MediaRecorder で録る（--mute-audio でもスピーカーへ出さないだけで、録る道には流れる）。
+AUDIO_START = """(function () {
+  if (!window.fgeAudio || !fgeAudio.ctx || !fgeAudio.master) return false;
+  var dest = fgeAudio.ctx.createMediaStreamDestination();
+  fgeAudio.master.connect(dest);
+  var rec = new MediaRecorder(dest.stream, { mimeType: "audio/webm;codecs=opus" });
+  window.__hd2dChunks = [];
+  rec.ondataavailable = function (e) { if (e.data.size > 0) window.__hd2dChunks.push(e.data); };
+  rec.start(250);
+  window.__hd2dRec = rec;
+  return true;
+})()"""
+AUDIO_STATE = """JSON.stringify(window.fgeAudio && fgeAudio.ctx ? { context: fgeAudio.ctx.state, at: +fgeAudio.ctx.currentTime.toFixed(2),
+  playing: Array.from(fgeAudio.sounds.entries()).filter(function (e) { return !!e[1].source; })
+    .map(function (e) { return { name: e[0], loop: e[1].source.loop, seconds: +e[1].buffer.duration.toFixed(3), volume: +e[1].gain.gain.value.toFixed(3) }; }) } : null)"""
+AUDIO_STOP = """new Promise(function (done) {
+  var rec = window.__hd2dRec;
+  if (!rec) { done(""); return; }
+  rec.onstop = function () {
+    var reader = new FileReader();
+    reader.onload = function () { done(String(reader.result).split(",")[1] || ""); };
+    reader.readAsDataURL(new Blob(window.__hd2dChunks, { type: "audio/webm" }));
+  };
+  rec.stop();
+})"""
 
 
 class Ws:
@@ -121,6 +149,7 @@ def main():
             ws.call("Input.dispatchMouseEvent", {"type": t, "x": 640, "y": 360, "button": "left", "clickCount": 1})
         if not wait_for(ws, "(document.getElementById('fge-boot') || {style: {}}).style.display === 'none'", 120):
             raise RuntimeError("最初のコマまで来ない")
+        evaluate(ws, AUDIO_START)
         last = max(e for _, e, _ in script) + 1.5
         held = set()
         start = time.time()
@@ -143,6 +172,11 @@ def main():
             time.sleep(max(0.0, (len(shots) / FPS) - (time.time() - start)))
         for k in held:
             key(ws, "up", k)
+        print("[record] 音:", evaluate(ws, AUDIO_STATE))
+        audio = ws.call("Runtime.evaluate", {"expression": AUDIO_STOP, "awaitPromise": True, "returnByValue": True}).get("result", {}).get("value") or ""
+        if audio:
+            with open(os.path.join(out, "audio.webm"), "wb") as f:
+                f.write(base64.b64decode(audio))
         with open(os.path.join(out, "frames.txt"), "w") as f:
             for i, (name, at) in enumerate(shots):
                 after = shots[i + 1][1] if i + 1 < len(shots) else at + 1.0 / FPS

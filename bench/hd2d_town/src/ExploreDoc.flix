@@ -9,15 +9,20 @@ mod ExploreDoc {
     /// depthOfField = 手前と奥のぼけ・post = 画面全体の後がけ。
     pub type alias Quality = { shadowMapSize = Int32, depthOfField = Bool, post = Bool }
 
+    /// 曲とクレジット。sound = project.json の sounds の名前（無ければ鳴らさず、クレジットも出さない）・volume = 音量（0〜1）・
+    /// credit = クレジットの行・creditFrom・creditSec = 始めてから出し始める秒と、出しておく秒・fadeSec = 出る・消える秒。
+    pub type alias Music = { sound = String, volume = Float64, credit = List[String], creditFrom = Float64, creditSec = Float64, fadeSec = Float64 }
+
     /// つまみ。map・look・plan = 地図・見た目・隊列のシナリオ（party と歩きのコマ・息遣い・足元の画面の高さ）の Doc・
     /// start・startFace = 先頭が立つマスと向き・speed = 歩く速さ（m/秒・スティックは倒した量を掛ける）・radius = 先頭の円の半径（m）・
     /// spacing = 隊列の間（m）・aheadMeters・aheadRate = 歩く向きへ先を見せる長さ（m）と、そこへ寄る速さ（/秒・止まると同じ速さで戻る）・
     /// heightLagK = カメラの高さが足元の高さを遅れて追う速さ（/秒）・walkZoom = カメラの引き（足元の点からの距離の倍率）・
     /// seenHeight・hideReach = 建物の北で、足元からこの高さの点が隠れるマスを塞ぐ（塞ぐのは北へ hideReach 行まで）・
-    /// passDecor = 通れる広場のにぎやかしの絵・quality = 描き方の重さの既定。
+    /// passDecor = 通れる広場のにぎやかしの絵・quality = 描き方の重さの既定・music = 曲とクレジット。
     pub type alias Rec = { map = String, look = String, plan = String, start = (Int32, Int32), startFace = Route.Dir, speed = Float64,
                            radius = Float64, spacing = Float64, aheadMeters = Float64, aheadRate = Float64, heightLagK = Float64,
-                           walkZoom = Float64, seenHeight = Float64, hideReach = Int32, passDecor = Set[String], quality = Quality }
+                           walkZoom = Float64, seenHeight = Float64, hideReach = Int32, passDecor = Set[String], quality = Quality,
+                           music = Music }
 
     pub def path(): String = "assets/explore.json"
 
@@ -25,7 +30,8 @@ mod ExploreDoc {
         { map = "assets/town_final.map.json", look = "assets/town.json", plan = "assets/buildup_center.json", start = (13, 54),
           startFace = Route.Dir.North, speed = 3.46, radius = 0.3, spacing = 1.0, aheadMeters = 1.5, aheadRate = 2.0, heightLagK = 2.5,
           walkZoom = 1.35, seenHeight = 0.9, hideReach = 8, passDecor = Set#{"sprites/pigeon.png", "sprites/balloon.png"},
-          quality = { shadowMapSize = 4096, depthOfField = true, post = true } }
+          quality = { shadowMapSize = 4096, depthOfField = true, post = true },
+          music = { sound = "firmament3_loop", volume = 0.35, credit = Nil, creditFrom = 1.5, creditSec = 8.0, fadeSec = 0.8 } }
 
     /// path の Doc を読む。無ければ何も知らせずに既定値・読めなければ 1 行言って既定値。
     pub def loadOr(p: String): Rec \ Fs.FileRead =
@@ -44,6 +50,7 @@ mod ExploreDoc {
             case _           => d#start
         };
         let q = Map.get("quality", m) |> Option.flatMap(JsonCodec.expectObject) |> Option.getWithDefault(Map.empty());
+        let mu = Map.get("music", m) |> Option.flatMap(JsonCodec.expectObject) |> Option.getWithDefault(Map.empty());
         { map = JsonCodec.stringOr("map", d#map, m), look = JsonCodec.stringOr("look", d#look, m), plan = JsonCodec.stringOr("plan", d#plan, m),
           start = start, startFace = Route.dirOfLetter(JsonCodec.stringOr("startFace", "n", m)),
           speed = num("speed", d#speed), radius = num("radius", d#radius), spacing = num("spacing", d#spacing),
@@ -53,7 +60,17 @@ mod ExploreDoc {
               |> Option.getWithDefault(d#passDecor),
           quality = { shadowMapSize = JsonCodec.intOr("shadowMapSize", d#quality#shadowMapSize, q),
                       depthOfField = JsonCodec.boolOr("depthOfField", d#quality#depthOfField, q),
-                      post = JsonCodec.boolOr("post", d#quality#post, q) } }
+                      post = JsonCodec.boolOr("post", d#quality#post, q) },
+          music = { sound = JsonCodec.stringOr("sound", d#music#sound, mu), volume = JsonCodec.floatOr("volume", d#music#volume, mu),
+                    credit = Map.get("credit", mu) |> Option.flatMap(JsonCodec.decodeList(JsonCodec.expectString)) |> Option.getWithDefault(d#music#credit),
+                    creditFrom = JsonCodec.floatOr("creditFrom", d#music#creditFrom, mu), creditSec = JsonCodec.floatOr("creditSec", d#music#creditSec, mu),
+                    fadeSec = JsonCodec.floatOr("fadeSec", d#music#fadeSec, mu) } }
+
+    /// project.json の sounds に名前 name の音があるか（曲のファイルは git に入れず、書き出しの時だけ足すので、無い時は鳴らさない）。
+    pub def isSoundDeclared(name: String): Bool \ Fs.FileRead =
+        DocJson.readJson("project.json") |> Result.toOption |> Option.flatMap(JsonCodec.expectObject) |> Option.flatMap(Map.get("sounds"))
+            |> Option.flatMap(JsonCodec.decodeList(j -> JsonCodec.expectObject(j) |> Option.map(o -> JsonCodec.stringOr("name", "", o))))
+            |> Option.map(List.memberOf(name)) |> Option.getWithDefault(false)
 
     /// 描き方の重さを、つまみの表 knobs（実機は環境変数・ブラウザは頁の URL の query）で差し替える。
     /// shadow = 影の地図の一辺（0 で影なし）・dof = 0 / 1・post = 0 / 1。知らない値は既定のまま。

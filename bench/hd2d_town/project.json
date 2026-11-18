@@ -176,7 +176,13 @@
       "hasAlpha": true
     }
   ],
-  "fonts": [],
+  "fonts": [
+    {
+      "name": "credit",
+      "path": "assets/PixelMplus10-Regular.ttf",
+      "fontSize": 10.0
+    }
+  ],
   "sounds": [],
   "web": {
     "startPrompt": "タッチして開始",
