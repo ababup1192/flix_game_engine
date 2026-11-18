@@ -23,6 +23,7 @@ mod TownScene {
     /// charShadowScale = 隊列のキャラの影の板の幅と高さの倍率（見えている板は変えない・太陽と点光源の影の両方）・
     /// charNightBase = 夜のキャラ（隊列と町の人）の板の地の明るさ（夜の露出で暗くなる分を 1 より大きい値で戻す）・charNightFar = 街灯から遠い暗がりのキャラの明るさの割合・
     /// charGain = 光を当てるキャラの板の色の掛け目（景色はそのままでキャラだけ明るくする・夕方）・
+    /// charToNight = 夕方 → 夜の間に、キャラの板を光を当てた明るさから夜の掛け目へ先に移す割合（0 で移さない・太陽が落ちる間に上げる）・
     /// lightUnits = 光の量の読み方（Physical は逆二乗・拡散に 1/π）・pointShadows = 街灯の点光源の影（None で落とさない・街灯の強さが 0 の間も落とさない）・
     /// boardLight = 板（キャラ・木・小物）に光を当てるか（Unlit は boardNightBase・charNightBase の掛け目で塗る。Doc では boardLamplight が正なら Unlit）・
     /// glowAlpha = 火袋とハローの光る板の濃さ（0〜1・歩きながら街灯が点く間に 0 から上げる）・
@@ -40,7 +41,7 @@ mod TownScene {
                             heightFog = Option[PostStack.HeightFog], boardLamplight = Float64, boardNightBase = Color,
                             bloomThreshold = Float64, bloomSize = Float64,
                             lanternCore = Color, lanternEdge = Color, haloColor = Color, haloSize = Float64, haloGlow = Float64, haloFalloff = Float64,
-                            charShadowScale = Vec2.Vec2, charNightBase = Color, charNightFar = Float64, charGain = Float64, lightUnits = Scene3d.LightUnits, pointShadows = Option[Scene3d.PointShadowMap],
+                            charShadowScale = Vec2.Vec2, charNightBase = Color, charNightFar = Float64, charGain = Float64, charToNight = Float64, lightUnits = Scene3d.LightUnits, pointShadows = Option[Scene3d.PointShadowMap],
                             boardLight = BoardLight, glowAlpha = Float64, litToUnlit = Float64,
                             view = PostStack.ViewTransform, heatHaze = Option[HeatHaze], stageLightScale = Float64, stageGlowScale = Float64 }
 
@@ -310,22 +311,28 @@ mod TownScene {
     // WhyNot: 掛け目を 1 で頭打ちにしない — 夜の露出（−2 段）で光を当てない板も 1/4 に暗くなり、溜まりの中のキャラの顔と服が読めない
     def charLit(look: Look, lamps: Lamps, x: Float64, y: Float64, t0: Rgb, bb: Scene3d.Billboard3d): Scene3d.Billboard3d =
         let t = { r = t0#r * look#charGain, g = t0#g * look#charGain, b = t0#b * look#charGain };
-        if (look#boardLight == BoardLight.Lit) bb |> Scene3d.withBillboardTint(gainedTint(look, t0))
-        else {
-            let near = Float64.min(1.0, lampNearness(look, lamps, x, y));
-            let k = look#charNightFar + (1.0 - look#charNightFar) * near;
-            let night = Color.rgb(look#charNightBase#r * k * t0#r, look#charNightBase#g * k * t0#g, look#charNightBase#b * k * t0#b);
-            Scene3d.unlit(bb) |> Scene3d.withBillboardTint(fromLitTint(look, lamps, bb, t, night))
-        }
+        let near = Float64.min(1.0, lampNearness(look, lamps, x, y));
+        let k = look#charNightFar + (1.0 - look#charNightFar) * near;
+        let night = Color.rgb(look#charNightBase#r * k * t0#r, look#charNightBase#g * k * t0#g, look#charNightBase#b * k * t0#b);
+        // WhyNot: 光を当てるキャラの板を、太陽が落ちきるまで光の計算のままにしない — 太陽が 0 に近づくと、裏から街灯を受けるキャラが黒い影絵に沈む。
+        if (look#boardLight == BoardLight.Lit and look#charToNight <= 0.0) bb |> Scene3d.withBillboardTint(gainedTint(look, t0))
+        else Scene3d.unlit(bb) |> Scene3d.withBillboardTint(litToNightTint(look, lamps, bb, t, night, Float64.max(look#charToNight, unlitShare(look))))
 
     /// 光を当てない板の色の掛け目: 光を当てた時の明るさから、夜の掛け目 night へ litToUnlit の割合で移した物。
     // WhyNot: 切り替えの瞬間の掛け目を場面に 1 つの値にしない — 街灯が点いた後で切り替えるので、街灯の手前の板と遠い板で明るさが違い、1 つの値ではどちらかが跳ねる
     def fromLitTint(look: Look, lamps: Lamps, bb: Scene3d.Billboard3d, t: Rgb, night: Color): Color =
-        if (look#litToUnlit >= 1.0) night
+        litToNightTint(look, lamps, bb, t, night, look#litToUnlit)
+
+    /// 光を当てない板の割合（光を当てる板は 0・光を当てない板は litToUnlit）。
+    def unlitShare(look: Look): Float64 = if (look#boardLight == BoardLight.Lit) 0.0 else look#litToUnlit
+
+    /// fromLitTint の、夜の掛け目へ移す割合 share を渡す形。
+    def litToNightTint(look: Look, lamps: Lamps, bb: Scene3d.Billboard3d, t: Rgb, night: Color, share: Float64): Color =
+        if (share >= 1.0) night
         else {
             let f = Scene3d.billboardFieldsOf(bb);
             let e = litLightAt(look, lamps, f#position#x, f#position#y + Float64.abs(f#size#y) * 0.5, f#position#z);
-            let w = Num.clamp(0.0, 1.0, look#litToUnlit);
+            let w = Num.clamp(0.0, 1.0, share);
             let k = (lin: Float64, nightC: Float64) -> { let lit = Texture3d.linearToSrgb(lin); lit + (nightC - lit) * w };
             Color.rgb(k(t#r * e#r, night#r), k(t#g * e#g, night#g), k(t#b * e#b, night#b))
         }
