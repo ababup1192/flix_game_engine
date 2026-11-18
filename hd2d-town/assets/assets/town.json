@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "topDeg": 15.0,
+  "bottomDeg": 50.0,
+  "far": 60.0,
+  "shadowDistance": 28.0,
+  "shadowMapSize": 4096,
+  "sunElevation": 40.0,
+  "sunAzimuth": 35.0,
+  "sunIntensity": 10.367,
+  "ambient": [
+    0.15,
+    0.17,
+    0.24
+  ],
+  "hemisphere": 0.15,
+  "boardTint": 1.0,
+  "snapToTexels": true,
+  "fogNear": 18.0,
+  "fogFar": 70.0,
+  "fog": [
+    0.88,
+    0.92,
+    0.98
+  ],
+  "sky": [
+    0.7,
+    0.8,
+    0.95
+  ],
+  "exposure": -0.3,
+  "bloomStrength": 0.0,
+  "fStop": 0.08,
+  "saturation": 1.05,
+  "vignette": 0.35,
+  "gain": [
+    1.06,
+    0.99,
+    0.88
+  ],
+  "shadowStrength": 1.0,
+  "fxaa": true,
+  "lift": [
+    1.0,
+    1.0,
+    1.0
+  ],
+  "gamma": [
+    1.0,
+    1.0,
+    1.0
+  ],
+  "charShadow": "silhouette",
+  "shadowPcf": 2,
+  "charShadowScale": [
+    0.6,
+    0.8
+  ],
+  "lightUnits": "physical"
+}
