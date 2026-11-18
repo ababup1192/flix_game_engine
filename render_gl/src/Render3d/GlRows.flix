@@ -7,7 +7,7 @@ mod Render3d.GlRows {
     use Render3d.{CameraData, DepthLocs, LitLocs, MaterialEntry, MaterialPass, MeshDraw, MeshLocs, SceneShadows, ShaderVariant, State, TextureSource,
                   Programs, drawMeshRange, ensureTangents, materialTextureNames, meshEntry, meshEntryAt, programsOf, putDepthRange, skinnedProgramsOf, useMeshProgram, warnMissingTexture}
     use Render3d.Batch.{MaterialBatch, MeshBatch}
-    use Render3d.Counts.{BatchBreak, countDrawCall, countInstances}
+    use Render3d.Counts.{BatchBreak, countBillboardRuns, countDrawCall, countInstances}
     use Render3d.Light.{putLights}
     use Render3d.Material.{MaterialTable, bindMaterial, drawWithLook, entryAt, freshBound, releaseBound, resolveTextureAs, useMaterial}
     use Render3d.SceneList.{SceneList, ScenePasses, billboardAt, valuesAt, firstBillboardRowOf, firstBlendedRowOf, flagCoverage, flagDoubleSided, flagNormalMap, flagSameBinding, hasFlag, headAt, kindBillboard, kindMaterial, kindSkinned, materialAt, meshAt, rowAt, rowCountOf}
@@ -40,7 +40,8 @@ mod Render3d.GlRows {
         let touched = Array#{0, 0} @ Static;
         inputs#passes |> List.forEach(pl -> uploadRowsFrom(gl, state, gen, source, inputs, snd(pl), touched, 0, rowCountOf(snd(pl))));
         if (Array.get(0, touched) == 1) gl.activeTexture(GlConst.TEXTURE0) else ();
-        countInstances(state, total, Array.get(1, touched))
+        countInstances(state, total, Array.get(1, touched));
+        inputs#passes |> List.forEach(pl -> countBillboardRuns(state, snd(pl)))
 
     def uploadRowsFrom(gl: GlContext, state: State, gen: Int64, source: TextureSource, inputs: SceneInputs, list: SceneList,
                        touched: Array[Int32, Static], row: Int32, n: Int32): Unit \ IO =

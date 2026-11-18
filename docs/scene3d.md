@@ -42,6 +42,8 @@ let flashlight = { color = Color.rgb(1.0, 0.95, 0.85), intensity = 3.0, range = 
 
 ### 点光源
 
+- 作るのは `{ color = .., intensity = 2.0 | Scene3d.pointLight(position, range) }`（白・intensity 1 から書き替える。字で全部の欄を書かない）。
+  intensity の意味は下の「光の量の読み方」で替わる（Legacy は光の所の明るさの倍率・Physical は 1 m の所の照度）
 - 1 つの場面で計算するのは 8 本まで（`Scene3d.maxPointLights()`）。**8 本を超えても `pointLights` に全部入れてよい** —
   描き手（GL・WebGPU・CPU）が `Scene3d.pickLights` で選ぶ。ゲームの側で選び直さない
 - 選び方（8 本を超えた時だけ。8 本以下は並びも強さもそのまま）:
@@ -333,6 +335,14 @@ GL と CPU の描き手は、場面のカメラの視錐台の外の置いた物
 - 光や羽虫をゲームの側で間引く・数える時は `Camera3d.frustum(camera, aspect)` → `Frustum.intersectsSphere` / `intersectsBox`。
   場面と同じ判定は `Scene3d.frustumOf(scene)` + `Scene3d.isOutsideFrustum`・置いた物の world の境界は `Scene3d.worldBoundsOf`
 
+### 動かない物をまとめる（staticGroup）
+
+町の建物・木・家具のように動かない物が数千個ある場面は、読み込みで 1 回 `Scene3d.staticGroup(名前, (鍵, 物) の列)` を作って Resources に持ち、
+毎コマ `{ groups = 集まり :: Nil | scene }` に載せる（毎コマ staticGroup を呼ばない）。WebGPU の描き手は集まりの計画と 1 体ごとの値を持ち越す。
+
+- GL の描き手は持ち越さず、毎コマ instances と同じに計画して描く（絵は同じ）。groups のある場面を GL で描くと 1 回だけ知らせる
+- 置いた物が 2,000 個を超え groups の無い場面が約 2 秒（120 場面）続くと、1 回だけ「動かない物は staticGroup に」と知らせる
+
 ### ビルボードの draw の数（同じ絵の板をまとめる）
 
 GL と WebGPU の描き手は、`scene#billboards` の**来た順で続く同じ絵の板**を 1 回の instanced draw で描く（Unity の GPU Instancing・Godot の MultiMesh と同じ考え。ゲームは何も書かなくてよい）。
@@ -343,6 +353,8 @@ GL と WebGPU の描き手は、`scene#billboards` の**来た順で続く同じ
   描き手が絵ごとに並べ替えると絵が変わる。**draw を減らしたいゲームは、同じ絵の板を続けて `billboards` に並べる**（森の木を絵ごとに出す・人を絵ごとに出す。
   重なる板の前後を来た順で決めている所は崩さない）
 - 影の地図（太陽・点光源の 6 面）は深度だけなので、描き手が絵ごとに並べ替えてからまとめる（ゲームの並べ方に依らない）
+- まとまりの数と絵の種類の数は `scene3dCounts#billboardRuns`・`billboardImages`（F3 の 3D の行の「billboard runs 100 / images 12」）。
+  runs が images よりずっと多いなら、違う絵の板が交互に来ている
 - 効き目は `drawCalls` の `billboard`・`shadowPass`（まとまり 1 つで 1）。bench/hd2d_town の立ち始め（WebGPU・1280×720）で 3D の draw 584 → 250・
   billboard 318 → 100・shadowPass 155 → 39（絵は 0 差）
 
@@ -410,8 +422,7 @@ let plan = { targets = Map#{ "scene" => RenderTarget.withMsaa(4, RenderTarget.wi
 
 ```flix
 App.withPostStack(w -> PostStack.preset(PostStack.Preset.DuskOutdoor)
-    |> PostStack.withDistortion(Some({ strength = { x = 2.0, y = 1.0 }, noiseSize = 24.0, speed = { x = 0.0, y = -20.0 },
-                                       mask = PostStack.DistortionMask.BottomBand({ top = 0.5, soft = 0.3 }) }))
+    |> PostStack.withDistortion(Some({ mask = PostStack.DistortionMask.BottomBand({ top = 0.5, soft = 0.3 }) | PostStack.distortion() }))
     |> PostStack.withTime(Clock.nowOf(w#playClock)))
 ```
 
@@ -437,11 +448,14 @@ App.withPostStack(w -> PostStack.preset(PostStack.Preset.DuskOutdoor)
 
 ```flix
 App.withPostStack(w -> PostStack.preset(PostStack.Preset.NightOutdoor)
-    |> PostStack.withHeightFog(Some({ color = Color.rgb(0.42, 0.46, 0.56), density = 0.05, baseHeight = 0.0, heightFalloff = 0.15,
-                                      startDistance = 0.0, maxOpacity = 0.92,
-                                      noise = Some({ size = 40.0, amount = 0.6, speed = { x = 10.0, y = 4.0 } }), lightGlow = 0.5 }))
+    |> PostStack.withHeightFog(Some({ color = Color.rgb(0.42, 0.46, 0.56), density = 0.05, heightFalloff = 0.15, maxOpacity = 0.92,
+                                      noise = Some({ size = 40.0, amount = 0.6, speed = { x = 10.0, y = 4.0 } | PostStack.fogNoise() }), lightGlow = 0.5
+                                      | PostStack.heightFog() }))
     |> PostStack.withTime(Clock.nowOf(w#playClock)))
 ```
+
+効果の値は既定値の関数から欄を書き替えて作る（`PostStack.bloom()`・`vignette()`・`colorGrade()`・`distortion()`・`heightFog()`・`fogNoise()`。
+post.json で効果の欄を書いた時の出発点も同じ値）。字で全部の欄を書かないので、欄が増えても書き直さなくてよい。
 
 - 式は Unreal の Exponential Height Fog と同じ（名前もそろえた）: 高さ y の濃さ = `density × e^(−heightFalloff × (y − baseHeight))`。目から面までその濃さを積み、
   `1 − e^(−積んだ量)` だけ `color` に寄せる（`maxOpacity` で上限）。`startDistance` までは積まない

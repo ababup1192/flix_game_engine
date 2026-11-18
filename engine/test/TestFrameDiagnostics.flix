@@ -22,6 +22,14 @@ mod TestFrameDiagnostics {
         Assert.assertEq(expected = Some("3D placed 3 / drawn 3 / draw calls 4 / dropped lights point 2 / spot 1"),
                         List.nth(2, FrameDiagnostics.summaryLines(d)))
 
+    // ビルボードの行があれば、3D の行に行の数と絵の種類の数が出る（落とした光より前）。
+    @Test
+    def testSummaryLinesShowBillboardRuns(): Unit \ Assert =
+        let d = { scene3dCounts = { instances = 3, drawn = 3, drawCalls = 9, billboardRuns = 6, billboardImages = 2, droppedSpotLights = 1
+                                    | FrameDiagnostics.emptyScene3dCounts() } | FrameDiagnostics.empty() };
+        Assert.assertEq(expected = Some("3D placed 3 / drawn 3 / draw calls 9 / billboard runs 6 / images 2 / dropped lights point 0 / spot 1"),
+                        List.nth(2, FrameDiagnostics.summaryLines(d)))
+
     // GPU の時間を測れない（None）なら "GPU -"（0 ms と取り違えない）。
     @Test
     def testSummaryLinesWithoutGpuTime(): Unit \ Assert =

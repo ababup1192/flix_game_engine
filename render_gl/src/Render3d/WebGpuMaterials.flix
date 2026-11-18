@@ -66,7 +66,7 @@ pub mod Render3d.WebGpuMaterials {
     pub type alias Registered = { textureById = Int32 -> Option[Texture] \ IO, encoding = Render3d.WebGpuMipmaps.Encoding, noteCopy = Unit -> Unit \ IO }
 
     /// 状態。programs = materialKey → 組んだ program（組めなければ None）・current = 今の prepare の問い合わせの順の program（行の欄 1 が引く）・
-    /// vertexModules = (uv つきか, lightmap つきか, 骨つきか) → 材質の頂点シェーダー・pipelines = (program, 形式の番号, 標本, 頂点のバイト数) → pipeline・
+    /// vertexModules = (uv つきか, lightmap つきか, 骨つきか) → 材質の頂点シェーダー・pipelines = MaterialPipelineKey → pipeline・
     /// textures = 絵の表・store = 絵の表の番号 → 絵・samplers = [Repeat Nearest, Repeat Linear, Clamp Nearest, Clamp Linear]・blank = 無い絵の代わり（1 × 1 の透明な黒）・
     /// values = 値の buffer（要素 1 つ・足りなければ作り直す）・valuesUsed = 今の encoder で使ったバイト数・groups = 今の encoder の group 1（submit の後に手放す）・
     /// bound = 今の pass で最後に付けた (pipeline の鍵の番号, 行の値の位置)・warned = 知らせ済みの材質の名前。
@@ -78,7 +78,7 @@ pub mod Render3d.WebGpuMaterials {
             nextId = Array[Int32, Static],
             current = Ref[Vector[Option[Program]], Static],
             vertexModules = Ref[Map[(Bool, Bool, Bool), ShaderModule], Static],
-            pipelines = Ref[Map[(Int32, Int32, Int32, Int32), RenderPipeline], Static],
+            pipelines = Ref[Map[MaterialPipelineSlot, RenderPipeline], Static],
             textures = TextureTable3d.Table,
             store = Ref[Map[Int32, GpuTexture], Static],
             samplers = Array[Sampler, Static],
@@ -528,13 +528,24 @@ pub mod Render3d.WebGpuMaterials {
             putTexturesFrom(desc, textureAt, samplerAt, k + 1, n)
         }
 
+    /// 材質の pipeline の鍵。program = program の番号・format = 描き先の形式の番号・samples = 標本の数・stride = 頂点のバイト数。
+    type alias MaterialPipelineKey = { program = Int32, format = Int32, samples = Int32, stride = Int32 }
+
+    // WhyNot: レコードを Map の鍵に直に使わない — レコードは Order を持てない。並べ方は materialPipelineSlotOf の 1 か所だけにして、呼ぶ側は欄の名前で書く。
+    enum MaterialPipelineSlot with Eq, Order {
+        case MaterialPipelineSlot(Int32, Int32, Int32, Int32)
+    }
+
+    def materialPipelineSlotOf(k: MaterialPipelineKey): MaterialPipelineSlot =
+        MaterialPipelineSlot.MaterialPipelineSlot(k#program, k#format, k#samples, k#stride)
+
     /// program p で形 mesh を mp の描き先へ描く pipeline（無ければ作る）。表の面は時計回りで、両面の材質だけ裏を間引かない。深度は LESS で書く。
     /// 半透明の版は深度を読むが書かず、GL の Render3d.GlRows.drawBlendedRows と同じ混ぜ方（色は SRC_ALPHA・ONE_MINUS_SRC_ALPHA、α は ONE・ONE_MINUS_SRC_ALPHA）で重ねる。
     /// 骨つきの版は group 2（姿勢）と、形の版のジョイントの番号と重み（location 14・15）を読む（呼ぶ側が mesh#skinAt のある形だけを渡す）。
     /// lightmap の版は 2 本目の uv（location 13）を読む（呼ぶ側が mesh#uv2At のある形だけを渡す）。
     def pipelineOf(m: Materials, mp: MaterialPass, p: Program, mesh: MeshBuffers): RenderPipeline \ IO =
         let MaterialsData.MaterialsData(s) = m;
-        let key = (p#id, WebGpuPipelines.formatCode(mp#format), mp#samples, mesh#stride);
+        let key = materialPipelineSlotOf({ program = p#id, format = WebGpuPipelines.formatCode(mp#format), samples = mp#samples, stride = mesh#stride });
         match Map.get(key, Ref.get(s#pipelines)) {
             case Some(found) => found
             case None =>

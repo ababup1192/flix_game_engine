@@ -10,14 +10,34 @@ mod Render3d.ScenePlan {
     use Render3d.PoseRows.{PoseRows, noRows, withPoseRow}
 
     /// 計画の側の状態（GL の物を持たない）。drawMode = 置いた物の描き方・sceneWarnedRef = 場面について知らせ済みの鍵（見つからない絵・上限を超えた材質と光・
-    /// 場面の絵の置き場あふれ・空・lightmap・uv の無い法線マップ）・skinWarnedRef = ジョイントの数の食い違いを知らせた形（contentHash）・shadowWarnedRef = 影について知らせ済みの種類。
+    /// 場面の絵の置き場あふれ・空・lightmap・uv の無い法線マップ）・skinWarnedRef = ジョイントの数の食い違いを知らせた形（contentHash）・shadowWarnedRef = 影について知らせ済みの種類・
+    /// crowdedScenesRef = 置いた物が多いのに staticGroup の無い場面が続いた数（noteStaticGroupHint）。
     pub type alias Planner = {
-        drawMode = DrawMode, sceneWarnedRef = Ref[Set[String], Static], skinWarnedRef = Ref[Set[String], Static], shadowWarnedRef = Ref[Set[String], Static]
+        drawMode = DrawMode, sceneWarnedRef = Ref[Set[String], Static], skinWarnedRef = Ref[Set[String], Static], shadowWarnedRef = Ref[Set[String], Static],
+        crowdedScenesRef = Ref[Int32, Static]
     }
 
     pub def freshPlanner(drawMode: DrawMode): Planner \ IO =
         { drawMode = drawMode, sceneWarnedRef = Ref.fresh(Static, Set.empty()), skinWarnedRef = Ref.fresh(Static, Set.empty()),
-          shadowWarnedRef = Ref.fresh(Static, Set.empty()) }
+          shadowWarnedRef = Ref.fresh(Static, Set.empty()), crowdedScenesRef = Ref.fresh(Static, 0) }
+
+    /// 置いた物が staticHintInstances() 個を超え、staticGroup が 1 つも無い場面が staticHintScenes() 回続いたら、1 回だけ知らせる（GL と WebGPU が場面ごとに呼ぶ）。
+    /// placed = 場面の置いた物の数（Scene3dCounts#instances に足す数と同じ）。
+    // WhyNot: 1 回超えただけで知らせない — 人の多い場面を一瞬通るだけのゲームにまで、まとめ直しを勧めることになる。
+    pub def noteStaticGroupHint(planner: Planner, placed: Int32, scene: Scene3d.Scene3dCmd): Unit \ IO =
+        let crowded = placed > staticHintInstances() and List.isEmpty(scene#groups);
+        let streak = if (crowded) Ref.get(planner#crowdedScenesRef) + 1 else 0;
+        Ref.put(streak, planner#crowdedScenesRef);
+        if (streak >= staticHintScenes())
+            warnOnce(planner, "@static-group-hint", "scene3d: 置いた物が ${placed} 個あり staticGroup の無い場面が続いている — 動かない物は Scene3d.staticGroup にまとめると"
+                + "計画と 1 体ごとの値を持ち越して CPU が減る（engine の docs/scene3d.md の「動かない物をまとめる（staticGroup）」）")
+        else ()
+
+    /// noteStaticGroupHint が多いと見る置いた物の数。
+    pub def staticHintInstances(): Int32 = 2000
+
+    /// noteStaticGroupHint が知らせるまでに続く場面の数（60 fps で約 2 秒）。
+    pub def staticHintScenes(): Int32 = 120
 
     /// 場面についての知らせを鍵ごとに 1 回だけ出す。
     pub def warnOnce(planner: Planner, key: String, message: String): Unit \ IO = warnOnceIn(planner#sceneWarnedRef, key, message)

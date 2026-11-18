@@ -14,10 +14,10 @@ mod Render3d.WebGpuSky {
     import fge.webgpu.WebGpu
     import java.nio.ByteBuffer
 
-    /// 空の backend の状態。sceneLayout = group 0 の layout（3D の描き手の持ち物）・pipelines = (形式の番号, 標本の数, group 0 の形の番号) → pipeline。
+    /// 空の backend の状態。sceneLayout = group 0 の layout（3D の描き手の持ち物）・pipelines = SkyPipelineKey → pipeline。
     pub type alias Sky = {
         gpu = WebGpu, sceneLayout = BindGroupLayout, vertexModule = ShaderModule, fragmentModule = ShaderModule,
-        pipelines = Ref[Map[(Int32, Int32, Int32), RenderPipeline], Static]
+        pipelines = Ref[Map[SkyPipelineSlot, RenderPipeline], Static]
     }
 
     /// device の上に shader module を作る。sceneLayout = 場面の group 0 の layout（持ち主が手放す）。
@@ -62,12 +62,22 @@ mod Render3d.WebGpuSky {
         p.setPipeline(pipelineOf(sky, format, samples, group0));
         p.draw(3, 1, 0, 0)
 
+    /// 空の pipeline の鍵。format = 描き先の形式の番号・samples = 標本の数・sceneLayout = 場面の group 0 の形の番号。
+    type alias SkyPipelineKey = { format = Int32, samples = Int32, sceneLayout = Int32 }
+
+    // WhyNot: レコードを Map の鍵に直に使わない — レコードは Order を持てない。並べ方は skyPipelineSlotOf の 1 か所だけにして、呼ぶ側は欄の名前で書く。
+    enum SkyPipelineSlot with Eq, Order {
+        case SkyPipelineSlot(Int32, Int32, Int32)
+    }
+
+    def skyPipelineSlotOf(k: SkyPipelineKey): SkyPipelineSlot = SkyPipelineSlot.SkyPipelineSlot(k#format, k#samples, k#sceneLayout)
+
     /// 形式 format・標本 samples・場面の group 0 の空の pipeline（無ければ作る）。
     /// 深度は読まず書かない（GL の drawSky が深度の判定を切って描く）。描き先の pass は深度を持つので、形式だけ合わせる。
     // WhyNot: 変種の場面でも既定の layout で作らない — pass の頭で付けた group 0 は変種の layout で、layout の違う pipeline へは付けられない。
     def pipelineOf(sky: Sky, format: RenderTarget.Format, samples: Int32, group0: (Int32, BindGroupLayout)): RenderPipeline \ IO =
         let (code, layout) = group0;
-        let key = (RenderPaint.Internal.WebGpuPipelines.formatCode(format), samples, code);
+        let key = skyPipelineSlotOf({ format = RenderPaint.Internal.WebGpuPipelines.formatCode(format), samples = samples, sceneLayout = code });
         match Map.get(key, Ref.get(sky#pipelines)) {
             case Some(p) => p
             case None =>

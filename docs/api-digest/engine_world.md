@@ -1858,6 +1858,18 @@
   `pub enum Preset with Eq, ToString { case Neutral case DuskOutdoor case NightOutdoor case SunnyCity case EveningBeach case Cave case NightCorridor case TorchRoom }`
 - 組み方の問題（build が返す。実機は 1 回だけ知らせ、描き出しの lint は止める）。
   `pub enum Issue with Eq, ToString { case NoScene3d case SeveralScenes(Int32) case ReservedPassName(String) }`
+- threshold 1・smoothness 0.5・size 0.04・strength 0.6 のブルーム。
+  `pub def bloom(): Bloom`
+- strength 0.3・inner 0.35・outer 1.05・画面の真ん中のビネット。
+  `pub def vignette(): Vignette`
+- 何もしない色の仕上げ（lift・gamma・gain・saturation がどれも 1）。
+  `pub def colorGrade(): ColorGrade`
+- 画面全体を上へ流れる揺らぎで歪める（strength (2, 1)・noiseSize 24・speed (0, −20)・mask Full）。
+  `pub def distortion(): Distortion`
+- size 8・amount 0.4・speed (0.5, 0.2) の霧のむら。
+  `pub def fogNoise(): FogNoise`
+- 青みの灰色・density 0.02・heightFalloff 0.2・むらと灯りのにじみ無しの高さの霧。
+  `pub def heightFog(): HeightFog`
 - 後がけの値の束（Godot の Environment・Unity の Volume のように、効果ごとの欄を持つ値 1 つ）。
   `pub type alias Stack = StackData`
 - 見た目の名前の出発点。Neutral は「Standard・露出 0・ほかは無し」。
@@ -2613,8 +2625,8 @@
   `pub def scaled(k: Float64, p: Plan): Plan`
 
 ## Timeline — `engine_world/src/Timeline.flix`
-- 組み上がった時刻表。sounds は (時刻, 書いた順) の昇順。
-  `pub enum Timeline[a] { case Timeline({ clips = Map[a, Clip[a]], segments = Map[a, Int32], sounds = Vector[SoundAt], waits = List[Float64], fitted = Map[String, Float64], duration = Float64 }) }`
+- 組み上がった時刻表。build / buildOrPanic だけが作る（外から組み立て・分解はできない）。
+  `pub type alias Timeline[a] = TimelineData[a]`
 - クリップ: start 秒に始まり dur 秒続く。tag = 拍の名前か出来事（ゲームの enum。文字列にしないのは、
   `pub type alias Clip[a] = { tag = a, start = Float64, dur = Float64 }`
 - クリップを値として作る（表に無い名前の既定値など。長さは負にしない）。
@@ -2665,7 +2677,6 @@
   `pub def build(tempo: Tempo, steps: List[Step[a]]): Result[List[BuildError[a]], Timeline[a]] with Order[a]`
 - build の、書き間違いで止める包み。並びをゲームのコードが書く表（Doc は長さしか持たない）では、Err は
   `pub def buildOrPanic(name: String, tempo: Tempo, steps: List[Step[a]]): Timeline[a] with Order[a], ToString[a]`
-- `pub def buildOrBug(name: String, tempo: Tempo, steps: List[Step[a]]): Timeline[a] with Order[a], ToString[a]`
 - 鳴らす予定の効果音（秒）。
   `pub type alias SoundAt = { at = Float64, segment = Int32, sound = String }`
 - 再生位置: 時刻表の上の時刻 t と、解いた待ちの数 passed。待ちの位置ちょうどでは、

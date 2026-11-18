@@ -535,6 +535,12 @@ mod Render3d.TestSceneList {
         let list = listWithTwoTextures(boardDraw("sprite", 5.0, false) :: boardDraw("sprite", 6.0, false) :: boardDraw("other", 7.0, false) :: boardDraw("sprite", 8.0, false) :: Nil);
         Assert.assertEq(expected = (7, 2) :: (9, 1) :: (7, 1) :: Nil, billboardRunsIn(list))
 
+    /// 絵 A・A・B・A の板は 3 行で、行の絵は A・B・A（診断の billboardRuns 3・billboardImages 2 の元）。
+    @Test
+    def testBillboardTexturesListOneEntryPerRow(): Unit \ {Assert, IO} =
+        let list = listWithTwoTextures(boardDraw("sprite", 5.0, false) :: boardDraw("sprite", 6.0, false) :: boardDraw("other", 7.0, false) :: boardDraw("sprite", 8.0, false) :: Nil);
+        Assert.assertEq(expected = 7 :: 9 :: 7 :: Nil, Render3d.SceneList.billboardTexturesOf(list))
+
     /// 視錐台の外の板は行を作らず、前後の同じ絵の板はその外の板をまたいで 1 つの行になる。
     @Test
     def testCulledBillboardDoesNotSplitRow(): Unit \ {Assert, IO} =

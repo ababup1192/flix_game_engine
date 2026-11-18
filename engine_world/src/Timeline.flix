@@ -52,9 +52,12 @@
 
 pub mod Timeline {
 
-    /// 組み上がった時刻表。sounds は (時刻, 書いた順) の昇順。
-    pub enum Timeline[a] {
-        case Timeline({ clips = Map[a, Clip[a]], segments = Map[a, Int32], sounds = Vector[SoundAt], waits = List[Float64],
+    /// 組み上がった時刻表。build / buildOrPanic だけが作る（外から組み立て・分解はできない）。
+    pub type alias Timeline[a] = TimelineData[a]
+
+    // sounds は (時刻, 書いた順) の昇順。
+    enum TimelineData[a] {
+        case TimelineData({ clips = Map[a, Clip[a]], segments = Map[a, Int32], sounds = Vector[SoundAt], waits = List[Float64],
                         fitted = Map[String, Float64], duration = Float64 })
     }
 
@@ -322,7 +325,7 @@ pub mod Timeline {
                 |> List.map(c -> { let (at, segment, _, name) = c; { at = at, segment = segment, sound = name } })
                 |> List.toVector;
             let lastSound = Vector.foldLeft((m, s) -> Float64.max(m, s#at), 0.0, sounds);
-            Ok(Timeline.Timeline({
+            Ok(TimelineData.TimelineData({
                 clips = clips, segments = built#segments, sounds = sounds,
                 waits = built#waits |> Sort.sortStableWith((x, y) -> x <=> y),
                 fitted = built#fitted,
@@ -337,11 +340,6 @@ pub mod Timeline {
             case Ok(tl)      => tl
             case Err(errors) => bug!("Timeline ${name} の書き間違い: ${errors |> List.map(e -> ToString.toString(e)) |> String.intercalate(", ")}")
         }
-
-    /// 旧名。次のリリースで消す（ゲームからの呼び出しは forbid の deprecated-name が止める）。
-    @Deprecated
-    pub def buildOrBug(name: String, tempo: Tempo, steps: List[Step[a]]): Timeline[a] with Order[a], ToString[a] =
-        buildOrPanic(name, tempo, steps)
 
     // ── 読む口（毎フレーム） ──
 
@@ -377,22 +375,22 @@ pub mod Timeline {
 
     /// 時刻表が終わる時刻（秒）。クリップより後ろの音も含む。
     pub def endOf(tl: Timeline[a]): Float64 = match tl {
-        case Timeline.Timeline(r) => r#duration
+        case TimelineData.TimelineData(r) => r#duration
     }
 
     /// タグのクリップ（秒）。
     pub def clipOf(tag: a, tl: Timeline[a]): Option[Clip[a]] with Order[a] = match tl {
-        case Timeline.Timeline(r) => Map.get(tag, r#clips)
+        case TimelineData.TimelineData(r) => Map.get(tag, r#clips)
     }
 
     /// クリップの列（開始の順。同じ時刻は tag の順）。全部のクリップを順に見る所（索引・ログ）に。
     pub def clipsOf(tl: Timeline[a]): List[Clip[a]] = match tl {
-        case Timeline.Timeline(r) => Map.valuesOf(r#clips) |> Sort.sortStableWith((x, y) -> x#start <=> y#start)
+        case TimelineData.TimelineData(r) => Map.valuesOf(r#clips) |> Sort.sortStableWith((x, y) -> x#start <=> y#start)
     }
 
     /// 時刻 t にタグのクリップのどこにいるか。境目は soundsOn と同じ (start で Active・長さ 0 なら After)。
     pub def stateOf(tag: a, head: Playhead, tl: Timeline[a]): ClipState with Order[a] = match tl {
-        case Timeline.Timeline(r) =>
+        case TimelineData.TimelineData(r) =>
             let segment = Map.get(tag, r#segments) |> Option.getWithDefault(0);
             match Map.get(tag, r#clips) {
                 case None    => ClipState.After
@@ -415,7 +413,7 @@ pub mod Timeline {
     /// (prev, now]（Enter だけ [prev, now]）。音が鳴るフレームで stateOf はもう Active か After を返す。
     /// 同じ時刻の音は書いた順。巻き戻し（now < prev）では鳴らさない。
     pub def soundsOn(playback: Playback, prev: Playhead, now: Playhead, tl: Timeline[a]): List[String] = match tl {
-        case Timeline.Timeline(r) =>
+        case TimelineData.TimelineData(r) =>
             let skipBelow = match playback {
                 case Playback.Enter => Some(s -> isBefore({ t = s#at, passed = s#segment }, prev#t, prev#passed))
                 case Playback.Play  => Some(s -> not isBefore(prev, s#at, s#segment))
@@ -469,7 +467,7 @@ pub mod Timeline {
 
     /// 長さを合わせる音（withFittedSound）を書き出すときの長さ（秒）。
     pub def soundLengthOf(name: String, tl: Timeline[a]): Option[Float64] = match tl {
-        case Timeline.Timeline(r) => Map.get(name, r#fitted)
+        case TimelineData.TimelineData(r) => Map.get(name, r#fitted)
     }
 
     // ── 待ち ──
@@ -549,7 +547,7 @@ pub mod Timeline {
 
     /// 次の待ち（無ければ表の終わり）へ飛ぶ（スキップ・ロードで演出を飛ばす）。
     pub def skipToNextWait(wall: Float64, p: PlaybackLog, tl: Timeline[a]): PlaybackLog = match tl {
-        case Timeline.Timeline(r) =>
+        case TimelineData.TimelineData(r) =>
             let head = playheadOn(wall, p, tl);
             let next = r#waits |> List.drop(head#passed) |> List.head |> Option.getWithDefault(r#duration);
             seekOn(wall, next, p, tl)
@@ -560,7 +558,7 @@ pub mod Timeline {
     /// 境目は soundsOn と同じ（Play は (prev, now]・Enter は [prev, now]・Seek は何も返さない）。O(クリップの数)。
     pub def startedOnWall(playback: Playback, prev: Float64, now: Float64, p: PlaybackLog, tl: Timeline[a]): List[a] with Order[a] =
         match tl {
-            case Timeline.Timeline(r) =>
+            case TimelineData.TimelineData(r) =>
                 // 最初のフレームは前のフレームが無いので、prev ちょうどの操作より前の位置から数える（頭で飛んだ物も返す）。
                 let before = if (playback == Playback.Enter) playheadOn(prev, LogData.LogData(controlsOf(p) |> List.filter(c -> controlWall(c) < prev)), tl)
                              else playheadOn(prev, p, tl);
@@ -604,7 +602,7 @@ pub mod Timeline {
     type alias Segment = { wallAt = Float64, localAt = Float64, passed = Int32 }
 
     def walkOn(wall: Float64, p: PlaybackLog, tl: Timeline[a]): Walked = match tl {
-        case Timeline.Timeline(r) => walkControls(wall, r#waits, controlsOf(p), { wallAt = 0.0, localAt = 0.0, passed = 0 }, Nil)
+        case TimelineData.TimelineData(r) => walkControls(wall, r#waits, controlsOf(p), { wallAt = 0.0, localAt = 0.0, passed = 0 }, Nil)
     }
 
     /// 操作を古い順に当てる。待ちに着いた後の Resume だけが待ちを解き、走っている間の Seek だけが先へ飛ぶ

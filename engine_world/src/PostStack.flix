@@ -152,6 +152,29 @@ pub mod PostStack {
         case ReservedPassName(String)
     }
 
+    // ── 効果ごとの既定値（`{ strength = 0.9 | PostStack.bloom() }` の形で替える。post.json で効果の欄を書いた時の出発点も同じ値） ──
+
+    /// threshold 1・smoothness 0.5・size 0.04・strength 0.6 のブルーム。
+    pub def bloom(): Bloom = { threshold = 1.0, smoothness = 0.5, size = 0.04, strength = 0.6 }
+
+    /// strength 0.3・inner 0.35・outer 1.05・画面の真ん中のビネット。
+    pub def vignette(): Vignette = { strength = 0.3, inner = 0.35, outer = 1.05, center = { x = 0.5, y = 0.5 } }
+
+    /// 何もしない色の仕上げ（lift・gamma・gain・saturation がどれも 1）。
+    pub def colorGrade(): ColorGrade =
+        { lift = Color.rgb(1.0, 1.0, 1.0), gamma = Color.rgb(1.0, 1.0, 1.0), gain = Color.rgb(1.0, 1.0, 1.0), saturation = 1.0 }
+
+    /// 画面全体を上へ流れる揺らぎで歪める（strength (2, 1)・noiseSize 24・speed (0, −20)・mask Full）。
+    pub def distortion(): Distortion = { strength = { x = 2.0, y = 1.0 }, noiseSize = 24.0, speed = { x = 0.0, y = -20.0 }, mask = DistortionMask.Full }
+
+    /// size 8・amount 0.4・speed (0.5, 0.2) の霧のむら。
+    pub def fogNoise(): FogNoise = { size = 8.0, amount = 0.4, speed = { x = 0.5, y = 0.2 } }
+
+    /// 青みの灰色・density 0.02・heightFalloff 0.2・むらと灯りのにじみ無しの高さの霧。
+    pub def heightFog(): HeightFog =
+        { color = Color.rgb(0.62, 0.66, 0.74), density = 0.02, baseHeight = 0.0, heightFalloff = 0.2, startDistance = 0.0, maxOpacity = 1.0,
+          noise = None, lightGlow = 0.0 }
+
     // ── 値の束 ──
 
     /// 全部の欄。外から作らせない（preset から始めて with* で替える・load で Doc から読む）。
@@ -185,17 +208,17 @@ pub mod PostStack {
     pub def preset(p: Preset): Stack =
         let n = neutralFields();
         let agx = (exposure: Float64) -> { exposure = exposure, viewTransform = ViewTransform.AgX, fxaa = true | n };
-        let bloom = (threshold, smoothness, size, strength) -> Some({ threshold = threshold, smoothness = smoothness, size = size, strength = strength });
+        let presetBloom = (threshold, smoothness, size, strength) -> Some({ threshold = threshold, smoothness = smoothness, size = size, strength = strength });
         let saturated = (k: Float64) -> Some({ lift = Color.rgb(1.0, 1.0, 1.0), gamma = Color.rgb(1.0, 1.0, 1.0), gain = Color.rgb(1.0, 1.0, 1.0), saturation = k });
         StackData.StackData(match p {
             case Preset.Neutral       => n
-            case Preset.DuskOutdoor   => { bloom = bloom(0.95, 0.7, 0.045, 0.9), vignette = presetVignette(0.34) | agx(0.0) }
-            case Preset.NightOutdoor  => { bloom = bloom(0.9, 0.7, 0.045, 0.95), vignette = presetVignette(0.42) | agx(-0.15) }
-            case Preset.SunnyCity     => { bloom = bloom(1.0, 0.6, 0.03, 0.25), vignette = presetVignette(0.18), colorGrade = saturated(1.12) | agx(0.0) }
-            case Preset.EveningBeach  => { bloom = bloom(0.85, 0.5, 0.05, 0.6), vignette = presetVignette(0.25) | agx(0.0) }
-            case Preset.Cave          => { bloom = bloom(0.9, 0.6, 0.035, 0.45), vignette = presetVignette(0.45), colorGrade = saturated(1.18) | agx(0.1) }
-            case Preset.NightCorridor => { bloom = bloom(2.0, 0.6, 0.04, 0.4), vignette = presetVignette(0.35) | agx(-0.3) }
-            case Preset.TorchRoom     => { bloom = bloom(1.0, 0.6, 0.05, 0.8), vignette = presetVignette(0.45), colorGrade = saturated(1.1) | agx(0.0) }
+            case Preset.DuskOutdoor   => { bloom = presetBloom(0.95, 0.7, 0.045, 0.9), vignette = presetVignette(0.34) | agx(0.0) }
+            case Preset.NightOutdoor  => { bloom = presetBloom(0.9, 0.7, 0.045, 0.95), vignette = presetVignette(0.42) | agx(-0.15) }
+            case Preset.SunnyCity     => { bloom = presetBloom(1.0, 0.6, 0.03, 0.25), vignette = presetVignette(0.18), colorGrade = saturated(1.12) | agx(0.0) }
+            case Preset.EveningBeach  => { bloom = presetBloom(0.85, 0.5, 0.05, 0.6), vignette = presetVignette(0.25) | agx(0.0) }
+            case Preset.Cave          => { bloom = presetBloom(0.9, 0.6, 0.035, 0.45), vignette = presetVignette(0.45), colorGrade = saturated(1.18) | agx(0.1) }
+            case Preset.NightCorridor => { bloom = presetBloom(2.0, 0.6, 0.04, 0.4), vignette = presetVignette(0.35) | agx(-0.3) }
+            case Preset.TorchRoom     => { bloom = presetBloom(1.0, 0.6, 0.05, 0.8), vignette = presetVignette(0.45), colorGrade = saturated(1.1) | agx(0.0) }
         })
 
     /// preset の全部（宣言の順）。

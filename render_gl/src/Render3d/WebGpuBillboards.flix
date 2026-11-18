@@ -20,13 +20,13 @@ mod Render3d.WebGpuBillboards {
     use RenderPaint.Internal.WebGpuPipelines
 
     /// ビルボードの backend の状態。sceneLayout = group 0 の layout（3D の描き手の持ち物）・imageLayout = group 1 の layout（2D の描き手の絵の group の layout・2D の描き手の持ち物）・
-    /// pipelines = (形式の番号, 標本の数, 場面の group 0 の形の番号, Physical の光か) → pipeline・physicalFragmentModule = Physical の光の frag（初めて要る時に作る）。
+    /// pipelines = BillboardPipelineKey → pipeline・physicalFragmentModule = Physical の光の frag（初めて要る時に作る）。
     /// shadowFragmentModule = 影の地図へ描く frag（Render3dWgsl.billboardShadowFragmentSource）・shadowPipeline = 影の地図の pipeline（初めて要る時に作る）・
     /// rowRightVertexModule と rowRightShadowPipeline = 板の横の向きを行の値から読む頂点シェーダーと、その影の地図の pipeline（点光源の面・初めて要る時に作る）。
     pub type alias Billboards = {
         gpu = WebGpu, sceneLayout = BindGroupLayout, imageLayout = BindGroupLayout, vertexModule = ShaderModule, fragmentModule = ShaderModule,
         physicalFragmentModule = Ref[Option[ShaderModule], Static],
-        pipelines = Ref[Map[(Int32, Int32, Int32, Bool), RenderPipeline], Static], shadowFragmentModule = ShaderModule, shadowPipeline = Ref[Option[RenderPipeline], Static],
+        pipelines = Ref[Map[BillboardPipelineSlot, RenderPipeline], Static], shadowFragmentModule = ShaderModule, shadowPipeline = Ref[Option[RenderPipeline], Static],
         rowRightVertexModule = Ref[Option[ShaderModule], Static], rowRightShadowPipeline = Ref[Option[RenderPipeline], Static]
     }
 
@@ -85,12 +85,23 @@ mod Render3d.WebGpuBillboards {
             made
     }
 
+    /// ビルボードの pipeline の鍵。format = 描き先の形式の番号・samples = 標本の数・sceneLayout = 場面の group 0 の形の番号・physicalUnits = Physical の光か。
+    type alias BillboardPipelineKey = { format = Int32, samples = Int32, sceneLayout = Int32, physicalUnits = Bool }
+
+    // WhyNot: レコードを Map の鍵に直に使わない — レコードは Order を持てない。並べ方は billboardPipelineSlotOf の 1 か所だけにして、呼ぶ側は欄の名前で書く。
+    enum BillboardPipelineSlot with Eq, Order {
+        case BillboardPipelineSlot(Int32, Int32, Int32, Bool)
+    }
+
+    def billboardPipelineSlotOf(k: BillboardPipelineKey): BillboardPipelineSlot =
+        BillboardPipelineSlot.BillboardPipelineSlot(k#format, k#samples, k#sceneLayout, k#physicalUnits)
+
     /// 形式 format・標本 samples・場面の変種 variant のビルボードの pipeline（無ければ作る）。裏を間引かず（四角はいつもカメラを向く）、深度は LESS で書く
     /// （GL のビルボードと同じく不透明の物の後・半透明の物の前に描く）。奥行きの書き出しの pass も同じ pipeline で、frag が場面の値の uDepthOut で灰色を書く。
     /// group0 = 場面の group 0 の (形の番号, layout)。frag は Render3d.billboardVariantOf(variant) の字（点光源の影は受けない）。
     pub def pipelineOf(b: Billboards, format: RenderTarget.Format, samples: Int32, variant: Render3d.ShaderVariant, group0: (Int32, BindGroupLayout)): RenderPipeline \ IO =
         let (code, layout) = group0;
-        let key = (WebGpuPipelines.formatCode(format), samples, code, variant#physicalUnits);
+        let key = billboardPipelineSlotOf({ format = WebGpuPipelines.formatCode(format), samples = samples, sceneLayout = code, physicalUnits = variant#physicalUnits });
         match Map.get(key, Ref.get(b#pipelines)) {
             case Some(p) => p
             case None =>

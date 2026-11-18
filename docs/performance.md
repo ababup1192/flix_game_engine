@@ -536,7 +536,7 @@ draw call の数が多くて重い時は、**一番多い理由から**ゲーム
 | `skinned` | 骨つきの物の batch（骨の無い物とはプログラムが別） | 同じ形・同じ材質の骨つきの物はまとまる。形と材質の種類を減らす |
 | `lightmap` | lightmap つきの物（物ごとに絵が違うので 1 体ずつ） | 動かない部屋は 1 つの形につないで lightmap を 1 枚にする |
 | `transparent` | 半透明の物（遠い順に 1 体ずつ） | 半透明にする物を減らす。抜くだけなら cutout（`withCutout`）にする |
-| `billboard` | ビルボード（1 枚で 1 draw call） | 数を減らす・視錐台の外は描かれない |
+| `billboard` | ビルボード（来た順で続く同じ絵の板の並びで 1 draw call。並びの数と絵の種類の数は `billboardRuns`・`billboardImages`） | 同じ絵の板を続けて `billboards` に並べる（runs が images に近づく）。視錐台の外は描かれない |
 | `shadowPass` | 影の地図へ描いた分（影を落とす光ごとに、形の batch の数だけ） | 影を落とす光を減らす（スポットの `shadow`・太陽の影）。形の種類を減らす |
 | `sky` | 空（場面 1 つで 1 draw call） | 直す所は無い |
 

@@ -498,7 +498,7 @@
 - 一番多い理由と数（同じ数なら欄の順で先の物・どれも 0 なら None）。
   `pub def topBreak(breaks: List[(String, Int32)]): Option[(String, Int32)]`
 - 3D の場面の数（Diagnostics#scene3dCounts）。
-  `pub type alias Scene3dCounts = { instances = Int32, drawn = Int32, drawCalls = Int32, droppedPointLights = Int32, droppedSpotLights = Int32, meshUploads = Int32, meshEvictions = Int32, texture3dUploads = Int32, mipCopies = Int32, materialBuilds = List[ShaderBuild], jointUploads = Int32, targetRebuilds = Int32, cpuPhases = List[(String, Int64)], batchBreaks = Scene3dBatchBreaks }`
+  `pub type alias Scene3dCounts = { instances = Int32, drawn = Int32, drawCalls = Int32, droppedPointLights = Int32, droppedSpotLights = Int32, meshUploads = Int32, meshEvictions = Int32, texture3dUploads = Int32, mipCopies = Int32, materialBuilds = List[ShaderBuild], jointUploads = Int32, targetRebuilds = Int32, cpuPhases = List[(String, Int64)], batchBreaks = Scene3dBatchBreaks, billboardRuns = Int32, billboardImages = Int32 }`
 - 3D の draw call が分かれた理由ごとの数。3D は batch を鍵でまとめてから描くので、draw call 1 つを 1 つの理由に数える（合計は drawCalls）。
   `pub type alias Scene3dBatchBreaks = { shadowPass = Int32, billboard = Int32, sky = Int32, transparent = Int32, lightmap = Int32, skinned = Int32, material = Int32, mesh = Int32 }`
 - どの理由も 0。
@@ -1307,8 +1307,10 @@
 - `pub def sqrtF(x: Float64): Float64`
 
 ## Scene3d — `engine/src/scene3d/Scene3d.flix`
-- 点光源。range より遠い所には届かない（落ち方は (1 − d² / range²)²）。
+- 点光源。range より遠い所には届かない。intensity の読み方は場面の LightUnits で決まる:
   `pub type alias PointLight = { position = Vec3.Vec3, color = Color, intensity = Float64, range = Float64 }`
+- 白・intensity 1 の点光源。ほかの値は `{ color = .., intensity = 2.0 | Scene3d.pointLight(p, range) }` の形で替える。
+  `pub def pointLight(position: Vec3.Vec3, range: Float64): PointLight`
 - 影の地図（段 C）。mapSize = 一辺の画素数・bias = 自分の面に影を落とさないための奥行きのずらし・
   `pub type alias ShadowMap = { mapSize = Int32, bias = Float64, pcfRadius = Int32, strength = Float64 }`
 - スポットライト。position から target を向き、fovY（ラジアン・円錐の全体の角）の円錐の中だけを照らす。shadow が Some なら影を落とす（段 C）。
@@ -1751,7 +1753,7 @@
   `pub def vertexSource(): String`
 - ノイズ関数の固定テンプレ（hash2 / worley / fbm）。Spec に依存しないので 1 度だけ pin し、
   `pub def preludeSource(): String`
-- Spec 2 つの構造比較（program キャッシュの正当性の中核）。真 ⇒ compile は純関数なので
+- Spec 2 つの構造比較（program キャッシュの正当性の中核）。真 ⇒ compile は純関数なので GLSL も等しい。
   `pub def eqSpec(a: ShaderDoc.Spec, b: ShaderDoc.Spec): Bool`
 - 2 つの材質（spec・自分で光る色 emission・metallic と roughness の場 metallicRoughness）が同じ GLSL を生むか（render_gl の材質の program キャッシュの鍵）。
   `pub def eqMaterial(specA: ShaderDoc.Spec, emissionA: Option[ShaderDoc.Shade], metallicRoughnessA: Option[ShaderDoc.Shade], specB: ShaderDoc.Spec, emissionB: Option[ShaderDoc.Shade], metallicRoughnessB: Option[ShaderDoc.Shade]): Bool`
@@ -1759,7 +1761,8 @@
   `pub def isSameSpec(a: ShaderDoc.Spec, b: ShaderDoc.Spec): Bool`
 - 2 つの色（emission か metallicRoughness）が同じ物か（両方無いか、参照が同じ）。
   `pub def isSameEmission(a: Option[ShaderDoc.Shade], b: Option[ShaderDoc.Shade]): Bool`
-- `pub def hashMaterial(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], metallicRoughness: Option[ShaderDoc.Shade]): Int64`
+- 材質（spec・emission・metallicRoughness）の中身の鍵。eqMaterial が真の 2 つは必ず同じ値になる（違う中身が同じ値になることはありうるので、
+  `pub def hashMaterial(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], metallicRoughness: Option[ShaderDoc.Shade]): Int64`
 - Spec → fragment シェーダー全体（prelude + main）。uTime uniform を前提に持つ。
   `pub def compile(spec: ShaderDoc.Spec): String`
 - 3D の材質を GLSL にした部品。render_gl の 3D の frag が、自分の光の計算の前に差し込む。

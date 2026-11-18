@@ -589,6 +589,7 @@ mod Render3d {
         if (area#fillBackground) drawSky(gl, state, area#viewport, scene) else ();
         let picked = Scene3d.pickLights(scene);
         noteDroppedLights(state, scene);
+        noteStaticGroups(state, scene);
         let lights = lightDataOf(picked, environmentLevels);
         let view = matrixArray(Camera3d.viewMatrix(scene#camera));
         let proj = matrixArray(Camera3d.projectionMatrix(scene#camera, Scene3d.aspectOf(scene)));
@@ -715,6 +716,13 @@ mod Render3d {
         else ()
 
     def warnSceneOnce(state: State, key: String, message: String): Unit \ IO = Render3d.ScenePlan.warnOnce(state#planner, key, message)
+
+    /// GL の描き手は staticGroup を持ち越さない（毎コマ instances と同じに計画して描く）ので、groups のある場面で 1 回だけ知らせる。
+    /// 置いた物が多く groups の無い場面が続いた時の知らせ（noteStaticGroupHint）も出す。
+    def noteStaticGroups(state: State, scene: Scene3d.Scene3dCmd): Unit \ IO =
+        if (List.isEmpty(scene#groups)) ()
+        else warnSceneOnce(state, "@gl-static-groups", "scene3d: GL の描き手は staticGroup の計画と 1 体ごとの値を持ち越さない — 毎コマ置いた物と同じに描く（絵は同じ・CPU は減らない）");
+        Render3d.ScenePlan.noteStaticGroupHint(state#planner, Scene3d.instancesOf(scene) |> List.length, scene)
 
     // ── 置いた物 ──
 

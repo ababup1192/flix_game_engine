@@ -1,6 +1,6 @@
 // eqSpec・eqMaterial のテクスチャ名の比べ（たどりながら作る名前の対応）が、texNames の番号で比べる形と同じ答えを返すこと。
 // 名前を 1 対 1 で付け替えた組は等しく、2 つの名前を 1 つに潰した組は等しくない。
-mod ShaderGen.TestPairing {
+mod ShaderGen.Internal.SpecKey.TestPairing {
     use ShaderDoc.Field
     use ShaderDoc.Shade
     use ShaderDoc.Out
@@ -35,7 +35,7 @@ mod ShaderGen.TestPairing {
     def byIndex(a: ShaderDoc.Spec, b: ShaderDoc.Spec): Bool =
         let indexOf = spec -> ShaderDoc.texNames(spec) |> List.zipWithIndex |> List.map(e -> { let (i, n) = e; (n, i) }) |> List.toMap;
         let (ia, ib) = (indexOf(a), indexOf(b));
-        ShaderGen.eqSpecWith((na, nb) -> Map.get(na, ia) == Map.get(nb, ib), a, b)
+        ShaderGen.Internal.SpecKey.eqSpecWith((na, nb) -> Map.get(na, ia) == Map.get(nb, ib), a, b)
 
     /// 各型紙を (a, b) で組んだ物と、names の組で組んだ物の (名前, eqSpec, 番号の比べ)。
     def answers(names: (String, String)): List[(String, Bool, Bool)] =

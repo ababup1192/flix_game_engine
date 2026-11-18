@@ -1,5 +1,5 @@
 {
-  "note": "lint-max-lines（engine の 4 パッケージの src の .flix が上限の行数を超えていないか。ESLint の max-lines と同じ考え）の規約データ。この JSON が source of truth で、bin/fge max-lines はこれを読んで動く。超えている物は exempt（\"パス::max-lines\" と理由 1 行）に載せて通し、分け終えたら --all が「もう鳴らない」と言うので消す。ゲームの src は見ない（ゲームの大きさと分け方はゲームが決める）。",
+  "note": "lint-max-lines（engine の 4 パッケージの src の .flix が上限の行数を超えていないか。ESLint の max-lines と同じ考え）の規約データ。この JSON が source of truth で、bin/fge max-lines はこれを読んで動く。超えている物は exempt（\"パス::max-lines\" と理由 1 行）に載せて通し（exemptLines に載せた時の行数。それより伸びたら鳴る）、分け終えたら --all が「もう鳴らない」と言うので消す。ゲームの src は見ない（ゲームの大きさと分け方はゲームが決める）。",
   "prefixes": [
     "engine/src/",
     "render_gl/src/",
@@ -12,7 +12,9 @@
   "maxLines": 1200,
   "hint": "読む所が見つからない大きさなので、役ごとに子のモジュールへ分ける（ゲームが呼ぶ関数は元のモジュールに残し、中身は <元>.Internal.<役> へ。例: App と App.Internal.*）。",
   "exempt": {
-    "engine/src/shader/ShaderGen.flix::max-lines": "上限を 4 行超えるだけ。部品ごとの GLSL 片（色・ノイズ・形）は ShaderEval の同じ部品と 1 対 1 で突き合わせて読むので、片だけを別のファイルへ出すと突き合わせが 2 ファイルにまたがる。GL の層を作って ShaderGen を触る時に分ける",
-    "engine_world/src/App.flix::max-lines": "上限を 5 行超えるだけ。ゲームが繋ぐ with* の口（withLetterboxView など）は App に置く決まりで、中身は App.Internal.Paint に出してある。with* の口を役ごとに App.Internal.* へ分ける時に外す"
+    "engine_world/src/App.flix::max-lines": "ゲームが繋ぐ with* の口（withLetterboxView など）は App に置く決まりで、中身は App.Internal.Paint に出してある。with* の口を役ごとに App.Internal.* へ分ける時に外す"
+  },
+  "exemptLines": {
+    "engine_world/src/App.flix::max-lines": 1209
   }
 }

@@ -100,16 +100,20 @@ pub mod FrameDiagnostics {
     /// - targetRebuilds: Design の解像度の描き先と影の地図の描き先を作った数
     /// - cpuPhases: 3D の描き手の CPU の区間ごとの時間（名前, ns）。区間は入れ子を引いた残り（split の時間は draw に入れない）
     /// - batchBreaks: draw call が 1 つにまとまらなかった理由ごとの数（欄の意味は Scene3dBatchBreaks）
+    /// - billboardRuns / billboardImages: 場面の pass のビルボードの行の数（来た順で続く同じ絵の板を 1 行 = 1 draw call にまとめた数）/ その行が貼る絵の種類の数。
+    ///   行の数が絵の種類の数よりずっと多いなら、違う絵の板が交互に来ている（同じ絵の板を続けて並べると行が減る）
+    /// 作る関数は emptyScene3dCounts（`{ instances = 3 | FrameDiagnostics.emptyScene3dCounts() }`）。
     pub type alias Scene3dCounts = {
         instances = Int32, drawn = Int32, drawCalls = Int32, droppedPointLights = Int32, droppedSpotLights = Int32,
         meshUploads = Int32, meshEvictions = Int32, texture3dUploads = Int32, mipCopies = Int32, materialBuilds = List[ShaderBuild],
-        jointUploads = Int32, targetRebuilds = Int32, cpuPhases = List[(String, Int64)], batchBreaks = Scene3dBatchBreaks
+        jointUploads = Int32, targetRebuilds = Int32, cpuPhases = List[(String, Int64)], batchBreaks = Scene3dBatchBreaks,
+        billboardRuns = Int32, billboardImages = Int32
     }
 
     /// 3D の draw call が分かれた理由ごとの数。3D は batch を鍵でまとめてから描くので、draw call 1 つを 1 つの理由に数える（合計は drawCalls）。
     /// 当てはまる理由が 2 つ以上ある時は、shadowPass → billboard → sky → transparent → lightmap → skinned → material → mesh の順で先に当てはまった 1 つ。
     /// - shadowPass: 影の地図へ描いた draw call
-    /// - billboard: ビルボード（1 枚で 1 draw call）
+    /// - billboard: ビルボード（来た順で続く同じ絵の板の並びで 1 draw call）
     /// - sky: 空（場面 1 つで 1 draw call）
     /// - transparent: 半透明の材質の物（遠い順に 1 体ずつ）
     /// - lightmap: lightmap つきの材質の物（1 体ずつ）
@@ -133,7 +137,7 @@ pub mod FrameDiagnostics {
     pub def emptyScene3dCounts(): Scene3dCounts =
         { instances = 0, drawn = 0, drawCalls = 0, droppedPointLights = 0, droppedSpotLights = 0,
           meshUploads = 0, meshEvictions = 0, texture3dUploads = 0, mipCopies = 0, materialBuilds = Nil,
-          jointUploads = 0, targetRebuilds = 0, cpuPhases = Nil, batchBreaks = emptyScene3dBatchBreaks() }
+          jointUploads = 0, targetRebuilds = 0, cpuPhases = Nil, batchBreaks = emptyScene3dBatchBreaks(), billboardRuns = 0, billboardImages = 0 }
 
     /// 上げ直した物と捨てた物の数を 1 行に（どれも 0 なら "-"）。並びは Scene3dCounts の欄の順。
     pub def uploadsText(c: Scene3dCounts): String =
@@ -156,7 +160,8 @@ pub mod FrameDiagnostics {
           materialBuilds = List.append(a#materialBuilds, b#materialBuilds), jointUploads = a#jointUploads + b#jointUploads,
           targetRebuilds = a#targetRebuilds + b#targetRebuilds,
           cpuPhases = names |> List.map(n -> (n, Map.getWithDefault(n, 0i64, total))),
-          batchBreaks = addScene3dBatchBreaks(a#batchBreaks, b#batchBreaks) }
+          batchBreaks = addScene3dBatchBreaks(a#batchBreaks, b#batchBreaks),
+          billboardRuns = a#billboardRuns + b#billboardRuns, billboardImages = a#billboardImages + b#billboardImages }
 
     /// 作ったシェーダー 1 つ。
     pub type alias ShaderBuild = { name = String, reason = BuildReason }
@@ -176,7 +181,7 @@ pub mod FrameDiagnostics {
     /// 画面の隅に出す数行（ms は小数 2 桁）。描くのはゲームの字の部品（出す所と見た目はゲームが決める）。
     /// 診断は view か hudView の ctx#diagnostics から取る。
     /// World へ写さない — 系で Frame#diagnostics を読むと遊んだ記録と再生が食い違う。出すかどうかの切り替えだけを World に置く。
-    /// 1 行目 CPU（submit・swap）・2 行目 GPU（全体と描き先ごと）・3 行目 3D の数（落とした光があれば末尾に）・4 行目 2D の描く物とシェーダー・
+    /// 1 行目 CPU（submit・swap）・2 行目 GPU（全体と描き先ごと）・3 行目 3D の数（ビルボードの行と絵の種類・落とした光があれば末尾に）・4 行目 2D の描く物とシェーダー・
     /// 5 行目 2D の draw call の数と、続けられなかった理由のうち一番多い物。
     /// 3D を置いたコマだけ、続けて上げ直した物と捨てた物・3D の描き手の CPU の区間・3D の draw call が分かれた理由を足す。
     /// WhyNot: 字は ASCII だけ — ゲームは欧文だけのフォントで描くことがあり、日本語の字は □ に化ける。
@@ -190,7 +195,7 @@ pub mod FrameDiagnostics {
         ("CPU submit ${msText(d#submitNs)} ms / swap ${msText(d#swapNs)} ms") ::
         (if (passes == "") gpu else "${gpu} (${passes})") ::
         ("3D placed ${Int32.toString(c#instances)} / drawn ${Int32.toString(c#drawn)} / draw calls ${Int32.toString(c#drawCalls)}"
-            + droppedLightsText(c)) ::
+            + billboardsText(c) + droppedLightsText(c)) ::
         ("2D draw items ${Int32.toString(d#drawItems)} / shaders ${Int32.toString(d#liveShaders)}") ::
         ("2D draw calls ${Int32.toString(d#draw2dCounts#drawCalls)}" + topBreakText(draw2dBreakList(d#draw2dCounts#batchBreaks))) ::
         (if (c#instances == 0) Nil
@@ -202,6 +207,11 @@ pub mod FrameDiagnostics {
         case Some((name, n)) => " / top break ${name} ${Int32.toString(n)}"
         case None            => ""
     }
+
+    /// ビルボードの行と絵の種類の数の字（行が無ければ空）。
+    def billboardsText(c: Scene3dCounts): String =
+        if (c#billboardRuns == 0) ""
+        else " / billboard runs ${Int32.toString(c#billboardRuns)} / images ${Int32.toString(c#billboardImages)}"
 
     /// 落とした光の数の字（落としていなければ空）。
     def droppedLightsText(c: Scene3dCounts): String =

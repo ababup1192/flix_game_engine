@@ -16,8 +16,16 @@
 /// 3D の場面 1 つの中身（光・環境・置いた物・ビルボード）と、Shader 効果へ渡す命令。
 pub mod Scene3d {
 
-    /// 点光源。range より遠い所には届かない（落ち方は (1 − d² / range²)²）。
+    /// 点光源。range より遠い所には届かない。intensity の読み方は場面の LightUnits で決まる:
+    /// Legacy（既定）= 光の真下の明るさの倍率。落ち方は (1 − d² / range²)²（光の所で intensity・range で 0）、拡散は albedo × 色 × intensity × facing。
+    /// Physical = 1 m 離れた所の照度（cd に当たる）。落ち方は intensity / max(d_m², 1e−4) に range の窓 clamp01(1 − (d² / range²)²)² を掛けた物
+    ///   （d_m = d / unitsPerMeter。1 m で intensity・2 m で 1/4）、拡散は albedo / π × 色 × 照度 × facing。
+    /// 字で全部の欄を書かず、pointLight(position, range) を `{ intensity = 2.0 | Scene3d.pointLight(p, 6.0) }` の形で替える。
     pub type alias PointLight = { position = Vec3.Vec3, color = Color, intensity = Float64, range = Float64 }
+
+    /// 白・intensity 1 の点光源。ほかの値は `{ color = .., intensity = 2.0 | Scene3d.pointLight(p, range) }` の形で替える。
+    pub def pointLight(position: Vec3.Vec3, range: Float64): PointLight =
+        { position = position, color = Color.rgb(1.0, 1.0, 1.0), intensity = 1.0, range = range }
 
     /// 影の地図（段 C）。mapSize = 一辺の画素数・bias = 自分の面に影を落とさないための奥行きのずらし・
     /// pcfRadius = 周りを平均する幅（画素）・strength = 影の濃さ（0〜1）。
@@ -26,6 +34,8 @@ pub mod Scene3d {
     /// スポットライト。position から target を向き、fovY（ラジアン・円錐の全体の角）の円錐の中だけを照らす。shadow が Some なら影を落とす（段 C）。
     /// innerFovY = 縁で暗くなり始める角（ラジアン・全体の角）。この角の内側は縁による減り無しで、そこから fovY まで暗くなる。
     /// None なら fovY × spotInnerRatio()。小さくするほど輪の縁が広くぼける（懐中電灯）。直し方は spotConeOf。
+    /// intensity の読み方は点光源（PointLight）と同じで、円錐の縁の減り（spotConeOf）をさらに掛ける:
+    /// Legacy = 倍率・落ち方は (1 − d² / range²)²。Physical = 1 m 離れた所の照度（cd に当たる）・逆二乗 × range の窓・拡散に 1/π。
     /// 字で全部の欄を書かず、spotLight(position, target, fovY) を `{ color = .. | Scene3d.spotLight(p, t, fov) }` の形で替える。
     pub type alias SpotLight = { position = Vec3.Vec3, target = Vec3.Vec3, fovY = Float64, innerFovY = Option[Float64],
                                  color = Color, intensity = Float64, range = Float64, shadow = Option[ShadowMap] }
@@ -54,7 +64,9 @@ pub mod Scene3d {
         { outerCos = outerCos, innerCos = if (innerCos == outerCos) innerCos + 0.000001 else innerCos }
 
     /// 太陽の光（平行光源。Unity・Unreal の Directional Light・Godot の DirectionalLight3D と同じ）。direction = 光が進む向き（長さは問わない。描く時に長さ 1 にする）・
-    /// color = 光の色（画面の値）・intensity = 線形の量・shadow が Some なら影を落とす。場面に 1 つまで（Scene3dCmd の directionalLight）。
+    /// color = 光の色（画面の値）・shadow が Some なら影を落とす。場面に 1 つまで（Scene3dCmd の directionalLight）。
+    /// intensity の読み方は場面の LightUnits で決まり、どちらも距離では落ちない:
+    /// Legacy（既定）= 線形の倍率（拡散は albedo × 色 × intensity × facing）。Physical = 光に向いた面の照度（lux に当たる。拡散は albedo / π × 色 × 照度 × facing）。
     /// 字で全部の欄を書かず、directionalLight(direction) を `{ intensity = 1.2 | Scene3d.directionalLight(d) }` の形で替える。
     /// 拡散は 点光源と同じ facing（clamp01(n·l)）に color × intensity を掛け、metallic と roughness を持つ材質には鏡面も足す。
     /// lightmap の面には拡散を足さず（ベイクに含める）、鏡面だけ足す。ビルボード（lit）は点光源と同じく法線をカメラへ向けて光を受け、影は受けない。

@@ -90,6 +90,10 @@ mod Render3d.SceneList {
     pub def missingBillboardTexturesOf(list: SceneList): List[String] \ IO =
         List.range(list#firstBillboard, list#firstBlended) |> List.filter(row -> rowAt(list, row, 1) < 0) |> List.map(row -> billboardAt(list, row)#texture)
 
+    /// 絵のあるビルボードの行が貼る全体の登録の絵の番号（行の順。同じ絵が離れた行に出れば何度も入る）。
+    pub def billboardTexturesOf(list: SceneList): List[Int32] \ IO =
+        List.range(list#firstBillboard, list#firstBlended) |> List.map(row -> rowAt(list, row, 1)) |> List.filter(t -> t >= 0)
+
     /// ビルボードの行 row の中身。
     pub def billboardAt(list: SceneList, row: Int32): Scene3d.BillboardFields \ IO = Array.get(row - list#firstBillboard, list#billboards)
 

@@ -105,7 +105,7 @@ pub mod Render3d.WebGpuRenderer {
     /// emptyLayout と emptyGroup = 骨つきの頂点の色の pipeline の group 1（材質を読まない版で、group 2 の前を埋める）・
     /// lightLayout と atlasLayout = 変種の場面の group 0 の layout（sceneLayout に R3dLight を足した物・さらに点光源の影の atlas を足した物。layoutCodeOf）・
     /// variantFragments = 変種の鍵（Render3d.variantKeyOf）→ 頂点の色の frag・cpuLight = R3dLight を詰める入れ物・
-    /// pipelines = (形式の番号, 標本の数, pass の番号（passCodeOf）, 頂点のバイト数, 骨つきか, 変種の鍵) → 頂点の色の pipeline・depthModule = 奥行きの書き出しの frag・blankDepth と blankImage = 影の地図と環境マップの代わり（影は場面の値が切るので読まれない・環境マップは絵が見つからない時に透明な黒として読む）・
+    /// pipelines = LitPipelineKey → 頂点の色の pipeline・depthModule = 奥行きの書き出しの frag・blankDepth と blankImage = 影の地図と環境マップの代わり（影は場面の値が切るので読まれない・環境マップは絵が見つからない時に透明な黒として読む）・
     /// written = 今の encoder（submit まで）で値を書いたか、貼る pass を積んだ描き先の鍵・instances = 1 体ごとの値の buffer（頂点の buffer の 1 番）・
     /// instanceUsed = 今の encoder で使ったそのバイト数・poses = 姿勢の storage の buffer・posesUsed = 今の encoder で使ったそのバイト数・
     /// poseGroups = 今の encoder の group 2（submit の後に手放す）・sceneGroups = 影の地図か環境マップを読む場面の group 0 の控え（描き先と読む絵が同じなら使い回し、コマの間に使わなかった物を手放す）・shadows = 影の地図の描き先と pass・epoch = submit の数（姿勢をこの encoder で書いたかを見る）・
@@ -128,7 +128,7 @@ pub mod Render3d.WebGpuRenderer {
             poseLayout = BindGroupLayout,
             emptyLayout = BindGroupLayout,
             emptyGroup = BindGroup,
-            pipelines = Ref[Map[(Int32, Int32, Int32, Int32, Bool, String), RenderPipeline], Static],
+            pipelines = Ref[Map[LitPipelineSlot, RenderPipeline], Static],
             blankDepth = Texture,
             blankImage = Texture,
             environmentSampler = Sampler,
@@ -258,7 +258,6 @@ pub mod Render3d.WebGpuRenderer {
     def sceneDepthFormat(): TextureFormat = TextureFormat.DEPTH24_PLUS
 
     def directBytes(bytes: Int32): ByteBuffer \ IO = ByteBuffer.allocateDirect(Int32.max(4, bytes)).order(ByteOrder.LITTLE_ENDIAN)
-
 
     def createInstanceBuffer(gpu: WebGpu, bytes: Int32): Buffer \ IO =
         gpu.createBuffer("fge scene3d instances", Int32.toInt64(bytes), Int32.bitwiseOr(BufferUsage.VERTEX, BufferUsage.COPY_DST))
@@ -643,7 +642,6 @@ pub mod Render3d.WebGpuRenderer {
                     (s#blankImage, 1)
             })
 
-
     /// 形を作るたびに MeshUploads を数える、形の表へ渡す関数の組。
     def countingAllocator(r: Renderer): MeshTable.MeshAllocator =
         let RendererData.RendererData(s) = r;
@@ -672,9 +670,9 @@ pub mod Render3d.WebGpuRenderer {
         let drawn = passes |> List.sumWith(match (_, list) -> countRowsOf(s, list)) + List.sumWith(c -> c#litCounts#drawn, carried);
         let placed = StaticRows.placedCountOf(plan#cmd#scene, List.map(c -> c#rows, carried));
         countInstances(s, placed, drawn);
-        let dropped = Scene3d.droppedLightsOf(plan#cmd#scene);
-        Render3d.Counts.count(s, Render3d.Counts.Counter.DroppedPointLights, dropped#points);
-        Render3d.Counts.count(s, Render3d.Counts.Counter.DroppedSpotLights, dropped#spots)
+        passes |> List.forEach(pl -> Render3d.Counts.countBillboardRuns(s, snd(pl)));
+        Render3d.ScenePlan.noteStaticGroupHint(s#planner, placed, plan#cmd#scene);
+        Render3d.Counts.countDroppedLights(s, plan#cmd#scene)
 
     /// stageScene の答え。shadows = 影の地図の pass（行の形は上げてある）・passes = 計画の pass ごとの (pass, 行, 行の values を送った位置（バイト）)（行の形と絵は上げてある）・
     /// poseGroup = 姿勢の group 2（姿勢の無い prepare は None）・environment = 環境マップの絵と mip のレベルの数（ensureEnvironment）。
@@ -1166,13 +1164,18 @@ pub mod Render3d.WebGpuRenderer {
                 made
         }
 
+    /// 頂点の色の pipeline の鍵（format = formatCode・pass = passCodeOf・stride = 頂点のバイト数・skinned = 骨つきか・variant = variantKeyOf）。
+    type alias LitPipelineKey = { format = Int32, samples = Int32, pass = Int32, stride = Int32, skinned = Bool, variant = String }
+    // WhyNot: レコードを Map の鍵に直に使わない — レコードは Order を持てない。並べ方は litPipelineSlotOf の 1 か所だけにして、呼ぶ側は欄の名前で書く。
+    enum LitPipelineSlot with Eq, Order { case LitPipelineSlot(Int32, Int32, Int32, Int32, Bool, String) }
+    def litPipelineSlotOf(k: LitPipelineKey): LitPipelineSlot = LitPipelineSlot.LitPipelineSlot(k#format, k#samples, k#pass, k#stride, k#skinned, k#variant)
+
     /// 形式 format・標本 samples・pass spec・頂点のバイト数 stride（Render3d.WebGpuRows の形の版）の頂点の色の pipeline（無ければ作る）。
-    /// skin = 骨つきの版なら形の版のジョイントの番号の位置（バイト。group 1 は空・group 2 に姿勢）。表の面は時計回り（Render3d の頭の約束）で裏を間引き、深度は LESS で書く。
+    /// skin = 骨つきの版なら形の版のジョイントの番号の位置（バイト。group 1 は空・group 2 に姿勢）。表の面は時計回り（Render3d の頭の約束）で裏を間引き、深度は LESS で書く。variant = 場面の pass の変種（frag と group 0 の layout）。
     // WhyNot: 鍵にジョイントの番号の位置を入れない — 位置は形の版の末尾の 8 float（Render3d.WebGpuRows.floatsPerVertex）で、頂点のバイト数から 1 つに決まる。
-    /// variant = 場面の pass の変種（frag と group 0 の layout を決める）。
     def pipelineOf(r: Renderer, format: RenderTarget.Format, samples: Int32, spec: ScenePassSpec, stride: Int32, skin: Option[Int32], variant: ShaderVariant): RenderPipeline \ IO =
         let RendererData.RendererData(s) = r;
-        let key = (WebGpuPipelines.formatCode(format), samples, passCodeOf(spec), stride, Option.nonEmpty(skin), variantKeyOf(variant));
+        let key = litPipelineSlotOf({ format = WebGpuPipelines.formatCode(format), samples = samples, pass = passCodeOf(spec), stride = stride, skinned = Option.nonEmpty(skin), variant = variantKeyOf(variant) });
         match Map.get(key, Ref.get(s#pipelines)) {
             case Some(p) => p
             case None =>
