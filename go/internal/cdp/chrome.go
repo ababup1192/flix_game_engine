@@ -119,6 +119,7 @@ func launchChrome(exe string, width, height int, timeout time.Duration) (*browse
 		return nil, fmt.Errorf("Chrome を起こせない: %w", err)
 	}
 	b := &browser{cmd: cmd, userDataDir: dir, exited: make(chan struct{}), stderr: tail}
+	track(b)
 	go func() { cmd.Wait(); close(b.exited) }()
 
 	portFile := filepath.Join(dir, "DevToolsActivePort")
@@ -200,6 +201,7 @@ func (b *browser) stop() {
 }
 
 func (b *browser) cleanup() {
+	untrack(b)
 	// WhyNot: 消すのは MkdirTemp で自分が作ったフォルダだけ。Chrome の子が掴んでいる間は消し残るが、OS の一時フォルダなので放る。
 	os.RemoveAll(b.userDataDir)
 }

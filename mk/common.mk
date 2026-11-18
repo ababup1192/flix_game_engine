@@ -10,7 +10,7 @@
 # WhyNot: 前置きを ENGINE の名前で決めない — エンジンの Makefile で ENGINE を決めると、環境変数で来た
 # ENGINE（Studio が渡す同梱の engine）を書き換えたまま子の make と道具へ渡してしまう。
 
-.PHONY: help help-all hooks api module mvn-cache-share
+.PHONY: help help-all hooks api module mvn-cache-share strays
 
 # python3 を起こす前置き（レシピでは素の python3 でなく $(PYTHON3) と書く）。macOS で DEVELOPER_DIR が nix の apple-sdk を
 # 指していても動くように、bin/py3 が起こす 1 回だけ CommandLineTools へ向け直す（理由は bin/py3 の頭）。
@@ -56,3 +56,9 @@ module: ## Q=<語> | やりたいこと → エンジンのモジュールを 1 
 # ROOT を省くとこの作業場。置き場・移し方・同時に使っても壊れない根拠は bin/mvn-cache-share.sh。
 mvn-cache-share: ### [ROOT=<dir>] | lib/cache を共有の置き場への symlink にする（status が「向いていない」と言ったら）
 	@"$(MVN_CACHE_SHARE)" "$(or $(ROOT),$(CURDIR))"
+
+# このリポジトリ（engine なら main と全部の worktree）から起こして、親がいなくなったまま残っているプロセス
+# （ヘッドレスの Chrome・http.server・ゲームのウィンドウ・消した worktree の常駐）を一覧にする。人の普段の Chrome やアプリは拾わない。
+# 拾い方と止めない物の理由は bin/strays.sh の頭。
+strays: ## [KILL=1] [AGE=<分>] | このリポから起こして取り残されたプロセス（Chrome・http.server・ウィンドウ・常駐）を一覧に（KILL=1 で AGE 分より古い物を止める）
+	@KILL="$(KILL)" AGE="$(AGE)" ROOT="$(STRAYS_ROOT)" "$(FGE_PREFIX)bin/strays.sh" "$(CURDIR)"
