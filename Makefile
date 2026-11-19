@@ -1431,6 +1431,14 @@ verify: ## SUITE=<名前> [DRY=1] [ARGS="K=V …"] [SINCE=<ref>] [GUI=1] | 流�
 	  echo "[verify] go/ が bin/fge-go より新しいので、選ぶ前に go-build"; $(MAKE) --no-print-directory go-build || exit 1; fi; \
 	bin/fge gates --suite "$(SUITE)" $(if $(DRY),--dry-run) $(if $(SINCE),--since "$(SINCE)") $(if $(GUI),--gui) -- $(ARGS)
 
+# 答え合わせ（plans/test-selection.md の 6 節・12.8）。台の worktree（.claude/worktrees/replay-scratch）を立て、コミットごとに
+# 選んだ門（sync-engine-full・check・test・check-pkgs）と全量（make test ALL=1・check-pkgs の全部）を流して比べる。結果は build/test-select/replay/。
+# WhyNot: verify の suite にしない — 1 本 10 分を超え、作業中の確かめではなく夜に流す物。
+.PHONY: test-select-replay
+test-select-replay: ### RANGE=<a>..<b> | COMMITS=<sha,…> | 答え合わせ: 過去のコミットの src を戻した赤で、選んだ門と全量の答えを比べる（1 本 10 分前後）
+	@if [ -n "$$(find go -type f -newer bin/fge-go 2>/dev/null | head -1)" ]; then $(MAKE) --no-print-directory go-build || exit 1; fi; \
+	bin/fge test-select-replay $(if $(RANGE),--range "$(RANGE)") $(if $(COMMITS),--commits "$(COMMITS)")
+
 # ステージした物と作業ツリーの差分（追跡していない新しいファイルを含む）でコミットの門を素振りする。 消したファイルは本物の precommit と同じく渡さない（--diff-filter=ACMR）。
 # jargon はステージした行（git diff --cached）しか見ないので、ステージしていない行の独自語はここでは拾えない。
 .PHONY: precommit-dry
