@@ -75,13 +75,13 @@ tape-print = jar=build/headless/headless.jar; \
 	    git ls-files -o --exclude-standard -z -- . ':!debug' ':!build' 2>/dev/null | xargs -0 $(SHA256) 2>/dev/null; \
 	    $(SHA256) < "$$jar"; echo "views=$(TAPE_VIEWS) x264=$(TAPE_X264) aac=$(TAPE_AAC)"; } | $(SHA256) | cut -c1-32; fi
 SHA256 = $(shell command -v sha256sum >/dev/null 2>&1 && echo sha256sum || echo "shasum -a 256")
-# 撮り終えた印が今の指紋と同じで、頁に要る物がそろっているか（$(1) = 名前・$$print = 今の指紋）。
+# 撮り終えのマーカー（.shot）が今の指紋と同じで、頁に要る物がそろっているか（$(1) = 名前・$$print = 今の指紋）。
 tape-done = ( [ "$(TAPE_FRESH)" != 1 ] && [ -n "$$print" ] && [ "$$(cat debug/tape/$(1)/.shot 2>/dev/null)" = "$$print" ] || exit 1; \
 	for v in $(TAPE_VIEWS); do suf=; [ "$(words $(TAPE_VIEWS))" -gt 1 ] && [ "$$v" = phone ] && suf=-phone; \
 	  [ -f debug/tape/$(1)/tape$$suf.json ] && [ -f debug/tape/$(1)/video$$suf.mp4 ] || exit 1; done )
 # 1 本の flow を撮って debug/tape/<名前> に置く（サブシェルで流す）。終わりの番号: 0 撮れた / 1 flow が途中で止まった / 2 撮れなかった。
 # WhyNot: flow が途中で止まっても 2 にしない — そこまでの頁を作ってから、最後に終了コード 1 を返す（code）。
-# WhyNot: 途中で止まった flow には撮り終えた印を書かない — 直して打ち直した時に止まった動画を使い回す。
+# WhyNot: 途中で止まった flow には撮り終えのマーカー（.shot）を書かない — 直して打ち直した時に止まった動画を使い回す。
 tape-shoot = code=0; rm -rf debug/video/$(2) debug/video/$(2)-phone debug/tape/$(2); mkdir -p debug/tape/$(2); \
 	for v in $(TAPE_VIEWS); do \
 	  case "$$v" in pc) src=debug/video/$(2); suf="";; phone) src=debug/video/$(2)-phone; suf=-phone;; \
