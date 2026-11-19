@@ -781,7 +781,11 @@ GL_JAR_TOMLS := flix.toml $(RENDER_GL_DIR)/flix.toml $(ENGINE_FULL_DIR)/flix.tom
 GL_JAR_DEPS := build/gl-jar/deps/lwjgl-$(GL_JAR_LWJGL).jar build/gl-jar/deps/lwjgl-opengl-$(GL_JAR_LWJGL).jar
 GL_JAR_DEPS += build/gl-jar/deps/webgpu-jni-$(GL_JAR_JWEBGPU).jar \
 	$(foreach m,api-core loader-core runtime-jni,build/gl-jar/deps/$(m)-$(GL_JAR_JPARSER).jar)
-JAVAC := $(shell if javac -version >/dev/null 2>&1; then echo javac; else echo $(CURDIR)/.devbox/nix/profile/default/bin/javac; fi)
+# WhyNot: 自分の .devbox だけを見ない — worktree は .devbox を持たないことが多く、無い道の javac を叩いて Error 127 で止まる。main の作業コピーの devbox も探す。
+JAVAC := $(shell if javac -version >/dev/null 2>&1; then echo javac; else \
+	main=$$(dirname "$$(git -C "$(CURDIR)" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" 2>/dev/null); \
+	for d in "$(CURDIR)" "$$main"; do j="$$d/.devbox/nix/profile/default/bin/javac"; if [ -x "$$j" ]; then echo "$$j"; exit 0; fi; done; \
+	echo $(CURDIR)/.devbox/nix/profile/default/bin/javac; fi)
 # JDK の道具を呼ぶ形（$(call JDK,javac) / java / jar）。PATH に javac が無い時は devbox の JDK の隣の物。
 JDK = $(if $(filter javac,$(JAVAC)),$1,"$(dir $(JAVAC))$1")
 # Maven Central から jar を 1 本取る（引数は maven2/ より後ろのパス）。
@@ -885,7 +889,9 @@ precommit-local: gl-jar-pin-check ### | bin/fge precommit が流すエンジン�
 
 ##@ 配る（engine_full・ブラウザ版）
 .PHONY: sync
-sync: clean-locks sync-layers sync-engine-full sync-root-src ## | 層の作業場を張り、engine_full を build-pkg して templates / bench に配る
+# WhyNot: ブラウザ版の束（sync-engine-full-web）も入れる — 別の口にしておくと版を上げても誰も流さず、置き場の current が前の版のまま残り、
+# ゲームの export-web（make tape の「はじめから遊ぶ」）が版の違う jar を探して止まる。
+sync: clean-locks sync-layers sync-engine-full sync-engine-full-web sync-root-src ## | 層の作業場を張り、engine_full と engine_full_web を build-pkg して templates / bench と置き場に配る
 
 # engine_full は engine / render_gl / engine_world / engine_tools のソースを1つに集めた
 # 自己完結パッケージ (依存ゼロ)。ルート src/ と同じくファイル単位の symlink で4パッケージの
@@ -1502,33 +1508,49 @@ NG_TITLE = $(if $(TITLE),$(TITLE),$(NAME))
 export NG_TITLE
 
 ##@ ゲームを産む・上げる
-# engine_full.fpkg がソースより古いまま先へ進むのを止める。
+# engine_full.fpkg がソースより古いまま先へ進まない。作業コピーなら、その場で sync-engine-full を流して作り直してから進む。
 # WhyNot: 「在るかどうか」だけでは足りない。fpkg のバージョン名は bump で進むので、中身が
 # 古くても名前は新しいバージョンに見える。それがゲームの lib/ や Studio の .app へ写ると、
 # Flix は「バージョン名が同じなら取り直さない」ので誰も気づけず、engine のソースにも Release
 # にも在る def が「Undefined name」になる。
 # 判定は mtime なので、git checkout 直後は中身が同じでも古く見えることがある。空振りは
-# sync-engine-full を 1 回回せば済む側の失敗なので、見逃すよりそちらを選ぶ。
+# sync-engine-full を 1 回回せば済む側の失敗なので、見逃すよりそちらを選ぶ（その 1 回はここで流す）。
+# WhyNot: 置き場の今のエントリが組んだ束・toml・版と同じかまで見る — 手で build-pkg した後や、版を上げて sync していない時は、
+# ゲームへ写すのが置き場の古い束（中の version も古い）になる。
+# WhyNot: 4 つの src に未コミットの差がある時は作り直さずに止める — 作業中の engine が版の名前を付けてゲームへ運ばれる。
+# 古い理由を 1 行ずつ出すシェルの 1 文（古くなければ何も出さない）。
+ENGINE_FULL_STALE = if [ ! -f "$(ENGINE_FULL_FPKG_SRC)" ]; then echo "$(ENGINE_FULL_FPKG_SRC) が無い"; else \
+	  find $(ROOT_SRC_PKGS:%=%/src) -name '*.flix' -newer "$(ENGINE_FULL_FPKG_SRC)" 2>/dev/null | head -5 | sed 's/^/ソースの方が新しい: /'; \
+	  entry=$$(bin/fpkg-store.sh path engine_full 2>/dev/null); base=$$(basename "$$entry" 2>/dev/null); \
+	  if [ -z "$$entry" ]; then echo "置き場（build/fpkg-store）に engine_full が無い"; \
+	  else case "$$base" in (engine_full-$(VERSION)-*) ;; (*) echo "置き場の今のエントリ（$$base）が v$(VERSION) の物ではない";; esac; \
+	    { cmp -s "$$entry/package.fpkg" "$(ENGINE_FULL_FPKG_SRC)" && cmp -s "$$entry/flix.toml" "$(ENGINE_FULL_TOML_SRC)"; } || \
+	      echo "置き場の今の束（$$base）が $(ENGINE_FULL_FPKG_SRC)・$(ENGINE_FULL_TOML_SRC) と違う"; fi; fi
 .PHONY: engine-full-fresh
 # 配った版はリリースが組んだ fpkg をそのまま使う（ソースの時刻は zip を開いた時刻なので、比べると空振りで止まる）。
-engine-full-fresh: ### | engine_full.fpkg がソースより古くないか（new-game・upgrade-game の前提）
-	@if [ ! -f "$(ENGINE_FULL_FPKG_SEED)" ]; then \
-	  if [ -n "$(IS_BUNDLE)" ]; then echo "error: $(ENGINE_FULL_FPKG_SEED) がありません（配った engine が欠けています。入れ直してください）"; \
-	  else echo "error: $(ENGINE_FULL_FPKG_SRC) がありません。先に make sync-engine-full を実行してください"; fi; exit 1; \
-	fi
-	@[ -z "$(IS_BUNDLE)" ] || exit 0; \
-	 newer=$$(find $(ROOT_SRC_PKGS:%=%/src) -name '*.flix' -newer "$(ENGINE_FULL_FPKG_SRC)" 2>/dev/null | head -5); \
-	 if [ -n "$$newer" ]; then \
-	   echo "error: $(ENGINE_FULL_FPKG_SRC) がソースより古いです。make sync-engine-full で作り直してください"; \
-	   echo "$$newer" | sed 's/^/  新しい: /'; exit 1; \
-	 fi
-	@# WhyNot: 置き場の今のエントリが組んだ束・toml・版と同じかまで見る — 手で build-pkg した後や、版を上げて sync していない時は、
-	@# ゲームへ写すのが置き場の古い束（中の version も古い）になる。
-	@[ -z "$(IS_BUNDLE)" ] || exit 0; \
-	 entry=$$(bin/fpkg-store.sh path engine_full) || { echo "error: 置き場（build/fpkg-store）に engine_full がありません。make sync-engine-full で入れてください"; exit 1; }; \
-	 case "$${entry##*/}" in engine_full-$(VERSION)-*) ;; *) echo "error: 置き場の今のエントリ（$${entry##*/}）が v$(VERSION) の物ではありません。make sync-engine-full で入れ直してください"; exit 1;; esac; \
-	 { cmp -s "$$entry/package.fpkg" "$(ENGINE_FULL_FPKG_SRC)" && cmp -s "$$entry/flix.toml" "$(ENGINE_FULL_TOML_SRC)"; } || \
-	   { echo "error: 置き場の今の束（$${entry}）が $(ENGINE_FULL_FPKG_SRC)・$(ENGINE_FULL_TOML_SRC) と違います。make sync-engine-full で入れ直してください"; exit 1; }
+engine-full-fresh: ### | engine_full.fpkg が古くないか（古ければ作業コピーでは sync-engine-full を流す・new-game・upgrade-game の前提）
+	@if [ -n "$(IS_BUNDLE)" ]; then \
+	  [ -f "$(ENGINE_FULL_FPKG_SEED)" ] || { echo "error: $(ENGINE_FULL_FPKG_SEED) がありません（配った engine が欠けています。入れ直してください）"; exit 1; }; \
+	  exit 0; \
+	fi; \
+	why=$$($(ENGINE_FULL_STALE)); \
+	[ -n "$$why" ] || exit 0; \
+	echo "[engine-full-fresh] engine_full の束が古い:"; echo "$$why" | sed 's/^/  /'; \
+	dirty=$$(git status --porcelain -- $(ROOT_SRC_PKGS:%=%/src) 2>/dev/null | head -10); \
+	if [ -n "$$dirty" ]; then \
+	  echo "error: engine のソースに未コミットの差があるので作り直しません（作業中の物を v$(VERSION) の名前でゲームへ運ばないため）:"; \
+	  echo "$$dirty" | sed 's/^/  /'; \
+	  echo "  次: コミットするか戻してから打ち直す（承知で運ぶなら make sync-engine-full を流してから）"; exit 1; \
+	fi; \
+	if git rev-parse -q --verify "refs/tags/v$(VERSION)" >/dev/null 2>&1; then \
+	  commits=$$(git log --oneline "v$(VERSION)..HEAD" -- $(ROOT_SRC_PKGS:%=%/src) 2>/dev/null); \
+	  if [ -n "$$commits" ]; then echo "[engine-full-fresh] v$(VERSION) のタグの後のコミットも束に入ります:"; echo "$$commits" | sed 's/^/  /'; \
+	  else echo "[engine-full-fresh] ソースは v$(VERSION) のタグと同じです"; fi; \
+	fi; \
+	echo "[engine-full-fresh] make sync-engine-full を流して作り直します"; \
+	$(MAKE) --no-print-directory sync-engine-full || exit 1; \
+	why=$$($(ENGINE_FULL_STALE)); \
+	[ -z "$$why" ] || { echo "error: sync-engine-full の後も束が古いままです:"; echo "$$why" | sed 's/^/  /'; exit 1; }
 
 .PHONY: new-game
 new-game: engine-full-fresh ## GAME=/abs/path NAME=<名前> [TITLE=] [W=] [H=] [TEMPLATE=] | 新しいゲームを 1 コマンドで産む（check → test → render-all まで通す）
