@@ -33,6 +33,9 @@ const (
 	replayJobs     = 6
 )
 
+// replayToolPaths は台の木に今の物（呼んだ木の HEAD）を重ねる道具の置き場（make の口と台本）。
+var replayToolPaths = []string{"Makefile", "mk", "bin"}
+
 type replayArgs struct {
 	rng     string
 	commits []string
@@ -274,8 +277,13 @@ func ensureReplayWorktree(root, wt string) error {
 // replayTrees は台の 2 つのコミット（base と target。target の親が base）を作る。どちらにも今の gates.json を重ねる。
 // WhyNot: base を target の祖先にしないと、test-select の --since の merge-base が target になり差分が空になる。
 // WhyNot: checkout や revert で木を作らない — フックを通らず枝も作らない commit-tree で、ぶつかりも起きない。
+// どちらの木にも今の gates.json と道具（replayToolPaths）を重ねる。
 // red: base は C の木、target は C のテストのまま src（テストでない .flix）だけを C^ に戻した木（6.1 の 2。C で直したテストが落ちる）。
 func replayTrees(root, gatesBlob, c string) (base, target string, reverted []string, err error) {
+	tools, err := gitLine(root, "rev-parse", "HEAD")
+	if err != nil {
+		return "", "", nil, err
+	}
 	idx := filepath.Join(root, replayDir, "index-"+strconv.Itoa(os.Getpid()))
 	if err := os.MkdirAll(filepath.Dir(idx), 0o755); err != nil {
 		return "", "", nil, err
@@ -305,6 +313,20 @@ func replayTrees(root, gatesBlob, c string) (base, target string, reverted []str
 		}
 		if _, err := gitEnv(root, env, "update-index", "--add", "--cacheinfo", "100644,"+gatesBlob+",gates.json"); err != nil {
 			return "", err
+		}
+		// WhyNot: 過去のコミットの Makefile・mk・bin で流さない — make の口（check-pkgs・test の PKGS と ALL）や配る台本が今と違い、古い木では無い口もある。
+		if _, err := gitEnv(root, env, append([]string{"rm", "--cached", "-r", "-q", "-f", "--ignore-unmatch", "--"}, replayToolPaths...)...); err != nil {
+			return "", err
+		}
+		ls, err := gitLine(root, append([]string{"ls-tree", "-r", tools, "--"}, replayToolPaths...)...)
+		if err != nil {
+			return "", err
+		}
+		cmd := exec.Command("git", "-C", root, "update-index", "--index-info")
+		cmd.Env = append(os.Environ(), env...)
+		cmd.Stdin = strings.NewReader(ls + "\n")
+		if b, err := cmd.CombinedOutput(); err != nil {
+			return "", fmt.Errorf("git update-index --index-info: %v %s", err, b)
 		}
 		return gitEnv(root, env, "write-tree")
 	}
@@ -375,19 +397,24 @@ func replayOne(root, wt, gatesBlob string, f *gates.File, c string) replayRecord
 	allTest, allCheck := allPackages(f)
 
 	t1 := time.Now()
-	full := runReplayFull(wt, f, allCheck)
+	m := &maker{wt: wt, logDir: filepath.Join(root, replayDir, "logs", shortSHA(c))}
+	full := runReplayFull(m, f, allCheck)
 	full.Seconds = int(time.Since(t1).Seconds())
 	rec.Full = full
 	rec.Seconds["full"] = full.Seconds
 
 	t2 := time.Now()
-	in := runReplaySelected(wt, plan, f)
+	in := runReplaySelected(m, plan, f)
 	rec.Seconds["selected"] = int(time.Since(t2).Seconds())
 	in.FullTestFail, in.FullCheckFail = setOf(full.TestFail), setOf(full.CheckFail)
 	in.AllTest, in.AllCheck = allTest, allCheck
 	rec.Red = sortedSet(in.SelectedRed)
 	v := testselect.Judge(in)
 	rec.Verdict = &v
+	if len(m.errs) > 0 {
+		// WhyNot: 読めなかった赤を緑として数えない — 拾い漏れ 0 に見えてしまう。
+		rec.Error = strings.Join(m.errs, "／")
+	}
 	return rec
 }
 
@@ -465,11 +492,18 @@ func idOfDir(f *gates.File, dir string) string {
 }
 
 // runMake は台の worktree で make を流し、出力（ログにも残す）と緑かを返す。
-func runMake(wt, logName string, args ...string) (string, bool) {
+// maker は台の worktree で make を流す（ログは台を消しても残るよう呼んだ木の build/test-select/replay/logs/<コミット>/ へ）。
+type maker struct {
+	wt, logDir string
+	// errs は make が赤なのに答えの行を読めなかった物（その答えを数えに使わない）。
+	errs []string
+}
+
+func (m *maker) run(logName string, args ...string) (string, bool) {
 	cmd := exec.Command("make", append([]string{"--no-print-directory"}, args...)...)
-	cmd.Dir = wt
+	cmd.Dir = m.wt
 	var buf strings.Builder
-	logPath := filepath.Join(wt, replayDir, logName+".log")
+	logPath := filepath.Join(m.logDir, logName+".log")
 	os.MkdirAll(filepath.Dir(logPath), 0o755)
 	var w io.Writer = &buf
 	if fh, err := os.Create(logPath); err == nil {
@@ -483,11 +517,18 @@ func runMake(wt, logName string, args ...string) (string, bool) {
 }
 
 // runReplayFull は全量を流す: sync-engine-full → make test ALL=1 → 赤だけ流し直し → check-pkgs（check の物全部）。
-func runReplayFull(wt string, f *gates.File, allCheck map[string]bool) *replayFull {
+// unread は make が赤なのに赤の行を 1 つも読めなかった時に訳を残す。
+func (m *maker) unread(logName string, green bool, redFound int) {
+	if !green && redFound == 0 {
+		m.errs = append(m.errs, "make が赤なのに赤のパッケージを読めない（"+filepath.Join(m.logDir, logName+".log")+"）")
+	}
+}
+
+func runReplayFull(m *maker, f *gates.File, allCheck map[string]bool) *replayFull {
 	full := &replayFull{}
-	_, synced := runMake(wt, "full-sync", "sync-engine-full")
+	_, synced := m.run("full-sync", "sync-engine-full")
 	full.SyncFailed = !synced
-	out, _ := runMake(wt, "full-test", "test", "ALL=1", "JOBS="+strconv.Itoa(replayJobs))
+	out, green := m.run("full-test", "test", "ALL=1", "JOBS="+strconv.Itoa(replayJobs))
 	first := testselect.ParseTestLines(out)
 	var red []string
 	for id, ok := range first {
@@ -496,10 +537,11 @@ func runReplayFull(wt string, f *gates.File, allCheck map[string]bool) *replayFu
 		}
 	}
 	sort.Strings(red)
+	m.unread("full-test", green, len(red))
 	failed := map[string]bool{}
 	if len(red) > 0 {
 		// 6.2: 不安定なテストは 2 回とも赤の物だけを数える。2 回目は赤だった物だけ（全部を 2 回流すと 1 本 約 20 分）。
-		again, _ := runMake(wt, "full-test-again", "test", "PKGS="+strings.Join(red, " "), "JOBS="+strconv.Itoa(max(2, min(len(red), replayJobs))))
+		again, _ := m.run("full-test-again", "test", "PKGS="+strings.Join(red, " "), "JOBS="+strconv.Itoa(max(2, min(len(red), replayJobs))))
 		second := testselect.ParseTestLines(again)
 		for _, id := range red {
 			if ok, ran := second[id]; ran && ok {
@@ -515,8 +557,10 @@ func runReplayFull(wt string, f *gates.File, allCheck map[string]bool) *replayFu
 	}
 	checkFailed := map[string]bool{}
 	if len(dirs) > 0 {
-		out, _ := runMake(wt, "full-check-pkgs", "check-pkgs", "DIRS="+strings.Join(dirs, " "))
-		for _, d := range testselect.ParseCheckPkgsRed(out) {
+		out, green := m.run("full-check-pkgs", "check-pkgs", "DIRS="+strings.Join(dirs, " "))
+		reds := testselect.ParseCheckPkgsRed(out)
+		m.unread("full-check-pkgs", green, len(reds))
+		for _, d := range reds {
 			checkFailed[idOfDir(f, d)] = true
 		}
 	}
@@ -545,21 +589,21 @@ func pkgOf(f *gates.File, id string) *gates.Package {
 
 // runReplaySelected は選んだ門のうち、パッケージの答えを持つ物（sync-engine-full・check・test・check-pkgs）を流す。
 // ほかの門（render-all・gl-parity など）は全量の側に比べる物が無いので流さない（6.2 の flix test 以外は次の段）。
-func runReplaySelected(wt string, plan *testselect.Plan, f *gates.File) testselect.JudgeInput {
+func runReplaySelected(m *maker, plan *testselect.Plan, f *gates.File) testselect.JudgeInput {
 	in := testselect.JudgeInput{SelectedTest: map[string]bool{}, SelectedCheck: map[string]bool{}, SelectedRed: map[string]bool{}, TypeRed: map[string]bool{}}
 	byID := map[string]testselect.Line{}
 	for _, l := range plan.Run {
 		byID[l.ID] = l
 	}
 	if l, ok := byID["sync-engine-full"]; ok {
-		if _, green := runMake(wt, "sel-sync", l.Make); !green {
+		if _, green := m.run("sel-sync", l.Make); !green {
 			for id := range engineFullConsumers(f) {
 				in.TypeRed[id] = true
 			}
 		}
 	}
 	if l, ok := byID["check"]; ok {
-		if _, green := runMake(wt, "sel-check", l.Make); !green {
+		if _, green := m.run("sel-check", l.Make); !green {
 			// 根の make check は root へ feeds を持つ層と根の src を 1 本の木で組む。
 			for _, p := range f.Packages {
 				for _, n := range p.Feeds {
@@ -577,20 +621,25 @@ func runReplaySelected(wt string, plan *testselect.Plan, f *gates.File) testsele
 			in.SelectedTest[id] = true
 		}
 		// WhyNot: JOBS=1 で流さない — 逐次の make test は最初の赤で止まり、[test] PASS|FAIL の行を出さない。
-		out, _ := runMake(wt, "sel-test", "test", "PKGS="+strings.Join(pkgs, " "), "JOBS="+strconv.Itoa(max(2, min(len(pkgs), replayJobs))))
+		out, green := m.run("sel-test", "test", "PKGS="+strings.Join(pkgs, " "), "JOBS="+strconv.Itoa(max(2, min(len(pkgs), replayJobs))))
+		n := 0
 		for id, ok := range testselect.ParseTestLines(out) {
 			if !ok {
 				in.SelectedRed[id] = true
+				n++
 			}
 		}
+		m.unread("sel-test", green, n)
 	}
 	if l, ok := byID["check-pkgs"]; ok {
 		dirs := strings.Fields(l.Vars["DIRS"])
 		for _, d := range dirs {
 			in.SelectedCheck[idOfDir(f, d)] = true
 		}
-		out, _ := runMake(wt, "sel-check-pkgs", "check-pkgs", "DIRS="+strings.Join(dirs, " "))
-		for _, d := range testselect.ParseCheckPkgsRed(out) {
+		out, green := m.run("sel-check-pkgs", "check-pkgs", "DIRS="+strings.Join(dirs, " "))
+		reds := testselect.ParseCheckPkgsRed(out)
+		m.unread("sel-check-pkgs", green, len(reds))
+		for _, d := range reds {
 			in.SelectedRed[idOfDir(f, d)] = true
 		}
 	}

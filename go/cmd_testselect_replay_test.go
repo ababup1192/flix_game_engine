@@ -45,8 +45,13 @@ func replayRepo(t *testing.T) (dir, c string) {
 	write("src/new.flix", "n\n")
 	run("add", "-A")
 	run("commit", "-q", "-m", "change")
+	c = run("rev-parse", "HEAD")
+	write("Makefile", "now\n")
+	write("bin/tool", "now\n")
+	run("add", "-A")
+	run("commit", "-q", "-m", "tools")
 	write("gates.json", "now\n")
-	return dir, run("rev-parse", "HEAD")
+	return dir, c
 }
 
 func show(dir, rev, p string) string {
@@ -131,6 +136,19 @@ func TestReplayLockTakesOverStaleLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	unlock()
+}
+
+// どちらの木にも今の Makefile と bin を重ねる（過去のコミットには無い口がある）。
+func TestReplayTreesOverlayCurrentTools(t *testing.T) {
+	dir, c := replayRepo(t)
+	base, target, _, err := replayTrees(dir, blobOf(t, dir), c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := []string{show(dir, base, "Makefile"), show(dir, target, "bin/tool"), show(dir, target, "src/a.flix")}
+	if strings.Join(got, "|") != "now|now|1" {
+		t.Errorf("got %v", got)
+	}
 }
 
 // --range と --commits はどちらか 1 つ・red でない mode と知らない口は断る。

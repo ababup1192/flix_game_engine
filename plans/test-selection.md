@@ -296,6 +296,7 @@ B に足す物:
   表の珍しい行は 1 回も試されないまま通りうるので、6.1 の 3 で行ごとに 1 本ずつ当てる。
 - 拾い漏れが出たら、規則を直し（多くは 3 節の表に 1 行）、残しておいた全部の結果に対して選び直す。
 - 使い始めた後も release の全量の門はそのまま。release で赤が出て、その原因の変更を選ぶ道具が拾っていなかったら、その例を答え合わせの台に足す。
+- **人の決め（2026-11-19）: 上の条件（40 本・100 本）は使わない。** 答え合わせは薄く（12 節）済ませ、`make verify SUITE=affected` を作業中の既定にする。外れは使いながら拾う。
 
 ### 6.5 答え合わせの手間
 
@@ -575,3 +576,32 @@ goReads の漏れ（exportweb_touch_test が templates の project.json・keys.s
 go の _test.go が repo の根から読むパス（Join("..", …)・engineRoot・"../../x"）を拾って goReads か wiring に当たるかを見る go のテストを足した。
 任意から: git の日本語のパス（core.quotePath=off）・version の行の読みを関数に分けてテスト・DRY=1 でも go-build の先回り・agents-pack/ の差で new-game-check・gl-parity を gui にしない理由を note に。
 残した物: `make test JOBS=1 PKGS=<1 本>` は .test-logs に書かない（今の逐次の枝と同じ）・Makefile と project.json の `../` を --check で拾う事（webgpu_v2 が gl_parity と webgpu_v1 の src を写す事は実装中に見つけて feeds に足した）。
+
+## 12. 答え合わせの道具（test-select-replay）と案 B の結果（2026-11-19）
+
+### 12.1 案 B（試して見送った・枝 test-select-b）
+
+変わった .flix の宣言の呼び手をたどり、届かないテンプレートのテストを外す案。枝 test-select-b に実装した（消していない）。過去の 13 本で測ると、
+engine 側の差の多くは描く道筋（PostStack・Render3d・App.Internal.Paint）の上の宣言で、テンプレートの全部に本当に届いた。絞れたのは 1 本（YarnRunner）で、
+外したテストは変異を入れても緑（見落とし 0）だったが、T3 の縮みは 9%（rpg-starter が残り、並べた test の長さがそれで決まる）。手間に見合わないので main には入れない。
+T3 を縮めるなら、rpg-starter の test の起動を速くする方と、答え合わせの後に render-all などの門を外す方が効く。
+
+### 12.2 道具の形（最小）
+
+- `bin/fge test-select-replay --range <a>..<b> | --commits <sha,…> [--mode red]`・`make test-select-replay RANGE= | COMMITS=`。結果は `build/test-select/replay/replay-<時刻>.json`、ログは `build/test-select/replay/logs/<コミット>/`。
+- red（6.1 の 2）: base は C の木、target は C のテストのまま src（テストでない .flix）だけを C^ に戻した木。どちらも `git commit-tree` で作り（base が target の祖先でないと `--since` の差分が空になる）、
+  今の gates.json と道具（Makefile・mk・bin）を重ねる（古い木には無い make の口がある）。
+- 台の worktree（`.claude/worktrees/replay-scratch`）は鍵（`build/test-select/replay.lock`）を取って 1 本だけで使う。checkout の後に追跡していない残りを消し、gl-jar の jar を新しい扱いにする。
+- 全量は sync-engine-full → `make test ALL=1`（赤だけ流し直して 2 回とも赤の物）→ check-pkgs の全部。選んだ物は sync-engine-full・check・test・check-pkgs だけを流す。
+  拾い漏れ・選んで拾った・型検査で拾った・食い違い・倒れたかを数える。make が赤なのに赤のパッケージを読めない時はその本をエラーにする（拾い漏れ 0 に見せない）。
+- 作らなかった物: 本当の赤の二分探索・わざと作る例（inject）・抜き取り（sample）・全量の作り置き。描き出し・gl-parity・go の門は比べない。
+
+### 12.3 流した結果（薄く・人の決めで途中で切り上げた）
+
+- ec6167b6（engine_world の霧・src を戻した赤）: 全量の test で engine_world が 2 回とも赤（霧のテスト 2 本）。案 A は engine_world を選ぶので拾える（外れ 0）。
+  全量の check-pkgs は、古い木の bench が Maven から依存を取りに行って長くかかり、そこで止めた（台の lib/cache を古い木の依存まで張れていない）。
+- de594437・df0ea942 は流していない。60 本・一晩の本番もやらない。
+
+### 12.4 使う中で外れに気づいたら
+
+選ばなかった門で赤が出たら、そのコミットを `make test-select-replay COMMITS=<sha>` で流して台に足し（結果の JSON を残す）、gates.json の表（packages の feeds・reads、go・goReads）を直す。

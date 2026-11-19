@@ -84,6 +84,21 @@
           "why": "全部流すのは選ぶ前の古いやり方"
         }
       ]
+    },
+    {
+      "id": "replay-check-selection",
+      "prompt": "engine のリポで、差分から門を選ぶ道具が過去のコミットで全量の赤を取りこぼしていないかを、いくつかのコミットで確かめたい。どう流す？",
+      "expect": [
+        {
+          "re": "make test-select-replay|bin/fge test-select-replay",
+          "why": "答え合わせは make test-select-replay COMMITS=<sha,…>（中身は bin/fge test-select-replay）"
+        },
+        {
+          "re": "COMMITS=|--commits|RANGE=|--range",
+          "why": "流すコミットは COMMITS=<sha,…> か RANGE=<a>..<b>"
+        }
+      ],
+      "avoid": []
     }
   ]
 }
