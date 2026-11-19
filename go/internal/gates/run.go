@@ -16,6 +16,8 @@ type Runner struct {
 	Out, Err io.Writer
 	Root     string
 	Env      []string
+	// NotRun は選んだのに流さない門（test-select の gui・hold）。最後の 1 行で知らせる。
+	NotRun []string
 	// Exec は make の行を流し、終了コードと signal で止まったかを返す。
 	Exec func(line []string) (code int, signaled bool)
 }
@@ -88,7 +90,7 @@ func (r *Runner) Run(gates []Gate, note string, extra []string, dryRun bool) int
 	}
 	if dryRun {
 		for _, g := range gates {
-			fmt.Fprintln(r.Out, strings.Join(g.MakeLine(extra), " "))
+			fmt.Fprintln(r.Out, ShellLine(g.MakeLine(extra)))
 		}
 		return 0
 	}
@@ -107,7 +109,7 @@ func (r *Runner) Run(gates []Gate, note string, extra []string, dryRun bool) int
 	var lines []string
 	for i, g := range gates {
 		line := g.MakeLine(extra)
-		fmt.Fprintf(r.Out, "\n[verify] (%d/%d) %s  — %s（目安 %s）\n", i+1, len(gates), strings.Join(line, " "), g.About, g.Time)
+		fmt.Fprintf(r.Out, "\n[verify] (%d/%d) %s  — %s（目安 %s）\n", i+1, len(gates), ShellLine(line), g.About, g.Time)
 		start := time.Now()
 		code, signaled := r.Exec(line)
 		took := time.Since(start).Round(time.Second)
@@ -133,6 +135,10 @@ func (r *Runner) Run(gates []Gate, note string, extra []string, dryRun bool) int
 	if len(failed) > 0 {
 		fmt.Fprintf(r.Out, "[verify] 赤: %s\n", strings.Join(failed, " "))
 		return 1
+	}
+	if len(r.NotRun) > 0 {
+		fmt.Fprintf(r.Out, "[verify] OK（流していない門 %d 本: %s）\n", len(r.NotRun), strings.Join(r.NotRun, " "))
+		return 0
 	}
 	fmt.Fprintln(r.Out, "[verify] 全部 OK")
 	return 0

@@ -31,7 +31,7 @@ type Facts struct {
 // MAKEFLAGS の中の K=V から名前を拾い、その名前の環境変数も外す。
 func makeEnv(env []string) []string {
 	drop := map[string]bool{"MAKEFLAGS": true, "MFLAGS": true, "MAKELEVEL": true, "MAKEOVERRIDES": true,
-		"SUITE": true, "DRY": true, "ARGS": true}
+		"SUITE": true, "DRY": true, "ARGS": true, "SINCE": true, "GUI": true}
 	for _, kv := range env {
 		if name, val, _ := strings.Cut(kv, "="); name == "MAKEFLAGS" {
 			for _, n := range commandLineVars(val) {
@@ -254,6 +254,9 @@ func Check(root string, f *File, facts *Facts) []string {
 		return append(errs, err.Error())
 	}
 	for _, s := range f.Suites {
+		if s.Select {
+			continue
+		}
 		if s.Fallback != "" {
 			if _, ok := f.FindSuite(s.Fallback); !ok {
 				add("suite %s: fallback の %s がありません", s.Name, s.Fallback)

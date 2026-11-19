@@ -37,6 +37,16 @@ type Gate struct {
 	Runs    []string           `json:"runs"`
 	Time    string             `json:"time"`
 	Prereq  bool               `json:"prereq"`
+	// Select は bin/fge test-select の扱い（always・code・never・hold・package。省けば input か packages で選ぶ）。
+	Select string `json:"select"`
+	// Hold は select が hold の門を流さない理由。
+	Hold string `json:"hold"`
+	// GUI は画面（隠しウィンドウを含む）を開く門。test-select は --gui の時だけ流す並びに入れる。
+	GUI bool `json:"gui"`
+	// DocsInput はこの門が読む .md（.md の差は input でなくこれで当てる）。
+	DocsInput *precommit.Matcher `json:"docsInput"`
+	// Covers はこの門が中身を全部流す、ほかの門の id の頭。
+	Covers []string `json:"covers"`
 	// From は読んだファイル（gates.json・precommit.json・hooks.json）。JSON には書かない。
 	From string `json:"-"`
 }
@@ -47,6 +57,38 @@ type Suite struct {
 	About    string   `json:"about"`
 	Gates    []string `json:"gates"`
 	Fallback string   `json:"fallback"`
+	// Select は bin/fge test-select の答えを流す suite（make verify SUITE=affected）。
+	Select bool `json:"select"`
+}
+
+// Package はパッケージの表の 1 件（test-select の「ファイル → パッケージ」と「下流」の正）。
+type Package struct {
+	ID    string             `json:"id"`
+	About string             `json:"about"`
+	Dir   string             `json:"dir"`
+	Local *precommit.Matcher `json:"local"`
+	Reads *precommit.Matcher `json:"reads"`
+	Feeds []string           `json:"feeds"`
+	Test  bool               `json:"test"`
+	Check bool               `json:"check"`
+	Gates []string           `json:"gates"`
+}
+
+// GoRow は go の表の 1 行（go/ の下のファイル → 足す門）。
+type GoRow struct {
+	About string            `json:"about"`
+	Input precommit.Matcher `json:"input"`
+	Gates []string          `json:"gates"`
+	// Tests はテストを足すパッケージ（packages の id）。
+	Tests []string `json:"tests"`
+}
+
+// GoRead は go のテストが読む go/ の外の物 → その go のパッケージ（* は全部）。
+type GoRead struct {
+	About string            `json:"about"`
+	Reads precommit.Matcher `json:"reads"`
+	Docs  bool              `json:"docs"`
+	Pkgs  []string          `json:"pkgs"`
 }
 
 // File は gates.json の中身。
@@ -55,6 +97,12 @@ type File struct {
 	Runs   map[string]string `json:"runs"`
 	Gates  []Gate            `json:"gates"`
 	Suites []Suite           `json:"suites"`
+
+	Packages []Package         `json:"packages"`
+	Go       []GoRow           `json:"go"`
+	GoReads  []GoRead          `json:"goReads"`
+	Wiring   precommit.Matcher `json:"wiring"`
+	Inert    precommit.Matcher `json:"inert"`
 }
 
 // Load は gates.json を読む。無ければ os.ErrNotExist を包んで返す。
@@ -94,16 +142,32 @@ func (g Gate) MakeLine(extra []string) []string {
 	return append(line, extra...)
 }
 
-// Display は一覧に出す打ち方。
+// Display は一覧に出す打ち方（空白を含む値は '' で包む）。
 func (g Gate) Display() string {
 	if l := g.MakeLine(nil); l != nil {
-		return strings.Join(l, " ")
+		return ShellLine(l)
 	}
 	return g.Cmd
 }
 
+// ShellLine は make の行をシェルへ貼れる形にする（空白を含む語は '' で包む）。
+func ShellLine(line []string) string {
+	parts := make([]string, len(line))
+	for i, w := range line {
+		if k, v, ok := strings.Cut(w, "="); ok && strings.ContainsAny(v, " \t") {
+			w = k + "='" + v + "'"
+		}
+		parts[i] = w
+	}
+	return strings.Join(parts, " ")
+}
+
 // Hits は門が paths のどれかに当たるか（input が無い門はどの変更でも当たる）。
+// select が package・go の門は input でなく packages と go の表で選ぶので、ここでは当たらない（bin/fge test-select が引く）。
 func (g Gate) Hits(paths []string) bool {
+	if g.Select == "package" || g.Select == "go" {
+		return false
+	}
 	if g.Input == nil {
 		return true
 	}

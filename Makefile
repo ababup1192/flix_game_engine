@@ -162,7 +162,11 @@ TEST_DIRS := $(ENGINE_DIR) $(LAYER_DIRS)
 PKG_TEST = (cd "$$dir" && "$(CURDIR)/bin/with-sample-tests" . "$(FLIX_TEST)" test)
 # WhyNot: JOBS と ALL をシェルの環境から受けない — 環境に JOBS がある機械で make test が黙って並列になる。コマンド行から来た時だけ効かせる。
 TEST_JOBS := $(if $(filter command line,$(origin JOBS)),$(JOBS),1)
-TEST_RUN_DIRS := $(TEST_DIRS) $(if $(and $(filter command line,$(origin ALL)),$(ALL)),$(TEMPLATE_DIRS) $(BENCH_TEST_DIRS))
+# PKGS="<名前…>" は選んだパッケージだけ（名前の引き方は test-% と同じ。bin/fge test-select が束ねる）。
+TEST_PKGS := $(if $(filter command line,$(origin PKGS)),$(PKGS))
+TEST_PKG_DIR = $(if $(filter $(1),$(LAYER_PKGS)),$(LAYER_ROOT)/$(1),$(if $(wildcard templates/$(1)/flix.toml),templates/$(1),$(if $(wildcard bench/$(1)/flix.toml),bench/$(1),$(if $(wildcard $(1)/flix.toml),$(1)))))
+TEST_RUN_DIRS := $(if $(TEST_PKGS),$(foreach p,$(TEST_PKGS),$(call TEST_PKG_DIR,$(p))),$(TEST_DIRS) $(if $(and $(filter command line,$(origin ALL)),$(ALL)),$(TEMPLATE_DIRS) $(BENCH_TEST_DIRS)))
+TEST_UNKNOWN_PKGS := $(foreach p,$(TEST_PKGS),$(if $(call TEST_PKG_DIR,$(p)),,$(p)))
 
 ##@ テスト
 # 逐次（JOBS=1）は最初の赤で止める。並列はパッケージごとにログを .test-logs/ に残し、赤があれば最後にログの末尾を出す。
@@ -173,6 +177,8 @@ TEST_RUN_DIRS := $(TEST_DIRS) $(if $(and $(filter command line,$(origin ALL)),$(
 .PHONY: test
 test: sync-layers ## [ALL=1] [JOBS=<数>] | engine と 3 層のテスト（ALL=1 でテンプレートとテストを持つ bench も・JOBS で並べて流す。並列のログは .test-logs/）
 	@case "$(TEST_JOBS)" in ''|0|*[!0-9]*) echo "[test] JOBS は 1 以上の数にする（JOBS=$(TEST_JOBS)）"; exit 2;; esac; \
+	$(if $(and $(TEST_PKGS),$(filter command line,$(origin ALL))),echo "[test] PKGS と ALL は一緒に使えない"; exit 2;) \
+	$(if $(TEST_UNKNOWN_PKGS),echo "[test] 知らないパッケージ（flix.toml が無い）: $(TEST_UNKNOWN_PKGS)"; exit 2;) \
 	if [ "$(TEST_JOBS)" = 1 ]; then \
 		for dir in $(TEST_RUN_DIRS); do \
 			if [ -f "$$dir/flix.toml" ]; then \
@@ -182,7 +188,8 @@ test: sync-layers ## [ALL=1] [JOBS=<数>] | engine と 3 層のテスト（ALL=1
 		done; \
 		exit 0; \
 	fi; \
-	mkdir -p .test-logs; rm -f .test-logs/*.log .test-logs/*.fail; \
+	mkdir -p .test-logs; \
+	$(if $(TEST_PKGS),for dir in $(TEST_RUN_DIRS); do n=$$(printf "%s" "$$dir" | tr / _ | tr -d .); rm -f ".test-logs/$$n.log" ".test-logs/$$n.fail"; done; ,rm -f .test-logs/*.log .test-logs/*.fail;) \
 	printf '%s\n' $(TEST_RUN_DIRS) | xargs -P $(TEST_JOBS) -n 1 sh -c ' \
 		dir="$$0"; [ -f "$$dir/flix.toml" ] || exit 0; \
 		name=$$(printf "%s" "$$dir" | tr / _ | tr -d .); \
@@ -191,11 +198,12 @@ test: sync-layers ## [ALL=1] [JOBS=<数>] | engine と 3 層のテスト（ALL=1
 		else \
 			echo "[test] FAIL $$dir"; touch ".test-logs/$$name.fail"; \
 		fi'; \
-	ran=$$(ls .test-logs/*.log 2>/dev/null | wc -l | tr -d ' '); \
+	ran=0; failed=""; for dir in $(TEST_RUN_DIRS); do n=$$(printf "%s" "$$dir" | tr / _ | tr -d .); \
+		[ -f ".test-logs/$$n.log" ] && ran=$$((ran + 1)); [ -f ".test-logs/$$n.fail" ] && failed="$$failed .test-logs/$$n"; done; \
 	if [ "$$ran" -eq 0 ]; then echo "[test] 1 本も実行されていない (xargs 失敗の疑い)"; exit 1; fi; \
-	if ls .test-logs/*.fail > /dev/null 2>&1; then \
+	if [ -n "$$failed" ]; then \
 		echo "===== 失敗したパッケージのログ末尾 ====="; \
-		for f in .test-logs/*.fail; do base=$${f%.fail}; echo "--- $$base"; tail -40 "$$base.log"; done; \
+		for base in $$failed; do echo "--- $$base"; tail -40 "$$base.log"; done; \
 		exit 1; \
 	fi; \
 	echo "[test] all green ($$ran packages)"
@@ -621,8 +629,13 @@ go-build: ## | go/ を bin/fge-go と、配る先ごとの 5 種にビルドす�
 # WhyNot: = で置く（:= にしない）のは、go env を呼ぶのをこの口を使う時だけにするため。
 GO_HOST = $(shell cd go && go env GOOS)/$(shell cd go && go env GOARCH)
 .PHONY: go-test
-go-test: ### [PKG=<名前>,…] | go/ のテスト（PKG は go/internal/<名前>。既定は全部）
-	@cd go && CGO_ENABLED=0 go test $(if $(PKG),$(foreach n,$(subst $(comma), ,$(PKG)),./internal/$(n)/...),./...)
+# FRESH=<名前>,… はその分を -count=1 で流す（テストが exec する子の読むファイルを go の test cache が追わないため）。名前の . は main。
+# PKG も FRESH も無ければ全部。bin/fge test-select は PKG と FRESH を重ねずに渡す。
+GO_PKG_PATHS = $(foreach n,$(subst $(comma), ,$(1)),$(if $(filter .,$(n)),.,./internal/$(n)/...))
+go-test: ### [PKG=<名前>,…] [FRESH=<名前>,…] | go/ のテスト（PKG は go/internal/<名前>・. は main。どちらも無ければ全部）
+	@cd go && $(if $(PKG)$(FRESH),true,CGO_ENABLED=0 go test ./...) \
+	$(if $(PKG),&& CGO_ENABLED=0 go test $(call GO_PKG_PATHS,$(PKG))) \
+	$(if $(FRESH),&& CGO_ENABLED=0 go test -count=1 $(call GO_PKG_PATHS,$(FRESH)))
 
 # arm64 の Mac で x86-64 の結果を確かめる（Rosetta）。arm64 は a*b+c を FMA にまとめることがあり、
 # 包み忘れると境目の画素だけが Mac と Windows でずれる（px の積は float64(…) か dot で包む）。
@@ -1408,19 +1421,46 @@ check-docs-sync: ## [ONLY=<名前>,…] | 規約まわりの配線が崩れて�
 # bin/fge gates（一覧）・bin/fge gates --files <パス…>（当たる門だけ。流さない）。
 # WhyNot: make test-<名前> の形にしない — test-% はパッケージ 1 本のテストの口で、suite の名前がテンプレートの名前と取り合う。
 # 下の ##> の行の名前は gates.json の suites と同じ並び（bin/fge gates --check が見る）。
-##> make verify SUITE=quick|test|release|gui|affected | quick=作業中の型検査・素振り・lint・配線／test=全部のテスト／release=リリースの門／gui=画面を開く門／affected=差分から（今は test）
+##> make verify SUITE=quick|test|release|gui|affected | quick=作業中の型検査・素振り・lint・配線／test=全部のテスト／release=リリースの門／gui=画面を開く門／affected=差分から選んで（bin/fge test-select・SINCE=<ref>・GUI=1）
+# affected は選ぶ前に、go/ の下に bin/fge-go より新しいファイル（.go・embed の素材・go.mod）があれば go-build を流す。
+# WhyNot: 古い bin/fge-go のまま選ばない — 選ぶ表の読み方そのものが go にあり、直した回に古い決まりで選ぶ。
 .PHONY: verify
-verify: ## SUITE=<名前> [DRY=1] [ARGS="K=V …"] | 流し方を 1 つ選んで門を順に流す（SUITE が無ければ一覧・DRY=1 は何を流すかだけ）
-	@if [ -z "$(SUITE)" ]; then bin/fge gates --suites; \
-	else bin/fge gates --suite "$(SUITE)" $(if $(DRY),--dry-run) -- $(ARGS); fi
+verify: ## SUITE=<名前> [DRY=1] [ARGS="K=V …"] [SINCE=<ref>] [GUI=1] | 流し方を 1 つ選んで門を順に流す（SUITE が無ければ一覧・DRY=1 は何を流すかだけ）
+	@if [ -z "$(SUITE)" ]; then bin/fge gates --suites; exit 0; fi; \
+	if [ "$(SUITE)" = affected ] && [ -n "$$(find go -type f -newer bin/fge-go 2>/dev/null | head -1)" ]; then \
+	  echo "[verify] go/ が bin/fge-go より新しいので、選ぶ前に go-build"; $(MAKE) --no-print-directory go-build || exit 1; fi; \
+	bin/fge gates --suite "$(SUITE)" $(if $(DRY),--dry-run) $(if $(SINCE),--since "$(SINCE)") $(if $(GUI),--gui) -- $(ARGS)
 
 # ステージした物と作業ツリーの差分（追跡していない新しいファイルを含む）でコミットの門を素振りする。 消したファイルは本物の precommit と同じく渡さない（--diff-filter=ACMR）。
 # jargon はステージした行（git diff --cached）しか見ないので、ステージしていない行の独自語はここでは拾えない。
 .PHONY: precommit-dry
-precommit-dry: ### | ステージした物と作業ツリーの差分で bin/fge precommit を素振りする（コミットはしない）
-	@files=$$( { git diff --name-only --diff-filter=ACMR HEAD; git ls-files --others --exclude-standard; } | sort -u); \
+# FILES_FROM=<ファイル> は差分を見ず、そのファイルの 1 行 1 つのパスで素振りする（bin/fge test-select が SINCE や --files の差を渡す）。
+precommit-dry: ### [FILES_FROM=<ファイル>] | ステージした物と作業ツリーの差分で bin/fge precommit を素振りする（コミットはしない）
+	@if [ -n "$(FILES_FROM)" ]; then files=$$(grep -v '^$$' "$(FILES_FROM)" | while IFS= read -r f; do [ -e "$$f" ] && printf '%s\n' "$$f"; done); \
+	else files=$$( { git diff --name-only --diff-filter=ACMR HEAD; git ls-files --others --exclude-standard; } | sort -u); fi; \
 	if [ -z "$$files" ]; then echo "[precommit-dry] 差分がありません"; exit 0; fi; \
 	bin/fge precommit --files $$files
+
+# テストを持たないパッケージ（bench）の型検査。bin/fge test-select が packages の check: true から DIRS を束ねる。
+# make -C <フォルダ> check を持つ所はそれ（webgpu_v1/v2 は木を組んでから・crowd2d などは bench/common の写しの比べも）・無ければ bin/flix check。
+.PHONY: check-pkgs
+check-pkgs: ### DIRS="<フォルダ…>" | テストを持たないパッケージを 1 つずつ型検査する（赤があっても最後まで流して並べる）
+	@[ -n "$(DIRS)" ] || { echo "[check-pkgs] DIRS=\"<フォルダ…>\" を渡す"; exit 2; }; \
+	failed=""; for d in $(DIRS); do \
+	  [ -d "$$d" ] || { echo "[check-pkgs] $$d がありません"; failed="$$failed $$d"; continue; }; \
+	  echo "===== $$d ====="; \
+	  if [ -f "$$d/Makefile" ] && grep -q '^check:' "$$d/Makefile"; then $(MAKE) --no-print-directory -C "$$d" check || failed="$$failed $$d"; \
+	  else (cd "$$d" && "$(FLIX)" check) || failed="$$failed $$d"; fi; \
+	done; \
+	if [ -n "$$failed" ]; then echo "[check-pkgs] 赤:$$failed"; exit 1; fi; echo "[check-pkgs] OK"
+
+# game-starter を build/new-game-check へ産み、make new-game の産声の確認（check → test → lint-flixlint → render-all）を通す。
+# WhyNot: game-starter を素のフォルダで組まない — src に new-game が埋める字（__WW__ など）が残っていて読めない。
+NEW_GAME_CHECK_DIR := $(CURDIR)/build/new-game-check
+.PHONY: new-game-check
+new-game-check: ### | game-starter を build/new-game-check へ産んで産声の確認を通す（engine 側か game-starter を直した時・bin/fge test-select が選ぶ）
+	@case "$(NEW_GAME_CHECK_DIR)" in */build/new-game-check) rm -r -f "$(NEW_GAME_CHECK_DIR)";; *) exit 2;; esac
+	@$(MAKE) --no-print-directory new-game GAME="$(NEW_GAME_CHECK_DIR)" NAME=newgamecheck TITLE=check
 
 # bin/fge gates --check が Makefile の値を受け取る口（1 行 1 つ）。
 .PHONY: gates-facts

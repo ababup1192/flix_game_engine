@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/gates"
+	"github.com/ababup1192/flix_game_engine/go/internal/testselect"
 )
 
 func init() {
@@ -64,6 +65,11 @@ func cmdGates(out, errOut *strings.Builder, rest []string, asJSON bool) int {
 			return orAbort(errOut, 2, err)
 		}
 		errs := gates.Check(root, f, facts)
+		tracked, links, err := testselect.TrackedAndLinks(root)
+		if err != nil {
+			return orAbort(errOut, 2, err)
+		}
+		errs = append(errs, testselect.CheckTable(root, testselect.NewTable(f), facts.TestPkgs, tracked, links)...)
 		for _, e := range errs {
 			fmt.Fprintf(errOut, "[gates] NG: %s\n", e)
 		}
@@ -76,6 +82,9 @@ func cmdGates(out, errOut *strings.Builder, rest []string, asJSON bool) int {
 	case hasFlag(rest, "--suites"):
 		for _, s := range f.Suites {
 			what := strings.Join(s.Gates, " → ")
+			if s.Select {
+				what = "（bin/fge test-select の答え。SINCE=<ref>・GUI=1）"
+			}
 			if s.Fallback != "" {
 				what = "（今は " + s.Fallback + " を流す）"
 			}
@@ -107,6 +116,9 @@ func cmdGates(out, errOut *strings.Builder, rest []string, asJSON bool) int {
 			}
 		}
 		all = hit
+		if !asJSON {
+			defer fmt.Fprintf(out, "（パッケージと go の門（select: package・go）は表の packages と go から選ぶので、ここには出ません。下流まで: bin/fge test-select --files %s）\n", strings.Join(paths, " "))
+		}
 	}
 	if asJSON {
 		emitJSON(out, rowsOf(all))
@@ -119,6 +131,9 @@ func cmdGates(out, errOut *strings.Builder, rest []string, asJSON bool) int {
 // runSuite は流す道。出力は流しながら stdout / stderr へ直に書く（長い門の出力を貯めない）。
 func runSuite(errOut *strings.Builder, root string, f *gates.File, rest []string) int {
 	name := argAfter(rest, "--suite")
+	if s, ok := f.FindSuite(name); ok && s.Select {
+		return runSelected(errOut, root, rest)
+	}
 	all, err := gates.All(root, f)
 	if err != nil {
 		return orAbort(errOut, 2, err)
@@ -135,4 +150,43 @@ func runSuite(errOut *strings.Builder, root string, f *gates.File, rest []string
 		}
 	}
 	return gates.NewRunner(os.Stdout, os.Stderr, root).Run(list, note, extra, hasFlag(rest, "--dry-run"))
+}
+
+// runSelected は suite affected: test-select の答えを Runner へ渡す。--dry-run は答え（理由つき）を出すだけ。
+func runSelected(errOut *strings.Builder, root string, rest []string) int {
+	var opts []string
+	var extra []string
+	for i, a := range rest {
+		if a == "--" {
+			extra = rest[i+1:]
+			break
+		}
+		opts = append(opts, a)
+	}
+	a := parseTestSelectArgs(opts)
+	plan, err := buildPlan(root, a)
+	if err != nil {
+		return orAbort(errOut, 2, err)
+	}
+	if hasFlag(opts, "--dry-run") {
+		var out strings.Builder
+		writePlan(&out, plan, a.gui, false)
+		os.Stdout.WriteString(out.String())
+		return 0
+	}
+	if len(plan.Run) == 0 {
+		os.Stdout.WriteString("[verify] 差分が無いので流す門がありません\n")
+		return 0
+	}
+	var list []gates.Gate
+	for _, l := range plan.Run {
+		list = append(list, l.Gate())
+	}
+	note := fmt.Sprintf("[verify] 差分 %d ファイルから門 %d 本を選びました（なぜは make verify SUITE=affected DRY=1・bin/fge test-select --explain）", len(plan.Files), len(list))
+	if len(plan.AllBecause) > 0 {
+		note += "\n[verify] 全部にしたファイル（安全側）: " + strings.Join(plan.AllBecause, "・")
+	}
+	r := gates.NewRunner(os.Stdout, os.Stderr, root)
+	r.NotRun = plan.NotRun(a.gui)
+	return r.Run(list, note, extra, false)
 }

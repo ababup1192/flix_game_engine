@@ -164,9 +164,11 @@ git log 掘りやテスト回し直しから始めない。
 
 **テストは絞って速く回す。全量の検証はリリース直前の 1 回だけ。**
 変更が波及したパッケージだけ `make test-<name>`、それ以外は `flix check` で足りる。
-門（テスト・検査）の一覧は根の `gates.json`。触ったファイルに当たる門は `bin/fge gates --files <パス…>`（流さない）。
-まとめて流すのは `make verify SUITE=<名前>`（`quick` = 作業中の型検査・precommit の素振り・lint／`test` = テンプレートを含む全部のテスト／
-`release` = リリースの門／`gui` = 画面を開く門（release の前に手元で）。`SUITE` 無しで一覧・`DRY=1` で何を流すかだけ）。
+門（テスト・検査）の一覧は根の `gates.json`。差分から流す門を選ぶのは `bin/fge test-select`（流さない。`--explain` でファイル → パッケージ → 下流 → 門・
+`--since <ref>` で枝の差・`--files <パス…>`）。パッケージの表と依存の向き（engine → 3 層 → engine_full → テンプレート・bench。層どうしは互いを見ない）も gates.json。
+まとめて流すのは `make verify SUITE=<名前>`（`affected` = 差分から選んだ門（`SINCE=<ref>`・画面を開く門は `GUI=1`）／`quick` = 作業中の型検査・precommit の素振り・lint／
+`test` = テンプレートを含む全部のテスト／`release` = リリースの門／`gui` = 画面を開く門（release の前に手元で）。`SUITE` 無しで一覧・`DRY=1` で何を流すかだけ）。
+`affected` は答え合わせ（plans/test-selection.md の 6 節）がまだなので、絞るのはパッケージの単位だけ（影響しうる門は全部選ぶ）。
 テストの口は `make test`（`ALL=1` でテンプレートとテストを持つ bench（bench/hd2d_town）も・`JOBS=<数>` で並べて流す）。絞る旗は `make gl-capture-check SCENES=<テンプレートか場面>`・`make go-test PKG=<名前>`。
 テストの範囲・書き方は `/quality-assurance`、リリース手順は `/release`。
 

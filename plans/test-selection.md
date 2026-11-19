@@ -1,6 +1,6 @@
 # 変更差分から流す門を絞る（test selection）の設計
 
-状態: 設計だけ（実装はまだ）。2026-11-19・main v0.102.0。
+状態: 案 A を実装（11 節・ブランチ test-select-a）。B と答え合わせはまだ。2026-11-19・main v0.102.0。
 
 人の依頼: git の変更差分から流すべきテストの範囲を狭めて作業の速さを上げたい。`bin/fge refactor` と flixlint を使う。
 テストは flix test に限らない。今の形で狭めにくいなら全体の作りを直して問題を単純にしてよい。
@@ -420,3 +420,158 @@ B に足す物:
 - 答え合わせが go の表・new-game・webgpu-v1-check の選び方を確かめていない → go/ の 83 本を台に入れ、拾い漏れの定義に go と new-game を足し、門ごとに「確かめた / まだ」を分けた
 - B の道具の時間と作り方の穴（def ごとにテンプレートの索引を引くと遅い・base の索引の作り方・`--max` `--limit`）→ facts と一度に突き合わせる・200 を超えたら外さない・base の索引はやめて下流の型検査に任せる・切られないかを B の最初に確かめる
 - engine の pub 面の判定が無い → 宣言の pub の欄と api-digest の差で見る・new-game の確かめの時間は測ってから入れる
+
+---
+
+
+## 11. 案 A の実装の設計（2 版・2026-11-19・ブランチ test-select-a）
+
+人の了承: 「main に入れて A へ」。答え合わせの道具（test-select-replay）と案 B は作らない。
+レビュー 1 回目 66 点（必須 13）→ 2 版で全部に答えた（11.8）。
+
+### 11.1 入口
+
+- `bin/fge test-select [--base <ref>] [--files <パス…>] [--gui] [--explain] [--json]`（go/internal/testselect・engine のリポだけ）。流さない。
+  - 差分: 既定は `git diff --name-only --no-renames HEAD`（ステージ・作業ツリー・消したファイル）+ 未追跡（`--exclude-standard`）。
+    `--base <ref>` は `git merge-base <ref> HEAD` との差（ref の後に main へ入った差を拾わない）+ 未追跡。`--files` は差分を見ない。
+  - 出す物: 「全部にしたファイル」（あれば先頭）→ 流す make の行（1 行ずつ、なぜの 1 行）→ 選んだが流さない門（gui・hold。理由つき）。
+    `--explain` はファイルごとの段（種類 → パッケージ → 下流の元 → 門）。`--json` は全部。
+- `make verify SUITE=affected [SINCE=<ref>] [GUI=1] [DRY=1]`: suite affected を `"select": true` にし、`bin/fge gates --suite affected` が test-select の答えを Runner へ渡す。
+  go/ の .go が bin/fge-go より新しければ、選ぶ前に `make go-build` を流す（古い道具で選ばない）。
+  Runner は流さなかった門があれば最後を「全部 OK」でなく「OK（流していない門 N 本: …）」にする。
+  - WhyNot: BASE の名前にしない — gl-capture-check が `BASE=off` を別の意味で使う。
+
+### 11.2 gates.json の形（新しいファイルは足さない）
+
+**パッケージの表 `packages`**（「ファイル → パッケージ」と「下流」の正）: 1 件 = `{id, dir, local?, reads?, feeds?, test?, check?, gates?}`
+
+- `dir` の下のファイル → そのパッケージ（一番長い dir）。`local`（Matcher）に当たる物（engine/test/ と層の test/）は下流へ伝えない。
+- `reads`（Matcher）: dir の外で、このパッケージ（のテスト・組み立て）が読むデータ。当たればこのパッケージだけ（下流へ伝えない）。
+  engine_world ← testdata/yarn/・testdata/lint/flow-check/・go/internal/yarn/testdata/、render_gl ← engine/test/data/・templates の .shader.json と .ttf、
+  engine_tools ← templates の .ttf・.otf、hd2d_town ← templates/game-starter/assets/・templates/rpg-starter/assets/、scene3d・sprite_stress ← templates/game-starter/assets/、
+  gl_parity の assets を読む bench ← bench/gl_parity/assets/（git の symlink と `../` から拾った）。
+- `feeds`: 依存の向き。engine → render_gl・engine_world・engine_tools → engine_full → テンプレート 5 本・bench・engine_web。
+  bench/common → sprite_stress・crowd2d・scene3d（写し）。scene3d → webgpu_v2（assets と Room.flix の写し）。**層どうしは持たない**。
+  根の `src/`（4 パッケージへの symlink の集まり）は id root・gates: check。
+- 当たったパッケージ（直に・reads・下流）ごとに: `test: true` → 1 本の `make test PKGS="…" JOBS=<min(6,数)>` に束ねる。
+  `check: true`（テストを持たないパッケージ）→ 1 本の `make check-pkgs DIRS="…"`（make -C <dir> check を持つ所はそれ・無ければ bin/flix check）。
+  `gates` → その門。engine 側 4 つ: check／engine_full: sync-engine-full・new-game-check の元の game-starter へ／テンプレート: 実際に使う物だけ
+  （render-all は 4 本・determinism は rpg・novel・tidepool・gl-capture-check は rpg・novel・tidepool・scene3d・smoke-devtools と webgpu-v1-check-web は rpg・lint:template-rules は hd2d・rpg・tidepool・studio-parity は全テンプレート）／
+  engine_full: check-external・baseline-check・refactor-smoke／gl_parity: gl-parity／webgpu_v1・v2: check（make -C の check）・webgpu-v1-check／engine_web: sync-engine-full-web（組めるか）・webgpu-v1-check-web。
+- **パッケージに持たれた門（packages の gates と test-*）は、packages からだけ選ぶ**。その門の `input` に packages の dir の中の prefix を書かない（--check が止める）。
+  input に書けるのは dir の外（go/・testdata/・bin/lint-rules/ など）だけ。これで「engine/src → テンプレート全部」を input が直に選ばない（B が downstream を替えれば絞れる）。
+  `bin/fge gates --files` も、パッケージに持たれた門は test-select の段で引く（表は 1 つ）。
+
+**門に足すキー**: `select`（`always`: precommit-dry・check-docs-sync／`code`: .md 以外の差があれば lint／`never`: 中身を他が覆う束 release-guard・test-release・release-verify・sync／
+`hold`: 選んでも流さず理由を出す studio-parity（外の Studio の clone と origin/main を要る）・check-external（外のゲームの写し）・baseline-check（基準の版）。input の無い門は select が必須）・
+`gui`（画面を開く門。`--gui` の時だけ流す: determinism・gl-capture-check・smoke-devtools・webgpu-v1-check・webgpu-v1-check-web。線引きは「ウィンドウか隠しウィンドウを開く」。gl-parity は画面なしの SoftRaster と GL の画面なしの比べなので gui でない）・
+`docsInput`（この門が読む .md）・`covers`（中身を覆う門の id の頭。check-docs-sync は `docs-sync:`。覆う側と覆われる側の make の口が同じかを --check が見る）。
+
+**go の表 `go`**: 行 = `{about, input（go/ の下の Matcher）, gates}`。go/internal/<名前>/ と go/*.go の**全部がどれか 1 行に当たる**（--check が数える）。
+行の例: 描き出しと隠しウィンドウの道具（flow・resident・heavy・headlessrun・rendercache）→ render-all・determinism・gl-capture-check・smoke-devtools／
+型検査の道具（checkd・javacmd・refactorhost・cmd_checkd・cmd_flixlint・cmd_resident）→ check・lint:template-rules・refactor-smoke／
+ブラウザと絵の比べ（exportweb_*・cmd_exportweb・cmd_webcapture・cmd_webbench・cmd_pixeldiff・cdp）→ gl-parity・webgpu-v1-check・webgpu-v1-check-web／
+sync-agents（syncagents）→ studio-parity／yarn → test の engine_world と sound-novel-starter／検査と状態の道具（precommit・forbid・jargon ほか）→ なし（lint と precommit-dry がいつも流れる）。
+go/ のどの差でも go-build（prereq）と go-test。go-test は、go の差だけなら `make go-test PKG=<変わったパッケージと import でたどった頼る側>`（go の cache は import の先の変更を追う）。
+**go 以外の差で go-test に当たった時**（go-test の input / docsInput / 下の reads）は全部の go-test + `FRESH=<exec.Command を使うテストのパッケージ>`（その分だけ -count=1。
+cache は子プロセスの読んだファイルを追わないため）。exec するパッケージは test-select が go/ の _test.go から毎回数える。
+go-test の input: go/・testdata/（.md も）・bin/lint-rules/・gates.json・docs/*.schema.json・plans/tape/・lint/・agents-pack/・.claude/。docsInput: check-codes.md・px-ops.md・go/・testdata/・plans/tape/・agents-pack/・.claude/。
+engine 側の src と templates/ を go のテスト（apidigest・flixdecl・yarn の template_vocab ほか約 40）が読むので、go-test を「packages の reads」と同じ形で持つ（id go のパッケージ・dir go/・test は go-test）。
+
+**安全側の表**: `wiring`（Matcher: どの階層の Makefile・`*.mk`・mk/・.github/・根の lib/・bin/（bin/lint-rules/ を除く）・flix.toml・devbox.json・devbox.lock・nix/）と
+`inert`（Matcher: plans/・spikes/・release/・.vscode/・根の debug/・docs/ の .md と schema 以外）。
+
+### 11.3 決まり（classify。ファイルごとに上から最初に当たった物）
+
+1. `.md` で testdata/・go/ の外 → **docs**: docsInput に当たる門だけ
+2. flix.toml で、差が `[package]` の中の `version =` の行だけ → **version**: engine 側なら sync-engine-full だけ。`--files` の時・新しく足した flix.toml は 3 へ
+3. wiring → **wiring**: 持ち主のパッケージがあればそれと下流の全部。無ければ**全部**（全パッケージと、select が never でない全部の門）
+4. packages の dir の下 → **package**（local なら下流へ伝えない）
+5. どれかのパッケージの reads・門の input・go の表に当たる → **data**: そのパッケージだけ・その門だけ
+6. inert → **inert**
+7. どれにも当たらない → **unowned**: 全部
+
+まとめ（downstream）: always の門 + code の門 + 種類ごとの門 + パッケージの下流の閉包の test・check・gates。
+**fpkg の新しさ**: テンプレートか bench を 1 本でも選び、engine_full の fpkg がない／4 つの src の .flix か render_gl/java がそれより新しい時は、差分に engine 側が無くても sync-engine-full を足す。
+並び: prereq（go-build・sync-engine-full）→ 安い物（check・lint・配線・precommit-dry）→ test → check-pkgs → 生成と比べ（render-all・gl-parity ほか）。gui と hold は別の欄。
+precommit-dry には選んだファイル（消した物を除く）を `FILES="…"` で渡す（BASE や --files の差も素振りする）。
+理由は段の並び `[]Step{Kind, Label}`（file → kind → package → feeds-from → gate）で持ち、B は package の前に declaration の段を差し込む。
+downstream の引数は classify の結果（パス・種類・パッケージ）で、B は関数の形を変えずに中身を呼び手のたどりへ替える。
+
+「外さない」: パッケージの中で門を絞らない（render-all は 4 本・SCENES を付けない）。絞るのは依存の向きのパッケージ単位だけ。
+game-starter は engine 側のどの差でも new-game-check（5 節は pub 面が変わった時だけだったが、答え合わせまでは外さない側。時間は測って time へ）。
+
+### 11.4 Makefile に足す物
+
+- `test` に `PKGS="<名前…>"`（コマンド行から来た時だけ・ALL=1 と一緒はエラー・知らない名前とフォルダの無い名前は exit 2・並列の時に消すログは選んだ分だけ）
+- `check-pkgs DIRS="…"`・`new-game-check`（build/new-game-check へ産んで new-game の産声の確認）
+- `precommit-dry` に `FILES=`・`go-test` に `FRESH=`・`verify` に SINCE・GUI（makeEnv が子へ持ち込まない名前にも足す）
+
+### 11.5 --check に足す物
+
+packages: id の重なり・dir の実在・feeds の先・輪・test: true なら test-<id> の門・check: true なら flix.toml か make の check・gates の id。
+テストのパッケージ（test-pkgs）が全部 packages に在る。パッケージに持たれた門の input に dir の中の prefix が無い。select の値・input の無い門に select。
+covers の頭の門が在り make の口が同じ。go の表が go/internal/* と go/*.go を全部覆う。
+git の symlink（120000）の先が別のパッケージの時、そのパッケージの feeds か reads に当たる。
+
+### 11.6 テスト（go）
+
+本物の gates.json を読み、典型の 5 種（T1 docs/x.md・T2 templates/rpg-starter/src の 1 本・T3 engine_world/src の 1 本・T4 render_gl/src/Render3dWgsl.flix・T5 go/internal/precommit の .go）は make の行の集まりを完全一致で、
+安全側の各行（根の Makefile・templates/x/Makefile・mk・bin の sh・.github・lib・flix.toml（version だけ / 依存の行 / --files）・持ち主の無いファイル・engine/test だけ・testdata の .md・docs の schema・
+game-starter のフォント → hd2d_town・bench/scene3d → webgpu_v2・debug/・消したファイル・fpkg が古い時・gui と hold の欄）は「この行を含む」で固定する。
+
+### 11.7 見込みの時間（実装の後に測った・テストは並べて長い方）
+
+測った物（2026-11-19・worktree・他の担当も動く中）: sync-engine-full 17s・check-pkgs（bench 9 本）53s・refactor-smoke 27s・sync-engine-full-web 17s・new-game-check 70s・
+go-test は cache ありで T5 の形 9s・T3 の形 5s・全部 5s（cache 無しの全部は 4分51s・tape を -count=1 にすると tape だけで約 5 分）。
+
+| 変更 | 今のやり方 | 全部 | 案 A（GUI 無し） | GUI=1 で足す物 |
+|---|---|---|---|---|
+| T1 docs の .md | 数秒 | 約 2分34秒 | precommit-dry + check-docs-sync（数秒） | なし |
+| T2 rpg-starter の src | 1分52s | 約 3分20秒 | test 1分52s + lint:template-rules 10s + render-all 150s + lint・素振り = 約 4分30秒（go のテストは流さない） | determinism 3分32s・gl-capture 12分・smoke・web 23s |
+| T3 engine_world の src | 48s | 約 8分30秒 | sync 17s + check 10s + test（engine_world・テンプレート 4・hd2d_town）1分52s + check-pkgs 53s + go-test 5s + render-all 150s + gl-parity 18s + refactor-smoke 27s + new-game-check 70s + sync-engine-full-web 17s = 逐次で約 8分（Runner は 1 本ずつ流す） | 同上 + webgpu-v1-check 64s |
+| T4 render_gl の WGSL | 47s | 約 8分30秒 + GPU 13分 | T3 と同じ形（engine_world を render_gl に替えるだけ）約 8分 | 同上 |
+| T5 go/internal/precommit | 0〜数秒 | go test 全部 4分51s（cache 無し） | go-build 30s + go-test 9s + lint・素振り・配線 = 約 50秒 | なし |
+
+T3・T4 は「全部」とほぼ同じ長さ（engine 側の差は下流のほぼ全部に効く）。縮むのは案 B（呼び手のたどり）で外せる下流から。
+今のやり方より遅い分は、作業中に下流（テンプレート・bench・game-starter）を見る分。
+
+**見つかった赤（この道具が拾った事）**: `make check-pkgs` で bench/webgpu_v2 が型検査で落ちる（src/bench/Render3d/WebGpuRenderer/SplitPassTrial.flix が、engine の 3D の設定のレコードから消えた variant の欄を使う）。
+HEAD の engine で落ちる元からの赤で、engine 側のどの差でも affected が赤になる。直すかは人に相談（この枝では直していない）。
+
+### 11.8 レビュー 1 回目（66 点）の必須と答え
+
+M1 input と packages の二重 → パッケージに持たれた門は packages だけで選ぶ・input に dir の中を書かない（--check）／M2 go の表 → 全部の go/ を行で覆う（--check）／
+M3 exec の嘘の緑 → FRESH= で -count=1／M4 gates.json → go-test の input／M5 素材の .md と schema → docs の決まりから外す・go-test の input と docsInput／
+M6 パッケージをまたぐ参照 → reads と feeds（scene3d → webgpu_v2）・symlink を --check／M7 flix.toml の無いパッケージ → make -C の check・sync-engine-full-web／
+M8 make の無い門・混ぜた門 → test-select は gates.json の門だけを見る。precommit と hook の分は precommit-dry が、checkd は check・test・check-pkgs が代わる。select 必須は gates.json の門だけ／
+M9 → precommit-dry FILES=／M10 → PKGS の 3 点／M11 → fpkg の新しさを見て sync-engine-full／M12 → never は束だけ・hold の欄／M13 → debug/ は inert・根の src/ は root。
+任意から: 並び・SINCE と merge-base・version 行は [package] の中だけ・Step・covers の make の一致・refactor-smoke を engine_full の下流へ・テストの固定の仕方・見込みの表を入れた。
+render-all をテンプレート単位に絞る案（任意 4）は「外さない」と食い違うので人に相談する事として残す。make status への負債の 1 行（任意 1 の b）は入れない（Runner の最後の 1 行で知らせる）。
+
+### 11.9 3 版の直し（レビュー 2 回目 78 点の必須 N1〜N4）
+
+- **N1 classify を 2 段に**: 段 1 で種類を 1 つ決める（docs・version・wiring・package・inert・unowned。上から最初に当たった物）。
+  段 2 は種類に関わらず**いつも重ねて足す**: どのパッケージの reads・門の input・go の表（go/ の下）・goReads（下）に当たる物を全部。
+  unowned は「段 1 で持ち主が無く、段 2 でも何にも当たらない」物だけ。docs は段 2 のうち docsInput と goReads の `docs: true` の行だけを見る。
+  これで templates/game-starter/assets のフォント → hd2d_town・scene3d・sprite_stress、engine/test/data → render_gl、templates の .shader.json → render_gl が効く。
+- **go は packages から外し、go の表にまとめる**。go/ のファイルは段 1 で package（id go）でなく、段 2 の go の表で門を足す種類 **go** にする（go-build と go-test はいつも）。
+  - go のパッケージの名前はパスから（go/internal/<x>/… → x・go/ 直下 → `.`）。go:embed の素材も置き場のパッケージになる。go.mod・go.sum → 全部（`*`）
+  - go の差の go-test: `PKG=` に変わったパッケージと import（テストの import を含む）でたどった頼る側
+  - **goReads**（gates.json の根）: 行 = `{about, reads, docs?, pkgs}`。go のテストが読む go/ の外の物 → その go のパッケージだけ。
+    engine 側の src → apidigest・docrefs・fallback・forbid・precommit ほか 12、templates/ → yarn・tape・uioverflow ほか 10、docs の schema → px ほか、
+    agents-pack と .claude の json → genrules・hooks ほか、lint/ → docrefs、gates.json → gates・testselect・main、plans/tape/（.md も）→ tape、bin/lint-rules/・testdata/ → 全部（`*`）
+  - **N2 FRESH**: 選んだ go のパッケージのうち「本体かテストか、import の先（go list の Deps）に exec.Command を持つ」物を `-count=1`。数えるのは test-select が毎回
+  - **N3**: go-test の docsInput はやめる（check-codes.md・px-ops.md は always の docs-sync が見る）。.md で go-test に当たるのは goReads の docs の行（plans/tape → tape）だけ。
+    T2〜T4 の go-test は goReads の行のパッケージだけ（全部 + FRESH にならない）。時間は実装の後に測って 11.7 に入れる
+  - **N4**: go/ のどのファイル（.go・embed の素材・go.mod）でも go の種類。bin/fge-go の新しさは go/ の全部のファイルで見る
+- 任意から: `--json` に流していない門（gui・hold）の id と理由を入れる。precommit-dry のファイルの一覧は `FILES_FROM=<ファイル>` で渡す（数百本でも長さの上限に当たらない）。
+  refactor-smoke と new-game-check と check-pkgs の時間は測ってから 11.7 に入れる。Makefile と project.json の `../` を --check で拾うのは B の前の宿題に残す（symlink は --check で見る）。
+
+### 11.10 実装のレビュー（84 点）と直した所
+
+必須 2: go-test で PKG と FRESH が重なり exec を持つ物を 2 回流す → PKG から FRESH を引く（全部の時は go list の全部から）・Makefile の go-test は PKG と FRESH を別々に流す。
+goReads の漏れ（exportweb_touch_test が templates の project.json・keys.schema.json と engine_web を読む・snd が docs/snd-ops.md を比べる）→ 行を足し、
+go の _test.go が repo の根から読むパス（Join("..", …)・engineRoot・"../../x"）を拾って goReads か wiring に当たるかを見る go のテストを足した。
+任意から: git の日本語のパス（core.quotePath=off）・version の行の読みを関数に分けてテスト・DRY=1 でも go-build の先回り・agents-pack/ の差で new-game-check・gl-parity を gui にしない理由を note に。
+残した物: `make test JOBS=1 PKGS=<1 本>` は .test-logs に書かない（今の逐次の枝と同じ）・Makefile と project.json の `../` を --check で拾う事（webgpu_v2 が gl_parity と webgpu_v1 の src を写す事は実装中に見つけて feeds に足した）。

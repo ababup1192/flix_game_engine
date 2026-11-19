@@ -6,20 +6,38 @@
       "id": "verify-suites",
       "prompt": "engine を直し終えたので、コミットの前に作業中の軽い確かめ（型検査・コミットの門の素振り・規約の検査）を 1 回でまとめて流したい。リリースの前には、隠しウィンドウを開く重い確かめもまとめて流したい。それぞれ何を打てばよいか、流す前に何が流れるかだけ見る方法も知りたい",
       "expect": [
-        {"re": "make verify SUITE=quick", "why": "作業中の確かめは make verify SUITE=quick"},
-        {"re": "SUITE=gui", "why": "画面を開く門は make verify SUITE=gui"},
-        {"re": "DRY=1|--dry-run", "why": "何を流すかだけは DRY=1"}
+        {
+          "re": "make verify SUITE=quick",
+          "why": "作業中の確かめは make verify SUITE=quick"
+        },
+        {
+          "re": "SUITE=gui",
+          "why": "画面を開く門は make verify SUITE=gui"
+        },
+        {
+          "re": "DRY=1|--dry-run",
+          "why": "何を流すかだけは DRY=1"
+        }
       ],
       "avoid": [
-        {"re": "make test-par-all|make test-all", "why": "消す予定の古い口"}
+        {
+          "re": "make test-par-all|make test-all",
+          "why": "消す予定の古い口"
+        }
       ]
     },
     {
       "id": "gates-for-files",
       "prompt": "engine の go/internal/forbid の中を直した。この変更でどのテストや検査を流すべきか、流さずに一覧だけ出したい。go のテストも直したパッケージだけ流したい",
       "expect": [
-        {"re": "bin/fge gates --files", "why": "当たる門は bin/fge gates --files <パス…>"},
-        {"re": "go-test PKG=", "why": "go のテストを絞るのは make go-test PKG=<名前>"}
+        {
+          "re": "bin/fge (gates --files|test-select)",
+          "why": "当たる門は bin/fge test-select --files <パス…>（パッケージと go の門まで）か bin/fge gates --files"
+        },
+        {
+          "re": "go-test PKG=",
+          "why": "go のテストを絞るのは make go-test PKG=<名前>"
+        }
       ],
       "avoid": []
     },
@@ -27,11 +45,44 @@
       "id": "test-all-packages",
       "prompt": "engine のリポで、テンプレートを含む全部のパッケージの flix test を並べて流したい。並べるのが怪しい時は 1 本ずつ流したい",
       "expect": [
-        {"re": "make test ALL=1", "why": "make test ALL=1 JOBS=<数>"},
-        {"re": "JOBS=", "why": "並べるのは JOBS="}
+        {
+          "re": "make test ALL=1",
+          "why": "make test ALL=1 JOBS=<数>"
+        },
+        {
+          "re": "JOBS=",
+          "why": "並べるのは JOBS="
+        }
       ],
       "avoid": [
-        {"re": "make test-par-all|make test-all\\b|make test-par\\b", "why": "古い口"}
+        {
+          "re": "make test-par-all|make test-all\\b|make test-par\\b",
+          "why": "古い口"
+        }
+      ]
+    },
+    {
+      "id": "affected-from-diff",
+      "prompt": "engine のリポで engine_world の src を直した。下流のテンプレートや bench まで含めて、この差分に効くテストと検査だけを選んで流したい。流す前に何をなぜ選んだかを見たいし、main から分かれた枝の差全部でも選びたい",
+      "expect": [
+        {
+          "re": "make verify SUITE=affected|bin/fge test-select",
+          "why": "差分から選ぶのは make verify SUITE=affected（中身は bin/fge test-select）"
+        },
+        {
+          "re": "DRY=1|--explain|--dry-run",
+          "why": "何をなぜ選んだかは DRY=1 か bin/fge test-select --explain"
+        },
+        {
+          "re": "SINCE=|--since",
+          "why": "枝の差は SINCE=<ref> / --since <ref>"
+        }
+      ],
+      "avoid": [
+        {
+          "re": "make test ALL=1",
+          "why": "全部流すのは選ぶ前の古いやり方"
+        }
       ]
     }
   ]
