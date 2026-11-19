@@ -97,7 +97,8 @@ pub mod Render3d.WebGpuRenderer.SplitPassTrial {
             // WhyNot: 空を描かない — 空の frag は描き先の左上を場面の左上として向きを作り、画面の途中の矩形へ描く形 B では向きがずれる（比べる部屋の場面に空は無い）。
             staged#passes |> List.forEach(match (spec, list, valuesBase) ->
                 encodeScene(t#renderer, host, target, { spec = spec, list = list, instanceBase = staged#instanceBase, valuesBase = valuesBase, poseGroup = staged#poseGroup,
-                                                       sceneGroup = target#sceneGroup, sky = false, carried = Nil, targetKey = "split" },
+                                                       sceneGroup = target#sceneGroup, sky = false, carried = Nil, targetKey = "split",
+                                                       variant = Render3d.passVariantOf(plan#cmd#scene) },
                             { color = t#frame.defaultView(), resolve = None, clear = None, depth = target#depth.defaultView(),
                               viewport = topLeftOf(t#height, rect), scissor = topLeftOf(t#height, scissor) }))
         });
