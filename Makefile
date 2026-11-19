@@ -1543,9 +1543,9 @@ engine-full-fresh: ### | engine_full.fpkg が古くないか（古ければ作�
 	  echo "$$dirty" | sed 's/^/  /'; \
 	  echo "  次: コミットするか戻してから打ち直す（承知で運ぶなら make sync-engine-full を流してから）"; exit 1; \
 	fi; \
-	if [ "$(FGE_UPGRADE_ANY_BRANCH)" != 1 ] && git rev-parse -q --verify refs/heads/main >/dev/null 2>&1 && ! git merge-base --is-ancestor HEAD main 2>/dev/null; then \
-	  echo "error: HEAD（$$(git rev-parse --abbrev-ref HEAD)）が main に入っていないコミットを持つので作り直しません（まだ出していない作業を v$(VERSION) の名前でゲームへ運ばないため）"; \
-	  echo "  次: main で打ち直す（承知でこの枝を運ぶなら FGE_UPGRADE_ANY_BRANCH=1）"; exit 1; \
+	if [ "$(FGE_ANY_BRANCH)" != 1 ] && git rev-parse -q --verify refs/heads/main >/dev/null 2>&1 && ! git merge-base --is-ancestor HEAD main 2>/dev/null; then \
+	  echo "error: HEAD（$$(git rev-parse --abbrev-ref HEAD)）が main に入っていないコミットを持つので、new-game・upgrade-game の前に engine_full の束を作り直しません（まだ出していない作業を v$(VERSION) の名前でゲームへ運ばないため）"; \
+	  echo "  次: main で打ち直す（承知でこの枝の engine を使うなら FGE_ANY_BRANCH=1 を付けて打ち直す）"; exit 1; \
 	fi; \
 	if git rev-parse -q --verify "refs/tags/v$(VERSION)" >/dev/null 2>&1; then \
 	  commits=$$(git log --oneline "v$(VERSION)..HEAD" -- $(ROOT_SRC_PKGS:%=%/src) 2>/dev/null); \

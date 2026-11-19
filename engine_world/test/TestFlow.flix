@@ -24,7 +24,8 @@ mod TestFlow {
           probes = { name = "n", doc = "押した数", read = Flow.Probe.Num(w -> Int32.toFloat64(w#n)) } ::
                    { name = "busy", doc = "受け付けない間", read = Flow.Probe.Flag(isBusy) } :: Nil,
           drives = { name = "masher", doc = "1 秒待つごとに決定", act = (waited, _) ->
-                       if (waited >= 1.0) Flow.DriveAct.Tap("confirm") else Flow.DriveAct.Idle } :: Nil,
+                       if (waited >= 1.0) Flow.DriveAct.Tap("confirm") else Flow.DriveAct.Idle } ::
+                   { name = "eager", doc = "待たずに決定", act = (_, _) -> Flow.DriveAct.Tap("confirm") } :: Nil,
           ready = Some(w -> if (isBusy(w)) Flow.Ready.Busy("数えた直後") else Flow.Ready.Ready),
           replies = Some(w -> w#replies) | Flow.emptyTable() }
 
@@ -163,6 +164,12 @@ mod TestFlow {
     def testPressOverAnUnansweredHoldFailsAtTheHold(): Unit \ Assert + Fs.FileRead =
         Assert.assertEq(expected = Err((2, "押したが受け付けられなかった（返事の番号が進まない）")),
                         played("fps 4\nhold cancel\ntap confirm\nrelease cancel"))
+
+    // 操作（drive）が 1 フレーム目から押す時も、その前に返事の無い押し方を離して確かめる（drive の返事と取り違えない）。
+    @Test
+    def testDriveDoesNotAnswerForTheLastPress(): Unit \ Assert + Fs.FileRead =
+        Assert.assertEq(expected = Err((2, "押したが受け付けられなかった（返事の番号が進まない）")),
+                        played("fps 4\ntap cancel\ndrive eager until n>=1 max 2"))
 
     // World を差し替える行（rewind）の前に、返事の無い押し方を離して確かめる。
     @Test

@@ -39,8 +39,8 @@ func withoutMakeVars(env []string) []string {
 	return out
 }
 
-// fullWebSourceDirs は engine_full_web を組む元（engine_full の 4 つと engine_web）。
-var fullWebSourceDirs = []string{"engine/src", "render_gl/src", "render_gl/java", "engine_world/src", "engine_tools/src", "engine_web"}
+// fullWebSourceDirs は engine_full_web を組む元（engine_full の 4 つと engine_full にだけある物と engine_web）。
+var fullWebSourceDirs = []string{"engine/src", "render_gl/src", "render_gl/java", "engine_world/src", "engine_tools/src", "engine_full/src/full", "engine_web"}
 
 // newerFullWebSource は engine_full_web の元のうち、built より新しい物を 1 つ（無ければ空）。
 // WhyNot: 版の名前だけで新しさを決めない — タグの後のコミットは同じ版の名前のまま中身が変わり、古い束では新しい def が無くて書き出しの型検査で止まる。

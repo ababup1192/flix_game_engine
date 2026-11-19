@@ -350,6 +350,7 @@ pub mod Flow {
         let jumps = match line#step {
             case Step.Tap(_, _)           => true
             case Step.Hold(_, _, _)       => true
+            case Step.Drive(_, _, _)      => true
             case Step.Start(_, _, _)      => true
             case Step.Rewind(_)           => true
             case Step.Reload(_, _)        => true
