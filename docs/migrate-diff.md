@@ -79,14 +79,18 @@ bin/fge migrate fill <記録>
 
 ## テープ（flow の動画に注釈を付けてもらう頁）
 
-- sound-novel-starter の子では `make tape FLOW=e2e/tape.flow`（中で `bin/fge tape --dir debug/tape/<名前>` が strip.jpg と index.html を書く）
+- sound-novel-starter の子では `make tape FLOW=e2e/tape.flow`（中で `bin/fge tape --dir debug/tape/<名前>` が strip.jpg と index.html を書く）。口は engine の `mk/tape.mk`（ゲームの Makefile が `game.mk` の後に include する）
+- 撮り終えた flow は入力（git の木と作業ツリーの差・録画の jar・`TAPE_VIEWS` と符号化の旗）が同じなら次の `make tape` で撮り直さない（`TAPE_FRESH=1` で撮り直す）。
+  ブラウザ版の書き出しが止まったら録画は撮り終えるまで続け、直した後は `make tape-publish` で書き出しと頁だけを作り直す。書き出しの後に流す物（元の wav を外す など）は `TAPE_AFTER_EXPORT`
+- `mk/tape.mk` を include する前の版のゲームは、Makefile の `flow-mp4`・`TAPE_*`・`tape-*`・`tape:` の写しを消して `include $(subst $(space),\$(space),$(ENGINE))/mk/tape.mk` の 1 行にする
+  （flow-mp4 は映像と音の旗を 3 つ目と 4 つ目に取る。`make flow-video` の呼び出しも合わせる）
 - 既定は縦（スマホ）の 1 本だけ撮る（ノベルは縦が基本で PC も同じ縦の画面）。PC の物と並べるなら `TAPE_VIEWS="phone pc"` で、頁の上のボタンで替える
 - ブラウザ版も書き出して頁の上の「はじめから遊ぶ」から開く（要らなければ `TAPE_PLAY=0`）
 
 ### 動画が大きすぎて push が落ちる（`remote unpack failed`・1 ファイル 100 MB が上限）
 
-- `make tape` の mp4 はノベル向けに小さく作る（Makefile の `TAPE_X264`・`TAPE_AAC`: `-preset slow -crf 32 -tune animation`・`aac 96k`。雨の降る画面でも 10 分 40 MB ほど）
-- 前の版のテンプレートから作ったゲームは `make engine-upgrade` では変わらないので、sound-novel-starter の Makefile から 2 行と flow-mp4 を写す
+- `make tape` の mp4 はノベル向けに小さく作る（engine の `mk/tape.mk` の `TAPE_X264`・`TAPE_AAC`: `-preset slow -crf 32 -tune animation`・`aac 96k`。雨の降る画面でも 10 分 40 MB ほど）
+- 前の版のテンプレートから作ったゲームは `make engine-upgrade` では変わらないので、Makefile のテープの写しを `mk/tape.mk` の include に替える（上の節）
 - `bin/fge tape publish` は 1 本 95 MB を超える動画を dry run でも知らせ、`--yes` の時は同じ設定で縮めてから置く（頁の videoBytes もそろえる・手元のテープは書き換えない）
 - 縮めても超えたら止まるので、flow を短く分けて撮り直す
 - 置く木の全部（30 日以内の前の分も毎回送る）が 2 GB（1 回の push の上限）を超えても `--yes` は止まる

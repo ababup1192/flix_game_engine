@@ -263,7 +263,7 @@
       "prompt": "結末 8 本のテープを bin/fge tape publish --yes で置こうとしたら remote unpack failed: index-pack failed で push が落ちた。動画が 1 本 300〜700 MB ある。どうすればいい？ まだ何も流さないで、直し方だけ",
       "expect": [
         {"re": "fge tape publish", "why": "publish が 95 MB を超える動画を縮めてから置く（採点は choice の道具名だけなので、縮めるという語では当てられない）"},
-        {"re": "TAPE_X264|crf ?32|sound-novel-starter/Makefile", "why": "これから撮る分は作る時に小さく（テンプレートの Makefile の TAPE_X264 をゲームの Makefile へ写す）"}
+        {"re": "TAPE_X264|crf ?32|sound-novel-starter/Makefile|mk/tape\\.mk", "why": "これから撮る分は作る時に小さく（engine の mk/tape.mk を include して TAPE_X264 を使う）"}
       ],
       "avoid": [
         {"re": "git lfs (track|install)", "why": "Pages は LFS の物を配らない"}

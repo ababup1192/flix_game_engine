@@ -209,7 +209,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 移行の記録を撮るのが遅い・flow が多くて待てない | `make migrate-new` は鍵を先に撮って違うコマだけ塗る（動画は要る時だけ `MIGRATE_VIDEO=1`・基準に上げる前は `bin/fge migrate fill`・engine の `docs/migrate-diff.md` の「ゲームの make の口」） |
 | 移行の比べで「基準と新しい撮りの描き手が違う」と止まった・比べのコマを CPU と GPU のどちらで塗るか決めたい | 基準をその機械で `make migrate-baseline MIGRATE_OVERWRITE=1 MIGRATE_PAINT=gpu` で撮り直す（CPU なら `MIGRATE_PAINT=cpu`・engine の `docs/migrate-diff.md` の「ゲームの make の口」） |
 | 作ったテープの頁を GitHub Pages に置き、URL をレビュワーに渡す | `bin/fge tape publish debug/tape/<名前> --repo <owner/name>`（既定は dry run。push は `--yes`・反映待ちは `--wait`・目印の無い置き場の初回は `--init`。テープは置き場の docs フォルダの下に置くので、Pages は枝の docs フォルダを出す形にする） |
-| テープの動画が大きすぎて GitHub への公開（push）が `remote unpack failed` で落ちる（1 ファイル 100 MB が上限） | `bin/fge tape publish --yes` が 95 MB を超える動画を縮めて置く・古いゲームは sound-novel-starter の Makefile の `TAPE_X264`・`TAPE_AAC` を写す（engine の `docs/migrate-diff.md` の「動画が大きすぎて push が落ちる」） |
+| テープの動画が大きすぎて GitHub への公開（push）が `remote unpack failed` で落ちる（1 ファイル 100 MB が上限） | `bin/fge tape publish --yes` が 95 MB を超える動画を縮めて置く・古いゲームは Makefile のテープの写しを engine の `mk/tape.mk` の include に替える（`TAPE_X264`・`TAPE_AAC` はそこにある）（engine の `docs/migrate-diff.md` の「動画が大きすぎて push が落ちる」） |
 | テープの置き場の一覧（README のゲームごとの見出し・`games/<game>.md` の日付と撮った版へのリンク）を、テープを置かずに作り直す | `bin/fge tape publish --reindex --repo <owner/name>`（一覧に無い過去の公開は `--seed-from debug/tape/published.jsonl` で埋める。古い置き方で根に置いたテープは docs フォルダの下へ移る） |
 | ドット絵を描く・直す（台本・絵の種類で検査が決まる） | `/pixel-art` → `*.px.star` か `*.pxsrc.json`（`"kind"`）を `bin/fge px build` |
 | 絵の周回を残す・戻す（次の手は next・止め時は stop） | `bin/fge px snap` / `rounds snap` / `restore`（出る案内に従う） |

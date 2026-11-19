@@ -86,8 +86,8 @@ func TestSetVideoBytesFindsPhoneVideoInBuiltPage(t *testing.T) {
 	}
 }
 
-func TestShrinkArgsMatchTemplateMakefile(t *testing.T) {
-	f, err := os.Open(filepath.Join("..", "..", "..", "templates", "sound-novel-starter", "Makefile"))
+func TestShrinkArgsMatchTapeMk(t *testing.T) {
+	f, err := os.Open(filepath.Join("..", "..", "..", "mk", "tape.mk"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestShrinkArgsMatchTemplateMakefile(t *testing.T) {
 	}
 	want := append(strings.Fields(vars["TAPE_X264"]+" "+vars["TAPE_AAC"]), "-movflags", "+faststart")
 	if !reflect.DeepEqual(ShrinkVideoArgs, want) {
-		t.Fatalf("ShrinkVideoArgs %v が Makefile の TAPE_X264・TAPE_AAC %v とずれている", ShrinkVideoArgs, want)
+		t.Fatalf("ShrinkVideoArgs %v が mk/tape.mk の TAPE_X264・TAPE_AAC %v とずれている", ShrinkVideoArgs, want)
 	}
 }
 

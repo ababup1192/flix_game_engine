@@ -24,7 +24,7 @@ const (
 )
 
 // ShrinkVideoArgs は大きすぎる動画を縮める ffmpeg の旗（入力と出力の間に置く）。
-// テンプレートの Makefile の TAPE_X264・TAPE_AAC と同じ値にそろえる（TestShrinkArgsMatchTemplateMakefile が見張る）。
+// engine の mk/tape.mk の TAPE_X264・TAPE_AAC と同じ値にそろえる（TestShrinkArgsMatchTapeMk が見張る）。
 // WhyNot: -preset veryfast にしない — 同じ大きさなら背景の雨や粒がつぶれて汚い（字はどれも読める）。
 var ShrinkVideoArgs = []string{
 	"-c:v", "libx264", "-preset", "slow", "-crf", "32", "-tune", "animation", "-pix_fmt", "yuv420p",

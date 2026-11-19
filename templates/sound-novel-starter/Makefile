@@ -27,20 +27,9 @@ endif
 # 空白を退避してから渡す（レシピの中の $(ENGINE) は "" で括ってあるのでそのままでよい）。
 space := $(subst ,, )
 include $(subst $(space),\$(space),$(ENGINE))/mk/game.mk
+# テープ（make tape・make tape-publish）と mp4 に束ねる flow-mp4 も engine が持つ（符号化の旗は TAPE_X264・TAPE_AAC で変える）。
+include $(subst $(space),\$(space),$(ENGINE))/mk/tape.mk
 
-# FlowVideo が書いたコマと音（$(1) のフォルダ）を H.264 + AAC の mp4（$(2)）に束ねるシェルの 1 文。映像の旗は $(3)、音の旗は $(4)。
-# GPU で塗れた時は frames.mkv（幅と高さは engine が偶数にそろえる）、塗れない時は連番 PNG（縦の design は 540×1169 のように奇数のまま）。
-# WhyNot: crop を外さない — SoftRaster で塗った連番 PNG は奇数のままで、yuv420p の H.264 は幅と高さが偶数でないと ffmpeg が書かずに止まる。
-flow-mp4 = fps=$$(cat $(1)/fps.txt); \
-	if [ -f $(1)/frames.mkv ]; then frames="-i $(1)/frames.mkv"; else frames="-framerate $$fps -i $(1)/f%04d.png"; fi; \
-	ffmpeg -y -loglevel error $$frames -f f64be -ar 44100 -ac 2 -i $(1)/audio.f64 \
-	  -vf "crop=trunc(iw/2)*2:trunc(ih/2)*2" $(3) -r $$fps $(4) -shortest -movflags +faststart $(2)
-# テープ（make tape）の符号化: 字の頁が続くノベル向けに小さく（雨の降る 540×1170 の画面で 10 分 40 MB ほど・字は crf 20 と見分けがつかない）。
-# 置き場（GitHub）は 1 ファイル 100 MB まで。bin/fge tape publish は 95 MB を超えた動画を同じ設定で縮めてから置く（go/internal/tape の ShrinkVideoArgs とそろえる）。
-# WhyNot: crf 20 に戻さない — 雨や粒が動く画面は 1 分 75 MB になり、4 分で GitHub に置けなくなる。
-# WhyNot: -preset veryfast にしない — 同じ大きさなら背景の雨がつぶれて汚い（字はどれも読める）。
-TAPE_X264 ?= -c:v libx264 -preset slow -crf 32 -tune animation -pix_fmt yuv420p
-TAPE_AAC ?= -c:a aac -b:a 96k
 # 紹介の動画（make flow-video・showcase-video）の符号化: X に載せる物なので大きさより画質（X は 1 本 512 MB まで）。
 VIDEO_X264 ?= -c:v libx264 -pix_fmt yuv420p -crf 20
 VIDEO_AAC ?= -c:a aac -b:a 192k
@@ -50,100 +39,6 @@ VIDEO_AAC ?= -c:a aac -b:a 192k
 .PHONY: showcase-video
 showcase-video:
 	@$(MAKE) --no-print-directory flow-video FLOW=e2e/showcase.flow
-
-# テープの頁（make tape FLOW=e2e/tape.flow → debug/tape/tape/index.html）。
-# ① FlowVideo が flow を流してコマ・音（debug/video/<名前>）と tape.json を書き、② showcase-video と同じ ffmpeg で video.mp4 に束ね、
-# ③ bin/fge tape が strip.jpg と index.html を作る。debug/tape/<名前> には頁に要る物（tape.json・video.mp4・strip.jpg・index.html と、縦の分の tape-phone.json・video-phone.mp4・strip-phone.jpg）だけを置く。
-# tape.json が書けない（同じ名前の mark・2 つ以上の .yarn にまたがる flow）時は FlowVideo が理由を出し、ここで止める。
-# flow が途中で止まった時も、そこまでの頁を作ってから止まった印（終了コード 1）を返す。
-# 分岐: 結末ごとに 1 本ずつ flow を書き（同じ始まりから別の選択肢を選ぶ）、make tape FLOWS="e2e/a.flow e2e/b.flow" で
-# まとめて撮る。bin/fge tape --group が、選んだ道が分かれた所を分岐にして、頁のグラフの箱から隣の頁へつなぐ。
-# 画面: 既定は縦（スマホを縦に持った時・FLOW_VIEW=phone）の 1 回だけ撮り、tape.json・video.mp4 に置く（頁は切り替えのボタンを出さない）。
-# このゲームは design が縦で、PC の画面も同じ縦の組みを真ん中に置くだけなので、PC の分を別に撮らない。
-# WhyNot: 既定を pc（同じ 540×1170・マウス）にしない — テープはスマホで見てもらう頁で、指の入力（区分 Small・Touch）の見え方をそろえる。
-# 2 つ並べて比べたい時だけ TAPE_VIEWS="phone pc"（縦の分は debug/video/<名前>-phone で撮り tape-phone.json・video-phone.mp4 に、PC の分は tape.json・video.mp4 に置き、頁は縦で開いて上のボタンで替える）。
-# はじめから遊ぶ: 既定でゲームのブラウザ版も書き出し（bin/fge export-web）、各テープの play/ に写す。頁の上の「はじめから遊ぶ」がタイトルから開く。
-# 後始末: mp4 に束ねたら元のコマ（debug/video/<名前>[-phone]・1 本で 8 GB を超えることがある）を消す。残すなら TAPE_KEEP_FRAMES=1
-# （flow が途中で止まった時も残す）。同じ名前を撮り直す時は、前の debug/video・debug/tape の出力を先に消して置き換える。
-# 書き出さないなら TAPE_PLAY=0（頁はボタンを出さない）。書き出しの作業フォルダと出口は TAPE_WEB（既定 /tmp/fge-tape-web/<ゲームのフォルダ名>）。
-TAPE_NAME = $(basename $(notdir $(FLOW)))
-TAPE_VIEWS = phone
-TAPE_PLAY = 1
-TAPE_KEEP_FRAMES = 0
-# 速さ: 書き出しは --reuse で、写すゲームの全部・engine の束と jar・bin/fge の指紋が前と同じなら組まずに使い回す（組み直させるなら TAPE_WEB_REUSE=0）。
-# 書き出しは録画と並べて裏で走らせ（ログは $(TAPE_WEB)/export.log）、録画は分岐の flow を並べて走らせる。同時に走るのは書き出しを含めて TAPE_JOBS 本まで（既定 2）。
-# 今までの順（書き出しを済ませてから 1 本ずつ撮る）は TAPE_JOBS=1。並べても同じ flow から同じ tape.json とハッシュが出る（JVM も書き出し先も別）。
-# Ctrl-C と撮れなかった時は、裏の書き出しと録画を子の java・ffmpeg ごと止める（tape-kill）。
-# WhyNot: 並べる前に jar を作っておく — jar を作る時にゲームの語彙（assets/talk/vocab*.json）を書き直すので、書き出しが写す途中の物を拾う。
-# WhyNot: 既定を 3 本以上にしない — 録画は GPU で塗り、ffmpeg も書き出しの TeaVM も全部のコアを使うので、負荷の高い機械で他の作業を止める。
-TAPE_JOBS = 2
-TAPE_WEB_REUSE = 1
-# WhyNot: 書き出しの作業フォルダをゲームの下（既定の build/web-export）にしない — 組んだ所のパスが wasm に残り、公開した頁からユーザー名が読める。
-TAPE_WEB = /tmp/fge-tape-web/$(notdir $(CURDIR))
-tape-play = $(if $(filter 1,$(TAPE_PLAY)),--play $(TAPE_WEB)/out)
-tape-export = "$(ENGINE)/bin/fge" export-web . --out "$(TAPE_WEB)/out" --work "$(TAPE_WEB)/work" $(if $(filter 1,$(TAPE_WEB_REUSE)),--reuse)
-# WhyNot: Windows（bash が無い）で jar を作り置かず並べもしない — headless-run が無く、入口ごとに flix run で組み直すので、並べると組むのが重なる。
-tape-jar = $(if $(filter 1,$(FGE_NO_BASH)),:,$(HEADLESS_RUN) --build-only)
-tape-jobs = $(if $(filter 1,$(FGE_NO_BASH)),1,$(TAPE_JOBS))
-# WhyNot: kill を pid 1 つに送るだけにしない — bin/fge は fge-go へ exec し、その子の java（TeaVM・録画）は親が死んでも残って作業フォルダに書き続ける。
-tape-kill = killtree() { for c in $$(pgrep -P $$1); do killtree $$c; done; kill $$1 2>/dev/null; }; for p in $(1); do killtree $$p; done
-# 1 本の flow を撮って debug/tape/<名前> に置く（サブシェルで流す）。終わりの番号: 0 撮れた / 1 flow が途中で止まった / 2 撮れなかった。
-# WhyNot: flow が途中で止まっても 2 にしない — そこまでの頁を作ってから、最後に終了コード 1 を返す（code）。
-tape-shoot = code=0; rm -rf debug/video/$(2) debug/video/$(2)-phone debug/tape/$(2); mkdir -p debug/tape/$(2); \
-	for v in $(TAPE_VIEWS); do \
-	  case "$$v" in pc) src=debug/video/$(2); suf="";; phone) src=debug/video/$(2)-phone; suf=-phone;; \
-	    *) echo "tape: TAPE_VIEWS に並べるのは phone と pc（$$v は知らない）"; exit 2;; esac; \
-	  test "$(words $(TAPE_VIEWS))" -gt 1 || suf=""; \
-	  FLOW=$(1) FLOW_OUT=$$src FLOW_VIEW=$$v $(HEADLESS_RUN) FlowVideo.play || code=1; \
-	  test -f $$src/tape.json || { echo "tape: $$src/tape.json を書けなかった"; exit 2; }; \
-	  cp $$src/tape.json debug/tape/$(2)/tape$$suf.json; \
-	  { $(call flow-mp4,$$src,debug/tape/$(2)/video$$suf.mp4,$(TAPE_X264),$(TAPE_AAC)); } || exit 2; \
-	  test "$(TAPE_KEEP_FRAMES)" = 1 -o "$$code" = 1 || rm -rf $$src; \
-	done; exit $$code
-.PHONY: tape
-tape:
-	@test -n "$(TAPE_NAME)$(FLOWS)" || { echo "make tape FLOW=e2e/<名前>.flow（分岐は FLOWS=\"e2e/a.flow e2e/b.flow\"）"; exit 2; }
-	@test -z "$(FLOW)" -o -z "$(FLOWS)" || { echo "tape: FLOW と FLOWS はどちらか 1 つ（分岐は FLOWS だけに並べる）"; exit 2; }
-	@dup=$$(for f in $(FLOWS); do basename $$f .flow; done | sort | uniq -d); \
-	 test -z "$$dup" || { echo "tape: FLOWS に同じ名前の flow がある: $$dup（debug/tape/<名前> が重なるので名前を分ける）"; exit 2; }
-	@for v in $(TAPE_VIEWS); do case "$$v" in pc|phone) ;; *) echo "tape: TAPE_VIEWS に並べるのは phone と pc（$$v は知らない）"; exit 2;; esac; done
-	@jobs=$(tape-jobs); t0=$$(date +%s); pids=""; ew=""; \
-	 trap '$(call tape-kill,$$(pgrep -P $$$$)); exit 130' INT TERM; \
-	 $(tape-jar) || { echo "tape: 録画の jar を作れなかった"; exit 1; }; \
-	 mkdir -p "$(TAPE_WEB)"; \
-	 if [ "$(TAPE_PLAY)" = 1 ]; then \
-	   if [ "$$jobs" -gt 1 ]; then \
-	     echo "tape: ブラウザ版の書き出しを録画と並べて走らせる（ログ $(TAPE_WEB)/export.log）"; \
-	     ( $(tape-export) ) > "$(TAPE_WEB)/export.log" 2>&1 & ew=$$!; \
-	   else \
-	     $(tape-export) || { echo "tape: ブラウザ版を書き出せなかった（書き出さずに撮るなら TAPE_PLAY=0）"; exit 1; }; \
-	   fi; \
-	 fi; \
-	 names=""; \
-	 for f in $(or $(FLOWS),$(FLOW)); do \
-	   n=$$(basename $$f .flow); names="$$names $$n"; \
-	   while :; do busy=0; for p in $$pids $$ew; do kill -0 $$p 2>/dev/null && busy=$$((busy+1)); done; \
-	     [ $$busy -lt $$jobs ] && break; sleep 1; done; \
-	   rm -f "$(TAPE_WEB)/shoot-$$n.code"; \
-	   { ( $(call tape-shoot,$$f,$$n) ); echo $$? > "$(TAPE_WEB)/shoot-$$n.code"; } 2>&1 | sed "s/^/[$$n] /" & pids="$$pids $$!"; \
-	 done; \
-	 for p in $$pids; do wait $$p; done; \
-	 code=0; for n in $$names; do c=$$(cat "$(TAPE_WEB)/shoot-$$n.code" 2>/dev/null || echo 2); \
-	   if [ "$$c" -ge 2 ]; then echo "tape: $$n を撮れなかった"; $(call tape-kill,$$ew); exit 1; fi; \
-	   test "$$c" = 0 || code=1; done; \
-	 echo "tape: 録画まで $$(( $$(date +%s) - t0 )) 秒"; \
-	 if [ -n "$$ew" ]; then \
-	   wait $$ew || { tail -30 "$(TAPE_WEB)/export.log"; echo "tape: ブラウザ版を書き出せなかった（ログ $(TAPE_WEB)/export.log・書き出さずに撮るなら TAPE_PLAY=0）"; exit 1; }; \
-	   grep '^export-web:' "$(TAPE_WEB)/export.log"; \
-	 fi; \
-	 if [ -n "$(FLOWS)" ]; then \
-	   dirs=""; for n in $$names; do dirs="$$dirs debug/tape/$$n"; done; \
-	   "$(ENGINE)/bin/fge" tape --group $$dirs $(tape-play) || exit 1; \
-	 else \
-	   "$(ENGINE)/bin/fge" tape --dir debug/tape/$(TAPE_NAME) $(tape-play) || exit 1; \
-	 fi; \
-	 echo "tape: $$(( $$(date +%s) - t0 )) 秒"; \
-	 exit $$code
 
 # 立ち絵と小物（assets/novel.cast.json）の絵の登録と縦横の比を見る（読むだけ・標準の python3 で足りる）。
 # 元の絵を縮めて縁を埋めるのは python3 art/cast/prepare.py <元の絵の置き場>（Pillow が要る）。
