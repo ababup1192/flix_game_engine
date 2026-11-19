@@ -211,6 +211,12 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
 		return 1
 	}
+	deferredFonts, err := resolveWebDeferredFonts(proj.Web, proj.fontNames())
+	if err != nil {
+		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
+		return 1
+	}
+	deferredPlan, textureNames = withDeferredFonts(deferredPlan, deferredFonts, textureNames)
 	for _, line := range deferredPlan.Warnings {
 		ewLogf("知らせ: %s", line)
 	}

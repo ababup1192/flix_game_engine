@@ -242,3 +242,36 @@ func TestWebStartupBytesUseBrotliWasmAndDecoder(t *testing.T) {
 		t.Errorf("wasm は br の 3000 と、解き手の gzip を足した回線の量のはず: %+v", got)
 	}
 }
+
+func TestResolveWebDeferredFontsReturnsNamedFonts(t *testing.T) {
+	got, err := resolveWebDeferredFonts(json.RawMessage(`{"deferredFonts": ["gothic"]}`), []string{"default", "gothic"})
+	if err != nil || !reflect.DeepEqual(got, []string{"gothic"}) {
+		t.Fatalf("got %v, %v", got, err)
+	}
+}
+
+func TestResolveWebDeferredFontsRejectsUnknownFont(t *testing.T) {
+	if _, err := resolveWebDeferredFonts(json.RawMessage(`{"deferredFonts": ["mincho"]}`), []string{"default"}); err == nil {
+		t.Fatal("fonts に無い名前を通した")
+	}
+}
+
+func TestResolveWebDeferredFontsRejectsDeferringEveryFont(t *testing.T) {
+	if _, err := resolveWebDeferredFonts(json.RawMessage(`{"deferredFonts": ["default", "gothic"]}`), []string{"default", "gothic"}); err == nil {
+		t.Fatal("全部のフォントの後回しを通した")
+	}
+}
+
+func TestWithDeferredFontsPutsAtlasAtTheHead(t *testing.T) {
+	plan, _ := withDeferredFonts(webDeferredPlan{Paths: []string{"assets/bg/late.png"}}, []string{"gothic"}, map[string][]string{})
+	if !reflect.DeepEqual(plan.Paths, []string{"font-atlas/gothic.fontatlas", "assets/bg/late.png"}) {
+		t.Fatalf("got %v", plan.Paths)
+	}
+}
+
+func TestWithDeferredFontsNamesAtlasByFont(t *testing.T) {
+	_, names := withDeferredFonts(webDeferredPlan{}, []string{"gothic"}, map[string][]string{"assets/bg/a.png": {"bg_a"}})
+	if !reflect.DeepEqual(names["font-atlas/gothic.fontatlas"], []string{"gothic"}) {
+		t.Fatalf("got %v", names)
+	}
+}

@@ -13,7 +13,8 @@ import (
 // project.json の web.deferred（「押して始める」の前に取らず、wasm を読んだ後に裏で取る素材）。ゲームの根からの glob。
 // 並び順がそのまま裏で取る順になる（同じ glob に当たる物は道の順）。
 type webDeferredSettings struct {
-	Deferred []string `json:"deferred"`
+	Deferred      []string `json:"deferred"`
+	DeferredFonts []string `json:"deferredFonts"`
 }
 
 // webDeferredEntry は bundle.json の deferred の 1 本。Bytes は配る物（WebP・Opus に替えた後）の大きさ。
@@ -44,6 +45,58 @@ func resolveWebDeferred(raw json.RawMessage) ([]webGlob, error) {
 }
 
 // webDeferredPlan は後回しにする道（取る順）と、知らせるだけの行。
+// resolveWebDeferredFonts は project.json の web.deferredFonts（タイトルの後に読むフォントの名前）を、fonts の名前と照らして返す。
+// WhyNot: 全部のフォントを後回しにさせない — タイトルの字を出すフォントが 1 本も無いと、届くまで組み込みの英数の字で出る。
+func resolveWebDeferredFonts(raw json.RawMessage, fonts []string) ([]string, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+	var s webDeferredSettings
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return nil, fmt.Errorf("project.json の web.deferredFonts を読めない: %v\n  次: フォントの名前の配列にする（例 [\"gothic\"]）", err)
+	}
+	known := map[string]bool{}
+	for _, name := range fonts {
+		known[name] = true
+	}
+	seen := map[string]bool{}
+	var names []string
+	for _, name := range s.DeferredFonts {
+		if !known[name] {
+			return nil, fmt.Errorf("project.json の web.deferredFonts の %q が fonts に無い。\n  次: fonts[].name の名前を書く（%s）", name, strings.Join(fonts, "・"))
+		}
+		if !seen[name] {
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+	if len(names) > 0 && len(names) == len(fonts) {
+		return nil, fmt.Errorf("project.json の web.deferredFonts が fonts を全部後回しにしている。\n  次: タイトルの字に使うフォントを 1 本は外す")
+	}
+	return names, nil
+}
+
+// withDeferredFonts は後回しの列の頭へ、後回しのフォントのアトラスを足し、アトラスの道 → フォントの名前を names に足した物を返す。
+// 頁の届いていない名前（LoadProgress の missing）にフォントの名前が並び、ゲームは絵と同じ扱いで待てる。
+// WhyNot: 列の後ろに足さない — 字は最初の場面から使い、3D の部屋や後半の絵より先に要る。
+func withDeferredFonts(plan webDeferredPlan, fonts []string, names map[string][]string) (webDeferredPlan, map[string][]string) {
+	if len(fonts) == 0 {
+		return plan, names
+	}
+	merged := map[string][]string{}
+	for rel, n := range names {
+		merged[rel] = n
+	}
+	var heads []string
+	for _, name := range fonts {
+		rel := "font-atlas/" + name + ".fontatlas"
+		heads = append(heads, rel)
+		merged[rel] = []string{name}
+	}
+	plan.Paths = append(heads, plan.Paths...)
+	return plan, merged
+}
+
 type webDeferredPlan struct {
 	Paths    []string
 	Warnings []string
