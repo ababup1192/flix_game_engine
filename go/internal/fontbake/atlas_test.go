@@ -129,7 +129,7 @@ func filledAtlas(side int, value func(x, y int) byte) []byte {
 	return data
 }
 
-func TestDownscaleHalvesSideToMultipleOfFour(t *testing.T) {
+func TestDownscaleRoundsSideUpToMultipleOfFour(t *testing.T) {
 	small, err := Downscale(filledAtlas(20, func(x, y int) byte { return 0 }), 0.5)
 	if err != nil {
 		t.Fatal(err)
@@ -168,5 +168,13 @@ func TestDownscaleRewritesPixelChecksum(t *testing.T) {
 func TestDownscaleRejectsFactorBelowHalf(t *testing.T) {
 	if _, err := Downscale(filledAtlas(16, func(x, y int) byte { return 0 }), 0.33); err == nil {
 		t.Fatal("0.33 を通した")
+	}
+}
+
+func TestDownscaleKeepsAtlasWhenSideWouldNotShrink(t *testing.T) {
+	data := filledAtlas(4, func(x, y int) byte { return 7 })
+	small, _ := Downscale(data, 0.5)
+	if string(small) != string(data) {
+		t.Fatal("縮まない辺のアトラスが変わった")
 	}
 }

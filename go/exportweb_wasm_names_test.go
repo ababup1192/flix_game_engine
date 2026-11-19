@@ -49,3 +49,15 @@ func TestSplitWasmNamesRejectsTruncatedSection(t *testing.T) {
 		t.Fatal("切れた区画を通した")
 	}
 }
+
+func TestSplitWasmNamesReadsTwoByteSectionSize(t *testing.T) {
+	payload := bytes.Repeat([]byte{9}, 200)
+	body := append([]byte{4}, "name"...)
+	body = append(body, payload...)
+	size := len(body)
+	named := append([]byte{0, byte(size&0x7f | 0x80), byte(size >> 7)}, body...)
+	_, names, err := splitWasmNames(tinyWasm(named))
+	if err != nil || !bytes.Equal(names, payload) {
+		t.Fatalf("got %d バイト, %v", len(names), err)
+	}
+}

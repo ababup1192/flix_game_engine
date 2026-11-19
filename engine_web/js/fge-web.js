@@ -1599,7 +1599,7 @@ async function fgeEachLimited(items, limit, fn) {
 var fgeBootLoad = null;
 function fgeBootProgressInit(bundle, fallbackTotal) {
   var boot = bundle.boot;
-  fgeBootLoad = { boot: boot && boot.assets > 0 && boot.wasm > 0 ? boot : null, base: fgeLoadLog.bytes,
+  fgeBootLoad = { boot: boot && boot.wasm > 0 ? boot : null, base: fgeLoadLog.bytes,
                   wasmDone: 0, assetsEnd: false, done: 0, total: fallbackTotal };
   fgeBootProgress();
 }
@@ -1609,7 +1609,7 @@ function fgeBootProgress() {
   var phase = s.assetsEnd ? "loading code..." : "loading assets...";
   if (s.boot === null) { fgeProgress(phase, s.done, s.total); return; }
   var b = s.boot;
-  var assets = s.assetsEnd ? 1 : Math.min(1, (fgeLoadLog.bytes - s.base) / b.assets);
+  var assets = s.assetsEnd || b.assets <= 0 ? 1 : Math.min(1, (fgeLoadLog.bytes - s.base) / b.assets);
   var wasm = Math.min(1, s.wasmDone / b.wasm);
   fgeProgress(phase, assets * b.assetsWire + wasm * b.wasmWire, b.assetsWire + b.wasmWire);
 }
@@ -1672,6 +1672,7 @@ function fgeParseWasmNames(bytes) {
   }
   return names;
 }
+// 画面の知らせが stack を含む時（main の例外など）はそこにも名前を付け、message だけの時（error のイベント）は console にだけ出す。
 // WhyNot: 名前を取ってから止まった知らせを出さない — 取れない（回線が切れた・古い書き出し）と知らせ自体が出なくなる。先に出し、名前は後から足す。
 function fgeNameWasmFrames(text) {
   if (typeof text !== "string" || !/wasm-function\[\d+\]/.test(text)) return;
@@ -1727,6 +1728,8 @@ async function fgeBoot() {
   fgeCountWasmFetch(wasmUrl, function (n) { if (fgeBootLoad) { fgeBootLoad.wasmDone += n; fgeBootProgress(); } });
   var wasmLoad = TeaVM.wasmGC.load(wasmUrl).then(function (teavm) {
     if (fgeDecodeTimes !== null) console.log("[loadtime] wasm を読み終えた " + performance.now().toFixed(0) + " ms");
+    // WhyNot: 数えた量だけで wasm の分を満たさない — 複製を読むのに失敗すると、棒が wasm の分を残したまま止まって見える。
+    if (fgeBootLoad && fgeBootLoad.boot) { fgeBootLoad.wasmDone = fgeBootLoad.boot.wasm; fgeBootProgress(); }
     fgeDeferred.wasmReady = true;
     fgeDeferredStart();
     return teavm;

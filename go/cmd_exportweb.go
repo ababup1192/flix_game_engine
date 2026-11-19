@@ -864,7 +864,7 @@ type webBundle struct {
 	// Splash は頁が「押して始める」の前に描く起動画面の材料（exportweb_splash.go）。
 	Splash *webSplash `json:"splash,omitempty"`
 	// Boot は押して始めるまでに取る物の大きさ。頁は進みの棒をこの量の重みで動かす。
-	Boot *webBootBytes `json:"boot,omitempty"`
+	Boot *webStartupBytes `json:"boot,omitempty"`
 }
 
 // withTouch は頁が起動の前に要る物（design の縦横比・パッド・ジェスチャー・向き）を束に足す。
@@ -1037,7 +1037,7 @@ func writeWebPage(p exportWebPaths, b webBundle, wasm, teavmCore string) (string
 	if err := writeWebWasm(wasm, p.Out); err != nil {
 		return "", err
 	}
-	boot := webBootBytesOf(p.Out, &b)
+	boot := webStartupBytesOf(p.Out, &b)
 	b.Boot = &boot
 	bundle, err := marshalWebBundle(b)
 	if err != nil {
@@ -1258,7 +1258,7 @@ func writeExportSizes(out *strings.Builder, dir string, b webBundle, atlases []s
 	}
 	fmt.Fprintf(w, "  %-8s %22s  ブラウザが取る量\n", "合計", pair(total))
 	start := webStartupSizeOf(dir, &b)
-	writeStage0(w, webStage0Of(dir, &b), start)
+	writeStartupEstimate(w, webStartupEstimateOf(dir, &b), start)
 	if r.FallbackBytes > 0 {
 		fmt.Fprintf(w, "  置き場には元の wav（%s）も残す — Opus を解けないブラウザだけが取る\n", humanBytes(r.FallbackBytes))
 	}
@@ -1270,12 +1270,12 @@ func writeExportSizes(out *strings.Builder, dir string, b webBundle, atlases []s
 	w.Flush()
 }
 
-// writeStage0 は起動まで（遊べるまで）の回線の量と 1.6 Mbps での秒数、後回しの最後が届く時刻を書く。目標を超えても止めない。
-func writeStage0(w io.Writer, s webStage0, start webStartupSize) {
+// writeStartupEstimate は起動まで（遊べるまで）の回線の量と 1.6 Mbps での秒数、後回しの最後が届く時刻を書く。目標を超えても止めない。
+func writeStartupEstimate(w io.Writer, s webStartupEstimate, start webStartupSize) {
 	wire := s.Boot.WasmWire + s.Boot.AssetsWire + s.PageWire
 	fmt.Fprintf(w, "  起動まで（タッチして開始まで）%d 本・回線 %s（wasm %s・素材 %s・頁 %s）→ 4G（1.6 Mbps）で約 %.1f 秒（前置き %.1f 秒を含む）\n",
 		start.StartCount, humanBytes(wire), humanBytes(s.Boot.WasmWire), humanBytes(s.Boot.AssetsWire), humanBytes(s.PageWire),
-		s.Seconds, webStage0PreludeSeconds)
+		s.Seconds, webStartupPreludeSeconds)
 	if n := len(s.Deferred); n > 0 {
 		fmt.Fprintf(w, "  後回し %d 本・%s → 最後の %s が届くのは約 %.0f 秒目（1 本ずつの時刻は書き出しのログ）\n",
 			start.DeferredCount, humanBytes(start.DeferredBytes), s.Deferred[n-1].Path, s.Deferred[n-1].Seconds)
@@ -1283,9 +1283,9 @@ func writeStage0(w io.Writer, s webStage0, start webStartupSize) {
 			ewLogf("  後回し %6.1f 秒目  %s", a.Seconds, a.Path)
 		}
 	}
-	if s.Seconds > webStage0TargetSeconds {
+	if s.Seconds > webStartupTargetSeconds {
 		fmt.Fprintf(w, "  知らせ: 起動までが 4G で %.0f 秒を超える — タイトルより後で使う素材は web.deferred へ回せる（大物から: wasm %s・素材 %s）\n",
-			webStage0TargetSeconds, humanBytes(s.Boot.WasmWire), humanBytes(s.Boot.AssetsWire))
+			webStartupTargetSeconds, humanBytes(s.Boot.WasmWire), humanBytes(s.Boot.AssetsWire))
 	}
 }
 

@@ -115,7 +115,7 @@ func Downscale(data []byte, factor float64) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	n := int(math.Round(float64(l.side)*factor/4)) * 4
+	n := int(math.Ceil(float64(l.side)*factor/4)) * 4
 	if n < 4 || n >= l.side {
 		return append([]byte{}, data...), nil
 	}

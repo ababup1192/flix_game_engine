@@ -120,6 +120,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | ブラウザ版の指の長押しを、キーボードの Esc（戻るのキー）と取り違えずに読む（押した所のボタンの名前を出す・ほかの所は隠す） | キーの Doc に長押しだけの操作を足し `web.touchGestures.longPress` に（戻るのキーにしない・engine の `docs/web-export.md` の「長押しを Esc（戻るのキー）と取り違えない」） |
 | スマホを縦に持った時に縦長の画面で起動する（縦の並べ方を足す） | project.json の `web.portraitDesign`・View は `ViewCtx#display#orientation`・当たりは `Display.orientationOf(frame#viewport)`（確かめ方は engine の `docs/web-export.md` の「縦の画面で起動する」） |
 | ブラウザ版の書き出しを小さくする（絵・音・字のアトラス） | `bin/fge export-web` が WebP・Opus に替える。強さは project.json の `web.compress`（engine の `docs/web-export.md` の「書き出しを小さくする」） |
+| ブラウザ版が外の回線（4G）で遊べるまで何秒かかるか見る・減らす | `bin/fge export-web` の終わりの表の「起動まで」の行（回線の量と 1.6 Mbps での秒数・16 秒超で知らせる）。後回しの 1 本ずつが届く時刻は書き出しのログ。減らすのはタイトルより後の素材を `web.deferred` へ回すのが先（字のアトラスは `web.compress.fontAtlasScale` の既定 0.5 で縮めてある）。engine の `docs/web-export.md` の「遊べるまでの量を見る」 |
 | ブラウザ版を GitHub Pages（gh-pages の枝）のサブフォルダに出す | `make web-pages-stage DEST=<サブフォルダ>`（書き出し直し → 音のファイル・sounds・deferred が残れば止める（配ってよい音だけなら `AUDIO=ok`）→ gh-pages の worktree に置いてコミット → サブフォルダの道で開けるか。push は人が最後の 1 行を打つ。手で gh-pages の worktree を作って写さない・engine の `docs/web-export.md` の「GitHub Pages に出す」） |
 | ブラウザ版の重さを測る（fps・CPU の ms・WebGPU か WebGL2 か・スマホで） | 頁の URL に `?fps=1`（左上に fps・CPU の ms・描き手。どのゲームの書き出しでも同じ）・`?backend=webgl2` で比べる。GPU の時間はブラウザでは出ない・前と後は同じ場所で比べる・スマホは人に URL を開いてもらう（engine の `docs/web-export.md` の「ブラウザで重さを測る」） |
 | ブラウザ版でシナリオを開発者ツールから読まれにくくする | project.json の `web.embed: [glob]`（wasm へ埋め込む）・`web.omit: [glob]`（配らない）（wasm を解析する人には読める・engine の `docs/web-export.md` の「シナリオを開発者ツールから読まれにくくする」） |
