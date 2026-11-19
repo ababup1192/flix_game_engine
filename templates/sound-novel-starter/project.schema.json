@@ -71,7 +71,8 @@
               "glob":    { "type": "text", "label": "劣化ありにする絵（ゲームの根からの glob。先に書いた方が勝つ）", "order": 1, "required": true },
               "quality": { "type": "int",  "label": "WebP の画質（1〜100）", "order": 2, "min": 1, "max": 100, "default": 80 }
             } } }, "label": "劣化ありの WebP にする絵（写真の背景など。ドット絵には使わない）", "order": 5 },
-            "fontAtlasScale":    { "type": "float", "label": "字のアトラス（距離場）の細かさの倍率。0.5 で量が約半分・見た目は変わらない。1 で縮めない", "order": 6, "min": 0.5, "max": 1.0, "default": 0.5 }
+            "fontAtlasScale":    { "type": "float", "label": "字のアトラス（距離場）の細かさの倍率。0.5 で量が約半分・見た目は変わらない。1 で縮めない", "order": 6, "min": 0.5, "max": 1.0, "default": 0.5 },
+            "wasmBrotli":        { "type": "bool", "label": "wasm を brotli にして一緒に配る解き手で戻す（gzip より 4 割ほど小さい。brotli の道具が要る）", "order": 7, "default": true }
           } },
           "label": "書き出しの時だけ素材を小さくする（書かなければ音は Opus・絵は劣化しない WebP）",
           "order": 1

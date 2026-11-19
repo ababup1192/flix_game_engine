@@ -1638,6 +1638,55 @@ function fgeCountWasmFetch(url, onBytes) {
   };
 }
 
+// fgeLoadWasm は wasm を読んで TeaVM の instance を返す。束が brotli の版（wasmBrotli）を持てば、それと解き手を取って頁で解く。
+// WhyNot: brotli の版を取れない・解けない時に止めない — 解き手の読み込みや解く途中で落ちても、gzip の classes.wasm で同じ物が動く。
+// WhyNot: wasm を読めない（WebAssembly GC が無い）時に gzip で取り直さない — 同じ wasm なので結果は変わらず、量だけ増える。
+function fgeLoadWasm(bundle, wasmUrl, onBytes) {
+  var plain = function () {
+    fgeCountWasmFetch(wasmUrl, onBytes);
+    return TeaVM.wasmGC.load(wasmUrl);
+  };
+  if (!bundle.wasmBrotli) return plain();
+  return Promise.all([fgeFetchCounted(fgeVersioned(bundle.wasmBrotli), onBytes), fgeLoadScript("brotli-decode.js")]).then(function (got) {
+    var started = performance.now();
+    var raw = BrotliDecode(new Int8Array(got[0]));
+    if (fgeDecodeTimes !== null) console.log("[loadtime] wasm の brotli を解いた " + (performance.now() - started).toFixed(0) + " ms");
+    return raw;
+  }).then(function (raw) { return TeaVM.wasmGC.load(raw); }, function (e) {
+    console.warn("[fge] brotli の wasm を使えない — gzip の classes.wasm を取る: " + (e && e.message || e));
+    if (fgeBootLoad) fgeBootLoad.wasmDone = 0;
+    return plain();
+  });
+}
+// fgeFetchCounted は url を取り、届いたバイト数を順に onBytes へ渡して、全部を ArrayBuffer で返す。
+async function fgeFetchCounted(url, onBytes) {
+  var res = await fetch(url);
+  if (!res.ok) throw new Error(url + " を取れない（" + res.status + "）");
+  var reader = res.body.getReader();
+  var chunks = [];
+  var total = 0;
+  for (;;) {
+    var r = await reader.read();
+    if (r.done) break;
+    chunks.push(r.value);
+    total += r.value.byteLength;
+    onBytes(r.value.byteLength);
+  }
+  var out = new Uint8Array(total);
+  var at = 0;
+  chunks.forEach(function (c) { out.set(c, at); at += c.byteLength; });
+  return out.buffer;
+}
+function fgeLoadScript(name) {
+  return new Promise(function (resolve, reject) {
+    var s = document.createElement("script");
+    s.src = fgeVersioned(name);
+    s.onload = resolve;
+    s.onerror = function () { reject(new Error(name + " を読めない")); };
+    document.head.appendChild(s);
+  });
+}
+
 // ── 落ちた時の関数名（classes.names）──
 // 書き出しは wasm の名前の区画を classes.names へ抜いて配る（量を減らすため）。stack の wasm-function[番号] に名前を付けて console へ出す。
 var fgeWasmNames = null;
@@ -1725,8 +1774,8 @@ async function fgeBoot() {
   // WhyNot: wasm を押した後に取らない — 押してから最初のコマまでに取る・compile・instantiate が全部乗る。main は GL の文脈を作った後（押した後）に呼ぶ。
   var wasmFailed = null;
   var wasmUrl = fgeVersioned("classes.wasm");
-  fgeCountWasmFetch(wasmUrl, function (n) { if (fgeBootLoad) { fgeBootLoad.wasmDone += n; fgeBootProgress(); } });
-  var wasmLoad = TeaVM.wasmGC.load(wasmUrl).then(function (teavm) {
+  var onWasmBytes = function (n) { if (fgeBootLoad) { fgeBootLoad.wasmDone += n; fgeBootProgress(); } };
+  var wasmLoad = fgeLoadWasm(bundle, wasmUrl, onWasmBytes).then(function (teavm) {
     if (fgeDecodeTimes !== null) console.log("[loadtime] wasm を読み終えた " + performance.now().toFixed(0) + " ms");
     // WhyNot: 数えた量だけで wasm の分を満たさない — 複製を読むのに失敗すると、棒が wasm の分を残したまま止まって見える。
     if (fgeBootLoad && fgeBootLoad.boot) { fgeBootLoad.wasmDone = fgeBootLoad.boot.wasm; fgeBootProgress(); }

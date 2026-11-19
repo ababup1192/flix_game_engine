@@ -226,3 +226,19 @@ func TestWebWireSizeGzipsText(t *testing.T) {
 		t.Errorf("同じ字の続く JSON は gzip で小さくなるはず: %d", got)
 	}
 }
+
+func TestWebStartupBytesUseBrotliWasmAndDecoder(t *testing.T) {
+	out, b := startupFixture(t)
+	writeServed(t, out, "../classes.wasm", 9000)
+	if err := os.WriteFile(filepath.Join(out, webWasmBrotliFile), make([]byte, 3000), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(out, webBrotliDecoderFile), make([]byte, 100), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	b.WasmBrotli = webWasmBrotliFile
+	got := webStartupBytesOf(out, &b)
+	if got.Wasm != 3000 || got.WasmWire <= 3000 || got.WasmWire > 3100 {
+		t.Errorf("wasm は br の 3000 と、解き手の gzip を足した回線の量のはず: %+v", got)
+	}
+}

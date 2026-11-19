@@ -257,6 +257,10 @@ func webStartupBytesOf(out string, b *webBundle) webStartupBytes {
 	}
 	wasm := filepath.Join(out, "classes.wasm")
 	s.Wasm, s.WasmWire = fileSize(wasm), webWireSize(wasm)
+	if br := filepath.Join(out, b.WasmBrotli); b.WasmBrotli != "" && fileExists(br) {
+		decoder := webWireSize(filepath.Join(out, webBrotliDecoderFile))
+		s.Wasm, s.WasmWire = fileSize(br), fileSize(br)+decoder
+	}
 	return s
 }
 

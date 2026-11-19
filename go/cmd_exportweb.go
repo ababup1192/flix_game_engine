@@ -371,11 +371,18 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 	sort.Strings(b.Files)
 
 	ewLogf("⑥ 素材を小さくする（絵は WebP・音は Opus・アトラスは画素を WebP か gzip）")
-	report := transcodeWebAssets(p.Out, &b, atlases, compress, findWebEncoders(p.Engine, compress))
+	enc := findWebEncoders(p.Engine, compress)
+	report := transcodeWebAssets(p.Out, &b, atlases, compress, enc)
 	b.Deferred = webDeferredEntries(p.Out, &b, deferredPlan.Paths, textureNames)
 
 	ewLogf("⑦ 頁")
-	hash, err := writeWebPage(p, b, wasm, core)
+	switch {
+	case enc.Brotli != "":
+		b.WasmBrotli = webWasmBrotliFile
+	case compress.WasmBrotli:
+		report.Notes = append(report.Notes, "wasm は gzip で配る — brotli が見つからない。入れ方: brew install brotli（Windows は brotli.exe を PATH に置く）")
+	}
+	hash, err := writeWebPage(p, b, wasm, core, enc.Brotli)
 	if err != nil {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
 		return 1
@@ -863,6 +870,8 @@ type webBundle struct {
 	Deferred []webDeferredEntry `json:"deferred,omitempty"`
 	// Splash は頁が「押して始める」の前に描く起動画面の材料（exportweb_splash.go）。
 	Splash *webSplash `json:"splash,omitempty"`
+	// WasmBrotli は classes.wasm を brotli にした物の道（無ければ頁は classes.wasm を取る）。
+	WasmBrotli string `json:"wasmBrotli,omitempty"`
 	// Boot は押して始めるまでに取る物の大きさ。頁は進みの棒をこの量の重みで動かす。
 	Boot *webStartupBytes `json:"boot,omitempty"`
 }
@@ -1033,9 +1042,14 @@ func runFontBake(game, dir string) int {
 }
 
 // writeWebPage は bundle.json・classes.wasm・js・index.html・version.txt を出し、版のハッシュを返す。
-func writeWebPage(p exportWebPaths, b webBundle, wasm, teavmCore string) (string, error) {
+func writeWebPage(p exportWebPaths, b webBundle, wasm, teavmCore, brotli string) (string, error) {
 	if err := writeWebWasm(wasm, p.Out); err != nil {
 		return "", err
+	}
+	if b.WasmBrotli != "" {
+		if err := writeWebWasmBrotli(brotli, filepath.Dir(p.WebJS), p.Out); err != nil {
+			return "", err
+		}
 	}
 	boot := webStartupBytesOf(p.Out, &b)
 	b.Boot = &boot
@@ -1091,6 +1105,26 @@ func writeWebWasm(wasm, out string) error {
 		return nil
 	}
 	return os.WriteFile(filepath.Join(out, webWasmNamesFile), names, 0o644)
+}
+
+// webWasmBrotliFile と webBrotliDecoderFile は、wasm を brotli にした物と、頁がそれを戻す解き手の道。
+const (
+	webWasmBrotliFile    = "classes.wasm.br"
+	webBrotliDecoderFile = "brotli-decode.js"
+)
+
+// writeWebWasmBrotli は out/classes.wasm を brotli（最も強い 11）にした classes.wasm.br と、engine_web/js の解き手を置く。
+// WhyNot: 置き場の圧縮に任せない — GitHub Pages は gzip しか配らず、wasm は brotli の方が 4 割ほど小さい。
+// 頁が自分で解くので、置き場が何で配っても同じ大きさで届く。
+func writeWebWasmBrotli(brotli, jsDir, out string) error {
+	data, err := exec.Command(brotli, "-q", "11", "-c", filepath.Join(out, "classes.wasm")).Output()
+	if err != nil {
+		return fmt.Errorf("brotli で wasm を詰められない: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(out, webWasmBrotliFile), data, 0o644); err != nil {
+		return err
+	}
+	return copyFile(filepath.Join(jsDir, webBrotliDecoderFile), filepath.Join(out, webBrotliDecoderFile))
 }
 
 func marshalWebBundle(b webBundle) ([]byte, error) {

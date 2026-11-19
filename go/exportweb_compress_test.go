@@ -61,6 +61,20 @@ func TestResolveWebCompressRejectsFontAtlasScaleBelowHalf(t *testing.T) {
 	}
 }
 
+func TestResolveWebCompressSendsWasmAsBrotliByDefault(t *testing.T) {
+	c, _ := resolveWebCompress(nil)
+	if !c.WasmBrotli {
+		t.Fatal("既定で wasm を brotli にしない")
+	}
+}
+
+func TestResolveWebCompressWasmBrotliFalseKeepsGzip(t *testing.T) {
+	c, err := resolveWebCompress(json.RawMessage(`{"compress": {"wasmBrotli": false}}`))
+	if err != nil || c.WasmBrotli {
+		t.Fatalf("got %+v, %v", c, err)
+	}
+}
+
 func TestResolveWebCompressRejectsQualityOutOfRange(t *testing.T) {
 	if _, err := resolveWebCompress(json.RawMessage(`{"compress": {"lossyImages": [{"glob": "assets/*.png", "quality": 0}]}}`)); err == nil {
 		t.Fatal("quality 0 を通した")
