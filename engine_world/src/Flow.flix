@@ -326,7 +326,7 @@ pub mod Flow {
                                          notes = unjudgedNotes(ctx, c) };
         let stepped = script#lines |> List.foldLeft((acc, line) -> match acc {
             case Err(stop) => Err(stop)
-            case Ok(c)     => runLine(ctx, line, c)
+            case Ok(c)     => settleBefore(ctx, line, c) |> Result.flatMap(settled -> runLine(ctx, line, settled))
         }, Ok(begin));
         // WhyNot: 離す前に終わった押し方を失敗にしない — 離した時に受けるゲームでは、まだ受けていないだけで誤りとは言えない（notes で知らせる）。
         let settled = stepped |> Result.flatMap(c -> match c#awaiting {
@@ -341,6 +341,33 @@ pub mod Flow {
         }
 
     type alias Ctx[w: Type, ef: Eff] = { app = App.App[w, ef], setup = Setup, dt = Float64, readyOn = Bool }
+
+    /// 前の押し方の返事を、この行が押す・World を差し替える前に確かめる（それ以外の行はそのまま）。
+    /// 押したフレームで返事が無く、固定刻みで持ち越した押した瞬間も残っていない押し方だけが対象で、まだ押していれば失敗、離すだけなら離すフレームを 1 つ進めて確かめる。
+    // WhyNot: 離すのを次の押し方の 1 フレーム目に任せない — 次の押し方の返事を前の押し方の返事と取り違えて、両方が偽の合格になる。
+    // WhyNot: 持ち越した押した瞬間が残っている押し方には挟まない — 押したフレームで失敗にならなかった押し方で、挟むと今通っている flow のフレーム数が変わる。
+    def settleBefore(ctx: Ctx[w, ef], line: Line, c: PlayState[w]): Result[Stop[w], PlayState[w]] \ ef =
+        let jumps = match line#step {
+            case Step.Tap(_, _)           => true
+            case Step.Hold(_, _, _)       => true
+            case Step.Start(_, _, _)      => true
+            case Step.Rewind(_)           => true
+            case Step.Reload(_, _)        => true
+            case Step.Request(_, _, _)    => true
+            case Step.Close               => true
+            case _                        => false
+        };
+        match c#awaiting {
+            case Some(wait) if jumps and Option.nonEmpty(wait#release) and isSettled(c#state) and not answered(ctx, c) =>
+                if (isHeld(wait, c#hand))
+                    Err({ cursor = c, at = wait#line, why = "押したが受け付けられなかった（返事の番号が進まない）", seen = "" })
+                else frames(ctx, line, 1, Set.empty(), noOpt(), c)
+            case _ => Ok(c)
+        }
+
+    /// 返事を待っている押し方の物を、手がまだ押しっぱなしにしているか（hold <対象> の release 前）。
+    def isHeld(wait: Awaiting, hand: Hand): Bool =
+        wait#release |> Option.exists(p -> not Set.isEmpty(Set.intersection(p#keys, hand#held)) or (p#button and hand#button))
 
     def runLine(ctx: Ctx[w, ef], line: Line, c: PlayState[w]): Result[Stop[w], PlayState[w]] \ ef + Fs.FileRead =
         let r = App.rec(ctx#app);

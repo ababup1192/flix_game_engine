@@ -145,6 +145,31 @@ mod TestFlow {
         Assert.assertEq(expected = "body:2: 離す前に手順が終わったので、返事を確かめていない（tap tapup）" :: Nil,
                         notesOf("fps 4\ntap tapup"))
 
+    // 押したフレームで返事の無い最後の tap（cancel）も、離す前なので失敗にせず知らせを残す。
+    @Test
+    def testUnansweredLastTapLeavesANote(): Unit \ Assert + Fs.FileRead =
+        Assert.assertEq(expected = "body:2: 離す前に手順が終わったので、返事を確かめていない（tap cancel）" :: Nil,
+                        notesOf("fps 4\ntap cancel"))
+
+    // 点の tap の次に別のキーを押す時は、間に離すフレームを挟んで点の返事を先に確かめる（次の押し方の返事と取り違えない）。
+    // 点は離して受けられ、何もしない cancel が 3 行目で止まる。
+    @Test
+    def testNextPressDoesNotAnswerForTheLastOne(): Unit \ Assert + Fs.FileRead =
+        Assert.assertEq(expected = Err((3, "押したが受け付けられなかった（返事の番号が進まない）")),
+                        played("fps 4\ntap 10,10\ntap cancel\nwait 1f"))
+
+    // 返事の無い hold を押したまま別の押し方を重ねると、その押し方の返事で hold を通さず、hold の行で止まる。
+    @Test
+    def testPressOverAnUnansweredHoldFailsAtTheHold(): Unit \ Assert + Fs.FileRead =
+        Assert.assertEq(expected = Err((2, "押したが受け付けられなかった（返事の番号が進まない）")),
+                        played("fps 4\nhold cancel\ntap confirm\nrelease cancel"))
+
+    // World を差し替える行（rewind）の前に、返事の無い押し方を離して確かめる。
+    @Test
+    def testRewindChecksTheLastPressFirst(): Unit \ Assert + Fs.FileRead =
+        Assert.assertEq(expected = Err((2, "押したが受け付けられなかった（返事の番号が進まない）")),
+                        played("fps 4\ntap cancel\nrewind 1"))
+
     // 押したフレームで返事が進む押し方は、最後の行でも知らせを残さない。
     @Test
     def testAnsweredLastPressLeavesNoNote(): Unit \ Assert + Fs.FileRead =
