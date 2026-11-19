@@ -61,19 +61,41 @@ mod WebAssets {
     def loadFonts(gl: GlContext, request: RenderPaint.FontRequest,
                   progress: (String, Int32, Int32) -> Unit \ IO): RenderPaint.FontsLoaded \ IO =
         let total = List.length(request#manifest);
+        let pending = pendingFontsOf(request#manifest);
         let (atlases, registry, _) = List.foldLeft((acc, entry) -> {
             let (atlasesSoFar, registrySoFar, done) = acc;
             progress("loading font ${entry#name}...", done, total);
-            match loadAtlas(gl, entry) {
+            match (if (List.exists(p -> p#name == entry#name, pending)) None else loadAtlas(gl, entry)) {
                 case Some((atlas, info)) =>
                     (Map.insert(entry#name, atlas, atlasesSoFar), Map.insert(atlas#textureName, info, registrySoFar), done + 1)
                 case None => (atlasesSoFar, registrySoFar, done + 1)
             }
         }, (Map.empty(), request#registry, 0), request#manifest);
         let warned: Ref[Set[String], Static] = Ref.fresh(Static, Set.empty());
-        { atlases = atlases, registry = registry, grow = (atlas, codepoints) -> noteMissing(warned, atlas, codepoints) }
+        { atlases = withPlaceholderFonts(request#manifest, pending, atlases), registry = registry,
+          grow = (atlas, codepoints) -> noteMissing(warned, atlas, codepoints) }
 
-    def loadAtlas(gl: GlContext, entry: RenderAsset.FontEntry): Option[(FontAtlas, RenderAsset.TextureInfo)] \ IO =
+    /// 後回しのフォント（web.deferredFonts）のうち、まだ上げていない物（届いていても上げるのは WebLayer の毎コマの登録）。
+    // WhyNot: 起動の前に届いていたアトラスをここで上げない — 上げた印（Deferred.markLoaded）を付ける所が 1 か所に要り、
+    // 付け損ねると届いていない名前の一覧にフォントが残り続け、それを待つゲームが先へ進まない。
+    pub def pendingFontsOf(manifest: List[RenderAsset.FontEntry]): List[RenderAsset.FontEntry] \ IO =
+        manifest |> List.filter(entry -> {
+            let path = atlasPathOf(entry);
+            Deferred.isDeferred(path) and Deferred.state(path) != "loaded"
+        })
+
+    /// 届いていないフォントの名前に、起動時に読めた最初のフォントを代わり（placeholder）に当てる（届いたら WebLayer が本物に差し替える）。
+    /// 代わりのフォントのアトラスに無い字は、届くまで出ない（アトラスはフォントごとに字を絞って作る）。
+    // WhyNot: 組み込みフォントへ落とさない — 組み込みは英数だけの小さな字なので、届くまでの間に日本語の文が消える。
+    // WhyNot: 名前を空けたままにしない — RenderPaint.fontAtlas が「project.json に無い」と言って組み込みフォントで出す。
+    pub def withPlaceholderFonts(manifest: List[RenderAsset.FontEntry], pending: List[RenderAsset.FontEntry],
+                             atlases: Map[String, FontAtlas]): Map[String, FontAtlas] =
+        manifest
+            |> List.findMap(entry -> Map.get(entry#name, atlases))
+            |> Option.map(placeholder -> pending |> List.foldLeft((acc, entry) -> Map.insert(entry#name, placeholder, acc), atlases))
+            |> Option.getWithDefault(atlases)
+
+    pub def loadAtlas(gl: GlContext, entry: RenderAsset.FontEntry): Option[(FontAtlas, RenderAsset.TextureInfo)] \ IO =
         let path = atlasPathOf(entry);
         let bytes = AssetTable.bytes(path);
         let baked = if (Object.isNull(bytes)) Err("束に無い") else RenderFontCache.decode(bytes, "font_${entry#name}") |> Option.toOk("形式が違うか壊れている");

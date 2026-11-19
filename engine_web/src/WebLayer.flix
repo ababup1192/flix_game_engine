@@ -8,6 +8,7 @@ pub mod WebLayer {
     import fge.gl.GlConst
     import fge.gl.GlContext
     import fge.web.AnimationFrame
+    import fge.web.AssetTable
     import fge.web.Browser
     import fge.web.Deferred
     import fge.web.Gamepads
@@ -141,7 +142,13 @@ pub mod WebLayer {
         let state = freshState(config, design);
         let fonts = RenderPaint.loadAssets(gl, paint, WebAssets.loader(), config, showProgress(state));
         Ref.put(config#textureManifest |> List.filter(e -> Deferred.isDeferred(e#path) and Deferred.state(e#path) != "loaded"), state#pendingTextures);
-        let onPoll = () -> { registerArrivedTextures(gl, paint, state); playArrivedSounds(state) };
+        Ref.put(WebAssets.pendingFontsOf(config#fontManifest), state#pendingFonts);
+        let uploadFont = entry -> WebAssets.loadAtlas(gl, entry) |> Option.map(loaded -> {
+            let (atlas, info) = loaded;
+            RenderPaint.putTexture(atlas#textureName, info, paint);
+            atlas
+        });
+        let onPoll = () -> { registerArrivedTextures(gl, paint, state); registerArrivedFont(uploadFont, fonts, state); playArrivedSounds(state) };
         let result =
             handleLoadProgress(state, () ->
             handleAudio(state, () ->
@@ -177,7 +184,8 @@ pub mod WebLayer {
     /// handler が分け合う状態。looping = ループが回り始めたか（最初の pollEvents の後）・lastDt = 前のコマからの経過（秒）・
     /// fullscreenAsked = 前に頼んだ全画面（同じ値を毎コマ頼み直さない）・yieldedAt = 起動中に最後にブラウザへ手を返した時刻（ms）・
     /// budget = 届いた 2D の絵を登録する予算（AssetDownloads#setBudget が替える）・spentMs = このコマに絵の登録に使った ms・
-    /// pendingTextures = まだ登録していない後回しの絵・pendingSounds = 届く前に鳴らせと言われた後回しの音（名前 → 最後に言われた鳴らし方）。
+    /// pendingTextures = まだ登録していない後回しの絵・pendingSounds = 届く前に鳴らせと言われた後回しの音（名前 → 最後に言われた鳴らし方）・
+    /// pendingFonts = アトラスがまだ届いていない後回しのフォント（web.deferredFonts）。
     type alias State = {
         design = Vec2.Vec2, maxDeltaTime = Float64,
         looping = Ref[Bool, Static], closeRequested = Ref[Bool, Static],
@@ -185,7 +193,8 @@ pub mod WebLayer {
         cursor = Ref[GameEngine.Cursor, Static], cursorVisible = Ref[Bool, Static],
         yieldedAt = Ref[Float64, Static], warnedSounds = Ref[Set[String], Static],
         budget = Ref[LoadProgress.DecodeBudget, Static], spentMs = Ref[Float64, Static], pendingTextures = Ref[List[RenderAsset.TextureEntry], Static],
-        pendingSounds = Ref[Map[String, LoadProgress.Deferred.PendingSound], Static]
+        pendingSounds = Ref[Map[String, LoadProgress.Deferred.PendingSound], Static],
+        pendingFonts = Ref[List[RenderAsset.FontEntry], Static]
     }
 
     /// 起動の時の State（WebGL2 と WebGPU の頁で同じ物）。
@@ -196,7 +205,7 @@ pub mod WebLayer {
           cursor = Ref.fresh(Static, GameEngine.Cursor.Default), cursorVisible = Ref.fresh(Static, true),
           yieldedAt = Ref.fresh(Static, Browser.now()), warnedSounds = Ref.fresh(Static, Set.empty()),
           budget = Ref.fresh(Static, initialBudget()), spentMs = Ref.fresh(Static, 0.0), pendingTextures = Ref.fresh(Static, Nil),
-          pendingSounds = Ref.fresh(Static, Map.empty()) }
+          pendingSounds = Ref.fresh(Static, Map.empty()), pendingFonts = Ref.fresh(Static, Nil) }
 
     /// 最初の setBudget より前の予算（App.withDecodeBudget の既定と同じ）。
     // WhyNot: 部屋を解く長さ（100 ms 前後）にしない — 予算を渡さないゲームでは文字送りの間も毎コマ使われ、届いた絵が重なったコマで止まりが見える。1 本の道は必ず登録するので遅れは出ない。
@@ -426,6 +435,22 @@ pub mod WebLayer {
                 p#pitch |> Option.forEach(pitch -> WebAudio.setPitch(name, pitch));
                 if (LoadProgress.Deferred.playsOnArrival(p, WebAudio.isLooping(name))) WebAudio.play(name) else ()
             }, arrived)
+        }
+
+    /// 届いた後回しのフォントを 1 本だけ上げ、フォントの表の代わりのフォント（WebAssets.withPlaceholderFonts）を本物に替える。
+    /// upload = アトラスを上げて FontAtlas を返す（上げられなければ None・仮の当てのまま）。上げた道は素材の表から手放す。
+    // WhyNot: 文字送りの間（予算の Paused）も待たない — 字はどの画面でも使い、待つ間ずっと仮のフォントで出続ける。
+    // WhyNot: コマに 2 本以上上げない — アトラスの検算と上げは 1 本で数 ms かかり、重ねるとコマが跳ねる。
+    def registerArrivedFont(upload: RenderAsset.FontEntry -> Option[FontAtlas] \ IO, fonts: RenderPaint.Fonts, st: State): Unit \ IO =
+        let (ready, waiting) = List.partition(entry -> AssetTable.has(WebAssets.atlasPathOf(entry)), Ref.get(st#pendingFonts));
+        match ready {
+            case entry :: rest =>
+                upload(entry) |> Option.forEach(atlas -> Ref.put(Map.insert(entry#name, atlas, Ref.get(fonts#atlases)), fonts#atlases));
+                let path = WebAssets.atlasPathOf(entry);
+                Deferred.markLoaded(path);
+                Deferred.release(path);
+                Ref.put(List.append(rest, waiting), st#pendingFonts)
+            case Nil => ()
         }
 
     /// 届いた後回しの 2D の絵を、予算の内で道ごとに登録する（Paused なら登録しない・Idle と Covered は 1 本の道は必ず、

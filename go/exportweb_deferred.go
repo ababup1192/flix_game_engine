@@ -3,7 +3,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"path"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -11,7 +13,8 @@ import (
 // project.json の web.deferred（「押して始める」の前に取らず、wasm を読んだ後に裏で取る素材）。ゲームの根からの glob。
 // 並び順がそのまま裏で取る順になる（同じ glob に当たる物は道の順）。
 type webDeferredSettings struct {
-	Deferred []string `json:"deferred"`
+	Deferred      []string `json:"deferred"`
+	DeferredFonts []string `json:"deferredFonts"`
 }
 
 // webDeferredEntry は bundle.json の deferred の 1 本。Bytes は配る物（WebP・Opus に替えた後）の大きさ。
@@ -41,6 +44,81 @@ func resolveWebDeferred(raw json.RawMessage) ([]webGlob, error) {
 	return globs, nil
 }
 
+// resolveWebDeferredFonts は project.json の web.deferredFonts（タイトルの後に読むフォントの名前）を、fonts の名前と照らして返す。
+// WhyNot: 全部のフォントを後回しにさせない — タイトルの字を出すフォントが 1 本も無いと、届くまで組み込みの英数の字で出る。
+func resolveWebDeferredFonts(raw json.RawMessage, fonts []string) ([]string, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+	var s webDeferredSettings
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return nil, fmt.Errorf("project.json の web.deferredFonts を読めない: %v\n  次: フォントの名前の配列にする（例 [\"gothic\"]）", err)
+	}
+	known := map[string]bool{}
+	for _, name := range fonts {
+		known[name] = true
+	}
+	seen := map[string]bool{}
+	var names []string
+	for _, name := range s.DeferredFonts {
+		if !known[name] {
+			return nil, fmt.Errorf("project.json の web.deferredFonts の %q が fonts に無い。\n  次: fonts[].name の名前を書く（%s）", name, strings.Join(fonts, "・"))
+		}
+		if !seen[name] {
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+	if len(names) > 0 && len(names) == len(fonts) {
+		return nil, fmt.Errorf("project.json の web.deferredFonts が fonts を全部後回しにしている。\n  次: タイトルの字に使うフォントを 1 本は外す")
+	}
+	return names, nil
+}
+
+// checkDeferredFontNames は後回しのフォントの名前が、textures と sounds の名前と被っていないかを見る。
+// WhyNot: 被ったまま通さない — 頁は後回しの物を名前でも引く（fgeDeferred.byName）ので、同じ名前の絵か音の届き具合と取り違える。
+func checkDeferredFontNames(fonts []string, textureNames map[string][]string, sounds []webSound) error {
+	taken := map[string]bool{}
+	for _, names := range textureNames {
+		for _, n := range names {
+			taken[n] = true
+		}
+	}
+	for _, s := range sounds {
+		taken[s.Name] = true
+	}
+	for _, name := range fonts {
+		if taken[name] {
+			return fmt.Errorf("project.json の web.deferredFonts の %q が textures か sounds の名前と同じ。\n  次: フォントか素材の名前を替える（届いていない名前の一覧で取り違える）", name)
+		}
+	}
+	return nil
+}
+
+// webFontAtlasRel はフォントのアトラスを置く道（engine_web の WebAssets.atlasPathOf と同じ）。
+func webFontAtlasRel(name string) string { return "font-atlas/" + name + ".fontatlas" }
+
+// withDeferredFonts は後回しの列の頭へ、後回しのフォントのアトラスを足し、アトラスの道 → フォントの名前を names に足した物を返す。
+// 頁の届いていない名前（LoadProgress の missing）にフォントの名前が並び、ゲームは絵と同じ扱いで待てる。
+// WhyNot: 列の後ろに足さない — 字は最初の場面から使い、3D の部屋や後半の絵より先に要る。
+func withDeferredFonts(plan webDeferredPlan, fonts []string, names map[string][]string) (webDeferredPlan, map[string][]string) {
+	if len(fonts) == 0 {
+		return plan, names
+	}
+	merged := map[string][]string{}
+	for rel, n := range names {
+		merged[rel] = n
+	}
+	var heads []string
+	for _, name := range fonts {
+		rel := webFontAtlasRel(name)
+		heads = append(heads, rel)
+		merged[rel] = []string{name}
+	}
+	plan.Paths = append(heads, plan.Paths...)
+	return plan, merged
+}
+
 // webDeferredPlan は後回しにする道（取る順）と、知らせるだけの行。
 type webDeferredPlan struct {
 	Paths    []string
@@ -64,7 +142,7 @@ func planWebDeferred(b webBundle, globs []webGlob, embed webEmbedPlan, fonts []s
 		hidden[rel] = "web.omit"
 	}
 	for _, name := range fonts {
-		rel := "font-atlas/" + name + ".fontatlas"
+		rel := webFontAtlasRel(name)
 		for _, g := range globs {
 			if g.match(rel) {
 				return plan, fmt.Errorf("web.deferred の %q がフォントのアトラス %s に当たる（起動の画面の字に要る）。\n  次: glob を assets/ の下の素材だけに当たるよう狭める", g.Pattern, rel)
@@ -185,4 +263,95 @@ func textureNamesByPath(pr exportProject) map[string][]string {
 		}
 	}
 	return out
+}
+
+// 起動まで（遊べるまで）の見積もりの前提。測った 4G の回線（Lighthouse のモバイルと同じ 1.6 Mbps・往復 150 ms）に合わせる。
+const (
+	webStartupBitsPerSecond = 1.6e6
+	// webStartupPreludeSeconds は index.html → version.txt → js → bundle.json の直列の往復（測った値）。
+	webStartupPreludeSeconds = 1.5
+	// webStartupTargetSeconds を超えたら書き出しの終わりに知らせる（止めない）。
+	webStartupTargetSeconds = 16.0
+)
+
+// webStartupBytes は頁が進みの棒を量で動かすための、起動の素材と wasm の大きさ（頁が数えるバイト数と回線に乗る量の見積もり）。
+// wasm を brotli で配る時の Wasm は classes.wasm.br の大きさ（頁はそれを数える）。
+type webStartupBytes struct {
+	Assets     int64 `json:"assets"`
+	AssetsWire int64 `json:"assetsWire"`
+	Wasm       int64 `json:"wasm"`
+	WasmWire   int64 `json:"wasmWire"`
+}
+
+// webArrival は後回しの 1 本が 1.6 Mbps で何秒目に届くかの見積もり。
+type webArrival struct {
+	Path    string
+	Seconds float64
+}
+
+// webStartupEstimate は遊べるまでに回線に乗る量と秒数の見積もり、と後回しの届く時刻。
+type webStartupEstimate struct {
+	Boot     webStartupBytes
+	PageWire int64
+	Seconds  float64
+	Deferred []webArrival
+}
+
+// webWireSize は置き場が gzip で配るとした時に回線に乗る量。もう詰めてある形（絵・音）は素の大きさ。
+// WhyNot: 置き場の圧縮を brotli で見積もらない — 今の置き先（GitHub Pages）は gzip しか配らない。
+func webWireSize(p string) int64 {
+	switch strings.ToLower(path.Ext(p)) {
+	case ".webp", ".jpg", ".jpeg", ".png", ".webm", ".opus", ".ogg", ".mp3", ".woff2", ".avif":
+		return fileSize(p)
+	}
+	data, err := os.ReadFile(p)
+	if err != nil {
+		return 0
+	}
+	gz, err := gzipBytes(data)
+	if err != nil || int64(len(gz)) > int64(len(data)) {
+		return int64(len(data))
+	}
+	return int64(len(gz))
+}
+
+func webSecondsFor(wire int64) float64 { return float64(wire) * 8 / webStartupBitsPerSecond }
+
+// webStartupBytesOf は書き出し先 out の起動の素材（後回しでない物）と classes.wasm の大きさ。
+func webStartupBytesOf(out string, b *webBundle) webStartupBytes {
+	deferred := map[string]bool{}
+	for _, e := range b.Deferred {
+		deferred[e.Path] = true
+	}
+	var s webStartupBytes
+	for _, rel := range b.copyList() {
+		if deferred[rel] {
+			continue
+		}
+		p := exportAssetPath(out, b.served(rel))
+		s.Assets += fileSize(p)
+		s.AssetsWire += webWireSize(p)
+	}
+	wasm := filepath.Join(out, "classes.wasm")
+	s.Wasm, s.WasmWire = fileSize(wasm), webWireSize(wasm)
+	if br := filepath.Join(out, b.WasmBrotli); b.WasmBrotli != "" && fileExists(br) {
+		decoder := webWireSize(filepath.Join(out, webBrotliDecoderFile))
+		s.Wasm, s.WasmWire = fileSize(br), fileSize(br)+decoder
+	}
+	return s
+}
+
+// webStartupEstimateOf は書き出し先 out から起動までの見積もりを作る。後回しは起動の後に、並べた順で回線を使い切るとして届く時刻を出す。
+func webStartupEstimateOf(out string, b *webBundle) webStartupEstimate {
+	s := webStartupEstimate{Boot: webStartupBytesOf(out, b)}
+	for _, name := range []string{"index.html", "version.txt", "fge-web.js", "wasm-gc-runtime.js", "bundle.json"} {
+		s.PageWire += webWireSize(filepath.Join(out, name))
+	}
+	s.Seconds = webStartupPreludeSeconds + webSecondsFor(s.Boot.AssetsWire+s.Boot.WasmWire+s.PageWire)
+	at := s.Seconds
+	for _, e := range b.Deferred {
+		at += webSecondsFor(webWireSize(exportAssetPath(out, b.served(e.Path))))
+		s.Deferred = append(s.Deferred, webArrival{Path: e.Path, Seconds: at})
+	}
+	return s
 }

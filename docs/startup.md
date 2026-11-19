@@ -91,12 +91,23 @@ fge-web.js が wasm を読み終えた後に別の行列で取り（同時 2 本
   デスクトップと画面なしは `LoadProgress.localDownloads()`（全部 Loaded・missing は空）なので、後回しが無いのと同じに動く。
 - `?loadtime=1` を付けて開くと、console に後回しの 1 本ごとの届いた時刻と「押すまでに取った量」が出る。
 
+### フォントを後から取る（`web.deferredFonts`）
+
+タイトルで使わないフォント（配信のコメント欄のゴシック体など）は、`"web": { "deferredFonts": ["gothic", "gothic_bold"] }` で
+押して始めた後に取れる（名前は `fonts[].name`。全部のフォントは後回しにできない）。アトラスは後回しの列の頭に入る。
+
+- 届くまでは、その名前に起動時に読めた最初のフォント（fonts の並びで先頭）を代わりに当てて出す。代わりのフォントのアトラスに無い字は届くまで出ない。届いたらコマの頭で 1 本ずつ本物に替える
+- 上げ終えるまで `downloads#missing()` にフォントの名前が並ぶ。字の形がそろうまで台詞へ進ませたくないゲームは、背景の待ちと同じ所でこの名前も待つ
+  （例: 届いていない背景・環境音の名前に `"gothic"`・`"gothic_bold"` を足して暗転で待つ）
+
 ### ループの中で区切って読む（`BackgroundLoad`・`App.withBackgroundLoad`）
 
 後回しにした 3D の部屋のように、届いてから解く（glb を読む・絵を貼る）物は、鍵ごとのグループ（`BackgroundLoad.Group`）にまとめる。
+ブラウザでは、押す前に届いていた鍵も `start` の結果には入らず、ゲームが始まってから予算の内で解く（届き方の速さで起動の待ちが変わらないように）。
+重い鍵は既定の `Idle(4)` では始まらないので、暗転の間などに `App.withDecodeBudget` で `Covered` を返して解かせる。
 
 ```flix
-// 読み込みの頭: 届いている鍵だけ解き、残りは待ちの表（Pending）に載せる。Pending は resources 側に置く
+// 読み込みの頭: 起動の素材だけで組める鍵を解き、残り（まだ届いていない鍵と、押す前に届いていた後回しの鍵）は待ちの表（Pending）に載せる。Pending は resources 側に置く
 let (rooms, pending) = BackgroundLoad.start(Rooms.group(doc, LoadProgress.imageDecoder()));
 let downloads = LoadProgress.downloads();
 

@@ -310,6 +310,8 @@ function fgeInitWebGl2() {
   if (!fgeGl) throw new Error("このブラウザは WebGL2 を使えない");
   fgeGl.getExtension("EXT_color_buffer_float");
   fgeGl.pixelStorei(fgeGl.UNPACK_COLORSPACE_CONVERSION_WEBGL, fgeGl.NONE);
+  // WhyNot: 行の揃えを既定の 4 のままにしない — 字の距離場（1 画素 1 バイト）は行を詰めて渡すので、幅が 4 の倍数でないと texImage2D が足りないと言って断る。
+  fgeGl.pixelStorei(fgeGl.UNPACK_ALIGNMENT, 1);
   fgeGl = fgeCheckedGl(fgeGl);
 }
 
@@ -1260,12 +1262,14 @@ function fgeError(message) {
   var el = document.getElementById("fge-error");
   if (el) { el.textContent = message; el.style.display = ""; }
   console.error(message);
+  fgeNameWasmFrames(message);
   // WhyNot: 撮る道具に待ち切らせない — 止まった頁は合図を出さないので、絵の遅れと見分けが付かないまま上限の秒数を待つ。
   if (fgeCaptureFrame > 0) window.fgeCaptureError = message;
 }
 window.addEventListener("error", function (e) {
   var err = e.error;
   fgeError("止まりました: " + (err && (err.message || String(err)) || e.message || e) + "（詳しくは開発者の道具の console）");
+  if (err) fgeNameWasmFrames(err.stack);
 });
 window.addEventListener("unhandledrejection", function (e) { fgeError("止まりました: " + (e.reason && e.reason.stack || e.reason)); });
 
@@ -1396,6 +1400,7 @@ var fgeDeferredSweepMs = 30000;
 function fgeDeferredPrepare(bundle, files, images, sounds) {
   (bundle.deferred || []).forEach(function (d) {
     var e = { path: fgeNormPath(d.path), bytes: d.bytes || 0, names: d.names || [], file: false, image: false, sounds: [],
+              font: /\.fontatlas$/.test(fgeNormPath(d.path)),
               state: "queued", why: "", arrivedAtRelease: false, permanent: false, failedAt: 0, gen: 0, abort: null, startedAt: 0 };
     fgeDeferred.entries.push(e);
     fgeDeferred.byPath.set(e.path, e);
@@ -1419,10 +1424,10 @@ function fgeDeferredState(nameOrPath) {
   if (e.state === "released") return "queued";
   return e.state === "failed" ? "failed:" + e.why : e.state;
 }
-// WhyNot: 絵と音を素材の表に入っただけで「届いた」にしない — 絵は WebLayer が登録するまで描けず、音は解くまで鳴らせない。
+// WhyNot: 絵と音とフォントのアトラスを素材の表に入っただけで「届いた」にしない — 絵とアトラスは WebLayer が上げるまで描けず、音は解くまで鳴らせない。
 function fgeDeferredArrived(e) {
   if (e.state === "released") return e.arrivedAtRelease;
-  return e.state === "loaded" || (e.state === "downloaded" && !e.image && e.sounds.length === 0);
+  return e.state === "loaded" || (e.state === "downloaded" && !e.image && !e.font && e.sounds.length === 0);
 }
 function fgeDeferredMissing() {
   var out = [];
@@ -1590,6 +1595,154 @@ async function fgeEachLimited(items, limit, fn) {
   await Promise.all(workers);
 }
 
+// ── 起動の進み（起動の素材と wasm を、回線に乗る量の重みで 1 本の棒にする）──
+// WhyNot: 素材の本数だけで棒を動かさない — wasm は 1 本で起動に取る量の半分ほどがあり、棒が満ちてから長く待たせる。
+var fgeBootLoad = null;
+function fgeBootProgressInit(bundle, fallbackTotal) {
+  var boot = bundle.boot;
+  fgeBootLoad = { boot: boot && boot.wasm > 0 ? boot : null, base: fgeLoadLog.bytes,
+                  wasmDone: 0, assetsEnd: false, done: 0, total: fallbackTotal };
+  fgeBootProgress();
+}
+function fgeBootProgress() {
+  var s = fgeBootLoad;
+  if (s === null) return;
+  var phase = s.assetsEnd ? "loading code..." : "loading assets...";
+  if (s.boot === null) { fgeProgress(phase, s.done, s.total); return; }
+  var b = s.boot;
+  var assets = s.assetsEnd || b.assets <= 0 ? 1 : Math.min(1, (fgeLoadLog.bytes - s.base) / b.assets);
+  var wasm = Math.min(1, s.wasmDone / b.wasm);
+  fgeProgress(phase, assets * b.assetsWire + wasm * b.wasmWire, b.assetsWire + b.wasmWire);
+}
+// fgeCountWasmFetch は、次に url を取る fetch の Response の複製を読んで、届いたバイト数を onBytes へ渡す。
+// WhyNot: gzip の道では wasm を自前で取ってバイト列を TeaVM へ渡さない — TeaVM の load は道を渡した時だけ compileStreaming で届きながらコンパイルし、
+// ブラウザは fetch の URL に紐づけてコンパイル済みのコードを持ち越す。元の Response は TeaVM へそのまま渡し、複製だけを数える。
+function fgeCountWasmFetch(url, onBytes) {
+  var plain = window.fetch;
+  window.fetch = function (input, init) {
+    if (input !== url) return plain.apply(this, arguments);
+    window.fetch = plain;
+    return plain.call(this, input, init).then(function (res) {
+      if (res.ok && res.body && typeof res.clone === "function") {
+        var reader = res.clone().body.getReader();
+        var pump = function () {
+          return reader.read().then(function (r) {
+            if (r.done) return;
+            onBytes(r.value.byteLength);
+            return pump();
+          });
+        };
+        pump().catch(function () { /* 数えるのを諦めるだけ（取るのは TeaVM 側） */ });
+      }
+      return res;
+    });
+  };
+}
+
+// fgeLoadWasm は wasm を読んで TeaVM の instance を返す。束が brotli の版（wasmBrotli）を持てば、それと解き手を取って頁で解く。
+// WhyNot: brotli の版を取れない・解けない時に止めない — 解き手の読み込みや解く途中で落ちても、gzip の classes.wasm で同じ物が動く。
+// WhyNot: wasm を読めない（WebAssembly GC が無い）時に gzip で取り直さない — 同じ wasm なので結果は変わらず、量だけ増える。
+// WhyNot: brotli の道でコンパイル済みのコードの持ち越しを諦める — バイト列を渡すと 2 回目もコンパイルし直すが、Chrome は関数を初めて呼ぶ時にコンパイルするので
+// 一括のコンパイルは 30 ms ほどで、回線の 1.3 MB（4G で 6 秒）の方が重い。
+// WhyNot: 届いた物を必ず解かない — 置き場が .br を Content-Encoding: br で配るとブラウザがもう解いていて、頭が wasm の印（\0asm）になる。
+function fgeLoadWasm(bundle, wasmUrl, onBytes) {
+  var plain = function () {
+    fgeCountWasmFetch(wasmUrl, onBytes);
+    return TeaVM.wasmGC.load(wasmUrl);
+  };
+  if (!bundle.wasmBrotli) return plain();
+  return Promise.all([fgeFetchCounted(fgeVersioned(bundle.wasmBrotli), onBytes), fgeLoadScript("brotli-decode.js")]).then(function (got) {
+    var started = performance.now();
+    var bytes = new Int8Array(got[0]);
+    if (bytes.length >= 4 && bytes[0] === 0 && bytes[1] === 0x61 && bytes[2] === 0x73 && bytes[3] === 0x6d) return bytes;
+    var raw = BrotliDecode(bytes);
+    if (fgeDecodeTimes !== null) console.log("[loadtime] wasm の brotli を解いた " + (performance.now() - started).toFixed(0) + " ms");
+    return raw;
+  }).then(function (raw) { return TeaVM.wasmGC.load(raw); }, function (e) {
+    console.warn("[fge] brotli の wasm を使えない — gzip の classes.wasm を取る: " + (e && e.message || e));
+    if (fgeBootLoad) fgeBootLoad.wasmDone = 0;
+    return plain();
+  });
+}
+// fgeFetchCounted は url を取り、届いたバイト数を順に onBytes へ渡して、全部を ArrayBuffer で返す。
+async function fgeFetchCounted(url, onBytes) {
+  var res = await fetch(url);
+  if (!res.ok) throw new Error(url + " を取れない（" + res.status + "）");
+  var reader = res.body.getReader();
+  var chunks = [];
+  var total = 0;
+  for (;;) {
+    var r = await reader.read();
+    if (r.done) break;
+    chunks.push(r.value);
+    total += r.value.byteLength;
+    onBytes(r.value.byteLength);
+  }
+  var out = new Uint8Array(total);
+  var at = 0;
+  chunks.forEach(function (c) { out.set(c, at); at += c.byteLength; });
+  return out.buffer;
+}
+function fgeLoadScript(name) {
+  return new Promise(function (resolve, reject) {
+    var s = document.createElement("script");
+    s.src = fgeVersioned(name);
+    s.onload = resolve;
+    s.onerror = function () { reject(new Error(name + " を読めない")); };
+    document.head.appendChild(s);
+  });
+}
+
+// ── 落ちた時の関数名（classes.names）──
+// 書き出しは wasm の名前の区画を classes.names へ抜いて配る（量を減らすため）。stack の wasm-function[番号] に名前を付けて console へ出す。
+var fgeWasmNames = null;
+function fgeLoadWasmNames() {
+  if (fgeWasmNames === null) {
+    fgeWasmNames = fgeFetchBytes("classes.names").then(fgeParseWasmNames, function () { return null; });
+  }
+  return fgeWasmNames;
+}
+// 名前の区画の中身（小区画 1 = 関数の名前の表）を、関数の番号 → 名前にする。
+function fgeParseWasmNames(bytes) {
+  var at = 0;
+  var leb = function () {
+    var v = 0, shift = 0, b;
+    do { b = bytes[at++]; v += (b & 0x7f) * Math.pow(2, shift); shift += 7; } while (b & 0x80);
+    return v;
+  };
+  var names = new Map();
+  while (at < bytes.length) {
+    var id = bytes[at++];
+    var size = leb();
+    var end = at + size;
+    if (id === 1) {
+      for (var n = leb(); n > 0; n--) {
+        var index = leb();
+        var len = leb();
+        names.set(index, fgeDecoder.decode(bytes.subarray(at, at + len)));
+        at += len;
+      }
+    }
+    at = end;
+  }
+  return names;
+}
+// 画面の知らせが stack を含む時（main の例外など）はそこにも名前を付け、message だけの時（error のイベント）は console にだけ出す。
+// WhyNot: 名前を取ってから止まった知らせを出さない — 取れない（回線が切れた・古い書き出し）と知らせ自体が出なくなる。先に出し、名前は後から足す。
+function fgeNameWasmFrames(text) {
+  if (typeof text !== "string" || !/wasm-function\[\d+\]/.test(text)) return;
+  fgeLoadWasmNames().then(function (names) {
+    if (!names) return;
+    var named = text.replace(/wasm-function\[(\d+)\]/g, function (frame, index) {
+      var name = names.get(Number(index));
+      return name ? frame + " " + name : frame;
+    });
+    console.error("[fge] 関数名を付けた stack:\n" + named);
+    var el = document.getElementById("fge-error");
+    if (el && el.textContent === text) el.textContent = named;
+  });
+}
+
 async function fgeBoot() {
   fgeCanvas = document.getElementById("fge-canvas");
   var bundle = JSON.parse(fgeDecoder.decode(await fgeFetchBytes("bundle.json")));
@@ -1626,8 +1779,12 @@ async function fgeBoot() {
   fgeAudio.master.connect(fgeAudio.ctx.destination);
   // WhyNot: wasm を押した後に取らない — 押してから最初のコマまでに取る・compile・instantiate が全部乗る。main は GL の文脈を作った後（押した後）に呼ぶ。
   var wasmFailed = null;
-  var wasmLoad = TeaVM.wasmGC.load(fgeVersioned("classes.wasm")).then(function (teavm) {
+  var wasmUrl = fgeVersioned("classes.wasm");
+  var onWasmBytes = function (n) { if (fgeBootLoad) { fgeBootLoad.wasmDone += n; fgeBootProgress(); } };
+  var wasmLoad = fgeLoadWasm(bundle, wasmUrl, onWasmBytes).then(function (teavm) {
     if (fgeDecodeTimes !== null) console.log("[loadtime] wasm を読み終えた " + performance.now().toFixed(0) + " ms");
+    // WhyNot: 数えた量だけで wasm の分を満たさない — 複製を読むのに失敗すると、棒が wasm の分を残したまま止まって見える。
+    if (fgeBootLoad && fgeBootLoad.boot) { fgeBootLoad.wasmDone = fgeBootLoad.boot.wasm; fgeBootProgress(); }
     fgeDeferred.wasmReady = true;
     fgeDeferredStart();
     return teavm;
@@ -1637,7 +1794,7 @@ async function fgeBoot() {
     fgeError(wasmFailed);
     return null;
   });
-  fgeProgress("loading assets...", 0, total);
+  fgeBootProgressInit(bundle, total);
   var jobs = files.map(function (path) {
     return async function () { fgeAssets.set(fgeNormPath(path), await fgeFetchAsset(path)); };
   }).concat(sounds.map(function (s) {
@@ -1654,17 +1811,22 @@ async function fgeBoot() {
   }));
   await fgeEachLimited(jobs, 6, async function (job) {
     await job();
-    fgeProgress("loading assets...", ++done, total);
+    fgeBootLoad.done = ++done;
+    fgeBootProgress();
   });
   // WhyNot: files にもある絵を取り直さない — 同じ URL を 2 回運ぶ。readBytes のために生のバイトが表に残るメモリは、3D の入口の速さを問わない範囲として受ける。
   await fgeEachLimited(images, 6, async function (path) {
     var kept = fgeAssets.get(fgeNormPath(path));
     fgeImages.set(fgeNormPath(path), await fgeBitmapOf(kept || await fgeFetchAsset(path), path));
-    if (!kept) fgeProgress("loading assets...", ++done, total);
+    if (!kept) { fgeBootLoad.done = ++done; fgeBootProgress(); }
   });
   fgeDeferred.bootReady = true;
   fgeDeferredStart();
   if (wasmFailed !== null) return;
+  fgeBootLoad.assetsEnd = true;
+  fgeBootProgress();
+  // WhyNot: 素材がそろっただけで「押して始める」を出さない — 押した後に wasm を待つ間、何も無い画面で待たせる（4G で 10 秒あった）。
+  if (await wasmLoad === null) return;
   fgeSplashReady();
   if (fgeDecodeTimes !== null) console.log("[loadtime] タッチして開始まで " + performance.now().toFixed(0) + " ms");
   // WhyNot: 音を起こすのを await の後にしない — Safari は押した操作の処理の中で resume しないと断る版がある。

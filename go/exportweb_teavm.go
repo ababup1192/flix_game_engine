@@ -169,3 +169,53 @@ func readZipEntry(jar, name string) ([]byte, error) {
 	}
 	return nil, fmt.Errorf("%s の中に %s が無い", jar, name)
 }
+
+// webWasmNamesFile は classes.wasm から抜いた名前の区画（custom section "name" の中身）を置く道。頁は落ちた時だけ取りに行く。
+const webWasmNamesFile = "classes.names"
+
+// splitWasmNames は wasm を、名前の区画を抜いた物と、その区画の中身（無ければ nil）に分ける。
+// WhyNot: TeaVM の setObfuscated(true) で名前を消さない — 類の名前など実行時に読まれる値まで替わりうる。
+// 名前の区画は stack の表示にしか使われない（TeaVM の Java の stack はコードの位置で読み直す）ので、後から抜いても動きは変わらない。
+func splitWasmNames(data []byte) (stripped, names []byte, err error) {
+	if len(data) < 8 || string(data[:4]) != "\x00asm" {
+		return nil, nil, fmt.Errorf("wasm の頭でない")
+	}
+	stripped = append(make([]byte, 0, len(data)), data[:8]...)
+	at := 8
+	for at < len(data) {
+		id := data[at]
+		size, body, err := readWasmLEB(data, at+1)
+		if err != nil {
+			return nil, nil, err
+		}
+		end := body + size
+		if end > len(data) {
+			return nil, nil, fmt.Errorf("区画 %d が長さを超える", id)
+		}
+		if id == 0 {
+			n, nameAt, err := readWasmLEB(data, body)
+			if err == nil && nameAt+n <= end && string(data[nameAt:nameAt+n]) == "name" {
+				names = append([]byte{}, data[nameAt+n:end]...)
+				at = end
+				continue
+			}
+		}
+		stripped = append(stripped, data[at:end]...)
+		at = end
+	}
+	return stripped, names, nil
+}
+
+func readWasmLEB(data []byte, at int) (value, next int, err error) {
+	shift := 0
+	for at < len(data) && shift < 35 {
+		b := data[at]
+		at++
+		value |= int(b&0x7f) << shift
+		if b < 0x80 {
+			return value, at, nil
+		}
+		shift += 7
+	}
+	return 0, 0, fmt.Errorf("LEB128 が切れている")
+}

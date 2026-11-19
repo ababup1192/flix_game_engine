@@ -3,6 +3,7 @@ package fontbake
 import (
 	"encoding/binary"
 	"fmt"
+	"hash/crc32"
 	"math"
 	"os"
 	"sort"
@@ -95,6 +96,79 @@ func JoinPixels(rest, pixels []byte) ([]byte, error) {
 		return nil, err
 	}
 	return data, nil
+}
+
+// MinDownscale は Downscale に渡せる倍率の下限。
+// WhyNot: 0.5 より下を許さない — アトラスは字を RenderFont.oversample（3 倍）で生成した距離場で、1/3 まで縮めると
+// 横線の込んだ漢字（霊・集）の縁が欠ける（描き比べで確かめた）。0.5 は 1.5 倍で生成したのと同じ細かさ。
+const MinDownscale = 0.5
+
+// Downscale はアトラスの距離場の画素を factor 倍の辺に縮め、辺と画素の検算を付け直した物を返す。
+// 字の表の座標は 0〜1 なので、表とその検算はそのまま使える。辺は 4 の倍数にそろえる。
+// WhyNot: 辺を 4 の倍数にそろえるのを読み手の側だけに任せない — WebGL の 1 チャンネルの絵は既定の行の揃え（4 バイト）で読み、
+// 頁がそれを 1 にし忘れた版でも texImage2D が失敗しないようにする。
+func Downscale(data []byte, factor float64) ([]byte, error) {
+	if factor < MinDownscale || factor > 1 {
+		return nil, fmt.Errorf("倍率 %g は %g〜1 にする", factor, MinDownscale)
+	}
+	l, err := layoutOf(data)
+	if err != nil {
+		return nil, err
+	}
+	n := int(math.Ceil(float64(l.side)*factor/4)) * 4
+	if n < 4 || n >= l.side {
+		return append([]byte{}, data...), nil
+	}
+	small := resampleGray(data[l.pixelStart():l.pixelEnd()], l.side, n)
+	out := make([]byte, 0, l.pixelStart()+n*n+trailerBytes)
+	out = append(out, data[:l.pixelStart()]...)
+	binary.BigEndian.PutUint32(out[12:16], uint32(n))
+	out = append(out, small...)
+	trailer := append([]byte{}, data[l.pixelEnd():]...)
+	binary.BigEndian.PutUint64(trailer[8:16], uint64(crc32.ChecksumIEEE(small)))
+	return append(out, trailer...), nil
+}
+
+// resampleGray は正方形の灰色の絵（辺 s）を辺 n へ、元の画素が新しい画素に重なる面積の重みで縮める。
+// WhyNot: 近い画素を 1 つ拾うだけにしない — 距離場は値そのものが縁までの距離なので、拾う画素の片寄りが字の太さの揺れになる。
+func resampleGray(p []byte, s, n int) []byte {
+	scale := float64(s) / float64(n)
+	cover := func(i int) (int, int, []float64) {
+		lo, hi := float64(i)*scale, float64(i+1)*scale
+		first, last := int(lo), int(math.Ceil(hi))
+		if last > s {
+			last = s
+		}
+		w := make([]float64, last-first)
+		for k := range w {
+			src := first + k
+			w[k] = (math.Min(hi, float64(src+1)) - math.Max(lo, float64(src))) / scale
+		}
+		return first, last, w
+	}
+	rows := make([]float64, s*n)
+	for x := 0; x < n; x++ {
+		first, _, w := cover(x)
+		for y := 0; y < s; y++ {
+			acc := 0.0
+			for k, wk := range w {
+				acc += wk * float64(p[y*s+first+k])
+			}
+			rows[y*n+x] = acc
+		}
+	}
+	out := make([]byte, n*n)
+	for y := 0; y < n; y++ {
+		first, _, w := cover(y)
+		for x := 0; x < n; x++ {
+			acc := 0.0
+			for k, wk := range w {
+				acc += wk * rows[(first+k)*n+x]
+			}
+			out[y*n+x] = byte(math.Max(0, math.Min(255, math.Round(acc))))
+		}
+	}
+	return out
 }
 
 // Leak はどのフォントのアトラスにも無い字。Dev は開発の道具の所にしか出所が無い字（止めずに知らせる）。

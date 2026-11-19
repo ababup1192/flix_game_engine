@@ -85,6 +85,14 @@ mod TestBackgroundLoad {
         Assert.assertEq(expected = (Map#{"a" => Ok("A"), "b" => Ok("B"), "c" => Ok("C")}, LoadProgress.LoadState.Loaded :: LoadProgress.LoadState.Loaded :: LoadProgress.LoadState.Loaded :: Nil),
                         (decoded, statesOf(pending)))
 
+    /// 後回しで起動の前に届いていた（Downloaded の）b は起動の時に解かず、待ちの表に Downloaded で載る
+    @Test
+    def testStartLeavesArrivedDeferredKeyToTheLoop(): Unit \ {Assert, Fs.FileRead, IO} =
+        let fake = fakeOf(("b.glb", LoadProgress.LoadState.Downloaded) :: Nil);
+        let (decoded, pending) = started(fake, abc());
+        Assert.assertEq(expected = (Set#{"a", "c"}, LoadProgress.LoadState.Loaded :: LoadProgress.LoadState.Downloaded :: LoadProgress.LoadState.Loaded :: Nil),
+                        (Map.keysOf(decoded), statesOf(pending)))
+
     /// b が Queued・c が Downloading なら a だけ解き、b・c の道を既定の順で頼む
     @Test
     def testStartRequestsTheKeysNotArrived(): Unit \ {Assert, Fs.FileRead, IO} =

@@ -211,6 +211,16 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
 		return 1
 	}
+	deferredFonts, err := resolveWebDeferredFonts(proj.Web, proj.fontNames())
+	if err != nil {
+		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
+		return 1
+	}
+	if err := checkDeferredFontNames(deferredFonts, textureNames, early.Sounds); err != nil {
+		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
+		return 1
+	}
+	deferredPlan, textureNames = withDeferredFonts(deferredPlan, deferredFonts, textureNames)
 	for _, line := range deferredPlan.Warnings {
 		ewLogf("知らせ: %s", line)
 	}
@@ -371,11 +381,18 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 	sort.Strings(b.Files)
 
 	ewLogf("⑥ 素材を小さくする（絵は WebP・音は Opus・アトラスは画素を WebP か gzip）")
-	report := transcodeWebAssets(p.Out, &b, atlases, compress, findWebEncoders(p.Engine, compress))
+	enc := findWebEncoders(p.Engine, compress)
+	report := transcodeWebAssets(p.Out, &b, atlases, compress, enc)
 	b.Deferred = webDeferredEntries(p.Out, &b, deferredPlan.Paths, textureNames)
 
 	ewLogf("⑦ 頁")
-	hash, err := writeWebPage(p, b, wasm, core)
+	switch {
+	case enc.Brotli != "":
+		b.WasmBrotli = webWasmBrotliFile
+	case compress.WasmBrotli:
+		report.Notes = append(report.Notes, "wasm は gzip で配る — brotli が見つからない。入れ方: brew install brotli（Windows は brotli.exe を PATH に置く）")
+	}
+	hash, err := writeWebPage(p, b, wasm, core, enc.Brotli)
 	if err != nil {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
 		return 1
@@ -866,6 +883,10 @@ type webBundle struct {
 	Deferred []webDeferredEntry `json:"deferred,omitempty"`
 	// Splash は頁が「押して始める」の前に描く起動画面の材料（exportweb_splash.go）。
 	Splash *webSplash `json:"splash,omitempty"`
+	// WasmBrotli は classes.wasm を brotli にした物の道（無ければ頁は classes.wasm を取る）。
+	WasmBrotli string `json:"wasmBrotli,omitempty"`
+	// Boot は押して始めるまでに取る物の大きさ。頁は進みの棒をこの量の重みで動かす。
+	Boot *webStartupBytes `json:"boot,omitempty"`
 }
 
 // withTouch は頁が起動の前に要る物（design の縦横比・パッド・ジェスチャー・向き）を束に足す。
@@ -1001,7 +1022,7 @@ func placeFontAtlases(p exportWebPaths, o exportWebOptions, names []string) ([]s
 	var files []string
 	for _, name := range names {
 		src := filepath.Join(dir, name+".fontatlas")
-		rel := "font-atlas/" + name + ".fontatlas"
+		rel := webFontAtlasRel(name)
 		if !fileExists(src) {
 			return nil, 1, fmt.Errorf("フォントアトラス %s が無い。\n  次: font-bake で作るか、--font-atlas-dir の中身を確かめる", src)
 		}
@@ -1034,15 +1055,22 @@ func runFontBake(game, dir string) int {
 }
 
 // writeWebPage は bundle.json・classes.wasm・js・index.html・version.txt を出し、版のハッシュを返す。
-func writeWebPage(p exportWebPaths, b webBundle, wasm, teavmCore string) (string, error) {
+func writeWebPage(p exportWebPaths, b webBundle, wasm, teavmCore, brotli string) (string, error) {
+	if err := writeWebWasm(wasm, p.Out); err != nil {
+		return "", err
+	}
+	if b.WasmBrotli != "" {
+		if err := writeWebWasmBrotli(brotli, filepath.Dir(p.WebJS), p.Out); err != nil {
+			return "", err
+		}
+	}
+	boot := webStartupBytesOf(p.Out, &b)
+	b.Boot = &boot
 	bundle, err := marshalWebBundle(b)
 	if err != nil {
 		return "", err
 	}
 	if err := os.WriteFile(filepath.Join(p.Out, "bundle.json"), bundle, 0o644); err != nil {
-		return "", err
-	}
-	if err := copyFile(wasm, filepath.Join(p.Out, "classes.wasm")); err != nil {
 		return "", err
 	}
 	if err := copyFile(p.WebJS, filepath.Join(p.Out, "fge-web.js")); err != nil {
@@ -1071,6 +1099,45 @@ func writeWebPage(p exportWebPaths, b webBundle, wasm, teavmCore string) (string
 		return "", err
 	}
 	return hash, os.WriteFile(filepath.Join(p.Out, "version.txt"), []byte(hash+"\n"), 0o644)
+}
+
+// writeWebWasm は wasm を名前の区画の無い classes.wasm と、区画の中身の classes.names に分けて置く。
+func writeWebWasm(wasm, out string) error {
+	data, err := os.ReadFile(wasm)
+	if err != nil {
+		return err
+	}
+	stripped, names, err := splitWasmNames(data)
+	if err != nil {
+		return fmt.Errorf("%s: %v", wasm, err)
+	}
+	if err := os.WriteFile(filepath.Join(out, "classes.wasm"), stripped, 0o644); err != nil {
+		return err
+	}
+	if names == nil {
+		return nil
+	}
+	return os.WriteFile(filepath.Join(out, webWasmNamesFile), names, 0o644)
+}
+
+// webWasmBrotliFile と webBrotliDecoderFile は、wasm を brotli にした物と、頁がそれを戻す解き手の道。
+const (
+	webWasmBrotliFile    = "classes.wasm.br"
+	webBrotliDecoderFile = "brotli-decode.js"
+)
+
+// writeWebWasmBrotli は out/classes.wasm を brotli（最も強い 11）にした classes.wasm.br と、engine_web/js の解き手を置く。
+// WhyNot: 置き場の圧縮に任せない — GitHub Pages は gzip しか配らず、wasm は brotli の方が 4 割ほど小さい。
+// 頁が自分で解くので、置き場が何で配っても同じ大きさで届く。
+func writeWebWasmBrotli(brotli, jsDir, out string) error {
+	data, err := exec.Command(brotli, "-q", "11", "-c", filepath.Join(out, "classes.wasm")).Output()
+	if err != nil {
+		return fmt.Errorf("brotli で wasm を詰められない: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(out, webWasmBrotliFile), data, 0o644); err != nil {
+		return err
+	}
+	return copyFile(filepath.Join(jsDir, webBrotliDecoderFile), filepath.Join(out, webBrotliDecoderFile))
 }
 
 func marshalWebBundle(b webBundle) ([]byte, error) {
@@ -1238,15 +1305,7 @@ func writeExportSizes(out *strings.Builder, dir string, b webBundle, atlases []s
 	}
 	fmt.Fprintf(w, "  %-8s %22s  ブラウザが取る量\n", "合計", pair(total))
 	start := webStartupSizeOf(dir, &b)
-	wasmGz := wasm
-	if data, err := os.ReadFile(filepath.Join(dir, "classes.wasm")); err == nil {
-		if gz, err := gzipBytes(data); err == nil {
-			wasmGz = int64(len(gz))
-		}
-	}
-	fmt.Fprintf(w, "  起動 %d 本・%s（wasm の gzip %s を足して %s）／後回し %d 本・%s\n",
-		start.StartCount, humanBytes(start.StartBytes), humanBytes(wasmGz), humanBytes(start.StartBytes+wasmGz),
-		start.DeferredCount, humanBytes(start.DeferredBytes))
+	writeStartupEstimate(w, webStartupEstimateOf(dir, &b), start)
 	if r.FallbackBytes > 0 {
 		fmt.Fprintf(w, "  置き場には元の wav（%s）も残す — Opus を解けないブラウザだけが取る\n", humanBytes(r.FallbackBytes))
 	}
@@ -1256,6 +1315,25 @@ func writeExportSizes(out *strings.Builder, dir string, b webBundle, atlases []s
 	// WhyNot: 運ばない物を言わずに終えない — assets/ の外の Doc や readBytes で読む素材は束に入らず、ブラウザで初めて「無い」になる。
 	fmt.Fprintln(w, "  束に入れたのは project.json と assets/ の下だけ（assets/ の外を読むゲームはブラウザで読めない）")
 	w.Flush()
+}
+
+// writeStartupEstimate は起動まで（遊べるまで）の回線の量と 1.6 Mbps での秒数、後回しの最後が届く時刻を書く。目標を超えても止めない。
+func writeStartupEstimate(w io.Writer, s webStartupEstimate, start webStartupSize) {
+	wire := s.Boot.WasmWire + s.Boot.AssetsWire + s.PageWire
+	fmt.Fprintf(w, "  起動まで（タッチして開始まで）%d 本・回線 %s（wasm %s・素材 %s・頁 %s）→ 4G（1.6 Mbps）で約 %.1f 秒（前置き %.1f 秒を含む）\n",
+		start.StartCount, humanBytes(wire), humanBytes(s.Boot.WasmWire), humanBytes(s.Boot.AssetsWire), humanBytes(s.PageWire),
+		s.Seconds, webStartupPreludeSeconds)
+	if n := len(s.Deferred); n > 0 {
+		fmt.Fprintf(w, "  後回し %d 本・%s → 最後の %s が届くのは約 %.0f 秒目（1 本ずつの時刻は書き出しのログ）\n",
+			start.DeferredCount, humanBytes(start.DeferredBytes), s.Deferred[n-1].Path, s.Deferred[n-1].Seconds)
+		for _, a := range s.Deferred {
+			ewLogf("  後回し %6.1f 秒目  %s", a.Seconds, a.Path)
+		}
+	}
+	if s.Seconds > webStartupTargetSeconds {
+		fmt.Fprintf(w, "  知らせ: 起動までが 4G で %.0f 秒を超える — タイトルより後で使う素材は web.deferred へ回せる（大物から: wasm %s・素材 %s）\n",
+			webStartupTargetSeconds, humanBytes(s.Boot.WasmWire), humanBytes(s.Boot.AssetsWire))
+	}
 }
 
 func humanBytes(n int64) string {

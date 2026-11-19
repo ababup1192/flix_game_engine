@@ -185,3 +185,105 @@ func TestWebDeferredEntriesListEverySoundNameOfOnePath(t *testing.T) {
 		t.Errorf("同じ道の音は 1 本の後回しに全部の名前を持つはず %+v: %+v", want, got)
 	}
 }
+
+func startupFixture(t *testing.T) (string, webBundle) {
+	out := t.TempDir()
+	b := webBundle{Images: []string{"assets/bg/gate.webp", "assets/bg/late.webp"}}
+	writeServed(t, out, "assets/bg/gate.webp", 200000)
+	writeServed(t, out, "assets/bg/late.webp", 400000)
+	b.Deferred = []webDeferredEntry{{Path: "assets/bg/late.webp", Bytes: 400000}}
+	return out, b
+}
+
+func TestWebStartupEstimateCountsOnlyStartAssets(t *testing.T) {
+	out, b := startupFixture(t)
+	if got := webStartupEstimateOf(out, &b).Boot.AssetsWire; got != 200000 {
+		t.Errorf("起動の素材は 200000 のはず: %d", got)
+	}
+}
+
+func TestWebStartupEstimateSecondsAddPreludeToBandwidthTime(t *testing.T) {
+	out, b := startupFixture(t)
+	if got := webStartupEstimateOf(out, &b).Seconds; got != webStartupPreludeSeconds+1.0 {
+		t.Errorf("200 KB は 1.6 Mbps で 1 秒・前置きを足して %.1f 秒のはず: %.3f", webStartupPreludeSeconds+1.0, got)
+	}
+}
+
+func TestWebStartupEstimateDeferredArrivesAfterStartup(t *testing.T) {
+	out, b := startupFixture(t)
+	s := webStartupEstimateOf(out, &b)
+	if got := s.Deferred[0].Seconds; got != s.Seconds+2.0 {
+		t.Errorf("後回しの 400 KB は起動の 2 秒後に届くはず: %.3f（起動 %.3f）", got, s.Seconds)
+	}
+}
+
+func TestWebWireSizeGzipsText(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "a.json")
+	if err := os.WriteFile(p, []byte(strings.Repeat("a", 10000)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := webWireSize(p); got >= 1000 {
+		t.Errorf("同じ字の続く JSON は gzip で小さくなるはず: %d", got)
+	}
+}
+
+func TestWebStartupBytesUseBrotliWasmAndDecoder(t *testing.T) {
+	out, b := startupFixture(t)
+	writeServed(t, out, "../classes.wasm", 9000)
+	if err := os.WriteFile(filepath.Join(out, webWasmBrotliFile), make([]byte, 3000), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(out, webBrotliDecoderFile), make([]byte, 100), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	b.WasmBrotli = webWasmBrotliFile
+	got := webStartupBytesOf(out, &b)
+	if got.Wasm != 3000 || got.WasmWire <= 3000 || got.WasmWire > 3100 {
+		t.Errorf("wasm は br の 3000 と、解き手の gzip を足した回線の量のはず: %+v", got)
+	}
+}
+
+func TestResolveWebDeferredFontsReturnsNamedFonts(t *testing.T) {
+	got, err := resolveWebDeferredFonts(json.RawMessage(`{"deferredFonts": ["gothic"]}`), []string{"default", "gothic"})
+	if err != nil || !reflect.DeepEqual(got, []string{"gothic"}) {
+		t.Fatalf("got %v, %v", got, err)
+	}
+}
+
+func TestResolveWebDeferredFontsRejectsUnknownFont(t *testing.T) {
+	if _, err := resolveWebDeferredFonts(json.RawMessage(`{"deferredFonts": ["mincho"]}`), []string{"default"}); err == nil {
+		t.Fatal("fonts に無い名前を通した")
+	}
+}
+
+func TestResolveWebDeferredFontsRejectsDeferringEveryFont(t *testing.T) {
+	if _, err := resolveWebDeferredFonts(json.RawMessage(`{"deferredFonts": ["default", "gothic"]}`), []string{"default", "gothic"}); err == nil {
+		t.Fatal("全部のフォントの後回しを通した")
+	}
+}
+
+func TestWithDeferredFontsPutsAtlasAtTheHead(t *testing.T) {
+	plan, _ := withDeferredFonts(webDeferredPlan{Paths: []string{"assets/bg/late.png"}}, []string{"gothic"}, map[string][]string{})
+	if !reflect.DeepEqual(plan.Paths, []string{"font-atlas/gothic.fontatlas", "assets/bg/late.png"}) {
+		t.Fatalf("got %v", plan.Paths)
+	}
+}
+
+func TestWithDeferredFontsNamesAtlasByFont(t *testing.T) {
+	_, names := withDeferredFonts(webDeferredPlan{}, []string{"gothic"}, map[string][]string{"assets/bg/a.png": {"bg_a"}})
+	if !reflect.DeepEqual(names["font-atlas/gothic.fontatlas"], []string{"gothic"}) {
+		t.Fatalf("got %v", names)
+	}
+}
+
+func TestCheckDeferredFontNamesRejectsTextureName(t *testing.T) {
+	if err := checkDeferredFontNames([]string{"gothic"}, map[string][]string{"assets/bg/g.png": {"gothic"}}, nil); err == nil {
+		t.Fatal("テクスチャと同じ名前を通した")
+	}
+}
+
+func TestCheckDeferredFontNamesRejectsSoundName(t *testing.T) {
+	if err := checkDeferredFontNames([]string{"gothic"}, nil, []webSound{{Name: "gothic", Path: "assets/sfx/g.wav"}}); err == nil {
+		t.Fatal("音と同じ名前を通した")
+	}
+}

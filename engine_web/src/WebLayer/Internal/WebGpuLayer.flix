@@ -22,7 +22,7 @@ pub mod WebLayer.Internal.WebGpuLayer {
     import java.nio.ByteBuffer
     use RenderPaint.Internal.WebGpuPaint
     use WebLayer.{FullscreenAsk, State, applyCursor, display, freshState, handleAudio, handleFrameClock, handleInput,
-                  handleLoadProgress, playArrivedSounds, showProgress, tickRate}
+                  handleLoadProgress, playArrivedSounds, registerArrivedFont, showProgress, tickRate}
 
     /// 画面へ出す所の状態。size = 今の描き先（canvas）の画素の大きさ・drawn = 画面へ出したコマの数（?capture の数え）。
     type alias Screen = {
@@ -69,6 +69,7 @@ pub mod WebLayer.Internal.WebGpuLayer {
                 Err(why)
             case Ok((paint, fonts, surface, format)) =>
                 Ref.put(config#textureManifest |> List.filter(e -> Deferred.isDeferred(e#path) and Deferred.state(e#path) != "loaded"), state#pendingTextures);
+                Ref.put(WebAssets.pendingFontsOf(config#fontManifest), state#pendingFonts);
                 let screen = { gpu = gpu, paint = paint, surface = surface, format = format, size = Ref.fresh(Static, size),
                                drawn = Ref.fresh(Static, 0),
                                captureFrame = queryValueOf("capture", queryPairs) |> Int32.fromString |> Option.getWithDefault(0) };
@@ -132,7 +133,7 @@ pub mod WebLayer.Internal.WebGpuLayer {
         let paint = screen#paint;
         screen#gpu.onDeviceLost();
         println("[backend] webgpu: ${screen#gpu.adapterInfo()}");
-        let onPoll = () -> { registerArrivedTextures(screen#gpu, paint, state); playArrivedSounds(state) };
+        let onPoll = () -> { registerArrivedTextures(screen#gpu, paint, state); registerArrivedFont(entry -> uploadAtlas(paint, entry), fonts, state); playArrivedSounds(state) };
         let result =
             handleLoadProgress(state, () ->
             handleAudio(state, () ->
@@ -185,22 +186,29 @@ pub mod WebLayer.Internal.WebGpuLayer {
     /// 書き出しが事前生成したアトラスを読んで R8 で上げる。読めないフォントは 1 行言って飛ばす（組み込みフォントで代わりに出す）。
     def loadFonts(paint: WebGpuPaint.Paint, manifest: List[RenderAsset.FontEntry], progress: (String, Int32, Int32) -> Unit \ IO): RenderPaint.Fonts \ IO =
         let total = List.length(manifest);
+        let pending = WebAssets.pendingFontsOf(manifest);
         let atlases = List.zipWithIndex(manifest) |> List.foldLeft((acc, indexed) -> {
             let (index, entry) = indexed;
             progress("loading font ${entry#name}...", index, total);
-            let path = WebAssets.atlasPathOf(entry);
-            let bytes = AssetTable.bytes(path);
-            let baked = if (Object.isNull(bytes)) None else RenderFontCache.decode(bytes, "font_${entry#name}");
-            match baked {
-                case Some(font) =>
-                    println("  Font '${entry#name}' read from ${path} (${font#side}x${font#side})");
-                    WebGpuPaint.putTexture(font#atlas#textureName, WebGpuPaint.uploadR8(paint, font#side, font#side, font#pixels), paint);
-                    Map.insert(entry#name, font#atlas, acc)
-                case None =>
-                    Log.warnThen("font: '${entry#name}' のアトラス ${path} が束に無いか壊れている — 組み込みフォントで出す（bin/fge export-web で書き出し直す）", acc)
-            }
+            if (List.exists(p -> p#name == entry#name, pending)) acc
+            else uploadAtlas(paint, entry) |> Option.map(atlas -> Map.insert(entry#name, atlas, acc)) |> Option.getWithDefault(acc)
         }, Map#{BootFont.name() => BootFont.atlas()});
-        { atlases = Ref.fresh(Static, atlases), grow = (atlas, _) -> checked_ecast(atlas), missing = Ref.fresh(Static, Set.empty()) }
+        { atlases = Ref.fresh(Static, WebAssets.withPlaceholderFonts(manifest, pending, atlases)), grow = (atlas, _) -> checked_ecast(atlas),
+          missing = Ref.fresh(Static, Set.empty()) }
+
+    /// 素材の表のアトラスを読んで R8 で上げる。束に無いか壊れていれば 1 行言って None（組み込みフォントか仮の当てで出す）。
+    def uploadAtlas(paint: WebGpuPaint.Paint, entry: RenderAsset.FontEntry): Option[FontAtlas] \ IO =
+        let path = WebAssets.atlasPathOf(entry);
+        let bytes = AssetTable.bytes(path);
+        let baked = if (Object.isNull(bytes)) None else RenderFontCache.decode(bytes, "font_${entry#name}");
+        match baked {
+            case Some(font) =>
+                println("  Font '${entry#name}' read from ${path} (${font#side}x${font#side})");
+                WebGpuPaint.putTexture(font#atlas#textureName, WebGpuPaint.uploadR8(paint, font#side, font#side, font#pixels), paint);
+                Some(font#atlas)
+            case None =>
+                Log.warnThen("font: '${entry#name}' のアトラス ${path} が束に無いか壊れている — 組み込みフォントで出す（bin/fge export-web で書き出し直す）", None)
+        }
 
     /// 届いた後回しの絵を、予算の内で道ごとに上げる（WebLayer.registerArrivedTextures と同じ予算の決まり）。
     def registerArrivedTextures(gpu: BrowserWebGpu, paint: WebGpuPaint.Paint, st: State): Unit \ IO =

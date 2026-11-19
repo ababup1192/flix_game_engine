@@ -84,8 +84,21 @@ design の大きさの画面に描くつもりの絵（ぼかした背景だけ�
 
 `bin/fge export-web` は書き出し先の中だけで、png → WebP（既定は劣化なし）・wav → Opus・アトラス → 画素だけ劣化なしの WebP（戻してバイト一致を確かめた時だけ・ほかは gzip）に替える（assets/ とデスクトップは変わらない）。
 
-- 強さは project.json の `web.compress`: `audioBitrateKbps`・`uncompressedAudio: [glob]`・`lossyImages: [{glob, quality}]`・`audio` / `images` を false で止める
+- 強さは project.json の `web.compress`: `audioBitrateKbps`・`uncompressedAudio: [glob]`・`lossyImages: [{glob, quality}]`・`fontAtlasScale`・`wasmBrotli`・`audio` / `images` を false で止める
 - 道具は ffmpeg（libopus）と cwebp・dwebp。無ければ圧縮せずに書き出して大きさの表に 1 行
+- アトラスの距離場は既定で辺を 1/2 に縮める（`fontAtlasScale: 0.5`・量は約半分・スマホの画面で見分けがつかない）。1 で縮めない。0.5 より下は込んだ漢字の縁が欠けるので受け付けない
+- wasm は brotli（最も強い 11）にした `classes.wasm.br` と解き手 `brotli-decode.js`（google/brotli・MIT）を一緒に配り、頁が自分で戻す（gzip より 4 割ほど小さい・置き場が gzip しか配らなくても効く）。解けない時は `classes.wasm` を取る。道具は brotli（無ければ gzip のまま配って知らせる）。止めるのは `wasmBrotli: false`
+- wasm の名前の区画（関数名・素の量の 2〜3 割）は `classes.names` へ抜いて配る。頁は止まった時だけそれを取り、stack の `wasm-function[番号]` に名前を付けて console へ出す
+
+### 遊べるまでの量を見る
+
+書き出しの終わりの表に、押して始めるまでに取る物（起動の素材と wasm）の回線の量と、4G（1.6 Mbps・往復 150 ms）での秒数の見積もりが出る。16 秒を超えると知らせる（止めない）。後回し（`web.deferred`）の 1 本ずつが何秒目に届くかは書き出しのログに出る。
+
+```
+  起動まで（タッチして開始まで）43 本・回線 2.9 MB（wasm 2.0 MB・素材 0.9 MB・頁 0.04 MB）→ 4G（1.6 Mbps）で約 16.0 秒（前置き 1.5 秒を含む）
+```
+
+減らすのは、タイトルより後で使う絵・音を `web.deferred` へ、タイトルで使わないフォントを `web.deferredFonts` へ回すのが先（アトラスは `fontAtlasScale` の既定 0.5 で縮めてある）。頁は進みの棒をこの量の重みで動かし、wasm まで読み終えてから「タッチして開始」を出す。
 
 ## シナリオを開発者ツールから読まれにくくする（`web.embed`・`web.omit`）
 
