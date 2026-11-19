@@ -562,7 +562,7 @@ determinism: ### [TARGETS="<フォルダ>:<シナリオ> …"] | 隠しウィン
 
 # 実機の窓の絵をテンプレの場面ごとに撮る (bin/gl-capture.sh)。隠しウィンドウ・FLIX_GE_FIXED_DT で dt を固定し、
 # 頭の 6 コマの SHA-256 を <OUT>/SHA256SUMS に控える。check は 2 回撮ってバイトで比べる (同じ起動で同じ絵になるか)。
-# WhyNot: 2 回撮りの比べは緩めない — 同じ機械・同じ engine で揺れるのは決まった絵を出せていない印。緩めるのは基準との比べだけ。
+# WhyNot: 2 回撮りの比べは緩めない — 同じ機械・同じ engine で揺れるのは決まった絵を出せていない証拠。緩めるのは基準との比べだけ。
 # 描き手は既定の WebGPU。BACKEND=gl で GL の backend を撮る（基準は描き手ごとに別のファイル）。
 # 撮るのはテンプレと bench の lib の engine なので、先に make sync-engine-full (engine のソースが fpkg より新しければ止まる)。
 # 絵は機械とドライバで変わるので、比べるのは同じ機械で撮った物どうし。render_gl を触ったら check を回す。

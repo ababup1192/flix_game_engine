@@ -167,7 +167,7 @@ func TestLessCaptureNameSortsFrameNumbers(t *testing.T) {
 	}
 }
 
-// 実機で撮った絵での確かめ。0.103.0 の前に tidepool の 12 枚が字の縁で数画素ずれた時の撮り物（基準どおりの絵と今の絵）を
+// 実機で撮った絵での確かめ。0.103.0 の前に tidepool の 12 枚が字のふちで数画素ずれた時の撮り物（基準どおりの絵と今の絵）を
 // GL_CAPTURE_OLD・GL_CAPTURE_NEW（フォルダ）で渡す。無ければ飛ばす（撮り物は git の外）。
 func realCaptureDirs(t *testing.T) (string, string) {
 	t.Helper()
