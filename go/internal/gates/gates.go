@@ -72,6 +72,9 @@ type Package struct {
 	Test  bool               `json:"test"`
 	Check bool               `json:"check"`
 	Gates []string           `json:"gates"`
+	// TestTime・CheckTime は make test・make check-pkgs で流す 1 本の目安（time.ParseDuration の形）。
+	TestTime  string `json:"testTime"`
+	CheckTime string `json:"checkTime"`
 }
 
 // GoRow は go の表の 1 行（go/ の下のファイル → 足す門）。
@@ -142,7 +145,7 @@ func (g Gate) MakeLine(extra []string) []string {
 	return append(line, extra...)
 }
 
-// Display は一覧に出す打ち方（空白を含む値は '' で包む）。
+// Display は一覧に出す打ち方（空白を含む値は ” で包む）。
 func (g Gate) Display() string {
 	if l := g.MakeLine(nil); l != nil {
 		return ShellLine(l)
@@ -150,7 +153,7 @@ func (g Gate) Display() string {
 	return g.Cmd
 }
 
-// ShellLine は make の行をシェルへ貼れる形にする（空白を含む語は '' で包む）。
+// ShellLine は make の行をシェルへ貼れる形にする（空白を含む語は ” で包む）。
 func ShellLine(line []string) string {
 	parts := make([]string, len(line))
 	for i, w := range line {

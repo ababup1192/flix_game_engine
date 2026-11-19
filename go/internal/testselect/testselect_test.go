@@ -450,3 +450,45 @@ func TestVersionOnlyDiffRejectsDependencyLines(t *testing.T) {
 		t.Error("依存の行を version に数えた")
 	}
 }
+
+func timeOf(p *Plan, id string) string {
+	for _, l := range p.Run {
+		if l.ID == id {
+			return l.Time
+		}
+	}
+	return ""
+}
+
+// test の目安は選んだパッケージの 1 本の目安（1 本なら名前を添えない）。
+func TestTestTimeOfOnePackage(t *testing.T) {
+	p := plan(t, env, Options{FilesFrom: filesFrom}, files("templates/hd2d-starter/src/Main.flix")...)
+	if got := timeOf(p, "test"); got != "45s" {
+		t.Errorf("time %q", got)
+	}
+}
+
+// test の目安は並べた中で一番長い 1 本で決まる。
+func TestTestTimeOfManyPackagesIsLongest(t *testing.T) {
+	p := plan(t, env, Options{FilesFrom: filesFrom}, files("templates/hd2d-starter/src/Main.flix", "templates/rpg-starter/src/Main.flix")...)
+	if got := timeOf(p, "test"); got != "1m52s（2 本を並べた中の rpg-starter で決まる）" {
+		t.Errorf("time %q", got)
+	}
+}
+
+// check-pkgs の目安は 1 本ずつの和。
+func TestCheckPkgsTimeIsSum(t *testing.T) {
+	p := plan(t, env, Options{FilesFrom: filesFrom}, files("bench/crowd2d/src/Main.flix", "bench/texture_upload/src/Main.flix")...)
+	if got := timeOf(p, "check-pkgs"); got != "12s（2 本・1 本ずつ）" {
+		t.Errorf("time %q", got)
+	}
+}
+
+// 目安を持たないパッケージがあれば門の文のまま。
+func TestTestTimeWithoutPackageTimeKeepsGateText(t *testing.T) {
+	tb := table(t)
+	tb.pkgs["hd2d-starter"].TestTime = ""
+	if got := testTimeOf(tb, []string{"hd2d-starter", "rpg-starter"}, "門の文"); got != "門の文" {
+		t.Errorf("time %q", got)
+	}
+}

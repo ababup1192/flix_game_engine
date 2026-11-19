@@ -13,6 +13,7 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/gates"
 	"github.com/ababup1192/flix_game_engine/go/internal/precommit"
@@ -320,7 +321,7 @@ func (l Line) Gate() gates.Gate {
 	return gates.Gate{ID: l.ID, About: l.About, Make: l.Make, Vars: l.Vars, Time: l.Time, Prereq: l.Prereq}
 }
 
-// Display は人が打てる形の make の行（空白を含む値は '' で包む）。
+// Display は人が打てる形の make の行（空白を含む値は ” で包む）。
 func (l Line) Display() string {
 	parts := []string{"make", l.Make}
 	keys := make([]string, 0, len(l.Vars))
@@ -542,7 +543,7 @@ func Assemble(t *Table, classes []FileClass, aff Affected, env Env, opt Options)
 		}
 		g := t.gates["test"]
 		lines = append(lines, Line{ID: "test", Make: "test", Vars: map[string]string{"PKGS": strings.Join(testPkgs, " "), "JOBS": fmt.Sprint(jobs)},
-			About: g.About, Time: g.Time, Why: pkgWhy(plan, testPkgs), order: order["test"]})
+			About: g.About, Time: testTimeOf(t, testPkgs, g.Time), Why: pkgWhy(plan, testPkgs), order: order["test"]})
 	}
 	if len(checkDirs) > 0 {
 		g := t.gates["check-pkgs"]
@@ -551,7 +552,7 @@ func Assemble(t *Table, classes []FileClass, aff Affected, env Env, opt Options)
 			ids = append(ids, t.Owner(d+"/").ID)
 		}
 		lines = append(lines, Line{ID: "check-pkgs", Make: "check-pkgs", Vars: map[string]string{"DIRS": strings.Join(checkDirs, " ")},
-			About: g.About, Time: g.Time, Why: pkgWhy(plan, ids), order: order["check-pkgs"]})
+			About: g.About, Time: checkTimeOf(t, ids, g.Time), Why: pkgWhy(plan, ids), order: order["check-pkgs"]})
 	}
 	if goLine != nil {
 		goLine.order = order["go-test"]
@@ -695,4 +696,44 @@ func goTestLine(t *Table, pkgs map[string]bool, src []string, all bool, env Env)
 	}
 	g := t.gates["go-test"]
 	return &Line{ID: "go-test", Make: "go-test", Vars: vars, About: g.About, Time: g.Time, Why: why}, nil
+}
+
+// testTimeOf は make test の目安（並べた中で一番長い 1 本）。目安を持たないパッケージがあれば門の文のまま。
+func testTimeOf(t *Table, ids []string, fallback string) string {
+	var longest time.Duration
+	who := ""
+	for _, id := range ids {
+		pk := t.pkgs[id]
+		if pk == nil {
+			return fallback
+		}
+		d, err := time.ParseDuration(pk.TestTime)
+		if err != nil {
+			return fallback
+		}
+		if d > longest {
+			longest, who = d, id
+		}
+	}
+	if len(ids) == 1 {
+		return longest.String()
+	}
+	return fmt.Sprintf("%s（%d 本を並べた中の %s で決まる）", longest, len(ids), who)
+}
+
+// checkTimeOf は make check-pkgs の目安（1 本ずつ流すので和）。目安を持たないパッケージがあれば門の文のまま。
+func checkTimeOf(t *Table, ids []string, fallback string) string {
+	var sum time.Duration
+	for _, id := range ids {
+		pk := t.pkgs[id]
+		if pk == nil {
+			return fallback
+		}
+		d, err := time.ParseDuration(pk.CheckTime)
+		if err != nil {
+			return fallback
+		}
+		sum += d
+	}
+	return fmt.Sprintf("%s（%d 本・1 本ずつ）", sum, len(ids))
 }
