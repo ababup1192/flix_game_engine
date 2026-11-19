@@ -40,10 +40,12 @@ HELP_SRC += "$(ENGINE)/mk/tape.mk"
 # 後始末: mp4 に束ねたら元のコマ（debug/video/<名前>[-phone]・1 本で 8 GB を超えることがある）を消す。残すなら TAPE_KEEP_FRAMES=1
 # （flow が途中で止まった時も残す）。同じ名前を撮り直す時は、前の debug/video・debug/tape の出力を先に消して置き換える。
 # 書き出さないなら TAPE_PLAY=0（頁はボタンを出さない）。書き出しの作業フォルダと出口は TAPE_WEB（既定 /tmp/fge-tape-web/<ゲームのフォルダ名>）。
-# 撮り直さない: 撮り終えた flow は debug/tape/<名前>/.shot に入力の指紋（git の HEAD・作業ツリーの差の中身・録画の jar・TAPE_VIEWS と符号化の旗）を書き、
+# 撮り直さない: 撮り終えた flow は debug/tape/<名前>/.shot に入力の指紋（git の HEAD・作業ツリーの差の中身・録画の jar・この tape.mk・TAPE_VIEWS と符号化の旗）と flow の道を書き、
 # 次の make tape で指紋が同じなら録画を飛ばして頁だけ作り直す（書き出しが止まった後の打ち直しが数十秒で済む）。撮り直すなら TAPE_FRESH=1。
+# 録画が git の拾うファイル（saves/ など）を木の中に書くゲームは、毎回指紋が変わって撮り直す（.gitignore に入れれば使い回せる）。
 # 頁だけ: make tape-publish FLOW=…（か FLOWS=…）は録画に触らず、書き出し → TAPE_AFTER_EXPORT → 頁を作る。
 TAPE_NAME = $(basename $(notdir $(FLOW)))
+# WhyNot: 既定を pc（同じ 540×1170・マウス）にしない — テープはスマホで見てもらう頁で、指の入力（区分 Small・Touch）の見え方をそろえる。
 TAPE_VIEWS ?= phone
 TAPE_PLAY ?= 1
 TAPE_KEEP_FRAMES ?= 0
@@ -69,14 +71,16 @@ tape-kill = killtree() { for c in $$(pgrep -P $$1); do killtree $$c; done; kill 
 # 録画の入力の指紋を出すシェルの 1 文（作れない時は空 = いつも撮る）。
 # WhyNot: flow のファイルだけを見ない — 台詞（assets の .yarn）・Doc・src のどれが変わっても同じ flow から違う動画になる。git の木と作業ツリーの差で全部を拾う。
 # WhyNot: 録画の jar を指紋に入れる — engine を直して lib の束だけが替わった時は git の差に出ない（lib は git の外）。jar は src と lib が変わった時だけ作り直される。
-tape-print = jar=build/headless/headless.jar; \
+# WhyNot: Windows（FGE_NO_BASH）では指紋を作らない — jar を作り置かないので、残っている古い jar で engine の変化を見落とす。
+tape-print = $(if $(filter 1,$(FGE_NO_BASH)),:,$(tape-print-sh))
+tape-print-sh = jar=build/headless/headless.jar; \
 	if [ -f "$$jar" ] && git rev-parse --verify -q HEAD >/dev/null 2>&1; then \
 	  { git rev-parse HEAD; git diff HEAD --binary -- . ':!debug' ':!build' 2>/dev/null; \
 	    git ls-files -o --exclude-standard -z -- . ':!debug' ':!build' 2>/dev/null | xargs -0 $(SHA256) 2>/dev/null; \
-	    $(SHA256) < "$$jar"; echo "views=$(TAPE_VIEWS) x264=$(TAPE_X264) aac=$(TAPE_AAC)"; } | $(SHA256) | cut -c1-32; fi
+	    $(SHA256) < "$$jar"; $(SHA256) < "$(ENGINE)/mk/tape.mk"; echo "views=$(TAPE_VIEWS) x264=$(TAPE_X264) aac=$(TAPE_AAC)"; } | $(SHA256) | cut -c1-32; fi
 SHA256 = $(shell command -v sha256sum >/dev/null 2>&1 && echo sha256sum || echo "shasum -a 256")
-# 撮り終えのマーカー（.shot）が今の指紋と同じで、頁に要る物がそろっているか（$(1) = 名前・$$print = 今の指紋）。
-tape-done = ( [ "$(TAPE_FRESH)" != 1 ] && [ -n "$$print" ] && [ "$$(cat debug/tape/$(1)/.shot 2>/dev/null)" = "$$print" ] || exit 1; \
+# 撮り終えのマーカー（.shot）が今の指紋と flow の道と同じで、頁に要る物がそろっているか（$(1) = 名前・$(2) = flow の道・$$print = 今の指紋）。
+tape-done = ( [ "$(TAPE_FRESH)" != 1 ] && [ -n "$$print" ] && [ "$$(cat debug/tape/$(1)/.shot 2>/dev/null)" = "$$print $(2)" ] || exit 1; \
 	for v in $(TAPE_VIEWS); do suf=; [ "$(words $(TAPE_VIEWS))" -gt 1 ] && [ "$$v" = phone ] && suf=-phone; \
 	  [ -f debug/tape/$(1)/tape$$suf.json ] && [ -f debug/tape/$(1)/video$$suf.mp4 ] || exit 1; done )
 # 1 本の flow を撮って debug/tape/<名前> に置く（サブシェルで流す）。終わりの番号: 0 撮れた / 1 flow が途中で止まった / 2 撮れなかった。
@@ -93,7 +97,7 @@ tape-shoot = code=0; rm -rf debug/video/$(2) debug/video/$(2)-phone debug/tape/$
 	  { $(call flow-mp4,$$src,debug/tape/$(2)/video$$suf.mp4,$(TAPE_X264),$(TAPE_AAC)); } || exit 2; \
 	  test "$(TAPE_KEEP_FRAMES)" = 1 -o "$$code" = 1 || rm -rf $$src; \
 	done; \
-	if [ "$$code" = 0 ] && [ -n "$(3)" ]; then echo "$(3)" > debug/tape/$(2)/.shot; fi; exit $$code
+	if [ "$$code" = 0 ] && [ -n "$$print" ]; then echo "$(3)" > debug/tape/$(2)/.shot; fi; exit $$code
 # 頁を作るシェルの 1 文（録画の後と tape-publish）。
 tape-page = if [ -n "$(FLOWS)" ]; then \
 	   dirs=""; for f in $(FLOWS); do dirs="$$dirs debug/tape/$$(basename $$f .flow)"; done; \
@@ -131,12 +135,12 @@ tape: tape-args ## FLOW=e2e/<名前>.flow（か FLOWS="…"） [TAPE_FRESH=1] | 
 	 names=""; \
 	 for f in $(or $(FLOWS),$(FLOW)); do \
 	   n=$$(basename $$f .flow); names="$$names $$n"; \
-	   if $(call tape-done,$$n); then echo "[$$n] 前に撮った時と入力が同じなので撮らない（撮り直すなら TAPE_FRESH=1）"; echo 0 > "$(TAPE_WEB)/shoot-$$n.code"; continue; fi; \
+	   if $(call tape-done,$$n,$$f); then echo "[$$n] 前に撮った時と入力が同じなので撮らない（撮り直すなら TAPE_FRESH=1）"; echo 0 > "$(TAPE_WEB)/shoot-$$n.code"; continue; fi; \
 	   while :; do busy=0; for p in $$pids $$ew; do kill -0 $$p 2>/dev/null && busy=$$((busy+1)); done; \
 	     $(tape-export-watch); \
 	     [ $$busy -lt $$jobs ] && break; sleep 1; done; \
 	   rm -f "$(TAPE_WEB)/shoot-$$n.code"; \
-	   { ( $(call tape-shoot,$$f,$$n,$$print) ); echo $$? > "$(TAPE_WEB)/shoot-$$n.code"; } 2>&1 | sed "s/^/[$$n] /" & pids="$$pids $$!"; \
+	   { ( $(call tape-shoot,$$f,$$n,$$print $$f) ); echo $$? > "$(TAPE_WEB)/shoot-$$n.code"; } 2>&1 | sed "s/^/[$$n] /" & pids="$$pids $$!"; \
 	 done; \
 	 while :; do left=0; for p in $$pids; do kill -0 $$p 2>/dev/null && left=1; done; \
 	   $(tape-export-watch); [ $$left = 0 ] && break; sleep 1; done; \
