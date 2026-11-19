@@ -1,0 +1,4 @@
+ok testdata/lint/flow-check/settings-differ/end.flow: 2 手
+FAIL testdata/lint/flow-check/settings-differ/part.flow: run で入れる親と設定が違う
+testdata/lint/flow-check/settings-differ/part.flow:0: end.flow から run で入れると設定が違う（fps は親で 30・単独で 60・ready は親で off・単独で on）。単独でも流すので、この flow にも 'fps 30' 'ready off' を書く
+[exit=1]

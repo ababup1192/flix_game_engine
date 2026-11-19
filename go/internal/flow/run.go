@@ -72,12 +72,18 @@ func check(out, errOut *strings.Builder, root string, args []string) (int, error
 		return 0, nil
 	}
 	code := 0
+	mismatches := settingMismatches(files)
 	for _, f := range files {
 		problems, steps := CheckFile(vocab, f)
 		if len(problems) > 0 {
 			code = 1
 			fmt.Fprintf(out, "FAIL %s: %d 行を読めない\n%s\n", f, len(problems), ProblemsText(problems))
-		} else {
+		}
+		if m := mismatches[f]; len(m) > 0 {
+			code = 1
+			fmt.Fprintf(out, "FAIL %s: run で入れる親と設定が違う\n%s\n", f, ProblemsText(m))
+		}
+		if len(problems) == 0 && len(mismatches[f]) == 0 {
 			fmt.Fprintf(out, "ok %s: %d 手\n", f, steps)
 		}
 	}

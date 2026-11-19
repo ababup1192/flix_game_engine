@@ -1,0 +1,5 @@
+# 結末: 30 fps・ready off で部品を流す。
+fps 30
+ready off
+start count n=1
+run part.flow
