@@ -1,4 +1,4 @@
-<!-- engine v0.102.1 / 生成: 2026-11-19 -->
+<!-- engine v0.102.1 / 生成: 2026-11-20 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_world
@@ -1229,7 +1229,7 @@
 - 1 フレームとその後の固定刻みの持ち越し（/step が途中で止める時に要る）。
   `pub type alias Played[w] = { step = App.TraceStep[w], state = App.StepState }`
 - 流し終えた結果。frames は先頭から。marks = 名前 → その時までのフレーム数・starts = (その時までのフレーム数, 始まりの名前)。
-  `pub type alias Outcome[w] = { frames = List[Played[w]], marks = Map[String, Int32], starts = List[(Int32, String)], last = w, state = App.StepState }`
+  `pub type alias Outcome[w] = { frames = List[Played[w]], marks = Map[String, Int32], starts = List[(Int32, String)], last = w, state = App.StepState, notes = List[String] }`
 - 止まった所。frame = それまでのフレーム数・why = 理由・seen = 使った問いの今の値と statusLine・upTo = そこまで。
   `pub type alias Failure[w] = { at = Line, frame = Int32, why = String, seen = String, upTo = Outcome[w] }`
 - play の設定: design = 解像度（Frame#viewport）・limit = フレーム数の上限（超えたら失敗）。

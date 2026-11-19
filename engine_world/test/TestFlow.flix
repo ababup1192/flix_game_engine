@@ -1,22 +1,26 @@
 // TestFlow — flow の読み手（Flow.Parse）と実行器（Flow.play）を、数えるだけの小さなゲームで固定する。
 // ゲーム: Z（役 confirm）を押すと数が 1 増え、返事の番号が進み、1 秒は受け付けない（busy）。X（役 cancel）は何もしない。
+// C（役 tapup）と左ボタンは、離したフレームで数が 1 増え返事の番号が進む（離した時に受けるゲームの形）。
 // fps 4（1 フレーム 0.25 秒）で流すと、受け付けない間はちょうど 4 フレーム（時刻が 0.25 の倍数なので丸めが出ない）。
 mod TestFlow {
     use GameEngine.Key
 
-    type alias Counter = { n = Int32, t = Float64, busyUntil = Float64, replies = Int64 }
+    type alias Counter = { n = Int32, t = Float64, busyUntil = Float64, replies = Int64, upKeyDown = Bool, buttonDown = Bool }
 
-    def start(): Counter = { n = 0, t = 0.0, busyUntil = 0.0, replies = 0i64 }
+    def start(): Counter = { n = 0, t = 0.0, busyUntil = 0.0, replies = 0i64, upKeyDown = false, buttonDown = false }
 
     def isBusy(w: Counter): Bool = w#t < w#busyUntil
 
     def step(frame: App.Frame, w: Counter): Counter =
         let pressed = App.justPressed(Key.Z, frame) and not isBusy(w);
         let counted = if (pressed) { n = w#n + 1, busyUntil = w#t + 1.0, replies = w#replies + 1i64 | w } else w;
-        { t = counted#t + frame#dt | counted }
+        let upKeyDown = Set.memberOf(Key.C, frame#down);
+        let released = (w#upKeyDown and not upKeyDown) or (w#buttonDown and not frame#mouseDown);
+        let upCounted = if (released) { n = counted#n + 1, replies = counted#replies + 1i64 | counted } else counted;
+        { t = upCounted#t + frame#dt, upKeyDown = upKeyDown, buttonDown = frame#mouseDown | upCounted }
 
     def table(): Flow.Table[Counter] =
-        { roles = _ -> (Key.Z, "confirm") :: (Key.X, "cancel") :: Nil,
+        { roles = _ -> (Key.Z, "confirm") :: (Key.X, "cancel") :: (Key.C, "tapup") :: Nil,
           probes = { name = "n", doc = "押した数", read = Flow.Probe.Num(w -> Int32.toFloat64(w#n)) } ::
                    { name = "busy", doc = "受け付けない間", read = Flow.Probe.Flag(isBusy) } :: Nil,
           drives = { name = "masher", doc = "1 秒待つごとに決定", act = (waited, _) ->
@@ -37,6 +41,17 @@ mod TestFlow {
                                                { world = start(), state = App.freshStepState() }) {
                 case Ok(outcome)  => Ok((outcome#last#n, List.length(outcome#frames)))
                 case Err(failure) => Err((failure#at#number, failure#why))
+            }
+        }
+
+    /// 流し終えた時の知らせ（失敗なら理由を 1 つ）。
+    def notesOf(text: String): List[String] \ Fs.FileRead =
+        match Flow.Parse.parseText(vocab(), "body", text) {
+            case Err(problems) => Flow.Parse.problemsText(problems) :: Nil
+            case Ok(script) => match Flow.play(app(), { design = Vec2.zero(), limit = 1000 }, script,
+                                               { world = start(), state = App.freshStepState() }) {
+                case Ok(outcome)  => outcome#notes
+                case Err(failure) => failure#why :: Nil
             }
         }
 
@@ -92,11 +107,48 @@ mod TestFlow {
     def testReadyOffPressesAtOnce(): Unit \ Assert + Fs.FileRead =
         Assert.assertEq(expected = Ok((1, 3)), played("fps 4\nready off\ntap confirm\ntap confirm"))
 
-    // 押したのに返事の番号が進まない（cancel は何もしない）と、押した行の番号つきで失敗する。
+    // 押して離したのに返事の番号が進まない（cancel は何もしない）と、押した行の番号つきで失敗する（離すのは次の wait の 1 フレーム目）。
     @Test
     def testUnansweredTapFailsAtItsLine(): Unit \ Assert + Fs.FileRead =
         Assert.assertEq(expected = Err((2, "押したが受け付けられなかった（返事の番号が進まない）")),
-                        played("fps 4\ntap cancel"))
+                        played("fps 4\ntap cancel\nwait 1f"))
+
+    // 離した時に受けるキーの tap は、離したフレーム（次の wait の 1 フレーム目）で返事が進めば通る（押す 1 + 離す 1 = 2 フレーム）。
+    @Test
+    def testTapAnsweredOnReleasePasses(): Unit \ Assert + Fs.FileRead =
+        Assert.assertEq(expected = Ok((1, 2)), played("fps 4\ntap tapup\nwait 1f"))
+
+    // 点の tap（左ボタン）も離したフレームで返事が進めば通る。
+    @Test
+    def testPointTapAnsweredOnReleasePasses(): Unit \ Assert + Fs.FileRead =
+        Assert.assertEq(expected = Ok((1, 2)), played("fps 4\ntap 10,10\nwait 1f"))
+
+    // 長さつきの hold も、押し続ける 3 フレームの後の離したフレームで返事が進めば通る（フレーム数は 3 + 1 のまま）。
+    @Test
+    def testTimedHoldAnsweredOnReleasePasses(): Unit \ Assert + Fs.FileRead =
+        Assert.assertEq(expected = Ok((1, 4)), played("fps 4\nhold tapup 3f\nwait 1f"))
+
+    // release まで押す hold は、押している間（wait 2f）は確かめず、release の行で離した後に確かめる（1 + 2 + 1 = 4 フレーム）。
+    @Test
+    def testOpenHoldIsJudgedAfterItsRelease(): Unit \ Assert + Fs.FileRead =
+        Assert.assertEq(expected = Ok((1, 4)), played("fps 4\nhold tapup\nwait 2f\nrelease tapup"))
+
+    // release まで押す hold を離して返事が進まなければ、hold の行の番号つきで失敗する。
+    @Test
+    def testOpenHoldUnansweredFailsAtTheHoldLine(): Unit \ Assert + Fs.FileRead =
+        Assert.assertEq(expected = Err((2, "押したが受け付けられなかった（返事の番号が進まない）")),
+                        played("fps 4\nhold cancel\nwait 2f\nrelease cancel"))
+
+    // 最後の行が離す前の押し方で終わったら、失敗にせず知らせを 1 つ残す。
+    @Test
+    def testLastPressBeforeReleaseLeavesANote(): Unit \ Assert + Fs.FileRead =
+        Assert.assertEq(expected = "body:2: 離す前に手順が終わったので、返事を確かめていない（tap tapup）" :: Nil,
+                        notesOf("fps 4\ntap tapup"))
+
+    // 押したフレームで返事が進む押し方は、最後の行でも知らせを残さない。
+    @Test
+    def testAnsweredLastPressLeavesNoNote(): Unit \ Assert + Fs.FileRead =
+        Assert.assertEq(expected = Nil, notesOf("fps 4\ntap confirm"))
 
     // until の打ち切りは失敗（max 1 秒 = 4 フレーム待っても数が増えない）。
     @Test

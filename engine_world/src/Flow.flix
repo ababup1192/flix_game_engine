@@ -19,7 +19,7 @@
 //   probes  = 問いの名前 → World から読む関数（Num・Text・Flag）
 //   drives  = 名前付きの操作（待った秒と World → Tap(役)・Idle・Restart）
 //   ready   = 入力を受けられるか（Ready・Busy(理由)）。宣言すると tap・hold の前に自動で待つ（ready off で止まる）
-//   replies = 返事の通し番号（押した後に進まなければ、押した行の番号つきで失敗。ready off で止まる）
+//   replies = 返事の通し番号（押して離した後に進まなければ、押した行の番号つきで失敗。ready off で止まる）
 //   options = ヘッダの設定の名前と値の候補（値はこの実行器では使わず、動画を撮るゲームが読む）
 //
 // 読む順: 表（Table）→ 手順（Script・Step）→ play（Outcome か Failure）。読み手は Flow.Parse、headless の入口は Flow.Cli。
@@ -267,8 +267,9 @@ pub mod Flow {
     pub type alias Played[w] = { step = App.TraceStep[w], state = App.StepState }
 
     /// 流し終えた結果。frames は先頭から。marks = 名前 → その時までのフレーム数・starts = (その時までのフレーム数, 始まりの名前)。
+    /// notes = 失敗にはしないが知らせる事（最後の押し方を離す前に手順が終わり、返事を確かめられなかった など）。
     pub type alias Outcome[w] = { frames = List[Played[w]], marks = Map[String, Int32], starts = List[(Int32, String)],
-                                  last = w, state = App.StepState }
+                                  last = w, state = App.StepState, notes = List[String] }
 
     /// 止まった所。frame = それまでのフレーム数・why = 理由・seen = 使った問いの今の値と statusLine・upTo = そこまで。
     pub type alias Failure[w] = { at = Line, frame = Int32, why = String, seen = String, upTo = Outcome[w] }
@@ -293,12 +294,18 @@ pub mod Flow {
           prevDown = Set.empty(), prevButton = false, prevOtherButtons = Set.empty(), prevCursor = None,
           focused = true, padKind = None }
 
-    /// 流している途中の物。frames と history は新しい順。awaiting = 返事を待っている tap（行と押す前の番号）。
+    /// 流している途中の物。frames と history は新しい順。awaiting = 返事を待っている押し方。
     type alias PlayState[w] = {
         world = w, state = App.StepState, hand = Hand, frames = List[Played[w]], count = Int32,
         marks = Map[String, Int32], starts = List[(Int32, String)], history = List[w],
-        awaiting = Option[(Line, Int64)], served = Map[String, File]
+        awaiting = Option[Awaiting], served = Map[String, File]
     }
+
+    /// 返事を待っている押し方: 押した行・押す前の番号・まだ離していない物（None = 離し終えて、固定刻みで持ち越した押した瞬間が消化されるのを待つ）。
+    type alias Awaiting = { line = Line, seq = Int64, release = Option[Pressed] }
+
+    /// 押した物（キーと左ボタン）。どれも離れたフレームが「離したフレーム」。
+    type alias Pressed = { keys = Set[Key], button = Bool }
 
     /// 止まる理由（行と、そこまでの PlayState）。
     type alias Stop[w] = { cursor = PlayState[w], at = Line, why = String, seen = String }
@@ -315,14 +322,16 @@ pub mod Flow {
                       marks = Map.empty(), starts = Nil, history = start#world :: Nil, awaiting = None,
                       served = Map.empty() };
         let finish = (c: PlayState[w]) -> { frames = List.reverse(c#frames), marks = c#marks,
-                                         starts = List.reverse(c#starts), last = c#world, state = c#state };
+                                         starts = List.reverse(c#starts), last = c#world, state = c#state,
+                                         notes = unjudgedNotes(ctx, c) };
         let stepped = script#lines |> List.foldLeft((acc, line) -> match acc {
             case Err(stop) => Err(stop)
             case Ok(c)     => runLine(ctx, line, c)
         }, Ok(begin));
+        // WhyNot: 離す前に終わった押し方を失敗にしない — 離した時に受けるゲームでは、まだ受けていないだけで誤りとは言えない（notes で知らせる）。
         let settled = stepped |> Result.flatMap(c -> match c#awaiting {
-            case Some((line, _)) if not answered(ctx, c) =>
-                Err({ cursor = c, at = line, why = "押したが受け付けられなかった（返事の番号が進まない）", seen = "" })
+            case Some(wait) if Option.isEmpty(wait#release) and not answered(ctx, c) =>
+                Err({ cursor = c, at = wait#line, why = "押したが受け付けられなかった（返事の番号が進まない）", seen = "" })
             case _ => Ok(c)
         });
         match settled {
@@ -397,7 +406,8 @@ pub mod Flow {
         }
 
     /// tap（span = None）と hold（span = Some(長さか release まで)）。ready on なら入力を受けられるまで待ち（10 秒まで）、
-    /// 押したフレームの後に返事の番号が進んだかを見る（固定刻みで押した瞬間が取り置かれている間は、消化されるまで待つ）。
+    /// 押してから離したフレームの後までに返事の番号が進んだかを見る（離したフレームは次の手が進める。
+    /// 固定刻みで押した瞬間が取り置かれている間は、消化されるまで待つ）。
     def press(ctx: Ctx[w, ef], line: Line, target: Target, span: Option[Option[Span]], opt: Opt,
               c0: PlayState[w]): Result[Stop[w], PlayState[w]] \ ef =
         let raw = not List.isEmpty(opt#ns);
@@ -423,7 +433,7 @@ pub mod Flow {
                                            { hand = { held = Set.difference(c#hand#held, keys),
                                                       button = c#hand#button and Option.isEmpty(clicking) | c#hand } | c });
                 // 返事の番号は、押すフレームの直前の World で取る（離すフレームと前の tap の返事の後）。
-                // 押したフレームで番号が進まないゲーム（入力を次のフレームで処理する物）は、ready off で書く。
+                // 離したフレームの次でも番号が進まないゲーム（入力を 1 フレーム遅れて処理する物）は、ready off で書く。
                 let before = released |> Result.toOption |> Option.flatMap(gap -> replies |> Option.map(f -> f(gap#world)));
                 let pressed = released |> Result.flatMap(gap -> frames(ctx, line, first, keys, pressOpt, gap));
                 let held = pressed |> Result.flatMap(after -> match span {
@@ -439,12 +449,13 @@ pub mod Flow {
                             |> Result.map(done -> { hand = { held = Set.difference(c#hand#held, keys),
                                                              button = c#hand#button and Option.isEmpty(clicking) | done#hand } | done })
                 });
+                // WhyNot: ここで失敗にしない — 離した時に受けるゲーム（点のタップを離した時にタップか払いかを決める物）は、
+                // 離したフレームまで番号が進まない。判定は advance が離したフレームの後にする。
                 held |> Result.flatMap(after -> match before {
                     case Some(seq) if checked =>
                         if (Some(seq) != (replies |> Option.map(f -> f(after#world)))) Ok(after)
-                        else if (isSettled(after#state))
-                            Err({ cursor = after, at = line, why = "押したが受け付けられなかった（返事の番号が進まない）", seen = "" })
-                        else Ok({ awaiting = Some((line, seq)) | after })
+                        else Ok({ awaiting = Some({ line = line, seq = seq,
+                                                    release = Some({ keys = keys, button = Option.nonEmpty(clicking) }) }) | after })
                     case _ => Ok(after)
                 })
             }
@@ -539,12 +550,8 @@ pub mod Flow {
                          frames = { step = step, state = state } :: c#frames,
                          history = List.take(App.historyLimit(), step#after :: c#history) | c };
             match next#awaiting {
-                case Some((pressLine, _)) =>
-                    if (answered(ctx, next)) Ok({ awaiting = None | next })
-                    else if (isSettled(state))
-                        Err({ cursor = next, at = pressLine, why = "押したが受け付けられなかった（返事の番号が進まない）", seen = "" })
-                    else Ok(next)
-                case None => Ok(next)
+                case Some(wait) => judgeAwaiting(ctx, wait, down, button, next)
+                case None       => Ok(next)
             }
         }
 
@@ -572,11 +579,29 @@ pub mod Flow {
     pub def roundToNanos(secs: Float64): Float64 =
         Float64.round(secs * 1000000000.0) / 1000000000.0
 
-    /// 返事を待っている tap の番号が進んだか。
+    /// 返事を待っている押し方の番号が進んだか。
     def answered(ctx: Ctx[w, ef], c: PlayState[w]): Bool =
         match (c#awaiting, App.rec(ctx#app)#flow#replies) {
-            case (Some((_, seq)), Some(f)) => f(c#world) != seq
-            case _                         => true
+            case (Some(wait), Some(f)) => f(c#world) != wait#seq
+            case _                     => true
+        }
+
+    /// 返事を待っている押し方を、このフレーム（down・button はこのフレームで押していた物）の後の World で確かめる。
+    /// 押した物がまだどれか下りている間は見ない。離したフレームの後に番号が進まず、固定刻みで持ち越した押した瞬間も残っていなければ失敗。
+    def judgeAwaiting(ctx: Ctx[w, ef], wait: Awaiting, down: Set[Key], button: Bool, c: PlayState[w]): Result[Stop[w], PlayState[w]] =
+        let stillDown = wait#release |> Option.exists(p -> not Set.isEmpty(Set.intersection(p#keys, down)) or (p#button and button));
+        if (answered(ctx, c)) Ok({ awaiting = None | c })
+        else if (stillDown) Ok(c)
+        else if (isSettled(c#state))
+            Err({ cursor = c, at = wait#line, why = "押したが受け付けられなかった（返事の番号が進まない）", seen = "" })
+        else Ok({ awaiting = Some({ release = None | wait }) | c })
+
+    /// 離す前に手順が終わって返事を確かめられなかった押し方の知らせ（無ければ空）。
+    def unjudgedNotes(ctx: Ctx[w, ef], c: PlayState[w]): List[String] =
+        match c#awaiting {
+            case Some(wait) if Option.nonEmpty(wait#release) and not answered(ctx, c) =>
+                "${wait#line#file}:${Int32.toString(wait#line#number)}: 離す前に手順が終わったので、返事を確かめていない（${wait#line#text}）" :: Nil
+            case _ => Nil
         }
 
     /// 固定刻みで取り置いた押した瞬間が残っていないか（残っている間は、次のフレームで系に届く）。

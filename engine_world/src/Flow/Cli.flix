@@ -70,6 +70,7 @@ pub mod Flow.Cli {
                 println("ok ${path}: ${Int32.toString(count)} フレーム（${seconds(count)} 秒）${fingerprintPart(app, outcome#last)}");
                 println(placesText(outcome));
                 println(statusPart(app, outcome#last));
+                outcome#notes |> List.forEach(note -> println("note ${note}"));
                 0
             case Err(failure) =>
                 println("FAIL ${failure#at#file}:${Int32.toString(failure#at#number)}: ${failure#why}");
