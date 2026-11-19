@@ -490,6 +490,9 @@ func resolveExportWebPaths(o exportWebOptions) (exportWebPaths, int, error) {
 	}
 
 	v := p.Version
+	if code, err := ensureFullWebFresh(p.Engine, v); err != nil {
+		return p, code, err
+	}
 	// WhyNot: build/engine_full_web と build/gl-jar・build/web-jar を直に読まない — 別の所で make sync-engine-full-web が走ると、
 	// 書き出しの途中（TeaVM は数分後に fge-web-tools を読む）で中身が書き換わる。置き場のエントリは置いた後は変わらない。
 	// 置き場が無い engine（配った版・置き場を作る前の作業コピー）だけ前の置き場を読む。
