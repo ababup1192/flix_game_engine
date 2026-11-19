@@ -96,7 +96,8 @@
 - `pub type alias Pending = { group = String, states = Map[String, LoadProgress.LoadState], sentPriority = List[String], costMs = Float64, idleSinceMs = Float64 }`
 - 鍵の並びが使えるか（Godot の load_threaded_get_status）。判定するだけで待たない。
   `pub enum Readiness with Eq, ToString { case Ready case Waiting case GaveUp(String) }`
-- `pub def start(group: Group[r, a]): (Map[String, Result[String, a]], Pending) \ {Fs.FileRead, IO, LoadProgress}`
+- 起動の読み込み: 道が全部起動の素材（Loaded）の鍵は read を順に・decode を並列に回し、残りは待ちの表に載せる
+  `pub def start(group: Group[r, a]): (Map[String, Result[String, a]], Pending) \ {Fs.FileRead, IO, LoadProgress}`
 - 鍵 1 つの状態。表に無い鍵は Failed（綴りの誤りを待ち続けにしない）。
   `pub def stateOf(key: String, pending: Pending): LoadProgress.LoadState`
 - 鍵を解いて使える形になったか。

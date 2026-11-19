@@ -43,11 +43,11 @@ pub mod BackgroundLoad {
         case GaveUp(String)
     }
 
+    // WhyNot: 後回しで届いていた鍵をここで解かない — 速い回線では押す前に後回しが全部届き、押した後に全部の鍵を解く間
+    // （3D の部屋 15 個で Mac でも 7 秒）何も出ない。まだ届いていない時と同じく、ゲームが始まってから予算の内で解く。
     /// 起動の読み込み: 道が全部起動の素材（Loaded）の鍵は read を順に・decode を並列に回し、残りは待ちの表に載せる
     /// （まだ届いていない鍵は行列の頭へ頼み、後回しで届いていた鍵は Downloaded のまま step が予算の内で解く）。
     /// 返すのは解いた鍵の結果（Err は decode の理由）と待ちの表。後回しの無い機種では全部の鍵が結果に入り、表は全部 Loaded。
-    // WhyNot: 後回しで届いていた鍵をここで解かない — 速い回線では押す前に後回しが全部届き、押した後に全部の鍵を解く間
-    // （3D の部屋 15 個で Mac でも 7 秒）何も出ない。まだ届いていない時と同じく、ゲームが始まってから予算の内で解く。
     pub def start(group: Group[r, a]): (Map[String, Result[String, a]], Pending) \ {Fs.FileRead, IO, LoadProgress} =
         let downloads = LoadProgress.downloads();
         let (arrived, waiting) = group#keys
