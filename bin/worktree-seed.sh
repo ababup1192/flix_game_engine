@@ -122,6 +122,8 @@ seed clone engine_full/artifact/package.fpkg
 # WhyNot: 束の置き場は clone — テンプレの lib/github（clone）の相対 symlink がこの中のエントリを指す。symlink だと worktree の
 # sync-engine-full が main の置き場へエントリを足し、current を替え、main の掃除の数え方まで変える（bin/fpkg-store.sh も symlink を見たら実体に替える）。
 seed clone build/fpkg-store
+# WhyNot: gl-capture の基準の絵は clone — make gl-capture-check が足りない絵を書き足す。無いと基準と違うコマを画素で比べられず、字の縁の数画素でも止まる。
+seed clone build/gl-capture/baseline
 # WhyNot: engine_full.fpkg は symlink — 作業コピーでは誰も書かない（check-docs-sync が有無を見るだけ）。
 seed symlink engine_full/artifact/engine_full.fpkg
 

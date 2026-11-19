@@ -20,11 +20,18 @@ type PixelDiff struct {
 	MaxDelta int
 	// Total は画素の総数。
 	Total int
+	// Over は成分の差の最大が DiffNRGBAOver の threshold を超えた画素の数（DiffNRGBA では Pixels と同じ）。
+	Over int
 }
 
 // DiffNRGBA は a と b を NRGBA のまま比べる。大きさが違えば Pixels = -1。
 // WhyNot: pixelAt（color.RGBA）で比べない — RGBA は前乗せの色で、半透明の画素の色の差が alpha で潰れる。
 func DiffNRGBA(a, b image.Image, withAlpha bool) PixelDiff {
+	return DiffNRGBAOver(a, b, withAlpha, 0)
+}
+
+// DiffNRGBAOver は DiffNRGBA に加えて、成分の差の最大が threshold を超えた画素を Over に数える。
+func DiffNRGBAOver(a, b image.Image, withAlpha bool, threshold int) PixelDiff {
 	ra, rb := a.Bounds(), b.Bounds()
 	if ra.Dx() != rb.Dx() || ra.Dy() != rb.Dy() {
 		return PixelDiff{Pixels: -1, Total: ra.Dx() * ra.Dy()}
@@ -41,6 +48,9 @@ func DiffNRGBA(a, b image.Image, withAlpha bool) PixelDiff {
 			if m > 0 {
 				d.Pixels++
 				d.MaxDelta = max(d.MaxDelta, m)
+			}
+			if m > threshold {
+				d.Over++
 			}
 		}
 	}
