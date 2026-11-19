@@ -1,4 +1,4 @@
-<!-- engine v0.102.1 / 生成: 2026-11-19 -->
+<!-- engine v0.102.1 / 生成: 2026-11-20 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine
@@ -96,8 +96,7 @@
 - `pub type alias Pending = { group = String, states = Map[String, LoadProgress.LoadState], sentPriority = List[String], costMs = Float64, idleSinceMs = Float64 }`
 - 鍵の並びが使えるか（Godot の load_threaded_get_status）。判定するだけで待たない。
   `pub enum Readiness with Eq, ToString { case Ready case Waiting case GaveUp(String) }`
-- 起動の読み込み: 道が全部届いている鍵は read を順に・decode を並列に回し、残りは行列の頭へ頼んで待ちの表に載せる。
-  `pub def start(group: Group[r, a]): (Map[String, Result[String, a]], Pending) \ {Fs.FileRead, IO, LoadProgress}`
+- `pub def start(group: Group[r, a]): (Map[String, Result[String, a]], Pending) \ {Fs.FileRead, IO, LoadProgress}`
 - 鍵 1 つの状態。表に無い鍵は Failed（綴りの誤りを待ち続けにしない）。
   `pub def stateOf(key: String, pending: Pending): LoadProgress.LoadState`
 - 鍵を解いて使える形になったか。

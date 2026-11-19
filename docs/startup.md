@@ -105,7 +105,7 @@ fge-web.js が wasm を読み終えた後に別の行列で取り（同時 2 本
 後回しにした 3D の部屋のように、届いてから解く（glb を読む・絵を貼る）物は、鍵ごとのグループ（`BackgroundLoad.Group`）にまとめる。
 
 ```flix
-// 読み込みの頭: 届いている鍵だけ解き、残りは待ちの表（Pending）に載せる。Pending は resources 側に置く
+// 読み込みの頭: 起動の素材だけで組める鍵を解き、残り（まだ届いていない鍵と、押す前に届いていた後回しの鍵）は待ちの表（Pending）に載せる。Pending は resources 側に置く
 let (rooms, pending) = BackgroundLoad.start(Rooms.group(doc, LoadProgress.imageDecoder()));
 let downloads = LoadProgress.downloads();
 

@@ -148,6 +148,10 @@ pub mod BackgroundLoad.Internal {
         case LoadProgress.DecodeBudget.Covered(ms) => isFirst or elapsed < ms
     }
 
+    /// 鍵の道が全部起動の素材（Loaded）か。道の無い鍵も起動の素材として扱う。
+    pub def isStartupKey(downloads: LoadProgress.AssetDownloads, pathsOf: String -> List[String], key: String): Bool \ IO =
+        pathsOf(key) |> List.forAll(path -> downloads#stateOf(path) == LoadProgress.LoadState.Loaded)
+
     /// 鍵の道の状態を 1 つにまとめる。どの道も届いて（Downloaded か Loaded）いれば Downloaded（鍵として解く順番待ち）。
     /// 届いていない道があれば、Failed・Queued・Downloading の順に重い方。道の無い鍵は Downloaded。
     pub def arrivalOf(downloads: LoadProgress.AssetDownloads, pathsOf: String -> List[String], key: String): LoadProgress.LoadState \ IO =
