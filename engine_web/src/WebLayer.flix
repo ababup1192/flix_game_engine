@@ -437,7 +437,7 @@ pub mod WebLayer {
             }, arrived)
         }
 
-    /// 届いた後回しのフォントを 1 本だけ上げ、フォントの表の仮の当て（WebAssets.withStandInFonts）を本物に替える。
+    /// 届いた後回しのフォントを 1 本だけ上げ、フォントの表の代わりのフォント（WebAssets.withPlaceholderFonts）を本物に替える。
     /// upload = アトラスを上げて FontAtlas を返す（上げられなければ None・仮の当てのまま）。上げた道は素材の表から手放す。
     // WhyNot: 文字送りの間（予算の Paused）も待たない — 字はどの画面でも使い、待つ間ずっと仮のフォントで出続ける。
     // WhyNot: コマに 2 本以上上げない — アトラスの検算と上げは 1 本で数 ms かかり、重ねるとコマが跳ねる。

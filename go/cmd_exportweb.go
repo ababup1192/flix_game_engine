@@ -216,6 +216,10 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
 		return 1
 	}
+	if err := checkDeferredFontNames(deferredFonts, textureNames, early.Sounds); err != nil {
+		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
+		return 1
+	}
 	deferredPlan, textureNames = withDeferredFonts(deferredPlan, deferredFonts, textureNames)
 	for _, line := range deferredPlan.Warnings {
 		ewLogf("知らせ: %s", line)
@@ -1015,7 +1019,7 @@ func placeFontAtlases(p exportWebPaths, o exportWebOptions, names []string) ([]s
 	var files []string
 	for _, name := range names {
 		src := filepath.Join(dir, name+".fontatlas")
-		rel := "font-atlas/" + name + ".fontatlas"
+		rel := webFontAtlasRel(name)
 		if !fileExists(src) {
 			return nil, 1, fmt.Errorf("フォントアトラス %s が無い。\n  次: font-bake で作るか、--font-atlas-dir の中身を確かめる", src)
 		}

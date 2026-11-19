@@ -275,3 +275,15 @@ func TestWithDeferredFontsNamesAtlasByFont(t *testing.T) {
 		t.Fatalf("got %v", names)
 	}
 }
+
+func TestCheckDeferredFontNamesRejectsTextureName(t *testing.T) {
+	if err := checkDeferredFontNames([]string{"gothic"}, map[string][]string{"assets/bg/g.png": {"gothic"}}, nil); err == nil {
+		t.Fatal("テクスチャと同じ名前を通した")
+	}
+}
+
+func TestCheckDeferredFontNamesRejectsSoundName(t *testing.T) {
+	if err := checkDeferredFontNames([]string{"gothic"}, nil, []webSound{{Name: "gothic", Path: "assets/sfx/g.wav"}}); err == nil {
+		t.Fatal("音と同じ名前を通した")
+	}
+}

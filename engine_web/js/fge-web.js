@@ -1400,6 +1400,7 @@ var fgeDeferredSweepMs = 30000;
 function fgeDeferredPrepare(bundle, files, images, sounds) {
   (bundle.deferred || []).forEach(function (d) {
     var e = { path: fgeNormPath(d.path), bytes: d.bytes || 0, names: d.names || [], file: false, image: false, sounds: [],
+              font: /\.fontatlas$/.test(fgeNormPath(d.path)),
               state: "queued", why: "", arrivedAtRelease: false, permanent: false, failedAt: 0, gen: 0, abort: null, startedAt: 0 };
     fgeDeferred.entries.push(e);
     fgeDeferred.byPath.set(e.path, e);
@@ -1423,10 +1424,10 @@ function fgeDeferredState(nameOrPath) {
   if (e.state === "released") return "queued";
   return e.state === "failed" ? "failed:" + e.why : e.state;
 }
-// WhyNot: 絵と音を素材の表に入っただけで「届いた」にしない — 絵は WebLayer が登録するまで描けず、音は解くまで鳴らせない。
+// WhyNot: 絵と音とフォントのアトラスを素材の表に入っただけで「届いた」にしない — 絵とアトラスは WebLayer が上げるまで描けず、音は解くまで鳴らせない。
 function fgeDeferredArrived(e) {
   if (e.state === "released") return e.arrivedAtRelease;
-  return e.state === "loaded" || (e.state === "downloaded" && !e.image && e.sounds.length === 0);
+  return e.state === "loaded" || (e.state === "downloaded" && !e.image && !e.font && e.sounds.length === 0);
 }
 function fgeDeferredMissing() {
   var out = [];
@@ -1614,7 +1615,7 @@ function fgeBootProgress() {
   fgeProgress(phase, assets * b.assetsWire + wasm * b.wasmWire, b.assetsWire + b.wasmWire);
 }
 // fgeCountWasmFetch は、次に url を取る fetch の Response の複製を読んで、届いたバイト数を onBytes へ渡す。
-// WhyNot: wasm を自前で取ってバイト列を TeaVM へ渡さない — TeaVM の load は道を渡した時だけ compileStreaming で届きながらコンパイルし、
+// WhyNot: gzip の道では wasm を自前で取ってバイト列を TeaVM へ渡さない — TeaVM の load は道を渡した時だけ compileStreaming で届きながらコンパイルし、
 // ブラウザは fetch の URL に紐づけてコンパイル済みのコードを持ち越す。元の Response は TeaVM へそのまま渡し、複製だけを数える。
 function fgeCountWasmFetch(url, onBytes) {
   var plain = window.fetch;
@@ -1641,6 +1642,9 @@ function fgeCountWasmFetch(url, onBytes) {
 // fgeLoadWasm は wasm を読んで TeaVM の instance を返す。束が brotli の版（wasmBrotli）を持てば、それと解き手を取って頁で解く。
 // WhyNot: brotli の版を取れない・解けない時に止めない — 解き手の読み込みや解く途中で落ちても、gzip の classes.wasm で同じ物が動く。
 // WhyNot: wasm を読めない（WebAssembly GC が無い）時に gzip で取り直さない — 同じ wasm なので結果は変わらず、量だけ増える。
+// WhyNot: brotli の道でコンパイル済みのコードの持ち越しを諦める — バイト列を渡すと 2 回目もコンパイルし直すが、Chrome は関数を初めて呼ぶ時にコンパイルするので
+// 一括のコンパイルは 30 ms ほどで、回線の 1.3 MB（4G で 6 秒）の方が重い。
+// WhyNot: 届いた物を必ず解かない — 置き場が .br を Content-Encoding: br で配るとブラウザがもう解いていて、頭が wasm の印（\0asm）になる。
 function fgeLoadWasm(bundle, wasmUrl, onBytes) {
   var plain = function () {
     fgeCountWasmFetch(wasmUrl, onBytes);
@@ -1649,7 +1653,9 @@ function fgeLoadWasm(bundle, wasmUrl, onBytes) {
   if (!bundle.wasmBrotli) return plain();
   return Promise.all([fgeFetchCounted(fgeVersioned(bundle.wasmBrotli), onBytes), fgeLoadScript("brotli-decode.js")]).then(function (got) {
     var started = performance.now();
-    var raw = BrotliDecode(new Int8Array(got[0]));
+    var bytes = new Int8Array(got[0]);
+    if (bytes.length >= 4 && bytes[0] === 0 && bytes[1] === 0x61 && bytes[2] === 0x73 && bytes[3] === 0x6d) return bytes;
+    var raw = BrotliDecode(bytes);
     if (fgeDecodeTimes !== null) console.log("[loadtime] wasm の brotli を解いた " + (performance.now() - started).toFixed(0) + " ms");
     return raw;
   }).then(function (raw) { return TeaVM.wasmGC.load(raw); }, function (e) {

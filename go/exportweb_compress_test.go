@@ -203,7 +203,9 @@ func TestWebpAtlasJoinsBackToSameBytes(t *testing.T) {
 		t.Fatal(err)
 	}
 	b := webBundle{}
-	transcodeWebAssets(out, &b, []string{rel}, defaultWebCompress(), enc)
+	keepSide := defaultWebCompress()
+	keepSide.FontAtlasScale = 1
+	transcodeWebAssets(out, &b, []string{rel}, keepSide, enc)
 	if b.Transcoded[rel] != rel+webAtlasSuffix {
 		t.Fatalf("transcoded = %v", b.Transcoded)
 	}

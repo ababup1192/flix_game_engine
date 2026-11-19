@@ -44,7 +44,6 @@ func resolveWebDeferred(raw json.RawMessage) ([]webGlob, error) {
 	return globs, nil
 }
 
-// webDeferredPlan は後回しにする道（取る順）と、知らせるだけの行。
 // resolveWebDeferredFonts は project.json の web.deferredFonts（タイトルの後に読むフォントの名前）を、fonts の名前と照らして返す。
 // WhyNot: 全部のフォントを後回しにさせない — タイトルの字を出すフォントが 1 本も無いと、届くまで組み込みの英数の字で出る。
 func resolveWebDeferredFonts(raw json.RawMessage, fonts []string) ([]string, error) {
@@ -76,6 +75,29 @@ func resolveWebDeferredFonts(raw json.RawMessage, fonts []string) ([]string, err
 	return names, nil
 }
 
+// checkDeferredFontNames は後回しのフォントの名前が、textures と sounds の名前と被っていないかを見る。
+// WhyNot: 被ったまま通さない — 頁は後回しの物を名前でも引く（fgeDeferred.byName）ので、同じ名前の絵か音の届き具合と取り違える。
+func checkDeferredFontNames(fonts []string, textureNames map[string][]string, sounds []webSound) error {
+	taken := map[string]bool{}
+	for _, names := range textureNames {
+		for _, n := range names {
+			taken[n] = true
+		}
+	}
+	for _, s := range sounds {
+		taken[s.Name] = true
+	}
+	for _, name := range fonts {
+		if taken[name] {
+			return fmt.Errorf("project.json の web.deferredFonts の %q が textures か sounds の名前と同じ。\n  次: フォントか素材の名前を替える（届いていない名前の一覧で取り違える）", name)
+		}
+	}
+	return nil
+}
+
+// webFontAtlasRel はフォントのアトラスを置く道（engine_web の WebAssets.atlasPathOf と同じ）。
+func webFontAtlasRel(name string) string { return "font-atlas/" + name + ".fontatlas" }
+
 // withDeferredFonts は後回しの列の頭へ、後回しのフォントのアトラスを足し、アトラスの道 → フォントの名前を names に足した物を返す。
 // 頁の届いていない名前（LoadProgress の missing）にフォントの名前が並び、ゲームは絵と同じ扱いで待てる。
 // WhyNot: 列の後ろに足さない — 字は最初の場面から使い、3D の部屋や後半の絵より先に要る。
@@ -89,7 +111,7 @@ func withDeferredFonts(plan webDeferredPlan, fonts []string, names map[string][]
 	}
 	var heads []string
 	for _, name := range fonts {
-		rel := "font-atlas/" + name + ".fontatlas"
+		rel := webFontAtlasRel(name)
 		heads = append(heads, rel)
 		merged[rel] = []string{name}
 	}
@@ -97,6 +119,7 @@ func withDeferredFonts(plan webDeferredPlan, fonts []string, names map[string][]
 	return plan, merged
 }
 
+// webDeferredPlan は後回しにする道（取る順）と、知らせるだけの行。
 type webDeferredPlan struct {
 	Paths    []string
 	Warnings []string
@@ -119,7 +142,7 @@ func planWebDeferred(b webBundle, globs []webGlob, embed webEmbedPlan, fonts []s
 		hidden[rel] = "web.omit"
 	}
 	for _, name := range fonts {
-		rel := "font-atlas/" + name + ".fontatlas"
+		rel := webFontAtlasRel(name)
 		for _, g := range globs {
 			if g.match(rel) {
 				return plan, fmt.Errorf("web.deferred の %q がフォントのアトラス %s に当たる（起動の画面の字に要る）。\n  次: glob を assets/ の下の素材だけに当たるよう狭める", g.Pattern, rel)
@@ -251,7 +274,8 @@ const (
 	webStartupTargetSeconds = 16.0
 )
 
-// webStartupBytes は頁が進みの棒を量で動かすための、起動の素材と wasm の大きさ（素の大きさと回線に乗る量の見積もり）。
+// webStartupBytes は頁が進みの棒を量で動かすための、起動の素材と wasm の大きさ（頁が数えるバイト数と回線に乗る量の見積もり）。
+// wasm を brotli で配る時の Wasm は classes.wasm.br の大きさ（頁はそれを数える）。
 type webStartupBytes struct {
 	Assets     int64 `json:"assets"`
 	AssetsWire int64 `json:"assetsWire"`

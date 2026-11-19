@@ -193,7 +193,7 @@ pub mod WebLayer.Internal.WebGpuLayer {
             if (List.exists(p -> p#name == entry#name, pending)) acc
             else uploadAtlas(paint, entry) |> Option.map(atlas -> Map.insert(entry#name, atlas, acc)) |> Option.getWithDefault(acc)
         }, Map#{BootFont.name() => BootFont.atlas()});
-        { atlases = Ref.fresh(Static, WebAssets.withStandInFonts(manifest, pending, atlases)), grow = (atlas, _) -> checked_ecast(atlas),
+        { atlases = Ref.fresh(Static, WebAssets.withPlaceholderFonts(manifest, pending, atlases)), grow = (atlas, _) -> checked_ecast(atlas),
           missing = Ref.fresh(Static, Set.empty()) }
 
     /// 素材の表のアトラスを読んで R8 で上げる。束に無いか壊れていれば 1 行言って None（組み込みフォントか仮の当てで出す）。

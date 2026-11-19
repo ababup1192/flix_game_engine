@@ -26,7 +26,7 @@ func exportInputsFingerprint(p exportWebPaths, o exportWebOptions, id string, en
 	h := sha256.New()
 	fmt.Fprintf(h, "rev\x00%s\nid\x00%s\nversion\x00%s\nnocheck\x00%v\n", exportReuseRevision, id, p.Version, o.NoBrowserCheck)
 	// WhyNot: 道具の道を symlink のまま入れない — brew は版を上げても道を変えず、先の Cellar の道だけが変わる。
-	for _, tool := range []string{enc.FFmpeg, enc.Cwebp, enc.Dwebp} {
+	for _, tool := range []string{enc.FFmpeg, enc.Cwebp, enc.Dwebp, enc.Brotli} {
 		if real, err := filepath.EvalSymlinks(tool); err == nil {
 			tool = real
 		}
@@ -43,7 +43,7 @@ func exportInputsFingerprint(p exportWebPaths, o exportWebOptions, id string, en
 		}
 	}
 	engine := []string{p.FullWebFpkg, p.FullWebToml, p.GlJar, p.WebJar, p.WebToolsJar, p.WebJS, p.IndexHTML, p.FlixJar,
-		bootFontDataPath(p.Engine)}
+		bootFontDataPath(p.Engine), filepath.Join(filepath.Dir(p.WebJS), webBrotliDecoderFile)}
 	if exe, err := os.Executable(); err == nil {
 		engine = append(engine, exe)
 	}
