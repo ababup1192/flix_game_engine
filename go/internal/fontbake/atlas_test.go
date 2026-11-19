@@ -2,6 +2,7 @@ package fontbake
 
 import (
 	"encoding/binary"
+	"hash/crc32"
 	"math"
 	"os"
 	"path/filepath"
@@ -114,5 +115,58 @@ func TestSplitPixelsLeavesNoPixelsInRest(t *testing.T) {
 	rest, _, _, _ := SplitPixels(atlasBytes(4, []rune{'A'}))
 	if len(rest) != headerSize+glyphRecord+trailerBytes {
 		t.Fatalf("残りが %d バイト", len(rest))
+	}
+}
+
+func filledAtlas(side int, value func(x, y int) byte) []byte {
+	data := atlasBytes(side, []rune{'A', '泉'})
+	start := headerSize + 2*glyphRecord
+	for y := 0; y < side; y++ {
+		for x := 0; x < side; x++ {
+			data[start+y*side+x] = value(x, y)
+		}
+	}
+	return data
+}
+
+func TestDownscaleHalvesSideToMultipleOfFour(t *testing.T) {
+	small, err := Downscale(filledAtlas(20, func(x, y int) byte { return 0 }), 0.5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l, err := layoutOf(small)
+	if err != nil || l.side != 12 {
+		t.Fatalf("辺 %d（%v）", l.side, err)
+	}
+}
+
+func TestDownscaleKeepsGlyphTable(t *testing.T) {
+	data := filledAtlas(16, func(x, y int) byte { return 0 })
+	small, _ := Downscale(data, 0.5)
+	if string(small[16:headerSize+2*glyphRecord]) != string(data[16:headerSize+2*glyphRecord]) {
+		t.Fatal("字の表が変わった")
+	}
+}
+
+func TestDownscaleAveragesCoveredPixels(t *testing.T) {
+	small, _ := Downscale(filledAtlas(8, func(x, y int) byte { return byte(100 * ((x + y) % 2)) }), 0.5)
+	_, pixels, _, _ := SplitPixels(small)
+	if pixels[0] != 50 {
+		t.Fatalf("2×2 の平均が %d", pixels[0])
+	}
+}
+
+func TestDownscaleRewritesPixelChecksum(t *testing.T) {
+	small, _ := Downscale(filledAtlas(16, func(x, y int) byte { return byte(x * 16) }), 0.5)
+	_, pixels, _, _ := SplitPixels(small)
+	stored := binary.BigEndian.Uint64(small[len(small)-8:])
+	if stored != uint64(crc32.ChecksumIEEE(pixels)) {
+		t.Fatal("画素の検算が縮めた画素と合わない")
+	}
+}
+
+func TestDownscaleRejectsFactorBelowHalf(t *testing.T) {
+	if _, err := Downscale(filledAtlas(16, func(x, y int) byte { return 0 }), 0.33); err == nil {
+		t.Fatal("0.33 を通した")
 	}
 }

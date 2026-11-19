@@ -41,6 +41,26 @@ func TestResolveWebCompressRejectsBitrateOutOfRange(t *testing.T) {
 	}
 }
 
+func TestResolveWebCompressHalvesFontAtlasByDefault(t *testing.T) {
+	c, _ := resolveWebCompress(nil)
+	if c.FontAtlasScale != 0.5 {
+		t.Fatalf("既定の倍率 %g", c.FontAtlasScale)
+	}
+}
+
+func TestResolveWebCompressFontAtlasScaleOneKeepsAtlas(t *testing.T) {
+	c, err := resolveWebCompress(json.RawMessage(`{"compress": {"fontAtlasScale": 1}}`))
+	if err != nil || c.FontAtlasScale != 1 {
+		t.Fatalf("got %+v, %v", c, err)
+	}
+}
+
+func TestResolveWebCompressRejectsFontAtlasScaleBelowHalf(t *testing.T) {
+	if _, err := resolveWebCompress(json.RawMessage(`{"compress": {"fontAtlasScale": 0.4}}`)); err == nil {
+		t.Fatal("0.4 を通した")
+	}
+}
+
 func TestResolveWebCompressRejectsQualityOutOfRange(t *testing.T) {
 	if _, err := resolveWebCompress(json.RawMessage(`{"compress": {"lossyImages": [{"glob": "assets/*.png", "quality": 0}]}}`)); err == nil {
 		t.Fatal("quality 0 を通した")

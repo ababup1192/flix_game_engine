@@ -3,7 +3,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"path"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -185,4 +187,90 @@ func textureNamesByPath(pr exportProject) map[string][]string {
 		}
 	}
 	return out
+}
+
+// 起動まで（遊べるまで）の見積もりの前提。測った 4G の回線（Lighthouse のモバイルと同じ 1.6 Mbps・往復 150 ms）に合わせる。
+const (
+	webStage0BitsPerSecond = 1.6e6
+	// webStage0PreludeSeconds は index.html → version.txt → js → bundle.json の直列の往復（測った値）。
+	webStage0PreludeSeconds = 1.5
+	// webStage0TargetSeconds を超えたら書き出しの終わりに知らせる（止めない）。
+	webStage0TargetSeconds = 16.0
+)
+
+// webBootBytes は頁が進みの棒を量で動かすための、起動の素材と wasm の大きさ（素の大きさと回線に乗る量の見積もり）。
+type webBootBytes struct {
+	Assets     int64 `json:"assets"`
+	AssetsWire int64 `json:"assetsWire"`
+	Wasm       int64 `json:"wasm"`
+	WasmWire   int64 `json:"wasmWire"`
+}
+
+// webArrival は後回しの 1 本が 1.6 Mbps で何秒目に届くかの見積もり。
+type webArrival struct {
+	Path    string
+	Seconds float64
+}
+
+// webStage0 は遊べるまでに回線に乗る量と秒数の見積もり、と後回しの届く時刻。
+type webStage0 struct {
+	Boot     webBootBytes
+	PageWire int64
+	Seconds  float64
+	Deferred []webArrival
+}
+
+// webWireSize は置き場が gzip で配るとした時に回線に乗る量。もう詰めてある形（絵・音）は素の大きさ。
+// WhyNot: 置き場の圧縮を brotli で見積もらない — 今の置き先（GitHub Pages）は gzip しか配らない。
+func webWireSize(p string) int64 {
+	switch strings.ToLower(path.Ext(p)) {
+	case ".webp", ".jpg", ".jpeg", ".png", ".webm", ".opus", ".ogg", ".mp3", ".woff2", ".avif":
+		return fileSize(p)
+	}
+	data, err := os.ReadFile(p)
+	if err != nil {
+		return 0
+	}
+	gz, err := gzipBytes(data)
+	if err != nil || int64(len(gz)) > int64(len(data)) {
+		return int64(len(data))
+	}
+	return int64(len(gz))
+}
+
+func webSecondsFor(wire int64) float64 { return float64(wire) * 8 / webStage0BitsPerSecond }
+
+// webBootBytesOf は書き出し先 out の起動の素材（後回しでない物）と classes.wasm の大きさ。
+func webBootBytesOf(out string, b *webBundle) webBootBytes {
+	deferred := map[string]bool{}
+	for _, e := range b.Deferred {
+		deferred[e.Path] = true
+	}
+	var s webBootBytes
+	for _, rel := range b.copyList() {
+		if deferred[rel] {
+			continue
+		}
+		p := exportAssetPath(out, b.served(rel))
+		s.Assets += fileSize(p)
+		s.AssetsWire += webWireSize(p)
+	}
+	wasm := filepath.Join(out, "classes.wasm")
+	s.Wasm, s.WasmWire = fileSize(wasm), webWireSize(wasm)
+	return s
+}
+
+// webStage0Of は書き出し先 out から起動までの見積もりを作る。後回しは起動の後に、並べた順で回線を使い切るとして届く時刻を出す。
+func webStage0Of(out string, b *webBundle) webStage0 {
+	s := webStage0{Boot: webBootBytesOf(out, b)}
+	for _, name := range []string{"index.html", "version.txt", "fge-web.js", "wasm-gc-runtime.js", "bundle.json"} {
+		s.PageWire += webWireSize(filepath.Join(out, name))
+	}
+	s.Seconds = webStage0PreludeSeconds + webSecondsFor(s.Boot.AssetsWire+s.Boot.WasmWire+s.PageWire)
+	at := s.Seconds
+	for _, e := range b.Deferred {
+		at += webSecondsFor(webWireSize(exportAssetPath(out, b.served(e.Path))))
+		s.Deferred = append(s.Deferred, webArrival{Path: e.Path, Seconds: at})
+	}
+	return s
 }

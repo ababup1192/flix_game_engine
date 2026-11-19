@@ -185,3 +185,44 @@ func TestWebDeferredEntriesListEverySoundNameOfOnePath(t *testing.T) {
 		t.Errorf("同じ道の音は 1 本の後回しに全部の名前を持つはず %+v: %+v", want, got)
 	}
 }
+
+func stage0Fixture(t *testing.T) (string, webBundle) {
+	out := t.TempDir()
+	b := webBundle{Images: []string{"assets/bg/gate.webp", "assets/bg/late.webp"}}
+	writeServed(t, out, "assets/bg/gate.webp", 200000)
+	writeServed(t, out, "assets/bg/late.webp", 400000)
+	b.Deferred = []webDeferredEntry{{Path: "assets/bg/late.webp", Bytes: 400000}}
+	return out, b
+}
+
+func TestWebStage0CountsOnlyStartAssets(t *testing.T) {
+	out, b := stage0Fixture(t)
+	if got := webStage0Of(out, &b).Boot.AssetsWire; got != 200000 {
+		t.Errorf("起動の素材は 200000 のはず: %d", got)
+	}
+}
+
+func TestWebStage0SecondsAddPreludeToBandwidthTime(t *testing.T) {
+	out, b := stage0Fixture(t)
+	if got := webStage0Of(out, &b).Seconds; got != webStage0PreludeSeconds+1.0 {
+		t.Errorf("200 KB は 1.6 Mbps で 1 秒・前置きを足して %.1f 秒のはず: %.3f", webStage0PreludeSeconds+1.0, got)
+	}
+}
+
+func TestWebStage0DeferredArrivesAfterStage0(t *testing.T) {
+	out, b := stage0Fixture(t)
+	s := webStage0Of(out, &b)
+	if got := s.Deferred[0].Seconds; got != s.Seconds+2.0 {
+		t.Errorf("後回しの 400 KB は起動の 2 秒後に届くはず: %.3f（起動 %.3f）", got, s.Seconds)
+	}
+}
+
+func TestWebWireSizeGzipsText(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "a.json")
+	if err := os.WriteFile(p, []byte(strings.Repeat("a", 10000)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := webWireSize(p); got >= 1000 {
+		t.Errorf("同じ字の続く JSON は gzip で小さくなるはず: %d", got)
+	}
+}

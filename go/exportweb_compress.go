@@ -28,6 +28,7 @@ type webCompressSettings struct {
 	UncompressedAudio []string       `json:"uncompressedAudio"`
 	Images            *bool          `json:"images"`
 	LossyImages       []webLossyRule `json:"lossyImages"`
+	FontAtlasScale    *float64       `json:"fontAtlasScale"`
 }
 
 type webLossyRule struct {
@@ -42,6 +43,8 @@ type webCompress struct {
 	UncompressedAudio []webGlob
 	Images            bool
 	LossyImages       []webLossyGlob
+	// FontAtlasScale はアトラスの距離場の辺に掛ける倍率（1 なら縮めない）。
+	FontAtlasScale float64
 }
 
 type webGlob struct {
@@ -61,7 +64,7 @@ const (
 )
 
 func defaultWebCompress() webCompress {
-	return webCompress{Audio: true, AudioBitrateKbps: webDefaultAudioKbps, Images: true}
+	return webCompress{Audio: true, AudioBitrateKbps: webDefaultAudioKbps, Images: true, FontAtlasScale: fontbake.MinDownscale}
 }
 
 // resolveWebCompress は project.json の web 欄から compress を読む。無ければ既定（音は Opus・絵は lossless の WebP）。
@@ -84,7 +87,7 @@ func resolveWebCompress(raw json.RawMessage) (webCompress, error) {
 	dec := json.NewDecoder(bytes.NewReader(web.Compress))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&s); err != nil {
-		return c, fmt.Errorf("project.json の web.compress を読めない: %v\n  次: 鍵は audio・audioBitrateKbps・uncompressedAudio・images・lossyImages（[{glob, quality}]）", err)
+		return c, fmt.Errorf("project.json の web.compress を読めない: %v\n  次: 鍵は audio・audioBitrateKbps・uncompressedAudio・images・lossyImages（[{glob, quality}]）・fontAtlasScale", err)
 	}
 	if s.Audio != nil {
 		c.Audio = *s.Audio
@@ -98,6 +101,13 @@ func resolveWebCompress(raw json.RawMessage) (webCompress, error) {
 			return c, fmt.Errorf("project.json の web.compress.audioBitrateKbps が %d。\n  次: %d〜%d にする（ステレオの値・モノラルはその半分で詰める）", k, webMinAudioKbps, webMaxAudioKbps)
 		}
 		c.AudioBitrateKbps = k
+	}
+	if s.FontAtlasScale != nil {
+		f := *s.FontAtlasScale
+		if f < fontbake.MinDownscale || f > 1 {
+			return c, fmt.Errorf("project.json の web.compress.fontAtlasScale が %g。\n  次: %g〜1 にする（1 で縮めない。%g より下は込んだ漢字の縁が欠ける）", f, fontbake.MinDownscale, fontbake.MinDownscale)
+		}
+		c.FontAtlasScale = f
 	}
 	for _, g := range s.UncompressedAudio {
 		wg, err := compileWebGlob(g)
@@ -270,6 +280,7 @@ func transcodeWebAssets(out string, b *webBundle, atlases []string, c webCompres
 		os.Remove(j.src)
 	}
 
+	r.Notes = append(r.Notes, downscaleWebAtlases(out, atlases, c.FontAtlasScale)...)
 	atlasJobs, notes := planWebAtlases(out, atlases, enc)
 	r.Notes = append(r.Notes, notes...)
 	for i, err := range runWebJobs(atlasJobs) {
@@ -301,6 +312,30 @@ func transcodeWebAssets(out string, b *webBundle, atlases []string, c webCompres
 		b.Transcoded = nil
 	}
 	return r
+}
+
+// downscaleWebAtlases は書き出し先のアトラスの距離場を scale 倍に縮めて書き直す。縮められなかった物は元のまま配り、知らせを返す。
+// WhyNot: デスクトップの作り方（RenderFont.oversample）を変えない — デスクトップは実行中に字を足す（RenderGlyphGrow）ので
+// 作り直しと同じ細かさが要る。ブラウザは字を足さないので、配る時だけ縮める。
+func downscaleWebAtlases(out string, atlases []string, scale float64) []string {
+	if scale >= 1 {
+		return nil
+	}
+	var notes []string
+	for _, rel := range atlases {
+		p := exportAssetPath(out, rel)
+		data, err := os.ReadFile(p)
+		if err == nil {
+			data, err = fontbake.Downscale(data, scale)
+		}
+		if err == nil {
+			err = os.WriteFile(p, data, 0o644)
+		}
+		if err != nil {
+			notes = append(notes, fmt.Sprintf("%s の距離場を縮められなかった — 元の細かさで配る（%v）", rel, err))
+		}
+	}
+	return notes
 }
 
 func servedRel(out, dst string) string {
