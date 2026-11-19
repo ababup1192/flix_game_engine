@@ -75,11 +75,13 @@ mod WebAssets {
         { atlases = withPlaceholderFonts(request#manifest, pending, atlases), registry = registry,
           grow = (atlas, codepoints) -> noteMissing(warned, atlas, codepoints) }
 
-    /// 後回しのフォント（web.deferredFonts）のうち、アトラスがまだ素材の表に届いていない物。
+    /// 後回しのフォント（web.deferredFonts）のうち、まだ上げていない物（届いていても上げるのは WebLayer の毎コマの登録）。
+    // WhyNot: 起動の前に届いていたアトラスをここで上げない — 上げた印（Deferred.markLoaded）を付ける所が 1 か所に要り、
+    // 付け損ねると届いていない名前の一覧にフォントが残り続け、それを待つゲームが先へ進まない。
     pub def pendingFontsOf(manifest: List[RenderAsset.FontEntry]): List[RenderAsset.FontEntry] \ IO =
         manifest |> List.filter(entry -> {
             let path = atlasPathOf(entry);
-            Deferred.isDeferred(path) and not AssetTable.has(path)
+            Deferred.isDeferred(path) and Deferred.state(path) != "loaded"
         })
 
     /// 届いていないフォントの名前に、起動時に読めた最初のフォントを代わり（placeholder）に当てる（届いたら WebLayer が本物に差し替える）。
