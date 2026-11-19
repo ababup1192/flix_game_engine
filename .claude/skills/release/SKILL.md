@@ -54,6 +54,8 @@ CI ではテストを流し直さない（スナップショットが OS と JRE
 画面を開く門は `make release` に入っていないので、`make verify SUITE=gui`（sync-engine-full の後に determinism・gl-capture-check・
 smoke-devtools・webgpu-v1-check-web。並びの正は根の gates.json）を手元で流して緑を確かめてから 2 へ進む（`docs/flow.md` の決定性の門）。
 何が流れるかだけ見るなら `DRY=1`。
+gl-capture-check が基準との字のふちのような小さい差を「小さい差で通した」と出しても止まらない（物差しは `docs/backend-parity.md` の「小さい差で通す」）。
+止まった時だけ `build/gl-capture/diff/` の絵を見て、意図した変化なら `make gl-capture-baseline` で撮り直して基準の .sha256 を同じコミットに入れる。
 
 配る物を手元で組まないのは、作業ツリーを写すと git の管理外の `debug/`・`gallery/`・`packages.lock` まで
 同梱 zip に入るため（0.67.0・0.68.0 は tidepool-starter の録画で 1.2 GB になった）。CI のきれいな checkout から

@@ -562,6 +562,7 @@ determinism: ### [TARGETS="<フォルダ>:<シナリオ> …"] | 隠しウィン
 
 # 実機の窓の絵をテンプレの場面ごとに撮る (bin/gl-capture.sh)。隠しウィンドウ・FLIX_GE_FIXED_DT で dt を固定し、
 # 頭の 6 コマの SHA-256 を <OUT>/SHA256SUMS に控える。check は 2 回撮ってバイトで比べる (同じ起動で同じ絵になるか)。
+# WhyNot: 2 回撮りの比べは緩めない — 同じ機械・同じ engine で揺れるのは決まった絵を出せていない証拠。緩めるのは基準との比べだけ。
 # 描き手は既定の WebGPU。BACKEND=gl で GL の backend を撮る（基準は描き手ごとに別のファイル）。
 # 撮るのはテンプレと bench の lib の engine なので、先に make sync-engine-full (engine のソースが fpkg より新しければ止まる)。
 # 絵は機械とドライバで変わるので、比べるのは同じ機械で撮った物どうし。render_gl を触ったら check を回す。
@@ -579,14 +580,18 @@ GL_CAPTURE_MACHINE ?= $(shell sysctl -n machdep.cpu.brand_string 2>/dev/null | t
 GL_CAPTURE_BASELINE_GL ?= bench/baseline/0.96.0/gl-capture-$(GL_CAPTURE_MACHINE).sha256
 GL_CAPTURE_BASELINE_WEBGPU ?= bench/baseline/0.99.0/gl-capture-webgpu-jwebgpu$(GL_JAR_JWEBGPU)-$(GL_CAPTURE_MACHINE).sha256
 GL_CAPTURE_BASELINE_FILE ?= $(if $(filter gl,$(GL_CAPTURE_BACKEND)),$(GL_CAPTURE_BASELINE_GL),$(GL_CAPTURE_BASELINE_WEBGPU))
+# 基準の絵（PNG）は git の外の手元に置く（全部で 14 MB ほど・生成した絵は git に入れない決まり）。基準の SHA と同じバイトの絵が撮れた回に
+# gl-capture-check が置き、SHA が基準と違うコマだけこの絵と画素で比べる（物差しは docs/backend-parity.md の「小さい差で通す」）。
+GL_CAPTURE_BASELINE_IMAGES ?= build/gl-capture/baseline/$(notdir $(basename $(GL_CAPTURE_BASELINE_FILE)))
 # SCENES は撮った物のフォルダ名（rpg-starter__title）か、テンプレートのフォルダ名（rpg-starter = その場面全部）を , で並べる。
 GL_CAPTURE_ONLY = $(foreach n,$(subst $(comma), ,$(SCENES)),--only $(n))
-gl-capture-check: ### [BACKEND=gl] [BASE=off] [SKIP=<フォルダ名>] [SCENES=<名前>,…] | 同じ場面を 2 回撮って 2 コマ目以降までバイトで比べ、基準とも比べる（違えば exit 1）
+gl-capture-check: ### [BACKEND=gl] [BASE=off] [SKIP=<フォルダ名>] [SCENES=<名前>,…] | 同じ場面を 2 回撮って 2 コマ目以降までバイトで比べ、基準とも比べる（基準との小さい差は通す・超えたら exit 1）
 	@rm -rf build/gl-capture/a build/gl-capture/b
 	@bin/gl-capture.sh --backend $(GL_CAPTURE_BACKEND) $(GL_CAPTURE_ONLY) build/gl-capture/a && bin/gl-capture.sh --backend $(GL_CAPTURE_BACKEND) $(GL_CAPTURE_ONLY) build/gl-capture/b && \
 		bin/gl-capture.sh --compare build/gl-capture/a build/gl-capture/b $(if $(SKIP),--skip $(SKIP)) $(GL_CAPTURE_ONLY)
 	@if [ "$(BASE)" = off ]; then :; \
-	elif [ -f "$(GL_CAPTURE_BASELINE_FILE)" ]; then bin/gl-capture.sh --compare $(GL_CAPTURE_BASELINE_FILE) build/gl-capture/a $(if $(SKIP),--skip $(SKIP)) $(GL_CAPTURE_ONLY); \
+	elif [ -f "$(GL_CAPTURE_BASELINE_FILE)" ]; then bin/fge gl-capture-baseline-check $(GL_CAPTURE_BASELINE_FILE) $(GL_CAPTURE_BASELINE_IMAGES) build/gl-capture/a \
+		--diff-dir build/gl-capture/diff $(if $(SKIP),--skip $(SKIP)) $(GL_CAPTURE_ONLY); \
 	else echo "[gl-capture] この機械 ($(GL_CAPTURE_MACHINE)) の $(GL_CAPTURE_BACKEND) の基準 ($(GL_CAPTURE_BASELINE_FILE)) が無いので、2 回撮りの一致だけを見た（撮るなら make gl-capture-baseline）"; fi
 
 # この機械の基準を今の絵で撮る（撮った絵は 2 回撮りで一致した物だけ）。WebGPU の基準の頭には、撮った時の adapter の行（Dawn の名乗り）を # で残す。
@@ -596,7 +601,9 @@ gl-capture-baseline: ### [BACKEND=gl] | この機械の gl-capture の基準を�
 	@$(MAKE) --no-print-directory gl-capture-check BASE=off
 	@mkdir -p $(dir $(GL_CAPTURE_BASELINE_FILE))
 	@{ grep -ah '^\[backend\] webgpu:' build/gl-capture/a/*/run.log 2>/dev/null | head -1 | sed 's/^/# /'; cat build/gl-capture/a/SHA256SUMS; } > $(GL_CAPTURE_BASELINE_FILE)
-	@echo "[gl-capture] 基準を書いた: $(GL_CAPTURE_BASELINE_FILE)"
+	@rm -rf $(GL_CAPTURE_BASELINE_IMAGES) && mkdir -p $(GL_CAPTURE_BASELINE_IMAGES)
+	@rsync -a --include='*/' --include='frame-*.png' --exclude='*' build/gl-capture/a/ $(GL_CAPTURE_BASELINE_IMAGES)/
+	@echo "[gl-capture] 基準を書いた: $(GL_CAPTURE_BASELINE_FILE)（基準の絵は $(GL_CAPTURE_BASELINE_IMAGES)）"
 
 # ── Go 版の検査 (画素・波形を扱う層) ────────────────────────
 # 置き場は go/。標準ライブラリだけで書いてあり、go.sum は空のままが正しい。

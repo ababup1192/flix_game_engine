@@ -162,14 +162,42 @@ gl-parity は 1 コマずつの場面を GL と CPU で比べる。こちらは*
 同じ機械の同じ場面が同じ絵かを見る物差し。描き手は既定の WebGPU で、`BACKEND=gl` で GL の backend を撮る（make の口と script の名前は gl-capture のまま）。
 
 - `make gl-capture OUT=<フォルダ> [BACKEND=gl]` — 撮る。場面は `bin/gl-capture.sh` の既定（rpg・ノベル・tidepool の START の場面と bench/scene3d の 3D の部屋）
-- `make gl-capture-check [BACKEND=gl]` — 同じ場面を 2 回撮り、全部のコマがバイト一致するかを見て、この機械の基準とも比べる（違えば exit 1。基準の無い機械は 2 回撮りの一致だけ）。
+- `make gl-capture-check [BACKEND=gl]` — 同じ場面を 2 回撮り、全部のコマがバイト一致するかを見て、この機械の基準とも比べる（基準の無い機械は 2 回撮りの一致だけ）。
+  2 回撮りの比べはバイト一致のまま（同じ機械で揺れるのは決まった絵を出せていない証拠なので緩めない）。基準との比べは下の「小さい差で通す」。
   基準は描き手ごとに別: WebGPU は `bench/baseline/0.99.0/gl-capture-webgpu-jwebgpu<版>-<機械>.sha256`（名前に jWebGPU の版＝Dawn の版を入れて pin。頭の `#` の行に撮った adapter）・
-  GL は `bench/baseline/0.96.0/gl-capture-<機械>.sha256`。撮り直すのは `make gl-capture-baseline [BACKEND=gl]`
+  GL は `bench/baseline/0.96.0/gl-capture-<機械>.sha256`。撮り直すのは `make gl-capture-baseline [BACKEND=gl]`（基準の絵も置き直す）
 - jWebGPU の版を上げると WebGPU の基準のファイル名が変わり、撮り直すまで「基準が無い」と言う（古い Dawn の基準と比べない）
 - 撮っている間はマウスに触れない（マウスの位置は実のカーソルを読むので、hover のある場面の絵が変わる）
 - 組む口: `FLIX_GE_HIDDEN`（framebuffer = design）・`FLIX_GE_FRAME_SHOT`・`FLIX_GE_FIXED_DT`（2 コマ目以降も揃える。docs/flow.md）・`FLIX_GE_MUTE`・`START`
 - GL の絵は機械とドライバで変わる。基準の SHA を別の機械の撮った物と比べない
 - game-starter は src に `make new-game` が埋める字が残っていて、その場では組めないので撮らない
+
+### 小さい差で通す（基準との比べ）
+
+基準との比べは `bin/fge gl-capture-baseline-check` が 1 コマずつ裁く。
+
+1. SHA が基準と同じ → 通す
+2. SHA が違う → 手元の基準の絵と画素で比べる。成分（R・G・B・A）の差が **D=4** を超えた画素が **N=64** 以下、かつ差の最大が **M=40** 以下なら
+   「小さい差で通した」と 1 行出して通す。超えたら止める（exit 1）。どちらでも「基準 | 今 | 差の所」の絵を `build/gl-capture/diff/` に書く
+3. 基準の絵が無い（か、基準の SHA と合わない古い絵しか無い）→ 今まで通り止める
+
+基準の絵（全部で 14 MB ほど）は git に入れず、手元の `build/gl-capture/baseline/<基準のファイル名>/` に置く。基準と同じバイトの絵が撮れた回に
+check が自分で置き（基準と同じバイトなのでそのまま基準の絵になる）、`make gl-capture-baseline` は撮り直した絵で置き直す。worktree へは
+`make worktree-seed` が main の物を写す。基準の絵が置かれる前に差が出た機械では、1 回目は今まで通りバイト一致で止まる。
+
+D・N・M の根拠（0.103.0 の前に tidepool の title と level の 12 枚が字のふちでずれた時の実測）:
+
+| | 違う画素 | D=4 を超えた画素 | 差の最大 |
+|---|---|---|---|
+| 字のふちのずれ（通したい） | 16〜18 | 3〜12 | ±11〜±16 |
+| tidepool の 1 コマ分の動き（止めたい） | 1 万〜2.7 万 | 1,393〜2,132 | ±47〜±156 |
+| rpg の battle・talk の 1 コマ分（カーソルの点滅） | 63〜85 | 63〜79 | ±242 |
+| 16×16 を塗りつぶした絵の欠け | 256 前後 | 256 前後 | 大 |
+
+M は今日の最大 ±16 の 2.5 倍、N は今日の最大 12 の 5 倍で、止めたい物はどれも N か M のどちらかで 1 桁以上外れる。
+sound-novel の talk の 1 コマ分（92 画素・±3〜4 のゆっくりした変化）は D 以下なので通る（目では見分けられない差）。
+確かめは `go test ./internal/compare/ -run Capture`（実機の撮り物での確かめは `GL_CAPTURE_OLD`・`GL_CAPTURE_NEW` に 2 つの撮り物のフォルダを渡す）。
+値を替える時は `--threshold` `--max-pixels` `--max-delta` で試してから `DefaultCaptureTolerance` を直す。
 
 ### GL の呼び出しの並びを控えて比べる（`FLIX_GE_GL_LOG`）
 
@@ -188,7 +216,7 @@ gl-parity は 1 コマずつの場面を GL と CPU で比べる。こちらは*
 |---|---|---|
 | `gl-parity.txt` | gl-parity の行（場面ごとの差の数） | `make gl-parity` |
 | `gl-parity.sha256` | gl-parity の CPU の絵（GPU に依らない。同じ JDK・同じ CPU の種類で比べる）と GL の絵の SHA-256 | `bench/gl_parity/debug/` を shasum |
-| `gl-capture-<機械>.sha256`・`gl-capture-webgpu-jwebgpu<版>-<機械>.sha256` | 上の撮り比べの SHA-256（GL・WebGPU。同じ機械でだけ比べる） | `make gl-capture-baseline [BACKEND=gl]` |
+| `gl-capture-<機械>.sha256`・`gl-capture-webgpu-jwebgpu<版>-<機械>.sha256` | 上の撮り比べの SHA-256（GL・WebGPU。同じ機械でだけ比べる。画素で比べる基準の絵は git の外の `build/gl-capture/baseline/`） | `make gl-capture-baseline [BACKEND=gl]` |
 | `scene3d.txt` | 3D の部屋の CPU の絵の SHA-256 と、CPU で描く時間の中央値 | `FGE_RENDER_CACHE=off make bench B=scene3d-still`・`make bench B=scene3d-cpu` |
 | `gl-parity-cpu.tsv` | gl-parity の場面ごとの CPU の描く時間の中央値（同じ機械で前後を並べて見る。門にしない） | `make bench B=gl-parity-cpu` |
 | `reference.txt` | テンプレの reference-check の結果（前から落ちる場面も） | 各テンプレで `make reference-check` |
@@ -197,5 +225,5 @@ gl-parity は 1 コマずつの場面を GL と CPU で比べる。こちらは*
 | `upgrade/<ゲーム>.patch` | 0.76 の移行を済ませていないゲームの写しを、移行メモどおりに上げる差分（ゲームの本体には当てない） | 写しを手で直して `diff -ru` |
 
 比べる口: `make baseline-check`（gl-parity の行・CPU の絵・3D の部屋。`GALLERY=1` でテンプレの gallery も）・`make check-external`・
-`make gl-capture-check`（基準の SHA とも比べる。同じ機械だけ）・`make bench B=gl-parity-cpu` と `make bench B=scene3d-cpu` の中央値を `gl-parity-cpu.tsv`・`scene3d.txt` と見比べる（時間は門にしない）。
+`make gl-capture-check`（基準の SHA とも比べ、違うコマは小さい差なら通す。同じ機械だけ）・`make bench B=gl-parity-cpu` と `make bench B=scene3d-cpu` の中央値を `gl-parity-cpu.tsv`・`scene3d.txt` と見比べる（時間は門にしない）。
 CPU の 3D の絵の一部は毎回のテストでも守る（engine_tools の `TestSoftRaster3dPinned`: 光・影・半球の光・霧・トゥーンの段の 32×32 の 2 枚の画素の SHA-256）。
