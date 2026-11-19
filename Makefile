@@ -1517,7 +1517,8 @@ export NG_TITLE
 # sync-engine-full を 1 回回せば済む側の失敗なので、見逃すよりそちらを選ぶ（その 1 回はここで流す）。
 # WhyNot: 置き場の今のエントリが組んだ束・toml・版と同じかまで見る — 手で build-pkg した後や、版を上げて sync していない時は、
 # ゲームへ写すのが置き場の古い束（中の version も古い）になる。
-# WhyNot: 4 つの src に未コミットの差がある時は作り直さずに止める — 作業中の engine が版の名前を付けてゲームへ運ばれる。
+# WhyNot: 4 つの src に未コミットの差がある時・HEAD が main に入っていない時は作り直さずに止める — 作業中の engine が版の名前を付けてゲームへ運ばれる。
+# WhyNot: 作り直す時はブラウザ版の束（sync-engine-full-web）も組む — 同じ版の名前のまま古い中身が残り、ゲームの export-web が新しい def を知らずに止まる。
 # 古い理由を 1 行ずつ出すシェルの 1 文（古くなければ何も出さない）。
 ENGINE_FULL_STALE = if [ ! -f "$(ENGINE_FULL_FPKG_SRC)" ]; then echo "$(ENGINE_FULL_FPKG_SRC) が無い"; else \
 	  find $(ROOT_SRC_PKGS:%=%/src) -name '*.flix' -newer "$(ENGINE_FULL_FPKG_SRC)" 2>/dev/null | head -5 | sed 's/^/ソースの方が新しい: /'; \
@@ -1542,13 +1543,18 @@ engine-full-fresh: ### | engine_full.fpkg が古くないか（古ければ作�
 	  echo "$$dirty" | sed 's/^/  /'; \
 	  echo "  次: コミットするか戻してから打ち直す（承知で運ぶなら make sync-engine-full を流してから）"; exit 1; \
 	fi; \
+	if [ "$(FGE_UPGRADE_ANY_BRANCH)" != 1 ] && git rev-parse -q --verify refs/heads/main >/dev/null 2>&1 && ! git merge-base --is-ancestor HEAD main 2>/dev/null; then \
+	  echo "error: HEAD（$$(git rev-parse --abbrev-ref HEAD)）が main に入っていないコミットを持つので作り直しません（まだ出していない作業を v$(VERSION) の名前でゲームへ運ばないため）"; \
+	  echo "  次: main で打ち直す（承知でこの枝を運ぶなら FGE_UPGRADE_ANY_BRANCH=1）"; exit 1; \
+	fi; \
 	if git rev-parse -q --verify "refs/tags/v$(VERSION)" >/dev/null 2>&1; then \
 	  commits=$$(git log --oneline "v$(VERSION)..HEAD" -- $(ROOT_SRC_PKGS:%=%/src) 2>/dev/null); \
 	  if [ -n "$$commits" ]; then echo "[engine-full-fresh] v$(VERSION) のタグの後のコミットも束に入ります:"; echo "$$commits" | sed 's/^/  /'; \
 	  else echo "[engine-full-fresh] ソースは v$(VERSION) のタグと同じです"; fi; \
 	fi; \
-	echo "[engine-full-fresh] make sync-engine-full を流して作り直します"; \
+	echo "[engine-full-fresh] make sync-engine-full と sync-engine-full-web を流して作り直します"; \
 	$(MAKE) --no-print-directory sync-engine-full || exit 1; \
+	$(MAKE) --no-print-directory sync-engine-full-web || exit 1; \
 	why=$$($(ENGINE_FULL_STALE)); \
 	[ -z "$$why" ] || { echo "error: sync-engine-full の後も束が古いままです:"; echo "$$why" | sed 's/^/  /'; exit 1; }
 

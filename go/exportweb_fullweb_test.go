@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // devEngine は exportWebFixture の engine を作業コピー（go/ と VERSION の行のある Makefile）にし、置き場の current を entry へ向ける。
@@ -109,5 +110,47 @@ func TestFullWebFreshLeavesABundleAlone(t *testing.T) {
 	calls := fakeSync(t, nil)
 	if _, code, _ := resolveExportWebPaths(exportWebOptions{Game: game, Engine: eng}); code != 2 || *calls != 0 {
 		t.Errorf("code=%d sync=%d", code, *calls)
+	}
+}
+
+// 版の名前が合っていても、エントリより新しいソースがあれば組み直す（タグの後のコミット）。
+func TestFullWebFreshSyncsWhenASourceIsNewer(t *testing.T) {
+	game, eng := exportWebFixture(t)
+	devEngine(t, eng, "0.9.0", "engine_full_web-0.9.0-0123456789abcdef")
+	src := filepath.Join(eng, "engine_world/src/Flow.flix")
+	if err := os.MkdirAll(filepath.Dir(src), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(src, []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	later := time.Now().Add(time.Hour)
+	if err := os.Chtimes(src, later, later); err != nil {
+		t.Fatal(err)
+	}
+	calls := fakeSync(t, func(engine string) {
+		if err := os.Chtimes(src, time.Now().Add(-time.Hour), time.Now().Add(-time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if _, code, err := resolveExportWebPaths(exportWebOptions{Game: game, Engine: eng}); err != nil || code != 0 || *calls != 1 {
+		t.Errorf("code=%d err=%v sync=%d", code, err, *calls)
+	}
+}
+
+func TestFullWebFreshHonoursNoAutoSync(t *testing.T) {
+	game, eng := exportWebFixture(t)
+	devEngine(t, eng, "0.9.0", "")
+	t.Setenv("FGE_NO_AUTO_SYNC", "1")
+	calls := fakeSync(t, nil)
+	if _, code, _ := resolveExportWebPaths(exportWebOptions{Game: game, Engine: eng}); code != 2 || *calls != 0 {
+		t.Errorf("code=%d sync=%d", code, *calls)
+	}
+}
+
+func TestWithoutMakeVarsDropsTheParentMakeFlags(t *testing.T) {
+	got := withoutMakeVars([]string{"MAKEFLAGS=FLOW=e2e/a.flow", "MAKELEVEL=1", "MFLAGS=-s", "PATH=/bin"})
+	if len(got) != 1 || got[0] != "PATH=/bin" {
+		t.Errorf("%v", got)
 	}
 }
