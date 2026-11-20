@@ -143,7 +143,7 @@
 - 生成したドット絵アトラス 1 枚ぶんの受け渡し。
   `pub type alias AtlasUpload = { texture = String, key = String, baked = PxSpriteAtlas.Baked }`
 - App の中身（欄の意味は右の // コメント）。ゲームからは読まず、ビルダー（addSystem / withView など）で組む。
-  `pub type alias Rec[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], reloadPaths = Option[List[String]], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> Render.PassPlan \ ef, postStack = Option[w -> PostStack.Stack \ ef], screenClear = Color, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], letterboxView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Table \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], preload3d = Option[Preload3d[w]], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], shot = Option[w -> String \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64], pipelinedRendering = Bool, clocks = List[(Float64, w) -> w], backgroundSteps = List[(LoadProgress.DecodeBudget, Float64, w) -> w \ {IO, Fs.FileRead}], decodeBudget = w -> LoadProgress.DecodeBudget, cursor = Option[w -> CursorSpec], fullscreen = Option[w -> Bool], mouseCapture = Option[w -> Bool], diagnostics = Bool, outputs = List[Output[w]], starts = List[Start[w]], shots = List[Start[w]], flow = Flow.Table[w], fingerprint = Option[w -> String], summaryMask = w -> w }`
+  `pub type alias Rec[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], reloadPaths = Option[List[String]], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> Render.PassPlan \ ef, postStack = Option[w -> PostStack.Stack \ ef], screenClear = Color, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], letterboxView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Table \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], preload3d = Option[Preload3d[w]], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], shot = Option[w -> String \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64], pipelinedRendering = Bool, clocks = List[(Float64, w) -> w], backgroundSteps = List[(LoadProgress.DecodeBudget, Float64, w) -> App.Internal.BackgroundLoad.StepResult[w] \ {IO, Fs.FileRead}], decodeBudget = w -> LoadProgress.DecodeBudget, loadWaitView = Option[(Option[LoadProgress.LoadWait], w) -> w], loadWaitStyle = w -> LoadWaitStyle, loadingIndicator = LoadingIndicator, loadGate = Option[w -> List[String]], cursor = Option[w -> CursorSpec], fullscreen = Option[w -> Bool], mouseCapture = Option[w -> Bool], diagnostics = Bool, outputs = List[Output[w]], starts = List[Start[w]], shots = List[Start[w]], flow = Flow.Table[w], fingerprint = Option[w -> String], summaryMask = w -> w }`
 - 初期 World だけを持つ空の App。絵はまだ無い（withView で繋ぐまで何も描かない）。
   `pub def make(init: w): App[w, ef]`
 - 初期 World を design 解像度（project.json の designWidth/Height）から組む入口。
@@ -231,14 +231,26 @@
   `pub def withPipelinedRendering(app: App[w, {}]): App[w, {}]`
 - World の欄にある遊びの時計（Clock.Clock[c]）を、App が毎フレーム 1 回だけ進めるよう宣言する。
   `pub def addClock(spec: { clockOf = w -> Clock.Clock[c], withClock = (Clock.Clock[c], w) -> w, paceOf = w -> Clock.Pace[c, r] }, app: App[w, ef]): App[w, ef]`
-- このコマに後回しの素材を解いてよい量を World から導く（既定は Idle(4 ms)）。withBackgroundLoad と withMissingAssets の
+- このコマに後回しの素材を解いてよい量を World から導く（既定は Idle(4 ms)・純粋な関数・デスクトップでは効かない）。
   `pub def withDecodeBudget(f: w -> LoadProgress.DecodeBudget, app: App[w, ef]): App[w, ef]`
-- BackgroundLoad.start で起動の時に読み残した鍵を、毎コマ予算の内で読む。グループごとに何度でも呼べる。
-  `pub def withBackgroundLoad(spec: { group = BackgroundLoad.Group[r, a], downloads = LoadProgress.AssetDownloads, pendingOf = w -> BackgroundLoad.Pending, withPending = (BackgroundLoad.Pending, w) -> w, store = (String, Result[String, a], w) -> w, priority = w -> List[String] }, app: App[w, ef]): App[w, ef]`
-- 後回しの 2D の絵と音のうち、まだ届いていない名前（AssetDownloads#missing）を World へ写す。
-  `pub def withMissingAssets(spec: { downloads = LoadProgress.AssetDownloads, missingOf = w -> Set[String], withMissing = (Set[String], w) -> w }, app: App[w, ef]): App[w, ef]`
-- withBackgroundLoad・withMissingAssets の step を、このコマの予算で宣言の順に 1 回ずつ当てる（実機のふつうのコマが進める前に呼ぶ）。
+- BackgroundLoad.start で起動の時に読み残した鍵を、毎コマ予算の内で読む（グループごとに何度でも呼べる）。
+  `pub def withBackgroundLoad(spec: App.Internal.BackgroundLoad.GroupSpec[w, r, a], app: App[w, ef]): App[w, ef]`
+- 後回しの 2D の絵と音のうち、まだ届いていない名前（AssetDownloads#missing）を World へ写す（変わった時だけ書く）。
+  `pub def withMissingAssets(spec: App.Internal.BackgroundLoad.MissingSpec[w], app: App[w, ef]): App[w, ef]`
+- withBackgroundLoad・withMissingAssets の step を、このコマの予算で宣言の順に 1 回ずつ当てる（1 コマの予算は 1 つ）。
   `pub def stepBackgroundLoad(app: App[w, ef], world: w): w \ {IO, Fs.FileRead}`
+- 押した時の待ちの間、押す前の場面へ戻した World の扱い。KeepRunning = 入力なしで進め続ける（タイトルの演出と BGM が動く）・
+  `pub enum LoadWaitStyle with Eq, ToString { case KeepRunning, Freeze }`
+- 待ちが長い時の読み込み中の表示。Default = engine の部品・Hidden = 出さない・Custom = ゲームが描く（字を出すならゲームのフォントで）。
+  `pub enum LoadingIndicator { case Default, Hidden, Custom((ViewCtx, LoadProgress.LoadWait) -> List[Render.PlacedItem]) }`
+- App が待っている間の様子を毎コマ World へ写す（待ちが明けたコマに 1 回 None）。選んだ行を光らせる・自前の表示を出す時だけ繋ぐ。
+  `pub def withLoadWait(f: (Option[LoadProgress.LoadWait], w) -> w, app: App[w, ef]): App[w, ef]`
+- 押した時の待ちの間、戻した World を進め続けるか止めるか（既定は KeepRunning）。戻した World から場面ごとに選べる。
+  `pub def withLoadWaitStyle(f: w -> LoadWaitStyle, app: App[w, ef]): App[w, ef]`
+- 読み込み中の表示を替える（既定は Default）。
+  `pub def withLoadingIndicator(indicator: LoadingIndicator, app: App[w, ef]): App[w, ef]`
+- 次の場面で使う後回しの名前を World が言う。進めた World が届いていない名前を返したら、その World を出さずに待つ
+  `pub def withLoadGate(f: w -> List[String], app: App[w, ef]): App[w, ef]`
 - マウスの矢印の見せ方（withCursor の宣言）。icon = 形・visible = 見せるか。
   `pub type alias CursorSpec = { icon = GameEngine.Cursor, visible = Bool }`
 - 毎フレーム「マウスの矢印をどう見せたいか」を World から宣言する。App は宣言が変わったフレームだけ当て、
@@ -328,11 +340,11 @@
 - 開発の道具（リモートデバッグの命令口・ゲームの名簿・flow の記録・ヒッチの見張り・Doc の保存検知・F8 の注釈の書き出し・
   `pub type alias DevTools[w: Type, efTools: Eff] = DevToolsFactory[w, efTools]`
 - App を実機で走らせる。startup を 1 回だけ畳み込み、いま押されているキーを prev の
-  `pub def launch(app: App[w, {}]): Unit \ (Platform.Services + Platform.Annotation + Fs.FileRead + Fs.FileWrite + IO)`
+  `pub def launch(app: App[w, {}]): Unit \ (Platform.Services + Platform.Annotation + LoadProgress + Fs.FileRead + Fs.FileWrite + IO)`
 - loadApp で App を組んで launch する。flow を記録する起動では、loadApp が Fs.FileRead で読んだ中身を start の行に載せ、
-  `pub def loadAndLaunch(loadApp: Unit -> App[w, {}] \ ef2): Unit \ (ef2 + Platform.Services + Platform.Annotation + Fs.FileRead + Fs.FileWrite + IO)`
+  `pub def loadAndLaunch(loadApp: Unit -> App[w, {}] \ ef2): Unit \ (ef2 + Platform.Services + Platform.Annotation + LoadProgress + Fs.FileRead + Fs.FileWrite + IO)`
 - 開発の道具の組を選んで App を実機で走らせる（launch はデスクトップの道具の組でこれを呼ぶ）。
-  `pub def launchWithDevTools(tools: DevTools[w, efTools], app: App[w, {}]): Unit \ (efTools + Platform.Services + Fs.FileRead + Fs.FileWrite + IO)`
+  `pub def launchWithDevTools(tools: DevTools[w, efTools], app: App[w, {}]): Unit \ (efTools + Platform.Services + LoadProgress + Fs.FileRead + Fs.FileWrite + IO)`
 - `pub def launchForBench(app: App[w, ef]): Unit \ (ef + Platform.Services + Fs.FileRead + Fs.FileWrite + IO)`
 
 ## App.CursorLook — `engine_world/src/App/CursorLook.flix`
@@ -2261,6 +2273,8 @@
   `pub def drawWith(textureInfoOf: String -> Option[GameEngine.TextureInfo] \ ef, items: List[PlacedItem]): (List[GameEngine.Drawable], List[GameEngine.PolygonRenderCmd]) \ ef`
 - そのフレームに描く字の集合の指紋（テクスチャ名と文の codepoint を織り込んだ Int64）。
   `pub def glyphFingerprint(items: List[PlacedItem]): Int64`
+- 描く物が名前で引く絵とフォント（sprite の texture・Shader 面の tex 場・字のフォントのアトラスの texture 名）。
+  `pub def assetNames(items: List[PlacedItem]): Set[String]`
 - 描く物のうち、フォントのアトラスにまだ無い字を「テクスチャ名 → 字」で集める。
   `pub def missingGlyphs(items: List[PlacedItem]): Map[String, Set[Int32]]`
 - Shader 面だけを取り出して Platform.Draw2d.drawSurface が受ける描画依頼へ変換する（GL 経路専用）。

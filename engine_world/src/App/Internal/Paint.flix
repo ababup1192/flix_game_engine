@@ -200,12 +200,12 @@ pub mod App.Internal.Paint {
     /// 入れ直す（updateTileBuffer）。新しいスロットだけ initTileBuffer で VAO を作る —
     /// key が毎バケツ転がる層でも GPU バッファは 1 層 1 本のまま。
     /// 位置と倍率は動的な絵と同じ camera 値（resolvedCamera）から出すので視点はずれない。
-    def tileLayerCmds(app: App[w, ef], design: Vec2.Vec2, world: w, cache: TileCache):
+    def tileLayerCmds(app: App[w, ef], design: Vec2.Vec2, world: w, specs: List[TileLayerSpec], cache: TileCache):
             (List[GameEngine.TileMapRenderCmd], TileCache) \ (ef + Platform.GpuResources) =
         let r = App.rec(app);
-        match r#tileLayers {
-            case None    => (Nil, cache)
-            case Some(f) =>
+        match specs {
+            case Nil => (Nil, cache)
+            case _   =>
                 let (center, z) = resolvedCamera(r, world, design);
                 let (cmds, nextCache) = List.foldLeft((acc, entry) -> {
                     let (i, spec) = entry;
@@ -238,7 +238,7 @@ pub mod App.Internal.Paint {
                         tileVaoId   = vao,
                         tileCount   = count };
                     (cmd :: done, tileCacheStore(slot, spec#key, vao, count, c))
-                }, ((Nil: List[GameEngine.TileMapRenderCmd]), cache), List.zipWithIndex(f(world)));
+                }, ((Nil: List[GameEngine.TileMapRenderCmd]), cache), List.zipWithIndex(specs));
                 (List.reverse(cmds), nextCache)
         }
 
@@ -346,32 +346,67 @@ pub mod App.Internal.Paint {
                         design: Vec2.Vec2, display: Display.Display, world: w, look: Look,
                         tileCache: TileCache, glyphSeen: Option[Int64], budgetWarned: Bool):
             (TileCache, Option[Int64], Bool) \ (ef + Platform.Rendering + RenderTarget.Target + IO) =
+        let built = buildPainted(app, warnOnce, diagnostics, design, display, world, look, tileCache);
+        submitPainted(app, warnOnce, design, world, built, tileCache, glyphSeen, budgetWarned)
+
+    /// 1 コマの組み立ての結果（GPU に触らずに作った物）。submitPainted がそのまま描き手へ渡す。
+    /// items = 画面の絵（見え方と重ね物を掛けた後）・plan = 計画の問題を直した Pass の列・letterbox = 余りへ塗る絵（余りの無いコマは None）・
+    /// tiles = タイル層の宣言（見え方が等倍の時だけ）・retained = 見え方が等倍か（タイル層と静的層を GPU の道で描くか）。
+    pub type alias Built = { items = List[Render.PlacedItem], plan = Render.PassPlan, letterbox = Option[List[Render.PlacedItem]],
+                             tiles = List[TileLayerSpec], retained = Bool }
+
+    /// 組み立てた 1 コマが名前で引く絵とフォント（画面・Pass の中・余りの絵・タイル層のアトラス）。3D の場面の中は数えない。
+    pub def assetNamesOf(built: Built): Set[String] =
+        let passItems = built#plan#passes |> List.flatMap(p -> p#items);
+        let tileNames = built#tiles |> List.map(spec -> spec#tileSet#atlasSource#textureName) |> List.toSet;
+        Set.union(tileNames, Render.assetNames(List.append(List.append(passItems, Option.getWithDefault(Nil, built#letterbox)), built#items)))
+
+    /// world から 1 コマを組む（GPU に触らない。字のアトラスは引くだけ）。view = None のゲームは None。
+    /// 計画の問題の知らせはここで出す。
+    pub def buildPainted(app: App[w, ef], warnOnce: String -> Unit, diagnostics: Option[FrameDiagnostics.Diagnostics],
+                         design: Vec2.Vec2, display: Display.Display, world: w, look: Look, tileCache: TileCache):
+            Option[Built] \ (ef + Platform.GpuResources) =
         let r = App.rec(app);
-        match r#view {
-            case None          => (tileCache, glyphSeen, budgetWarned)
-            case Some(toItems) =>
+        r#view |> Option.map(toItems -> {
+            let atlas = Platform.GpuResources.getFontAtlas("default");
+            let ctx = baseCtx(app, design, display, atlas, warnOnce, diagnostics);
+            let frame = buildFrame(app, design, ctx, world, toItems);
+            let plan = notePassIssues(warnOnce, Render.resolvePassReads(tileCache#passTargets, frame#plan));
+            let letterboxItems = letterboxItemsOf(app, design, ctx, world);
+            // タイル層と静的層は GPU 側でカメラを掛けるので、見え方（F8 のズーム・パン）を掛けられない。
+            // 見え方が等倍でない間だけ、ほかの絵と同じ PlacedItem に直して一緒に掛ける。
+            let retained = Annotate.isIdentity(look#view);
+            let scene = frame#items;
+            let base = if (retained) scene
+                       else List.append(tilePausedItems(app, design, world),
+                                        List.append(scene, staticPausedItems(app, design, world)));
+            let inspected = Annotate.applyInspectItems(look#view,
+                if (List.isEmpty(look#inspected)) base else List.append(base, look#inspected));
+            // fixed は本番ビルドで Nil — 空の append で本編全件を cons し直さない。
+            let items = if (List.isEmpty(look#fixed)) inspected else List.append(inspected, look#fixed);
+            let tiles = if (retained) (r#tileLayers |> Option.map(f -> f(world)) |> Option.getWithDefault(Nil)) else Nil;
+            { items = items, plan = plan, letterbox = letterboxItems, tiles = tiles, retained = retained }
+        })
+
+    /// buildPainted で組んだ 1 コマを描き手へ渡す（アトラスの上げ・先に上げる 3D・Pass・余り・字の用意・タイル層・本編の順）。
+    /// 画面へ出す（presentFrame）のは呼ぶ側。built が None（view = None）なら何もしない。
+    pub def submitPainted(app: App[w, ef], warnOnce: String -> Unit, design: Vec2.Vec2, world: w, built: Option[Built],
+                          tileCache: TileCache, glyphSeen: Option[Int64], budgetWarned: Bool):
+            (TileCache, Option[Int64], Bool) \ (ef + Platform.Rendering + RenderTarget.Target + IO) =
+        let r = App.rec(app);
+        match built {
+            case None        => (tileCache, glyphSeen, budgetWarned)
+            case Some(frame) =>
                 uploadAtlases((r#spriteAtlases)(world));
                 preloadCmd(app, tileCache#gen, world) |> Option.forEach(cmd -> Platform.Draw3d.preload3d(cmd));
-                let atlas = Platform.GpuResources.getFontAtlas("default");
-                let ctx = baseCtx(app, design, display, atlas, warnOnce, diagnostics);
-                let frame = buildFrame(app, design, ctx, world, toItems);
-                let plan = notePassIssues(warnOnce, Render.resolvePassReads(tileCache#passTargets, frame#plan));
-                let passList = plan#passes;
-                renderPasses(warnOnce, design, plan);
-                let letterboxItems = renderLetterbox(app, warnOnce, design, ctx, world);
+                let passList = frame#plan#passes;
+                renderPasses(warnOnce, design, frame#plan);
+                Option.forEach(drawLetterbox(warnOnce, design), frame#letterbox);
+                let letterboxItems = Option.getWithDefault(Nil, frame#letterbox);
                 let cacheSeen = { passTargets = passList |> List.foldLeft((acc, p) -> Set.insert(p#name, acc), tileCache#passTargets)
                                   | tileCache };
-                // タイル層と静的層は GPU 側でカメラを掛けるので、見え方（F8 のズーム・パン）を掛けられない。
-                // 見え方が等倍でない間だけ、ほかの絵と同じ PlacedItem に直して一緒に掛ける。
-                let retained = Annotate.isIdentity(look#view);
-                let scene = frame#items;
-                let base = if (retained) scene
-                           else List.append(tilePausedItems(app, design, world),
-                                            List.append(scene, staticPausedItems(app, design, world)));
-                let inspected = Annotate.applyInspectItems(look#view,
-                    if (List.isEmpty(look#inspected)) base else List.append(base, look#inspected));
-                // fixed は本番ビルドで Nil — 空の append で本編全件を cons し直さない。
-                let items = if (List.isEmpty(look#fixed)) inspected else List.append(inspected, look#fixed);
+                let retained = frame#retained;
+                let items = frame#items;
                 // 字の欠け照合はレンダーターゲットの中の字も一緒に見る（ターゲットも本編と
                 // 同じ「初めて出る字は 1 コマ遅れる」に乗せる）。
                 let itemsForGlyphs = List.append(List.append(List.flatMap(p -> p#items, passList), letterboxItems), items);
@@ -389,7 +424,7 @@ pub mod App.Internal.Paint {
                     if (Map.isEmpty(missing)) Some(fp) else None
                 };
                 // 面と 3D の場面は別チャンネル（Platform.Draw2d.drawSurface・Platform.Draw3d.drawScene3d）へ積み、残りの 2D と一緒に描き手が z で合流させる。
-                let (tileCmds, nextCache) = if (retained) tileLayerCmds(app, design, world, cacheSeen) else (Nil, cacheSeen);
+                let (tileCmds, nextCache) = if (retained) tileLayerCmds(app, design, world, frame#tiles, cacheSeen) else (Nil, cacheSeen);
                 submitGpuItems(warnOnce, items, tileCmds, if (retained) staticLayerCmd(app, design, world) else None);
                 // 数えるのは itemsForGlyphs（本編 + レンダーターゲットの中）— headless の
                 // 検査と同じ量にそろえる。タイル層・静的層は GPU 側で 1 層 1 draw call に
@@ -429,25 +464,27 @@ pub mod App.Internal.Paint {
             RenderTarget.Target.endTarget()
         }, plan#passes)
 
-    /// withLetterboxView があり窓に余りがあれば、その絵を Pass（letterboxTarget。design の 1/4 の画素）へ描き、
-    /// 次の画面のコマで余りへ広げて塗るよう描き手に頼む（Platform.Draw2d.fillLetterbox）。描いた絵を返す（字の用意と絵の値段に数える）。余りの無いコマは何もしない。
-    // WhyNot: テクセルを design の大きさにしない — 余りは窓いっぱいに広げてぼかして見せる所で、小さく描いて 2 つの画素の間をなめらかにつないで広げる方が
-    //   ぼけが強く、ぼかしの shader を塗る画素も 1/16 で済む。
-    def renderLetterbox(app: App[w, ef], warnOnce: String -> Unit, design: Vec2.Vec2, base: App.ViewCtx, world: w):
-            List[Render.PlacedItem] \ (ef + Platform.Rendering + RenderTarget.Target) =
+    /// withLetterboxView があり窓に余りがあれば、その絵（字の用意と絵の値段に数える）。余りの無いコマは None。
+    def letterboxItemsOf(app: App[w, ef], design: Vec2.Vec2, base: App.ViewCtx, world: w): Option[List[Render.PlacedItem]] \ ef =
         match App.rec(app)#letterboxView {
             case Some(v) if isLetterboxed(base#display, design) =>
-                let items = App.composeScene(None, 1.0, design, { world = v({ visible = App.visibleOf(None, 1.0, design) | base }, world), hud = Nil });
-                let size = n -> Int32.max(1, Float64.tryToInt32(Float64.round(n)) |> Option.getWithDefault(1));
-                RenderTarget.Target.beginTarget({ name = letterboxTarget(), width = size(design#x / 4.0), height = size(design#y / 4.0),
-                                                  format = RenderTarget.Format.Rgba8Unorm, clear = RenderTarget.LoadOp.Clear({ r = 0.0, g = 0.0, b = 0.0 }),
-                                                  samples = 1 });
-                submitGpuItems(warnOnce, items, Nil, None);
-                RenderTarget.Target.endTarget();
-                Platform.Draw2d.fillLetterbox(letterboxTarget());
-                items
-            case _ => Nil
+                Some(App.composeScene(None, 1.0, design, { world = v({ visible = App.visibleOf(None, 1.0, design) | base }, world), hud = Nil }))
+            case _ => None
         }
+
+    /// 余りの絵を Pass（letterboxTarget。design の 1/4 の画素）へ描き、次の画面のコマで余りへ広げて塗るよう描き手に頼む
+    /// （Platform.Draw2d.fillLetterbox）。
+    // WhyNot: テクセルを design の大きさにしない — 余りは窓いっぱいに広げてぼかして見せる所で、小さく描いて 2 つの画素の間をなめらかにつないで広げる方が
+    //   ぼけが強く、ぼかしの shader を塗る画素も 1/16 で済む。
+    def drawLetterbox(warnOnce: String -> Unit, design: Vec2.Vec2, items: List[Render.PlacedItem]):
+            Unit \ (Platform.Rendering + RenderTarget.Target) =
+        let size = n -> Int32.max(1, Float64.tryToInt32(Float64.round(n)) |> Option.getWithDefault(1));
+        RenderTarget.Target.beginTarget({ name = letterboxTarget(), width = size(design#x / 4.0), height = size(design#y / 4.0),
+                                          format = RenderTarget.Format.Rgba8Unorm, clear = RenderTarget.LoadOp.Clear({ r = 0.0, g = 0.0, b = 0.0 }),
+                                          samples = 1 });
+        submitGpuItems(warnOnce, items, Nil, None);
+        RenderTarget.Target.endTarget();
+        Platform.Draw2d.fillLetterbox(letterboxTarget())
 
     /// withLetterboxView の絵を描く Pass の名前。
     pub def letterboxTarget(): String = "fge_letterbox"

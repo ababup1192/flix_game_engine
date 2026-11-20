@@ -28,7 +28,7 @@ mod TestBackgroundLoad {
                             Ref.put(List.foldLeft((acc, path) -> Map.insert(path, LoadProgress.LoadState.Queued, acc), Ref.get(table), paths), table)
                         },
                         setBudget = _ -> checked_ecast(()),
-                        spentMs = () -> Ref.get(spent) },
+                        spentMs = () -> Ref.get(spent) | LoadProgress.localDownloads() },
           states = table, requested = requested, released = released, clock = Ref.fresh(Static, 0.0),
           decodeMs = Ref.fresh(Static, 100.0), spent = spent }
 
@@ -248,6 +248,30 @@ mod TestBackgroundLoad {
     def testReadinessGivesUpOnAnUnknownKey(): Unit \ {Assert, Fs.FileRead, IO} =
         Assert.assertEq(expected = BackgroundLoad.Readiness.GaveUp("z: z は rooms の鍵に無い"),
                         BackgroundLoad.readiness("z" :: Nil, waitingPending(), 0.0, 20.0))
+
+    /// 名前が全部 missing に無ければ Ready
+    @Test
+    def testReadinessOfNamesIsReadyWhenNothingIsMissing(): Unit \ Assert =
+        Assert.assertEq(expected = BackgroundLoad.Readiness.Ready,
+                        BackgroundLoad.readinessOfNames("bg" :: "amb" :: Nil, Set#{"other"}, Set.empty(), 30.0, 20.0))
+
+    /// missing にある名前があり上限の内なら Waiting
+    @Test
+    def testReadinessOfNamesWaitsForAMissingName(): Unit \ Assert =
+        Assert.assertEq(expected = BackgroundLoad.Readiness.Waiting,
+                        BackgroundLoad.readinessOfNames("bg" :: "amb" :: Nil, Set#{"amb"}, Set.empty(), 1.0, 20.0))
+
+    /// 上限を超えたら、届いていない名前を挙げて GaveUp
+    @Test
+    def testReadinessOfNamesGivesUpAtTheLimit(): Unit \ Assert =
+        Assert.assertEq(expected = BackgroundLoad.Readiness.GaveUp("amb が 20.0 秒待っても届かない"),
+                        BackgroundLoad.readinessOfNames("bg" :: "amb" :: Nil, Set#{"amb"}, Set.empty(), 20.0, 20.0))
+
+    /// 諦めた名前が混ざれば上限を待たずに GaveUp
+    @Test
+    def testReadinessOfNamesGivesUpOnAGivenUpName(): Unit \ Assert =
+        Assert.assertEq(expected = BackgroundLoad.Readiness.GaveUp("bg は諦めた"),
+                        BackgroundLoad.readinessOfNames("bg" :: "amb" :: Nil, Set#{"amb"}, Set#{"bg"}, 0.0, 20.0))
 
     // ========================================================================
     // 取り直し: Failed → Queued → Downloaded → Loaded

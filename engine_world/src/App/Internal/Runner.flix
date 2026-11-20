@@ -35,7 +35,8 @@ pub mod App.Internal.Runner {
     }
 
     /// 開発の道具（hooks）を開いて起動の World を組み、閉じるまでループを回し、道具を閉じる。
-    pub def runLoop(app0: App[w, ef], hooks: App.Internal.DevTools.Hooks[w, ef, efTools]): Unit \ (ef + efTools + Platform.Services + Fs.FileRead + Fs.FileWrite + IO) =
+    /// downloads = 届いていない後回しの物を待つ時の機種の API（None は待たない: bench）。
+    pub def runLoop(app0: App[w, ef], hooks: App.Internal.DevTools.Hooks[w, ef, efTools], downloads: Option[LoadProgress.AssetDownloads]): Unit \ (ef + efTools + Platform.Services + Fs.FileRead + Fs.FileWrite + IO) =
         // 下ごしらえの間、画面にはバックエンドが最後に出した起動画面（「preparing game...」）が出たまま残る。
         // 長い下ごしらえは、ゲームが LoadProgress.report で区切りを知らせ、バックエンドの handler が起動画面を進める。
         // WhyNot: ここで起動画面を出し直さない — 間引きも中止スイッチも持たない 2 つ目の経路が生まれる。
@@ -46,7 +47,7 @@ pub mod App.Internal.Runner {
             // 知らない始まりの名前で黙って先頭の場面から始めると、別の場面を見て直していることに気づけない。
             case Err(why)  => System.err.println("[App] ${why}"); (opened, None)
             case Ok((world0, started)) =>
-                let play = () -> launchFrom(app, hooks, design, world0, isShotStart(started), opened);
+                let play = () -> launchFrom(app, hooks, design, world0, isShotStart(started), downloads, opened);
                 let (tools, world) = match opened#script {
                     case None         => play()
                     case Some(script) => App.Internal.InputScript.drive(script, play)
@@ -61,9 +62,12 @@ pub mod App.Internal.Runner {
 
     /// 起動の World が決まった後の launch（ウィンドウの宣言・診断・ループ）。返すのはループを抜けた時の道具の状態と最後の World。
     /// halted なら F8 で止めた状態から始める（止められる構成の時だけ。canDebug が偽ならふつうに動く）。
+    // WhyNot: withPipelinedRendering の App で待たない — 照らす前に次のコマの traceFrame を預けてしまう順で、捨てる道が無い。
     def launchFrom(app: App[w, ef], hooks: App.Internal.DevTools.Hooks[w, ef, efTools], design: Vec2.Vec2, world0: w, halted: Bool,
+                   downloads: Option[LoadProgress.AssetDownloads],
                    tools: App.Internal.DevTools.State): (App.Internal.DevTools.State, w) \ (ef + efTools + Platform.Services + Fs.FileRead + Fs.FileWrite + IO) =
         let r = App.rec(app);
+        let assets = if (r#pipelinedRendering) None else Option.map(assetWatchOf, downloads);
         // 窓の宣言（withFullscreen）は最初のコマを描く前に当てる（起動した拍からその窓で見せる）。
         App.Internal.Output.applyFullscreen(r, world0);
         if (r#diagnostics) Platform.Diagnostics.setDiagnosticsEnabled(true) else ();
@@ -84,7 +88,8 @@ pub mod App.Internal.Runner {
                     glyphSeen = None, budgetWarned = false,
                     warnOnce = App.warnOnceWith(Ref.fresh(Static, Set.empty())),
                     cursorShown = App.CursorLook.State.Stale, captureShown = None, lastDiagnostics = None,
-                    outputKeys = App.Internal.Output.keysAfterJump(app, world0, Nil), tools = started })
+                    outputKeys = App.Internal.Output.keysAfterJump(app, world0, Nil), tools = started,
+                    assets = assets, loadWait = App.Internal.LoadWait.initial(), publishedWait = None })
 
     /// loop が次のフレームへ渡し続ける物。app（不変）は入れない — 状態に混ぜると
     /// 「フレームごとに変わりうる物」に見える。
@@ -115,8 +120,28 @@ pub mod App.Internal.Runner {
         // 出力（addOutput）ごとの最後に書いた鍵（outputs と同じ順）。
         outputKeys = List[String],
         // 開発の道具（命令口・遊んだ記録・ヒッチの見張り・保存検知）の状態。道具なしの起動では何も開いていない。
-        tools = App.Internal.DevTools.State
+        tools = App.Internal.DevTools.State,
+        // 届いていない後回しの物を待つ機種の APIと、届いていない名前の控え（None = 待たない App）。
+        assets = Option[AssetWatch],
+        // 待ちの状態と押した所の控え（App.Internal.LoadWait）・最後に機種と World へ知らせた待ち。
+        loadWait = App.Internal.LoadWait.State[w],
+        publishedWait = Option[LoadProgress.LoadWait]
     }
+
+    /// 届いていない名前の控え。gen = 最後に読んだ時の missingGen（変わるまで missing と policies を読み直さない）・
+    /// policies = 届いていない名前ごとの扱い。
+    type alias AssetWatch = { downloads = LoadProgress.AssetDownloads, gen = Int32, missing = Set[String],
+                              policies = Map[String, LoadProgress.MissingPolicy] }
+
+    /// 機種の APIから、今の届いていない名前と扱いを読む。
+    def assetWatchOf(downloads: LoadProgress.AssetDownloads): AssetWatch \ IO =
+        let missing = downloads#missing();
+        { downloads = downloads, gen = downloads#missingGen(), missing = missing,
+          policies = missing |> Set.toList |> List.map(name -> (name, downloads#policyOf(name))) |> List.toMap }
+
+    /// missingGen が変わった時だけ読み直す。
+    def refreshAssetWatch(watch: AssetWatch): AssetWatch \ IO =
+        if (watch#downloads#missingGen() == watch#gen) watch else assetWatchOf(watch#downloads)
 
     /// リモートコマンドを捌いた後に残る 3 つの進み方。
     pub enum Branch with Eq, ToString {
@@ -304,11 +329,45 @@ pub mod App.Internal.Runner {
         if (collecting) discard Platform.Diagnostics.consumeDiagnostics() else ();
         let (watched, watchedTools, watchFired) = hooks#beginFrame(frame#dt, st#world, st#tools);
         let (reloaded, reloadFired) = applyReload(r, frame, watched, f -> hooks#runReload(watchedTools, "key", f));
+        let assets = Option.map(refreshAssetWatch, st#assets);
+        let opened = { reloaded = reloaded, tools = watchedTools, fired = watchFired or reloadFired, collecting = collecting };
+        match assets |> Option.flatMap(a -> slowWatchOf(a, st#loadWait) |> Option.map(watch -> (a, watch))) {
+            case None              => fastStep(app, hooks, frame, frameStart, { assets = assets | st }, opened)
+            case Some((a, watch)) => slowStep(app, hooks, frame, frameStart, { assets = Some(a) | st }, opened, a, watch)
+        }
+
+    /// 進める前に済ませた物（読み直した World・道具の状態・読み直しが起きたか・診断を集めるか）。
+    type alias Opened[w] = { reloaded = w, tools = App.Internal.DevTools.State, fired = Bool, collecting = Bool }
+
+    /// 待ちを見るコマなら、そのための機種の様子（届いていない物も待ちも控えも無く、コードがそろい、ロゴも出ていなければ None）。
+    def slowWatchOf(a: AssetWatch, state: App.Internal.LoadWait.State[w]): Option[App.Internal.LoadWait.Watch] \ IO =
+        let codeReady = a#downloads#getCodeLoadState() == LoadProgress.LoadState.Loaded;
+        let splash = a#downloads#isSplashShowing();
+        if (Set.isEmpty(a#missing) and codeReady and not splash and App.Internal.LoadWait.isIdle(state)) None
+        else {
+            let failed = App.Internal.LoadWait.waitingNames(state) |> Set.filter(name -> isFailed(a#downloads#stateOf(name)));
+            Some({ missing = a#missing, failed = failed, codeReady = codeReady, splash = splash, nowSec = nowSec() })
+        }
+
+    def isFailed(state: LoadProgress.LoadState): Bool = match state {
+        case LoadProgress.LoadState.Failed(_) => true
+        case _                                => false
+    }
+
+    /// 待ちの秒を数える時刻（秒・差だけを使う）。
+    def nowSec(): Float64 \ IO = Int64.toFloat64(System.nanoTime()) / 1000000000.0
+
+    /// 待ちを見ないふつうのコマ: World を進めて（traceFrame）、音を鳴らし、描き、見張り・履歴・出力・窓の宣言を済ませた次の状態。
+    def fastStep(app: App[w, ef], hooks: App.Internal.DevTools.Hooks[w, ef, efTools], frame: App.Frame, frameStart: Int64, st: LoopState[w], opened: Opened[w]): LoopState[w] \ (ef + Platform.Window + Platform.Rendering + RenderTarget.Target + GameEngine.Audio + Platform.Diagnostics + Platform.Tasks + Fs.FileRead + Fs.FileWrite + IO) =
+        let r = App.rec(app);
+        let collecting = opened#collecting;
+        let watchedTools = opened#tools;
+        let fired = opened#fired;
         // WhyNot: 後回しの素材を traceFrame の中で読まない — 系を純粋のまま保ち、trace・台本・/step が同じ World を出すため。
-        let loaded = App.stepBackgroundLoad(app, reloaded);
+        let loaded = App.stepBackgroundLoad(app, opened#reloaded);
         // WhyNot: 重ねる App で進めた後の World（advanced）を描かない — 進め終わるのを待ってからでないと描けず、重ねる分が無くなる。
         if (r#pipelinedRendering) submitTraceFrame(app, frame, st#stepState, loaded) else ();
-        let paintedEarly = if (r#pipelinedRendering) Some(paintAndPresent(app, st, frame, loaded, watchFired or reloadFired)) else None;
+        let paintedEarly = if (r#pipelinedRendering) Some(paintAndPresent(app, st, frame, loaded, fired)) else None;
         let waitStart = System.nanoTime();
         // 1 フレームの中身は trace・台本・/step と同じ traceFrame の 1 本（音の名前もここで導く）。
         let (traced, nextStepState) = if (r#pipelinedRendering) joinTraceFrame() else App.traceFrame(app, frame, st#stepState, loaded);
@@ -321,14 +380,14 @@ pub mod App.Internal.Runner {
         let measuredAnno = if (r#debug) Annotate.recordDt(frame#dt, st#anno) else st#anno;
         let ((cache1, seen1, warned1), renderNs) = match paintedEarly {
             case Some(done) => done
-            case None       => paintAndPresent(app, { anno = measuredAnno | st }, frame, advanced, watchFired or reloadFired)
+            case None       => paintAndPresent(app, { anno = measuredAnno | st }, frame, advanced, fired)
         };
         // 診断はここで 1 回だけ引き取り、ヒッチの記録と次のフレームの Frame#diagnostics・ViewCtx#diagnostics へ配る。
         let diag = if (collecting) Some(Platform.Diagnostics.consumeDiagnostics()) else None;
         let nextTools = hooks#endFrame(watchedTools,
             { frame = measuredAnno#frame, start = frameStart, updateNs = if (r#pipelinedRendering) updatedAt - waitStart else updatedAt - frameStart,
               renderNs = renderNs,
-              pressed = frame#justPressed, reloaded = watchFired or reloadFired }, diag, advanced);
+              pressed = frame#justPressed, reloaded = fired }, diag, advanced);
         // 時間スクラブ用の履歴（debug が無効なら一切持たない = 本番ビルドは無負荷）
         let nextHistory = if (App.canDebug(r))
                               List.take(App.historyLimit(), advanced :: st#history)
@@ -343,6 +402,163 @@ pub mod App.Internal.Runner {
           stepState = nextStepState, tools = nextTools,
           sustaining = nextSustaining, mixState = nextMix, soundUses = nextUses, tileCache = cache1,
           glyphSeen = seen1, budgetWarned = warned1 | st }
+
+    /// 待ちを見るコマで出す物。world = 出す World・stepState = 次のコマへ渡す StepState・trace = 当てる音（None は音を当てない）・
+    /// recorded = 遊んだ記録に書く入力（World へ入力を渡したコマだけ）・loadWait = 次の待ちの状態。
+    type alias Shown[w] = { world = w, stepState = App.StepState, trace = Option[App.TraceStep[w]], recorded = Option[App.Frame],
+                            loadWait = App.Internal.LoadWait.State[w] }
+
+    /// 待ちを見るコマ（ブラウザ版で届いていない物があるか、待ちか控えの最中）: 進める前の手を決め（LoadWait.plan）、進めた候補を
+    /// 照らし（LoadWait.decide）、答えの World を描いて出す。届いていない名前の集まりは withLoadWait で World へ写した後に進める。
+    def slowStep(app: App[w, ef], hooks: App.Internal.DevTools.Hooks[w, ef, efTools], frame: App.Frame, frameStart: Int64, st: LoopState[w],
+                 opened: Opened[w], a: AssetWatch, watch: App.Internal.LoadWait.Watch): LoopState[w] \ (ef + Platform.Window + Platform.Rendering + RenderTarget.Target + GameEngine.Audio + Platform.Diagnostics + Platform.Tasks + Fs.FileRead + Fs.FileWrite + IO) =
+        let r = App.rec(app);
+        let (step, planned) = App.Internal.LoadWait.plan(App.Internal.LoadWait.defaultSettings(), frame, watch, opened#reloaded, st#stepState, st#loadWait);
+        let published = App.Internal.LoadWait.published(planned, watch#missing, watch#nowSec);
+        noticeLoadWait(a, st#publishedWait, published);
+        let (stepped, stores) = App.Internal.BackgroundLoad.stepAll(r, opened#reloaded);
+        let loaded = viewLoadWait(r, st#publishedWait, published, stepped);
+        let held = { real = Clock.advance(Clock.paceOf(Clock.Run.Running), frame#dt, st#stepState#real) | st#stepState };
+        let measuredAnno = if (r#debug) Annotate.recordDt(frame#dt, st#anno) else st#anno;
+        let base = { anno = measuredAnno, publishedWait = published | st };
+        let still = { world = loaded, stepState = held, trace = None, recorded = None, loadWait = planned };
+        match step {
+            case App.Internal.LoadWait.Step.Splash         => showSlow(app, hooks, frame, frameStart, base, opened, still)
+            case App.Internal.LoadWait.Step.Hold           => showSlow(app, hooks, frame, frameStart, base, opened, { trace = Some(stillTrace(r, frame, loaded, Nil)) | still })
+            case App.Internal.LoadWait.Step.Advance(input) =>
+                let ctx = { missing = watch#missing, policies = a#policies, nowSec = watch#nowSec, frame = givenFrameOf(frame, input),
+                            loaded = loaded, stepState = st#stepState, real = held#real, stored = List.map(s -> s#replay, stores),
+                            styleOf = r#loadWaitStyle };
+                advanceSlow(app, hooks, frame, frameStart, base, opened, ctx, planned)
+        }
+
+    /// 進める時に World へ渡す入力。
+    def givenFrameOf(frame: App.Frame, input: App.Internal.LoadWait.Input): App.Frame = match input {
+        case App.Internal.LoadWait.Input.Live         => frame
+        case App.Internal.LoadWait.Input.Idle         => App.Internal.LoadWait.idleFrameOf(frame)
+        case App.Internal.LoadWait.Input.Replay(held) => App.Internal.LoadWait.replayFrameOf(frame, held)
+    }
+
+    /// 1 コマ進めて組み、その候補を照らして、出すか捨てるかの答えのとおりに描いて出す。
+    /// 作る途中で後から取るコードがそろっていなかった候補は捨てる（系と View は純粋なので、途中で捨てても外へ出た物は無い）。
+    def advanceSlow(app: App[w, ef], hooks: App.Internal.DevTools.Hooks[w, ef, efTools], frame: App.Frame, frameStart: Int64, st: LoopState[w],
+                    opened: Opened[w], ctx: App.Internal.LoadWait.Context[w], planned: App.Internal.LoadWait.State[w]): LoopState[w] \ (ef + Platform.Window + Platform.Rendering + RenderTarget.Target + GameEngine.Audio + Platform.Diagnostics + Platform.Tasks + Fs.FileRead + Fs.FileWrite + IO) =
+        let r = App.rec(app);
+        let attempt = App.Internal.LoadWait.catchCodeNotReady(() -> {
+            let (traced, next) = App.traceFrame(app, ctx#frame, st#stepState, ctx#loaded);
+            (traced, next, buildFor(app, st, frame, traced#after))
+        });
+        let candidate = candidateOf(app, ctx, st, attempt);
+        let (show, decided) = App.Internal.LoadWait.decide(candidate, ctx, planned);
+        match (show, attempt) {
+            case (App.Internal.LoadWait.Show.Candidate(sounds), Some((traced, next, built))) =>
+                let out = { world = traced#after, stepState = next, trace = Some({ sounds = sounds | traced }), recorded = Some(ctx#frame), loadWait = decided };
+                emitSlow(app, hooks, frame, frameStart, st, opened, ctx, planned, candidate, out, built)
+            case _ => showSlow(app, hooks, frame, frameStart, st, opened, shownOf(r, frame, ctx, show, decided))
+        }
+
+    /// 照らす候補（描く物の名前と withLoadGate の名前・音・作れたか・押した入力か・外への出力の鍵が変わるか）。
+    def candidateOf(app: App[w, ef], ctx: App.Internal.LoadWait.Context[w], st: LoopState[w],
+                    attempt: Option[(App.TraceStep[w], App.StepState, Option[App.Internal.Paint.Built])]): App.Internal.LoadWait.Candidate \ ef =
+        let r = App.rec(app);
+        let pressed = App.Internal.LoadWait.isPressFrame(ctx#frame, st#stepState);
+        match attempt {
+            case None => { names = Set.empty(), sounds = Nil, loops = Nil, failed = true, pressed = pressed, outputsChanged = false }
+            case Some((traced, _, built)) =>
+                let drawn = built |> Option.map(App.Internal.Paint.assetNamesOf) |> Option.getWithDefault(Set.empty());
+                let gated = r#loadGate |> Option.map(f -> f(traced#after)) |> Option.getWithDefault(Nil);
+                { names = List.foldLeft((acc, name) -> Set.insert(name, acc), drawn, gated), sounds = traced#sounds,
+                  loops = List.map(s -> s#name, traced#sustained), failed = false, pressed = pressed,
+                  outputsChanged = not List.isEmpty(App.Internal.Output.dueOutputs(app, traced#after, st#outputKeys)) }
+        }
+
+    /// 候補を出す: 描いて出し、描く途中で後から取るコードがそろっていなかったら、そのコマは画面へ出さず、候補を捨てた時と同じ答えにする
+    /// （描き手の今のコマの命令に半分積んだ物が残るので、同じコマで前の World を描き足さない。次のコマで描く）。
+    def emitSlow(app: App[w, ef], hooks: App.Internal.DevTools.Hooks[w, ef, efTools], frame: App.Frame, frameStart: Int64, st: LoopState[w],
+                 opened: Opened[w], ctx: App.Internal.LoadWait.Context[w], planned: App.Internal.LoadWait.State[w],
+                 candidate: App.Internal.LoadWait.Candidate, out: Shown[w], built: Option[App.Internal.Paint.Built]): LoopState[w] \ (ef + Platform.Window + Platform.Rendering + RenderTarget.Target + GameEngine.Audio + Platform.Diagnostics + Platform.Tasks + Fs.FileRead + Fs.FileWrite + IO) =
+        match paintGuarded(app, st, built, out#world, opened#fired) {
+            case Some(painted) => finishSlow(app, hooks, frame, frameStart, st, opened, out, Some(painted))
+            case None          =>
+                let (show, decided) = App.Internal.LoadWait.decide({ failed = true, names = Set.empty(), sounds = Nil, loops = Nil | candidate }, ctx, planned);
+                finishSlow(app, hooks, frame, frameStart, st, opened, shownOf(App.rec(app), frame, ctx, show, decided), None)
+        }
+
+    /// 候補を捨てた答えの出す物（進める前の World か、押した所の控えへ戻した World。どちらも系を進めない）。
+    def shownOf(r: App.Rec[w, ef], frame: App.Frame, ctx: App.Internal.LoadWait.Context[w], show: App.Internal.LoadWait.Show[w],
+                decided: App.Internal.LoadWait.State[w]): Shown[w] \ ef =
+        let held = { real = ctx#real | ctx#stepState };
+        let (world, stepState, chime) = match show {
+            case App.Internal.LoadWait.Show.Restored(w, s, sounds) => (w, s, sounds)
+            case App.Internal.LoadWait.Show.Loaded(sounds)         => (ctx#loaded, held, sounds)
+            case App.Internal.LoadWait.Show.Candidate(_)           => (ctx#loaded, held, Nil)
+        };
+        { world = world, stepState = stepState, trace = Some(stillTrace(r, frame, world, chime)), recorded = None, loadWait = decided }
+
+    /// 進めずに出す World の音: 一発の音は chime だけ、鳴り続ける音はその World の宣言（ミキサーのフェードは dt で進む）。
+    def stillTrace(r: App.Rec[w, ef], frame: App.Frame, world: w, chime: List[String]): App.TraceStep[w] \ ef =
+        { frame = frame, before = world, after = world, sounds = chime, sustained = (r#sustained)(world) }
+
+    /// world を組む（fps の重ねは st#anno から）。
+    def buildFor(app: App[w, ef], st: LoopState[w], frame: App.Frame, world: w): Option[App.Internal.Paint.Built] \ (ef + Platform.GpuResources + Platform.Window) =
+        let r = App.rec(app);
+        App.Internal.Paint.buildPainted(app, st#warnOnce, frame#diagnostics, st#design, Platform.Window.getDisplay(), world,
+                                        App.Internal.Paint.plainLook(App.Internal.Paint.fpsOverlayOf(r, st#design, st#anno)), st#tileCache)
+
+    /// 組んだ World を描いて画面へ出す。後から取るコードがそろう前の例外で描けなかったら None（画面へは出さない）。
+    def paintGuarded(app: App[w, ef], st: LoopState[w], built: Option[App.Internal.Paint.Built], world: w, bump: Bool):
+            Option[((App.Internal.Paint.TileCache, Option[Int64], Bool), Int64)] \ (ef + Platform.Window + Platform.Rendering + RenderTarget.Target + IO) =
+        let start = System.nanoTime();
+        App.Internal.LoadWait.catchCodeNotReady(() ->
+            App.Internal.Paint.submitPainted(app, st#warnOnce, st#design, world, built, App.Internal.Paint.bumpTileGen(bump, st#tileCache), st#glyphSeen, st#budgetWarned))
+            |> Option.map(painted -> { Platform.Window.presentFrame(); (painted, System.nanoTime() - start) })
+
+    /// 進めずに出す World（ロゴの間・描き直す待ち・捨てた候補の代わり）を組んで描いて出す。
+    def showSlow(app: App[w, ef], hooks: App.Internal.DevTools.Hooks[w, ef, efTools], frame: App.Frame, frameStart: Int64, st: LoopState[w],
+                 opened: Opened[w], out: Shown[w]): LoopState[w] \ (ef + Platform.Window + Platform.Rendering + RenderTarget.Target + GameEngine.Audio + Platform.Diagnostics + Platform.Tasks + Fs.FileRead + Fs.FileWrite + IO) =
+        let built = buildFor(app, st, frame, out#world);
+        finishSlow(app, hooks, frame, frameStart, st, opened, out, paintGuarded(app, st, built, out#world, opened#fired))
+
+    /// 待ちを見るコマの後半: 音・見張り・記録・履歴・出力・窓の宣言（ふつうのコマと同じ順）。painted が None（描けなかった）なら音を当てない。
+    /// 音・出力・窓の宣言で後から取るコードがそろう前の例外が出たら、そのコマは当てずに前の状態のまま（次のコマで当て直す）。
+    def finishSlow(app: App[w, ef], hooks: App.Internal.DevTools.Hooks[w, ef, efTools], frame: App.Frame, frameStart: Int64, st: LoopState[w],
+                   opened: Opened[w], out: Shown[w], painted: Option[((App.Internal.Paint.TileCache, Option[Int64], Bool), Int64)]): LoopState[w] \ (ef + Platform.Window + Platform.Rendering + RenderTarget.Target + GameEngine.Audio + Platform.Diagnostics + Platform.Tasks + Fs.FileRead + Fs.FileWrite + IO) =
+        let r = App.rec(app);
+        let audioBefore = (st#sustaining, st#mixState, st#soundUses);
+        let trace = if (Option.isEmpty(painted)) None else out#trace;
+        let (nextSustaining, nextMix, nextUses) = trace
+            |> Option.flatMap(t -> App.Internal.LoadWait.catchCodeNotReady(() -> App.Internal.Output.applyAudio(r, frame#dt, t, st#sustaining, st#mixState, st#soundUses, st#warnOnce)))
+            |> Option.getWithDefault(audioBefore);
+        Option.forEach(given -> hooks#recordFrame(opened#tools, given, out#world), out#recorded);
+        let ((cache1, seen1, warned1), renderNs) = Option.getWithDefault(((st#tileCache, st#glyphSeen, st#budgetWarned), 0i64), painted);
+        let diag = if (opened#collecting) Some(Platform.Diagnostics.consumeDiagnostics()) else None;
+        let nextTools = hooks#endFrame(opened#tools,
+            { frame = st#anno#frame, start = frameStart, updateNs = System.nanoTime() - frameStart - renderNs, renderNs = renderNs,
+              pressed = frame#justPressed, reloaded = opened#fired }, diag, out#world);
+        let nextHistory = if (App.canDebug(r)) List.take(App.historyLimit(), out#world :: st#history) else Nil;
+        let written = App.Internal.LoadWait.catchCodeNotReady(() -> App.Internal.Output.writeOutputs(app, out#world, st#outputKeys))
+            |> Option.getWithDefault(st#outputKeys);
+        let declared = App.Internal.LoadWait.catchCodeNotReady(() -> applyDeclared(r, out#world, st))
+            |> Option.getWithDefault({ cursorShown = App.CursorLook.State.Stale, captureShown = None });
+        { world = out#world, history = nextHistory,
+          outputKeys = written, cursorShown = declared#cursorShown, captureShown = declared#captureShown,
+          lastDiagnostics = if (r#diagnostics) diag else None,
+          anno = { frame = st#anno#frame + 1i64 | st#anno },
+          stepState = out#stepState, tools = nextTools, loadWait = out#loadWait,
+          sustaining = nextSustaining, mixState = nextMix, soundUses = nextUses, tileCache = cache1,
+          glyphSeen = seen1, budgetWarned = warned1 | st }
+
+    /// 今の待ちが前に知らせた物から変わった時だけ機種へ知らせる（待った秒だけの変化は知らせない）。
+    def noticeLoadWait(a: AssetWatch, before: Option[LoadProgress.LoadWait], now: Option[LoadProgress.LoadWait]): Unit \ IO =
+        let shape = Option.map(lw -> (lw#reason, lw#names, lw#progress, lw#pressed));
+        if (shape(before) == shape(now)) () else a#downloads#setLoadWait(now)
+
+    /// withLoadWait があれば、今の待ちを World へ写す（待っている間は毎コマ・明けたコマに 1 回 None）。
+    def viewLoadWait(r: App.Rec[w, ef], before: Option[LoadProgress.LoadWait], now: Option[LoadProgress.LoadWait], world: w): w =
+        match r#loadWaitView {
+            case Some(f) if Option.nonEmpty(now) or Option.nonEmpty(before) => f(now, world)
+            case _                                                          => world
+        }
 
     /// world を描いて画面へ出し、塗りの持ち回しと、描いて出すまでの時間（ns）を返す。fps の重ね書きは st#anno から。
     /// bump = Doc の読み直しが起きたコマ（タイル層の世代を進め、同じ key でも作り直す）。

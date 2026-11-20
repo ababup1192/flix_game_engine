@@ -246,9 +246,12 @@ pub mod App {
         clocks = List[(Float64, w) -> w],
         // 後回しの素材を区切って読む step（withBackgroundLoad・withMissingAssets）の列・追加順。実機のふつうのコマに 1 回、
         // 進める前の World へ当てる。引数はこのコマの予算（decodeBudget）。
-        backgroundSteps = List[(LoadProgress.DecodeBudget, Float64, w) -> w \ {IO, Fs.FileRead}],
+        backgroundSteps = List[(LoadProgress.DecodeBudget, Float64, w) -> App.Internal.BackgroundLoad.StepResult[w] \ {IO, Fs.FileRead}],
         // このコマに後回しの素材を解いてよい量を World から導く（withDecodeBudget）。全部の backgroundSteps が同じ値を受ける。
         decodeBudget = w -> LoadProgress.DecodeBudget,
+        // ブラウザ版で届いていない物を App が待つ間の替え口（withLoadWait・withLoadWaitStyle・withLoadingIndicator・withLoadGate）。
+        loadWaitView = Option[(Option[LoadProgress.LoadWait], w) -> w], loadWaitStyle = w -> LoadWaitStyle,
+        loadingIndicator = LoadingIndicator, loadGate = Option[w -> List[String]],
         // 毎フレームの「マウスの矢印をどう見せたいか」の宣言（withCursor）。None = App は触らない（F8 の十字だけ）。
         cursor = Option[w -> CursorSpec],
         // 毎フレームの「窓をフルスクリーンにしたいか」の宣言（withFullscreen）。None = App は触らない。
@@ -320,6 +323,7 @@ pub mod App {
           clocks = Nil,
           backgroundSteps = Nil,
           decodeBudget = _ -> LoadProgress.DecodeBudget.Idle(4.0),
+          loadWaitView = None, loadWaitStyle = _ -> LoadWaitStyle.KeepRunning, loadingIndicator = LoadingIndicator.Default, loadGate = None,
           cursor = None,
           fullscreen = None,
           mouseCapture = None,
@@ -692,45 +696,51 @@ pub mod App {
 
     // ── 後回しの素材（web.deferred）をループの中で区切って読む ──
 
-    /// このコマに後回しの素材を解いてよい量を World から導く（既定は Idle(4 ms)）。withBackgroundLoad と withMissingAssets の
-    /// step が同じ値を受け、ブラウザでは届いた 2D の絵を登録する量もこれに従う（登録に使った ms は解く側の ms から引く）。
-    /// 3D の部屋のような重い鍵（1 本 100 ms 前後）を Idle で解きたいゲームだけが、タップ待ち・タイトルの間を Idle(150.0) などへ上げる。
-    /// Paused = 文字送り中など画面が動いている・Idle(ms) = タップ待ち・タイトル（1 回の止まりを許す長さ）・Covered(ms) = 暗転中。
-    /// 純粋な関数（pixelSnap と同じ）。デスクトップでは解く物が無いので効かない。
+    /// このコマに後回しの素材を解いてよい量を World から導く（既定は Idle(4 ms)・純粋な関数・デスクトップでは効かない）。
+    /// withBackgroundLoad と withMissingAssets の step と、ブラウザが届いた 2D の絵を登録する量が同じ値に従う。
+    /// Paused = 文字送り中など画面が動いている・Idle(ms) = タップ待ち・タイトル（重い 3D の鍵を解くなら Idle(150.0) など）・Covered(ms) = 暗転中。
     pub def withDecodeBudget(f: w -> LoadProgress.DecodeBudget, app: App[w, ef]): App[w, ef] =
         App.App({ decodeBudget = f | rec(app) })
 
-    /// BackgroundLoad.start で起動の時に読み残した鍵を、毎コマ予算の内で読む。グループごとに何度でも呼べる。
-    /// downloads = 起動の時に LoadProgress.downloads() で受け取った物・pendingOf / withPending = 待ちの表の読み書き（resources 側の欄）・
-    /// store = 解けた鍵の結果を置く（取れない・解けない鍵は Err で 1 回）・priority = 今の優先順の鍵（Loaded でない鍵がある時だけ引く）。
-    /// 全部の鍵が Loaded なら同じ World を返す（デスクトップと画面なしは起動から全部 Loaded）。
+    /// BackgroundLoad.start で起動の時に読み残した鍵を、毎コマ予算の内で読む（グループごとに何度でも呼べる）。
+    /// downloads = 起動の時に受け取った LoadProgress.downloads()・pendingOf / withPending = 待ちの表の読み書き・
+    /// store = 解けた鍵の結果を置く（取れない・解けない鍵は Err で 1 回）・priority = 今の優先順の鍵。全部 Loaded なら同じ World を返す。
     /// 回すのは実機のふつうのコマだけ（F8 の停止・リモートのコマ・traceFrame・描き出しは回さない）。テストは stepBackgroundLoad。
-    pub def withBackgroundLoad(spec: { group = BackgroundLoad.Group[r, a],
-                                       downloads = LoadProgress.AssetDownloads,
-                                       pendingOf = w -> BackgroundLoad.Pending,
-                                       withPending = (BackgroundLoad.Pending, w) -> w,
-                                       store = (String, Result[String, a], w) -> w,
-                                       priority = w -> List[String] },
-                               app: App[w, ef]): App[w, ef] =
-        let r = rec(app);
-        App.App({ backgroundSteps = List.append(r#backgroundSteps, App.Internal.BackgroundLoad.groupStep(spec) :: Nil) | r })
+    pub def withBackgroundLoad(spec: App.Internal.BackgroundLoad.GroupSpec[w, r, a], app: App[w, ef]): App[w, ef] =
+        App.Internal.BackgroundLoad.addStep(App.Internal.BackgroundLoad.groupStep(spec), app)
 
-    /// 後回しの 2D の絵と音のうち、まだ届いていない名前（AssetDownloads#missing）を World へ写す。
-    /// missingOf = World の今の集まり（起動の時に downloads#missing() で埋めておく）・withMissing = 書き替え。
-    /// 集まりが空なら引かず、変わった時だけ書く（デスクトップは起動から空なので同じ World のまま）。
+    /// 後回しの 2D の絵と音のうち、まだ届いていない名前（AssetDownloads#missing）を World へ写す（変わった時だけ書く）。
+    /// missingOf = 今の集まり（起動の時に downloads#missing() で埋めておく。空なら引かない）・withMissing = 書き替え。
     /// 予算（withDecodeBudget）をブラウザへ届けるのもこの step なので、3D のグループが無いゲームもこれだけで予算が効く。
-    pub def withMissingAssets(spec: { downloads = LoadProgress.AssetDownloads,
-                                     missingOf = w -> Set[String],
-                                     withMissing = (Set[String], w) -> w },
-                             app: App[w, ef]): App[w, ef] =
-        let r = rec(app);
-        App.App({ backgroundSteps = List.append(r#backgroundSteps, App.Internal.BackgroundLoad.missingStep(spec) :: Nil) | r })
+    pub def withMissingAssets(spec: App.Internal.BackgroundLoad.MissingSpec[w], app: App[w, ef]): App[w, ef] =
+        App.Internal.BackgroundLoad.addStep(App.Internal.BackgroundLoad.missingStep(spec), app)
 
-    /// withBackgroundLoad・withMissingAssets の step を、このコマの予算で宣言の順に 1 回ずつ当てる（実機のふつうのコマが進める前に呼ぶ）。
-    /// 前の step が使った ms を次の step へ渡すので、グループが複数あっても 1 コマの予算は 1 つ。
-    /// テストで偽の downloads を流す時に、実機と同じ当て方を組むのに使う。
+    /// withBackgroundLoad・withMissingAssets の step を、このコマの予算で宣言の順に 1 回ずつ当てる（1 コマの予算は 1 つ）。
+    /// 実機のふつうのコマが進める前に呼ぶ物で、テストで偽の downloads を流す時に同じ当て方を組むのに使う。
     pub def stepBackgroundLoad(app: App[w, ef], world: w): w \ {IO, Fs.FileRead} =
-        App.Internal.BackgroundLoad.stepAll(rec(app), world)
+        fst(App.Internal.BackgroundLoad.stepAll(rec(app), world))
+
+    // ── ブラウザ版で、届いていない後回しの素材と後から取るコードを App が待つ（デスクトップ・テスト・描き出しでは待たない）──
+
+    /// 押した時の待ちの間、押す前の場面へ戻した World の扱い。KeepRunning = 入力なしで進め続ける（タイトルの演出と BGM が動く）・
+    /// Freeze = 進めずに描き直す（勝手に動かしたくない場面）。
+    pub enum LoadWaitStyle with Eq, ToString { case KeepRunning, Freeze }
+
+    /// 待ちが長い時の読み込み中の表示。Default = engine の部品・Hidden = 出さない・Custom = ゲームが描く（字を出すならゲームのフォントで）。
+    pub enum LoadingIndicator { case Default, Hidden, Custom((ViewCtx, LoadProgress.LoadWait) -> List[Render.PlacedItem]) }
+
+    /// App が待っている間の様子を毎コマ World へ写す（待ちが明けたコマに 1 回 None）。選んだ行を光らせる・自前の表示を出す時だけ繋ぐ。
+    pub def withLoadWait(f: (Option[LoadProgress.LoadWait], w) -> w, app: App[w, ef]): App[w, ef] = App.App({ loadWaitView = Some(f) | rec(app) })
+
+    /// 押した時の待ちの間、戻した World を進め続けるか止めるか（既定は KeepRunning）。戻した World から場面ごとに選べる。
+    pub def withLoadWaitStyle(f: w -> LoadWaitStyle, app: App[w, ef]): App[w, ef] = App.App({ loadWaitStyle = f | rec(app) })
+
+    /// 読み込み中の表示を替える（既定は Default）。
+    pub def withLoadingIndicator(indicator: LoadingIndicator, app: App[w, ef]): App[w, ef] = App.App({ loadingIndicator = indicator | rec(app) })
+
+    /// 次の場面で使う後回しの名前を World が言う。進めた World が届いていない名前を返したら、その World を出さずに待つ
+    /// （押したコマなら押す前の場面のまま待つので、暗転を見せずに済む）。使う物が無い場面は空を返す。
+    pub def withLoadGate(f: w -> List[String], app: App[w, ef]): App[w, ef] = App.App({ loadGate = Some(f) | rec(app) })
 
     // ── 外への出力（系は IO を持たず、App が実機のフレームの後でだけ触る）──
 
@@ -1160,12 +1170,12 @@ pub mod App {
     /// 開発の道具はデスクトップの組（App.DevTools.desktop）: デバッグ有効（withDebug）かつ環境変数 DEBUG_HTTP_PORT があれば、
     /// リモートデバッグの HTTP エンドポイントも一緒に立ち上がる（例: `DEBUG=1 DEBUG_HTTP_PORT=7777 flix run`）。
     /// 組み終えた App を渡すこの形では、flow を記録する起動は Doc を読み直して start の行に載せる（App.loadAndLaunch は読み直さない）。
-    pub def launch(app: App[w, {}]): Unit \ (Platform.Services + Platform.Annotation + Fs.FileRead + Fs.FileWrite + IO) =
+    pub def launch(app: App[w, {}]): Unit \ (Platform.Services + Platform.Annotation + LoadProgress + Fs.FileRead + Fs.FileWrite + IO) =
         launchWithDevTools(App.DevTools.desktop(ProcessEnv.snapshot()), app)
 
     /// loadApp で App を組んで launch する。flow を記録する起動では、loadApp が Fs.FileRead で読んだ中身を start の行に載せ、
     /// Doc を読み直さない。loadApp の中の効果（LoadProgress など）は、外の handler が受ける。組んだ App は launch と同じく純粋な物だけ。
-    pub def loadAndLaunch(loadApp: Unit -> App[w, {}] \ ef2): Unit \ (ef2 + Platform.Services + Platform.Annotation + Fs.FileRead + Fs.FileWrite + IO) =
+    pub def loadAndLaunch(loadApp: Unit -> App[w, {}] \ ef2): Unit \ (ef2 + Platform.Services + Platform.Annotation + LoadProgress + Fs.FileRead + Fs.FileWrite + IO) =
         let env = ProcessEnv.snapshot();
         // WhyNot: 記録しないと env で分かる起動で中身を控えない — 3D の形などの大きな字を、起動の World が決まるまで抱えることになる。
         if (not debugOf(env) or Option.isEmpty(Flow.Record.pathOf(env))) launchWithDevTools(App.DevTools.desktop(env), loadApp())
@@ -1179,15 +1189,18 @@ pub mod App {
     /// 命令口・記録・名簿・ヒッチの見張り・保存検知・F8 の注釈の書き出しのコードへ呼び出しが届かず、Platform.Annotation も要らない。
     /// 道具なしでは環境変数を読まないので、START も効かない（いつも先頭の始まりから）。F8 で止めて囲んでも注釈は書き出さない。
     /// 道具なしの入口では App.debugFromEnv も呼ばない（環境変数を読む JVM の API（System.getenv）が残る）。withDebug は値で渡す。
-    pub def launchWithDevTools(tools: DevTools[w, efTools], app: App[w, {}]): Unit \ (efTools + Platform.Services + Fs.FileRead + Fs.FileWrite + IO) =
+    /// ループの前に LoadProgress.downloads() を 1 回受け取り、ブラウザ版で届いていない後回しの物を使うコマを出さずに待つ（デスクトップでは待たない）。
+    pub def launchWithDevTools(tools: DevTools[w, efTools], app: App[w, {}]): Unit \ (efTools + Platform.Services + LoadProgress + Fs.FileRead + Fs.FileWrite + IO) =
         let DevToolsFactory.DevToolsFactory(attach) = tools;
-        App.Internal.Runner.runLoop(app, attach(app))
+        let downloads = LoadProgress.downloads();
+        App.Internal.Runner.runLoop(app, attach(app), Some(downloads))
 
     /// 系の中で IO を測る bench のための launch（effect を持つ App も受ける）。開発の道具は持たない。ゲームからは呼ばない
-    /// （ゲームの src で書くと lint-forbid の launch-for-bench が止める）。
+    /// （ゲームの src で書くと lint-forbid の launch-for-bench が止める）。届いていない物を待たない。
     // WhyNot: launch を効果多相に戻さない — 実機の入口が effect を持つ App を受けると、系が IO に触らないことを型で言えなくなる。
+    // WhyNot: bench で待たない — 候補を捨てると、系が外へ出した IO が残る。
     pub def launchForBench(app: App[w, ef]): Unit \ (ef + Platform.Services + Fs.FileRead + Fs.FileWrite + IO) =
-        App.Internal.Runner.runLoop(app, App.Internal.DevTools.none())
+        App.Internal.Runner.runLoop(app, App.Internal.DevTools.none(), None)
 
     // WhyNot: 同じ 10 行を UiRender・SortingLayer・App に 1 つずつ置く。pub にするとゲームから z を書き換えられ、
     //   どの層に入るかが表から読めなくなる（Flix 0.77 にはパッケージの中だけで見える pub が無い）。

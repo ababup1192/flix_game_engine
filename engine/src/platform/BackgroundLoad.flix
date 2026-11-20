@@ -90,4 +90,15 @@ pub mod BackgroundLoad {
                 else if (waited >= limit) Readiness.GaveUp("${String.intercalate(", ", waitingKeys)} が ${Float64.toString(limit)} 秒待っても届かない")
                 else Readiness.Waiting
         }
+
+    /// 名前の並びが使えるか（ゲームが自分で待つ時の判定。App のループの待ちと同じ数え方）。
+    /// missing = まだ届いていない名前（App.withMissingAssets の集まり）・gaveUp = ゲームが諦めた名前・
+    /// waited = 待ち始めてからの秒・limit = 待つ上限の秒。諦めた名前が 1 つでもあれば上限を待たずに GaveUp。
+    pub def readinessOfNames(names: List[String], missing: Set[String], gaveUp: Set[String], waited: Float64, limit: Float64): Readiness =
+        let given = names |> List.filter(name -> Set.memberOf(name, gaveUp));
+        let waitingNames = names |> List.filter(name -> Set.memberOf(name, missing));
+        if (not List.isEmpty(given)) Readiness.GaveUp("${String.intercalate(", ", given)} は諦めた")
+        else if (List.isEmpty(waitingNames)) Readiness.Ready
+        else if (waited >= limit) Readiness.GaveUp("${String.intercalate(", ", waitingNames)} が ${Float64.toString(limit)} 秒待っても届かない")
+        else Readiness.Waiting
 }

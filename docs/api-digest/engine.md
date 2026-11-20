@@ -104,6 +104,8 @@
   `pub def isLoaded(key: String, pending: Pending): Bool`
 - keys が使えるか。waited = 待ち始めてからの秒・limit = 待つ上限の秒（超えたらその素材なしで進む）。
   `pub def readiness(keys: List[String], pending: Pending, waited: Float64, limit: Float64): Readiness`
+- 名前の並びが使えるか（ゲームが自分で待つ時の判定。App のループの待ちと同じ数え方）。
+  `pub def readinessOfNames(names: List[String], missing: Set[String], gaveUp: Set[String], waited: Float64, limit: Float64): Readiness`
 
 ## BootFont — `engine/src/render2d/BootFont.flix`
 - フォントの登録名。ゲームが project.json で付ける名前と衝突しない綴りにしてある。
@@ -774,8 +776,18 @@
 - 1 コマに解いてよい量（Unity の backgroundLoadingPriority）。Paused = 解かない（文字送り中など画面が動いていて止まりが見える）・
   `pub enum DecodeBudget with Eq, ToString { case Paused case Idle(Float64) case Covered(Float64) }`
 - 後回しの素材を引く関数の組（どれもループの中で呼べる）。
-  `pub type alias AssetDownloads = { stateOf = String -> LoadState \ IO, missing = Unit -> Set[String] \ IO, request = List[String] -> Unit \ IO, release = List[String] -> Unit \ IO, setBudget = DecodeBudget -> Unit \ IO, spentMs = Unit -> Float64 \ IO }`
-- 後回しの無い機種の組: stateOf はいつも Loaded・missing はいつも空・spentMs はいつも 0・request と release と setBudget は何もしない。
+  `pub type alias AssetDownloads = { stateOf = String -> LoadState \ IO, missing = Unit -> Set[String] \ IO, request = List[String] -> Unit \ IO, release = List[String] -> Unit \ IO, setBudget = DecodeBudget -> Unit \ IO, spentMs = Unit -> Float64 \ IO, missingGen = Unit -> Int32 \ IO, policyOf = String -> MissingPolicy \ IO, getCodeLoadState = Unit -> LoadState \ IO, isSplashShowing = Unit -> Bool \ IO, setLoadWait = Option[LoadWait] -> Unit \ IO }`
+- 届いていない素材を使おうとした時の扱い。Wait = 届くまで待つ・Placeholder = 描かずに（フォントは先頭のフォントで）進む・Skip = 鳴らさずに進む。
+  `pub enum OnMissing with Eq, ToString { case Wait case Placeholder case Skip }`
+- 名前 1 つの扱い。onMissing = None は種類の既定（絵とフォントは待つ・一発の音は鳴らさず進む・ループの音は押した時の待ちに加わる）・
+  `pub type alias MissingPolicy = { onMissing = Option[OnMissing], group = Option[String] }`
+- 表に載っていない名前の扱い（両方 None）。
+  `pub def defaultPolicy(): MissingPolicy`
+- 待っている物の種類。Code = 後から取る wasm・Assets = 後回しの素材。
+  `pub enum LoadWaitReason with Eq, ToString { case Code case Assets }`
+- App のループが待っている所。names = まだ届いていない名前（並びは字の順）・waited = 待ち始めてからの秒・
+  `pub type alias LoadWait = { reason = LoadWaitReason, names = List[String], waited = Float64, progress = Float64, pressed = Bool }`
+- 後回しの無い機種の組: stateOf と getCodeLoadState はいつも Loaded・missing はいつも空・missingGen と spentMs はいつも 0・
   `pub def localDownloads(): AssetDownloads`
 - `pub def runNoop(f: Unit -> a \ ef): a \ (ef - LoadProgress) + IO`
 - tasks を 1 つずつ回し、最初に (phase, 0, n)・1 つ終わるたびに (phase, 終わった数, n) を report へ渡す（空なら何も渡さない）。

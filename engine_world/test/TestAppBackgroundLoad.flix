@@ -32,7 +32,7 @@ mod TestAppBackgroundLoad {
                         request = _ -> checked_ecast(()),
                         release = paths -> Ref.put(List.append(Ref.get(released), paths), released),
                         setBudget = budget -> Ref.put(List.append(Ref.get(budgets), budget :: Nil), budgets),
-                        spentMs = () -> checked_ecast(0.0) },
+                        spentMs = () -> checked_ecast(0.0) | LoadProgress.localDownloads() },
           states = table, missing = missingNow, budgets = budgets, released = released }
 
     def setState(path: String, state: LoadProgress.LoadState, fake: Fake): Unit \ IO =
@@ -114,6 +114,37 @@ mod TestAppBackgroundLoad {
         let paused = w0 |> App.stepBackgroundLoad(app) |> App.stepBackgroundLoad(app);
         let covered = App.stepBackgroundLoad(app, { covered = true | paused });
         Assert.assertEq(expected = (Nil, ("b", Ok("B")) :: Nil), (paused#stored, covered#stored))
+
+    /// 鍵を解いたコマは、どの step の store かと解いた鍵を記録として返す
+    @Test
+    def testStepAllMarksTheStore(): Unit \ {Assert, Fs.FileRead, IO} =
+        let fake = fakeOf(("b.glb", LoadProgress.LoadState.Queued) :: Nil, Set.empty());
+        let app = roomsApp(fake);
+        let w1 = worldOf(fake) |> App.stepBackgroundLoad(app);
+        setState("b.glb", LoadProgress.LoadState.Downloaded, fake);
+        let (_, marks) = App.Internal.BackgroundLoad.stepAll(App.rec(app), w1);
+        Assert.assertEq(expected = (0, "b" :: Nil) :: Nil, List.map(m -> (m#step, m#keys), marks))
+
+    /// 記録の replay を別の World（解く前の World）へ当てると、同じ結果が置かれ鍵が Loaded になる
+    @Test
+    def testStoreMarkReplaysOnAnotherWorld(): Unit \ {Assert, Fs.FileRead, IO} =
+        let fake = fakeOf(("b.glb", LoadProgress.LoadState.Queued) :: Nil, Set.empty());
+        let app = roomsApp(fake);
+        let w1 = worldOf(fake) |> App.stepBackgroundLoad(app);
+        setState("b.glb", LoadProgress.LoadState.Downloaded, fake);
+        let (_, marks) = App.Internal.BackgroundLoad.stepAll(App.rec(app), w1);
+        let replayed = List.foldLeft((acc, m) -> m#replay(acc), w1, marks);
+        Assert.assertEq(expected = (("b", Ok("B")) :: Nil, true), (replayed#stored, BackgroundLoad.isLoaded("b", replayed#pending)))
+
+    /// 届いていない名前の書き替え（withMissingAssets）は記録を返さない
+    @Test
+    def testMissingStepLeavesNoMark(): Unit \ {Assert, Fs.FileRead, IO} =
+        let fake = fakeOf(Nil, Set#{"bg"});
+        let app = missingApp(fake);
+        let w0 = worldOf(fake);
+        Ref.put(Set.empty(), fake#missing);
+        let (written, marks) = App.Internal.BackgroundLoad.stepAll(App.rec(app), w0);
+        Assert.assertEq(expected = (1, 0), (written#writes, List.length(marks)))
 
     /// 取れなかった鍵は store に Err を 1 回だけ渡す
     @Test

@@ -391,6 +391,38 @@ mod TestRender {
         let items = { at = { x = 0.0, y = 0.0 }, item = RawDraw.box({ x = 1.0, y = 1.0 }, red(), 0) } :: Nil;
         Assert.assertEq(expected = -3750763034362895579i64, Render.glyphFingerprint(items))
 
+    // ── assetNames（描く物が名前で引く絵とフォント）──
+
+    // sprite は texture の名前を出す。
+    @Test
+    def testAssetNamesHasTheSpriteTexture(): Unit \ Assert =
+        Assert.assertEq(expected = Set#{"ball"}, Render.assetNames({ at = Vec2.zero(), item = Render.sprite("ball", 0) } :: Nil))
+
+    // 字はフォントのアトラスの texture 名を出す。
+    @Test
+    def testAssetNamesHasTheFontTexture(): Unit \ Assert =
+        Assert.assertEq(expected = Set#{"font_gothic"}, Render.assetNames(textPlaced("AB", testAtlasNamed("font_gothic")) :: Nil))
+
+    // Shader 面は tex 場が読む絵の名前を出す。
+    @Test
+    def testAssetNamesHasTheSurfaceTexture(): Unit \ Assert =
+        let read = ShaderDoc.Field.Tex({ name = "pieces", chan = ShaderDoc.TexChan.R });
+        Assert.assertEq(expected = Set#{"pieces"}, Render.assetNames(Render.shaderFill(rgbSpec(Nil, read), square8(), 0.0, 6) :: Nil))
+
+    // Clipped は中身の名前を出す。
+    @Test
+    def testAssetNamesLooksInsideClipped(): Unit \ Assert =
+        let clipped = Render.sprite("ball", 0) |> Render.clipped({ position = Vec2.zero(), size = { x = 4.0, y = 4.0 } });
+        Assert.assertEq(expected = Set#{"ball"}, Render.assetNames({ at = Vec2.zero(), item = clipped } :: Nil))
+
+    // 箱と 3D の場面は名前を出さない（3D の場面の中は BackgroundLoad が受け持つ）。
+    @Test
+    def testAssetNamesSkipsBoxesAndScenes3d(): Unit \ Assert =
+        let camera = { eye = Vec3.v3(0.0, 2.0, 10.0), yaw = 0.0, pitch = 0.0, fovY = 0.8, near = 0.1, far = 100.0, lensShift = Vec2.zero() };
+        let scene = Render.scene3d(Vec2.zero(), Scene3d.scene(camera, { x = 32.0, y = 18.0 }));
+        let box = { at = Vec2.zero(), item = RawDraw.box({ x = 1.0, y = 1.0 }, red(), 0) };
+        Assert.assertEq(expected = Set.empty(), Render.assetNames(scene :: box :: Nil))
+
     // ========================================================================
     // drawWith: テクスチャ 1 枚を読むだけの面（F8 の止めた画面・注釈のスクショ）
     // ========================================================================

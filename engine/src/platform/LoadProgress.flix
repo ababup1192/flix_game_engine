@@ -61,21 +61,58 @@ pub mod LoadProgress {
     /// （project.json の textures と sounds の名前。名前の無い素材は道）・request = 道を並べた順で行列の頭へ（取れずに Failed の道も戻す）・
     /// release = 道の生のバイトを捨てる（後回しの道だけ。捨てた道は読めなくなる。BackgroundLoad が鍵を解いた後に呼ぶ）・
     /// setBudget = このコマの予算を機種へ渡す（届いた 2D の絵の登録が従う。ゲームは呼ばない — App の step が毎コマ呼ぶ）・
-    /// spentMs = このコマに機種が届いた絵の登録に使った ms（App の step が自分の解く時間に足し、1 コマで予算を 2 回使わない）。
+    /// spentMs = このコマに機種が届いた絵の登録に使った ms（App の step が自分の解く時間に足し、1 コマで予算を 2 回使わない）・
+    /// missingGen = missing が変わるたびに増える数（App のループが毎コマ集まりを作り直さないための目印）・
+    /// policyOf = 名前の扱い（project.json の web.deferredPolicy の onMissing と group。表に無い名前は両方 None = 種類の既定）・
+    /// getCodeLoadState = 後から取る wasm の状態（分けていない束とデスクトップはいつも Loaded）・
+    /// isSplashShowing = 頁が押した後のロゴを出している間か・setLoadWait = 今の待ちを機種へ知らせる（App のループが変わった時だけ呼ぶ）。
     pub type alias AssetDownloads = {
         stateOf = String -> LoadState \ IO,
         missing = Unit -> Set[String] \ IO,
         request = List[String] -> Unit \ IO,
         release = List[String] -> Unit \ IO,
         setBudget = DecodeBudget -> Unit \ IO,
-        spentMs = Unit -> Float64 \ IO
+        spentMs = Unit -> Float64 \ IO,
+        missingGen = Unit -> Int32 \ IO,
+        policyOf = String -> MissingPolicy \ IO,
+        getCodeLoadState = Unit -> LoadState \ IO,
+        isSplashShowing = Unit -> Bool \ IO,
+        setLoadWait = Option[LoadWait] -> Unit \ IO
     }
 
-    /// 後回しの無い機種の組: stateOf はいつも Loaded・missing はいつも空・spentMs はいつも 0・request と release と setBudget は何もしない。
+    /// 届いていない素材を使おうとした時の扱い。Wait = 届くまで待つ・Placeholder = 描かずに（フォントは先頭のフォントで）進む・Skip = 鳴らさずに進む。
+    /// 絵とフォントは Wait と Placeholder、音は Wait と Skip を使う（Placeholder と Skip はどちらも「待たない」と読む）。
+    pub enum OnMissing with Eq, ToString {
+        case Wait
+        case Placeholder
+        case Skip
+    }
+
+    /// 名前 1 つの扱い。onMissing = None は種類の既定（絵とフォントは待つ・一発の音は鳴らさず進む・ループの音は押した時の待ちに加わる）・
+    /// group = 押した時の待ちで一緒に待つ組の名前（Unity の Addressables の group）。
+    pub type alias MissingPolicy = { onMissing = Option[OnMissing], group = Option[String] }
+
+    /// 表に載っていない名前の扱い（両方 None）。
+    pub def defaultPolicy(): MissingPolicy = { onMissing = None, group = None }
+
+    /// 待っている物の種類。Code = 後から取る wasm・Assets = 後回しの素材。
+    pub enum LoadWaitReason with Eq, ToString {
+        case Code
+        case Assets
+    }
+
+    /// App のループが待っている所。names = まだ届いていない名前（並びは字の順）・waited = 待ち始めてからの秒・
+    /// progress = 待ち始めた時の数のうち届いた割合（0..1・Code だけの待ちは 0）・pressed = 押した所まで戻して待っているか（偽は前の World で止まっている）。
+    pub type alias LoadWait = { reason = LoadWaitReason, names = List[String], waited = Float64, progress = Float64, pressed = Bool }
+
+    /// 後回しの無い機種の組: stateOf と getCodeLoadState はいつも Loaded・missing はいつも空・missingGen と spentMs はいつも 0・
+    /// policyOf はいつも defaultPolicy・isSplashShowing はいつも偽・request と release と setBudget と setLoadWait は何もしない。
     pub def localDownloads(): AssetDownloads =
         { stateOf = _ -> checked_ecast(LoadState.Loaded), missing = () -> checked_ecast(Set.empty()),
           request = _ -> checked_ecast(()), release = _ -> checked_ecast(()), setBudget = _ -> checked_ecast(()),
-          spentMs = () -> checked_ecast(0.0) }
+          spentMs = () -> checked_ecast(0.0), missingGen = () -> checked_ecast(0),
+          policyOf = _ -> checked_ecast(defaultPolicy()), getCodeLoadState = () -> checked_ecast(LoadState.Loaded),
+          isSplashShowing = () -> checked_ecast(false), setLoadWait = _ -> checked_ecast(()) }
 
     /// 知らせを捨て、仕事を順に回す handler（headless の描き出し・動画・テスト・flow の再生）。
     /// imageDecoder を受け取ると止まる（絵を解くなら HeadlessLoad.handle）。
