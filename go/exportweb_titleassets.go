@@ -222,6 +222,7 @@ func (s *webDeferredSuggestion) keepOneFont(fonts, deferredFonts []string) {
 // estimate は候補を貼った時の起動の秒と、足した物が届く時刻を出す。並びは export-web が組む後回しの列と同じ
 // （今の列の頭に続くフォントのアトラスの後ろへ足したフォント・今の列の残り・足した glob の順。1 つの glob に当たる物は道の順）。
 // WhyNot: 今の列のフォントを全部頭へ寄せて数えない — web.deferred の font: の行や group で後ろに置いたフォントの分だけ、足した物が遅く見える。
+// WhyNot: 列の 1 行目の font: の行で置いたフォントを頭のフォントと分けない — bundle.json からは行で置いたか分からない（足した物が少し遅く見える側にずれるだけ）。
 func (s *webDeferredSuggestion) estimate(out string, b *webBundle, deferred map[string]bool) {
 	wire := map[string]int64{}
 	var moved int64
