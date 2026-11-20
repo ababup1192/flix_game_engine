@@ -44,7 +44,8 @@ mod RenderPaint.Internal.WebGpuPaint.Scenes.TestScenesDawn {
         }
 
     def submitsAroundPaste(gpu: WebGpu): Int32 \ IO =
-        let paint = RenderPaint.Internal.WebGpuPaint.create(gpu, { designWidth = 64, designHeight = 64, clearColor = Color.rgb(0.0, 0.0, 0.0), width = 64, height = 64 });
+        let paint = RenderPaint.Internal.WebGpuPaint.create(gpu, { designWidth = 64, designHeight = 64, clearColor = Color.rgb(0.0, 0.0, 0.0), width = 64, height = 64,
+                                                                    scene3d = Render3d.WebGpuRenderer.makeScenes });
         let first = prepare(paint, 0, target(), screen(), scene() :: Nil);
         flushPending(paint);
         let before = submitsOf(paint);

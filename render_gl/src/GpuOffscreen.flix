@@ -93,7 +93,8 @@ pub mod GpuOffscreen {
             let height = config#designHeight * cfg#scale;
             println("[backend] webgpu: ${gpu.adapterInfo()}");
             let paint = WebGpuPaint.create(gpu, { designWidth = config#designWidth, designHeight = config#designHeight,
-                                                  clearColor = config#clearColor, width = width, height = height }) |> WebGpuPaint.withoutHistory;
+                                                  clearColor = config#clearColor, width = width, height = height,
+                                                  scene3d = Render3d.WebGpuRenderer.makeScenes }) |> WebGpuPaint.withoutHistory;
             LwjglLayer.Internal.WebGpuWindowLayer.loadTextures(paint, config#textureManifest, (_, _) -> checked_ecast(()));
             let fonts = LwjglLayer.Internal.WebGpuWindowLayer.loadFonts(paint, config, (_, _, _) -> checked_ecast(()));
             let stamps = config#textureManifest

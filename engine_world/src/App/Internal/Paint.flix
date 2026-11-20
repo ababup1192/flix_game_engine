@@ -51,26 +51,48 @@ pub mod App.Internal.Paint {
     /// 1 コマの Pass の計画と画面の絵（App.buildFrame の中身）。withPostStack があれば world を後がけの Pass へ回し、
     /// 画面には後がけの面と HUD を置く。計画の名前が重なれば後がけを掛けずに 1 行知らせる。
     pub def buildFrame(app: App[w, ef], design: Vec2.Vec2, base: App.ViewCtx, world: w,
-                    toItems: (App.ViewCtx, w) -> List[Render.PlacedItem] \ ef): { plan = Render.PassPlan, items = List[Render.PlacedItem] } \ ef =
+                    toItems: (App.ViewCtx, w) -> List[Render.PlacedItem] \ ef): FramePlan \ ef =
         let r = App.rec(app);
         let layers = sceneLayers(app, design, base, world, toItems);
         let gamePlan = (r#passes)(world);
-        let plain = { plan = gamePlan, items = List.append(layers#world, layers#hud) };
         match r#postStack {
-            case None    => plain
-            case Some(f) =>
-                let stack = PostStack.resolveQuality(base#display#sizeClass, f(world));
-                let built = PostStack.build({ size = design, clear = PostStack.backgroundOf(stack) |> Option.getWithDefault(r#screenClear), world = layers#world }, stack);
-                let reserved = gamePlan#passes |> List.filter(p -> String.startsWith(prefix = PostStack.reservedPrefix(), p#name))
-                    |> List.map(p -> "[post] withPassPlan の Pass '${p#name}' が ps_ で始まる（ps_ は PostStack の Pass。名前を替える）");
-                let noted = List.append(built#issues |> List.map(issue -> "[post] ${PostStack.issueText(issue)}"), reserved) |> List.forEach(base#warnOnce);
-                match (noted, Render.mergePassPlans(gamePlan, built#plan)) {
-                    case ((), Ok(plan))     => { plan = plan, items = built#present :: layers#hud }
-                    case ((), Err(clashes)) =>
-                        match clashes |> List.forEach(c -> base#warnOnce("[post] withPassPlan の Pass と名前が重なる（${c}）— 後がけを掛けない")) {
-                            case () => plain
-                        }
-                }
+            case None       => { plan = gamePlan, items = List.append(layers#world, layers#hud) }
+            case Some(post) => post({ base = base, design = design, clear = r#screenClear, world = world, layers = layers, plan = gamePlan })
+        }
+
+    /// 1 コマの Pass の計画と画面の絵。
+    pub type alias FramePlan = { plan = Render.PassPlan, items = List[Render.PlacedItem] }
+
+    /// 後がけ（withPostStack）へ渡す 1 コマ。base = View の ViewCtx の元・clear = 画面の地の色・
+    /// layers = camera を掛けた View の絵と HUD の絵（sceneLayers）・plan = withPassPlan の計画。
+    pub type alias PostInput[w] = {
+        base = App.ViewCtx, design = Vec2.Vec2, clear = Color, world = w,
+        layers = { world = List[Render.PlacedItem], hud = List[Render.PlacedItem] }, plan = Render.PassPlan
+    }
+
+    /// withPostStack の f で 1 コマに後がけを掛ける。world の絵を後がけの Pass へ回し、画面には後がけの面と HUD を置く。
+    /// 計画の名前が重なれば後がけを掛けずに 1 行知らせる。
+    // WhyNot: App に w -> PostStack.Stack のまま持たせて buildFrame から呼ばない — 後がけを使わないゲームのブラウザ版の wasm にも
+    //   PostStack の組み立てが全部入る（TeaVM は届く関数を残すので、ここへ届くのを withPostStack を呼んだ時だけにする）。
+    pub def applyPostStack(f: w -> PostStack.Stack \ ef, input: PostInput[w]): FramePlan \ ef =
+        let base = input#base;
+        let layers = input#layers;
+        let gamePlan = input#plan;
+        let plain = { plan = gamePlan, items = List.append(layers#world, layers#hud) };
+        let stack = PostStack.resolveQuality(base#display#sizeClass, f(input#world));
+        let built = PostStack.build({ size = input#design, clear = PostStack.backgroundOf(stack) |> Option.getWithDefault(input#clear), world = layers#world }, stack);
+        let reserved = gamePlan#passes |> List.filter(p -> String.startsWith(prefix = PostStack.reservedPrefix(), p#name))
+            |> List.map(p -> "[post] withPassPlan の Pass '${p#name}' が ps_ で始まる（ps_ は PostStack の Pass。名前を替える）");
+        let noted = List.append(built#issues |> List.map(issue -> "[post] ${PostStack.issueText(issue)}"), reserved) |> List.forEach(base#warnOnce);
+        match (noted, Render.mergePassPlans(gamePlan, built#plan)) {
+            case ((), Ok(plan))     => { plan = plan, items = built#present :: layers#hud }
+            case ((), Err(clashes)) => warnClashesThen(base#warnOnce, clashes, plain)
+        }
+
+    /// 重なった名前を 1 つずつ知らせて plain を返す。
+    def warnClashesThen(warnOnce: String -> Unit, clashes: List[Render.PassPlanIssue], plain: FramePlan): FramePlan =
+        match clashes |> List.forEach(c -> warnOnce("[post] withPassPlan の Pass と名前が重なる（${c}）— 後がけを掛けない")) {
+            case () => plain
         }
 
     /// 生成したアトラスを描画部へ渡しておく（同じ key の間は何も起きない）。

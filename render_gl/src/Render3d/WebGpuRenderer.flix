@@ -101,6 +101,35 @@ pub mod Render3d.WebGpuRenderer {
     /// prepare の答え（i 番目 = 番号 i の場面を貼る物。描く物の無い場面は None）。
     pub type alias Prepared = Vector[Option[Paste]]
 
+    /// 2D の描き手（RenderPaint.Internal.WebGpuPaint）が持つ 3D の描き手（関数の組）。場面を描かない物は noScenes。
+    /// 欄はこの mod の同じ名前の関数と同じ役（prepare・preload・notePasted・afterSubmit・endFrame・takeCounts・release）。
+    // WhyNot: 2D の描き手に Renderer を直に持たせない — 3D を描かないゲームのブラウザ版の wasm にも、この mod と計画（Render3d.ScenePlan）と式の組み立てが全部入る。
+    pub type alias Scenes = {
+        prepare = (Host, Dest, List[Scene3d.RenderCmd]) -> Prepared \ IO,
+        preload = (Host, Scene3d.PreloadCmd) -> Unit \ IO,
+        notePasted = Paste -> Unit \ IO,
+        afterSubmit = Unit -> Unit \ IO,
+        endFrame = Unit -> Unit \ IO,
+        takeCounts = Unit -> FrameDiagnostics.Scene3dCounts \ IO,
+        release = Unit -> Unit \ IO
+    }
+
+    /// 3D の場面の描き手を device の上に作る（create の答えを Scenes に包む）。
+    pub def makeScenes(gpu: WebGpu, pasteLayout: BindGroupLayout, imageLayout: BindGroupLayout): Scenes \ IO =
+        scenesOf(create(gpu, pasteLayout, imageLayout))
+
+    /// r を Scenes に包む。
+    pub def scenesOf(r: Renderer): Scenes =
+        { prepare = (host, dest, cmds) -> prepare(r, host, dest, cmds), preload = (host, cmd) -> preload(r, host, cmd),
+          notePasted = paste -> notePasted(r, paste),
+          afterSubmit = () -> afterSubmit(r), endFrame = () -> endFrame(r), takeCounts = () -> takeCounts(r), release = () -> release(r) }
+
+    /// 場面を描かない描き手（どの場面も貼る物なし・数は 0）。
+    pub def noScenes(): Scenes =
+        { prepare = (_, _, cmds) -> List.toVector(List.map(_ -> (None: Option[Paste]), cmds)), preload = (_, _) -> (),
+          notePasted = _ -> (),
+          afterSubmit = () -> (), endFrame = () -> (), takeCounts = () -> FrameDiagnostics.emptyScene3dCounts(), release = () -> () }
+
     /// 描き手の状態。欄の中身:
     /// vertexModule と skinnedModule = 頂点の色の頂点シェーダー（骨の無い版と骨つきの版）・poseLayout = group 2（姿勢）の layout・
     /// emptyLayout と emptyGroup = 骨つきの頂点の色の pipeline の group 1（材質を読まない版で、group 2 の前を埋める）・

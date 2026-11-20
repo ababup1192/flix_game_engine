@@ -588,7 +588,7 @@ mod V2Main {
             case Err(why) => Err(why)
             case Ok(gpu)  =>
                 let paint = WebGpuPaint.create(gpu, { designWidth = config#designWidth, designHeight = config#designHeight, clearColor = config#clearColor,
-                                                      width = width, height = height });
+                                                      width = width, height = height, scene3d = Render3d.WebGpuRenderer.makeScenes });
                 let fonts = LwjglLayer.Internal.WebGpuWindowLayer.V1Assets.loadAll(paint, config);
                 println("[webgpu-v2] adapter: ${gpu.adapterInfo()}");
                 let shots = cases(kit) |> List.map(c -> (c, shootGl(session, c), shootWebGpu(paint, fonts, c, width, height)));

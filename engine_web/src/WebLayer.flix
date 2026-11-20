@@ -18,6 +18,7 @@ pub mod WebLayer {
     import fge.web.WebImages
     import fge.web.WebGl2
     import fge.web.webgpu.BrowserWebGpu
+    import fge.webgpu.BindGroupLayout
     import fge.webgpu.WebGpu
     import java.lang.Throwable
 
@@ -56,7 +57,7 @@ pub mod WebLayer {
     pub def withProject(rootDir: String, f: Unit -> a \ ef): a \ ef - Platform.Services - LoadProgress + IO + Fs.FileRead =
         let config = loadBootConfigOrBug(rootDir);
         let g = () -> recordDrawnTextures(f);
-        if (Browser.backendRequest() == "webgpu") withWebGpuOrGl((_, _) -> makeWarningRenderer(), config, g)
+        if (Browser.backendRequest() == "webgpu") withWebGpuOrGl((_, _) -> makeWarningRenderer(), (_, _, _) -> makeWarningScenes(), config, g)
         else withWeb((_, _) -> makeWarningRenderer(), config, g)
 
     /// Scene3d を描くゲームの入口。既定は 3D も WebGPU で描く（使えなければ理由を console に出して WebGL2 で描く）。頁が ?backend=webgl2 で開かれていれば WebGL2 で描く。
@@ -64,7 +65,7 @@ pub mod WebLayer {
         let config = loadBootConfigOrBug(rootDir);
         let makeRenderer = (gl, cfg) -> Render3d.makeRenderer(gl, cfg, Render3d.DrawMode.Instanced);
         let g = () -> recordSceneTextures(() -> recordDrawnTextures(f));
-        if (Browser.backendRequest() == "webgpu") withWebGpuOrGl(makeRenderer, config, g)
+        if (Browser.backendRequest() == "webgpu") withWebGpuOrGl(makeRenderer, Render3d.WebGpuRenderer.makeScenes, config, g)
         else withWeb(makeRenderer, config, g)
 
     /// 頁が ?usedAssets=1 か ?net=4g で開かれていれば、2D で描いた絵の名前（スプライト・タイルマップ・面が読む絵）を初めて出たコマで
@@ -126,11 +127,12 @@ pub mod WebLayer {
         }
 
     /// WebGPU で描く。webgpu の文脈を取る前に落ちたら、理由を console に出して WebGL2 で描く。
-    /// makeRenderer = WebGL2 へ落ちた時の 3D の描き手の作り方（WebGPU の 3D の描き手は塗りのコアが持つ）。
+    /// makeRenderer = WebGL2 へ落ちた時の 3D の描き手の作り方・makeScenes = WebGPU の 3D の描き手の作り方。
     @DontInline
     def withWebGpuOrGl(makeRenderer: (GlContext, GameEngine.EngineConfig) -> Scene3dRenderer.Renderer \ IO,
+                       makeScenes: (WebGpu, BindGroupLayout, BindGroupLayout) -> Render3d.WebGpuRenderer.Scenes \ IO,
                        config: GameEngine.EngineConfig, f: Unit -> a \ ef): a \ ef - Platform.Services - LoadProgress + IO =
-        match WebLayer.Internal.WebGpuLayer.withWeb(config, f) {
+        match WebLayer.Internal.WebGpuLayer.withWeb(makeScenes, config, f) {
             case Ok(result) => result
             case Err(why)   => withGlFallback(why, makeRenderer, config, f)
         }
@@ -146,17 +148,30 @@ pub mod WebLayer {
         discard AnimationFrame.waitFrame();
         waitForReload()
 
-    /// 場面を描かない描き手。場面が来たら初回に 1 回だけ、withProject3d へ替えるよう知らせる。
+    /// 場面を描かない描き手（WebGL2）。場面が来たら初回に 1 回だけ、withProject3d へ替えるよう知らせる。
     def makeWarningRenderer(): Scene3dRenderer.Renderer \ IO =
         let warned = Ref.fresh(Static, false);
         { prepare = (_, _, _, cmds) -> {
-              if (List.isEmpty(cmds) or Ref.get(warned)) ()
-              else {
-                  Ref.put(true, warned);
-                  Log.warn("scene3d: WebLayer.withProject は 3D を描かない — web/WebMain.flix を WebLayer.withProject3d へ替える")
-              };
+              warnScene3dOnce(warned, cmds);
               Scene3dRenderer.noScenes()
           } | Scene3dRenderer.none() }
+
+    /// 場面を描かない描き手（WebGPU）。場面が来たら初回に 1 回だけ、withProject3d へ替えるよう知らせる。
+    def makeWarningScenes(): Render3d.WebGpuRenderer.Scenes \ IO =
+        let warned = Ref.fresh(Static, false);
+        let none = Render3d.WebGpuRenderer.noScenes();
+        { prepare = (host, dest, cmds) -> {
+              warnScene3dOnce(warned, cmds);
+              (none#prepare)(host, dest, cmds)
+          } | none }
+
+    /// cmds に場面があり、まだ知らせていなければ、withProject3d へ替えるよう 1 行知らせる。
+    def warnScene3dOnce(warned: Ref[Bool, Static], cmds: List[a]): Unit \ IO =
+        if (List.isEmpty(cmds) or Ref.get(warned)) ()
+        else {
+            Ref.put(true, warned);
+            Log.warn("scene3d: WebLayer.withProject は 3D を描かない — web/WebMain.flix を WebLayer.withProject3d へ替える")
+        }
 
     // WhyNot: 頁を開いた時（素材を取る前）に測らない — 読み込みの間に回した端末で、古い向きのまま起動する。押して始めた後の main で測る。
     /// 起動に使う設定。縦の design を選ぶ時（スマホを縦に持って開いた・頁の ?orientation=portrait）で、project.json に

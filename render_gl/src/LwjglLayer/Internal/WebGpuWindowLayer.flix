@@ -233,7 +233,8 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
         let presentMode = Ref.fresh(Static, PresentMode.IMMEDIATE);
         Option.forEach(s -> Ref.put(configureSurface(gpu, s, opened#format, fbSize, PresentMode.IMMEDIATE, warnedImmediate), presentMode), opened#surface);
         let paint = WebGpuPaint.create(gpu, { designWidth = config#designWidth, designHeight = config#designHeight,
-                                              clearColor = config#clearColor, width = fst(fbSize), height = snd(fbSize) });
+                                              clearColor = config#clearColor, width = fst(fbSize), height = snd(fbSize),
+                                              scene3d = Render3d.WebGpuRenderer.makeScenes });
         let frameStats = if (env#frameStats) Some(RenderFrameStats.fresh()) else None;
         let present = { gpu = gpu, paint = paint, opened = opened, size = sizeHolder, presentMode = presentMode, frameStats = frameStats,
                         frameShotDir = env#frameShotDir, frameShotTaken = Array#{0} @ Static, screenPainted = Ref.fresh(Static, None),

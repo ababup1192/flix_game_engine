@@ -13,6 +13,7 @@ pub mod WebLayer.Internal.WebGpuLayer {
     import fge.web.Pointer
     import fge.web.WebImages
     import fge.web.webgpu.BrowserWebGpu
+    import fge.webgpu.BindGroupLayout
     import fge.webgpu.PresentMode
     import fge.webgpu.Surface
     import fge.webgpu.TextureFormat
@@ -31,12 +32,14 @@ pub mod WebLayer.Internal.WebGpuLayer {
     }
 
     /// WebGPU で描く頁を起動して f を回す。canvas の webgpu の文脈を取る前に落ちたら Err(理由)（f はまだ呼んでいない）。
+    /// makeScenes = 3D の場面の描き手の作り方（WebGpuPaint.create の scene3d）。
     @DontInline
-    pub def withWeb(config: GameEngine.EngineConfig, f: Unit -> a \ ef): Result[String, a] \ ef - Platform.Services - LoadProgress + IO =
+    pub def withWeb(makeScenes: (WebGpu, BindGroupLayout, BindGroupLayout) -> Render3d.WebGpuRenderer.Scenes \ IO,
+                    config: GameEngine.EngineConfig, f: Unit -> a \ ef): Result[String, a] \ ef - Platform.Services - LoadProgress + IO =
         Browser.setTitle(config#title);
         match openDevice() {
             case Err(why) => Err(why)
-            case Ok(gpu)  => prepare(config, gpu, f)
+            case Ok(gpu)  => prepare(makeScenes, config, gpu, f)
         }
 
     /// adapter と device を取る。WebGPU の無いブラウザ・取れない時・core-features-and-limits が無い時は Err。
@@ -55,13 +58,14 @@ pub mod WebLayer.Internal.WebGpuLayer {
     /// 塗りのコアを作り、絵とフォントを上げ、誤りが無ければ canvas に描き先を作って f を回す。落ちたら作った物を捨てて Err。
     /// 頁の ?webgpuFail=prepare|canvas は、webgpu の文脈を取る前・取った後に落ちる道を起こす（GL へ落ちる道の確かめ用。無ければ何もしない）。
     @DontInline
-    def prepare(config: GameEngine.EngineConfig, gpu: BrowserWebGpu, f: Unit -> a \ ef): Result[String, a] \ ef - Platform.Services - LoadProgress + IO =
+    def prepare(makeScenes: (WebGpu, BindGroupLayout, BindGroupLayout) -> Render3d.WebGpuRenderer.Scenes \ IO,
+                config: GameEngine.EngineConfig, gpu: BrowserWebGpu, f: Unit -> a \ ef): Result[String, a] \ ef - Platform.Services - LoadProgress + IO =
         let design = { x = Int32.toFloat64(config#designWidth), y = Int32.toFloat64(config#designHeight) };
         let state = freshState(config, design);
         let size = (Int32.max(1, Browser.canvasWidth()), Int32.max(1, Browser.canvasHeight()));
         let queryPairs = Array.toList(Browser.queryPairs());
         let failMode = queryValueOf("webgpuFail", queryPairs);
-        let ready = prepareAssets(config, gpu, size, showProgress(state), failMode)
+        let ready = prepareAssets(makeScenes, config, gpu, size, showProgress(state), failMode)
             |> Result.flatMap(assets -> attachOrRelease(gpu, assets, size, failMode));
         match ready {
             case Err(why) =>
@@ -77,13 +81,15 @@ pub mod WebLayer.Internal.WebGpuLayer {
         }
 
     /// 塗りのコア（pipeline）を作り、絵とフォントを上げ、誤りの数を見る（全部 canvas の webgpu の文脈を取る前）。落ちたら塗りのコアを手放して Err。
-    def prepareAssets(config: GameEngine.EngineConfig, gpu: BrowserWebGpu, size: (Int32, Int32),
+    def prepareAssets(makeScenes: (WebGpu, BindGroupLayout, BindGroupLayout) -> Render3d.WebGpuRenderer.Scenes \ IO,
+                      config: GameEngine.EngineConfig, gpu: BrowserWebGpu, size: (Int32, Int32),
                       progress: (String, Int32, Int32) -> Unit \ IO, failMode: String): Result[String, (WebGpuPaint.Paint, RenderPaint.Fonts)] \ IO =
         let webGpu: WebGpu = checked_cast(gpu);
         let made: Ref[Option[WebGpuPaint.Paint], Static] = Ref.fresh(Static, None);
         let outcome = try {
             let paint = WebGpuPaint.create(webGpu, { designWidth = config#designWidth, designHeight = config#designHeight,
-                                                     clearColor = config#clearColor, width = fst(size), height = snd(size) });
+                                                     clearColor = config#clearColor, width = fst(size), height = snd(size),
+                                                     scene3d = makeScenes });
             Ref.put(Some(paint), made);
             println("Loading textures...");
             loadTextures(gpu, paint, config#textureManifest, (done, total) -> progress("loading images...", done, total));

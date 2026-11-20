@@ -68,7 +68,7 @@ mod V1Main {
                 let width = config#designWidth;
                 let height = config#designHeight;
                 let paint = WebGpuPaint.create(gpu, { designWidth = width, designHeight = height, clearColor = config#clearColor,
-                                                      width = width, height = height });
+                                                      width = width, height = height, scene3d = Render3d.WebGpuRenderer.makeScenes });
                 let fonts = LwjglLayer.Internal.WebGpuWindowLayer.V1Assets.loadAll(paint, config);
                 let shots = V1Scenes.all() |> List.map(sc -> {
                     List.forEach(frame -> handle(paint, fonts, () -> drawScene(frame)), framesOf(sc));

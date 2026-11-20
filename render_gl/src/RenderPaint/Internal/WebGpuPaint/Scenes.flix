@@ -15,14 +15,14 @@ pub mod RenderPaint.Internal.WebGpuPaint.Scenes {
                     scenes: List[Scene3d.RenderCmd]): Render3d.WebGpuRenderer.Prepared \ IO =
         let PaintData.PaintData(p) = paint;
         let (format, samples) = target;
-        Render3d.WebGpuRenderer.prepare(p#scenes3d, hostOf(paint),
+        (p#scenes3d#prepare)(hostOf(paint),
                                         { key = stencilKey, format = format, samples = samples, viewport = viewportOf(paint, pass), height = pass#height },
                                         scenes)
 
     /// 先に上げる物の宣言 cmd（withPreload3d）の形と絵と材質を 3D の描き手に上げさせる（前と同じ key なら何もしない）。
     pub def preload(paint: Paint, cmd: Scene3d.PreloadCmd): Unit \ IO =
         let PaintData.PaintData(p) = paint;
-        Render3d.WebGpuRenderer.preload(p#scenes3d, hostOf(paint), cmd)
+        (p#scenes3d#preload)(hostOf(paint), cmd)
 
     /// 先に描いた場面 1 つ（prepare の答え）を、場面の矩形の scissor で貼り、その描き先の値を今の encoder の中で使い中と控える
     /// （描く物の無い場面は何もしない）。
@@ -32,7 +32,7 @@ pub mod RenderPaint.Internal.WebGpuPaint.Scenes {
         let pipes = p#pipes;
         let (format, samples) = target;
         scene |> Option.forEach(found -> {
-            Render3d.WebGpuRenderer.notePasted(p#scenes3d, found);
+            (p#scenes3d#notePasted)(found);
             let (x, y, w, h) = found#scissor;
             pass.setPipeline(WebGpuPipelines.pipelineOf(pipes, WebGpuRows.shapeScene(), WebGpuRows.blendScene(), format, samples, stencil));
             pass.setBindGroup(1, found#group);

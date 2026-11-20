@@ -143,7 +143,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             diagnosticsRef = Ref[Option[FrameDiagnostics.Diagnostics], Static],
             drawCounts = RenderDrawCounts.Holder,
             // 3D の場面を描く所（2D の pass の前に場面を自分の texture へ描き、貼る行で貼る）。
-            scenes3d = Render3d.WebGpuRenderer.Renderer,
+            scenes3d = Render3d.WebGpuRenderer.Scenes,
             // Pass の history に前のコマの絵を写すか（偽なら毎回透明。GL の RenderPaint の keepHistory と同じ）。
             keepHistory = Bool
         })
@@ -161,8 +161,10 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     def instanceBytes(): Int32 = 4 * RenderList.instanceFloats()
 
     /// device の上に pipeline・buffer・中間の texture・組み込みの絵（起動画面の字とロゴ・Render.lightAt と darkAt の絵）を作る。
-    /// design = 射影の寸・clearColor = design の中の地の色・width × height = 中間の texture の画素の大きさ。
-    pub def create(gpu: WebGpu, cfg: { designWidth = Int32, designHeight = Int32, clearColor = Color, width = Int32, height = Int32 }): Paint \ IO =
+    /// design = 射影の寸・clearColor = design の中の地の色・width × height = 中間の texture の画素の大きさ・
+    /// scene3d = 3D の場面の描き手の作り方（Render3d.WebGpuRenderer.makeScenes・3D を描かないなら (_, _, _) -> Render3d.WebGpuRenderer.noScenes()）。
+    pub def create(gpu: WebGpu, cfg: { designWidth = Int32, designHeight = Int32, clearColor = Color, width = Int32, height = Int32,
+                                       scene3d = (WebGpu, BindGroupLayout, BindGroupLayout) -> Render3d.WebGpuRenderer.Scenes \ IO }): Paint \ IO =
         let designW = Int32.toFloat64(cfg#designWidth);
         let designH = Int32.toFloat64(cfg#designHeight);
         let frameLayout = gpu.createBindGroupLayout(new BindGroupLayoutDesc("fge frame").buffer(0, ShaderStage.VERTEX, BufferBindingType.UNIFORM));
@@ -215,7 +217,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             frameCounters = Array#{0, 0, 0, 0, 0, 0} @ Static,
             texWarnLog = Ref.fresh(Static, Set.empty()), msaaWarned = Ref.fresh(Static, Set.empty()), skips = SkippedDraws.fresh(),
             diagnosticsRef = Ref.fresh(Static, None), drawCounts = RenderDrawCounts.fresh(),
-            scenes3d = Render3d.WebGpuRenderer.create(gpu, pipes#sceneLayout, imageLayout),
+            scenes3d = (cfg#scene3d)(gpu, pipes#sceneLayout, imageLayout),
             keepHistory = true
         });
         installBuiltins(paint);
@@ -399,7 +401,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         Ref.put(None, p#presentPipeline);
         WebGpuPipelines.release(p#pipes);
         WebGpuSurfaces.release(p#surfaces);
-        Render3d.WebGpuRenderer.release(p#scenes3d);
+        (p#scenes3d#release)();
         Map.forEach((_, pipeline) -> pipeline.release(), Ref.get(p#copyPipelines));
         Ref.put(Map.empty(), p#copyPipelines);
         Array.get(0, p#frameTexture).destroy();
@@ -470,7 +472,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
                 Array.put(Array.get(1, p#frameCounters) + 1, 1, p#frameCounters);
                 List.forEach(stream -> Array.put(0, 1, stream#sizes), p#instances :: p#vertices :: p#values :: Nil);
                 WebGpuSurfaces.afterSubmit(p#surfaces);
-                Render3d.WebGpuRenderer.afterSubmit(p#scenes3d)
+                (p#scenes3d#afterSubmit)()
         }
 
     /// このコマに積んだ pass があれば submit する（絵や buffer を作る・書く・捨てる前に呼ぶ）。
@@ -764,7 +766,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
                 // WhyNot: 集めていない間の 3D の数を溜め続けない — 誰も引き取らない数が増え続ける（GL の RenderPaint.noteGpuTime と同じ）。
                 if (Option.isEmpty(Ref.get(p#diagnosticsRef))) {
                     RenderDrawCounts.discardTotal(p#drawCounts);
-                    discard Render3d.WebGpuRenderer.takeCounts(p#scenes3d)
+                    discard (p#scenes3d#takeCounts)()
                 } else ();
                 true
         }
@@ -886,7 +888,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         };
         submitEncoder(paint);
         warnTable(SkippedDraws.endFrame(p#skips));
-        Render3d.WebGpuRenderer.endFrame(p#scenes3d);
+        (p#scenes3d#endFrame)();
         WebGpuSurfaces.endFrame(p#surfaces, Array.get(0, p#lastFrame)#surfaces |> List.map(cmd -> GpuHandle.shaderProgramInt(cmd#program)) |> List.toSet);
         let submits = Array.get(1, p#frameCounters);
         Array.put(submits, 2, p#frameCounters);
@@ -1035,7 +1037,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             case None    => FrameDiagnostics.empty()
             case Some(d) =>
                 Ref.put(Some(FrameDiagnostics.empty()), p#diagnosticsRef);
-                { textureUploads = List.reverse(d#textureUploads), draw2dCounts = draw2d, scene3dCounts = Render3d.WebGpuRenderer.takeCounts(p#scenes3d) | d }
+                { textureUploads = List.reverse(d#textureUploads), draw2dCounts = draw2d, scene3dCounts = (p#scenes3d#takeCounts)() | d }
         }
 
     // ── handler ──
