@@ -1,19 +1,27 @@
-// SoundLength — 効果音の長さ（秒）を WAV の頭から読む。<<audio se 音 wait=true>> が待つ秒（Res#soundSeconds）。
-// 鳴り続ける音（looping）は読まない。読めない音は表に入れない（その音の wait=true は待たない）。
+// SoundLength — 効果音の長さ（秒）。<<audio se 音 wait=true>> が待つ秒（Res#soundSeconds）。
+// 実機（デスクトップ・ブラウザ）は機種に聞き（GameEngine.Audio.audioSeconds）、ウィンドウなし（テスト・描き出し・flow）は WAV の頭から読む。
+// 鳴り続ける音（looping）は入れない。長さが分からない音は表に入れない（その音の wait=true は待たない）。
 mod SoundLength {
-    use fge::ProjectLoader
+    use fge::{GameEngine, ProjectLoader}
 
-    /// project.json の sounds のうち鳴り続けない音の、名前 → 長さ（秒）。project.json が読めなければ空。
-    pub def load(): Map[String, Float64] \ Fs.FileRead = loadIn(".")
+    /// project.json の sounds のうち鳴り続けない音の、名前 → 長さ（秒。機種が読み込んだ音の長さ）。project.json が読めなければ空。
+    // WhyNot: 実機でも WAV を Fs.FileRead で読まない — ブラウザ版の音は WebAudio へ直に渡り、Fs の表に無いので必ず読めない。
+    pub def load(): Map[String, Float64] \ {Fs.FileRead, GameEngine.Audio} =
+        unloopedIn(".")
+            |> List.filterMap(s -> Some((s#name, GameEngine.Audio.audioSeconds(s#name))) |> Option.filter(p -> snd(p) > 0.0))
+            |> List.toMap
 
-    /// dir の project.json の sounds の長さ（load と同じ。WAV の場所は dir から）。project.json が無ければ空。
+    /// dir の project.json の sounds の長さを WAV の頭から読む（ウィンドウなし用。WAV の場所は dir から）。project.json が無ければ空。
     pub def loadIn(dir: String): Map[String, Float64] \ Fs.FileRead =
+        unloopedIn(dir)
+            |> List.filterMap(s -> Fs.FileRead.readBytes(s#path) |> Result.toOption |> Option.flatMap(wavSeconds) |> Option.map(v -> (s#name, v)))
+            |> List.toMap
+
+    /// dir の project.json の sounds のうち鳴り続けない物。
+    def unloopedIn(dir: String): List[GameEngine.AudioEntry] \ Fs.FileRead =
         match ProjectLoader.loadProject(dir) {
-            case Ok(p) =>
-                p#config#soundManifest |> List.filter(s -> not s#looping)
-                    |> List.filterMap(s -> Fs.FileRead.readBytes(s#path) |> Result.toOption |> Option.flatMap(wavSeconds) |> Option.map(v -> (s#name, v)))
-                    |> List.toMap
-            case Err(_) => Map.empty()
+            case Ok(p)  => p#config#soundManifest |> List.filter(s -> not s#looping)
+            case Err(_) => Nil
         }
 
     /// チャンク 1 つ: tagAt = 名前の頭、body = 中身の頭、size = 中身の大きさ。

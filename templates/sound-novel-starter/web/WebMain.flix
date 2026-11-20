@@ -10,7 +10,7 @@ mod WebMain {
         run {
             // 後回しの絵と音（project.json の web.deferred）は押した後も裏で届く。届いていない名前を Res に置いて始める。
             let downloads = LoadProgress.downloads();
-            let loaded = Res.withMissing(downloads#missing(), Controls.loadRes());
+            let loaded = Res.withMissing(downloads#missing(), Controls.loadRuntimeRes());
             let res = Res.withGame(GameBoot.loadAssets(loaded#game), loaded);
             let app = Game.appFrom(res, World.opened(Saves.load(res#kind), localEpochSeconds()))
                 |> Game.withAssetLoading(downloads)
