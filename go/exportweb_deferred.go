@@ -19,10 +19,13 @@ type webDeferredSettings struct {
 
 // webDeferredEntry は bundle.json の deferred の 1 本。Bytes は配る物（WebP・Opus に替えた後）の大きさ。
 // Names は同じ道を指す project.json の textures と sounds の名前（ゲームが「まだ届いていない名前」として受ける）。
+// OnMissing と Group は web.deferredPolicy で当たった行の物（無ければ空 = 種類の既定・組なし）。
 type webDeferredEntry struct {
-	Path  string   `json:"path"`
-	Bytes int64    `json:"bytes"`
-	Names []string `json:"names,omitempty"`
+	Path      string   `json:"path"`
+	Bytes     int64    `json:"bytes"`
+	Names     []string `json:"names,omitempty"`
+	OnMissing string   `json:"onMissing,omitempty"`
+	Group     string   `json:"group,omitempty"`
 }
 
 func resolveWebDeferred(raw json.RawMessage) ([]webGlob, error) {

@@ -262,6 +262,17 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		return 1
 	}
 	deferredPlan, textureNames = withDeferredFonts(deferredPlan, deferredFonts, textureNames)
+	deferredPolicy, err := resolveWebDeferredPolicy(proj.Web)
+	if err != nil {
+		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
+		return 1
+	}
+	if _, lines, err := applyWebDeferredPolicy(webDeferredEntries("", &early, deferredPlan.Paths, textureNames), deferredPolicy, &early); err != nil {
+		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
+		return 1
+	} else {
+		deferredPlan.Warnings = append(deferredPlan.Warnings, lines...)
+	}
 	for _, line := range deferredPlan.Warnings {
 		ewLogf("知らせ: %s", line)
 	}
@@ -460,7 +471,7 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 	report.Notes = append(report.Notes, losslessNotes...)
 	report.AutoLossyLines = buildWebAutoLossySummary(report.Verdicts, compress.Auto, compress.LossyImages, prevLossless)
 	logWebAutoLossy(report.Verdicts)
-	b.Deferred = webDeferredEntries(p.Out, &b, deferredPlan.Paths, textureNames)
+	b.Deferred, _, _ = applyWebDeferredPolicy(webDeferredEntries(p.Out, &b, deferredPlan.Paths, textureNames), deferredPolicy, &b)
 
 	ewLogf("⑦ 頁")
 	b.ServiceWorker = serviceWorker

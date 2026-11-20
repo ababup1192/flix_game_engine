@@ -111,7 +111,7 @@ fi
 # ── 5. サブフォルダの道で開けるか ──
 if [ "${NO_BROWSER_CHECK:-}" != 1 ]; then
   shot="$game/build/web-pages-check.png"
-  if "$fge" web-capture "$dest/index.html?capture=3" "$shot" --dir "$wt" --wait 90 >/dev/null; then
+  if "$fge" web-capture "$dest/index.html?capture=3&deferred=all" "$shot" --dir "$wt" --wait 90 >/dev/null; then
     say "ヘッドレスの Chrome で $dest/index.html を開き、3 コマ目まで描けた（${shot}）"
   else
     die "置いた頁を $dest/ の道で開けなかった（上の字を見る。コミットは残っているので、直したら流し直す）"

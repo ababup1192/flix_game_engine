@@ -21,7 +21,7 @@ mod WebMain {
                     |> App.launchForBench
         }
 
-    def show(): Unit \ (IO + Fs.FileRead + Fs.FileWrite + Platform.Services) =
+    def show(): Unit \ (IO + Fs.FileRead + Fs.FileWrite + Platform.Services + LoadProgress) =
         match Room.loadMeshes() {
             case Err(why)   => println("[scene3d] 家具を読めない: ${why}")
             case Ok(meshes) =>

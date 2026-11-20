@@ -33,4 +33,28 @@ public final class Deferred {
     /** 後回しで、まだ届いていない名前（名前の無い素材は道）を改行でつないだ字。 */
     @JSBody(script = "return fgeDeferredMissing();")
     public static native String missing();
+
+    /** missing の字が変わるたびに 1 つ増える数。 */
+    @JSBody(script = "return fgeDeferredMissingGen();")
+    public static native int missingGen();
+
+    /** 名前の扱い（project.json の web.deferredPolicy）。"onMissing\ngroup" の形（無い欄は空）。 */
+    @JSBody(params = {"name"}, script = "return fgeDeferredPolicy(name);")
+    public static native String policy(String name);
+
+    /** 後から取る wasm の状態の字（"none" は分けていない束）。 */
+    @JSBody(script = "return fgeCodeState();")
+    public static native String codeState();
+
+    /** 押した後のロゴを出している間か。 */
+    @JSBody(script = "return fgeIsSplashShowing();")
+    public static native boolean isSplashShowing();
+
+    /** App のループの今の待ちを知らせる（names は改行でつなぐ）。 */
+    @JSBody(params = {"reason", "names", "waited", "progress", "pressed"}, script = "fgeSetLoadWait(reason, names, waited, progress, pressed);")
+    public static native void setLoadWait(String reason, String names, double waited, double progress, boolean pressed);
+
+    /** App のループの待ちが明けた。 */
+    @JSBody(script = "fgeSetLoadWait(null);")
+    public static native void clearLoadWait();
 }

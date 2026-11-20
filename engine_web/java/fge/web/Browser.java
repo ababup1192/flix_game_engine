@@ -30,6 +30,10 @@ public final class Browser {
     @JSBody(script = "fgeFrameDrawn();")
     public static native void frameDrawn();
 
+    /** 1 コマを画面へ出した（WebGL2 と WebGPU の頁のどちらも）。待ちの無いコマを初めて出した時に起動の画面を外す。 */
+    @JSBody(script = "fgeFramePresented();")
+    public static native void framePresented();
+
     /** 開発者の道具の console へ 1 行。 */
     @JSBody(params = {"line"}, script = "console.log(line);")
     public static native void log(String line);

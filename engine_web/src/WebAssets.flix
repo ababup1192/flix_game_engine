@@ -72,8 +72,13 @@ mod WebAssets {
             }
         }, (Map.empty(), request#registry, 0), request#manifest);
         let warned: Ref[Set[String], Static] = Ref.fresh(Static, Set.empty());
-        { atlases = withPlaceholderFonts(request#manifest, pending, atlases), registry = registry,
+        let aliased = placeholderTextures(request#manifest, pending, atlases, name -> Map.get(name, registry))
+            |> List.foldLeft((acc, pair) -> { let (name, info) = pair; Map.insert(name, info, acc) }, registry);
+        { atlases = withPlaceholderFonts(request#manifest, pending, atlases), registry = aliased,
           grow = (atlas, codepoints) -> noteMissing(warned, atlas, codepoints) }
+
+    /// フォントのアトラスの texture の名前（字の描き物が持つ名前。App のループはこの名前で届いていないフォントを照らす）。
+    pub def fontTextureNameOf(entry: RenderAsset.FontEntry): String = "font_${entry#name}"
 
     /// 後回しのフォント（web.deferredFonts）のうち、まだ上げていない物（届いていても上げるのは WebLayer の毎コマの登録）。
     // WhyNot: 起動の前に届いていたアトラスをここで上げない — 上げた印（Deferred.markLoaded）を付ける所が 1 か所に要り、
@@ -84,21 +89,33 @@ mod WebAssets {
             Deferred.isDeferred(path) and Deferred.state(path) != "loaded"
         })
 
-    /// 届いていないフォントの名前に、起動時に読めた最初のフォントを代わり（placeholder）に当てる（届いたら WebLayer が本物に差し替える）。
-    /// 代わりのフォントのアトラスに無い字は、届くまで出ない（アトラスはフォントごとに字を絞って作る）。
+    /// 届いていないフォントの名前に、起動時に読めた最初のフォントの写し（字の表は最初のフォント・texture の名前は本物の
+    /// fontTextureNameOf）を代わり（placeholder）に当てる（届いたら WebLayer が本物に差し替える）。代わりのフォントのアトラスに無い字は、届くまで出ない。
+    /// texture の名前に本物の名前を持たせるのは、App のループが描く物の名前から届いていないフォントを照らすため（絵は placeholderTextures で同じ物を当てる）。
     // WhyNot: 組み込みフォントへ落とさない — 組み込みは英数だけの小さな字なので、届くまでの間に日本語の文が消える。
     // WhyNot: 名前を空けたままにしない — RenderPaint.fontAtlas が「project.json に無い」と言って組み込みフォントで出す。
     pub def withPlaceholderFonts(manifest: List[RenderAsset.FontEntry], pending: List[RenderAsset.FontEntry],
                              atlases: Map[String, FontAtlas]): Map[String, FontAtlas] =
-        manifest
-            |> List.findMap(entry -> Map.get(entry#name, atlases))
-            |> Option.map(placeholder -> pending |> List.foldLeft((acc, entry) -> Map.insert(entry#name, placeholder, acc), atlases))
+        firstLoaded(manifest, atlases)
+            |> Option.map(placeholder -> pending |> List.foldLeft((acc, entry) -> Map.insert(entry#name, { textureName = fontTextureNameOf(entry) | placeholder }, acc), atlases))
             |> Option.getWithDefault(atlases)
+
+    /// 代わりのフォントの写しの texture の名前に、最初のフォントの絵を当てる組（名前, 絵）。infoOf = texture の名前 → 上げた絵。
+    pub def placeholderTextures(manifest: List[RenderAsset.FontEntry], pending: List[RenderAsset.FontEntry], atlases: Map[String, FontAtlas],
+                                infoOf: String -> Option[RenderAsset.TextureInfo] \ ef): List[(String, RenderAsset.TextureInfo)] \ ef =
+        match firstLoaded(manifest, atlases) |> Option.map(a -> a#textureName) {
+            case None       => Nil
+            case Some(name) => infoOf(name) |> Option.map(info -> List.map(entry -> (fontTextureNameOf(entry), info), pending)) |> Option.getWithDefault(Nil)
+        }
+
+    /// manifest の並びで最初に読めたフォントのアトラス。
+    def firstLoaded(manifest: List[RenderAsset.FontEntry], atlases: Map[String, FontAtlas]): Option[FontAtlas] =
+        manifest |> List.findMap(entry -> Map.get(entry#name, atlases))
 
     pub def loadAtlas(gl: GlContext, entry: RenderAsset.FontEntry): Option[(FontAtlas, RenderAsset.TextureInfo)] \ IO =
         let path = atlasPathOf(entry);
         let bytes = AssetTable.bytes(path);
-        let baked = if (Object.isNull(bytes)) Err("束に無い") else RenderFontCache.decode(bytes, "font_${entry#name}") |> Option.toOk("形式が違うか壊れている");
+        let baked = if (Object.isNull(bytes)) Err("束に無い") else RenderFontCache.decode(bytes, fontTextureNameOf(entry)) |> Option.toOk("形式が違うか壊れている");
         match baked {
             case Ok(font) =>
                 println("  Font '${entry#name}' read from ${path} (${font#side}x${font#side})");
@@ -109,12 +126,21 @@ mod WebAssets {
 
     // WhyNot: 足りない字を毎回言わない — App は字が欠けている間ずっと毎コマ足しに来る。
     /// 起動時に生成しなかった字はブラウザでは足せない。フォントごとに 1 度だけ字を並べて言い、アトラスはそのまま返す。
+    // WhyNot: 代わりのフォント（届いていない後回しのフォントの写し）の欠けを言わない — 字の表は別のフォントの物で、書き出しの漏れではない。
     def noteMissing(warned: Ref[Set[String], Static], atlas: FontAtlas, codepoints: Set[Int32]): FontAtlas \ IO =
-        if (Set.isEmpty(codepoints) or Set.memberOf(atlas#textureName, Ref.get(warned))) atlas
+        if (Set.isEmpty(codepoints) or Set.memberOf(atlas#textureName, Ref.get(warned)) or isPlaceholderTexture(atlas#textureName)) atlas
         else {
             Ref.put(Set.insert(atlas#textureName, Ref.get(warned)), warned);
             let chars = textOf(codepoints);
             Log.warnThen("font: ${atlas#textureName} に無い字 ${Int32.toString(Set.size(codepoints))} 個（${chars}）— 書き出しで字を集め直す", atlas)
+        }
+
+    /// texture の名前が、まだ届いていない後回しのフォントの物か（その間は代わりのフォントの写しが持つ）。
+    def isPlaceholderTexture(textureName: String): Bool \ IO =
+        if (not String.startsWith(prefix = "font_", textureName)) false
+        else {
+            let path = "font-atlas/${String.dropLeft(5, textureName)}.fontatlas";
+            Deferred.isDeferred(path) and Deferred.state(path) != "loaded"
         }
 
     /// 字の番号の集まりを字の並びへ。

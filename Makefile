@@ -427,7 +427,7 @@ webgpu-v1-check-web: ### [WEB_EXPORT=off] | 同じ門のブラウザ版（rpg-st
 	@page=$(WEBGPU_V1_WEB)/rpg; { sed -n 1,3p $$page/index.html; cat bench/webgpu_v1/web/nogpu-head.html; sed -n '4,$$p' $$page/index.html; } > $$page/nogpu.html
 	@# WhyNot: 前の回の絵と記録を残したまま撮らない — 撮れなかった回に前の絵で比べて緑になる。
 	@rm -f $(WEBGPU_V1_WEB)/gl.png $(WEBGPU_V1_WEB)/gl.log $(WEBGPU_V1_WEB)/webgpu.png $(WEBGPU_V1_WEB)/webgpu.log $(WEBGPU_V1_WEB)/nogpu.png $(WEBGPU_V1_WEB)/nogpu.log
-	@set -e -o pipefail; for pair in "gl:index.html?capture=6&backend=webgl2" "webgpu:index.html?capture=6" "nogpu:nogpu.html?capture=6"; do \
+	@set -e -o pipefail; for pair in "gl:index.html?capture=6&deferred=all&backend=webgl2" "webgpu:index.html?capture=6&deferred=all" "nogpu:nogpu.html?capture=6&deferred=all"; do \
 		name=$${pair%%:*}; url=$${pair#*:}; \
 		bin/fge web-capture "$$url" $(WEBGPU_V1_WEB)/$$name.png --dir $(WEBGPU_V1_WEB)/rpg --size 640x600 --wait 90 | tee $(WEBGPU_V1_WEB)/$$name.log \
 			|| { echo "[webgpu-v1-check-web] $$name を撮れなかった ($(WEBGPU_V1_WEB)/$$name.log)"; exit 1; }; \

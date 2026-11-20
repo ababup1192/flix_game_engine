@@ -1275,9 +1275,31 @@ function fgeWireFpsOverlay() {
   };
   requestAnimationFrame(tick);
 }
+// ── 後から取る wasm（分けた束の後から取る側）の状態。分けていない束はいつも none（engine は Loaded と読む）──
+var fgeCode = { state: "none" };
+window.fgeCode = fgeCode;
+function fgeCodeState() { return fgeCode.state; }
+// 押した後のロゴを出している間か（ロゴを出すまでは出していない）。
+function fgeIsSplashShowing() { return false; }
+// ── engine の待ち（App のループが届いていない物を待っている所）──
+// window.fgeLoadWait = { reason, names, waited, progress, pressed } か null。
+window.fgeLoadWait = null;
+function fgeSetLoadWait(reason, joined, waited, progress, pressed) {
+  if (reason === null) { window.fgeLoadWait = null; return; }
+  var names = String(joined).split("\n").filter(function (n) { return n.length > 0; });
+  window.fgeLoadWait = { reason: reason, names: names, waited: waited, progress: progress, pressed: pressed };
+  // P3 の記録: 待ちに出た名前は「タイトルの間に早く使った名前」（待つと描かれず fgeNoteUsed の early に乗らない）。
+  if (fgeUsedAssets !== null) names.forEach(function (n) { if (!(n in fgeUsedAssets.early)) fgeUsedAssets.early[n] = fgeUsedAssets.frame; });
+}
+var fgeBootShown = true;
+// WhyNot: 最初の pollEvents で起動の画面を外さない — 最初のコマから届いていない物を待つと、外した下に前の頁の色だけが出る。
+function fgeFramePresented() {
+  if (!fgeBootShown || fgeSplash.running || window.fgeLoadWait !== null) return;
+  fgeBootShown = false;
+  fgeShow("fge-boot", false);
+}
 function fgeStarted() {
   fgeSplash.running = false;
-  fgeShow("fge-boot", false);
   fgeWireFpsOverlay();
   if (fgeDecodeTimes !== null) console.log("[loadtime] 最初のコマまで " + performance.now().toFixed(0) + " ms");
 }
@@ -1425,8 +1447,11 @@ var fgeDeferredSweepMs = 30000;
 
 function fgeDeferredPrepare(bundle, files, images, sounds) {
   (bundle.deferred || []).forEach(function (d) {
-    var e = { path: fgeNormPath(d.path), bytes: d.bytes || 0, names: d.names || [], file: false, image: false, sounds: [],
-              font: /\.fontatlas$/.test(fgeNormPath(d.path)),
+    var font = /\.fontatlas$/.test(fgeNormPath(d.path));
+    // フォントは名前のほかに、字の描き物が持つアトラスの texture の名前（font_<名前>）でも引く（engine が描く物の名前と照らす）。
+    var names = (d.names || []).concat(font ? (d.names || []).map(function (n) { return "font_" + n; }) : []);
+    var e = { path: fgeNormPath(d.path), bytes: d.bytes || 0, names: names, file: false, image: false, sounds: [], font: font,
+              onMissing: d.onMissing || "", group: d.group || "",
               state: "queued", why: "", arrivedAtRelease: false, permanent: false, failedAt: 0, gen: 0, abort: null, startedAt: 0 };
     fgeDeferred.entries.push(e);
     fgeDeferred.byPath.set(e.path, e);
@@ -1444,11 +1469,13 @@ function fgeDeferredIsDeferred(nameOrPath) { return fgeDeferred.byName.has(nameO
 function fgeDeferredEntry(nameOrPath) { return fgeDeferred.byPath.get(fgeNormPath(nameOrPath)) || fgeDeferred.byName.get(nameOrPath); }
 // 後回しでない道は起動の前に全部そろっているので loaded。
 // WhyNot: released を downloaded と言わない — 別のグループが同じ道を届いたと見て読み、無いバイトで Failed に固まる。
+// WhyNot: 取り直す失敗（5xx・回線）を failed と言わない — engine の待ちが上限を待たずに諦め、取り直せば届く絵を描かずに進む。
 function fgeDeferredState(nameOrPath) {
   var e = fgeDeferredEntry(nameOrPath);
   if (!e) return "loaded";
   if (e.state === "released") return "queued";
-  return e.state === "failed" ? "failed:" + e.why : e.state;
+  if (e.state === "failed") return e.permanent ? "failed:" + e.why : "queued";
+  return e.state;
 }
 // WhyNot: 絵と音とフォントのアトラスを素材の表に入っただけで「届いた」にしない — 絵とアトラスは WebLayer が上げるまで描けず、音は解くまで鳴らせない。
 function fgeDeferredArrived(e) {
@@ -1462,6 +1489,22 @@ function fgeDeferredMissing() {
     if (e.names.length > 0) e.names.forEach(function (n) { out.push(n); }); else out.push(e.path);
   });
   return out.join("\n");
+}
+var fgeDeferredMissingSeen = { text: null, gen: 0 };
+function fgeDeferredMissingGen() {
+  var text = fgeDeferredMissing();
+  if (text !== fgeDeferredMissingSeen.text) { fgeDeferredMissingSeen.text = text; fgeDeferredMissingSeen.gen++; }
+  return fgeDeferredMissingSeen.gen;
+}
+function fgeDeferredPolicy(name) {
+  var e = fgeDeferred.byName.get(name);
+  return e ? e.onMissing + "\n" + e.group : "\n";
+}
+// WhyNot: 届いたかを `deferred=all` の頁で 1 本ずつ待たない — 撮るコマの番号が、届いた順と engine の待ちでずれる。
+function fgeDeferredAllArrived() {
+  return fgeDeferred.entries.every(function (e) {
+    return e.state === "loaded" || e.state === "downloaded" || (e.state === "failed" && e.permanent);
+  });
 }
 function fgeDeferredRetryable(e, minAgeMs) { return e.state === "failed" && !e.permanent && performance.now() - e.failedAt >= minAgeMs; }
 function fgeDeferredRequeue(e) {
@@ -1891,6 +1934,9 @@ async function fgeBoot() {
   fgeWireMouseCapture();
   var teavm = await wasmLoad;
   if (teavm === null) return;
+  if (fgeQueryParam("deferred") === "all") {
+    while (!fgeDeferredAllArrived()) await new Promise(function (resolve) { setTimeout(resolve, 50); });
+  }
   try {
     teavm.exports.main([]);
   } catch (e) {

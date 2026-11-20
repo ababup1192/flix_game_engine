@@ -286,6 +286,7 @@ GitHub Pages は全部のファイルに `max-age=600` を付けるので、Serv
 | `?glcheck=1` | GL の呼び出しごとに `getError` を見て console に出す（WebGL2 の時） |
 | `?loadtime=1` | 絵の解読の時間と、最初のコマまでの ms を console に出す |
 | `?capture=<n>` | dt を 1/60 に固定し、n コマ目を撮る合図を出す（[web-capture.md](web-capture.md)） |
+| `&deferred=all` | 後回しの素材が全部届いてから main を呼ぶ（`?capture=` で画素を比べる頁に付ける。engine の待ちで撮るコマがずれない・[startup.md](startup.md)） |
 | `?sw=0` | Service Worker の登録を外し、そのキャッシュを消す（「起動の始まりと 2 回目からの起動」） |
 | `?size=small&input=touch`・`?orientation=portrait` | スマホの区分・指の入力・縦の design で開く（上の節） |
 

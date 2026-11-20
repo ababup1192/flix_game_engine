@@ -133,7 +133,7 @@ pub mod WebLayer.Internal.WebGpuLayer {
         let paint = screen#paint;
         screen#gpu.onDeviceLost();
         println("[backend] webgpu: ${screen#gpu.adapterInfo()}");
-        let onPoll = () -> { registerArrivedTextures(screen#gpu, paint, state); registerArrivedFont(entry -> uploadAtlas(paint, entry), fonts, state); playArrivedSounds(state) };
+        let onPoll = () -> { registerArrivedTextures(screen#gpu, paint, state); registerArrivedFont(entry -> uploadAtlas(paint, entry) |> Option.map(fst), fonts, state); playArrivedSounds(state) };
         let result =
             handleLoadProgress(state, () ->
             handleAudio(state, () ->
@@ -187,25 +187,31 @@ pub mod WebLayer.Internal.WebGpuLayer {
     def loadFonts(paint: WebGpuPaint.Paint, manifest: List[RenderAsset.FontEntry], progress: (String, Int32, Int32) -> Unit \ IO): RenderPaint.Fonts \ IO =
         let total = List.length(manifest);
         let pending = WebAssets.pendingFontsOf(manifest);
-        let atlases = List.zipWithIndex(manifest) |> List.foldLeft((acc, indexed) -> {
+        let (atlases, infos) = List.zipWithIndex(manifest) |> List.foldLeft((acc, indexed) -> {
             let (index, entry) = indexed;
+            let (atlasesSoFar, infosSoFar) = acc;
             progress("loading font ${entry#name}...", index, total);
             if (List.exists(p -> p#name == entry#name, pending)) acc
-            else uploadAtlas(paint, entry) |> Option.map(atlas -> Map.insert(entry#name, atlas, acc)) |> Option.getWithDefault(acc)
-        }, Map#{BootFont.name() => BootFont.atlas()});
+            else uploadAtlas(paint, entry)
+                |> Option.map(loaded -> { let (atlas, info) = loaded; (Map.insert(entry#name, atlas, atlasesSoFar), Map.insert(atlas#textureName, info, infosSoFar)) })
+                |> Option.getWithDefault(acc)
+        }, (Map#{BootFont.name() => BootFont.atlas()}, Map.empty()));
+        WebAssets.placeholderTextures(manifest, pending, atlases, name -> Map.get(name, infos))
+            |> List.forEach(pair -> { let (name, info) = pair; WebGpuPaint.putTexture(name, info, paint) });
         { atlases = Ref.fresh(Static, WebAssets.withPlaceholderFonts(manifest, pending, atlases)), grow = (atlas, _) -> checked_ecast(atlas),
           missing = Ref.fresh(Static, Set.empty()) }
 
     /// 素材の表のアトラスを読んで R8 で上げる。束に無いか壊れていれば 1 行言って None（組み込みフォントか仮の当てで出す）。
-    def uploadAtlas(paint: WebGpuPaint.Paint, entry: RenderAsset.FontEntry): Option[FontAtlas] \ IO =
+    def uploadAtlas(paint: WebGpuPaint.Paint, entry: RenderAsset.FontEntry): Option[(FontAtlas, RenderAsset.TextureInfo)] \ IO =
         let path = WebAssets.atlasPathOf(entry);
         let bytes = AssetTable.bytes(path);
-        let baked = if (Object.isNull(bytes)) None else RenderFontCache.decode(bytes, "font_${entry#name}");
+        let baked = if (Object.isNull(bytes)) None else RenderFontCache.decode(bytes, WebAssets.fontTextureNameOf(entry));
         match baked {
             case Some(font) =>
                 println("  Font '${entry#name}' read from ${path} (${font#side}x${font#side})");
-                WebGpuPaint.putTexture(font#atlas#textureName, WebGpuPaint.uploadR8(paint, font#side, font#side, font#pixels), paint);
-                Some(font#atlas)
+                let info = WebGpuPaint.uploadR8(paint, font#side, font#side, font#pixels);
+                WebGpuPaint.putTexture(font#atlas#textureName, info, paint);
+                Some((font#atlas, info))
             case None =>
                 Log.warnThen("font: '${entry#name}' のアトラス ${path} が束に無いか壊れている — 組み込みフォントで出す（bin/fge export-web で書き出し直す）", None)
         }
@@ -283,6 +289,7 @@ pub mod WebLayer.Internal.WebGpuLayer {
             def getDisplay(k) = k(display(st#design))
             def presentFrame(k) = {
                 presentToCanvas(screen);
+                Browser.framePresented();
                 let dt = AnimationFrame.waitTick(tickRate());
                 Ref.put(if (Browser.isFrameCapture()) 1.0 / tickRate() else dt, st#lastDt);
                 k(())

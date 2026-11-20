@@ -280,6 +280,7 @@ pub mod WebLayer {
             def getDisplay(k) = k(display(st#design))
             def presentFrame(k) = {
                 Browser.frameDrawn();
+                Browser.framePresented();
                 let dt = AnimationFrame.waitTick(tickRate());
                 Ref.put(if (Browser.isFrameCapture()) 1.0 / tickRate() else dt, st#lastDt);
                 k(())
@@ -494,17 +495,17 @@ pub mod WebLayer {
     /// upload = アトラスを上げて FontAtlas を返す（上げられなければ None・仮の当てのまま）。上げた道は素材の表から手放す。
     // WhyNot: 文字送りの間（予算の Paused）も待たない — 字はどの画面でも使い、待つ間ずっと仮のフォントで出続ける。
     // WhyNot: コマに 2 本以上上げない — アトラスの検算と上げは 1 本で数 ms かかり、重ねるとコマが跳ねる。
+    //   ?capture= の頁だけは届いた物を全部上げる（1 本ずつだと最初の数コマが字を待ち、撮るコマの番号がデスクトップとずれる）。
     def registerArrivedFont(upload: RenderAsset.FontEntry -> Option[FontAtlas] \ IO, fonts: RenderPaint.Fonts, st: State): Unit \ IO =
         let (ready, waiting) = List.partition(entry -> AssetTable.has(WebAssets.atlasPathOf(entry)), Ref.get(st#pendingFonts));
-        match ready {
-            case entry :: rest =>
-                upload(entry) |> Option.forEach(atlas -> Ref.put(Map.insert(entry#name, atlas, Ref.get(fonts#atlases)), fonts#atlases));
-                let path = WebAssets.atlasPathOf(entry);
-                Deferred.markLoaded(path);
-                Deferred.release(path);
-                Ref.put(List.append(rest, waiting), st#pendingFonts)
-            case Nil => ()
-        }
+        let (now, later) = if (Browser.isFrameCapture()) (ready, Nil) else (List.take(1, ready), List.drop(1, ready));
+        now |> List.forEach(entry -> {
+            upload(entry) |> Option.forEach(atlas -> Ref.put(Map.insert(entry#name, atlas, Ref.get(fonts#atlases)), fonts#atlases));
+            let path = WebAssets.atlasPathOf(entry);
+            Deferred.markLoaded(path);
+            Deferred.release(path)
+        });
+        if (List.isEmpty(now)) () else Ref.put(List.append(later, waiting), st#pendingFonts)
 
     /// 届いた後回しの 2D の絵を、予算の内で道ごとに登録する（Paused なら登録しない・Idle と Covered は 1 本の道は必ず、
     /// 2 本目からは ms に収まるまで）。1 本の道の名前は全部同じコマで登録し、登録し終えた道を fge-web.js に知らせる。使った ms は spentMs へ。
@@ -539,13 +540,44 @@ pub mod WebLayer {
     }
 
     /// 後回しの素材を引く関数の組（fge.web.Deferred を包む）。setBudget は登録の予算を替え、spentMs はこのコマの登録に使った ms。
+    /// getCodeLoadState は頁の fgeCode（分けていない束の none は Loaded）・setLoadWait は頁の window.fgeLoadWait へ。
     def downloadsOf(st: State): LoadProgress.AssetDownloads =
         { stateOf = path -> LoadProgress.Deferred.loadStateOfText(Deferred.state(path)),
           missing = () -> linesOf(Deferred.missing()) |> List.toSet,
           request = paths -> if (List.isEmpty(paths)) () else Deferred.request(String.intercalate("\n", paths)),
           release = paths -> if (List.isEmpty(paths)) () else Deferred.release(String.intercalate("\n", paths)),
           setBudget = budget -> Ref.put(budget, st#budget),
-          spentMs = () -> Ref.get(st#spentMs) }
+          spentMs = () -> Ref.get(st#spentMs),
+          missingGen = () -> Deferred.missingGen(),
+          policyOf = name -> policyOfText(Deferred.policy(name)),
+          getCodeLoadState = () -> codeStateOfText(Deferred.codeState()),
+          isSplashShowing = () -> Deferred.isSplashShowing(),
+          setLoadWait = noticeLoadWait }
+
+    /// 頁の扱いの字（"onMissing\ngroup"・無い欄は空）を MissingPolicy へ。知らない onMissing は種類の既定。
+    def policyOfText(text: String): LoadProgress.MissingPolicy =
+        let parts = String.split(regex = "\n", text);
+        let nonEmpty = s -> if (String.isEmpty(s)) None else Some(s);
+        let onMissing = List.head(parts) |> Option.flatMap(nonEmpty) |> Option.flatMap(onMissingOfText);
+        let group = List.nth(1, parts) |> Option.flatMap(nonEmpty);
+        { onMissing = onMissing, group = group }
+
+    def onMissingOfText(text: String): Option[LoadProgress.OnMissing] = match text {
+        case "wait"        => Some(LoadProgress.OnMissing.Wait)
+        case "placeholder" => Some(LoadProgress.OnMissing.Placeholder)
+        case "skip"        => Some(LoadProgress.OnMissing.Skip)
+        case _             => None
+    }
+
+    /// 頁の fgeCode の字を LoadState へ（none は分けていない束なので Loaded）。
+    def codeStateOfText(text: String): LoadProgress.LoadState =
+        if (text == "none") LoadProgress.LoadState.Loaded else LoadProgress.Deferred.loadStateOfText(text)
+
+    /// App のループの待ちを頁へ（names は改行でつなぐ）。
+    def noticeLoadWait(wait: Option[LoadProgress.LoadWait]): Unit \ IO = match wait {
+        case None     => Deferred.clearLoadWait()
+        case Some(lw) => Deferred.setLoadWait(ToString.toString(lw#reason), String.intercalate("\n", lw#names), lw#waited, lw#progress, lw#pressed)
+    }
 
     def linesOf(text: String): List[String] =
         if (String.isEmpty(text)) Nil else String.split(regex = "\n", text)
