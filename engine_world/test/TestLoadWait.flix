@@ -82,6 +82,24 @@ mod TestLoadWait {
         let (show, _) = LoadWait.decide(candidate(Set#{"bg"}, false), ctx(Set#{"bg"}, 0.4, live(), 3), later);
         Assert.assertEq(expected = "restored 1 Nil", showText(show))
 
+    /// 控えの間に押し直しても控えは取り直さない（暗転の途中で押し直しても、最初に押す前の World へ戻す）
+    @Test
+    def testPressAgainKeepsTheFirstSnapshot(): Unit \ Assert =
+        let (_, pressed) = LoadWait.decide(candidate(Set.empty(), true), ctx(Set#{"bg"}, 0.0, press(), 1), LoadWait.initial());
+        let (_, again) = LoadWait.decide(candidate(Set.empty(), true), ctx(Set#{"bg"}, 0.3, press(), 2), pressed);
+        let (show, _) = LoadWait.decide(candidate(Set#{"bg"}, true), ctx(Set#{"bg"}, 0.6, press(), 3), again);
+        Assert.assertEq(expected = "restored 1 Nil", showText(show))
+
+    /// 控えの間の押した入力は全部、押した順に渡し直す（下を押してすぐ決定を押しても、決定が消えない）
+    @Test
+    def testEveryPressInTheWindowIsReplayed(): Unit \ Assert =
+        let (_, down) = LoadWait.decide(candidate(Set.empty(), true), ctx(Set#{"bg"}, 0.0, pressOf(Key.Down), 1), LoadWait.initial());
+        let (_, next) = LoadWait.plan(settings(), live(), watch(Set#{"bg"}, 0.1), 2, App.freshStepState(), down);
+        let (_, waiting) = LoadWait.decide(candidate(Set#{"bg"}, true), ctx(Set#{"bg"}, 0.2, press(), 2), next);
+        let (_, captured) = LoadWait.plan(settings(), live(), watch(Set#{"bg"}, 0.3), 1, App.freshStepState(), waiting);
+        let pressedKeys = captured#snapshot |> Option.map(s -> List.map(f -> Set.toList(f#justPressed), s#frames));
+        Assert.assertEq(expected = Some((Key.Down :: Nil) :: Nil :: (Key.Enter :: Nil) :: Nil :: Nil), pressedKeys)
+
     /// 外への出力の鍵が変わる候補を出したら控えを捨てる（その後に当たっても戻さず止まる）
     @Test
     def testOutputChangeDropsTheSnapshot(): Unit \ Assert =
