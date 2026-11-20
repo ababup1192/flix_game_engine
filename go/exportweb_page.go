@@ -124,9 +124,9 @@ func webHeadScript(hash string, preload []webPreload) string {
     }
     if (typeof fgeAudio !== "undefined" && fgeAudio.started) return;
     try {
-      var last = Number(sessionStorage.getItem("fge-sw-reload-at") || 0);
+      var last = Number(sessionStorage.getItem("fge-sw-reload-at:" + location.pathname) || 0);
       if (Date.now() - last < 60000) return;
-      sessionStorage.setItem("fge-sw-reload-at", String(Date.now()));
+      sessionStorage.setItem("fge-sw-reload-at:" + location.pathname, String(Date.now()));
     } catch (e) { return; }
     location.reload();
   });
