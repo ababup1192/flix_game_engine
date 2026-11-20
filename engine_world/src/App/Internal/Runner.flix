@@ -344,7 +344,7 @@ pub mod App.Internal.Runner {
     def slowWatchOf(a: AssetWatch, state: App.Internal.LoadWait.State[w]): Option[App.Internal.LoadWait.Watch] \ IO =
         let codeReady = a#downloads#getCodeLoadState() == LoadProgress.LoadState.Loaded;
         let splash = a#downloads#isSplashShowing();
-        if (App.Internal.LoadWait.isPlainFrame(a#missing, codeReady, splash, state)) None
+        if (App.Internal.LoadWait.isFastFrame(a#missing, codeReady, splash, state)) None
         else {
             let failed = App.Internal.LoadWait.waitingNames(state) |> Set.filter(name -> isFailed(a#downloads#stateOf(name)));
             Some({ missing = a#missing, failed = failed, codeReady = codeReady, splash = splash, nowSec = nowSec() })
@@ -478,11 +478,13 @@ pub mod App.Internal.Runner {
     def emitSlow(app: App[w, ef], hooks: App.Internal.DevTools.Hooks[w, ef, efTools], frame: App.Frame, frameStart: Int64, st: LoopState[w],
                  opened: Opened[w], ctx: App.Internal.LoadWait.Context[w], planned: App.Internal.LoadWait.State[w],
                  candidate: App.Internal.LoadWait.Candidate, out: Shown[w], built: Option[App.Internal.Paint.Built]): LoopState[w] \ (ef + Platform.Window + Platform.Rendering + RenderTarget.Target + GameEngine.Audio + Platform.Diagnostics + Platform.Tasks + Fs.FileRead + Fs.FileWrite + IO) =
-        match paintGuarded(app, st, built, out#world, opened#fired) {
-            case Some(painted) => finishSlow(app, hooks, frame, frameStart, st, opened, out, Some(painted))
+        let noticed = noticeShown(st, out);
+        match paintGuarded(app, noticed, built, out#world, opened#fired) {
+            case Some(painted) => finishSlow(app, hooks, frame, frameStart, noticed, opened, out, Some(painted))
             case None          =>
                 let (show, decided) = App.Internal.LoadWait.decide({ failed = true, names = Set.empty(), sounds = Nil, loops = Nil | candidate }, ctx, planned);
-                finishSlow(app, hooks, frame, frameStart, st, opened, shownOf(App.rec(app), frame, ctx, show, decided), None)
+                let failedOut = shownOf(App.rec(app), frame, ctx, show, decided);
+                finishSlow(app, hooks, frame, frameStart, noticeShown(noticed, failedOut), opened, failedOut, None)
         }
 
     /// 候補を捨てた答えの出す物（進める前の World か、押した所の控えへ戻した World。どちらも系を進めない）。
@@ -517,8 +519,9 @@ pub mod App.Internal.Runner {
     /// 進めずに出す World（ロゴの間・描き直す待ち・捨てた候補の代わり）を組んで描いて出す。
     def showSlow(app: App[w, ef], hooks: App.Internal.DevTools.Hooks[w, ef, efTools], frame: App.Frame, frameStart: Int64, st: LoopState[w],
                  opened: Opened[w], out: Shown[w]): LoopState[w] \ (ef + Platform.Window + Platform.Rendering + RenderTarget.Target + GameEngine.Audio + Platform.Diagnostics + Platform.Tasks + Fs.FileRead + Fs.FileWrite + IO) =
-        let built = buildFor(app, st, frame, out#world);
-        finishSlow(app, hooks, frame, frameStart, st, opened, out, paintGuarded(app, st, built, out#world, opened#fired))
+        let noticed = noticeShown(st, out);
+        let built = buildFor(app, noticed, frame, out#world);
+        finishSlow(app, hooks, frame, frameStart, noticed, opened, out, paintGuarded(app, noticed, built, out#world, opened#fired))
 
     /// 待ちを見るコマの後半: 音・見張り・記録・履歴・出力・窓の宣言（ふつうのコマと同じ順）。painted が None（描けなかった）なら音を当てない。
     /// 音・出力・窓の宣言で後から取るコードがそろう前の例外が出たら、そのコマは当てずに前の状態のまま（次のコマで当て直す）。
@@ -557,6 +560,16 @@ pub mod App.Internal.Runner {
             let waited = App.Internal.LoadWait.published(before, given, nowSec) |> Option.map(lw -> lw#waited) |> Option.getWithDefault(0.0);
             Log.fellBack("load-wait", String.intercalate(", ", Set.toList(given)), "描かず・鳴らさずに進む", "${Float64.toString(waited)} 秒待っても届かない")
         }
+
+    /// 出すコマの待ち（照らした後の状態）を、描いて出す前に機種へ知らせる（頁は待ちのあるコマで起動の画面を外さない）。
+    // WhyNot: 進める前の状態の待ちだけを知らせない — 待ちに入ったコマが待ちの無いコマとして出て、頁が起動の画面を外す。
+    def noticeShown(st: LoopState[w], out: Shown[w]): LoopState[w] \ IO = match st#assets {
+        case None    => st
+        case Some(a) =>
+            let now = App.Internal.LoadWait.published(out#loadWait, a#missing, nowSec());
+            noticeLoadWait(a, st#publishedWait, now);
+            { publishedWait = now | st }
+    }
 
     /// 今の待ちが前に知らせた物から変わった時だけ機種へ知らせる（待った秒だけの変化は知らせない）。
     def noticeLoadWait(a: AssetWatch, before: Option[LoadProgress.LoadWait], now: Option[LoadProgress.LoadWait]): Unit \ IO =

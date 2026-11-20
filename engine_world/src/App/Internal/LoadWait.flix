@@ -48,7 +48,7 @@ pub mod App.Internal.LoadWait {
     }
 
     /// ループが待ちを見ずに今までと同じ道を通れるコマか（届いていない物が無く・コードがそろい・ロゴも出ておらず・待ちも控えも無い）。
-    pub def isPlainFrame(missing: Set[String], codeReady: Bool, splash: Bool, state: State[w]): Bool =
+    pub def isFastFrame(missing: Set[String], codeReady: Bool, splash: Bool, state: State[w]): Bool =
         Set.isEmpty(missing) and codeReady and not splash and isIdle(state)
 
     /// 進める時に渡す入力。Live = このコマの入力・Idle = 何も押していない入力・Replay = 控えた入力。
@@ -245,13 +245,15 @@ pub mod App.Internal.LoadWait {
             |> List.filter(name -> missingNow(name) and onMissingOf(ctx#policies, name) == Some(LoadProgress.OnMissing.Wait));
         List.foldLeft((acc, name) -> Set.insert(name, acc), pictures, sounds)
 
-    /// 押した時の待ちで一緒に待つ名前: 当たった名前と同じ group の届いていない名前（ループの音も group に入れれば一緒に待つ）。
+    /// 押した時の待ちで一緒に待つ名前: 当たった名前と同じ group の届いていない名前のうち placeholder・skip でない物（ループの音も group に入れれば一緒に待つ）。
     // WhyNot: 届いていないループの音を既定で一緒に待たない — BGM は後回しの列の後ろなので、押した時の待ちが BGM の届くまで延びる。届いたら鳴る。
     def joinedOf(ctx: Context[w], hits: Set[String], gaveUp: Set[String]): Set[String] =
         let missingNow = name -> Set.memberOf(name, ctx#missing) and not Set.memberOf(name, gaveUp);
         let groups = hits |> Set.toList |> List.filterMap(name -> Map.get(name, ctx#policies) |> Option.flatMap(p -> p#group)) |> List.toSet;
         if (Set.isEmpty(groups)) Set.empty()
-        else ctx#policies |> Map.filterWithKey((name, p) -> missingNow(name) and Option.exists(g -> Set.memberOf(g, groups), p#group)) |> Map.keysOf
+        else ctx#policies
+            |> Map.filterWithKey((name, p) -> missingNow(name) and not isNoWait(p#onMissing) and Option.exists(g -> Set.memberOf(g, groups), p#group))
+            |> Map.keysOf
 
     def onMissingOf(policies: Map[String, LoadProgress.MissingPolicy], name: String): Option[LoadProgress.OnMissing] =
         Map.get(name, policies) |> Option.flatMap(p -> p#onMissing)

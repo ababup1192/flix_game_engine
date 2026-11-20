@@ -471,7 +471,10 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 	report.Notes = append(report.Notes, losslessNotes...)
 	report.AutoLossyLines = buildWebAutoLossySummary(report.Verdicts, compress.Auto, compress.LossyImages, prevLossless)
 	logWebAutoLossy(report.Verdicts)
-	b.Deferred, _, _ = applyWebDeferredPolicy(webDeferredEntries(p.Out, &b, deferredPlan.Paths, textureNames), deferredPolicy, &b)
+	if b.Deferred, _, err = applyWebDeferredPolicy(webDeferredEntries(p.Out, &b, deferredPlan.Paths, textureNames), deferredPolicy, &b); err != nil {
+		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
+		return 1
+	}
 
 	ewLogf("⑦ 頁")
 	b.ServiceWorker = serviceWorker

@@ -1377,11 +1377,11 @@ async function fgeFetchAsset(path, signal) {
 // WhyNot: WebGL の readPixels で画素を取らない — 起動前で GL の文脈がまだ無い。2D の canvas は色空間の変換を切った ImageBitmap をそのまま写す。
 async function fgeJoinAtlasPixels(served, bytes) {
   var view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  if (bytes.length < 52 || view.getUint32(0) !== 0x46474546 || view.getUint32(4) !== 0x4F4E5402) throw new Error(served + " はフォントアトラスの形でない");
+  if (bytes.length < 52 || view.getUint32(0) !== 0x46474546 || view.getUint32(4) !== 0x4F4E5402) throw Object.assign(new Error(served + " はフォントアトラスの形でない"), { permanent: true });
   var side = view.getInt32(12);
   var tableEnd = 52 + view.getInt32(48) * 76;
   var restEnd = tableEnd + 16;
-  if (side <= 0 || restEnd > bytes.length) throw new Error(served + " の頭の数が長さに合わない");
+  if (side <= 0 || restEnd > bytes.length) throw Object.assign(new Error(served + " の頭の数が長さに合わない"), { permanent: true });
   var bitmap = await createImageBitmap(new Blob([bytes.subarray(restEnd)], { type: "image/webp" }),
     { premultiplyAlpha: "none", colorSpaceConversion: "none" });
   if (bitmap.width !== side || bitmap.height !== side) throw new Error(served + " の絵が " + bitmap.width + "x" + bitmap.height + "（頭は " + side + "）");
@@ -1581,9 +1581,12 @@ function fgeDeferredPump() {
   }
 }
 // WhyNot: 4xx を取り直さない — 束に無い・道の誤りで、何度取っても同じ答え。408（待ちすぎ）と 429（頼みすぎ）は回線の都合なので取り直す。
+// WhyNot: 解けない素材（壊れた絵・音・形の違うアトラス）を取り直さない — 取り直しても同じ答えで、待つ側が上限まで待たされる。
 function fgeIsPermanentFailure(err) {
   var status = err && err.status;
-  return typeof status === "number" && status >= 400 && status < 500 && status !== 408 && status !== 429;
+  if (typeof status === "number") return status >= 400 && status < 500 && status !== 408 && status !== 429;
+  var name = err && err.name;
+  return !!(err && err.permanent) || name === "EncodingError" || name === "InvalidStateError" || name === "NotSupportedError";
 }
 function fgeDeferredFetch(e) {
   var gen = ++e.gen;
@@ -1937,7 +1940,16 @@ async function fgeBoot() {
   var teavm = await wasmLoad;
   if (teavm === null) return;
   if (fgeQueryParam("deferred") === "all") {
-    while (!fgeDeferredAllArrived()) await new Promise(function (resolve) { setTimeout(resolve, 50); });
+    var waitUntil = performance.now() + 60000;
+    while (!fgeDeferredAllArrived()) {
+      if (performance.now() > waitUntil) {
+        fgeError("&deferred=all: 60 秒待っても届かない後回しの素材がある: " + fgeDeferred.entries.filter(function (e) {
+          return !(e.state === "loaded" || e.state === "downloaded" || (e.state === "failed" && e.permanent));
+        }).map(function (e) { return e.path + "（" + e.state + "）"; }).join("・"));
+        return;
+      }
+      await new Promise(function (resolve) { setTimeout(resolve, 50); });
+    }
   }
   try {
     teavm.exports.main([]);

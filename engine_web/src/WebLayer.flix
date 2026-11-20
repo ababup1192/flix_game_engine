@@ -512,7 +512,8 @@ pub mod WebLayer {
     def registerArrivedTextures(gl: GlContext, paint: RenderPaint.Paint, st: State): Unit \ IO =
         Ref.put(0.0, st#spentMs);
         let pending = Ref.get(st#pendingTextures);
-        let limit = match Ref.get(st#budget) {
+        // WhyNot: ?capture= の頁で予算に従わない — 1 本ずつだと最初の数コマが絵を待ち、撮るコマの番号がデスクトップとずれる。
+        let limit = if (Browser.isFrameCapture()) Some(Float64.maxValue()) else match Ref.get(st#budget) {
             case LoadProgress.DecodeBudget.Paused     => None
             case LoadProgress.DecodeBudget.Idle(ms)    => Some(ms)
             case LoadProgress.DecodeBudget.Covered(ms) => Some(ms)

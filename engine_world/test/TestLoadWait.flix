@@ -227,6 +227,14 @@ mod TestLoadWait {
         let (_, next) = LoadWait.decide(candidate(Set#{"bg"}, true), ctxOf(Set#{"bg", "op2", "card"}, policies, 0.0, press(), 5, Nil), LoadWait.initial());
         Assert.assertEq(expected = Set#{"bg", "op2"}, LoadWait.waitingNames(next))
 
+    /// group の残りでも skip・placeholder の物は一緒に待たない
+    @Test
+    def testGroupRestSkipsNoWaitNames(): Unit \ Assert =
+        let policies = Map#{"bg" => policy(None, Some("start")), "se" => policy(Some(LoadProgress.OnMissing.Skip), Some("start")),
+                            "font_x" => policy(Some(LoadProgress.OnMissing.Placeholder), Some("start"))};
+        let (_, next) = LoadWait.decide(candidate(Set#{"bg"}, true), ctxOf(Set#{"bg", "se", "font_x"}, policies, 0.0, press(), 5, Nil), LoadWait.initial());
+        Assert.assertEq(expected = Set#{"bg"}, LoadWait.waitingNames(next))
+
     /// 控えの外の待ちには group の残りを足さない
     @Test
     def testGroupRestDoesNotJoinAStoppedWait(): Unit \ Assert =
@@ -351,7 +359,7 @@ mod TestLoadWait {
     @Test
     def testLocalDownloadsAlwaysTakeThePlainPath(): Unit \ {Assert, IO} =
         let d = LoadProgress.localDownloads();
-        let plain = LoadWait.isPlainFrame(d#missing(), d#getCodeLoadState() == LoadProgress.LoadState.Loaded, d#isSplashShowing(),
+        let plain = LoadWait.isFastFrame(d#missing(), d#getCodeLoadState() == LoadProgress.LoadState.Loaded, d#isSplashShowing(),
                                           (LoadWait.initial(): LoadWait.State[Int32]));
         Assert.assertEq(expected = true, plain)
 
