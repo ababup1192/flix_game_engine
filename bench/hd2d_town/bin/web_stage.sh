@@ -28,7 +28,7 @@ d = json.load(open(p))
 d["sounds"] = [s for s in d.get("sounds", []) if s.get("name") != "firmament3_loop"] + [
     {"name": "firmament3_loop", "path": "assets/bgm/firmament3_loop.ogg", "looping": True}]
 web = d.setdefault("web", {})
-web["deferred"] = sorted(set(web.get("deferred", []) + ["assets/bgm/*.ogg"]))
+web["deferred"] = [g for g in web.get("deferred", []) if g != "assets/bgm/*.ogg"] + ["assets/bgm/*.ogg"]
 open(p, "w").write(json.dumps(d, ensure_ascii=False, indent=2) + "\n")
 EOF
 echo "[web_stage] 曲を足した: $bgm → $stage/assets/bgm/firmament3_loop.ogg"

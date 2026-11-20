@@ -16,7 +16,7 @@ func mustWebDeferred(t *testing.T, raw string) []webGlob {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return g
+	return g.Globs
 }
 
 func deferredFixtureBundle() webBundle {
@@ -305,14 +305,14 @@ func TestResolveWebDeferredFontsRejectsDeferringEveryFont(t *testing.T) {
 }
 
 func TestWithDeferredFontsPutsAtlasAtTheHead(t *testing.T) {
-	plan, _ := withDeferredFonts(webDeferredPlan{Paths: []string{"assets/bg/late.png"}}, []string{"gothic"}, map[string][]string{})
+	plan, _, _ := withDeferredFonts(webDeferredPlan{Paths: []string{"assets/bg/late.png"}}, []string{"gothic"}, nil, nil, map[string][]string{})
 	if !reflect.DeepEqual(plan.Paths, []string{"font-atlas/gothic.fontatlas", "assets/bg/late.png"}) {
 		t.Fatalf("got %v", plan.Paths)
 	}
 }
 
 func TestWithDeferredFontsNamesAtlasByFont(t *testing.T) {
-	_, names := withDeferredFonts(webDeferredPlan{}, []string{"gothic"}, map[string][]string{"assets/bg/a.png": {"bg_a"}})
+	_, names, _ := withDeferredFonts(webDeferredPlan{}, []string{"gothic"}, nil, nil, map[string][]string{"assets/bg/a.png": {"bg_a"}})
 	if !reflect.DeepEqual(names["font-atlas/gothic.fontatlas"], []string{"gothic"}) {
 		t.Fatalf("got %v", names)
 	}
@@ -349,5 +349,203 @@ func TestTapWaitEstimateSaysZeroWithoutWaitingAssets(t *testing.T) {
 func TestTapWaitCountsGroupedFontsAsWaiting(t *testing.T) {
 	if !webWaitsWhenMissing(webDeferredEntry{Path: "assets/f.fontatlas", Group: "start"}, "font") {
 		t.Error("group を付けたフォントは待つはず（fge-web.js の fgeDeferredPolicy と同じ）")
+	}
+}
+
+func TestResolveWebDeferredKeepsFontLinePosition(t *testing.T) {
+	order, err := resolveWebDeferred(json.RawMessage(`{"deferred": ["assets/bg/*.png", "assets/bgm/*.wav", "font:round"]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(order.Fonts, []webDeferredFontSlot{{Font: "round", Before: 2}}) {
+		t.Errorf("font:round は glob 2 本の後のはず: %+v", order.Fonts)
+	}
+}
+
+func TestResolveWebDeferredRejectsFontLineTwice(t *testing.T) {
+	if _, err := resolveWebDeferred(json.RawMessage(`{"deferred": ["font:round", "assets/bg/*.png", "font:round"]}`)); err == nil {
+		t.Fatal("同じ font: の 2 行を通した")
+	}
+}
+
+func TestResolveWebDeferredRejectsFontLineWithoutName(t *testing.T) {
+	if _, err := resolveWebDeferred(json.RawMessage(`{"deferred": ["font:"]}`)); err == nil {
+		t.Fatal("名前の無い font: を通した")
+	}
+}
+
+func fontOrderPlan(t *testing.T, raw string) (webDeferredPlan, webDeferredOrder) {
+	t.Helper()
+	order, err := resolveWebDeferred(json.RawMessage(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := planWebDeferred(deferredFixtureBundle(), order.Globs, webEmbedPlan{}, []string{"default", "round"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return plan, order
+}
+
+func TestWithDeferredFontsPutsAtlasAtItsFontLine(t *testing.T) {
+	plan, order := fontOrderPlan(t, `{"deferred": ["assets/bg/sea.png", "font:round", "assets/bgm/*.wav"]}`)
+	plan, _, err := withDeferredFonts(plan, []string{"round"}, order.Fonts, nil, map[string][]string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"assets/bg/sea.png", "font-atlas/round.fontatlas", "assets/bgm/sea.wav"}
+	if !reflect.DeepEqual(plan.Paths, want) {
+		t.Errorf("取る順は %v のはず: %v", want, plan.Paths)
+	}
+}
+
+func TestWithDeferredFontsPutsAtlasLastWhenFontLineIsLast(t *testing.T) {
+	plan, order := fontOrderPlan(t, `{"deferred": ["assets/bg/sea.png", "assets/bgm/*.wav", "font:round"]}`)
+	plan, _, _ = withDeferredFonts(plan, []string{"round"}, order.Fonts, nil, map[string][]string{})
+	if got := plan.Paths[len(plan.Paths)-1]; got != "font-atlas/round.fontatlas" {
+		t.Errorf("最後の行の font: は列の最後のはず: %v", plan.Paths)
+	}
+}
+
+func TestWithDeferredFontsKeepsUnwrittenFontAtTheHead(t *testing.T) {
+	plan, order := fontOrderPlan(t, `{"deferred": ["assets/bg/sea.png", "font:round"]}`)
+	plan, _, _ = withDeferredFonts(plan, []string{"default", "round"}, order.Fonts, nil, map[string][]string{})
+	want := []string{"font-atlas/default.fontatlas", "assets/bg/sea.png", "font-atlas/round.fontatlas"}
+	if !reflect.DeepEqual(plan.Paths, want) {
+		t.Errorf("font: の行の無いフォントは頭のはず: %v", plan.Paths)
+	}
+}
+
+func TestWithDeferredFontsRejectsFontLineNotInDeferredFonts(t *testing.T) {
+	plan, order := fontOrderPlan(t, `{"deferred": ["assets/bg/sea.png", "font:round"]}`)
+	if _, _, err := withDeferredFonts(plan, nil, order.Fonts, nil, map[string][]string{}); err == nil || !strings.Contains(err.Error(), "deferredFonts") {
+		t.Fatalf("deferredFonts に無いフォントの font: を通した: %v", err)
+	}
+}
+
+func TestWithDeferredFontsPutsGroupedFontAtItsGroup(t *testing.T) {
+	b := deferredFixtureBundle()
+	plan, order := fontOrderPlan(t, `{"deferred": ["assets/bgm/*.wav", "assets/bg/sea.png"]}`)
+	pol := mustDeferredPolicy(t, `{"deferredPolicy": [{"match": "assets/bg/sea.png", "group": "start"}, {"match": "font:round", "group": "start"}]}`)
+	at := webFontGroupStarts(plan.Paths, []string{"round"}, pol, &b, nil)
+	plan, _, _ = withDeferredFonts(plan, []string{"round"}, order.Fonts, at, map[string][]string{})
+	want := []string{"assets/bgm/sea.wav", "font-atlas/round.fontatlas", "assets/bg/sea.png"}
+	if !reflect.DeepEqual(plan.Paths, want) {
+		t.Errorf("group を付けたフォントはその group の最初の素材の前のはず: %v", plan.Paths)
+	}
+}
+
+func TestWithDeferredFontsKeepsGroupedFontAtHeadWithoutGroupAssets(t *testing.T) {
+	b := deferredFixtureBundle()
+	plan, order := fontOrderPlan(t, `{"deferred": ["assets/bgm/*.wav"]}`)
+	pol := mustDeferredPolicy(t, `{"deferredPolicy": [{"match": "font:round", "group": "start"}]}`)
+	at := webFontGroupStarts(plan.Paths, []string{"round"}, pol, &b, nil)
+	plan, _, _ = withDeferredFonts(plan, []string{"round"}, order.Fonts, at, map[string][]string{})
+	if plan.Paths[0] != "font-atlas/round.fontatlas" {
+		t.Errorf("group の素材が列に無ければ頭のはず: %v", plan.Paths)
+	}
+}
+
+func TestWithDeferredFontsPrefersFontLineOverGroup(t *testing.T) {
+	b := deferredFixtureBundle()
+	plan, order := fontOrderPlan(t, `{"deferred": ["assets/bg/sea.png", "assets/bgm/*.wav", "font:round"]}`)
+	pol := mustDeferredPolicy(t, `{"deferredPolicy": [{"match": "assets/bg/sea.png", "group": "start"}, {"match": "font:round", "group": "start"}]}`)
+	at := webFontGroupStarts(plan.Paths, []string{"round"}, pol, &b, nil)
+	plan, _, _ = withDeferredFonts(plan, []string{"round"}, order.Fonts, at, map[string][]string{})
+	if got := plan.Paths[len(plan.Paths)-1]; got != "font-atlas/round.fontatlas" {
+		t.Errorf("font: の行が group の位置より勝つはず: %v", plan.Paths)
+	}
+}
+
+func TestWithDeferredFontsTakesFontLineWithoutGlobs(t *testing.T) {
+	plan, order := fontOrderPlan(t, `{"deferred": ["font:round"]}`)
+	plan, _, _ = withDeferredFonts(plan, []string{"round"}, order.Fonts, nil, map[string][]string{})
+	if !reflect.DeepEqual(plan.Paths, []string{"font-atlas/round.fontatlas"}) {
+		t.Errorf("glob が無くても font: の行のフォントを取るはず: %v", plan.Paths)
+	}
+}
+
+func TestWithDeferredFontsPlacesFontLineAfterGlobWithNothingNew(t *testing.T) {
+	plan, order := fontOrderPlan(t, `{"deferred": ["assets/bg/sea.png", "assets/bgm/*.wav", "assets/bg/sea.png", "font:round", "assets/walk/*.glb"]}`)
+	plan, _, _ = withDeferredFonts(plan, []string{"round"}, order.Fonts, nil, map[string][]string{})
+	want := []string{"assets/bg/sea.png", "assets/bgm/sea.wav", "font-atlas/round.fontatlas", "assets/walk/gate.glb", "assets/walk/hall.glb"}
+	if !reflect.DeepEqual(plan.Paths, want) {
+		t.Errorf("取り済みの道しか当てない glob の後の font: は、次の glob の前のはず: %v", plan.Paths)
+	}
+}
+
+func TestWithDeferredFontsPutsUnwrittenFontBeforeFontLineAtSamePlace(t *testing.T) {
+	plan, order := fontOrderPlan(t, `{"deferred": ["font:round", "assets/bg/sea.png"]}`)
+	plan, _, _ = withDeferredFonts(plan, []string{"round", "default"}, order.Fonts, nil, map[string][]string{})
+	want := []string{"font-atlas/default.fontatlas", "font-atlas/round.fontatlas", "assets/bg/sea.png"}
+	if !reflect.DeepEqual(plan.Paths, want) {
+		t.Errorf("同じ位置では font: の行の無いフォントが先のはず: %v", plan.Paths)
+	}
+}
+
+func writeServedIncompressible(t *testing.T, out, rel string, size int) {
+	t.Helper()
+	data := make([]byte, size)
+	x := uint32(2463534242)
+	for i := range data {
+		x ^= x << 13
+		x ^= x >> 17
+		x ^= x << 5
+		data[i] = byte(x)
+	}
+	p := exportAssetPath(out, rel)
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// 600 KB のフォントと、group "start" の絵（200 KB）を raw の web.deferred の並びで取る束。
+func fontAfterGroupFixture(t *testing.T, raw string) (string, webBundle) {
+	t.Helper()
+	out := t.TempDir()
+	b := webBundle{Images: []string{"assets/a.webp"}}
+	writeServed(t, out, "assets/a.webp", 200000)
+	writeServedIncompressible(t, out, "font-atlas/round.fontatlas", 600000)
+	order, err := resolveWebDeferred(json.RawMessage(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := planWebDeferred(b, order.Globs, webEmbedPlan{}, []string{"default", "round"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan, _, err = withDeferredFonts(plan, []string{"round"}, order.Fonts, nil, map[string][]string{}); err != nil {
+		t.Fatal(err)
+	}
+	pol := mustDeferredPolicy(t, `{"deferredPolicy": [{"match": "assets/*.webp", "group": "start"}]}`)
+	b.Deferred, _, err = applyWebDeferredPolicy(webDeferredEntries(out, &b, plan.Paths, nil), pol, &b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out, b
+}
+
+func TestTapWaitShrinksWhenFontLineIsAfterTheGroup(t *testing.T) {
+	out, b := fontAfterGroupFixture(t, `{"deferred": ["assets/*.webp", "font:round"]}`)
+	if got := webTapWaitOf(out, &b, []string{"start"}).Seconds; math.Abs(got-(1+webDeferredRoundTripSeconds)) > 1e-9 {
+		t.Errorf("フォントを group の後ろへ回せば group の絵 1 本の秒のはず: %v", got)
+	}
+}
+
+func TestTapWaitCountsHeadFontBeforeTheGroup(t *testing.T) {
+	out, b := fontAfterGroupFixture(t, `{"deferred": ["assets/*.webp"]}`)
+	if got := webTapWaitOf(out, &b, []string{"start"}).Seconds; got < 3+1 {
+		t.Errorf("頭のフォント（600 KB = 3 秒）の後に group の絵が届くはず: %v", got)
+	}
+}
+
+func TestArrivalSecondsFollowFontLineOrder(t *testing.T) {
+	out, b := fontAfterGroupFixture(t, `{"deferred": ["assets/*.webp", "font:round"]}`)
+	setWebArrivalSeconds(out, &b)
+	if b.Deferred[1].Path != "font-atlas/round.fontatlas" || b.Deferred[1].ArrivalSeconds <= b.Deferred[0].ArrivalSeconds {
+		t.Errorf("arrivalSeconds は font: の行の位置で積むはず: %+v", b.Deferred)
 	}
 }

@@ -252,13 +252,13 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		return 1
 	}
 	early.Files = strip.without(early.Files)
-	deferredGlobs, err := resolveWebDeferred(proj.Web)
+	deferredOrder, err := resolveWebDeferred(proj.Web)
 	if err != nil {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
 		return 1
 	}
 	textureNames := textureNamesByPath(proj)
-	deferredPlan, err := planWebDeferred(early, deferredGlobs, embedPlan, proj.fontNames(), textureNames)
+	deferredPlan, err := planWebDeferred(early, deferredOrder.Globs, embedPlan, proj.fontNames(), textureNames)
 	if err != nil {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
 		return 1
@@ -272,9 +272,13 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
 		return 1
 	}
-	deferredPlan, textureNames = withDeferredFonts(deferredPlan, deferredFonts, textureNames)
 	deferredPolicy, err := resolveWebDeferredPolicy(proj.Web)
 	if err != nil {
+		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
+		return 1
+	}
+	fontGroupAt := webFontGroupStarts(deferredPlan.Paths, deferredFonts, deferredPolicy, &early, textureNames)
+	if deferredPlan, textureNames, err = withDeferredFonts(deferredPlan, deferredFonts, deferredOrder.Fonts, fontGroupAt, textureNames); err != nil {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
 		return 1
 	}
