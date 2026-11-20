@@ -456,7 +456,11 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 	for _, rel := range deferredPlan.Paths {
 		deferredSet[rel] = true
 	}
-	afterTap, err := resolveWebAfterTap(proj.Web, deferredPolicy, bundled, deferredSet)
+	images := map[string]bool{}
+	for _, rel := range b.Images {
+		images[rel] = true
+	}
+	afterTap, err := resolveWebAfterTap(proj.Web, deferredPolicy, bundled, deferredSet, images)
 	if err != nil {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
 		return 1

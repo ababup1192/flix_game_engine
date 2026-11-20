@@ -247,7 +247,8 @@ type webAfterTapSettings struct {
 // resolveWebAfterTap は web.splash を読み、bundle.json の splash.afterTap にする。
 // waitFor の既定は deferredPolicy に最初に出てくる group（group が無ければ空 = 待つ物はコードだけ）。
 // bundled は束に入る道（custom の絵と音がそこに無ければ誤り）、deferred は後回しの道（押した直後に要るので誤り）。
-func resolveWebAfterTap(raw json.RawMessage, pol webDeferredPolicy, bundled, deferred map[string]bool) (webAfterTap, error) {
+// images は束の絵（project.json の textures）の道。
+func resolveWebAfterTap(raw json.RawMessage, pol webDeferredPolicy, bundled, deferred, images map[string]bool) (webAfterTap, error) {
 	out := webAfterTap{Mode: "engine", MinSeconds: webAfterTapMinSeconds, MaxSeconds: webAfterTapMaxSeconds}
 	groups := map[string]bool{}
 	for _, row := range pol.Rows {
@@ -315,6 +316,9 @@ func resolveWebAfterTap(raw json.RawMessage, pol webDeferredPolicy, bundled, def
 		}
 		if deferred[rel] {
 			return out, fmt.Errorf("project.json の web.splash.%s %q が web.deferred に当たる（押した直後に出すので起動の前に要る）。\n  次: web.deferred から外す", item.key, item.rel)
+		}
+		if item.key == "logo" && !images[rel] {
+			return out, fmt.Errorf("project.json の web.splash.logo %q が textures の絵でない（頁は起動の時に解いた絵を出す）。\n  次: project.json の textures に宣言する", item.rel)
 		}
 		if item.key == "logo" {
 			out.Logo = rel

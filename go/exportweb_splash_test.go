@@ -91,42 +91,42 @@ func afterTapPolicy(t *testing.T, rows string) webDeferredPolicy {
 
 func TestAfterTapWaitForDefaultsToFirstGroup(t *testing.T) {
 	pol := afterTapPolicy(t, `[{"match": "assets/x/*.png", "onMissing": "placeholder"}, {"match": "assets/a/*.png", "group": "start"}, {"match": "assets/b/*.png", "group": "late"}]`)
-	got, err := resolveWebAfterTap(nil, pol, nil, nil)
+	got, err := resolveWebAfterTap(nil, pol, nil, nil, nil)
 	if err != nil || len(got.WaitFor) != 1 || got.WaitFor[0] != "start" {
 		t.Errorf("waitFor の既定は最初の group のはず: %v %v", got.WaitFor, err)
 	}
 }
 
 func TestAfterTapWithoutGroupWaitsForNothing(t *testing.T) {
-	got, err := resolveWebAfterTap(nil, webDeferredPolicy{}, nil, nil)
+	got, err := resolveWebAfterTap(nil, webDeferredPolicy{}, nil, nil, nil)
 	if err != nil || len(got.WaitFor) != 0 {
 		t.Errorf("group が無ければ待つ group も無いはず: %v %v", got.WaitFor, err)
 	}
 }
 
 func TestAfterTapRejectsUnknownGroup(t *testing.T) {
-	_, err := resolveWebAfterTap(json.RawMessage(`{"splash": {"waitFor": ["start"]}}`), webDeferredPolicy{}, nil, nil)
+	_, err := resolveWebAfterTap(json.RawMessage(`{"splash": {"waitFor": ["start"]}}`), webDeferredPolicy{}, nil, nil, nil)
 	if err == nil {
 		t.Error("deferredPolicy に無い group は誤りのはず")
 	}
 }
 
 func TestAfterTapRejectsMaxOverThreeSeconds(t *testing.T) {
-	_, err := resolveWebAfterTap(json.RawMessage(`{"splash": {"maxSeconds": 5}}`), webDeferredPolicy{}, nil, nil)
+	_, err := resolveWebAfterTap(json.RawMessage(`{"splash": {"maxSeconds": 5}}`), webDeferredPolicy{}, nil, nil, nil)
 	if err == nil {
 		t.Error("maxSeconds が 3 秒を超えたら誤りのはず")
 	}
 }
 
 func TestAfterTapNoneTurnsLogoOff(t *testing.T) {
-	got, err := resolveWebAfterTap(json.RawMessage(`{"splash": {"afterTap": "none"}}`), webDeferredPolicy{}, nil, nil)
+	got, err := resolveWebAfterTap(json.RawMessage(`{"splash": {"afterTap": "none"}}`), webDeferredPolicy{}, nil, nil, nil)
 	if err != nil || got.Mode != "none" {
 		t.Errorf("none のはず: %q %v", got.Mode, err)
 	}
 }
 
 func TestAfterTapCustomNeedsLogo(t *testing.T) {
-	_, err := resolveWebAfterTap(json.RawMessage(`{"splash": {"afterTap": "custom"}}`), webDeferredPolicy{}, nil, nil)
+	_, err := resolveWebAfterTap(json.RawMessage(`{"splash": {"afterTap": "custom"}}`), webDeferredPolicy{}, nil, nil, nil)
 	if err == nil {
 		t.Error("custom で logo が無ければ誤りのはず")
 	}
@@ -134,21 +134,21 @@ func TestAfterTapCustomNeedsLogo(t *testing.T) {
 
 func TestAfterTapCustomLogoMustNotBeDeferred(t *testing.T) {
 	in := map[string]bool{"assets/ui/logo.png": true}
-	_, err := resolveWebAfterTap(json.RawMessage(`{"splash": {"afterTap": "custom", "logo": "assets/ui/logo.png"}}`), webDeferredPolicy{}, in, in)
+	_, err := resolveWebAfterTap(json.RawMessage(`{"splash": {"afterTap": "custom", "logo": "assets/ui/logo.png"}}`), webDeferredPolicy{}, in, in, in)
 	if err == nil {
 		t.Error("後回しの絵は押した直後に出せないので誤りのはず")
 	}
 }
 
 func TestAfterTapRejectsUnknownField(t *testing.T) {
-	_, err := resolveWebAfterTap(json.RawMessage(`{"splash": {"maxSecond": 2}}`), webDeferredPolicy{}, nil, nil)
+	_, err := resolveWebAfterTap(json.RawMessage(`{"splash": {"maxSecond": 2}}`), webDeferredPolicy{}, nil, nil, nil)
 	if err == nil {
 		t.Error("知らない欄は誤りのはず")
 	}
 }
 
 func TestAfterTapRejectsMinOverMax(t *testing.T) {
-	_, err := resolveWebAfterTap(json.RawMessage(`{"splash": {"minSeconds": 2.5, "maxSeconds": 2}}`), webDeferredPolicy{}, nil, nil)
+	_, err := resolveWebAfterTap(json.RawMessage(`{"splash": {"minSeconds": 2.5, "maxSeconds": 2}}`), webDeferredPolicy{}, nil, nil, nil)
 	if err == nil {
 		t.Error("minSeconds が maxSeconds を超えたら誤りのはず")
 	}
@@ -156,7 +156,7 @@ func TestAfterTapRejectsMinOverMax(t *testing.T) {
 
 func TestAfterTapCustomTakesBundledLogo(t *testing.T) {
 	in := map[string]bool{"assets/ui/logo.png": true}
-	got, err := resolveWebAfterTap(json.RawMessage(`{"splash": {"afterTap": "custom", "logo": "assets/ui/logo.png"}}`), webDeferredPolicy{}, in, nil)
+	got, err := resolveWebAfterTap(json.RawMessage(`{"splash": {"afterTap": "custom", "logo": "assets/ui/logo.png"}}`), webDeferredPolicy{}, in, nil, in)
 	if err != nil || got.Logo != "assets/ui/logo.png" {
 		t.Errorf("束の中の絵なら通るはず: %q %v", got.Logo, err)
 	}
@@ -164,8 +164,16 @@ func TestAfterTapCustomTakesBundledLogo(t *testing.T) {
 
 func TestAfterTapEmptyWaitForWaitsForNothing(t *testing.T) {
 	pol := afterTapPolicy(t, `[{"match": "assets/a/*.png", "group": "start"}]`)
-	got, err := resolveWebAfterTap(json.RawMessage(`{"splash": {"waitFor": []}}`), pol, nil, nil)
+	got, err := resolveWebAfterTap(json.RawMessage(`{"splash": {"waitFor": []}}`), pol, nil, nil, nil)
 	if err != nil || len(got.WaitFor) != 0 {
 		t.Errorf("waitFor を空に書いたら group を待たないはず: %v %v", got.WaitFor, err)
+	}
+}
+
+func TestAfterTapCustomLogoMustBeATexture(t *testing.T) {
+	in := map[string]bool{"assets/ui/logo.png": true}
+	_, err := resolveWebAfterTap(json.RawMessage(`{"splash": {"afterTap": "custom", "logo": "assets/ui/logo.png"}}`), webDeferredPolicy{}, in, nil, nil)
+	if err == nil {
+		t.Error("textures に無い絵は頁が出せないので誤りのはず")
 	}
 }

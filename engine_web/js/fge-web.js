@@ -1312,7 +1312,7 @@ function fgeAfterTapStart() {
   if (fgeAfterTapRemainingSeconds(cfg) < cfg.minSeconds) return;
   fgeAfterTap.showing = true;
   fgeAfterTap.startedAt = performance.now();
-  // ロゴの間の押しは捕捉の段で止め、ゲームの入力（fgeWireInput）へ渡さない（飛ばす押しが「はじめから」を決めないように）。離すのは止めない（押しっぱなしのキーが残らないように）。
+  // ロゴの間の押しは捕捉の段で止め、ゲームの入力（fgeWireInput）へ渡さない（飛ばす押しが「はじめから」を決めないように）。keyup は止めない（押しっぱなしのキーが残らないように）。
   var events = ["keydown", "pointerdown", "mousedown", "touchstart", "click", "pointerup", "touchend"];
   var skip = function (e) {
     e.stopImmediatePropagation();
