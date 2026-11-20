@@ -127,6 +127,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | ブラウザ版でシナリオを開発者ツールから読まれにくくする | project.json の `web.embed: [glob]`（wasm へ埋め込む）・`web.omit: [glob]`（配らない）（wasm を解析する人には読める・engine の `docs/web-export.md` の「シナリオを開発者ツールから読まれにくくする」） |
 | ブラウザ版の「押して始める」までに取る量を減らす（重い背景・BGM・効果音を後から取る） | project.json の `web.deferred: [glob]`・ゲームは `LoadProgress.downloads()` の `#missing()` で描き分ける（タイトルの背景は後回しにしない・engine の `docs/startup.md` の「ブラウザで素材を後から取る」） |
 | ブラウザ版の「押して始める」の画面の文言を替える（日本語の「タッチして開始」など） | project.json の `web.startPrompt`（既定 `"Tap to start"`）。押す前の画面はデスクトップの起動画面（ロゴ・題字・ゲージ・英語の一行）と同じ絵を頁が描き、満ちたら文言と指のアイコンを出す（後回しの素材の進み具合はゲージの下の細い線）。頁の HTML や fge-web.js を書き替えない（engine の `docs/startup.md`） |
+| ブラウザ版の 2 回目からの起動を速くする・古い版が出ると言われた（GitHub Pages の `max-age` の 10 分を過ぎた起動） | 書き出しの頁が自分で Service Worker（`sw.js`）を登録する。止めるのは project.json の `web.serviceWorker: false`・利用者の側で抜け出すのは頁の URL に `?sw=0`。頁の js や自前の Service Worker を書かない（engine の `docs/web-export.md` の「起動の始まりと 2 回目からの起動」） |
 | ノベルを縦（スマホ）を基本に作る・PC でも同じ縦の画面を出す・背景の写真を縦の構図で作る | 手本 sound-novel-starter（`AGENTS.local.md` の「縦が基本」）・design は縦の 540×1170・写真は縦で生成し 720×1560 に切って photos に `aspect`（engine の `docs/novel.md` の「縦が基本」・横から移すのは `docs/migrations/0.101.0.md`） |
 | 窓の比が design と違う時の余り（レターボックス・ピラーボックス。PC の横長の窓に縦の design を出した時の左右など）を、黒でなく背景で塗る | `App.withLetterboxView((ctx, w) -> 絵)`（ぼかした背景を返す・engine の `docs/web-export.md` の「窓の余り」） |
 | ノベルに立ち絵と小物を出す（表情・位置の替え・消す・クロスフェード・セーブとバックログから戻っても残る） | 手本 sound-novel-starter: `<<show>>`・`<<hide>>`・`<<move>>` + `assets/novel.cast.json`・絵は textures の `cast_<名前>_<表情>`（engine の `docs/novel.md` の「立ち絵と小物」） |

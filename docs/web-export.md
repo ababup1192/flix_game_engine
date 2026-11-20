@@ -128,6 +128,51 @@ design の大きさの画面に描くつもりの絵（ぼかした背景だけ�
 - 手元で配ったサーバーは見終えたら Ctrl-C で止める（残った物は `make strays` で見つかる）
 - Windows では流せない（bash の道具）
 
+## 起動の始まりと 2 回目からの起動（preload・Service Worker・`web.serviceWorker`）
+
+ゲームの側で直す所は無い。書き出しの頁が自分でやる。
+
+### 版の確かめと preload
+
+頁の物は全部 `?v=<版>` の付いた URL で取る（版は書き出しの木のハッシュ・`version.txt` にも書く）。`index.html` は置き場のキャッシュで古い物が出ることがあるので、
+頁の起動役は `version.txt` をキャッシュを使わずに取り、その版で `fge-web.js` などを読む（取れない・3 秒で返らない時は書き出した時の版）。
+
+`index.html` の head の起動役は、起動の最初に要る物（`bundle.json`・`classes.wasm.br` と `brotli-decode.js`（brotli が無ければ `classes.wasm`）・2 本の js）の
+`<link rel=preload>` をその版で出す。いつ出すか:
+
+| 頁 | preload を出す時 |
+|---|---|
+| `index.html` を今ネットから取った（`transferSize > 0`） | すぐ（書き出した時の版と置き場の版は同じなので、`version.txt` を待たない） |
+| `index.html` が HTTP キャッシュから出た | `version.txt` の答えの後（古い版の URL を先に取ると、置き場は新しい中身を返し、その 1 回分が無駄になる） |
+| Service Worker が受け持つ | すぐ（下の節） |
+
+`fetch()` で取る物は `as="fetch"` と `crossorigin`、`<script>` で読む物は `as="script"` だけ。違えると preload した物が使われず 2 回取る。
+片手間迷宮（4G・1.6 Mbps・往復 150 ms の測り）で、押せるまでが 28.6 → 28.0 秒。
+
+### Service Worker（2 回目からの起動）
+
+書き出しは根に `sw.js`（元は `engine_web/js/fge-sw.js`）を置き、頁は「タッチして開始」を出した後に書き出しのフォルダの scope で登録する。
+GitHub Pages は全部のファイルに `max-age=600` を付けるので、Service Worker が無いと 10 分を過ぎた次の起動は全部のファイルに確かめ（304）が走る
+（片手間迷宮で 3.7 秒・素材の多いゲームでは 9 秒）。Service Worker があると 10 分の前も後も 0.1〜0.2 秒で押せる。
+
+| 何を | どう |
+|---|---|
+| 版の付いた物（`?v=<版>`） | 版ごとのキャッシュ（名前は `fge-sw:<束の id>:<書き出しのフォルダの道>:v<版>`）から返す。入れるのは版が今の版（`version.txt`）の時だけ |
+| `version.txt` | 毎回ネットへ行く。ネットが無い時は最後に取れた版を返す（キャッシュに揃っていればネット無しで遊べる） |
+| `index.html` | Service Worker が覚えている版のキャッシュから返し、同時に版を確かめる。頁は書き出した時の版ですぐ起動し、版が違えば押して始める前に 1 回だけ読み直す。版を上げた後の最初の起動は毎回この読み直しが入る（押した後は読み直さず、次に開いた時に新しい版） |
+| 古い版のキャッシュ | 今の版で起動した頁（version.txt が答えた時だけ）が Service Worker に知らせて消す。同じゲームの別のタブが開いている間は消さない（版が上がった所で消すと、古い版のまま遊んでいる頁が後から取る物が置き場の新しい中身になる） |
+| 初めての頁 | 登録の前に取った物は、頁が URL を Service Worker へ送り、HTTP キャッシュから写す（10 分の内ならネットへ行かない）。後から取る後回しの素材は Service Worker が受け持って入れる |
+| キャッシュへ入れる時 | 届いた後に始めた `version.txt` の答えが同じ版の時だけ入れる（遊んでいる間に版が上がると、置き場の新しい中身が古い版の URL で届くため）。続けて届いた物は 2 秒ごとに 1 回の確かめでまとめる |
+
+- 版が上がると全部の URL の `?v=` が替わるので、版を上げた後の最初の起動は全部を取り直す（Service Worker の有無で同じ）
+- 同じドメインに複数のゲームを置いても、scope とキャッシュの名前は書き出しのフォルダごとに分かれる。根に置いたゲームの Service Worker は、サブフォルダのゲームの頁の物を受けずに素のネットへ回す
+- 開くたびに `sw.js` の更新の確かめが 1 本ネットへ行く（`updateViaCache: "none"`。直した `sw.js` を置き場の max-age を待たずに届けるため）。起動を待たせない
+- 止めるのは project.json の `web.serviceWorker: false`。その書き出しの頁は前に登録した Service Worker とそのキャッシュを外す
+- 壊れた時に抜け出す口: 頁の URL に `?sw=0` を付けて開くと、その頁はキャッシュを使わずにネットから取り、Service Worker が登録を外してキャッシュを消す（次に開いた時から Service Worker 無し）。登録に失敗した時は Service Worker 無しで今まで通り動く
+- `?capture=<n>` の頁は登録しない（描き出しの検査に前の書き出しを持ち越さない）
+- セーブ（localStorage）は Service Worker のキャッシュと別の所にあり、消しても残る
+- iOS の Safari は、しばらく操作の無いサイトの Service Worker とキャッシュを消すことがある（Safari の 7 日の決まり。localStorage のセーブも同じ決まりの内）。消された後は初めての時と同じに取る
+
 ## ブラウザで重さを測る
 
 ### 頁の旗（どのゲームの書き出しでも同じに使える）
@@ -141,6 +186,7 @@ design の大きさの画面に描くつもりの絵（ぼかした背景だけ�
 | `?glcheck=1` | GL の呼び出しごとに `getError` を見て console に出す（WebGL2 の時） |
 | `?loadtime=1` | 絵の解読の時間と、最初のコマまでの ms を console に出す |
 | `?capture=<n>` | dt を 1/60 に固定し、n コマ目を撮る合図を出す（[web-capture.md](web-capture.md)） |
+| `?sw=0` | Service Worker の登録を外し、そのキャッシュを消す（「起動の始まりと 2 回目からの起動」） |
 | `?size=small&input=touch`・`?orientation=portrait` | スマホの区分・指の入力・縦の design で開く（上の節） |
 
 `WebLayer.devTools()` で起こすゲームは、ここに無い鍵をクエリの最初に置くと Start の名前として読む（知らない名前なら先頭の始まりで開いて console.error に 1 行）。

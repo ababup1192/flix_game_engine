@@ -86,6 +86,12 @@
           "type": { "list": "text" },
           "label": "配らない素材（ゲームの根からの glob）。実行時に読まない元のファイル（.yarn など）を外す",
           "order": 3
+        },
+        "serviceWorker": {
+          "type": "bool",
+          "label": "2 回目からの起動を Service Worker のキャッシュで速くする（版が上がれば新しい物を取る。false で前に登録した物も外す）",
+          "order": 4,
+          "default": true
         }
       }
     }

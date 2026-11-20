@@ -101,6 +101,12 @@
           "type": { "list": "text" },
           "label": "押して始めた後に取るフォント（fonts[].name）。タイトルで使わないフォントだけ。届くまでは先頭のフォントで出す",
           "order": 6
+        },
+        "serviceWorker": {
+          "type": "bool",
+          "label": "2 回目からの起動を Service Worker のキャッシュで速くする（版が上がれば新しい物を取る。false で前に登録した物も外す）",
+          "order": 7,
+          "default": true
         }
       }
     }
