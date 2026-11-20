@@ -555,7 +555,7 @@ pub mod App.Internal.Runner {
         if (Set.isEmpty(given)) ()
         else {
             let waited = App.Internal.LoadWait.published(before, given, nowSec) |> Option.map(lw -> lw#waited) |> Option.getWithDefault(0.0);
-            System.err.println("[load-wait] ${String.intercalate(", ", Set.toList(given))} を ${Float64.toString(waited)} 秒待っても届かないので諦めた（以後は描かず・鳴らさずに進む）")
+            Log.fellBack("load-wait", String.intercalate(", ", Set.toList(given)), "描かず・鳴らさずに進む", "${Float64.toString(waited)} 秒待っても届かない")
         }
 
     /// 今の待ちが前に知らせた物から変わった時だけ機種へ知らせる（待った秒だけの変化は知らせない）。
