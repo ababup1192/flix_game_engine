@@ -111,9 +111,9 @@ type webBundleChecks struct {
 }
 
 // webGateUsesMeasuredTap は押した後の測り（⑨”）の値を門の数字に入れるか。
-// WhyNot: 最初から入れない — 測りは headless の Chrome の実時間で、機械の速さで揺れうる。押した時の待ちが出る束（新しい fge-web.js で書き出したゲーム）で
-// 3 回ずつ流し、揺れが 1 秒以内と分かってから true にする（plans/web-loading-p5.md の 1.2）。それまでは数字と ★ で出す。
-const webGateUsesMeasuredTap = false
+// WhyNot: 切り替えを消さない — 測りは headless の Chrome の実時間で動く。4G のまねの届く秒は決まっていて揺れないと測れた（3 回とも同じ秒）が、
+// 頁の作りが変わって揺れが出た時に、門を見積もりへ戻して測った値を ★ だけにする口として残す。
+const webGateUsesMeasuredTap = true
 
 // webGate は 1 つの束の門の判定。TapWait は測った値と group の見積もりの大きい方。Playable = Startup + max(0, TapWait − LogoCover)。
 type webGate struct {

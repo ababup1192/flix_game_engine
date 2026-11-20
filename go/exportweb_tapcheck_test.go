@@ -52,6 +52,25 @@ window.fgeMissingSkips = [{ kind: "texture", why: "placeholder", frame: 100, nam
 window.fgeTapMark = { at: 2990, frame: 90 };
 `
 
+func TestTapOutcomeCutAtLimitWithoutFramesIsSkipped(t *testing.T) {
+	if _, skipped := webTapOutcome(webTapProbeResult{State: "none", Frames: 12, SinceTap: 40}); skipped == "" {
+		t.Error("記録が無いまま上限で切れた（コマが進まなかった）なら、待たずに動いたでなく測れなかったのはず")
+	}
+}
+
+func TestTapOutcomeNoRecordAfterEnoughFrames(t *testing.T) {
+	m, skipped := webTapOutcome(webTapProbeResult{State: "none", Frames: webTapNoRecordFrames, SinceTap: 6})
+	if skipped != "" || !m.NoRecord {
+		t.Errorf("コマが十分進んで記録が無ければ、待たずに動いたのはず: %+v %q", m, skipped)
+	}
+}
+
+func TestTapOutcomeOpenAtLimitIsCapped(t *testing.T) {
+	if m, _ := webTapOutcome(webTapProbeResult{State: "open", Seconds: 41, SinceTap: 40}); !m.Capped {
+		t.Errorf("明けないまま上限で切れた待ちは打ち切りのはず: %+v", m)
+	}
+}
+
 func TestTapProbeCountsFromStartClockToWaitEnd(t *testing.T) {
 	r := probeOnPage(t, probeRecords+`var fgeMissingWaitOpen = null;`)
 	if math.Abs(r.Seconds-4.5) > 1e-9 || r.State != "closed" {

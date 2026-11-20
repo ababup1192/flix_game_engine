@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"errors"
 	"math"
 	"os"
@@ -149,13 +148,22 @@ func TestGateWithoutGroupCountsZeroWhenUnmeasured(t *testing.T) {
 	}
 }
 
-func TestGateMeasuredWaitIsNotedUncoveredUntilVerified(t *testing.T) {
+func TestGateWithoutGroupAddsMeasuredWaitUncovered(t *testing.T) {
 	out, b := tapWaitFixture(t, webDeferredEntry{Path: "assets/a.webp"})
 	withLogo(&b, "engine")
 	b.Checks = &webBundleChecks{TapWaitSeconds: ptrFloat(5)}
 	g := webGateOf(out, &b, defaultWebStartupBudget())
-	if g.Playable != g.Startup || !strings.Contains(strings.Join(g.Notes, "\n"), fmt.Sprintf("遊べるまで %.1f 秒", g.Startup+5)) {
-		t.Errorf("揺れを確かめるまで測った値は門に入れず、ロゴの出ない group 無しの 5 秒をそのまま足した数を ★ で出すはず: %+v", g)
+	if math.Abs(g.Playable-(g.Startup+5)) > 1e-9 {
+		t.Errorf("group の無いゲームはロゴが出ないので、測った 5 秒をそのまま足すはず: %+v", g)
+	}
+}
+
+func TestGateMeasuredWaitLongerThanGroupEstimateIsUsed(t *testing.T) {
+	out, b := groupFixture(t)
+	withLogo(&b, "engine", "start")
+	b.Checks = &webBundleChecks{TapWaitSeconds: ptrFloat(9)}
+	if g := webGateOf(out, &b, defaultWebStartupBudget()); g.TapWait != 9 {
+		t.Errorf("測った値が group の見積もりより長ければ測った値を使うはず: %+v", g)
 	}
 }
 

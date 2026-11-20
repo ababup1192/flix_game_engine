@@ -291,7 +291,7 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 			fmt.Fprintf(errOut, "fge export-web: %s\n", msg)
 			return 1
 		}
-		ewLogf("★ %s（web.startupBudget を書くと止まる・0.107.0 から全部止まる）", msg)
+		ewLogf("★ %s（web.startupBudget を書くと止まる・移行が終わる版から全部止まる）", msg)
 	}
 	for _, line := range deferredPlan.Warnings {
 		ewLogf("知らせ: %s", line)
@@ -718,7 +718,7 @@ func writeWebGateSummary(w io.Writer, g webGate, budget webStartupBudget, draft 
 	case draft:
 		fmt.Fprintf(w, "  ★ 門が赤のまま --draft で書き出した（draft のマーカー付き・web-check が拒むので公開できない）: %s\n", strings.Join(g.Red, " / "))
 	case !budget.Declared:
-		fmt.Fprintf(w, "  ★ %s。0.107.0 から書き出しも止まる。公開の道（web-check）は今も止めるので、手で写す前に bin/fge web-check <書き出し先>\n", strings.Join(g.Red, " / "))
+		fmt.Fprintf(w, "  ★ %s。移行が終わる版から書き出しも止まる（docs/migrations/0.106.0.md）。公開の道（web-check）は今も止めるので、手で写す前に bin/fge web-check <書き出し先>\n", strings.Join(g.Red, " / "))
 		writeWebGateAdvice(w, g.Advice, "")
 	}
 }

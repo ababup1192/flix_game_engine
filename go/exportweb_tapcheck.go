@@ -125,15 +125,28 @@ func measureWebTapWait(out string, keys []string, wait time.Duration) (m webTapM
 		}
 		// WhyNot: 待ちが明けてすぐ終えない — 明けた直後の途中の待ち（控えの外の待ち）も表に出したい。
 		// WhyNot: 記録が出ないのを秒だけで見切らない — headless はコマが遅く、タイトルから場面へのフェードが実時間で数秒かかる。
-		done := (r.State == "closed" && r.ClosedFor >= webTapAfterWindow) ||
-			(r.State == "none" && r.Frames >= webTapNoRecordFrames && r.SinceTap >= 5)
+		done := (r.State == "closed" && r.ClosedFor >= webTapAfterWindow) || webTapSawNoRecord(r)
 		if done || time.Duration(r.SinceTap*float64(time.Second)) >= webTapMeasureLimit || time.Now().After(deadline) {
 			break
 		}
 	}
-	m = webTapMeasure{Seconds: r.Seconds, NoRecord: r.State == "none", Capped: r.State == "open",
-		Stopped: r.Stopped, StoppedSecs: r.StoppedSecs, Placeholders: r.Placeholders}
-	return m, "", nil
+	m, skipped = webTapOutcome(r)
+	return m, skipped, nil
+}
+
+// webTapSawNoRecord は押した時の待ちの記録が出ないまま、見切ってよいだけコマと秒が進んだか。
+func webTapSawNoRecord(r webTapProbeResult) bool {
+	return r.State == "none" && r.Frames >= webTapNoRecordFrames && r.SinceTap >= 5
+}
+
+// webTapOutcome は測りの最後の読みを結果にする。記録が無いまま上限で切れたら skipped に理由（測れなかった）。
+// WhyNot: 上限で切れた記録無しを「待たずに動いた」にしない — コマが進まなかった頁（止まった・極端に遅い）を 0 秒の測った値として門に入れる。
+func webTapOutcome(r webTapProbeResult) (webTapMeasure, string) {
+	if r.State == "none" && !webTapSawNoRecord(r) {
+		return webTapMeasure{}, fmt.Sprintf("上限まで待っても押した後のコマが %d 進まず測れなかった（%d コマ・%.0f 秒）", webTapNoRecordFrames, r.Frames, r.SinceTap)
+	}
+	return webTapMeasure{Seconds: r.Seconds, NoRecord: r.State == "none", Capped: r.State == "open",
+		Stopped: r.Stopped, StoppedSecs: r.StoppedSecs, Placeholders: r.Placeholders}, ""
 }
 
 // webTapNeedsMeasure は押した後に engine が待ちうる後回しがあるか（無い束は測らない。最大 40 秒以上かかるため）。
