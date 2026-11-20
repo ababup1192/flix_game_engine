@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -30,11 +31,27 @@ func resolveWebDeferredPolicy(raw json.RawMessage) (webDeferredPolicy, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return pol, nil
 	}
+	var web struct {
+		DeferredPolicy json.RawMessage `json:"deferredPolicy"`
+	}
 	var s webDeferredPolicySettings
-	if err := json.Unmarshal(raw, &s); err != nil {
+	err := json.Unmarshal(raw, &web)
+	if err == nil && len(web.DeferredPolicy) > 0 {
+		// WhyNot: 欄の書き違い（grop など）を黙って通さない — 行が当たっても扱いが効かず、気付けない。
+		dec := json.NewDecoder(bytes.NewReader(web.DeferredPolicy))
+		dec.DisallowUnknownFields()
+		err = dec.Decode(&s.DeferredPolicy)
+	}
+	if err != nil {
 		return pol, fmt.Errorf("project.json の web.deferredPolicy を読めない: %v\n  次: { \"match\": \"<glob か font:名前>\", \"onMissing\": \"wait\", \"group\": \"start\" } の並びにする", err)
 	}
 	for _, row := range s.DeferredPolicy {
+		if row.Match == "" {
+			return pol, fmt.Errorf("project.json の web.deferredPolicy に match の無い行がある。\n  次: 後回しの道の glob か font:名前を書く")
+		}
+		if row.OnMissing == "" && row.Group == "" {
+			return pol, fmt.Errorf("project.json の web.deferredPolicy の %q に onMissing も group も無い（先勝ちなので後ろの行を黙って隠す）。\n  次: どちらかを書くか行を消す", row.Match)
+		}
 		switch row.OnMissing {
 		case "", "wait", "placeholder", "skip":
 		default:
@@ -72,11 +89,13 @@ func webDeferredKindOf(rel string, b *webBundle) string {
 	return "file"
 }
 
-// onMissingFits は onMissing がその種類に使える値か（files は扱いを持たないので何でも通す）。
+// onMissingFits は onMissing がその種類に使える値か（files は届く前に使っても待たないので wait 以外は効かない）。
 func onMissingFits(kind, onMissing string) bool {
 	switch {
-	case onMissing == "" || onMissing == "wait" || kind == "file":
+	case onMissing == "" || onMissing == "wait":
 		return true
+	case kind == "file":
+		return false
 	case kind == "sound":
 		return onMissing == "skip"
 	default:
@@ -121,7 +140,7 @@ func applyWebDeferredPolicy(entries []webDeferredEntry, pol webDeferredPolicy, b
 		sort.Ints(rows)
 		r := rows[0]
 		var parts []string
-		for _, kind := range []string{"image", "font", "sound"} {
+		for _, kind := range []string{"image", "font", "sound", "file"} {
 			if paths := misfits[r][kind]; len(paths) > 0 {
 				parts = append(parts, fmt.Sprintf("%s: %s", kind, strings.Join(paths, "・")))
 			}

@@ -81,3 +81,29 @@ func TestDeferredPolicyWarnsOnRowMatchingNothing(t *testing.T) {
 		t.Errorf("当たらない行は 1 行知らせるはず: %v %v", warnings, err)
 	}
 }
+
+func TestDeferredPolicyRejectsRowWithoutOnMissingAndGroup(t *testing.T) {
+	if _, err := resolveWebDeferredPolicy(json.RawMessage(`{"deferredPolicy": [{"match": "assets/**"}]}`)); err == nil {
+		t.Error("onMissing も group も無い行は止めるはず")
+	}
+}
+
+func TestDeferredPolicyRejectsMisspelledField(t *testing.T) {
+	if _, err := resolveWebDeferredPolicy(json.RawMessage(`{"deferredPolicy": [{"match": "assets/**", "onMissing": "wait", "grop": "x"}]}`)); err == nil {
+		t.Error("欄の書き違いは止めるはず")
+	}
+}
+
+func TestDeferredPolicyRejectsEmptyMatch(t *testing.T) {
+	if _, err := resolveWebDeferredPolicy(json.RawMessage(`{"deferredPolicy": [{"match": "", "group": "x"}]}`)); err == nil {
+		t.Error("match の無い行は止めるはず")
+	}
+}
+
+func TestDeferredPolicyRejectsPlaceholderOnAFile(t *testing.T) {
+	b := deferredFixtureBundle()
+	pol := mustDeferredPolicy(t, `{"deferredPolicy": [{"match": "assets/walk/*.glb", "onMissing": "placeholder"}]}`)
+	if _, _, err := applyWebDeferredPolicy(policyFixtureEntries(), pol, &b); err == nil {
+		t.Error("files に placeholder は効かないので止めるはず")
+	}
+}
