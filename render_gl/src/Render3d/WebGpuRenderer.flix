@@ -101,7 +101,7 @@ pub mod Render3d.WebGpuRenderer {
     /// prepare の答え（i 番目 = 番号 i の場面を貼る物。描く物の無い場面は None）。
     pub type alias Prepared = Vector[Option[Paste]]
 
-    /// 2D の描き手（RenderPaint.Internal.WebGpuPaint）が持つ 3D の描き手（関数の組）。場面を描かない物は noScenes。
+    /// 2D の描き手（RenderPaint.Internal.WebGpuPaint）が持つ 3D の描き手（関数の組）。場面を描かない物は none。
     /// 欄はこの mod の同じ名前の関数と同じ役（prepare・preload・notePasted・afterSubmit・endFrame・takeCounts・release）。
     // WhyNot: 2D の描き手に Renderer を直に持たせない — 3D を描かないゲームのブラウザ版の wasm にも、この mod と計画（Render3d.ScenePlan）と式の組み立てが全部入る。
     pub type alias Scenes = {
@@ -125,7 +125,7 @@ pub mod Render3d.WebGpuRenderer {
           afterSubmit = () -> afterSubmit(r), endFrame = () -> endFrame(r), takeCounts = () -> takeCounts(r), release = () -> release(r) }
 
     /// 場面を描かない描き手（どの場面も貼る物なし・数は 0）。
-    pub def noScenes(): Scenes =
+    pub def none(): Scenes =
         { prepare = (_, _, cmds) -> List.toVector(List.map(_ -> (None: Option[Paste]), cmds)), preload = (_, _) -> (),
           notePasted = _ -> (),
           afterSubmit = () -> (), endFrame = () -> (), takeCounts = () -> FrameDiagnostics.emptyScene3dCounts(), release = () -> () }

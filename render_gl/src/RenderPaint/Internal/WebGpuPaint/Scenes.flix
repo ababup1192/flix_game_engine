@@ -16,8 +16,8 @@ pub mod RenderPaint.Internal.WebGpuPaint.Scenes {
         let PaintData.PaintData(p) = paint;
         let (format, samples) = target;
         (p#scenes3d#prepare)(hostOf(paint),
-                                        { key = stencilKey, format = format, samples = samples, viewport = viewportOf(paint, pass), height = pass#height },
-                                        scenes)
+                             { key = stencilKey, format = format, samples = samples, viewport = viewportOf(paint, pass), height = pass#height },
+                             scenes)
 
     /// 先に上げる物の宣言 cmd（withPreload3d）の形と絵と材質を 3D の描き手に上げさせる（前と同じ key なら何もしない）。
     pub def preload(paint: Paint, cmd: Scene3d.PreloadCmd): Unit \ IO =

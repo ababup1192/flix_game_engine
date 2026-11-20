@@ -159,7 +159,7 @@ pub mod App {
         // 掛からない（ターゲットの中は常に design 座標そのまま — カメラを効かせたい絵は
         // view と同じ composeScene をゲーム側で通してから渡す）。
         passes = w -> Render.PassPlan \ ef,
-        // 画面全体の後がけ（withPostStack が App.Internal.Paint.applyPostStack で組む）。View が返す絵に掛け、HUD とデバッグの重ねには掛けない。
+        // 画面全体の後がけ（withPostStack）。View が返す絵に掛け、HUD とデバッグの重ねには掛けない。
         postStack = Option[App.Internal.Paint.PostInput[w] -> App.Internal.Paint.FramePlan \ ef],
         screenClear = Color,                                       // 画面の地の色（実機の起動で project.json の clearColor・後がけの場面の Pass を消す色の既定）
         // 既定フォント以外に使うフォントの名前（project.json の fonts[].name）。ここに宣言した

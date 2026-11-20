@@ -159,7 +159,7 @@ pub mod WebLayer {
     /// 場面を描かない描き手（WebGPU）。場面が来たら初回に 1 回だけ、withProject3d へ替えるよう知らせる。
     def makeWarningScenes(): Render3d.WebGpuRenderer.Scenes \ IO =
         let warned = Ref.fresh(Static, false);
-        let none = Render3d.WebGpuRenderer.noScenes();
+        let none = Render3d.WebGpuRenderer.none();
         { prepare = (host, dest, cmds) -> {
               warnScene3dOnce(warned, cmds);
               (none#prepare)(host, dest, cmds)

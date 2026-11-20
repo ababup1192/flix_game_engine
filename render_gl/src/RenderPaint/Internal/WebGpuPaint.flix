@@ -162,7 +162,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
 
     /// device の上に pipeline・buffer・中間の texture・組み込みの絵（起動画面の字とロゴ・Render.lightAt と darkAt の絵）を作る。
     /// design = 射影の寸・clearColor = design の中の地の色・width × height = 中間の texture の画素の大きさ・
-    /// scene3d = 3D の場面の描き手の作り方（Render3d.WebGpuRenderer.makeScenes・3D を描かないなら (_, _, _) -> Render3d.WebGpuRenderer.noScenes()）。
+    /// scene3d = 3D の場面の描き手の作り方（Render3d.WebGpuRenderer.makeScenes・3D を描かないなら (_, _, _) -> checked_ecast(Render3d.WebGpuRenderer.none())）。
     pub def create(gpu: WebGpu, cfg: { designWidth = Int32, designHeight = Int32, clearColor = Color, width = Int32, height = Int32,
                                        scene3d = (WebGpu, BindGroupLayout, BindGroupLayout) -> Render3d.WebGpuRenderer.Scenes \ IO }): Paint \ IO =
         let designW = Int32.toFloat64(cfg#designWidth);

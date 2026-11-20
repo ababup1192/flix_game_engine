@@ -166,7 +166,7 @@ TEST_JOBS := $(if $(filter command line,$(origin JOBS)),$(JOBS),1)
 TEST_PKGS := $(if $(filter command line,$(origin PKGS)),$(PKGS))
 TEST_PKG_DIR = $(if $(filter $(1),$(LAYER_PKGS)),$(LAYER_ROOT)/$(1),$(if $(wildcard templates/$(1)/flix.toml),templates/$(1),$(if $(wildcard bench/$(1)/flix.toml),bench/$(1),$(if $(wildcard $(1)/flix.toml),$(1)))))
 TEST_RUN_DIRS := $(if $(TEST_PKGS),$(foreach p,$(TEST_PKGS),$(call TEST_PKG_DIR,$(p))),$(TEST_DIRS) $(if $(and $(filter command line,$(origin ALL)),$(ALL)),$(TEMPLATE_DIRS) $(BENCH_TEST_DIRS)))
-TEST_UNKNOWN_PKGS := $(foreach p,$(TEST_PKGS),$(if $(call TEST_PKG_DIR,$(p)),,$(p)))
+TEST_UNKNOWN_PKGS := $(strip $(foreach p,$(TEST_PKGS),$(if $(call TEST_PKG_DIR,$(p)),,$(p))))
 
 ##@ テスト
 # 逐次（JOBS=1）は最初の赤で止める。並列はパッケージごとにログを .test-logs/ に残し、赤があれば最後にログの末尾を出す。
