@@ -24,6 +24,7 @@ import (
 
 const exportWebUsage = `使い方: fge export-web <ゲームのフォルダ> [--out <dir>] [--check] [--id <名前>] [--font-atlas-dir <dir>]
                        [--work <dir>] [--engine <dir>] [--keep-work] [--no-browser-check] [--reuse] [--show-leaks]
+                       [--apply-deferred]
   ゲームをブラウザ版（TeaVM の WASM GC）へ書き出す。出力の既定は <ゲーム>/build/web。
   --check           作業フォルダで flix check だけ流す（web/WebMain.flix の型検査）
   --id              bundle.json の id（既定はゲームのフォルダの名前）
@@ -34,6 +35,8 @@ const exportWebUsage = `使い方: fge export-web <ゲームのフォルダ> [--
   --no-browser-check  最後の「ヘッドレスの Chrome で頁を開き、wasm を読んで数コマ回せるか」を飛ばす
   --reuse           書き出しの中身を決める物（写すゲームの全部・engine の束と jar・この bin/fge・変換の道具）の指紋が
                     前の書き出しと同じで、書き出し先がその時のままなら組まずに使い回す（指紋は作業フォルダの export.inputs）
+  --apply-deferred  最後の確かめでタイトルの 120 コマ（2 秒）に使わなかった起動の素材（後回しの候補）を、project.json の
+                    web.deferred・web.deferredFonts の後ろへ足す（無ければ候補を出すだけ。--reuse でも組み直す）
   --show-leaks      作業フォルダかホームのパスが jar か wasm に残って止まった時、残った字を手元の画面に出す（既定は件数と場所だけ）
   環境変数: FLIX_GE_TEAVM_DIR（TeaVM の jar のフォルダ。無ければ Maven から取る）・JAVA・FLIX_JAR・
             FGE_CHROME（確かめに使う Chrome）・FLIX_GE_WEB_CHECK_WAIT（確かめで待つ秒・既定 90）
@@ -46,7 +49,7 @@ func init() {
 type exportWebOptions struct {
 	Game, Out, Work, Engine, ID, FontAtlasDir string
 	Check, KeepWork, NoBrowserCheck, Reuse    bool
-	ShowLeaks                                 bool
+	ShowLeaks, ApplyDeferred                  bool
 }
 
 // exportWebCopyExcludes はゲームの根の直下で写さない物。
@@ -114,6 +117,10 @@ func parseExportWebArgs(args []string) (exportWebOptions, error) {
 			o.ShowLeaks = true
 			continue
 		}
+		if a == "--apply-deferred" {
+			o.ApplyDeferred = true
+			continue
+		}
 		if a == "--json" {
 			continue
 		}
@@ -139,6 +146,9 @@ func parseExportWebArgs(args []string) (exportWebOptions, error) {
 	}
 	if o.Game == "" {
 		return o, errors.New("ゲームのフォルダを渡してください")
+	}
+	if o.ApplyDeferred && (o.NoBrowserCheck || o.Check) {
+		return o, errors.New("--apply-deferred は最後のブラウザの確かめで候補を出すので、--no-browser-check・--check とは一緒に使えない")
 	}
 	return o, nil
 }
@@ -261,7 +271,8 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 	}
 
 	fingerprint := ""
-	if o.Reuse && !o.Check {
+	// WhyNot: --apply-deferred で使い回さない — 候補は書き出しの最後のブラウザの確かめで出すので、使い回すと出せない。
+	if o.Reuse && !o.Check && !o.ApplyDeferred {
 		fingerprint, err = exportInputsFingerprint(p, o, id, findWebEncoders(p.Engine, compress))
 		if err != nil {
 			fmt.Fprintf(errOut, "fge export-web: 指紋を作れない: %v\n", err)
@@ -480,11 +491,13 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 			ewLogf("  %s は ASCII でない字が続く所が無く、平文の残りを探せなかった", rel)
 		}
 	}
+	var used *webUsedAssets
 	if o.NoBrowserCheck {
 		ewLogf("⑨ ブラウザで wasm を読めるか: --no-browser-check で飛ばした")
 	} else {
-		ewLogf("⑨ ブラウザで wasm を読めるか（ヘッドレスの Chrome で ?capture=%d）", webLoadCheckFrames)
-		skipped, err := checkWebLoads(p.Out, webLoadCheckFrames, webLoadCheckWait())
+		ewLogf("⑨ ブラウザで wasm を読めるか（ヘッドレスの Chrome で ?capture=%d・タイトルの %d コマに使う素材を記録）", webLoadCheckFrames, webTitleFrames)
+		skipped, recorded, err := checkWebLoadsRecording(p.Out, webLoadCheckFrames, webTitleFrames, webLoadCheckWait())
+		used = recorded
 		if err != nil {
 			fmt.Fprintf(errOut, "fge export-web: 書き出した頁をブラウザで開くと止まる: %v\n"+
 				"  書き出し先 %s は残してある（配ると真っ白になる）。\n"+
@@ -505,6 +518,44 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 
 	fmt.Fprintf(out, "export-web: %s（版 %s）\n", p.Out, hash)
 	writeExportSizes(out, p.Out, b, atlases, report, strip)
+	return writeTitleAssets(out, errOut, o, p, &b, proj, deferredFonts, embedPlan, used)
+}
+
+// writeTitleAssets は最後の確かめで記録したタイトルの間の素材から後回しの候補を書き、--apply-deferred なら project.json へ足す。
+func writeTitleAssets(out, errOut *strings.Builder, o exportWebOptions, p exportWebPaths, b *webBundle, proj exportProject,
+	deferredFonts []string, embed webEmbedPlan, used *webUsedAssets) int {
+	if used == nil {
+		if o.ApplyDeferred {
+			fmt.Fprintln(errOut, "fge export-web: --apply-deferred: ブラウザの確かめで素材の記録が取れなかった（Chrome が無いか、engine の fge-web.js が記録を持たない）。project.json は変えていない")
+			return 1
+		}
+		return 0
+	}
+	hidden := map[string]bool{}
+	for _, rel := range append(append([]string{}, embed.Embedded...), embed.Omitted...) {
+		hidden[rel] = true
+	}
+	s := suggestWebDeferred(p.Out, b, proj, deferredFonts, hidden, *used, webTitleFrames)
+	w := bufio.NewWriter(out)
+	defer w.Flush()
+	writeDeferredSuggestion(w, s, o.Game)
+	if raw, err := json.MarshalIndent(used, "", "  "); err == nil {
+		record := filepath.Join(p.Work, "title-assets.json")
+		if os.WriteFile(record, append(raw, '\n'), 0o644) == nil {
+			fmt.Fprintf(w, "    記録の全部（名前・道 → 初めて使ったコマ）: %s\n", record)
+		}
+	}
+	if !o.ApplyDeferred {
+		return 0
+	}
+	file := filepath.Join(p.Game, "project.json")
+	changed, err := applyDeferredToProject(file, s.Globs, s.Fonts)
+	if err != nil {
+		w.Flush()
+		fmt.Fprintf(errOut, "fge export-web: --apply-deferred: %s を書き換えられない: %v\n", file, err)
+		return 1
+	}
+	writeAppliedDeferred(w, file, changed, s)
 	return 0
 }
 

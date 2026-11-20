@@ -16,6 +16,7 @@ type Options struct {
 	Width  int           // 頁の viewport。0 なら 800
 	Height int           // 0 なら 600
 	Wait   time.Duration // 合図を待つ上限。0 なら 30 秒
+	Eval   string        // 合図の後に頁で評価する式（空なら評価しない）。値は Result.Eval
 }
 
 // Result は受け取った絵と、頁が名乗った描き手（WebGL の UNMASKED_RENDERER など。無ければ空）。
@@ -24,6 +25,7 @@ type Result struct {
 	Renderer string
 	Chrome   string
 	Version  string
+	Eval     json.RawMessage // Options.Eval の値（JSON のまま）
 }
 
 // pixelPayload は頁の window.fgeCapture() が返す値（docs/web-capture.md）。
@@ -73,7 +75,13 @@ func Capture(opt Options) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Result{Image: img, Renderer: renderer, Chrome: page.Chrome, Version: page.Version}, nil
+	res := &Result{Image: img, Renderer: renderer, Chrome: page.Chrome, Version: page.Version}
+	if opt.Eval != "" {
+		if res.Eval, err = c.evaluate(opt.Eval, step); err != nil {
+			return nil, err
+		}
+	}
+	return res, nil
 }
 
 func waitReady(c *client, wait time.Duration) error {

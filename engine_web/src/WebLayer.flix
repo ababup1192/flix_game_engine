@@ -55,15 +55,68 @@ pub mod WebLayer {
     /// 既定は WebGPU で描く（使えなければ理由を console に出して WebGL2 で描く）。頁が ?backend=webgl2 で開かれていれば WebGL2 で描く。
     pub def withProject(rootDir: String, f: Unit -> a \ ef): a \ ef - Platform.Services - LoadProgress + IO + Fs.FileRead =
         let config = loadBootConfigOrBug(rootDir);
-        if (Browser.backendRequest() == "webgpu") withWebGpuOrGl((_, _) -> makeWarningRenderer(), config, f)
-        else withWeb((_, _) -> makeWarningRenderer(), config, f)
+        let g = () -> recordDrawnTextures(f);
+        if (Browser.backendRequest() == "webgpu") withWebGpuOrGl((_, _) -> makeWarningRenderer(), config, g)
+        else withWeb((_, _) -> makeWarningRenderer(), config, g)
 
     /// Scene3d を描くゲームの入口。既定は 3D も WebGPU で描く（使えなければ理由を console に出して WebGL2 で描く）。頁が ?backend=webgl2 で開かれていれば WebGL2 で描く。
     pub def withProject3d(rootDir: String, f: Unit -> a \ ef): a \ ef - Platform.Services - LoadProgress + IO + Fs.FileRead =
         let config = loadBootConfigOrBug(rootDir);
         let makeRenderer = (gl, cfg) -> Render3d.makeRenderer(gl, cfg, Render3d.DrawMode.Instanced);
-        if (Browser.backendRequest() == "webgpu") withWebGpuOrGl(makeRenderer, config, f)
-        else withWeb(makeRenderer, config, f)
+        let g = () -> recordSceneTextures(() -> recordDrawnTextures(f));
+        if (Browser.backendRequest() == "webgpu") withWebGpuOrGl(makeRenderer, config, g)
+        else withWeb(makeRenderer, config, g)
+
+    /// 頁が ?usedAssets=1 で開かれていれば、2D で描いた絵の名前（スプライト・タイルマップ・面が読む絵）を初めて出たコマで
+    /// fge-web.js に記録する（書き出しの確かめが後回しの候補を出すのに読む）。描く命令はそのまま外の handler へ渡す。
+    def recordDrawnTextures(f: Unit -> a \ ef): a \ (ef - Platform.Draw2d) + Platform.Draw2d + IO =
+        let recording = Browser.isRecordingUsedAssets();
+        let seen = Ref.fresh(Static, Set.empty());
+        run f() with handler Platform.Draw2d {
+            def renderCommands(sprites, tileMaps, polygons, staticLayer, k) = {
+                if (recording) {
+                    noteNewTextures(seen, List.map(DrawCmd.textureOf, sprites));
+                    noteNewTextures(seen, List.map(t -> t#textureName, tileMaps))
+                } else ();
+                Platform.Draw2d.renderCommands(sprites, tileMaps, polygons, staticLayer);
+                k(())
+            }
+            def drawSurface(cmd, k) = {
+                if (recording) noteNewTextures(seen, List.map(fst, cmd#texReads)) else ();
+                Platform.Draw2d.drawSurface(cmd);
+                k(())
+            }
+            def fillLetterbox(texture, k) = { Platform.Draw2d.fillLetterbox(texture); k(()) }
+        }
+
+    /// recordDrawnTextures の 3D 版。Scene3d の場面が読む絵の名前（材質・法線マップ・lightmap・ビルボード・環境マップ）を記録する。
+    // WhyNot: 2D の入口（withProject）に入れない — 材質の絵の名前を引き出す関数まで、3D を使わないゲームの wasm に入る。
+    def recordSceneTextures(f: Unit -> a \ ef): a \ (ef - Platform.Draw3d) + Platform.Draw3d + IO =
+        let recording = Browser.isRecordingUsedAssets();
+        let seen = Ref.fresh(Static, Set.empty());
+        run f() with handler Platform.Draw3d {
+            def drawScene3d(cmd, k) = {
+                if (recording) noteNewTextures(seen, sceneTextureNamesOf(cmd#scene)) else ();
+                Platform.Draw3d.drawScene3d(cmd);
+                k(())
+            }
+            def preload3d(cmd, k) = { Platform.Draw3d.preload3d(cmd); k(()) }
+        }
+
+    def sceneTextureNamesOf(scene: Scene3d.Scene3dCmd): List[String] =
+        List.flatMap(Scene3d.textureNamesOf, Scene3d.instancesOf(scene))
+            ::: List.map(b -> Scene3d.billboardFieldsOf(b)#texture, scene#billboards)
+            ::: Scene3d.environmentTextureNamesOf(scene)
+
+    /// まだ記録していない名前だけを fge-web.js へ渡し、seen に足す。
+    def noteNewTextures(seen: Ref[Set[String], Static], names: List[String]): Unit \ IO =
+        let known = Ref.get(seen);
+        let fresh = names |> List.filter(n -> not String.isEmpty(n) and not Set.memberOf(n, known)) |> List.toSet;
+        if (Set.isEmpty(fresh)) ()
+        else {
+            Ref.put(Set.union(known, fresh), seen);
+            Browser.noteUsed("texture", String.intercalate("\n", Set.toList(fresh)))
+        }
 
     /// `rootDir` 直下の project.json を読んで起動に使う設定にする。読めなければ止める（LwjglLayer.withProject と同じ）。
     def loadBootConfigOrBug(rootDir: String): GameEngine.EngineConfig \ IO + Fs.FileRead =
@@ -411,7 +464,7 @@ pub mod WebLayer {
             if (WebAudio.has(name) or not Deferred.isDeferred(name)) ()
             else Ref.put(LoadProgress.Deferred.notePendingSound(name, call, Ref.get(st#pendingSounds)), st#pendingSounds);
         run f() with handler GameEngine.Audio {
-            def playAudio(name, k) = { note(name, LoadProgress.Deferred.SoundCall.Play); if (known("playAudio", name)) WebAudio.play(name) else (); k(()) }
+            def playAudio(name, k) = { Browser.noteUsed("sound", name); note(name, LoadProgress.Deferred.SoundCall.Play); if (known("playAudio", name)) WebAudio.play(name) else (); k(()) }
             def stopAudio(name, k) = { note(name, LoadProgress.Deferred.SoundCall.Stop); if (known("stopAudio", name)) WebAudio.stop(name) else (); k(()) }
             def setVolume(name, volume, k) = { note(name, LoadProgress.Deferred.SoundCall.SetVolume(volume)); if (known("setVolume", name)) WebAudio.setVolume(name, volume) else (); k(()) }
             def setPitch(name, pitch, k) = { note(name, LoadProgress.Deferred.SoundCall.SetPitch(pitch)); if (known("setPitch", name)) WebAudio.setPitch(name, pitch) else (); k(()) }
@@ -525,6 +578,7 @@ pub mod WebLayer {
 
     /// 道の絵を ImageBitmap に解いて JS の側に持ち、その key を返す（解くまでゲームのループごと止まる）。束に無い・解けない道は None。
     def platformImageOf(path: String): Option[ImageData.PlatformImage] \ IO =
+        Browser.noteUsed("file", path);
         if (WebImages.holdPlatformImage(path)) Some({ key = WebImages.platformKey(path), width = WebImages.width(path), height = WebImages.height(path) })
         else None
 

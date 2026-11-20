@@ -407,6 +407,7 @@ var fgePointer = { x: 0, y: 0, dx: 0, dy: 0, wheel: 0, touch: false,
 function fgeKeyDown(code) { return !!(fgeKeys[code] || fgePadHeld[code] || fgeFrameLatch[code]); }
 function fgePointerDown(button) { return !!(fgePointer.buttons[button] || fgePointer.frameLatch[button]); }
 function fgeBeginFrame() {
+  if (fgeUsedAssets !== null) fgeUsedAssets.frame++;
   fgeFrameLatch = fgeLatch;
   fgeLatch = Object.create(null);
   fgePointer.frameLatch = fgePointer.latch;
@@ -878,6 +879,25 @@ function fgeWireInput() {
   });
 }
 
+// ── 使った素材の記録（?usedAssets=1。書き出しが後回しの候補を出すのに window.fgeUsedAssets を読む）──
+// 形は go/exportweb_titleassets.go の webUsedAssets。
+// WhyNot: 読んだファイルは early に入れない — 後回しの物を読みに来るのは、届いたかを見てから読む裏の読み込み（BackgroundLoad）で、届く前の読みは「無い」で返るだけ。
+var fgeUsedAssets = fgeQueryParam("usedAssets") === "1" ? { frame: 0, texture: {}, sound: {}, file: {}, early: {} } : null;
+window.fgeUsedAssets = fgeUsedAssets;
+function fgeNoteUsed(kind, joined) {
+  if (fgeUsedAssets === null) return;
+  var seen = fgeUsedAssets[kind];
+  var early = fgeUsedAssets.early;
+  String(joined).split("\n").forEach(function (raw) {
+    var name = kind === "file" ? fgeNormPath(raw) : raw;
+    if (name.length === 0) return;
+    if (!(name in seen)) seen[name] = fgeUsedAssets.frame;
+    if (kind === "file" || name in early) return;
+    var e = fgeDeferred.byName.get(name);
+    if (e && !fgeDeferredArrived(e)) early[name] = fgeUsedAssets.frame;
+  });
+}
+
 // ── 素材の表 ──
 var fgeAssets = new Map();
 var fgeDecoder = new TextDecoder("utf-8");
@@ -888,10 +908,12 @@ function fgeNormPath(path) {
 }
 function fgeAssetHas(path) { return fgeAssets.has(fgeNormPath(path)); }
 function fgeAssetText(path) {
+  fgeNoteUsed("file", fgeNormPath(path));
   var b = fgeAssets.get(fgeNormPath(path));
   return b === undefined ? null : fgeDecoder.decode(b);
 }
 function fgeAssetBytes(path) {
+  fgeNoteUsed("file", fgeNormPath(path));
   var b = fgeAssets.get(fgeNormPath(path));
   return b === undefined ? null : new Int8Array(b.buffer, b.byteOffset, b.byteLength);
 }
@@ -921,6 +943,7 @@ var fgeEmptyBytes = new Uint8Array(0);
 // WhyNot: 後回しでない道のバイトは空にしない — 起動の素材はゲームが何度でも読む前提で書かれている。
 function fgeHoldImage(path, done) {
   var p = fgeNormPath(path);
+  fgeNoteUsed("file", p);
   var bytes = fgeAssets.get(p);
   var label = "[loadtime] hold " + p;
   if (fgeDecodeTimes !== null) console.time(label);
