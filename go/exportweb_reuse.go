@@ -44,7 +44,7 @@ func exportInputsFingerprint(p exportWebPaths, o exportWebOptions, id string, en
 	}
 	engine := []string{p.FullWebFpkg, p.FullWebToml, p.GlJar, p.WebJar, p.WebToolsJar, p.WebJS, p.IndexHTML, p.FlixJar,
 		bootFontDataPath(p.Engine), filepath.Join(filepath.Dir(p.WebJS), webBrotliDecoderFile),
-		filepath.Join(filepath.Dir(p.WebJS), webServiceWorkerSource)}
+		filepath.Join(filepath.Dir(p.WebJS), webServiceWorkerSource), filepath.Join(filepath.Dir(p.WebJS), webServiceWorkerOffSource)}
 	if exe, err := os.Executable(); err == nil {
 		engine = append(engine, exe)
 	}

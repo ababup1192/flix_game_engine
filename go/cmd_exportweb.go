@@ -3,8 +3,6 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1065,7 +1063,7 @@ func runFontBake(game, dir string) int {
 	return 0
 }
 
-// writeWebPage は bundle.json・classes.wasm・js・sw.js（束が serviceWorker の時）・index.html・version.txt を出し、版のハッシュを返す。
+// writeWebPage は bundle.json・classes.wasm・js・sw.js・sums.json・index.html・version.txt を出し、版のハッシュを返す。
 func writeWebPage(p exportWebPaths, b webBundle, wasm, teavmCore, brotli string) (string, error) {
 	if err := writeWebWasm(wasm, p.Out); err != nil {
 		return "", err
@@ -1094,12 +1092,10 @@ func writeWebPage(p exportWebPaths, b webBundle, wasm, teavmCore, brotli string)
 	if err := os.WriteFile(filepath.Join(p.Out, "wasm-gc-runtime.js"), runtime, 0o644); err != nil {
 		return "", err
 	}
-	if b.ServiceWorker {
-		if err := writeWebServiceWorker(filepath.Dir(p.WebJS), p.Out, b.ID); err != nil {
-			return "", err
-		}
+	if err := writeWebServiceWorker(filepath.Dir(p.WebJS), p.Out, b.ID, b.ServiceWorker); err != nil {
+		return "", err
 	}
-	hash, err := webVersionHash(p.Out)
+	hash, err := writeWebSums(p.Out)
 	if err != nil {
 		return "", err
 	}
@@ -1165,41 +1161,6 @@ func marshalWebBundle(b webBundle) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
-}
-
-// webVersionHash は出力の木（index.html と version.txt を除く全部）を道の順に名前と中身ごと読んで作る短いハッシュ
-// （頁の js の参照に付けてキャッシュを外す）。
-// WhyNot: wasm と bundle.json だけから作らない — Doc や fge-web.js だけを直した書き出しで版が変わらず、置き先のキャッシュが古い物を配る。
-func webVersionHash(out string) (string, error) {
-	var rels []string
-	err := filepath.WalkDir(out, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		rel, err := filepath.Rel(out, path)
-		if err != nil {
-			return err
-		}
-		rel = filepath.ToSlash(rel)
-		if rel != "index.html" && rel != "version.txt" {
-			rels = append(rels, rel)
-		}
-		return nil
-	})
-	if err != nil {
-		return "", err
-	}
-	sort.Strings(rels)
-	h := sha256.New()
-	for _, rel := range rels {
-		data, err := os.ReadFile(filepath.Join(out, filepath.FromSlash(rel)))
-		if err != nil {
-			return "", err
-		}
-		fmt.Fprintf(h, "%s\x00%d\x00", rel, len(data))
-		h.Write(data)
-	}
-	return hex.EncodeToString(h.Sum(nil))[:12], nil
 }
 
 func cleanupExportWork(p exportWebPaths, keep bool) {

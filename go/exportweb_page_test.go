@@ -1,7 +1,11 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -113,7 +117,7 @@ func TestWriteWebServiceWorkerPutsGameID(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(jsDir, webServiceWorkerSource), []byte(`var FGE_GAME_ID = "__FGE_GAME_ID__";`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeWebServiceWorker(jsDir, out, `my"game`); err != nil {
+	if err := writeWebServiceWorker(jsDir, out, `my"game`, true); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := os.ReadFile(filepath.Join(out, webServiceWorkerFile))
@@ -127,7 +131,7 @@ func TestWriteWebServiceWorkerFailsWithoutMark(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(jsDir, webServiceWorkerSource), []byte(`var id = "x";`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeWebServiceWorker(jsDir, t.TempDir(), "g"); err == nil {
+	if err := writeWebServiceWorker(jsDir, t.TempDir(), "g", true); err == nil {
 		t.Error("束の id の印が無ければ誤りのはず")
 	}
 }
@@ -139,5 +143,107 @@ func TestEngineServiceWorkerSourceHasIDMark(t *testing.T) {
 	}
 	if !strings.Contains(string(src), webServiceWorkerIDMark) {
 		t.Errorf("engine_web/js/%s に %s が要る", webServiceWorkerSource, webServiceWorkerIDMark)
+	}
+}
+
+func TestWriteWebServiceWorkerOffPutsRemovingWorker(t *testing.T) {
+	jsDir, out := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(jsDir, webServiceWorkerOffSource), []byte("self.registration.unregister();"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeWebServiceWorker(jsDir, out, "g", false); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(filepath.Join(out, webServiceWorkerFile))
+	if string(got) != "self.registration.unregister();" {
+		t.Errorf("false の時は自分を外す sw.js が出るはず: %s", got)
+	}
+}
+
+func TestEngineServiceWorkerOffSourceUnregistersWithoutFetch(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join("..", "engine_web", "js", webServiceWorkerOffSource))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src), "registration.unregister()") || strings.Contains(string(src), `addEventListener("fetch"`) {
+		t.Errorf("自分を外す sw.js は unregister し、fetch を受けないはず")
+	}
+}
+
+func writeSumsForTest(t *testing.T) (string, string) {
+	t.Helper()
+	out := t.TempDir()
+	for name, body := range map[string]string{"index.html": "i", "version.txt": "v", "fge-web.js": "js", "assets/a.png": "png"} {
+		p := filepath.Join(out, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	version, err := writeWebSums(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out, version
+}
+
+func TestWriteWebSumsListsEachFileHashExceptPageAndVersion(t *testing.T) {
+	out, _ := writeSumsForTest(t)
+	data, _ := os.ReadFile(filepath.Join(out, webSumsFile))
+	var sums map[string]string
+	if err := json.Unmarshal(data, &sums); err != nil {
+		t.Fatal(err)
+	}
+	h := sha256.Sum256([]byte("png"))
+	if len(sums) != 2 || sums["assets/a.png"] != hex.EncodeToString(h[:]) {
+		t.Errorf("index.html と version.txt を除く 1 本ずつの sha256 のはず: %v", sums)
+	}
+}
+
+func TestWriteWebSumsVersionIsHeadOfSumsHash(t *testing.T) {
+	out, version := writeSumsForTest(t)
+	data, _ := os.ReadFile(filepath.Join(out, webSumsFile))
+	h := sha256.Sum256(data)
+	if version != hex.EncodeToString(h[:])[:12] {
+		t.Errorf("版は sums.json の sha256 の頭 12 字のはず: %s", version)
+	}
+}
+
+// jsc は macOS にだけある。無い機械では飛ばす。
+const jscPath = "/System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc"
+
+func checkJsSyntax(t *testing.T, path string) {
+	t.Helper()
+	if _, err := os.Stat(jscPath); err != nil {
+		t.Skip("jsc が無い（macOS の外）")
+	}
+	if out, err := exec.Command(jscPath, "-e", "checkSyntax("+strconvQuote(path)+")").CombinedOutput(); err != nil {
+		t.Errorf("%s の構文が通らない: %s", path, out)
+	}
+}
+
+func strconvQuote(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
+}
+
+func TestEngineWebScriptsParse(t *testing.T) {
+	for _, name := range []string{webServiceWorkerSource, webServiceWorkerOffSource, "fge-web.js"} {
+		checkJsSyntax(t, filepath.Join("..", "engine_web", "js", name))
+	}
+}
+
+func TestStampedScriptsParse(t *testing.T) {
+	got := stampForTest(t, webPreloads(webBundle{WasmBrotli: webWasmBrotliFile}))
+	dir := t.TempDir()
+	for i, part := range strings.Split(got, "<script>")[1:] {
+		body := part[:strings.Index(part, "</script>")]
+		p := filepath.Join(dir, "s"+string(rune('0'+i))+".js")
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		checkJsSyntax(t, p)
 	}
 }

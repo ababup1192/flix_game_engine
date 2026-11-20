@@ -1830,7 +1830,7 @@ async function fgeBoot() {
   // WhyNot: 素材がそろっただけで「押して始める」を出さない — 押した後に wasm を待つ間、何も無い画面で待たせる（4G で 10 秒あった）。
   if (await wasmLoad === null) return;
   fgeSplashReady();
-  fgeServiceWorkerStart(bundle);
+  try { fgeServiceWorkerStart(bundle); } catch (e) { console.warn("[fge] Service Worker を扱えない — 毎回ネットから取る: " + (e && e.message || e)); }
   if (fgeDecodeTimes !== null) console.log("[loadtime] タッチして開始まで " + performance.now().toFixed(0) + " ms");
   // WhyNot: 音を起こすのを await の後にしない — Safari は押した操作の処理の中で resume しないと断る版がある。
   // WhyNot: pointerdown で待たない — 指の pointerdown はユーザーの操作に数えられず（HTML の決まり）、Chrome は resume を断る。
@@ -1873,21 +1873,17 @@ async function fgeBoot() {
   }
 }
 
-// ── Service Worker（2 回目からの起動。中身は engine_web/js/fge-sw.js）──
-// 束が serviceWorker を持てば sw.js を書き出しのフォルダの scope で登録し、持たなければ前に登録した物とそのキャッシュを外す。
-// 頁の URL に ?sw=0 を付けても外す（Service Worker が壊れた時に抜け出す口。sw.js もその頁をキャッシュから返さずに自分を外す）。
-// WhyNot: updateViaCache を既定にしない — 直した sw.js が置き場の max-age の間届かず、壊れた Service Worker が残る。開くたびに sw.js の確かめが 1 本増える。
+// ── Service Worker（2 回目からの起動。中身は engine_web/js/fge-sw.js・docs/web-export.md の「起動の始まりと 2 回目からの起動」）──
 // WhyNot: 起動の前に登録しない — 登録と Service Worker の起動が、起動の素材や wasm と回線と CPU を取り合う。
-// WhyNot: 登録に失敗しても止めない — Service Worker が無くても頁は今まで通り動く。
+// WhyNot: 登録や外す処理の例外で起動を止めない — Service Worker が無くても頁は今まで通り動く。sandbox の iframe では navigator.serviceWorker を読むだけで例外になる。
 // WhyNot: ?capture= の頁では登録しない — 描き出しの検査が前の書き出しのキャッシュを持ち越さないように。
-// 頁が取った物の URL を Service Worker へ送り、まだキャッシュに無い物を HTTP キャッシュから写させる。
+// WhyNot: updateViaCache を既定にしない — 直した sw.js が置き場の max-age の間届かず、壊れた Service Worker が残る。開くたびに sw.js の確かめが 1 本増える。
 // WhyNot: Service Worker を通らなかった物（workerStart が 0）だけを送らない — ドメインの根の別のゲームの Service Worker を通った物も、自分のキャッシュには無い。
-var fgeServiceWorkerPrefix = "fge-sw:";
 function fgeServiceWorkerStart(bundle) {
   if (!("serviceWorker" in navigator) || fgeCaptureFrame > 0) return;
   var scope = new URL("./", location.href).href;
   if (!bundle.serviceWorker || fgeQueryParam("sw") === "0") {
-    fgeServiceWorkerRemove(bundle, scope);
+    fgeServiceWorkerRemove(scope);
     return;
   }
   var mine = new URL("sw.js", location.href).href;
@@ -1904,14 +1900,17 @@ function fgeServiceWorkerStart(bundle) {
     console.warn("[fge] Service Worker を登録できない — 毎回ネットから取る: " + (e && e.message || e));
   });
 }
-function fgeServiceWorkerRemove(bundle, scope) {
+// WhyNot: 束の id で絞って消さない — id を替えて書き出し直した時の古い id のキャッシュが残る。書き出しのフォルダの道で絞る（fge-sw.js と同じ）。
+function fgeServiceWorkerRemove(scope) {
   navigator.serviceWorker.getRegistration(scope).then(function (reg) {
     if (reg && reg.scope === scope) return reg.unregister();
   }).catch(function () { /* 外せない時は次に開いた時に外す */ });
-  if (!window.caches) return;
-  var mine = fgeServiceWorkerPrefix + (bundle.id || "game") + ":" + new URL(scope).pathname + ":";
+  try {
+    if (!window.caches) return;
+  } catch (e) { return; }
+  var mine = ":" + new URL(scope).pathname + ":";
   caches.keys().then(function (names) {
-    return Promise.all(names.filter(function (n) { return n.indexOf(mine) === 0; }).map(function (n) { return caches.delete(n); }));
+    return Promise.all(names.filter(function (n) { return n.indexOf("fge-sw:") === 0 && n.indexOf(mine) > 0; }).map(function (n) { return caches.delete(n); }));
   }).catch(function () { /* 消せない時は次に開いた時に消す */ });
 }
 function fgeServiceWorkerReport(scope) {

@@ -14,6 +14,10 @@ var FGE_VERSION_RE = /^[0-9a-f]{6,64}$/;
 var FGE_CHECK_REUSE_MS = 10000;
 var fgeLatest = null;
 var fgeCheck = null;
+var fgeRemoving = false;
+var fgeSums = new Map();
+// WhyNot: 頁が送ってきた URL を、この Service Worker が取っている最中にもう一度取らない — 同じ物を 2 回運ぶ。
+var fgeInFlight = new Set();
 
 function fgeCacheName(version) { return FGE_PREFIX + "v" + version; }
 
@@ -28,13 +32,15 @@ self.addEventListener("activate", function (event) {
 
 self.addEventListener("fetch", function (event) {
   var req = event.request;
-  if (req.method !== "GET" || req.url.indexOf(FGE_SCOPE) !== 0) return;
+  if (fgeRemoving || req.method !== "GET" || req.url.indexOf(FGE_SCOPE) !== 0) return;
   var url = new URL(req.url);
   var path = url.origin + url.pathname;
   if (req.mode === "navigate") {
     if (path !== FGE_SCOPE && path !== FGE_INDEX_URL) return;
-    // WhyNot: ?sw=0 の頁をキャッシュから返さない — 壊れたキャッシュで起動の途中に落ちると、頁の側の外す処理まで届かない。
+    // WhyNot: ?sw=0 の頁の物をキャッシュから返さない — 壊れたキャッシュで起動の途中に落ちると、頁の側の外す処理まで届かない。
+    // unregister は頁が全部閉じるまで効かず、その間もこの頁は受け持たれたままなので、fgeRemoving で fetch を全部素のネットへ回す。
     if (url.searchParams.get("sw") === "0") {
+      fgeRemoving = true;
       event.waitUntil(fgeRemoveSelf());
       return;
     }
@@ -54,6 +60,7 @@ self.addEventListener("fetch", function (event) {
 
 self.addEventListener("message", function (event) {
   var d = event.data;
+  if (fgeRemoving) return;
   if (d && d.type === "fge-sw-cache" && Array.isArray(d.urls)) {
     event.waitUntil(fgeCacheUrls(d.urls).catch(function (e) { console.warn("[fge-sw] 先に入れられない: " + (e && e.message || e)); }));
   } else if (d && d.type === "fge-sw-drop" && typeof d.keep === "string") {
@@ -61,7 +68,6 @@ self.addEventListener("message", function (event) {
   }
 });
 
-// fgeLater は fetch の後ろで続ける仕事（キャッシュへ入れる）を、応答と一緒に待たせる。
 // WhyNot: 応答を返した後の then の中で event.waitUntil を呼ばない — respondWith を寿命の延長に数えない版では、その時にはもう呼べず例外になり、同じ物を 2 回取る。
 function fgeLater(event) {
   var jobs = [];
@@ -78,12 +84,14 @@ function fgeLater(event) {
 
 // WhyNot: 自分の scope の頁でない物を受けない — ドメインの根に置いたゲームの Service Worker は、まだ自分のを持たない
 // サブフォルダのゲームの頁も受け持つ。その頁の ?v= を根のゲームの版で入れると、版の違う物を混ぜる。
+// WhyNot: ?sw=0 の頁の物を fgeRemoving だけで見分けない — Service Worker は止まって起こし直されると旗を忘れる。
 function fgeOwnClient(event) {
   if (!event.clientId) return Promise.resolve(true);
   return self.clients.get(event.clientId).then(function (c) {
     if (!c) return true;
-    var p = new URL(c.url).pathname;
-    return p === FGE_SCOPE_PATH || p === FGE_SCOPE_PATH + "index.html";
+    var u = new URL(c.url);
+    if (u.searchParams.get("sw") === "0") return false;
+    return u.pathname === FGE_SCOPE_PATH || u.pathname === FGE_SCOPE_PATH + "index.html";
   }, function () { return true; });
 }
 
@@ -98,7 +106,7 @@ function fgeRemoveSelf() {
   return self.registration.unregister().then(function () { return fgeDeleteCaches(function () { return true; }); });
 }
 
-// 書き出しのフォルダの物を消す。束の id を替えて書き出し直した時の古い id の分も入る。
+// WhyNot: 束の id で絞らない — id を替えて書き出し直した時の古い id のキャッシュが残る。書き出しのフォルダの道で絞る。
 function fgeDeleteCaches(drop) {
   return caches.keys().then(function (names) {
     return Promise.all(names.filter(function (name) {
@@ -119,9 +127,8 @@ function fgeStoredVersion() {
   });
 }
 
-// fgeCheckVersion は version.txt をネットから取る。fromNav は頁を開いた所の確かめ。
-// fgeReuseNavCheck は頁の version.txt に、その頁を開いた所で始めた確かめの答えを使う。
 // WhyNot: 頁を開くたびの確かめに前の答えを使わない — 続けて開いた間に版が上がると、古い版のまま読み直さない。
+// 前の答えを使うのは、その頁を開いた所で始めた確かめ（fromNav）を頁の version.txt に返す時だけ。
 function fgeReuseNavCheck() {
   if (fgeCheck && fgeCheck.nav && Date.now() - fgeCheck.at < FGE_CHECK_REUSE_MS) return fgeCheck.promise;
   return fgeCheckVersion(false);
@@ -140,19 +147,6 @@ function fgeCheckVersion(fromNav) {
   check.promise.catch(function () { if (fgeCheck === check) fgeCheck = null; });
   fgeCheck = check;
   return check.promise;
-}
-
-// fgeCheckAfterNow は今より後に始める確かめの答え。続けて届いた物はまとめて 1 回の確かめで答える。
-// WhyNot: 届いた 1 本ごとに確かめない — 版を上げた後の最初の起動は全部がキャッシュに無く、百本の version.txt が出る。
-var FGE_CHECK_BATCH_MS = 2000;
-var fgeCheckLater = null;
-function fgeCheckAfterNow() {
-  if (fgeCheckLater) return fgeCheckLater;
-  fgeCheckLater = new Promise(function (resolve) { setTimeout(resolve, FGE_CHECK_BATCH_MS); }).then(function () {
-    fgeCheckLater = null;
-    return fgeCheckVersion(false);
-  });
-  return fgeCheckLater;
 }
 
 function fgeSetLatest(version) {
@@ -186,6 +180,64 @@ function fgeServeVersion() {
   });
 }
 
+// ── 中身の照らし（sums.json）──
+// WhyNot: 届いた後の version.txt が同じ版かだけを見て入れない — 置き場の入れ替えは拠点とファイルごとに混ざり、
+// 新しい版の URL に古い中身が届く（その逆も）。入れたら次の版まで残るので、1 本ずつの中身を sums.json のハッシュと照らす。
+// sums.json そのものは、その sha256 の頭 12 字が版と同じことで照らす。
+function fgeSumsOf(version) {
+  if (!fgeSums.has(version)) {
+    var p = fgeLoadSums(version).catch(function () { return null; });
+    fgeSums.set(version, p);
+    p.then(function (s) { if (!s) fgeSums.delete(version); });
+  }
+  return fgeSums.get(version);
+}
+
+function fgeLoadSums(version) {
+  var url = FGE_SCOPE + "sums.json?v=" + version;
+  var name = fgeCacheName(version);
+  return caches.match(url, { cacheName: name }).then(function (hit) {
+    if (hit) return hit.arrayBuffer().then(function (buf) { return { buf: buf, fresh: false }; });
+    return fetch(url, { cache: "no-cache", credentials: "same-origin" }).then(function (res) {
+      if (res.status !== 200) throw new Error("sums.json が " + res.status);
+      return res.arrayBuffer().then(function (buf) { return { buf: buf, fresh: true }; });
+    });
+  }).then(function (got) {
+    return fgeDigest(got.buf).then(function (hex) {
+      if (hex.slice(0, 12) !== version) throw new Error("sums.json が版 " + version + " と合わない");
+      var sums = JSON.parse(new TextDecoder().decode(got.buf));
+      if (!got.fresh) return sums;
+      return caches.open(name).then(function (cache) {
+        return cache.put(url, new Response(got.buf, { headers: { "Content-Type": "application/json" } }));
+      }).then(function () { return sums; });
+    });
+  });
+}
+
+function fgeDigest(buf) {
+  return crypto.subtle.digest("SHA-256", buf).then(function (h) {
+    return Array.prototype.map.call(new Uint8Array(h), function (b) { return (b < 16 ? "0" : "") + b.toString(16); }).join("");
+  });
+}
+
+// WhyNot: 届いた応答の Content-Encoding を持ち越さない — 中身はもう解いてあり、作り直した応答に付けたままだと長さと合わない。
+function fgePutVerified(url, version, res) {
+  var rel = decodeURIComponent(new URL(url).pathname.slice(FGE_SCOPE_PATH.length));
+  return Promise.all([fgeSumsOf(version), res.arrayBuffer()]).then(function (got) {
+    var sums = got[0];
+    if (!sums || typeof sums[rel] !== "string") return;
+    return fgeDigest(got[1]).then(function (hex) {
+      if (hex !== sums[rel]) return;
+      var headers = new Headers(res.headers);
+      headers.delete("Content-Encoding");
+      headers.delete("Content-Length");
+      return caches.open(fgeCacheName(version)).then(function (cache) {
+        return cache.put(url, new Response(got[1], { status: 200, headers: headers }));
+      });
+    });
+  });
+}
+
 // ── 頁 ──
 // WhyNot: index.html を返す前に版の答えを待たない — 往復 1 回分が起動に乗る。返した後に頁が version.txt で確かめ、違えば読み直す。
 function fgeServeIndex(later) {
@@ -194,82 +246,82 @@ function fgeServeIndex(later) {
     if (!version) return null;
     return caches.match(FGE_INDEX_URL, { cacheName: fgeCacheName(version) });
   }).then(function (hit) {
-    return hit || fgeFetchIndex(FGE_INDEX_URL, "no-cache", later);
+    return hit || fgeFetchIndex(FGE_INDEX_URL, { cache: "no-cache", credentials: "same-origin" }, later);
   });
 }
 
 // WhyNot: 返す頁をブラウザの HTTP キャッシュから取らない（no-cache）— 置き場が max-age を付けて配り、版の上がった後も古い頁が出る。
-// WhyNot: 届いた頁を版を見ずに今の版の所へ入れない — 置き場の入れ替えの途中や HTTP キャッシュからだと別の版の頁が届く。
-// 頁の中の版（起動役の baked）が、届いた後に始めた version.txt の答え（fgeCheckAfterNow）と同じ時だけ、その版の所へ入れる。
-function fgeFetchIndex(url, mode, later) {
-  return fetch(url, { cache: mode, credentials: "same-origin" }).then(function (res) {
+// WhyNot: 頁を今の版の所へ決め打ちで入れない — 置き場の入れ替えの途中や HTTP キャッシュからだと別の版の頁が届く。
+// 頁の中の版（起動役の baked）の所へ入れるので、頁と素材の版は違わない。返すのは覚えている版の所からだけ。
+function fgeFetchIndex(url, init, later) {
+  return fetch(url, init).then(function (res) {
     if (res.redirected) throw new Error("index.html が転送された");
     if (res.status !== 200 || res.type !== "basic") return res;
     var keep = res.clone();
     later.add(res.clone().text().then(function (html) {
       var m = /var baked = "([0-9a-f]{6,64})";/.exec(html);
       if (!m) return;
-      return fgeCheckAfterNow().then(function (latest) {
-        if (latest !== m[1]) return;
-        return caches.open(fgeCacheName(latest)).then(function (cache) { return cache.put(FGE_INDEX_URL, keep); });
-      });
+      return caches.open(fgeCacheName(m[1])).then(function (cache) { return cache.put(FGE_INDEX_URL, keep); });
     }));
     return res;
   });
 }
 
 // ── 版の付いた物 ──
-// WhyNot: 覚えている版だけを見て入れない — 遊んでいる間に版が上がると、置き場の新しい中身が古い版の URL で届く。
-// 届いた後に始めた version.txt の答えが同じ版の時だけ、中身はその版と言える（fgeCheckAfterNow）。
 function fgeServeVersioned(req, version, later) {
   return caches.match(req.url, { cacheName: fgeCacheName(version), ignoreVary: true }).then(function (hit) {
     if (hit) return hit;
+    fgeInFlight.add(req.url);
     return fetch(req).then(function (res) {
-      if (res.status === 200 && res.type === "basic") later.add(fgePutChecked(req.url, version, res.clone()));
+      if (res.status === 200 && res.type === "basic") {
+        later.add(fgePutVerified(req.url, version, res.clone()).then(function () { fgeInFlight.delete(req.url); },
+          function () { fgeInFlight.delete(req.url); }));
+      } else {
+        fgeInFlight.delete(req.url);
+      }
       return res;
+    }, function (e) {
+      fgeInFlight.delete(req.url);
+      throw e;
     });
   });
 }
 
-function fgePutChecked(url, version, res) {
-  return fgeCheckAfterNow().then(function (latest) {
-    if (latest !== version) return;
-    return caches.open(fgeCacheName(version)).then(function (cache) { return cache.put(url, res); });
-  });
-}
-
-// 初めての頁は Service Worker が受け持つ前に起動の物を取り終えている。頁が取った URL を送ってくるので、HTTP キャッシュから写す。
+// WhyNot: 頁が送ってきた URL をネットから取り直さない（only-if-cached）— iOS の Safari は大きい物を HTTP キャッシュに残さないことがあり、
+// 押した後に wasm と素材を回線で取り直して後回しの取り込みと回線を取り合う。HTTP キャッシュに無い物は、次に開いた時にこの Service Worker を通って入る。
 function fgeCacheUrls(urls) {
   return fgeStoredVersion().then(function (stored) {
     return stored || fgeCheckVersion(false).catch(function () { return null; });
   }).then(function (version) {
     if (!version) return;
     var todo = urls.filter(function (u) { return typeof u === "string" && u.indexOf(FGE_SCOPE) === 0; });
-    var puts = [];
-    var later = { add: function (p) { puts.push(p.catch(function () { /* 1 本落ちても残りは入れる */ })); } };
     var next = function () {
       var u = todo.shift();
       if (u === undefined) return Promise.resolve();
-      return fgeCacheOne(version, u, later).catch(function () { /* 1 本落ちても残りは入れる */ }).then(next);
+      return fgeCacheOne(version, u).catch(function () { /* 1 本落ちても残りは入れる */ }).then(next);
     };
-    return Promise.all([next(), next(), next(), next()]).then(function () { return Promise.all(puts); });
+    return Promise.all([next(), next(), next(), next()]);
   });
 }
 
-function fgeCacheOne(version, u, later) {
+function fgeCacheOne(version, u) {
   var url = new URL(u);
   var path = url.origin + url.pathname;
   var name = fgeCacheName(version);
+  var init = { cache: "only-if-cached", mode: "same-origin", credentials: "same-origin" };
   if (path === FGE_SCOPE || path === FGE_INDEX_URL) {
     return caches.match(FGE_INDEX_URL, { cacheName: name }).then(function (hit) {
-      return hit ? null : fgeFetchIndex(u, "default", later);
+      if (hit) return null;
+      var jobs = [];
+      return fgeFetchIndex(u, init, { add: function (p) { jobs.push(p); } }).then(function () { return Promise.all(jobs); });
     });
   }
-  if (url.searchParams.get("v") !== version) return Promise.resolve();
-  return caches.match(u, { cacheName: name, ignoreVary: true }).then(function (hit) {
-    if (hit) return null;
-    return fetch(u, { credentials: "same-origin" }).then(function (res) {
-      if (res.status === 200 && res.type === "basic") later.add(fgePutChecked(u, version, res));
+  var v = url.searchParams.get("v");
+  if (!v || fgeInFlight.has(u)) return Promise.resolve();
+  return caches.match(u, { cacheName: fgeCacheName(v), ignoreVary: true }).then(function (hit) {
+    if (hit || fgeInFlight.has(u)) return null;
+    return fetch(u, init).then(function (res) {
+      if (res.status === 200 && res.type === "basic") return fgePutVerified(u, v, res);
     });
   });
 }
