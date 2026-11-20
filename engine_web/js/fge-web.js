@@ -1275,6 +1275,8 @@ window.addEventListener("unhandledrejection", function (e) { fgeError("止まり
 
 // ── 起動 ──
 var fgeGameId = "game";
+// WhyNot: 取った物の記録を 250 本（ブラウザの既定）で止めない — 素材の多いゲームは起動の前に超え、Service Worker へ送る URL（fgeServiceWorkerReport）が欠ける。
+try { performance.setResourceTimingBufferSize(4000); } catch (e) { /* 決められない版 */ }
 // WhyNot: 素材と wasm を版なしの URL で取らない — 置き先のキャッシュで、古い wasm と新しい素材が混ざる。版は index.html が付けた ?v= を使う。
 var fgeVersion = (function () {
   var src = document.currentScript ? document.currentScript.src : "";
@@ -1828,6 +1830,7 @@ async function fgeBoot() {
   // WhyNot: 素材がそろっただけで「押して始める」を出さない — 押した後に wasm を待つ間、何も無い画面で待たせる（4G で 10 秒あった）。
   if (await wasmLoad === null) return;
   fgeSplashReady();
+  try { fgeServiceWorkerStart(bundle); } catch (e) { console.warn("[fge] Service Worker を扱えない — 毎回ネットから取る: " + (e && e.message || e)); }
   if (fgeDecodeTimes !== null) console.log("[loadtime] タッチして開始まで " + performance.now().toFixed(0) + " ms");
   // WhyNot: 音を起こすのを await の後にしない — Safari は押した操作の処理の中で resume しないと断る版がある。
   // WhyNot: pointerdown で待たない — 指の pointerdown はユーザーの操作に数えられず（HTML の決まり）、Chrome は resume を断る。
@@ -1868,6 +1871,63 @@ async function fgeBoot() {
   } catch (e) {
     fgeError("止まりました: " + (e && e.stack || e));
   }
+}
+
+// ── Service Worker（2 回目からの起動。中身は engine_web/js/fge-sw.js・docs/web-export.md の「起動の始まりと 2 回目からの起動」）──
+// WhyNot: 起動の前に登録しない — 登録と Service Worker の起動が、起動の素材や wasm と回線と CPU を取り合う。
+// WhyNot: 登録や外す処理の例外で起動を止めない — Service Worker が無くても頁は今まで通り動く。sandbox の iframe では navigator.serviceWorker を読むだけで例外になる。
+// WhyNot: ?capture= の頁では登録しない — 描き出しの検査が前の書き出しのキャッシュを持ち越さないように。
+// WhyNot: updateViaCache を既定にしない — 直した sw.js が置き場の max-age の間届かず、壊れた Service Worker が残る。開くたびに sw.js の確かめが 1 本増える。
+// WhyNot: Service Worker を通らなかった物（workerStart が 0）だけを送らない — ドメインの根の別のゲームの Service Worker を通った物も、自分のキャッシュには無い。
+function fgeServiceWorkerStart(bundle) {
+  if (!("serviceWorker" in navigator) || fgeCaptureFrame > 0) return;
+  var scope = new URL("./", location.href).href;
+  if (!bundle.serviceWorker || fgeQueryParam("sw") === "0") {
+    fgeServiceWorkerRemove(scope);
+    return;
+  }
+  var mine = new URL("sw.js", location.href).href;
+  var isMine = function () { var c = navigator.serviceWorker.controller; return !!c && c.scriptURL === mine; };
+  navigator.serviceWorker.register("sw.js", { scope: "./", updateViaCache: "none" }).then(function () {
+    if (isMine()) { fgeServiceWorkerReport(scope); return; }
+    var onChange = function () {
+      if (!isMine()) return;
+      navigator.serviceWorker.removeEventListener("controllerchange", onChange);
+      fgeServiceWorkerReport(scope);
+    };
+    navigator.serviceWorker.addEventListener("controllerchange", onChange);
+  }, function (e) {
+    console.warn("[fge] Service Worker を登録できない — 毎回ネットから取る: " + (e && e.message || e));
+  });
+}
+// WhyNot: 束の id で絞って消さない — id を替えて書き出し直した時の古い id のキャッシュが残る。書き出しのフォルダの道で絞る（fge-sw.js と同じ）。
+function fgeServiceWorkerRemove(scope) {
+  navigator.serviceWorker.getRegistration(scope).then(function (reg) {
+    if (reg && reg.scope === scope) return reg.unregister();
+  }).catch(function () { /* 外せない時は次に開いた時に外す */ });
+  try {
+    if (!window.caches) return;
+  } catch (e) { return; }
+  var mine = ":" + new URL(scope).pathname + ":";
+  caches.keys().then(function (names) {
+    return Promise.all(names.filter(function (n) { return n.indexOf("fge-sw:") === 0 && n.indexOf(mine) > 0; }).map(function (n) { return caches.delete(n); }));
+  }).catch(function () { /* 消せない時は次に開いた時に消す */ });
+}
+function fgeServiceWorkerReport(scope) {
+  var sent = new Set();
+  var pick = function (list) {
+    return list.filter(function (e) {
+      return e.name.indexOf(scope) === 0 && /[?&]v=/.test(e.name) && !sent.has(e.name);
+    }).map(function (e) { sent.add(e.name); return e.name; });
+  };
+  var post = function (urls) {
+    var sw = navigator.serviceWorker.controller;
+    if (sw && sw.scriptURL === new URL("sw.js", location.href).href && urls.length > 0) sw.postMessage({ type: "fge-sw-cache", urls: urls });
+  };
+  post([location.href].concat(pick(performance.getEntriesByType("resource"))));
+  try {
+    new PerformanceObserver(function (l) { post(pick(l.getEntries())); }).observe({ type: "resource" });
+  } catch (e) { /* 観られない版は次に開いた時に入る */ }
 }
 
 function fgeNoteTap() {
