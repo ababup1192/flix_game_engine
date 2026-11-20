@@ -1,0 +1,17 @@
+{
+  "note": "bin/fge export-web が写真寄りの png を既定で lossy の WebP にする判定の数（docs/web-export.md の「写真寄りの絵は既定で lossy」）。この JSON が source of truth。",
+  "autoLossy": {
+    "minLosslessBytes": 49152,
+    "minOpaqueColors": 1024,
+    "quality": 90,
+    "transparentOpaqueShare": 0.8,
+    "dataNameParts": ["normal", "_n.", "height", "mask", "lut", "ramp"],
+    "fewColorsListed": 3,
+    "colorCountCap": 16384,
+    "opaqueAlphaMin": 224,
+    "losslessImages": {
+      "broadGlobShare": 0.6,
+      "broadGlobMinImages": 5
+    }
+  }
+}

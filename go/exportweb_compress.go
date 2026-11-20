@@ -23,18 +23,24 @@ import (
 
 // project.json の web.compress（書き出しの時だけ素材を小さくする設定）。書いていない鍵は既定。
 type webCompressSettings struct {
-	Audio             *bool          `json:"audio"`
-	AudioBitrateKbps  *int           `json:"audioBitrateKbps"`
-	UncompressedAudio []string       `json:"uncompressedAudio"`
-	Images            *bool          `json:"images"`
-	LossyImages       []webLossyRule `json:"lossyImages"`
-	FontAtlasScale    *float64       `json:"fontAtlasScale"`
-	WasmBrotli        *bool          `json:"wasmBrotli"`
+	Audio             *bool             `json:"audio"`
+	AudioBitrateKbps  *int              `json:"audioBitrateKbps"`
+	UncompressedAudio []string          `json:"uncompressedAudio"`
+	Images            *bool             `json:"images"`
+	LossyImages       []webLossyRule    `json:"lossyImages"`
+	LosslessImages    []webLosslessRule `json:"losslessImages"`
+	FontAtlasScale    *float64          `json:"fontAtlasScale"`
+	WasmBrotli        *bool             `json:"wasmBrotli"`
 }
 
 type webLossyRule struct {
 	Glob    string `json:"glob"`
 	Quality int    `json:"quality"`
+}
+
+type webLosslessRule struct {
+	Glob string `json:"glob"`
+	Why  string `json:"why"`
 }
 
 // webCompress は読み終えた web.compress。
@@ -44,6 +50,12 @@ type webCompress struct {
 	UncompressedAudio []webGlob
 	Images            bool
 	LossyImages       []webLossyGlob
+	// LosslessImages は写真寄りでも lossless に留める絵（lossyImages に当たる絵には効かない）。
+	LosslessImages []webLosslessGlob
+	// Auto は写真寄りの png を既定で lossy にする判定の数。nil なら判定しない（書いた lossyImages だけ）。
+	Auto *webAutoLossyRules
+	// DataImages はシェーダーが値として読むテクスチャの道（既定の lossy から外す）。
+	DataImages map[string]bool
 	// FontAtlasScale はアトラスの距離場の辺に掛ける倍率（1 なら縮めない）。
 	FontAtlasScale float64
 	// WasmBrotli は wasm を brotli にした classes.wasm.br と解き手を一緒に配るか。
@@ -90,7 +102,7 @@ func resolveWebCompress(raw json.RawMessage) (webCompress, error) {
 	dec := json.NewDecoder(bytes.NewReader(web.Compress))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&s); err != nil {
-		return c, fmt.Errorf("project.json の web.compress を読めない: %v\n  次: 鍵は audio・audioBitrateKbps・uncompressedAudio・images・lossyImages（[{glob, quality}]）・fontAtlasScale・wasmBrotli", err)
+		return c, fmt.Errorf("project.json の web.compress を読めない: %v\n  次: 鍵は audio・audioBitrateKbps・uncompressedAudio・images・lossyImages（[{glob, quality}]）・losslessImages（[{glob, why}]）・fontAtlasScale・wasmBrotli", err)
 	}
 	if s.Audio != nil {
 		c.Audio = *s.Audio
@@ -131,6 +143,16 @@ func resolveWebCompress(raw json.RawMessage) (webCompress, error) {
 			return c, fmt.Errorf("project.json の web.compress.lossyImages の %q の quality が %d。\n  次: 1〜100 にする（WebP の画質）", r.Glob, r.Quality)
 		}
 		c.LossyImages = append(c.LossyImages, webLossyGlob{wg, r.Quality})
+	}
+	for _, r := range s.LosslessImages {
+		wg, err := compileWebGlob(r.Glob)
+		if err != nil {
+			return c, fmt.Errorf("project.json の web.compress.losslessImages: %v", err)
+		}
+		if strings.TrimSpace(r.Why) == "" {
+			return c, fmt.Errorf("project.json の web.compress.losslessImages の %q に why が無い。\n  次: lossless に留める理由を 1 行（例 \"字のふちが滲む\"・\"シェーダーが値として読む\"）", r.Glob)
+		}
+		c.LosslessImages = append(c.LosslessImages, webLosslessGlob{wg, r.Why})
 	}
 	return c, nil
 }
@@ -311,6 +333,10 @@ type webSizePair struct{ Before, After int64 }
 // webTranscodeReport は変換の結果（大きさの表と、知らせの行）。
 type webTranscodeReport struct {
 	Images, Sounds, Atlases webSizePair
+	// Verdicts は png ごとの既定の lossy の判定（c.Auto が nil なら空）。
+	Verdicts []webImageVerdict
+	// AutoLossyLines は表に出す既定の lossy の行（buildWebAutoLossySummary）。
+	AutoLossyLines []string
 	// FallbackBytes は配る道を替えた音の、元の wav のぶん（置き場には残すが、解けない時だけ取る）。
 	FallbackBytes int64
 	Notes         []string
@@ -320,6 +346,8 @@ type webTranscodeReport struct {
 type webJob struct {
 	rel, src, dst string
 	encode        func(src, dst string) error
+	// verdict は絵の判定の書き込み先（音とアトラスは nil）。
+	verdict *webImageVerdict
 }
 
 // transcodeWebAssets は書き出し先に写した素材のうち、小さくなる物だけを WebP・Opus・gzip へ替え（アトラスは画素だけ WebP にした形か gzip の小さい方）、
@@ -404,6 +432,16 @@ func transcodeWebAssets(out string, b *webBundle, atlases []string, c webCompres
 		soundRels = append(soundRels, s.Path)
 	}
 	r.Images, r.Sounds, r.Atlases = sum(b.Images), sum(soundRels), sum(atlases)
+	if c.Auto != nil {
+		for _, j := range imageJobs {
+			v := *j.verdict
+			// WhyNot: 配らなかった WebP の判定を残さない — 元の png を配った絵が、既定の lossy や消せる glob の数に入る。
+			if _, served := b.Transcoded[j.rel]; !served {
+				v.Kind = webImageLossless
+			}
+			r.Verdicts = append(r.Verdicts, v)
+		}
+	}
 	if len(b.Transcoded) == 0 {
 		b.Transcoded = nil
 	}
@@ -465,9 +503,11 @@ func planWebImages(out string, images []string, c webCompress, enc webEncoders, 
 		seen[rel] = true
 		ext := strings.ToLower(path.Ext(rel))
 		q := 0
-		for _, r := range c.LossyImages {
+		var rules []int
+		for i, r := range c.LossyImages {
 			if r.match(rel) {
 				used[r.re] = true
+				rules = append(rules, i)
 				if q == 0 {
 					q = r.Quality
 				}
@@ -486,9 +526,7 @@ func planWebImages(out string, images []string, c webCompress, enc webEncoders, 
 			continue
 		}
 		taken[target] = true
-		cwebp, quality := enc.Cwebp, q
-		jobs = append(jobs, webJob{rel: rel, src: exportAssetPath(out, rel), dst: exportAssetPath(out, target),
-			encode: func(src, dst string) error { return runQuiet(cwebp, cwebpArgs(src, dst, quality)...) }})
+		jobs = append(jobs, planWebImageJob(out, rel, target, q, rules, c, enc.Cwebp))
 	}
 	for _, r := range c.LossyImages {
 		if !used[r.re] {
@@ -499,6 +537,34 @@ func planWebImages(out string, images []string, c webCompress, enc webEncoders, 
 		notes = append(notes, "絵は圧縮していない — cwebp（libwebp）が見つからない。入れ方: brew install webp（Windows は libwebp の cwebp.exe を PATH に置く）")
 	}
 	return jobs, notes
+}
+
+// planWebImageJob は 1 枚の絵の変換を組む。quality が 0 なら lossless か既定の判定、正なら当たった lossyImages の glob（rules）の先頭の quality。
+// WhyNot: losslessImages を lossyImages より先に見ない — 前からある明示の lossy を、新しい鍵が何も知らせずに打ち消す。
+func planWebImageJob(out, rel, target string, quality int, rules []int, c webCompress, cwebp string) webJob {
+	v := &webImageVerdict{Rel: rel, explicitRules: rules}
+	j := webJob{rel: rel, src: exportAssetPath(out, rel), dst: exportAssetPath(out, target), verdict: v}
+	dataTexture := c.DataImages[rel] || (c.Auto != nil && isWebDataImageName(rel, c.Auto.DataNameParts))
+	switch {
+	case quality > 0:
+		j.encode = func(src, dst string) error {
+			return encodeWebImageExplicit(cwebp, src, dst, quality, c.Auto, dataTexture, v)
+		}
+	case c.Auto != nil:
+		byRule := false
+		for _, g := range c.LosslessImages {
+			if g.match(rel) {
+				byRule = true
+				break
+			}
+		}
+		j.encode = func(src, dst string) error {
+			return encodeWebImageAuto(cwebp, src, dst, c.Auto, byRule, dataTexture, v)
+		}
+	default:
+		j.encode = func(src, dst string) error { return runQuiet(cwebp, cwebpArgs(src, dst, 0)...) }
+	}
+	return j
 }
 
 // cwebpArgs は WebP の引数。quality が 0 なら劣化なし。
