@@ -10,17 +10,22 @@ import (
 	"strings"
 )
 
-// webCandidateAdvice は後回しの候補を貼った時の次に打つ手（記録が無いか、減らない時は空）。
-func webCandidateAdvice(out string, b *webBundle, proj exportProject, deferredFonts []string, embed webEmbedPlan, used *webUsedAssets) string {
+// suggestTitleDeferred は最後の確かめで記録したタイトルの間の素材から後回しの候補を出す（記録が無ければ nil）。
+func suggestTitleDeferred(out string, b *webBundle, c exportConfig, used *webUsedAssets) *webDeferredSuggestion {
 	if used == nil {
-		return ""
+		return nil
 	}
 	hidden := map[string]bool{}
-	for _, rel := range append(append([]string{}, embed.Embedded...), embed.Omitted...) {
+	for _, rel := range append(append([]string{}, c.EmbedPlan.Embedded...), c.EmbedPlan.Omitted...) {
 		hidden[rel] = true
 	}
-	s := suggestWebDeferred(out, b, proj, deferredFonts, hidden, *used, webTitleFrames)
-	if len(s.Candidates) == 0 || s.After >= s.Before {
+	s := suggestWebDeferred(out, b, c.Project, c.DeferredFonts, hidden, *used, webTitleFrames)
+	return &s
+}
+
+// webCandidateAdvice は後回しの候補を貼った時の次に打つ手（候補が無いか、減らない時は空）。
+func webCandidateAdvice(s *webDeferredSuggestion) string {
+	if s == nil || len(s.Candidates) == 0 || s.After >= s.Before {
 		return ""
 	}
 	return fmt.Sprintf("後回しの候補 %d 本（タイトルの %d コマで使わなかった）→ 起動 約 -%.1f 秒（押した直後に使う物は外してから貼る・export-web --apply-deferred）",
@@ -44,8 +49,8 @@ func writeWebGateSummary(w io.Writer, g webGate, budget webStartupBudget, draft 
 }
 
 // writeTitleAssets は最後の確かめで記録したタイトルの間の素材から後回しの候補を書き、--apply-deferred なら project.json へ足す。
-func writeTitleAssets(out, errOut *strings.Builder, o exportWebOptions, p exportWebPaths, b *webBundle, proj exportProject,
-	deferredFonts []string, embed webEmbedPlan, used *webUsedAssets) int {
+// s は suggestTitleDeferred の候補で、used が nil の時だけ nil。
+func writeTitleAssets(out, errOut *strings.Builder, o exportWebOptions, p exportWebPaths, s *webDeferredSuggestion, used *webUsedAssets) int {
 	if used == nil {
 		if o.ApplyDeferred {
 			fmt.Fprintln(errOut, "fge export-web: --apply-deferred: ブラウザの確かめで素材の記録が取れなかった（Chrome が無いか、engine の fge-web.js が記録を持たない）。project.json は変えていない")
@@ -53,14 +58,9 @@ func writeTitleAssets(out, errOut *strings.Builder, o exportWebOptions, p export
 		}
 		return 0
 	}
-	hidden := map[string]bool{}
-	for _, rel := range append(append([]string{}, embed.Embedded...), embed.Omitted...) {
-		hidden[rel] = true
-	}
-	s := suggestWebDeferred(p.Out, b, proj, deferredFonts, hidden, *used, webTitleFrames)
 	w := bufio.NewWriter(out)
 	defer w.Flush()
-	writeDeferredSuggestion(w, s, o.Game)
+	writeDeferredSuggestion(w, *s, o.Game)
 	if raw, err := json.MarshalIndent(used, "", "  "); err == nil {
 		record := filepath.Join(p.Work, "title-assets.json")
 		if os.WriteFile(record, append(raw, '\n'), 0o644) == nil {
@@ -77,7 +77,7 @@ func writeTitleAssets(out, errOut *strings.Builder, o exportWebOptions, p export
 		fmt.Fprintf(errOut, "fge export-web: --apply-deferred: %s を書き換えられない: %v\n", file, err)
 		return 1
 	}
-	writeAppliedDeferred(w, file, changed, s)
+	writeAppliedDeferred(w, file, changed, *s)
 	return 0
 }
 
@@ -88,7 +88,6 @@ func writeWebMissingTitleTo(out *strings.Builder, r *webMissingReport) {
 	w.Flush()
 }
 
-// writeExportSizes は配る大きさの内訳を 1 行ずつ出す（変換した種類は「前 → 後」）と、変換の知らせ。
 // exportDocFiles は files のうち素材の行に数える物。アトラスと、絵の行で数える images の道を除く。
 func exportDocFiles(b webBundle, isAtlas map[string]bool) []string {
 	isImage := map[string]bool{}
@@ -104,6 +103,7 @@ func exportDocFiles(b webBundle, isAtlas map[string]bool) []string {
 	return docs
 }
 
+// writeExportSizes は配る大きさの内訳を 1 行ずつ出す（変換した種類は「前 → 後」）と、変換の知らせ。
 func writeExportSizes(out *strings.Builder, dir string, b webBundle, atlases []string, r webTranscodeReport, strip webStripPlan) {
 	isAtlas := map[string]bool{}
 	for _, a := range atlases {

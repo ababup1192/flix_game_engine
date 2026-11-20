@@ -328,3 +328,38 @@ func writeWebWasmBrotli(brotli, jsDir, out string) error {
 	}
 	return copyFile(filepath.Join(jsDir, webBrotliDecoderFile), filepath.Join(out, webBrotliDecoderFile))
 }
+
+// writeExportPage は頁の物（wasm・js・bundle.json・index.html など）を書き、埋め込んだ素材の平文が残っていないかを見る。版を返す。
+func writeExportPage(c exportConfig, a *exportAssembly, w wasmBuild) (string, *exportFailure) {
+	p, b := c.Paths, &a.Bundle
+	ewLogf("⑦ 頁")
+	b.ServiceWorker = c.ServiceWorker
+	bookedBudget := c.Budget
+	b.StartupBudget = &bookedBudget
+	switch {
+	case a.Enc.Brotli != "":
+		b.WasmBrotli = webWasmBrotliFile
+	case c.Compress.WasmBrotli:
+		// WhyNot: 書き出しを止めない — Studio を使う人の機械に brotli が無くても、遅いだけで遊べる頁は出せる。
+		note := brotliMissingNote(webWireSize(w.Wasm))
+		ewLogf("%s", note)
+		a.Report.Notes = append(a.Report.Notes, note)
+	}
+	hash, err := writeWebPage(p, *b, w.Wasm, w.TeavmCore, a.Enc.Brotli)
+	if err != nil {
+		return "", exportFail(1, err)
+	}
+	if len(c.EmbedPlan.Embedded) > 0 {
+		ewLogf("⑧ 埋め込んだ素材の平文が書き出し先に残っていないか")
+		unchecked, err := checkEmbedLeaks(p.Out, p.Game, c.EmbedPlan.Embedded)
+		if err != nil {
+			// WhyNot: 止めた書き出し先を残さない — 頁と版はもう書いてあり、置き場へ写すだけの手順だと平文の残る版が配られる。
+			os.RemoveAll(p.Out)
+			return "", exportFailf(1, "fge export-web: %v\n  書き出し先 %s は消した\n", err, p.Out)
+		}
+		for _, rel := range unchecked {
+			ewLogf("  %s は ASCII でない字が続く所が無く、平文の残りを探せなかった", rel)
+		}
+	}
+	return hash, nil
+}

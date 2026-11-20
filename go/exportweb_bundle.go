@@ -270,3 +270,76 @@ func loadWebBundle(dir string) (webBundle, error) {
 	}
 	return b, nil
 }
+
+// exportAssembly は書き出し先に置いた束と、その内訳（アトラス・変換の結果・見つかった変換の道具）。
+type exportAssembly struct {
+	Bundle  webBundle
+	Atlases []string
+	Report  webTranscodeReport
+	Enc     webEncoders
+}
+
+// assembleWebBundle は書き出し先を空にして素材とフォントアトラスを置き、素材を小さくして後回しの列を組む。
+func assembleWebBundle(o exportWebOptions, c exportConfig) (exportAssembly, *exportFailure) {
+	p, proj := c.Paths, c.Project
+	var a exportAssembly
+	ewLogf("④ アセットの束 → %s", p.Out)
+	prevLossless := loadPreviousLosslessImages(p.Out)
+	if err := resetExportOut(p.Out); err != nil {
+		return a, exportFail(2, err)
+	}
+	b, err := buildWebBundle(p.Game, c.ID, proj, usesScene3dEntry(c.Entry))
+	if err != nil {
+		return a, exportFail(1, err)
+	}
+	b.Files = c.Strip.without(c.EmbedPlan.withoutHidden(b.Files))
+	if len(c.EmbedPlan.Omitted) > 0 {
+		ewLogf("  web.omit で配らない: %s", strings.Join(c.EmbedPlan.Omitted, "・"))
+	}
+	b.withTouch(proj, c.Touch)
+	splash, warning := buildWebSplash(p.Engine, c.StartPrompt, c.Touch.PortraitDesign)
+	if warning != "" {
+		ewLogf("知らせ: %s", warning)
+	}
+	b.Splash = &splash
+	bundled, deferredSet, images := map[string]bool{}, map[string]bool{}, map[string]bool{}
+	for _, rel := range b.copyList() {
+		bundled[rel] = true
+	}
+	for _, rel := range c.DeferredPlan.Paths {
+		deferredSet[rel] = true
+	}
+	for _, rel := range b.Images {
+		images[rel] = true
+	}
+	afterTap, err := resolveWebAfterTap(proj.Web, c.DeferredPolicy, bundled, deferredSet, images)
+	if err != nil {
+		return a, exportFail(1, err)
+	}
+	splash.AfterTap = &afterTap
+	for _, rel := range b.copyList() {
+		if err := copyFile(filepath.Join(p.Game, filepath.FromSlash(rel)), exportAssetPath(p.Out, rel)); err != nil {
+			return a, exportFailf(1, "fge export-web: 素材を写せない: %v\n", err)
+		}
+	}
+
+	ewLogf("⑤ フォントアトラス")
+	atlases, code, err := placeFontAtlases(p, o, proj.fontNames())
+	if err != nil {
+		return a, exportFail(code, err)
+	}
+	b.Files = append(b.Files, atlases...)
+	sort.Strings(b.Files)
+
+	ewLogf("⑥ 素材を小さくする（絵は WebP・音は Opus・アトラスは画素を WebP か gzip）")
+	enc := findWebEncoders(p.Engine, c.Compress)
+	report := transcodeWebAssets(p.Out, &b, atlases, c.Compress, enc)
+	report.Notes = append(report.Notes, c.LosslessNotes...)
+	report.AutoLossyLines = buildWebAutoLossySummary(report.Verdicts, c.Compress.Auto, c.Compress.LossyImages, prevLossless)
+	logWebAutoLossy(report.Verdicts)
+	if b.Deferred, _, err = applyWebDeferredPolicy(webDeferredEntries(p.Out, &b, c.DeferredPlan.Paths, c.TextureNames), c.DeferredPolicy, &b); err != nil {
+		return a, exportFail(1, err)
+	}
+	setWebArrivalSeconds(p.Out, &b)
+	return exportAssembly{Bundle: b, Atlases: atlases, Report: report, Enc: enc}, nil
+}

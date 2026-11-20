@@ -218,3 +218,118 @@ func cleanupExportWork(p exportWebPaths, keep bool) {
 	os.Remove(filepath.Join(p.Work, "embedded.jar"))
 	os.RemoveAll(filepath.Join(p.Work, "wasm"))
 }
+
+// wasmBuild は組んだ wasm の道と、頁の wasm-gc-runtime.js を取り出す TeaVM の core の jar。
+type wasmBuild struct {
+	Wasm, TeavmCore string
+}
+
+// buildWasm はゲームを fatjar に組み、バイトコードの付け替え・位置の相対化・素材の埋め込みを経て TeaVM で wasm にする。
+func buildWasm(o exportWebOptions, c exportConfig) (wasmBuild, *exportFailure) {
+	p, java := c.Paths, c.Java
+	fatLog := filepath.Join(p.Work, "fatjar.log")
+	ewLogf("① flix build-fatjar（ログ %s）", fatLog)
+	if runLogged(p.Project, fatLog, false, java, "-Xss64m", "-jar", p.FlixJar, "build-fatjar", "--entrypoint", "WebMain.main") != 0 {
+		return wasmBuild{}, exportFailf(1, "%s\nfge export-web: flix build-fatjar が失敗した（ログ %s）。\n  次: 上の誤りを直すか、--check で型検査だけ流す\n",
+			tailFile(fatLog, 40), fatLog)
+	}
+	fatjar, err := findFatJar(filepath.Join(p.Project, "artifact"))
+	if err != nil {
+		return wasmBuild{}, exportFail(1, err)
+	}
+
+	jars, err := teavmJars(exportWebLog)
+	if err != nil {
+		return wasmBuild{}, exportFail(2, err)
+	}
+	asm := findTeavmJar(jars, "teavm-relocated-libs-asm")
+	core := findTeavmJar(jars, "teavm-core")
+	if asm == "" || core == "" {
+		return wasmBuild{}, exportFailf(2, "fge export-web: TeaVM の jar の中に teavm-relocated-libs-asm か teavm-core が無い。\n  次: FLIX_GE_TEAVM_DIR の中身を確かめるか、外して Maven から取らせる\n")
+	}
+
+	rewritten := filepath.Join(p.Work, "rewritten.jar")
+	rewriteLog := filepath.Join(p.Work, "rewrite.log")
+	ewLogf("② バイトコードの付け替え")
+	if code := runRewrite(java, asm, p.WebToolsJar, fatjar, rewritten, rewriteLog); code != 0 {
+		return wasmBuild{}, exportFailf(1, "%s\nfge export-web: 付け替え（fge.teavmfix.Rewrite）が失敗した（ログ %s）。\n  次: engine の根で make sync-engine-full-web を流して fge-web-tools を作り直す\n",
+			tailFile(rewriteLog, 20), rewriteLog)
+	}
+
+	ewLogf("②' ゲームの .flix の位置を作業フォルダからの相対（game/...）へ")
+	leakFinder := newWebLeakFinder(os.Getenv("HOME"), os.Getenv("USERPROFILE"), p.Work, p.Game)
+	relativized := filepath.Join(p.Work, "relativized.jar")
+	paths, err := rewriteJarSourcePaths(rewritten, relativized, leakFinder)
+	if err != nil {
+		return wasmBuild{}, exportFailf(1, "fge export-web: 位置の置き換えが失敗した: %v\n", err)
+	}
+	ewLogf("  置き換えた位置 %d", paths.Replaced)
+	if len(paths.Leaks) > 0 {
+		return wasmBuild{}, exportFailf(1, "fge export-web: %s\n", webLeakReport(map[string][]string{"jar": paths.Leaks}, o.ShowLeaks, false))
+	}
+	rewritten = relativized
+
+	if embedded := c.EmbedPlan.Embedded; len(embedded) > 0 {
+		seed, err := embedSeedOf(p.Game, embedded)
+		if err != nil {
+			return wasmBuild{}, exportFail(1, err)
+		}
+		embeddedJar := filepath.Join(p.Work, "embedded.jar")
+		embedLog := filepath.Join(p.Work, "embed.log")
+		ewLogf("②'' 素材を符号にして wasm へ埋め込む（web.embed %d 本）", len(embedded))
+		if code := runEmbed(java, asm, p.WebToolsJar, p.WebJar, p.Game, rewritten, embeddedJar, embedLog, embedded, seed); code != 0 {
+			return wasmBuild{}, exportFailf(1, "%s\nfge export-web: 埋め込み（fge.teavmfix.Embed）が失敗した（ログ %s）。\n  次: 上の行を読む（EmbeddedData が無いと言うなら engine の根で make sync-engine-full-web を流して fge-web と fge-web-tools を作り直す）\n",
+				tailFile(embedLog, 20), embedLog)
+		}
+		rewritten = embeddedJar
+	}
+
+	wasmDir := filepath.Join(p.Work, "wasm")
+	teavmLog := filepath.Join(p.Work, "teavm.log")
+	ewLogf("③ TeaVM（wasm-gc・ログ %s）", teavmLog)
+	if err := os.RemoveAll(wasmDir); err != nil {
+		return wasmBuild{}, exportFailf(2, "fge export-web: %s を消せない: %v\n", wasmDir, err)
+	}
+	if err := os.MkdirAll(wasmDir, 0o755); err != nil {
+		return wasmBuild{}, exportFailf(2, "fge export-web: %s を作れない: %v\n", wasmDir, err)
+	}
+	cp := strings.Join(append(append([]string{p.WebToolsJar}, jars...), rewritten), string(os.PathListSeparator))
+	teavmCode := runLogged(p.Work, teavmLog, false, java, "-Xmx"+teavmHeap(), "-cp", cp, "fge.teavmfix.BuildWasm",
+		"Main", wasmDir, "classes.wasm")
+	logText, _ := os.ReadFile(teavmLog)
+	if errs, shown := teavmErrors(string(logText), 5); errs > 0 {
+		return wasmBuild{}, exportFailf(1, "%s\nfge export-web: TeaVM の ERROR が %d 件（ログ %s）。\n  次: 上の行のクラス・メソッドを engine_web の shim か付け替えで手当てする\n",
+			shown, errs, teavmLog)
+	}
+	wasm := filepath.Join(wasmDir, "classes.wasm")
+	if teavmCode != 0 || !fileExists(wasm) {
+		return wasmBuild{}, exportFailf(1, "%s\nfge export-web: TeaVM が classes.wasm を出さなかった（終わりの番号 %d・ログ %s）。\n  次: ログの最後を読む（メモリ不足なら FLIX_GE_TEAVM_XMX で TeaVM の上限を上げる・今は "+teavmHeap()+"。fge.teavmfix.BuildWasm が無いと言うなら engine の根で make sync-engine-full-web を流して fge-web-tools を作り直す）\n",
+			tailFile(teavmLog, 20), teavmCode, teavmLog)
+	}
+
+	wasmBytes, err := os.ReadFile(wasm)
+	if err != nil {
+		return wasmBuild{}, exportFail(1, err)
+	}
+	// WhyNot: 書き出し先へ置いてから探さない — 止めた後も置いた物が残り、置き場へ写す手順だとそのまま配られる。
+	leaks, err := findWasmLeaks(wasmBytes, leakFinder)
+	if err != nil {
+		return wasmBuild{}, exportFailf(1, "fge export-web: wasm を読めない: %v\n", err)
+	}
+	if leaks.total() > 0 {
+		return wasmBuild{}, exportFailf(1, "fge export-web: %s\n", webLeakReport(map[string][]string{"wasm": leaks.Wasm, "names": leaks.Names}, o.ShowLeaks, true))
+	}
+	return wasmBuild{Wasm: wasm, TeavmCore: core}, nil
+}
+
+// runExportCheck は --check の型検査だけを流す。
+func runExportCheck(out *strings.Builder, o exportWebOptions, c exportConfig) (int, *exportFailure) {
+	p := c.Paths
+	log := filepath.Join(p.Work, "check.log")
+	if runLogged(p.Project, log, true, c.Java, "-Xss64m", "-jar", p.FlixJar, "check") != 0 {
+		return 0, exportFailf(1, "fge export-web --check: 型検査が通らない（ログ %s）。\n  次: web/WebMain.flix か engine_web を直す\n", log)
+	}
+	cleanupExportWork(p, o.KeepWork)
+	fmt.Fprintln(out, "export-web --check: 型検査が通った")
+	return 0, nil
+}

@@ -374,7 +374,7 @@ func TestWriteTitleAssetsStopsApplyWithoutRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out, errOut strings.Builder
-	code := writeTitleAssets(&out, &errOut, exportWebOptions{ApplyDeferred: true}, exportWebPaths{Game: game}, &webBundle{}, exportProject{}, nil, webEmbedPlan{}, nil)
+	code := writeTitleAssets(&out, &errOut, exportWebOptions{ApplyDeferred: true}, exportWebPaths{Game: game}, nil, nil)
 	data, _ := os.ReadFile(file)
 	if code != 1 || string(data) != projectWithDeferred {
 		t.Errorf("記録が無い時の --apply-deferred は 1 で止まり project.json を変えないはず: code=%d", code)

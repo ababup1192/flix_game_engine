@@ -126,32 +126,19 @@ func rerunWebBrowserChecks(dir string, b *webBundle) error {
 		fmt.Fprintln(os.Stderr, "web-check: Chrome が見つからないので --browser の確かめは飛ばした（bundle.json の checks を使う）")
 		return nil
 	}
-	checks := webBundleChecks{Title4g: "ok"}
-	if len(b.Deferred) > 0 {
-		r, err := checkWebMissingTitle(dir, webTitleFrames, webLoadCheckWait())
-		checks.Title4g, checks.SkippedWhy = webTitle4gOf(r, err)
+	budget := defaultWebStartupBudget()
+	if b.StartupBudget != nil {
+		budget = *b.StartupBudget
 	}
-	if webTapNeedsMeasure(b) {
-		budget := defaultWebStartupBudget()
-		if b.StartupBudget != nil {
-			budget = *b.StartupBudget
-		}
-		m, why, err := measureWebTapWait(dir, budget.startKeys(), webLastWaitingArrival(b), webLoadCheckWait())
-		switch {
-		case err != nil:
-			// WhyNot: 測れない束で止めない — 古い fge-web.js の書き出しは待ちの記録を持たず、測れないのは束の誤りではない（書き出しと同じく見積もりと ★）。
-			checks.TapSkippedWhy = "測れなかった: " + err.Error()
-			fmt.Fprintf(os.Stderr, "web-check: 押した後を測れなかった: %v\n", err)
-		case why != "":
-			checks.TapSkippedWhy = why
-		default:
-			checks.TapWaitSeconds, checks.TapNoRecord = m.tapSeconds(), m.NoRecord
+	r := runWebBrowserChecks(dir, b, budget.startKeys(), webBrowserCheckLog{
+		TapFailed: func(err error) { fmt.Fprintf(os.Stderr, "web-check: 押した後を測れなかった: %v\n", err) },
+		TapMeasured: func(m webTapMeasure) {
 			var w strings.Builder
 			writeWebTapMeasure(&w, &m, "")
 			fmt.Fprint(os.Stderr, strings.ReplaceAll(w.String(), "  押した後", "web-check: 押した後"))
-		}
-	}
-	b.Checks = &checks
+		},
+	})
+	b.Checks = &r.Checks
 	return nil
 }
 
@@ -257,7 +244,7 @@ func runWebCheck(dir string, browser bool) (webCheckResult, error) {
 	case b.Checks == nil:
 		g.Notes = append(g.Notes, "★ 4G のタイトルの確かめの記録が無い（0.105.0 までの書き出し）— web-check --browser で流す")
 	case b.Checks.Title4g == "stopped":
-		g.Red = append(g.Red, "4G（?net=4g）のタイトルで、届いていない後回しの物を待って止まった — タイトルで使う物は web.deferred から外す")
+		g.Red = append(g.Red, webTitle4gStoppedRed)
 	case b.Checks.Title4g == "skipped":
 		g.Notes = append(g.Notes, "★ 4G のタイトルの確かめを飛ばした書き出し（"+b.Checks.SkippedWhy+"）— web-check --browser で流す")
 	}
