@@ -12,7 +12,7 @@ import (
 )
 
 // exportReuseRevision は指紋の作り方の版。書き出しの中身を変える直しを入れたら上げる（前の指紋と合わなくする）。
-const exportReuseRevision = "3"
+const exportReuseRevision = "4"
 
 // exportReuseStamp は --reuse が前の書き出しの指紋を残す所（作業フォルダの中）。
 // WhyNot: 書き出し先（--out）の中に置かない — 書き出し先はそのままテープの play/ に写り、公開した頁に指紋が混ざる。

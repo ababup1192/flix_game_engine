@@ -58,7 +58,6 @@ TAPE_FRESH ?= 0
 # WhyNot: 既定を 3 本以上にしない — 録画は GPU で塗り、ffmpeg も書き出しの TeaVM も全部のコアを使うので、負荷の高い機械で他の作業を止める。
 TAPE_JOBS ?= 2
 TAPE_WEB_REUSE ?= 1
-# WhyNot: 書き出しの作業フォルダをゲームの下（既定の build/web-export）にしない — 組んだ所のパスが wasm に残り、公開した頁からユーザー名が読める。
 TAPE_WEB ?= /tmp/fge-tape-web/$(notdir $(CURDIR))
 tape-play = $(if $(filter 1,$(TAPE_PLAY)),--play $(TAPE_WEB)/out)
 tape-export = "$(ENGINE)/bin/fge" export-web . --out "$(TAPE_WEB)/out" --work "$(TAPE_WEB)/work" $(if $(filter 1,$(TAPE_WEB_REUSE)),--reuse)

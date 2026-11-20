@@ -92,6 +92,11 @@
           "label": "2 回目からの起動を Service Worker のキャッシュで速くする（版が上がれば新しい物を取る。false で前に登録した物も外す）",
           "order": 4,
           "default": true
+        },
+        "keep": {
+          "type": { "list": "text" },
+          "label": "既定で配らない形（*.schema.json・.blend などの制作の元ファイル）のうち、ゲームが動く時に読むので配る物（ゲームの根からの glob）",
+          "order": 5
         }
       }
     }
