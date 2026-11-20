@@ -3,4 +3,4 @@ version     = "0.1.0"
 flix        = "0.80.0"
 
 [dependencies]
-"github:ababup1192/flix_game_engine" = { version = "0.103.0", mount = "fge", security = "unrestricted" }
+"github:ababup1192/flix_game_engine" = { version = "0.104.0", mount = "fge", security = "unrestricted" }
