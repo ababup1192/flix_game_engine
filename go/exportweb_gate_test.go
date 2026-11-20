@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"errors"
 	"math"
 	"os"
@@ -104,10 +105,29 @@ func TestGateCountsGroupWaitBeyondLogo(t *testing.T) {
 func TestGateLogoNoneDoesNotCover(t *testing.T) {
 	out, b := groupFixture(t)
 	withLogo(&b, "none", "start")
-	b.Splash.AfterTap.WaitFor = nil
 	g := webGateOf(out, &b, defaultWebStartupBudget())
 	if g.LogoCover != 0 {
 		t.Errorf("ロゴを出さないゲームは覆わないはず: %+v", g)
+	}
+}
+
+func TestGateLogoDoesNotCoverWhenGroupArrivesBeforeMinSeconds(t *testing.T) {
+	out, b := tapWaitFixture(t, webDeferredEntry{Path: "assets/a.webp", Group: "start"})
+	withLogo(&b, "engine", "start")
+	b.Splash.AfterTap.MinSeconds = 2
+	b.Checks = &webBundleChecks{TapWaitSeconds: ptrFloat(4)}
+	g := webGateOf(out, &b, defaultWebStartupBudget())
+	if g.LogoCover != 0 {
+		t.Errorf("group が minSeconds より前に届けば頁はロゴを出さないので、測った待ちが長くても覆わないはず: %+v", g)
+	}
+}
+
+func TestGateCapsLogoCoverAtThreeSeconds(t *testing.T) {
+	out, b := groupFixture(t)
+	withLogo(&b, "engine", "start")
+	b.Splash.AfterTap.MaxSeconds = 30
+	if g := webGateOf(out, &b, defaultWebStartupBudget()); g.LogoCover != webAfterTapMaxSeconds {
+		t.Errorf("bundle.json の maxSeconds を書き換えても 3 秒までしか覆わないはず: %v", g.LogoCover)
 	}
 }
 
@@ -129,13 +149,13 @@ func TestGateWithoutGroupCountsZeroWhenUnmeasured(t *testing.T) {
 	}
 }
 
-func TestGateWithoutGroupAddsMeasuredWaitUncovered(t *testing.T) {
+func TestGateMeasuredWaitIsNotedUncoveredUntilVerified(t *testing.T) {
 	out, b := tapWaitFixture(t, webDeferredEntry{Path: "assets/a.webp"})
 	withLogo(&b, "engine")
 	b.Checks = &webBundleChecks{TapWaitSeconds: ptrFloat(5)}
 	g := webGateOf(out, &b, defaultWebStartupBudget())
-	if math.Abs(g.Playable-(g.Startup+5)) > 1e-9 {
-		t.Errorf("group の無いゲームはロゴが出ないので、測った 5 秒をそのまま足すはず: %+v", g)
+	if g.Playable != g.Startup || !strings.Contains(strings.Join(g.Notes, "\n"), fmt.Sprintf("遊べるまで %.1f 秒", g.Startup+5)) {
+		t.Errorf("揺れを確かめるまで測った値は門に入れず、ロゴの出ない group 無しの 5 秒をそのまま足した数を ★ で出すはず: %+v", g)
 	}
 }
 

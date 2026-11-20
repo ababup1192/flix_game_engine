@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -136,11 +135,13 @@ func rerunWebBrowserChecks(dir string, b *webBundle) error {
 		m, why, err := measureWebTapWait(dir, budget.startKeys(), webLoadCheckWait())
 		switch {
 		case err != nil:
-			return errors.New("押した後を測れない: " + err.Error())
+			// WhyNot: 測れない束で止めない — 古い fge-web.js の書き出しは待ちの記録を持たず、測れないのは束の誤りではない（書き出しと同じく見積もりと ★）。
+			checks.TapSkippedWhy = "測れなかった: " + err.Error()
+			fmt.Fprintf(os.Stderr, "web-check: 押した後を測れなかった: %v\n", err)
 		case why != "":
 			checks.TapSkippedWhy = why
 		default:
-			checks.TapWaitSeconds = m.tapSeconds()
+			checks.TapWaitSeconds, checks.TapNoRecord = m.tapSeconds(), m.NoRecord
 			var w strings.Builder
 			writeWebTapMeasure(&w, &m, "")
 			fmt.Fprint(os.Stderr, strings.ReplaceAll(w.String(), "  押した後", "web-check: 押した後"))

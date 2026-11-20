@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"math"
 	"strings"
 	"time"
 
@@ -14,6 +15,14 @@ import (
 
 // webTapMeasureLimit を過ぎても待ちが明けなければ、この秒で打ち切って「これ以上」として扱う。
 const webTapMeasureLimit = 40 * time.Second
+
+// webTapKeyGapFrames は startKeys の 1 つずつの間に待つコマ数・webTapNoRecordFrames は押した時の待ちの記録が出ないと見切るまでのコマ数（5 秒）・
+// webTapAfterWindow は待ちが明けた後に途中の待ちを見る秒。
+const (
+	webTapKeyGapFrames   = 6
+	webTapNoRecordFrames = 300
+	webTapAfterWindow    = 10
+)
 
 // webTapMeasure は押した後の測りの結果。Seconds は開始を押してから（4G の時計が始まってから）押した時の待ちが明けるまでの秒。
 // NoRecord は押した時の待ちの記録が無かった（待たずに動いた・キーが合わず何も始まらなかったのどちらか）。
@@ -32,7 +41,7 @@ const webTapProbe = `(() => {
   var m = window.fgeTapMark, now = performance.now(), at = fgeNetClock.at;
   var ws = (window.fgeMissingWaits || []).filter(function (w) { return w.startedAt >= m.at - 20; });
   var p = ws.filter(function (w) { return w.kind === "pressed"; })[0] || null;
-  var res = { sinceTap: (now - m.at) / 1000, state: "none", seconds: 0, stopped: 0, stoppedSecs: 0, placeholders: [] };
+  var res = { sinceTap: (now - m.at) / 1000, frames: fgeFrameNo - m.frame, state: "none", seconds: 0, stopped: 0, stoppedSecs: 0, placeholders: [] };
   if (p) {
     var open = p === fgeMissingWaitOpen;
     var end = open ? now : p.startedAt + p.seconds * 1000;
@@ -53,6 +62,7 @@ const webTapProbe = `(() => {
 
 type webTapProbeResult struct {
 	SinceTap     float64  `json:"sinceTap"`
+	Frames       int      `json:"frames"`
 	State        string   `json:"state"`
 	Seconds      float64  `json:"seconds"`
 	ClosedFor    float64  `json:"closedFor"`
@@ -92,23 +102,32 @@ func measureWebTapWait(out string, keys []string, wait time.Duration) (m webTapM
 	if err := page.Eval(`(window.fgeTapMark = { at: performance.now(), frame: fgeFrameNo }, true)`, nil); err != nil {
 		return m, "", err
 	}
-	for _, k := range keys {
+	for i, k := range keys {
 		if k == "Space" {
 			k = " "
+		}
+		// WhyNot: キーを同じコマに続けて送らない — 頁は 1 コマの間の押しをまとめて渡し、「下へ移ってから決める」が 1 コマに重なる。
+		if i > 0 {
+			if err := page.WaitFor(fmt.Sprintf("fgeFrameNo >= fgeTapMark.frame + %d", webTapKeyGapFrames*i), wait); err != nil {
+				return m, "", fmt.Errorf("キーの間にコマが進まない: %v", err)
+			}
 		}
 		if err := page.PressKey(k, 0); err != nil {
 			return m, "", err
 		}
 	}
 	var r webTapProbeResult
+	deadline := time.Now().Add(webTapMeasureLimit + 20*time.Second)
 	for {
 		time.Sleep(100 * time.Millisecond)
 		if err := page.Eval(webTapProbe, &r); err != nil {
 			return m, "", err
 		}
 		// WhyNot: 待ちが明けてすぐ終えない — 明けた直後の途中の待ち（控えの外の待ち）も表に出したい。
-		done := (r.State == "closed" && r.ClosedFor >= 5) || (r.State == "none" && r.SinceTap >= 3)
-		if done || time.Duration(r.SinceTap*float64(time.Second)) >= webTapMeasureLimit {
+		// WhyNot: 記録が出ないのを秒だけで見切らない — headless はコマが遅く、タイトルから場面へのフェードが実時間で数秒かかる。
+		done := (r.State == "closed" && r.ClosedFor >= webTapAfterWindow) ||
+			(r.State == "none" && r.Frames >= webTapNoRecordFrames && r.SinceTap >= 5)
+		if done || time.Duration(r.SinceTap*float64(time.Second)) >= webTapMeasureLimit || time.Now().After(deadline) {
 			break
 		}
 	}
@@ -157,7 +176,7 @@ func (m *webTapMeasure) tapSeconds() *float64 {
 	}
 	v := round1(m.Seconds)
 	if m.Capped {
-		v = webTapMeasureLimit.Seconds()
+		v = math.Max(v, webTapMeasureLimit.Seconds())
 	}
 	return &v
 }

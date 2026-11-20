@@ -606,7 +606,10 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		}
 	}
 	if tap == nil && checks.TapSkippedWhy == "" && webTapNeedsMeasure(&b) {
-		checks.TapSkippedWhy = map[bool]string{true: "--no-browser-check", false: "Chrome が見つからない"}[o.NoBrowserCheck]
+		checks.TapSkippedWhy = "Chrome が見つからない"
+		if o.NoBrowserCheck {
+			checks.TapSkippedWhy = "--no-browser-check"
+		}
 	}
 	b.Checks = &checks
 	suggestion := webCandidateAdvice(p.Out, &b, proj, deferredFonts, embedPlan, used)
@@ -635,11 +638,19 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		}
 	}
 
-	fmt.Fprintf(out, "export-web: %s（版 %s）\n", p.Out, hash)
+	if stop {
+		fmt.Fprintf(out, "export-web: %s（版 %s・門が赤なので最後に消す）\n", p.Out, hash)
+	} else {
+		fmt.Fprintf(out, "export-web: %s（版 %s）\n", p.Out, hash)
+	}
 	writeExportSizes(out, p.Out, b, atlases, report, strip)
 	writeWebMissingTitleTo(out, missing)
 	var tw strings.Builder
-	writeWebTapMeasure(&tw, tap, map[bool]string{true: checks.TapSkippedWhy, false: ""}[tap == nil && checks.TapSkippedWhy != ""])
+	tapSkipped := ""
+	if tap == nil {
+		tapSkipped = checks.TapSkippedWhy
+	}
+	writeWebTapMeasure(&tw, tap, tapSkipped)
 	writeWebGateSummary(&tw, g, budget, o.Draft)
 	out.WriteString(tw.String())
 	titleCode := writeTitleAssets(out, errOut, o, p, &b, proj, deferredFonts, embedPlan, used)

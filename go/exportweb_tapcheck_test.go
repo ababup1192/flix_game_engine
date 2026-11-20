@@ -45,7 +45,7 @@ func probeOnPage(t *testing.T, script string) webTapProbeResult {
 }
 
 const probeRecords = `
-var fgeNetClock = { at: 1000 };
+var fgeNetClock = { at: 1000 }, fgeFrameNo = 400;
 var pressed = { kind: "pressed", startedAt: 3000, seconds: 2.5 };
 window.fgeMissingWaits = [{ kind: "stopped", startedAt: 500, seconds: 9 }, pressed, { kind: "stopped", startedAt: 6000, seconds: 1 }];
 window.fgeMissingSkips = [{ kind: "texture", why: "placeholder", frame: 100, name: "card" }, { kind: "texture", why: "placeholder", frame: 10, name: "early" }];

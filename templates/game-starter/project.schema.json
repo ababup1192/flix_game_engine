@@ -138,7 +138,7 @@
           "type": { "record": {
             "seconds":   { "type": "float", "label": "遊べるまで（開いてすぐ押した人が最初の場面を動かせるまで・4G）の上限の秒。起動の秒に、押した後の待ちのうちロゴで覆えない分を足した数", "order": 1, "min": 1, "max": 120, "default": 16 },
             "why":       { "type": "text", "label": "16 秒を超える時の理由（必須・bundle.json に写るので公開される）", "order": 2 },
-            "startKeys": { "type": { "list": "text" }, "label": "書き出しの確かめが押した後を測る時にタイトルで押すキー（Enter・Space・矢印・英字 1 字。書かなければ Enter = タイトルの既定の行を決める）", "order": 3 }
+            "startKeys": { "type": { "list": "text" }, "label": "書き出しの確かめが押した後を測る時にタイトルで押すキー（Enter・Space・Escape・矢印・英字 1 字。書かなければ Enter = タイトルの既定の行を決める）", "order": 3 }
           } },
           "label": "ブラウザ版の起動の予算（超えると書き出しと web-check が止まる）",
           "order": 10

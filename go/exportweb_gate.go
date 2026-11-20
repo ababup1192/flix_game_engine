@@ -110,13 +110,19 @@ type webBundleChecks struct {
 	TapNoRecord bool `json:"tapNoRecord,omitempty"`
 }
 
+// webGateUsesMeasuredTap は押した後の測り（⑨”）の値を門の数字に入れるか。
+// WhyNot: 最初から入れない — 測りは headless の Chrome の実時間で、機械の速さで揺れうる。押した時の待ちが出る束（新しい fge-web.js で書き出したゲーム）で
+// 3 回ずつ流し、揺れが 1 秒以内と分かってから true にする（plans/web-loading-p5.md の 1.2）。それまでは数字と ★ で出す。
+const webGateUsesMeasuredTap = false
+
 // webGate は 1 つの束の門の判定。TapWait は測った値と group の見積もりの大きい方。Playable = Startup + max(0, TapWait − LogoCover)。
 type webGate struct {
 	Startup       float64
 	TapWait       float64
-	Measured      bool // TapWait に押した後の測りの値を使った
-	Unknown       bool // 測っておらず group も無い（最初の場面が待つかが分からず 0 秒で数えた）
-	NoRecord      bool // 押した後を測ったが待ちの記録が無かった
+	Measured      bool    // 押した後の測りの値がある
+	MeasuredWait  float64 // 測った値（webGateUsesMeasuredTap が false の間は門に入れず知らせだけ）
+	Unknown       bool    // 測っておらず group も無い（最初の場面が待つかが分からず 0 秒で数えた）
+	NoRecord      bool    // 押した後を測ったが待ちの記録が無かった
 	LogoCover     float64
 	Playable      float64
 	Budget        webStartupBudget
@@ -151,22 +157,34 @@ func webGateOf(dir string, b *webBundle, budget webStartupBudget) webGate {
 	g.Unknown = t.Count > 0 && len(t.Group) == 0
 	g.NoRecord = b.Checks != nil && b.Checks.TapNoRecord
 	if c := b.Checks; c != nil && c.TapWaitSeconds != nil {
-		g.TapWait, g.Measured, g.Unknown = math.Max(g.TapWait, *c.TapWaitSeconds), true, false
+		g.Measured, g.MeasuredWait, g.Unknown = true, *c.TapWaitSeconds, false
+		if webGateUsesMeasuredTap {
+			g.TapWait = math.Max(g.TapWait, g.MeasuredWait)
+		}
 	}
 	// WhyNot: group の無いゲームでロゴの秒を引かない — 頁のロゴは waitFor の group を待つ時だけ出て（fge-web.js の fgeAfterTapPending）、
-	// group が無ければ押した後の待ちは何にも覆われない。
-	if after != nil && len(waitFor) > 0 && t.Count > 0 && g.TapWait >= after.MinSeconds {
-		g.LogoCover = after.MaxSeconds
+	// group が無ければ押した後の待ちは何にも覆われない。出すかは頁と同じく group の見積もりで決める（測った値で決めると、頁が出さないロゴの秒を引く）。
+	// WhyNot: bundle.json の maxSeconds をそのまま使わない — 書き換えて sums.json を作り直せば、覆う秒をいくらでも膨らませられる。
+	if after != nil && len(waitFor) > 0 && t.Count > 0 && t.Seconds >= after.MinSeconds {
+		g.LogoCover = math.Min(after.MaxSeconds, webAfterTapMaxSeconds)
 	}
 	g.Playable = g.Startup + math.Max(0, g.TapWait-g.LogoCover)
 	if g.Playable > budget.Seconds {
-		g.Red = append(g.Red, fmt.Sprintf("遊べるまで（すぐ押した時・4G）約 %.1f 秒が予算 %.0f 秒を超えた（%s）", g.Playable, budget.Seconds, g.breakdown()))
+		g.Red = append(g.Red, fmt.Sprintf("遊べるまで（すぐ押した時・4G）約 %.1f 秒が予算 %g 秒を超えた（%s）", g.Playable, budget.Seconds, g.breakdown()))
+	}
+	if g.Measured && !webGateUsesMeasuredTap {
+		with := g.Startup + math.Max(0, math.Max(g.TapWait, g.MeasuredWait)-g.LogoCover)
+		over := ""
+		if with > budget.Seconds {
+			over = "・予算を超える"
+		}
+		g.Notes = append(g.Notes, fmt.Sprintf("★ 押した後の測り %.1f 秒（揺れを確かめるまで門には入れていない。入れると遊べるまで %.1f 秒%s）", g.MeasuredWait, with, over))
 	}
 	if budget.Seconds > webStartupTargetSeconds {
-		g.Notes = append(g.Notes, fmt.Sprintf("★ 予算 %.0f 秒（既定 %.0f 秒より上）: %s", budget.Seconds, webStartupTargetSeconds, budget.Why))
+		g.Notes = append(g.Notes, fmt.Sprintf("★ 予算 %g 秒（既定 %.0f 秒より上）: %s", budget.Seconds, webStartupTargetSeconds, budget.Why))
 	}
 	switch {
-	case g.Unknown && g.NoRecord:
+	case g.NoRecord:
 		g.Notes = append(g.Notes, "押した後を測ったが待ちの記録が無い（待たずに動いた。タイトルの既定の行が「はじめから」でないゲームは web.startupBudget.startKeys を書かないと測れない）")
 	case g.Unknown:
 		g.Notes = append(g.Notes, fmt.Sprintf("★ 押した後は測っていない（group が無く、最初の場面が待つかは分からないので 0 秒で数えた。待つなら最初の物は %.1f 秒目に届く）— Chrome のある機械で書き出すか web-check --browser で測る", t.Seconds))
@@ -184,8 +202,10 @@ func webGateOf(dir string, b *webBundle, budget webStartupBudget) webGate {
 func (g webGate) breakdown() string {
 	tap := fmt.Sprintf("押した後 %.1f 秒", g.TapWait)
 	switch {
-	case g.Measured:
+	case g.Measured && webGateUsesMeasuredTap:
 		tap += "・測った値"
+	case g.Measured:
+		tap += "・測った値は知らせだけ"
 	case g.Unknown && g.NoRecord:
 		tap += "・測ったが待ちの記録なし"
 	case g.Unknown:
@@ -201,7 +221,7 @@ func (g webGate) breakdown() string {
 
 // line は表と web-check の 1 行。
 func (g webGate) line() string {
-	return fmt.Sprintf("遊べるまで（すぐ押した時・4G）: 約 %.1f 秒 / 予算 %.0f 秒（%s）", g.Playable, g.Budget.Seconds, g.breakdown())
+	return fmt.Sprintf("遊べるまで（すぐ押した時・4G）: 約 %.1f 秒 / 予算 %g 秒（%s）", g.Playable, g.Budget.Seconds, g.breakdown())
 }
 
 // advise は予算を超えた時の次に打つ手（候補は書き出しの確かめで取れた時に呼び手が先頭へ足す）。
