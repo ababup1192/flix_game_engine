@@ -23,7 +23,7 @@ import (
 )
 
 const exportWebUsage = `使い方: fge export-web <ゲームのフォルダ> [--out <dir>] [--check] [--id <名前>] [--font-atlas-dir <dir>]
-                       [--work <dir>] [--engine <dir>] [--keep-work] [--no-browser-check] [--reuse]
+                       [--work <dir>] [--engine <dir>] [--keep-work] [--no-browser-check] [--reuse] [--show-leaks]
   ゲームをブラウザ版（TeaVM の WASM GC）へ書き出す。出力の既定は <ゲーム>/build/web。
   --check           作業フォルダで flix check だけ流す（web/WebMain.flix の型検査）
   --id              bundle.json の id（既定はゲームのフォルダの名前）
@@ -34,6 +34,7 @@ const exportWebUsage = `使い方: fge export-web <ゲームのフォルダ> [--
   --no-browser-check  最後の「ヘッドレスの Chrome で頁を開き、wasm を読んで数コマ回せるか」を飛ばす
   --reuse           書き出しの中身を決める物（写すゲームの全部・engine の束と jar・この bin/fge・変換の道具）の指紋が
                     前の書き出しと同じで、書き出し先がその時のままなら組まずに使い回す（指紋は作業フォルダの export.inputs）
+  --show-leaks      作業フォルダかホームのパスが jar か wasm に残って止まった時、残った字を手元の画面に出す（既定は件数と場所だけ）
   環境変数: FLIX_GE_TEAVM_DIR（TeaVM の jar のフォルダ。無ければ Maven から取る）・JAVA・FLIX_JAR・
             FGE_CHROME（確かめに使う Chrome）・FLIX_GE_WEB_CHECK_WAIT（確かめで待つ秒・既定 90）
   終わりの番号: 0 書き出せた / 1 組み立てか TeaVM か素材かブラウザでの読み込みで失敗 / 2 呼び方の誤りか下ごしらえが無い`
@@ -45,6 +46,7 @@ func init() {
 type exportWebOptions struct {
 	Game, Out, Work, Engine, ID, FontAtlasDir string
 	Check, KeepWork, NoBrowserCheck, Reuse    bool
+	ShowLeaks                                 bool
 }
 
 // exportWebCopyExcludes はゲームの根の直下で写さない物。
@@ -105,6 +107,10 @@ func parseExportWebArgs(args []string) (exportWebOptions, error) {
 		}
 		if a == "--reuse" {
 			o.Reuse = true
+			continue
+		}
+		if a == "--show-leaks" {
+			o.ShowLeaks = true
 			continue
 		}
 		if a == "--json" {
@@ -203,6 +209,17 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
 		return 1
 	}
+	keep, err := resolveWebKeep(proj.Web)
+	if err != nil {
+		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
+		return 1
+	}
+	strip, err := planWebStrip(p.Game, early.Files, keep, embedPlan)
+	if err != nil {
+		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
+		return 1
+	}
+	early.Files = strip.without(early.Files)
 	deferredGlobs, err := resolveWebDeferred(proj.Web)
 	if err != nil {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
@@ -303,6 +320,21 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		return 1
 	}
 
+	ewLogf("②' ゲームの .flix の位置を作業フォルダからの相対（game/...）へ")
+	leakFinder := newWebLeakFinder(os.Getenv("HOME"), os.Getenv("USERPROFILE"), p.Work, p.Game)
+	relativized := filepath.Join(p.Work, "relativized.jar")
+	paths, err := rewriteJarSourcePaths(rewritten, relativized, leakFinder)
+	if err != nil {
+		fmt.Fprintf(errOut, "fge export-web: 位置の置き換えが失敗した: %v\n", err)
+		return 1
+	}
+	ewLogf("  置き換えた位置 %d", paths.Replaced)
+	if len(paths.Leaks) > 0 {
+		fmt.Fprintf(errOut, "fge export-web: %s\n", webLeakReport(map[string][]string{"jar": paths.Leaks}, o.ShowLeaks, false))
+		return 1
+	}
+	rewritten = relativized
+
 	if len(embedPlan.Embedded) > 0 {
 		seed, err := embedSeedOf(p.Game, embedPlan.Embedded)
 		if err != nil {
@@ -311,7 +343,7 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		}
 		embeddedJar := filepath.Join(p.Work, "embedded.jar")
 		embedLog := filepath.Join(p.Work, "embed.log")
-		ewLogf("②' 素材を符号にして wasm へ埋め込む（web.embed %d 本）", len(embedPlan.Embedded))
+		ewLogf("②'' 素材を符号にして wasm へ埋め込む（web.embed %d 本）", len(embedPlan.Embedded))
 		if code := runEmbed(java, asm, p.WebToolsJar, p.WebJar, p.Game, rewritten, embeddedJar, embedLog, embedPlan.Embedded, seed); code != 0 {
 			fmt.Fprintf(errOut, "%s\nfge export-web: 埋め込み（fge.teavmfix.Embed）が失敗した（ログ %s）。\n  次: 上の行を読む（EmbeddedData が無いと言うなら engine の根で make sync-engine-full-web を流して fge-web と fge-web-tools を作り直す）\n",
 				tailFile(embedLog, 20), embedLog)
@@ -347,6 +379,22 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		return 1
 	}
 
+	wasmBytes, err := os.ReadFile(wasm)
+	if err != nil {
+		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
+		return 1
+	}
+	// WhyNot: 書き出し先へ置いてから探さない — 止めた後も置いた物が残り、置き場へ写す手順だとそのまま配られる。
+	leaks, err := findWasmLeaks(wasmBytes, leakFinder)
+	if err != nil {
+		fmt.Fprintf(errOut, "fge export-web: wasm を読めない: %v\n", err)
+		return 1
+	}
+	if leaks.total() > 0 {
+		fmt.Fprintf(errOut, "fge export-web: %s\n", webLeakReport(map[string][]string{"wasm": leaks.Wasm, "names": leaks.Names}, o.ShowLeaks, true))
+		return 1
+	}
+
 	ewLogf("④ アセットの束 → %s", p.Out)
 	if err := resetExportOut(p.Out); err != nil {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
@@ -357,7 +405,7 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
 		return 1
 	}
-	b.Files = embedPlan.withoutHidden(b.Files)
+	b.Files = strip.without(embedPlan.withoutHidden(b.Files))
 	if len(embedPlan.Omitted) > 0 {
 		ewLogf("  web.omit で配らない: %s", strings.Join(embedPlan.Omitted, "・"))
 	}
@@ -441,7 +489,7 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 	}
 
 	fmt.Fprintf(out, "export-web: %s（版 %s）\n", p.Out, hash)
-	writeExportSizes(out, p.Out, b, atlases, report)
+	writeExportSizes(out, p.Out, b, atlases, report, strip)
 	return 0
 }
 
@@ -1189,7 +1237,7 @@ func exportDocFiles(b webBundle, isAtlas map[string]bool) []string {
 	return docs
 }
 
-func writeExportSizes(out *strings.Builder, dir string, b webBundle, atlases []string, r webTranscodeReport) {
+func writeExportSizes(out *strings.Builder, dir string, b webBundle, atlases []string, r webTranscodeReport, strip webStripPlan) {
 	isAtlas := map[string]bool{}
 	for _, a := range atlases {
 		isAtlas[a] = true
@@ -1227,6 +1275,9 @@ func writeExportSizes(out *strings.Builder, dir string, b webBundle, atlases []s
 		After:  wasm + docs + page + r.Images.After + r.Atlases.After + r.Sounds.After,
 	}
 	fmt.Fprintf(w, "  %-8s %22s  ブラウザが取る量\n", "合計", pair(total))
+	if n := len(strip.Stripped); n > 0 {
+		fmt.Fprintf(w, "  %-8s %22s  schema・制作の元ファイル %d 本（動く時に読まない。戻すなら web.keep）\n", "外した", humanBytes(strip.StrippedBytes), n)
+	}
 	start := webStartupSizeOf(dir, &b)
 	writeStartupEstimate(w, webStartupEstimateOf(dir, &b), start)
 	if r.FallbackBytes > 0 {
@@ -1234,6 +1285,9 @@ func writeExportSizes(out *strings.Builder, dir string, b webBundle, atlases []s
 	}
 	for _, n := range r.Notes {
 		fmt.Fprintf(w, "  知らせ: %s\n", n)
+	}
+	if n := len(strip.Noticed); n > 0 {
+		fmt.Fprintf(w, "  知らせ: .md・.txt %d 本（%s）を束に入れた — ゲームが読まないなら web.omit へ\n", n, humanBytes(strip.NoticedBytes))
 	}
 	// WhyNot: 運ばない物を言わずに終えない — assets/ の外の Doc や readBytes で読む素材は束に入らず、ブラウザで初めて「無い」になる。
 	fmt.Fprintln(w, "  束に入れたのは project.json と assets/ の下だけ（assets/ の外を読むゲームはブラウザで読めない）")

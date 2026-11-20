@@ -13,6 +13,17 @@
 - 書き出しの最後にヘッドレスの Chrome で頁を開き、wasm の compile と最初の数コマで止まれば exit 1（TeaVM は通るのに真っ白になる形を止める）。
   JSO を `Object` を受ける所へ渡さず Java の類に包む。Chrome が無ければ知らせて飛ばす。飛ばすなら `--no-browser-check`（門の中身は [web-capture.md](web-capture.md) の「書き出しの門」）
 
+### 作業フォルダとホームのパスを wasm に残さない
+
+Flix はゲームの .flix の位置（`bug!`・match の網羅漏れ・`???` で出す位置）を、書き出しの作業フォルダの絶対パスのまま定数に残す。
+`bin/fge export-web` は TeaVM に渡す前の jar で、絶対パスで始まり `/project/src/`・`/project/test/`（Windows は `\` の形）の後に続いて `.flix` で終わる位置を `game/...` の形へ置き換える（`--work` を渡しても・Windows でも同じ）。
+
+- その後 jar の定数プールと、wasm（`classes.wasm`・`classes.names`）の 2 回、`/Users/<名前>/`・`/home/<名前>/`・`C:\Users\<名前>\`・`C:/Users/<名前>/` の形と、手元の `$HOME`・作業フォルダ・ゲームの絶対パスを探す。残っていれば書き出し先に何も置かずに止まる（exit 1）
+- 止まった時に出るのは件数と場所（`jar` / `wasm` / `names`）だけ。残った字は `--show-leaks` を付けた時だけ手元の画面に出る（ログを人や CI に貼っても名前が広がらない）
+- 「次:」の行は 2 通り: `.flix` の位置が残ったなら置き換えの漏れなので engine に報告する（ゲームの側で避ける手は要らない）。それ以外はゲームのコードか素材の字に絶対パスが書いてあるので、ゲームの根からの相対の道に直す
+- 止まった時の console の位置は `game/src/<ファイル>.flix` で読める。engine の位置は前から `flix_game_engine-<版>.fpkg:src/...` の形
+- デスクトップの配布（`make dist-*`）の jar は置き換えない（利用者の手元で動き、例外の stack にもともとパスが出る作り）
+
 ### engine の作業場で書き出す時
 
 - 先に `make sync-engine-full-web`
@@ -91,6 +102,14 @@ design の大きさの画面に描くつもりの絵（ぼかした背景だけ�
   - brotli は PATH → engine の devbox → Homebrew と nix の profile の bin → nix の store（`/nix/store/*-brotli-<版>/bin/brotli` の版の新しい物）の順に探す。Finder から開いた Studio のように PATH が細くても、手で PATH を足さずに見つかる。
   - どこにも無い時は gzip のまま配り、`★ wasm を brotli にできず …4G（1.6 Mbps）で起動が約 N 秒遅くなる` を書き出しの途中と終わりの両方に出す（止めない）。
 - wasm の名前の区画（関数名・素の量の 2〜3 割）は `classes.names` へ抜いて配る。頁は止まった時だけそれを取り、stack の `wasm-function[番号]` に名前を付けて console へ出す
+
+### 動く時に読まない形は配らない（`web.keep`）
+
+`bin/fge export-web` は assets/ の下の `*.schema.json`（Studio とエディタだけが読む）と制作の元ファイル（`.blend` `.blend1` `.psd` `.kra` `.aseprite` `.ase` `.xcf`）を既定で束から外し、表に `外した` の 1 行を出す。
+
+- ゲームが動く時に読むなら `web.keep: [glob]`（例 `"keep": ["assets/editor.schema.json"]`）で戻す。当たるファイルの無い glob は誤り
+- `.md`・`.txt` は外さず、束に入れた本数と量を `知らせ:` の 1 行で出すだけ（字の一覧・クレジット・台本を .txt で読むゲームがあり、起動の確かめはタイトルまでしか見ないので、外して壊れても気づけない）。読まない物は `web.omit` へ
+- 前からある `web.omit: ["assets/*.schema.json"]` は重なっても誤りにならない（消してよい）
 
 ### 遊べるまでの量を見る
 
