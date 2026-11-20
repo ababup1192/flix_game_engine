@@ -347,6 +347,14 @@ mod TestLoadWait {
         let lw = LoadWait.published(next, Set#{"op2"}, 1.5);
         Assert.assertEq(expected = Some(("op2" :: Nil, 0.5, 1.5, true)), Option.map(w -> (w#names, w#progress, w#waited, w#pressed), lw))
 
+    /// デスクトップの組（localDownloads）では、いつも待ちを見ない今までの道を通る
+    @Test
+    def testLocalDownloadsAlwaysTakeThePlainPath(): Unit \ {Assert, IO} =
+        let d = LoadProgress.localDownloads();
+        let plain = LoadWait.isPlainFrame(d#missing(), d#getCodeLoadState() == LoadProgress.LoadState.Loaded, d#isSplashShowing(),
+                                          (LoadWait.initial(): LoadWait.State[Int32]));
+        Assert.assertEq(expected = true, plain)
+
     /// 待ちも控えも無い起動の状態は、今までと同じ道を通れる
     @Test
     def testInitialStateIsIdle(): Unit \ Assert =

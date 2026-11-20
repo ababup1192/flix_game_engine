@@ -344,7 +344,7 @@ pub mod App.Internal.Runner {
     def slowWatchOf(a: AssetWatch, state: App.Internal.LoadWait.State[w]): Option[App.Internal.LoadWait.Watch] \ IO =
         let codeReady = a#downloads#getCodeLoadState() == LoadProgress.LoadState.Loaded;
         let splash = a#downloads#isSplashShowing();
-        if (Set.isEmpty(a#missing) and codeReady and not splash and App.Internal.LoadWait.isIdle(state)) None
+        if (App.Internal.LoadWait.isPlainFrame(a#missing, codeReady, splash, state)) None
         else {
             let failed = App.Internal.LoadWait.waitingNames(state) |> Set.filter(name -> isFailed(a#downloads#stateOf(name)));
             Some({ missing = a#missing, failed = failed, codeReady = codeReady, splash = splash, nowSec = nowSec() })

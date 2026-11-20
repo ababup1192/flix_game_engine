@@ -47,6 +47,10 @@ pub mod App.Internal.LoadWait {
         case _         => false
     }
 
+    /// ループが待ちを見ずに今までと同じ道を通れるコマか（届いていない物が無く・コードがそろい・ロゴも出ておらず・待ちも控えも無い）。
+    pub def isPlainFrame(missing: Set[String], codeReady: Bool, splash: Bool, state: State[w]): Bool =
+        Set.isEmpty(missing) and codeReady and not splash and isIdle(state)
+
     /// 進める時に渡す入力。Live = このコマの入力・Idle = 何も押していない入力・Replay = 控えた入力。
     pub enum Input {
         case Live
