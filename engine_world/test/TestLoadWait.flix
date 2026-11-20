@@ -207,10 +207,17 @@ mod TestLoadWait {
         let (show, _) = LoadWait.decide({ loops = "bgm" :: Nil | candidate(Set.empty(), true) }, ctx(Set#{"bgm"}, 0.0, press(), 5), LoadWait.initial());
         Assert.assertEq(expected = "candidate Nil", showText(show))
 
-    /// 押した時の待ちが起きたら、届いていないループの音も一緒に待つ
+    /// 押した時の待ちが起きても、届いていないループの音は既定では一緒に待たない（届いたら鳴る）
     @Test
-    def testLoopJoinsAPressedWait(): Unit \ Assert =
+    def testLoopDoesNotJoinAPressedWaitByDefault(): Unit \ Assert =
         let (_, next) = LoadWait.decide({ loops = "bgm" :: Nil | candidate(Set#{"bg"}, true) }, ctx(Set#{"bg", "bgm"}, 0.0, press(), 5), LoadWait.initial());
+        Assert.assertEq(expected = Set#{"bg"}, LoadWait.waitingNames(next))
+
+    /// ループの音も当たった名前と同じ group に入れれば一緒に待つ
+    @Test
+    def testLoopInTheSameGroupJoinsAPressedWait(): Unit \ Assert =
+        let policies = Map#{"bg" => policy(None, Some("start")), "bgm" => policy(None, Some("start"))};
+        let (_, next) = LoadWait.decide({ loops = "bgm" :: Nil | candidate(Set#{"bg"}, true) }, ctxOf(Set#{"bg", "bgm"}, policies, 0.0, press(), 5, Nil), LoadWait.initial());
         Assert.assertEq(expected = Set#{"bg", "bgm"}, LoadWait.waitingNames(next))
 
     /// 押した時の待ちは、当たった名前と同じ group の届いていない名前も一緒に待つ

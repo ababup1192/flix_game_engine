@@ -200,7 +200,7 @@ pub mod App.Internal.LoadWait {
         else s
 
     /// 待つ名前に当たった時（待っていない時か渡し直しの最中）: 控えがあるか、今のコマが押したコマなら控えへ戻して押した時の待ちに入る。
-    /// 待つ名前は当たった名前・一緒に待つループの音・同じ group の残り。捨てた候補の届いている一発の音は、押した時に鳴らす。
+    /// 待つ名前は当たった名前と同じ group の残り。捨てた候補の届いている一発の音は、押した時に鳴らす。
     def enterWait(candidate: Candidate, ctx: Context[w], hits: Set[String], state: State[w]): (Show[w], State[w]) =
         // 今のコマで取る控えの World（loaded）は、このコマの store を当てた後なので、もう一度は当てない。
         let (chosen, extra) = match state#snapshot {
@@ -211,7 +211,7 @@ pub mod App.Internal.LoadWait {
             case Some(s) =>
                 let restored = List.foldLeft((acc, replay) -> replay(acc), s#world, List.append(s#stored, extra));
                 let chime = if (isIdleMode(state#mode)) candidate#sounds |> List.filter(name -> not Set.memberOf(name, ctx#missing)) else Nil;
-                let names = Set.union(hits, joinedOf(candidate, ctx, hits, state#gaveUp));
+                let names = Set.union(hits, joinedOf(ctx, hits, state#gaveUp));
                 let wt = { code = candidate#failed, names = names, total = Set.size(names), startedSec = ctx#nowSec, pressed = true,
                            frozen = ctx#styleOf(restored) == App.LoadWaitStyle.Freeze,
                            chimed = addCounts(Map.unionWith((x, y) -> x + y, state#owed, s#played), chime) };
@@ -241,14 +241,13 @@ pub mod App.Internal.LoadWait {
             |> List.filter(name -> missingNow(name) and onMissingOf(ctx#policies, name) == Some(LoadProgress.OnMissing.Wait));
         List.foldLeft((acc, name) -> Set.insert(name, acc), pictures, sounds)
 
-    /// 押した時の待ちで一緒に待つ名前: 候補の届いていないループの音（skip でない物）と、当たった名前と同じ group の届いていない名前。
-    def joinedOf(candidate: Candidate, ctx: Context[w], hits: Set[String], gaveUp: Set[String]): Set[String] =
+    /// 押した時の待ちで一緒に待つ名前: 当たった名前と同じ group の届いていない名前（ループの音も group に入れれば一緒に待つ）。
+    // WhyNot: 届いていないループの音を既定で一緒に待たない — BGM は後回しの列の後ろなので、押した時の待ちが BGM の届くまで延びる。届いたら鳴る。
+    def joinedOf(ctx: Context[w], hits: Set[String], gaveUp: Set[String]): Set[String] =
         let missingNow = name -> Set.memberOf(name, ctx#missing) and not Set.memberOf(name, gaveUp);
-        let loops = candidate#loops |> List.filter(name -> missingNow(name) and not isNoWait(onMissingOf(ctx#policies, name))) |> List.toSet;
         let groups = hits |> Set.toList |> List.filterMap(name -> Map.get(name, ctx#policies) |> Option.flatMap(p -> p#group)) |> List.toSet;
-        let members = if (Set.isEmpty(groups)) Set.empty()
-                      else ctx#policies |> Map.filterWithKey((name, p) -> missingNow(name) and Option.exists(g -> Set.memberOf(g, groups), p#group)) |> Map.keysOf;
-        Set.union(loops, members)
+        if (Set.isEmpty(groups)) Set.empty()
+        else ctx#policies |> Map.filterWithKey((name, p) -> missingNow(name) and Option.exists(g -> Set.memberOf(g, groups), p#group)) |> Map.keysOf
 
     def onMissingOf(policies: Map[String, LoadProgress.MissingPolicy], name: String): Option[LoadProgress.OnMissing] =
         Map.get(name, policies) |> Option.flatMap(p -> p#onMissing)

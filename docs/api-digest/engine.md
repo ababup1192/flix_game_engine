@@ -779,7 +779,7 @@
   `pub type alias AssetDownloads = { stateOf = String -> LoadState \ IO, missing = Unit -> Set[String] \ IO, request = List[String] -> Unit \ IO, release = List[String] -> Unit \ IO, setBudget = DecodeBudget -> Unit \ IO, spentMs = Unit -> Float64 \ IO, missingGen = Unit -> Int32 \ IO, policyOf = String -> MissingPolicy \ IO, getCodeLoadState = Unit -> LoadState \ IO, isSplashShowing = Unit -> Bool \ IO, setLoadWait = Option[LoadWait] -> Unit \ IO }`
 - 届いていない素材を使おうとした時の扱い。Wait = 届くまで待つ・Placeholder = 描かずに（フォントは先頭のフォントで）進む・Skip = 鳴らさずに進む。
   `pub enum OnMissing with Eq, ToString { case Wait case Placeholder case Skip }`
-- 名前 1 つの扱い。onMissing = None は種類の既定（絵とフォントは待つ・一発の音は鳴らさず進む・ループの音は押した時の待ちに加わる）・
+- 名前 1 つの扱い。onMissing = None は種類の既定（絵とフォントは待つ・一発の音は鳴らさず進む・ループの音は待たずに届いたら鳴る）・
   `pub type alias MissingPolicy = { onMissing = Option[OnMissing], group = Option[String] }`
 - 表に載っていない名前の扱い（両方 None）。
   `pub def defaultPolicy(): MissingPolicy`
