@@ -16,9 +16,9 @@ pub mod App.Internal.LoadWait {
 
     /// 押した所の控え。world = 押す前の World・stepState = その時の StepState・atSec = 控えた時刻・
     /// frames = 押したコマとその次のコマの入力の組を、控えてから押した順に並べた物（渡し直すコマ。組は 2 コマ）・stored = 控えてから積んだ store の記録・
-    /// played = 控えてから鳴らした一発の音の名前ごとの数。
+    /// played = 控えてから鳴らした一発の音の名前ごとの数・justCaptured = このコマの plan が組の 2 コマ目を足したか（同じコマを 2 度並べない）。
     pub type alias Snapshot[w] = { world = w, stepState = App.StepState, atSec = Float64, frames = List[App.Frame],
-                                   stored = List[w -> w], played = Map[String, Int32] }
+                                   stored = List[w -> w], played = Map[String, Int32], justCaptured = Bool }
 
     /// 待っている所。code = 後から取るコードを待つか・names = 待つ名前・total = 待ち始めた時の名前の数・startedSec = 待ち始めた時刻・
     /// pressed = 押した所まで戻して待っているか（偽は前の World で止まっている）・frozen = 戻した World を進めずに描き直すか・
@@ -26,18 +26,20 @@ pub mod App.Internal.LoadWait {
     pub type alias Wait = { code = Bool, names = Set[String], total = Int32, startedSec = Float64, pressed = Bool, frozen = Bool,
                             chimed = Map[String, Int32] }
 
-    /// 待ちの局面。Idle = 待っていない・Waiting = 待っている・Replaying(i) = 届いたので控えた入力の i コマ目を渡し直す。
+    /// 待ちの状態。Idle = 待っていない・Waiting = 待っている・Replaying = 届いたので、まだ渡していない控えた入力を先頭から渡し直す。
+    // WhyNot: 渡し直す入力を控えの中から引かない — 渡し直しの途中で出力の鍵が変わって控えを捨てると、残りの入力も消える。
     pub enum Mode {
         case Idle
         case Waiting(Wait)
-        case Replaying(Int32)
+        case Replaying(List[App.Frame])
     }
 
-    /// ループが持ち回す待ちの状態。gaveUp = 諦めた名前（ゲームの間ずっと待たない）・owed = 渡し直しの音から引く数。
-    pub type alias State[w] = { mode = Mode, snapshot = Option[Snapshot[w]], gaveUp = Set[String], owed = Map[String, Int32] }
+    /// ループが持ち回す待ちの状態。gaveUp = 諦めた名前（ゲームの間ずっと待たない）・owed = 渡し直しの音から引く数・
+    /// owedUntilSec = owed を引き続ける時刻（渡し直しを始めてから控えの秒の間。控えを捨てても引く）。
+    pub type alias State[w] = { mode = Mode, snapshot = Option[Snapshot[w]], gaveUp = Set[String], owed = Map[String, Int32], owedUntilSec = Float64 }
 
     /// 起動の時の状態（待っていない・控えも無い）。
-    pub def initial(): State[w] = { mode = Mode.Idle, snapshot = None, gaveUp = Set.empty(), owed = Map.empty() }
+    pub def initial(): State[w] = { mode = Mode.Idle, snapshot = None, gaveUp = Set.empty(), owed = Map.empty(), owedUntilSec = 0.0 }
 
     /// 待っていなくて控えも無いか（ループが今までと同じ道を通れるか）。
     pub def isIdle(state: State[w]): Bool = match state#mode {
@@ -86,29 +88,30 @@ pub mod App.Internal.LoadWait {
         if (watch#splash) (Step.Splash, state)
         else match state#mode {
             case Mode.Idle         => (Step.Advance(Input.Live), expire(settings, watch#nowSec, state))
-            case Mode.Replaying(i) => replayStep(i, state)
+            case Mode.Replaying(frames) => replayStep(frames, state)
             case Mode.Waiting(wt)  => waitingStep(settings, live, watch, world, stepState, wt, state)
         }
 
     /// 控えの最後の組が押したコマの入力しか持っていなければ、このコマの入力を組の 2 コマ目として足す（渡し直しの最中は足さない）。
     def captureNext(live: App.Frame, state: State[w]): State[w] = match (state#mode, state#snapshot) {
-        case (Mode.Replaying(_), _) => state
-        case (_, Some(s)) if Int32.modulo(List.length(s#frames), 2) == 1 => { snapshot = Some({ frames = List.append(s#frames, live :: Nil) | s }) | state }
+        case (Mode.Replaying(_), Some(s)) => { snapshot = Some({ justCaptured = false | s }) | state }
+        case (_, Some(s)) if Int32.modulo(List.length(s#frames), 2) == 1 =>
+            { snapshot = Some({ frames = List.append(s#frames, live :: Nil), justCaptured = true | s }) | state }
+        case (_, Some(s)) => { snapshot = Some({ justCaptured = false | s }) | state }
         case _ => state
     }
 
     /// 待っていない時: 控えの秒が過ぎていれば控えを捨てる。
     def expire(settings: Settings, nowSec: Float64, state: State[w]): State[w] = match state#snapshot {
-        case Some(s) if nowSec - s#atSec > settings#pressWindowSeconds => { snapshot = None, owed = Map.empty() | state }
+        case Some(s) if nowSec - s#atSec > settings#pressWindowSeconds => { snapshot = None | state }
         case _                                                         => state
     }
 
-    /// 渡し直しの i コマ目。控えた入力を渡し切っていれば待っていない時へ戻す。
-    def replayStep(i: Int32, state: State[w]): (Step, State[w]) =
-        match state#snapshot |> Option.flatMap(s -> List.nth(i, s#frames)) {
-            case Some(held) => (Step.Advance(Input.Replay(held)), state)
-            case None       => (Step.Advance(Input.Live), { mode = Mode.Idle | state })
-        }
+    /// 渡し直す入力の先頭。渡し切っていれば待っていない時へ戻す。
+    def replayStep(frames: List[App.Frame], state: State[w]): (Step, State[w]) = match frames {
+        case held :: _ => (Step.Advance(Input.Replay(held)), state)
+        case Nil       => (Step.Advance(Input.Live), { mode = Mode.Idle | state })
+    }
 
     /// 待ちの最中の手。やめるキー → 戻した場面のまま待ちをやめる・全部届いた（か諦めた）→ 押した時の待ちは渡し直し、控えの外の待ちは進める・
     /// まだ → 押した時の待ちで止めないなら入力なしで進め、ほかは描き直す。
@@ -119,17 +122,18 @@ pub mod App.Internal.LoadWait {
         let assetsDone = Set.isEmpty(remaining) or timedOut or allFailed;
         let codeDone = not wt#code or watch#codeReady;
         let cancelled = wt#pressed and not Set.isEmpty(Set.intersection(live#justPressed, settings#cancelKeys));
-        if (cancelled) (Step.Advance(Input.Idle), { mode = Mode.Idle, snapshot = None, owed = Map.empty() | state })
-        else if (assetsDone and codeDone) resume(watch#nowSec, world, stepState, wt, { gaveUp = Set.union(state#gaveUp, remaining) | state })
+        if (cancelled) (Step.Advance(Input.Idle), { mode = Mode.Idle, snapshot = None, owed = Map.empty(), owedUntilSec = 0.0 | state })
+        else if (assetsDone and codeDone) resume(settings, watch#nowSec, world, stepState, wt, { gaveUp = Set.union(state#gaveUp, remaining) | state })
         else if (wt#pressed and not wt#frozen) (Step.Advance(Input.Idle), state)
         else (Step.Hold, state)
 
     /// 待ちが明けた時: 押した時の待ちは控えを今の World へ移して 1 コマ目を渡し直し、控えの外の待ちはこのコマの入力で進める。
-    def resume(nowSec: Float64, world: w, stepState: App.StepState, wt: Wait, state: State[w]): (Step, State[w]) =
+    def resume(settings: Settings, nowSec: Float64, world: w, stepState: App.StepState, wt: Wait, state: State[w]): (Step, State[w]) =
         match (wt#pressed, state#snapshot) {
             case (true, Some(s)) =>
                 let moved = { world = world, stepState = stepState, atSec = nowSec, stored = Nil, played = Map.empty() | s };
-                replayStep(0, { mode = Mode.Replaying(0), snapshot = Some(moved), owed = wt#chimed | state })
+                replayStep(s#frames, { mode = Mode.Replaying(s#frames), snapshot = Some(moved), owed = wt#chimed,
+                                       owedUntilSec = nowSec + settings#pressWindowSeconds | state })
             case _ => (Step.Advance(Input.Live), { mode = Mode.Idle | state })
         }
 
@@ -159,18 +163,19 @@ pub mod App.Internal.LoadWait {
         if (not candidate#failed and Set.isEmpty(hits)) emit(candidate, ctx, state)
         else match state#mode {
             case Mode.Waiting(wt) =>
-                let more = { code = wt#code or candidate#failed, names = Set.union(wt#names, hits), frozen = true | wt };
+                let more = { code = wt#code or candidate#failed, names = Set.union(wt#names, hits),
+                             total = wt#total + Set.size(Set.difference(hits, wt#names)), frozen = true | wt };
                 (Show.Loaded(Nil), { mode = Mode.Waiting(more) | state })
             case _ => enterWait(candidate, ctx, hits, state)
         }
 
     /// 候補を出す時: 渡し直しの音から引く数を引き、渡し直しを 1 コマ進め、控えを取る・積む・捨てる。
     def emit(candidate: Candidate, ctx: Context[w], state: State[w]): (Show[w], State[w]) =
-        let (sounds, owed) = withoutOwed(candidate#sounds, state#owed);
-        let frameCount = state#snapshot |> Option.map(s -> List.length(s#frames)) |> Option.getWithDefault(0);
+        let (sounds, owed) = withoutOwed(candidate#sounds, if (ctx#nowSec > state#owedUntilSec) Map.empty() else state#owed);
         let mode = match state#mode {
-            case Mode.Replaying(i) => if (i + 1 >= frameCount) Mode.Idle else Mode.Replaying(i + 1)
-            case other             => other
+            case Mode.Replaying(_ :: rest) if not List.isEmpty(rest) => Mode.Replaying(rest)
+            case Mode.Replaying(_)                                   => Mode.Idle
+            case other                                               => other
         };
         let waiting = match state#mode {
             case Mode.Waiting(_) => true
@@ -182,32 +187,35 @@ pub mod App.Internal.LoadWait {
                            case Some(s) => Some(withPress(candidate, ctx, state#mode, { stored = List.append(s#stored, ctx#stored), played = addCounts(s#played, sounds) | s }))
                            case None    => if (candidate#pressed and isIdleMode(state#mode)) Some(snapshotOf(ctx, sounds)) else None
                        };
-        (Show.Candidate(sounds), { mode = mode, snapshot = snapshot, owed = if (Option.isEmpty(snapshot)) Map.empty() else owed | state })
+        (Show.Candidate(sounds), { mode = mode, snapshot = snapshot, owed = owed | state })
 
     /// 控えが生きている間に押したコマ: 控えは取り直さず（押す前の World のまま）、その入力を渡し直すコマの末尾へ足す（次のコマを plan が足す）。
-    /// 足すのは 16 コマまで。前の組の 2 コマ目を足したコマ（数が偶数でない時）は、そのコマが既に並んでいるので足さない。
+    /// 足すのは 16 コマまで。このコマを plan が前の組の 2 コマ目として足していれば、そのコマは既に並んでいるので足さない。
     // WhyNot: 控えを最初の押した所に留めたまま、その後の押した入力を捨てない — 下を押してすぐ決定を押すと、決定が消えて押し直しになる。
     // WhyNot: 控えを後の押した所へ取り直さない — 暗転の途中で押し直すと、半分暗い所へ戻る。
     def withPress(candidate: Candidate, ctx: Context[w], mode: Mode, s: Snapshot[w]): Snapshot[w] =
         let count = List.length(s#frames);
-        if (candidate#pressed and isIdleMode(mode) and Int32.modulo(count, 2) == 0 and count < 16)
+        if (candidate#pressed and isIdleMode(mode) and not s#justCaptured and Int32.modulo(count, 2) == 0 and count < 16)
             { frames = List.append(s#frames, ctx#frame :: Nil) | s }
         else s
 
     /// 待つ名前に当たった時（待っていない時か渡し直しの最中）: 控えがあるか、今のコマが押したコマなら控えへ戻して押した時の待ちに入る。
     /// 待つ名前は当たった名前・一緒に待つループの音・同じ group の残り。捨てた候補の届いている一発の音は、押した時に鳴らす。
     def enterWait(candidate: Candidate, ctx: Context[w], hits: Set[String], state: State[w]): (Show[w], State[w]) =
-        let fresh = if (candidate#pressed and isIdleMode(state#mode)) Some(snapshotOf(ctx, Nil)) else None;
-        let kept = state#snapshot |> Option.map(withPress(candidate, ctx, state#mode));
-        match Option.withDefault(default = fresh, kept) {
+        // 今のコマで取る控えの World（loaded）は、このコマの store を当てた後なので、もう一度は当てない。
+        let (chosen, extra) = match state#snapshot {
+            case Some(s) => (Some(withPress(candidate, ctx, state#mode, s)), ctx#stored)
+            case None    => (if (candidate#pressed and isIdleMode(state#mode)) Some(snapshotOf(ctx, Nil)) else None, Nil)
+        };
+        match chosen {
             case Some(s) =>
-                let restored = List.foldLeft((acc, replay) -> replay(acc), s#world, List.append(s#stored, ctx#stored));
+                let restored = List.foldLeft((acc, replay) -> replay(acc), s#world, List.append(s#stored, extra));
                 let chime = if (isIdleMode(state#mode)) candidate#sounds |> List.filter(name -> not Set.memberOf(name, ctx#missing)) else Nil;
                 let names = Set.union(hits, joinedOf(candidate, ctx, hits, state#gaveUp));
                 let wt = { code = candidate#failed, names = names, total = Set.size(names), startedSec = ctx#nowSec, pressed = true,
                            frozen = ctx#styleOf(restored) == App.LoadWaitStyle.Freeze,
                            chimed = addCounts(Map.unionWith((x, y) -> x + y, state#owed, s#played), chime) };
-                (Show.Restored(restored, { real = ctx#real | s#stepState }, chime),
+                (Show.Restored(restored, { real = ctx#real, pending = App.Internal.Frame.noPending() | s#stepState }, chime),
                  { mode = Mode.Waiting(wt), snapshot = Some({ world = restored, stored = Nil, played = Map.empty() | s }), owed = Map.empty() | state })
             case None =>
                 let wt = { code = candidate#failed, names = hits, total = Set.size(hits), startedSec = ctx#nowSec, pressed = false,
@@ -217,7 +225,8 @@ pub mod App.Internal.LoadWait {
 
     /// 今のコマで取る控え（押す前の World と StepState・このコマの入力・このコマで鳴らした一発の音）。
     def snapshotOf(ctx: Context[w], sounds: List[String]): Snapshot[w] =
-        { world = ctx#loaded, stepState = ctx#stepState, atSec = ctx#nowSec, frames = ctx#frame :: Nil, stored = Nil, played = addCounts(Map.empty(), sounds) }
+        { world = ctx#loaded, stepState = ctx#stepState, atSec = ctx#nowSec, frames = ctx#frame :: Nil, stored = Nil, played = addCounts(Map.empty(), sounds),
+          justCaptured = false }
 
     def isIdleMode(mode: Mode): Bool = match mode {
         case Mode.Idle => true

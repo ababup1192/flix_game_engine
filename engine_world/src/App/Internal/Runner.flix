@@ -89,7 +89,8 @@ pub mod App.Internal.Runner {
                     warnOnce = App.warnOnceWith(Ref.fresh(Static, Set.empty())),
                     cursorShown = App.CursorLook.State.Stale, captureShown = None, lastDiagnostics = None,
                     outputKeys = App.Internal.Output.keysAfterJump(app, world0, Nil), tools = started,
-                    assets = assets, loadWait = App.Internal.LoadWait.initial(), publishedWait = None })
+                    assets = assets, loadWait = App.Internal.LoadWait.initial(),
+                    waitSettings = App.Internal.LoadWait.defaultSettings(), publishedWait = None })
 
     /// loop が次のフレームへ渡し続ける物。app（不変）は入れない — 状態に混ぜると
     /// 「フレームごとに変わりうる物」に見える。
@@ -123,8 +124,8 @@ pub mod App.Internal.Runner {
         tools = App.Internal.DevTools.State,
         // 届いていない後回しの物を待つ機種の APIと、届いていない名前の控え（None = 待たない App）。
         assets = Option[AssetWatch],
-        // 待ちの状態と押した所の控え（App.Internal.LoadWait）・最後に機種と World へ知らせた待ち。
-        loadWait = App.Internal.LoadWait.State[w],
+        // 待ちの状態と押した所の控え（App.Internal.LoadWait）・待ちの決まりの数・最後に機種と World へ知らせた待ち。
+        loadWait = App.Internal.LoadWait.State[w], waitSettings = App.Internal.LoadWait.Settings,
         publishedWait = Option[LoadProgress.LoadWait]
     }
 
@@ -413,7 +414,8 @@ pub mod App.Internal.Runner {
     def slowStep(app: App[w, ef], hooks: App.Internal.DevTools.Hooks[w, ef, efTools], frame: App.Frame, frameStart: Int64, st: LoopState[w],
                  opened: Opened[w], a: AssetWatch, watch: App.Internal.LoadWait.Watch): LoopState[w] \ (ef + Platform.Window + Platform.Rendering + RenderTarget.Target + GameEngine.Audio + Platform.Diagnostics + Platform.Tasks + Fs.FileRead + Fs.FileWrite + IO) =
         let r = App.rec(app);
-        let (step, planned) = App.Internal.LoadWait.plan(App.Internal.LoadWait.defaultSettings(), frame, watch, opened#reloaded, st#stepState, st#loadWait);
+        let (step, planned) = App.Internal.LoadWait.plan(st#waitSettings, frame, watch, opened#reloaded, st#stepState, st#loadWait);
+        noteGaveUp(st#loadWait, planned, watch#nowSec);
         let published = App.Internal.LoadWait.published(planned, watch#missing, watch#nowSec);
         noticeLoadWait(a, st#publishedWait, published);
         let (stepped, stores) = App.Internal.BackgroundLoad.stepAll(r, opened#reloaded);
@@ -444,33 +446,32 @@ pub mod App.Internal.Runner {
     def advanceSlow(app: App[w, ef], hooks: App.Internal.DevTools.Hooks[w, ef, efTools], frame: App.Frame, frameStart: Int64, st: LoopState[w],
                     opened: Opened[w], ctx: App.Internal.LoadWait.Context[w], planned: App.Internal.LoadWait.State[w]): LoopState[w] \ (ef + Platform.Window + Platform.Rendering + RenderTarget.Target + GameEngine.Audio + Platform.Diagnostics + Platform.Tasks + Fs.FileRead + Fs.FileWrite + IO) =
         let r = App.rec(app);
+        let pressed = App.Internal.LoadWait.isPressFrame(ctx#frame, st#stepState);
+        // WhyNot: withLoadGate と出力の鍵をこの外で引かない — どちらもゲームのコードで、後から取るコードに触れうる。
         let attempt = App.Internal.LoadWait.catchCodeNotReady(() -> {
             let (traced, next) = App.traceFrame(app, ctx#frame, st#stepState, ctx#loaded);
-            (traced, next, buildFor(app, st, frame, traced#after))
+            let built = buildFor(app, st, frame, traced#after);
+            (traced, next, built, candidateOf(app, st, pressed, traced, built))
         });
-        let candidate = candidateOf(app, ctx, st, attempt);
+        let candidate = attempt |> Option.map(match (_, _, _, c) -> c)
+            |> Option.getWithDefault({ names = Set.empty(), sounds = Nil, loops = Nil, failed = true, pressed = pressed, outputsChanged = false });
         let (show, decided) = App.Internal.LoadWait.decide(candidate, ctx, planned);
         match (show, attempt) {
-            case (App.Internal.LoadWait.Show.Candidate(sounds), Some((traced, next, built))) =>
+            case (App.Internal.LoadWait.Show.Candidate(sounds), Some((traced, next, built, _))) =>
                 let out = { world = traced#after, stepState = next, trace = Some({ sounds = sounds | traced }), recorded = Some(ctx#frame), loadWait = decided };
                 emitSlow(app, hooks, frame, frameStart, st, opened, ctx, planned, candidate, out, built)
             case _ => showSlow(app, hooks, frame, frameStart, st, opened, shownOf(r, frame, ctx, show, decided))
         }
 
     /// 照らす候補（描く物の名前と withLoadGate の名前・音・作れたか・押した入力か・外への出力の鍵が変わるか）。
-    def candidateOf(app: App[w, ef], ctx: App.Internal.LoadWait.Context[w], st: LoopState[w],
-                    attempt: Option[(App.TraceStep[w], App.StepState, Option[App.Internal.Paint.Built])]): App.Internal.LoadWait.Candidate \ ef =
+    def candidateOf(app: App[w, ef], st: LoopState[w], pressed: Bool, traced: App.TraceStep[w],
+                    built: Option[App.Internal.Paint.Built]): App.Internal.LoadWait.Candidate \ ef =
         let r = App.rec(app);
-        let pressed = App.Internal.LoadWait.isPressFrame(ctx#frame, st#stepState);
-        match attempt {
-            case None => { names = Set.empty(), sounds = Nil, loops = Nil, failed = true, pressed = pressed, outputsChanged = false }
-            case Some((traced, _, built)) =>
-                let drawn = built |> Option.map(App.Internal.Paint.assetNamesOf) |> Option.getWithDefault(Set.empty());
-                let gated = r#loadGate |> Option.map(f -> f(traced#after)) |> Option.getWithDefault(Nil);
-                { names = List.foldLeft((acc, name) -> Set.insert(name, acc), drawn, gated), sounds = traced#sounds,
-                  loops = List.map(s -> s#name, traced#sustained), failed = false, pressed = pressed,
-                  outputsChanged = not List.isEmpty(App.Internal.Output.dueOutputs(app, traced#after, st#outputKeys)) }
-        }
+        let drawn = built |> Option.map(App.Internal.Paint.assetNamesOf) |> Option.getWithDefault(Set.empty());
+        let gated = r#loadGate |> Option.map(f -> f(traced#after)) |> Option.getWithDefault(Nil);
+        { names = List.foldLeft((acc, name) -> Set.insert(name, acc), drawn, gated), sounds = traced#sounds,
+          loops = List.map(s -> s#name, traced#sustained), failed = false, pressed = pressed,
+          outputsChanged = not List.isEmpty(App.Internal.Output.dueOutputs(app, traced#after, st#outputKeys)) }
 
     /// 候補を出す: 描いて出し、描く途中で後から取るコードがそろっていなかったら、そのコマは画面へ出さず、候補を捨てた時と同じ答えにする
     /// （描き手の今のコマの命令に半分積んだ物が残るので、同じコマで前の World を描き足さない。次のコマで描く）。
@@ -547,6 +548,15 @@ pub mod App.Internal.Runner {
           stepState = out#stepState, tools = nextTools, loadWait = out#loadWait,
           sustaining = nextSustaining, mixState = nextMix, soundUses = nextUses, tileCache = cache1,
           glyphSeen = seen1, budgetWarned = warned1 | st }
+
+    /// 待ちを諦めた名前が増えたコマに、名前と待った秒を 1 行言う（その名前は以後、描かず・鳴らさずに進む）。
+    def noteGaveUp(before: App.Internal.LoadWait.State[w], after: App.Internal.LoadWait.State[w], nowSec: Float64): Unit \ IO =
+        let given = Set.difference(after#gaveUp, before#gaveUp);
+        if (Set.isEmpty(given)) ()
+        else {
+            let waited = App.Internal.LoadWait.published(before, given, nowSec) |> Option.map(lw -> lw#waited) |> Option.getWithDefault(0.0);
+            System.err.println("[load-wait] ${String.intercalate(", ", Set.toList(given))} を ${Float64.toString(waited)} 秒待っても届かないので諦めた（以後は描かず・鳴らさずに進む）")
+        }
 
     /// 今の待ちが前に知らせた物から変わった時だけ機種へ知らせる（待った秒だけの変化は知らせない）。
     def noticeLoadWait(a: AssetWatch, before: Option[LoadProgress.LoadWait], now: Option[LoadProgress.LoadWait]): Unit \ IO =

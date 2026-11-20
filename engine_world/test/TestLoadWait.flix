@@ -52,7 +52,7 @@ mod TestLoadWait {
     def modeText(state: LoadWait.State[Int32]): String = match state#mode {
         case Mode.Idle         => "idle"
         case Mode.Waiting(wt)  => if (wt#pressed) "pressed-wait" else "stopped-wait"
-        case Mode.Replaying(i) => "replaying ${i}"
+        case Mode.Replaying(frames) => "replaying ${List.length(frames)}"
     }
 
     /// 押したコマで bg に当たって押した時の待ちに入った状態（押す前の World は 5・時刻 0）。
@@ -94,11 +94,42 @@ mod TestLoadWait {
     @Test
     def testEveryPressInTheWindowIsReplayed(): Unit \ Assert =
         let (_, down) = LoadWait.decide(candidate(Set.empty(), true), ctx(Set#{"bg"}, 0.0, pressOf(Key.Down), 1), LoadWait.initial());
-        let (_, next) = LoadWait.plan(settings(), live(), watch(Set#{"bg"}, 0.1), 2, App.freshStepState(), down);
-        let (_, waiting) = LoadWait.decide(candidate(Set#{"bg"}, true), ctx(Set#{"bg"}, 0.2, press(), 2), next);
+        let (_, planned2) = LoadWait.plan(settings(), live(), watch(Set#{"bg"}, 0.1), 2, App.freshStepState(), down);
+        let (_, after2) = LoadWait.decide(candidate(Set.empty(), false), ctx(Set#{"bg"}, 0.1, live(), 2), planned2);
+        let (_, planned3) = LoadWait.plan(settings(), press(), watch(Set#{"bg"}, 0.2), 3, App.freshStepState(), after2);
+        let (_, waiting) = LoadWait.decide(candidate(Set#{"bg"}, true), ctx(Set#{"bg"}, 0.2, press(), 3), planned3);
         let (_, captured) = LoadWait.plan(settings(), live(), watch(Set#{"bg"}, 0.3), 1, App.freshStepState(), waiting);
         let pressedKeys = captured#snapshot |> Option.map(s -> List.map(f -> Set.toList(f#justPressed), s#frames));
         Assert.assertEq(expected = Some((Key.Down :: Nil) :: Nil :: (Key.Enter :: Nil) :: Nil :: Nil), pressedKeys)
+
+    /// 押したすぐ次のコマでまた押しても、そのコマは組の 2 コマ目として 1 回だけ並ぶ（同じ入力を 2 回渡し直さない）
+    @Test
+    def testBackToBackPressesAreNotDoubled(): Unit \ Assert =
+        let (_, first) = LoadWait.decide(candidate(Set.empty(), true), ctx(Set#{"bg"}, 0.0, pressOf(Key.Down), 1), LoadWait.initial());
+        let (_, planned) = LoadWait.plan(settings(), press(), watch(Set#{"bg"}, 0.016), 2, App.freshStepState(), first);
+        let (_, second) = LoadWait.decide(candidate(Set.empty(), true), ctx(Set#{"bg"}, 0.016, press(), 2), planned);
+        Assert.assertEq(expected = Some(2), second#snapshot |> Option.map(s -> List.length(s#frames)))
+
+    /// 押したコマでそのまま当たった時は、そのコマの store を 2 回当てない（loaded は当てた後の World）
+    @Test
+    def testPressFrameHitAppliesTheStoreOnce(): Unit \ Assert =
+        let (show, _) = LoadWait.decide(candidate(Set#{"bg"}, true), ctxOf(Set#{"bg"}, Map.empty(), 0.0, press(), 15, (w -> w + 10) :: Nil), LoadWait.initial());
+        Assert.assertEq(expected = "restored 15 Nil", showText(show))
+
+    /// 渡し直しの途中で出力の鍵が変わって控えを捨てても、残りの入力は渡し直す
+    @Test
+    def testReplayContinuesAfterAnOutputChange(): Unit \ Assert =
+        let (_, captured) = LoadWait.plan(settings(), live(), watch(Set#{"bg"}, 0.1), 5, App.freshStepState(), pressedWait(Set#{"bg"}));
+        let (_, replaying) = LoadWait.plan(settings(), live(), watch(Set.empty(), 0.2), 6, App.freshStepState(), captured);
+        let (_, saved) = LoadWait.decide({ outputsChanged = true | candidate(Set.empty(), true) }, ctx(Set.empty(), 0.2, press(), 6), replaying);
+        let (step, _) = LoadWait.plan(settings(), live(), watch(Set.empty(), 0.3), 7, App.freshStepState(), saved);
+        Assert.assertEq(expected = "replay Nil", stepText(step))
+
+    /// 待ちの最中に待つ名前が増えたら分母も増やす（届いた割合が負にならない）
+    @Test
+    def testProgressCountsNamesAddedDuringTheWait(): Unit \ Assert =
+        let (_, more) = LoadWait.decide(candidate(Set#{"room"}, false), ctx(Set#{"bg", "room"}, 0.5, live(), 5), pressedWait(Set#{"bg", "room"}));
+        Assert.assertEq(expected = Some(0.5), LoadWait.published(more, Set#{"room"}, 1.0) |> Option.map(lw -> lw#progress))
 
     /// 外への出力の鍵が変わる候補を出したら控えを捨てる（その後に当たっても戻さず止まる）
     @Test
@@ -363,4 +394,19 @@ mod TestLoadWait {
             case e: RuntimeException => e.getMessage()
         };
         Assert.assertEq(expected = "boom", message)
+
+    // ========================================================================
+    // 組んだ 1 コマの名前（Paint.assetNamesOf）
+    // ========================================================================
+
+    /// 画面・Pass の中・余りの絵・タイル層のアトラスの名前を全部数える
+    @Test
+    def testAssetNamesOfCountsEveryPart(): Unit \ Assert =
+        let placed = name -> { at = Vec2.zero(), item = Render.sprite(name, 0) };
+        let atlas = { marginX = 0.0, marginY = 0.0, spacingX = 0.0, spacingY = 0.0, texHeight = 16.0, texWidth = 16.0, textureName = "tiles", tileSize = 8.0 };
+        let tile = { key = "floor", tileSet = { atlasSource = atlas }, tiles = () -> Nil, origin = Vec2.zero(), zIndex = 0 };
+        let built = { items = placed("hero") :: Nil,
+                      plan = Render.passPlan({ name = "fx", clear = RenderTarget.LoadOp.Clear({ r = 0.0, g = 0.0, b = 0.0 }), items = placed("smoke") :: Nil } :: Nil),
+                      letterbox = Some(placed("blur") :: Nil), tiles = tile :: Nil, retained = true };
+        Assert.assertEq(expected = Set#{"hero", "smoke", "blur", "tiles"}, App.Internal.Paint.assetNamesOf(built))
 }
