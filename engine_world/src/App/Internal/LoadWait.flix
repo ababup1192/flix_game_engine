@@ -288,6 +288,11 @@ pub mod App.Internal.LoadWait {
         case _ => None
     }
 
+    /// 押した時の待ちの、押した点（控えの最初の入力がマウスかタッチで押していればその位置。キーで押した時と控えが無い時は None）。
+    pub def pressPointOf(state: State[w]): Option[Vec2.Vec2] =
+        state#snapshot |> Option.flatMap(s -> List.head(s#frames))
+            |> Option.flatMap(f -> if (f#mouseClicked or not Set.isEmpty(f#mouseClickedButtons)) Some(f#cursor) else None)
+
     /// 待つ名前の字（Runner が機種へ取れずに終わったかを問い合わせる名前）。待っていなければ空。
     pub def waitingNames(state: State[w]): Set[String] = match state#mode {
         case Mode.Waiting(wt) => wt#names

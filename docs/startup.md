@@ -111,6 +111,9 @@ Backspace（パッドの B）で押した時の待ちをやめる。デスクト
 - 扱いを替えるのは `"web": { "deferredPolicy": [{ "match": "<後回しの道の glob か font:名前>", "onMissing": "wait|placeholder|skip", "group": "<組>" }] }`（先の行が勝つ）。
   絵とフォントは `wait`・`placeholder`（待たずに描かずに進む）、音は `wait`・`skip`。`group` を付けると、押した時の待ちで同じ組の残りも一緒に待つ
 - 撮る頁（`?capture=<n>`）で画素を比べる時は `&deferred=all` を付ける（後回しが全部届いてから main を呼ぶ。撮るコマの番号が待ちでずれない）
+- 待つ間の表示: 押した時の待ちに入ったら、押した点（キーなら画面の真ん中）から波紋を 1 回。待ちが 0.5 秒を超えたら画面の右下に小さな輪（届いた割合の弧と回る光の点・字は出さない・20 秒を超えたら回り方がゆっくりになる）。
+  z は `ZBand.loadingBase`（HUD より手前・デバッグより奥）。替えるのは `App.withLoadingIndicator(App.LoadingIndicator.Custom(f))`（自分のフォントで字を出す時）・出さないのは `Hidden`（波紋も出さない）。
+  選んだ行を光らせるなど World の側で手応えを出すなら `App.withLoadWait` で `LoadWait#pressed`・`waited`・`progress` を写す
 - 頁の `window.fgeLoadWait` が今の待ち（理由・名前・待った秒・届いた割合・押した時の待ちか）。起動の画面は、待ちの無いコマを初めて出した時に外す
 
 ### ループの中で区切って読む（`BackgroundLoad`・`App.withBackgroundLoad`）

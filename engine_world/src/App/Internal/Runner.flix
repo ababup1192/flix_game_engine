@@ -450,7 +450,7 @@ pub mod App.Internal.Runner {
         // WhyNot: withLoadGate と出力の鍵をこの外で引かない — どちらもゲームのコードで、後から取るコードに触れうる。
         let attempt = App.Internal.LoadWait.catchCodeNotReady(() -> {
             let (traced, next) = App.traceFrame(app, ctx#frame, st#stepState, ctx#loaded);
-            let built = buildFor(app, st, frame, traced#after);
+            let built = buildFor(app, st, frame, traced#after, planned);
             (traced, next, built, candidateOf(app, st, pressed, traced, built))
         });
         let candidate = attempt |> Option.map(match (_, _, _, c) -> c)
@@ -502,11 +502,14 @@ pub mod App.Internal.Runner {
     def stillTrace(r: App.Rec[w, ef], frame: App.Frame, world: w, chime: List[String]): App.TraceStep[w] \ ef =
         { frame = frame, before = world, after = world, sounds = chime, sustained = (r#sustained)(world) }
 
-    /// world を組む（fps の重ねは st#anno から）。
-    def buildFor(app: App[w, ef], st: LoopState[w], frame: App.Frame, world: w): Option[App.Internal.Paint.Built] \ (ef + Platform.GpuResources + Platform.Window) =
+    /// world を組む（fps の重ねは st#anno から・待ちの表示は st#publishedWait と waitState の押した点から）。
+    def buildFor(app: App[w, ef], st: LoopState[w], frame: App.Frame, world: w, waitState: App.Internal.LoadWait.State[w]): Option[App.Internal.Paint.Built] \ (ef + Platform.GpuResources + Platform.Window) =
         let r = App.rec(app);
-        App.Internal.Paint.buildPainted(app, st#warnOnce, frame#diagnostics, st#design, Platform.Window.getDisplay(), world,
-                                        App.Internal.Paint.plainLook(App.Internal.Paint.fpsOverlayOf(r, st#design, st#anno)), st#tileCache)
+        let display = Platform.Window.getDisplay();
+        let waiting = App.Internal.Paint.loadingOverlayOf(app, st#warnOnce, st#design, display, st#publishedWait, App.Internal.LoadWait.pressPointOf(waitState));
+        let fps = App.Internal.Paint.fpsOverlayOf(r, st#design, st#anno);
+        App.Internal.Paint.buildPainted(app, st#warnOnce, frame#diagnostics, st#design, display, world,
+                                        App.Internal.Paint.plainLook(if (List.isEmpty(waiting)) fps else List.append(waiting, fps)), st#tileCache)
 
     /// 組んだ World を描いて画面へ出す。後から取るコードがそろう前の例外で描けなかったら None（画面へは出さない）。
     def paintGuarded(app: App[w, ef], st: LoopState[w], built: Option[App.Internal.Paint.Built], world: w, bump: Bool):
@@ -520,7 +523,7 @@ pub mod App.Internal.Runner {
     def showSlow(app: App[w, ef], hooks: App.Internal.DevTools.Hooks[w, ef, efTools], frame: App.Frame, frameStart: Int64, st: LoopState[w],
                  opened: Opened[w], out: Shown[w]): LoopState[w] \ (ef + Platform.Window + Platform.Rendering + RenderTarget.Target + GameEngine.Audio + Platform.Diagnostics + Platform.Tasks + Fs.FileRead + Fs.FileWrite + IO) =
         let noticed = noticeShown(st, out);
-        let built = buildFor(app, noticed, frame, out#world);
+        let built = buildFor(app, noticed, frame, out#world, out#loadWait);
         finishSlow(app, hooks, frame, frameStart, noticed, opened, out, paintGuarded(app, noticed, built, out#world, opened#fired))
 
     /// 待ちを見るコマの後半: 音・見張り・記録・履歴・出力・窓の宣言（ふつうのコマと同じ順）。painted が None（描けなかった）なら音を当てない。

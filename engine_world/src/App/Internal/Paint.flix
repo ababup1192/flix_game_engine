@@ -98,6 +98,17 @@ pub mod App.Internal.Paint {
             Annotate.fpsItems(atlas, atlas#fontSize, design, Annotate.fpsOf(anno))
         }
 
+    /// App が待っている間の表示（withLoadingIndicator の答え）。待っていなければ空。Custom はゲームの View と同じ ViewCtx で、待ちの間は毎コマ呼ぶ。
+    pub def loadingOverlayOf(app: App[w, ef], warnOnce: String -> Unit, design: Vec2.Vec2, display: Display.Display,
+                             wait: Option[LoadProgress.LoadWait], press: Option[Vec2.Vec2]): List[Render.PlacedItem] \ Platform.GpuResources =
+        match (App.rec(app)#loadingIndicator, wait) {
+            case (_, None)                                   => Nil
+            case (App.LoadingIndicator.Hidden, _)            => Nil
+            case (App.LoadingIndicator.Default, Some(lw))    => App.Internal.LoadingView.itemsOf(design, lw, press)
+            case (App.LoadingIndicator.Custom(f), Some(lw))  =>
+                f(baseCtx(app, design, display, Platform.GpuResources.getFontAtlas("default"), warnOnce, None), lw)
+        }
+
     /// 静的レイヤーを通常の動的アイテムとして描くための PlacedItem 列（F8 のズーム・パン中と、注釈の書き出し）。
     /// build（ワールド座標）に主 view と同じ camera（resolvedCamera → composeScene）を掛けて、
     /// 動的な絵と重なり順・位置を揃える。静的レイヤーが無ければ空。

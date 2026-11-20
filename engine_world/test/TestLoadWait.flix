@@ -432,4 +432,46 @@ mod TestLoadWait {
                       plan = Render.passPlan({ name = "fx", clear = RenderTarget.LoadOp.Clear({ r = 0.0, g = 0.0, b = 0.0 }), items = placed("smoke") :: Nil } :: Nil),
                       letterbox = Some(placed("blur") :: Nil), tiles = tile :: Nil, retained = true };
         Assert.assertEq(expected = Set#{"hero", "smoke", "blur", "tiles"}, App.Internal.Paint.assetNamesOf(built))
+
+    // ========================================================================
+    // 待ちの表示（押した点・波紋・輪）
+    // ========================================================================
+
+    def waitOf(waited: Float64, pressed: Bool): LoadProgress.LoadWait =
+        { reason = LoadProgress.LoadWaitReason.Assets, names = "bg" :: Nil, waited = waited, progress = 0.5, pressed = pressed }
+
+    def design(): Vec2.Vec2 = { x = 320.0, y = 180.0 }
+
+    /// マウスかタッチで押して待ちに入ると、押した点はその時のカーソルの位置
+    @Test
+    def testPressPointIsTheClickedCursor(): Unit \ Assert =
+        let click = { mouseClicked = true, mouseDown = true, cursor = { x = 40.0, y = 30.0 } | live() };
+        let (_, waiting) = LoadWait.decide(candidate(Set#{"bg"}, true), ctx(Set#{"bg"}, 0.0, click, 5), LoadWait.initial());
+        Assert.assertEq(expected = Some((40.0, 30.0)), LoadWait.pressPointOf(waiting) |> Option.map(p -> (p#x, p#y)))
+
+    /// キーで押して待ちに入ると、押した点は無い（波紋は画面の真ん中から）
+    @Test
+    def testPressPointIsNoneForAKey(): Unit \ Assert =
+        Assert.assertTrue(Option.isEmpty(LoadWait.pressPointOf(pressedWait(Set#{"bg"}))))
+
+    /// 押した時の待ちの頭は、輪の出る秒の前でも波紋を出す
+    @Test
+    def testRippleShowsRightAfterThePress(): Unit \ Assert =
+        Assert.assertFalse(List.isEmpty(App.Internal.LoadingView.itemsOf(design(), waitOf(0.1, true), Some({ x = 40.0, y = 30.0 }))))
+
+    /// 押していない待ちは、輪の出る秒までは何も出さない
+    @Test
+    def testNothingBeforeTheIndicatorSeconds(): Unit \ Assert =
+        Assert.assertTrue(List.isEmpty(App.Internal.LoadingView.itemsOf(design(), waitOf(0.3, false), None)))
+
+    /// 輪の出る秒を超えた待ちは輪を出す
+    @Test
+    def testIndicatorShowsAfterTheIndicatorSeconds(): Unit \ Assert =
+        Assert.assertFalse(List.isEmpty(App.Internal.LoadingView.itemsOf(design(), waitOf(0.7, false), None)))
+
+    /// 表示はどれも読み込み中の表示の範囲の z（HUD より手前・デバッグより奥）
+    @Test
+    def testIndicatorStaysInTheLoadingBand(): Unit \ Assert =
+        let zs = App.Internal.LoadingView.itemsOf(design(), waitOf(0.3, true), None) |> List.map(p -> Render.zOf(p#item));
+        Assert.assertTrue(List.forAll(z -> z >= ZBand.loadingBase() and z < ZBand.debugBase(), zs))
 }
