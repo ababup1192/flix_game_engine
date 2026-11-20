@@ -390,7 +390,10 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 	case enc.Brotli != "":
 		b.WasmBrotli = webWasmBrotliFile
 	case compress.WasmBrotli:
-		report.Notes = append(report.Notes, "wasm は gzip で配る — brotli が見つからない。入れ方: brew install brotli（Windows は brotli.exe を PATH に置く）")
+		// WhyNot: 書き出しを止めない — Studio を使う人の機械に brotli が無くても、遅いだけで遊べる頁は出せる。
+		note := brotliMissingNote(webWireSize(wasm))
+		ewLogf("%s", note)
+		report.Notes = append(report.Notes, note)
 	}
 	hash, err := writeWebPage(p, b, wasm, core, enc.Brotli)
 	if err != nil {
