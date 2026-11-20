@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -231,4 +232,99 @@ func writeWebSums(out string) (string, error) {
 	}
 	h := sha256.Sum256(data)
 	return hex.EncodeToString(h[:])[:12], nil
+}
+
+// writeWebPage は bundle.json・classes.wasm・js・sw.js・sums.json・index.html・version.txt を出し、版のハッシュを返す。
+func writeWebPage(p exportWebPaths, b webBundle, wasm, teavmCore, brotli string) (string, error) {
+	if err := writeWebWasm(wasm, p.Out); err != nil {
+		return "", err
+	}
+	if b.WasmBrotli != "" {
+		if err := writeWebWasmBrotli(brotli, filepath.Dir(p.WebJS), p.Out); err != nil {
+			return "", err
+		}
+	}
+	return writeWebPageMeta(p, b, teavmCore)
+}
+
+// writeWebPageMeta は wasm を置いた後の頁の物（bundle.json・js・sw.js・sums.json・index.html・version.txt）を書き、版を返す。
+// 確かめの結果を bundle.json に足した後にも呼ぶ（wasm と .br は作り直さない）。
+func writeWebPageMeta(p exportWebPaths, b webBundle, teavmCore string) (string, error) {
+	boot := webStartupBytesOf(p.Out, &b)
+	b.Boot = &boot
+	bundle, err := marshalWebBundle(b)
+	if err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(filepath.Join(p.Out, "bundle.json"), bundle, 0o644); err != nil {
+		return "", err
+	}
+	if err := copyFile(p.WebJS, filepath.Join(p.Out, "fge-web.js")); err != nil {
+		return "", err
+	}
+	runtime, err := readZipEntry(teavmCore, "org/teavm/backend/wasm/wasm-gc-runtime.js")
+	if err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(filepath.Join(p.Out, "wasm-gc-runtime.js"), runtime, 0o644); err != nil {
+		return "", err
+	}
+	if err := writeWebServiceWorker(filepath.Dir(p.WebJS), p.Out, b.ID, b.ServiceWorker); err != nil {
+		return "", err
+	}
+	hash, err := writeWebSums(p.Out)
+	if err != nil {
+		return "", err
+	}
+	index, err := os.ReadFile(p.IndexHTML)
+	if err != nil {
+		return "", err
+	}
+	html, err := stampWebIndex(string(index), hash, webPreloads(b))
+	if err != nil {
+		return "", fmt.Errorf("%s: %v", p.IndexHTML, err)
+	}
+	if err := os.WriteFile(filepath.Join(p.Out, "index.html"), []byte(html), 0o644); err != nil {
+		return "", err
+	}
+	return hash, os.WriteFile(filepath.Join(p.Out, "version.txt"), []byte(hash+"\n"), 0o644)
+}
+
+// writeWebWasm は wasm を名前の区画の無い classes.wasm と、区画の中身の classes.names に分けて置く。
+func writeWebWasm(wasm, out string) error {
+	data, err := os.ReadFile(wasm)
+	if err != nil {
+		return err
+	}
+	stripped, names, err := splitWasmNames(data)
+	if err != nil {
+		return fmt.Errorf("%s: %v", wasm, err)
+	}
+	if err := os.WriteFile(filepath.Join(out, "classes.wasm"), stripped, 0o644); err != nil {
+		return err
+	}
+	if names == nil {
+		return nil
+	}
+	return os.WriteFile(filepath.Join(out, webWasmNamesFile), names, 0o644)
+}
+
+// webWasmBrotliFile と webBrotliDecoderFile は、wasm を brotli にした物と、頁がそれを戻す解き手の道。
+const (
+	webWasmBrotliFile    = "classes.wasm.br"
+	webBrotliDecoderFile = "brotli-decode.js"
+)
+
+// writeWebWasmBrotli は out/classes.wasm を brotli（最も強い 11）にした classes.wasm.br と、engine_web/js の解き手を置く。
+// WhyNot: 置き場の圧縮に任せない — GitHub Pages は gzip しか配らず、wasm は brotli の方が 4 割ほど小さい。
+// 頁が自分で解くので、置き場が何で配っても同じ大きさで届く。
+func writeWebWasmBrotli(brotli, jsDir, out string) error {
+	data, err := exec.Command(brotli, "-q", "11", "-c", filepath.Join(out, "classes.wasm")).Output()
+	if err != nil {
+		return fmt.Errorf("brotli で wasm を詰められない: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(out, webWasmBrotliFile), data, 0o644); err != nil {
+		return err
+	}
+	return copyFile(filepath.Join(jsDir, webBrotliDecoderFile), filepath.Join(out, webBrotliDecoderFile))
 }

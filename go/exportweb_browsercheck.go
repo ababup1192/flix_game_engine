@@ -162,3 +162,24 @@ func writeWebMissingTitle(w io.Writer, r *webMissingReport, frames int) {
 	fmt.Fprintf(w, "  4G（?net=4g）のタイトルの %d コマ: 止まった待ち %d 回・押した時の待ち %d 回・描かずに / 鳴らさずに進んだ名前 %d 個（うち待つはずの物 %d 個）\n",
 		frames, stopped, pressed, len(r.Skips), gaveUp)
 }
+
+// webTitle4gOf は ?net=4g のタイトルの確かめの結果を bundle.json の checks の形にする。
+func webTitle4gOf(r *webMissingReport, err error) (string, string) {
+	switch {
+	case err != nil:
+		return "skipped", "?net=4g の頁が開けなかった"
+	case r == nil:
+		return "skipped", "頁が待ちの記録を持たない（古い fge-web.js）"
+	}
+	for _, wt := range r.Waits {
+		if wt.Kind == "stopped" {
+			return "stopped", ""
+		}
+	}
+	for _, sk := range r.Skips {
+		if sk.Why == "gaveUp" {
+			return "stopped", ""
+		}
+	}
+	return "ok", ""
+}
