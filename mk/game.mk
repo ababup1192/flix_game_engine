@@ -187,7 +187,7 @@ endif
 # ブラウザ版を gh-pages の枝の <DEST>/ へ置いてコミットするまで（push は人。打つ 1 行と手元で開く手順を最後に出す）。
 # 書き出しは build/web-pages へ毎回作り直す。音のファイル・sounds・deferred の音が 1 本でもあれば止める（配ってよい音だけなら AUDIO=ok）。
 # SRC=<書き出し済みのフォルダ> なら書き出さずにそれを置く。中身と止める理由は $(ENGINE)/bin/web-pages-stage.sh の頭・docs/web-export.md。
-web-pages-stage: ## DEST=<サブフォルダ> [SRC=<書き出し済み>] [AUDIO=ok] | ブラウザ版を gh-pages の <DEST>/ に置いてコミット（音が残れば止める・push は人）
+web-pages-stage: ## DEST=<サブフォルダ> [SRC=<書き出し済み>] [AUDIO=ok] [BRANCH=] [PAGES_WT=] [NO_BROWSER_CHECK=1] | ブラウザ版を gh-pages の <DEST>/ に置いてコミット（音が残れば止める・push は人）
 ifeq ($(FGE_NO_BASH),1)
 	@echo "[web-pages-stage] Windows では流せません（bash の道具）。macOS か Linux で流してください"; exit 1
 else
