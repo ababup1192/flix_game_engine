@@ -101,6 +101,37 @@
           "type": { "list": "text" },
           "label": "既定で配らない形（*.schema.json・.blend などの制作の元ファイル）のうち、ゲームが動く時に読むので配る物（ゲームの根からの glob）",
           "order": 5
+        },
+        "deferred": {
+          "type": { "list": "text" },
+          "label": "押して始めた後に裏で取る素材（ゲームの根からの glob・取る順）。タイトルで使う物は入れない。届く前の絵を描くコマは engine が出さずに待ち、一発の音とループの音は待たない（扱いを替えるのは deferredPolicy）",
+          "order": 6
+        },
+        "deferredFonts": {
+          "type": { "list": "text" },
+          "label": "押して始めた後に取るフォント（fonts[].name）。タイトルで使わないフォントだけ。届くまでは先頭のフォントで出す",
+          "order": 7
+        },
+        "deferredPolicy": {
+          "type": { "list": { "record": {
+            "match":     { "type": "text", "label": "当てる後回しの道（ゲームの根からの glob）か font:<フォントの名前>。1 つの名前に当たる行が複数あれば先の行が勝つ", "order": 1, "required": true },
+            "onMissing": { "type": { "enum": ["wait", "placeholder", "skip"] }, "label": "届く前に使った時（wait = コマを出さずに待つ・placeholder = 絵とフォントを待たずに描かずか先頭のフォントで進む・skip = 音を待たずに鳴らさず進む）。書かなければ種類ごとの既定（絵は wait・フォントは placeholder・一発の音は skip・ループの音は待たない）", "order": 2 },
+            "group":     { "type": "text", "label": "押した時の待ちで一緒に待つ組の名前（同じ組の、まだ届いていない物も待つ）", "order": 3 }
+          } } },
+          "label": "後回しの素材を届く前に使った時の扱い（deferred の道ごと）。書かなければ engine の既定のまま",
+          "order": 8
+        },
+        "splash": {
+          "type": { "record": {
+            "afterTap":   { "type": { "enum": ["engine", "none", "custom"] }, "label": "「タッチして開始」を押した後のロゴ（engine = engine のロゴ・none = 出さない・custom = 絵と音を logo と sound に替える）", "order": 1, "default": "engine" },
+            "logo":       { "type": "text", "label": "custom の時のロゴの絵（ゲームの根からの道・後回しでない物）", "order": 2 },
+            "sound":      { "type": "text", "label": "custom の時のジングル（ゲームの根からの道・後回しでない物。無ければ音なし）", "order": 3 },
+            "minSeconds": { "type": "float", "label": "ロゴを出す最短の秒", "order": 4, "min": 0, "max": 3, "default": 1.2 },
+            "maxSeconds": { "type": "float", "label": "ロゴを出す上限の秒（3 秒より長くはできない）", "order": 5, "min": 0, "max": 3, "default": 3.0 },
+            "waitFor":    { "type": { "list": "text" }, "label": "ロゴの間に待つ group（deferredPolicy の group。書かなければ deferredPolicy に最初に出てくる group）", "order": 6 }
+          } },
+          "label": "押した後のロゴ（待つ物が残る時だけ出る・同じ版では 2 回目から出ない）",
+          "order": 9
         }
       }
     }

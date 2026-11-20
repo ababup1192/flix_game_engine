@@ -156,21 +156,16 @@ mod SceneRender {
     /// 描く元を替えて描く横の場面: (描き出しの名前, novel.shots.json の場面の名前)。どう替えるかは resFor。
     /// WhyNot: novel.shots.json に入れない — 実機の START=shot: は World だけを替える口で、Doc（描く元）は替えられない。
     def variantShots(): List[(String, String)] =
-        ("hold-ring", "hold") :: ("hold-none", "hold") :: ("cast-sample", "cast") :: Nil
+        ("cast-sample", "cast") :: Nil
 
-    /// 描き出しの名前 → その場面で使う描く元。hold-ring / hold-none = 待ちの印を輪 / 無しにした描く元、
+    /// 描き出しの名前 → その場面で使う描く元。
     /// cast-sample = テスト用の立ち絵の人物を物語の人物に足した描く元（CastDoc.withSample）、portrait-cast-veil = それに縦の頁の覆いを人物が出ている間だけ薄くする倍率を入れた描く元。ほかはそのまま。
     def resFor(name: String, res: Res.Res): Res.Res = match name {
         case "cast-sample"          => Res.withCast(CastDoc.withSample(res#cast), res)
         case "portrait-cast-sample" => Res.withCast(CastDoc.withSample(res#cast), res)
         case "portrait-cast-veil"   => Res.withCast(CastDoc.Doc.Doc({ portraitVeilWithCast = 0.5 | CastDoc.rec(CastDoc.withSample(res#cast)) }), res)
-        case "hold-ring"          => withLoadingMark(ThemeDoc.LoadingMark.Ring, res)
-        case "portrait-hold-ring" => withLoadingMark(ThemeDoc.LoadingMark.Ring, res)
-        case "hold-none"          => withLoadingMark(ThemeDoc.LoadingMark.Hidden, res)
-        case _                    => res
+        case _                      => res
     }
-
-    def withLoadingMark(mark: ThemeDoc.LoadingMark, res: Res.Res): Res.Res = Res.withTheme(ThemeDoc.withLoadingMark(mark, res#theme), res)
 
     /// 縦の画面で描く場面: (描き出しの名前, 場面の名前, 画面の大きさ)。World は Shots の同じ場面の物をそのまま使う（menu・saveload・tooltip だけは worldOf）。
     /// 太い縦の画面（360×640）は縦の design の下限の高さで、並べ方がいちばん窮屈になる所を見る。
@@ -182,7 +177,7 @@ mod SceneRender {
             :: ("portrait-settings", "settings", tall) :: ("portrait-ask", "ask", tall)
             :: ("portrait-eaves", "eaves", tall) :: ("portrait-ending", "ending", tall) :: ("portrait-menu", "menu", tall)
             :: ("portrait-saveload", "saveload", tall) :: ("portrait-tooltip", "tooltip", tall)
-            :: ("portrait-credits", "credits", tall) :: ("portrait-hold-ring", "hold", tall) :: ("portrait-cast-sample", "cast", tall) :: ("portrait-cast-veil", "cast", tall)
+            :: ("portrait-credits", "credits", tall) :: ("portrait-cast-sample", "cast", tall) :: ("portrait-cast-veil", "cast", tall)
             :: ("portrait-short-nvl", "nvl", short) :: ("portrait-short-save", "save", short)
             :: ("portrait-short-settings", "settings", short) :: Nil
 

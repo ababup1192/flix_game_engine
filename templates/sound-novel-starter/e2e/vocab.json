@@ -36,7 +36,6 @@
     {"name": "shot:invite", "doc": "ギャラリーの場面（gallery/invite.png）", "args": {}},
     {"name": "shot:ending", "doc": "ギャラリーの場面（gallery/ending.png）", "args": {}},
     {"name": "shot:still", "doc": "ギャラリーの場面（gallery/still.png）", "args": {}},
-    {"name": "shot:hold", "doc": "ギャラリーの場面（gallery/hold.png）", "args": {}},
     {"name": "shot:log", "doc": "ギャラリーの場面（gallery/log.png）", "args": {}},
     {"name": "shot:save", "doc": "ギャラリーの場面（gallery/save.png）", "args": {}},
     {"name": "shot:load", "doc": "ギャラリーの場面（gallery/load.png）", "args": {}},

@@ -195,7 +195,7 @@ mod Cast {
         { shown = layer#shown |> List.map(settledBefore),
           leaving = layer#leaving |> List.filter(l -> progressOf(now, l#startedAt, l#seconds) < 1.0) }
 
-    /// 重ねの途中を終わりの形にする（セーブから戻った時・素材を待つ黒の間・描き出しで場面を作る時）。
+    /// 重ねの途中を終わりの形にする（セーブから戻った時・描き出しで場面を作る時）。
     pub def settle(layer: Layer): Layer =
         { shown = layer#shown |> List.map(s -> { before = None, startedAt = Clock.never() | s }), leaving = Nil }
 
@@ -231,9 +231,6 @@ mod Cast {
     // ── 使う絵の名前 ──
 
     pub def textureOf(figure: Figure): String = CastDoc.textureOf(figure#name, figure#face)
-
-    /// 層に出ている物のテクスチャの名前（素材を待つ時に見る）。
-    pub def textures(layer: Layer): List[String] = layer#shown |> List.map(s -> textureOf(s#now))
 
     // ── 重ねの進み ──
 

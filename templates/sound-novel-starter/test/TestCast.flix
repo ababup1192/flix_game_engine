@@ -1,5 +1,5 @@
 // 立ち絵と小物（Cast）: シナリオの <<show>> / <<hide>> の読み方、出し入れと重ね方、セーブ・ロード・バックログから戻る時の持ち越し、
-// 舞台の全部と頁がどの台詞からも同じに戻ること、ノードに着いた時の舞台、素材の待ちとのつなぎ、置き場所。
+// 舞台の全部と頁がどの台詞からも同じに戻ること、ノードに着いた時の舞台、届いていない絵、置き場所。
 // 人物と位置の名前はテスト用の Doc（test/fixtures/novel.cast.json）、シナリオはテスト用の木
 // （test/fixtures/talk/cast.yarn と stage.yarn を build した物）から引き、期待値は Doc と台本から導く。
 mod TestCast {
@@ -7,7 +7,7 @@ mod TestCast {
     use fge::{Clock, Display, JsonCodec, Render, Yarn, YarnRunner, YarnStorage}
     use Util.Json.Json
     use CastDoc.Kind
-    use TestKit.{advance, begun, quiet, settle, stepBy}
+    use TestKit.{advance, begun, quiet, settle}
 
     /// テスト用の Doc。
     def doc(): CastDoc.Doc \ Fs.FileRead = CastDoc.load("test/fixtures/novel.cast.json")
@@ -477,40 +477,14 @@ mod TestCast {
         let jumped = settle(r, quiet(() -> WorldMenu.answer(r, World.Answer.Yes, asked)));
         Assert.assertEq(expected = (shownAtL4(), ("cup", "plain", "item") :: Nil), stageMark(jumped))
 
-    // ══ 素材の待ち ══
-
-    @Test
-    def testUnarrivedCastHoldsBeforeTheCue(): Unit \ {Assert, Fs.FileRead} =
-        // まだ届いていない立ち絵へ替える所で送ると、黒へ重ね始め（待つ名前はその立ち絵）、立ち絵は前のまま。
-        let r = res();
-        let b = entry(Kind.Character, "b");
-        let texture = CastDoc.textureOf("b", b#face);
-        let held = Res.withMissing(Set#{texture}, r);
-        let l1 = begun(r);
-        let w = advance(held, l1);
-        Assert.assertEq(expected = (Some(World.HoldPhase.FadingOut), Some(texture :: Nil), stageMark(l1)),
-                        (World.holdPhaseOf(w), World.readOf(w) |> Option.flatMap(rd -> rd#hold) |> Option.map(h -> h#names), stageMark(w)))
+    // ══ 届いていない絵 ══
 
     @Test
     def testUnarrivedCastIsNotDrawn(): Unit \ {Assert, Fs.FileRead} =
-        // まだ届いていない立ち絵は描かない（届いている人は描く）。frame とサムネは同じ層の関数を引く。
+        // 描かずに飛ばす名前（サムネが届いていない後回しの絵を渡す）の立ち絵は描かない（ほかの人は描く）。
         let layer = played(("show", "a" :: Nil) :: ("show", "b" :: "at=right" :: Nil) :: Nil);
         let hidden = CastDoc.textureOf("a", entry(Kind.Character, "a")#face);
         Assert.assertEq(expected = "picture_cast_b_plain" :: Nil, drawn(envAt(10.0, Set#{hidden}), layer) |> List.map(fst))
-
-    @Test
-    def testWaitingSettlesTheCastCrossfade(): Unit \ {Assert, Fs.FileRead} =
-        // 黒へ重ね切って Waiting に入ると、立ち絵の重ねの途中は終わりの形になる（重ね始めの時刻を「終わった過去」にする）。
-        // b を出した直後（重ねの途中）に、届いていない a の笑顔へ替える所まで送る。
-        let r = res();
-        let smile = CastDoc.textureOf("a", "smile");
-        let held = Res.withMissing(Set#{smile}, r);
-        let typing = advance(held, begun(r));
-        let fading = advance(held, advance(held, typing));
-        let waiting = stepBy(held, KindDoc.rec(r#kind)#holdFadeSeconds + 0.01, fading);
-        let starts = (w: World.World) -> World.stageOf(r, w)#cast#shown |> List.map(s -> Clock.secondsOf(s#startedAt));
-        let never = Clock.secondsOf(Clock.never());
-        Assert.assertEq(expected = (Some(World.HoldPhase.Waiting), never :: never :: Nil), (World.holdPhaseOf(waiting), starts(waiting)))
 
     // ══ 置き場所 ══
 

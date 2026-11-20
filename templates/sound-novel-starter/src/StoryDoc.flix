@@ -88,7 +88,7 @@ mod StoryDoc {
         case NoSaveNow
         case SavesRefused
         case SavesRefusedKept
-        // 素材を待つ間の印（novel.theme.json の loadingMark = ring のラベル）
+        // サムネの写真を待つ間の印（novel.theme.json の loadingMark = ring のラベル）
         case Waiting
         // 始まりの引数で直したシナリオを遊んでいる間のバナー（Starts の talk の edit.*）
         case ScriptEdited

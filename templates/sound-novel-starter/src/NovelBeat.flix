@@ -28,7 +28,7 @@ mod NovelBeat {
         case Line
         case Choices
         case Done
-        /// 束を足すまでに過ぎた秒（素材の待ちの暗転の間など。後ろの束を今から始める）
+        /// 束を足すまでに過ぎた秒（後ろの束を今から始める）
         case Elapsed(Float64)
     }
 
@@ -256,7 +256,7 @@ mod NovelBeat {
 
     def endOf(tl: Table): Float64 = Timeline.clipsOf(tl) |> List.foldLeft((m, c) -> Float64.max(m, c#start + c#dur), 0.0)
 
-    /// 束を後ろへ足す。表の終わりより今が先なら（素材の待ちの間に時計が進んだ）、その秒を先に置いて束を今から始める。
+    /// 束を後ろへ足す。表の終わりより今が先なら（足すまでに時計が進んだ）、その秒を先に置いて束を今から始める。
     // WhyNot: 1 ミリ秒より短い差は置かない — 物語の時刻の差の丸め（wallOf）だけで、毎回 0 秒の待ちが挟まる。
     pub def appended(wall: Float64, items: List[Item], beat: Beat): Beat =
         let gap = if (isEmpty(beat)) wall else {

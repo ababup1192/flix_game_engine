@@ -32,6 +32,8 @@ mod Game {
             |> App.withHudView(Resources.view(View.hud))
             // PC の横長の窓・全画面で、縦の画面の左右の余りを、背景の写真を広げてぼかした絵で塗る（黒い帯にしない）。
             |> App.withLetterboxView(Resources.view(View.letterbox))
+            // ブラウザ版で engine が押した所まで戻して待つ間、タイトルの選んだ行を光らせる（デスクトップ・テスト・描き出しは待たないので呼ばれない）。
+            |> App.withLoadWait((wait, h) -> Resources.mapWorld((_, w) -> World.withLoadWait(wait, w), h))
             |> App.withAudio(ws -> Controls.sounds(ws#after#resources#missing, { before = ws#before#world, after = ws#after#world }))
             |> App.withSustained(Resources.read(Controls.ambience))
             |> App.withMixer(Resources.read(Controls.mixerOf))

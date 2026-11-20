@@ -33,8 +33,10 @@
 - **プレイヤーは詰まない**: どの結末もクレジットを経てタイトル画面へ戻る。Doc やシナリオが壊れても fail-open で起動する。
 - **ブラウザ版の書き出しは project.json の web 欄**: 文言 `startPrompt` は「タッチして開始」のまま。写真の背景は
   `compress.lossyImages` の q85。背景・BGM・効果音を足したら `deferred` に入れるか決める（タイトルの背景と最初に鳴る音は入れない。
-  書き方と届く前のふるまいは engine の `docs/startup.md`）。届く前の背景・環境音で暗転して待つ規則は `WorldRead` の「素材の待ち」の節
-  （入口は `Game.withAssetLoading` で、Main とブラウザの入口だけが足す。テスト・flow・描き出しは全部届いた形のまま）。
+  書き方と届く前のふるまいは engine の `docs/startup.md`）。届く前の背景・立ち絵は engine が待つ（押した所まで戻して待ち、
+  届いたら押した入力を渡し直す。手で待ちを書かない。本画面の View は届いていない絵も描く物の列に入れる = `View.Env` の `skipTextures` を空に。
+  飛ばすのはセーブの枠のサムネだけ）。待つ間、タイトルの選んだ行が光る（`App.withLoadWait` → `World.loadWait` → `View.title`）。
+  入口は `Game.withAssetLoading` で、Main とブラウザの入口だけが足す。テスト・flow・描き出しは全部届いた形のまま。
 - 文字送り（UiTypewriter）・ルビつきの字の配置と折り返し（RichText.placeRuby）・シナリオの実行（YarnRunner）・
   ミキサー（AudioMixer）はエンジンの物を使う。自前の文字折り・会話の進め方・音量の掛け算を書かない。
   例外はクレジットの行（`src/CreditsLayout.flix`）: 中央そろえの行を禁則つきで読点・中黒・括弧の所で折り、流れ切る長さも同じ並びから出す

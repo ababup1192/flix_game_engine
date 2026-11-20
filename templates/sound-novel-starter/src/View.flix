@@ -11,7 +11,6 @@
 //   world: 層の数の順に並べる（ViewStage）。背景 0 → 背景に付く絵 → 粒 → 立ち絵と小物（Doc の layer）・ゲームの絵（GameView が決める）→ 覆い（overlay）
 //          … カメラと揺れはこの層だけに掛かる
 //   hud:   NVL の幕 / ADV のウィンドウ → 本文（ルビつき）・名前 → 送りの印 → 選択肢 → クイックメニュー（縦の画面は右の列と … とツールチップ）
-//          → 素材を待つ間の黒と待ちの印（ブラウザ版で背景・環境音がまだ届いていない時）
 //          → 画面（バックログ・セーブ・ロード・設定。セーブの枠のサムネはその時の画面を同じ関数で描いて縮める）→ 確認のウィンドウ → 知らせ
 //          タイトルとクレジットも hud（写真の上に字だけを置く画面）
 //
@@ -27,7 +26,8 @@ mod View {
 
     /// どの場面でも使う描く元: Doc とシナリオ（res）・セーブデータ（既読と設定と枠）・マウスの位置・2 本の時計の今・
     /// 並べ方の組（fit。Controls が当たりを取る時と同じ組）・押している間の掴み（grab。列の長押しのツールチップ）・
-    /// 字の本（fonts。GameView が Render.textTinted などに渡す）。
+    /// 字の本（fonts。GameView が Render.textTinted などに渡す）・描かずに飛ばす絵の名前（skipTextures。サムネだけが届いていない後回しの絵を入れる）。
+    // WhyNot: 本画面で届いていない絵を飛ばさない — 飛ばすと engine が描く物の列から届いていない名前を見つけられず、待たずに暗い地のコマを出す。
     pub type alias Env = {
         res = Res.Res,
         saves = Saves.Saves,
@@ -36,7 +36,8 @@ mod View {
         realNow = Clock.Time[Clock.Real],
         storyNow = Clock.Time[Stage.Story],
         fit = Layout.Fit,
-        fonts = Fonts
+        fonts = Fonts,
+        skipTextures = Set[String]
     }
 
     /// 字の本: atlas = 本文の本（project.json の fonts の default）、fontOf = 名前で引く本（project.json の fonts[].name。
@@ -45,7 +46,7 @@ mod View {
 
     /// 字を描かない所（当たりを取る・バックログの寸法・テープの物の矩形）の Env。fonts は字の形を持たない本（emptyFonts）。
     pub def envOf(fit: Layout.Fit, res: Res.Res, w: World.World): Env =
-        { res = res, saves = w#saves, pointer = w#pointer, grab = w#grab, realNow = w#realNow, storyNow = World.now(w), fit = fit, fonts = emptyFonts() }
+        { res = res, saves = w#saves, pointer = w#pointer, grab = w#grab, realNow = w#realNow, storyNow = World.now(w), fit = fit, fonts = emptyFonts(), skipTextures = Set.empty() }
 
     /// 描く所の Env（並べ方の組と字の本は ctx から）。
     pub def envOfCtx(ctx: App.ViewCtx, res: Res.Res, w: World.World): Env =
@@ -82,11 +83,8 @@ mod View {
     pub def zGameHud(): Int32 = 21
     def zChoice(): Int32 = 30
     def zButtons(): Int32 = 40
-    /// 素材を待つ間の黒（本文とボタンの上・画面と確認のウィンドウの下）と、その上の待ちの印。
-    /// <<overlay layer=screen>> の覆い（本文とボタンの上・素材を待つ間の黒の下）。
+    /// <<overlay layer=screen>> の覆い（本文とボタンの上・画面と確認のウィンドウの下）。
     def zOverlay(): Int32 = 44
-    def zHold(): Int32 = 45
-    def zHoldMark(): Int32 = 46
     def zPanel(): Int32 = 50
     def zCard(): Int32 = 52
     /// サムネの縮めた画面は zThumb + 元の z（元は 0..zButtons の少し上）に入る。縁と印は zThumbTop から。
@@ -105,7 +103,7 @@ mod View {
         }
 
     /// PC の横長の窓で縦の画面の左右に出る余り（ピラーボックス）を塗る絵（App.withLetterboxView）。今の背景の写真（時間帯の色とぼかし）を
-    /// 画面に置き、暗転・覆い・素材の待ちの黒を真ん中と同じ濃さで重ね、地の色で沈める。engine がこれを窓いっぱいに広げるので、ぼかしも広がる。
+    /// 画面に置き、暗転・覆いを真ん中と同じ濃さで重ね、地の色で沈める。engine がこれを窓いっぱいに広げるので、ぼかしも広がる。
     // WhyNot: frame をそのまま渡さない — 立ち絵・小物・粒まで窓の幅へ広がり、縦の画面の外に大きな人物が出る。
     // WhyNot: タイトルの広げと漂い・カメラ・揺れを掛けない — 左右は広げてぼかした色の面で、動かすと真ん中の縁と食い違って見える。
     pub def letterbox(ctx: App.ViewCtx, res: Res.Res, w: World.World): List[Render.PlacedItem] =
@@ -114,13 +112,10 @@ mod View {
         let photo = ViewStage.backdropsIn(ViewStage.photoRect(env#fit), env, stage);
         let shade = ViewStage.shadeOf(env, stage) |> List.map(Render.overItem(ViewStage.mapZ(_ -> zVeil() - 1)));
         let covered = ViewStage.screenOverlay(env, stage, zVeil() + 1);
-        let held = World.readOf(w) |> Option.flatMap(r -> r#hold)
-            |> Option.map(hold -> at(0.0, 0.0, RawDraw.box(Layout.size(env#fit), Backdrop.groundOf(res#backdrops), zVeil() + 2) |> Render.fade(holdAlphaOf(env, hold))))
-            |> Option.toList;
         let veil = at(0.0, 0.0, RawDraw.box(Layout.size(env#fit), Backdrop.groundOf(res#backdrops), zVeil()) |> Render.fade(0.45));
-        List.flatten(photo :: shade :: (veil :: Nil) :: covered :: held :: Nil)
+        List.flatten(photo :: shade :: (veil :: Nil) :: covered :: Nil)
 
-    /// 舞台だけの絵（frame と、画面に被せる overlay）。文字の枠・HUD・画面・知らせ・素材の待ちの字は描かない（移行の突き合わせの world の層のコマ）。
+    /// 舞台だけの絵（frame と、画面に被せる overlay）。文字の枠・HUD・画面・知らせは描かない（移行の突き合わせの world の層のコマ）。
     // WhyNot: frame だけにしない — layer=screen の overlay は hud の側に描くので、frame だけでは overlay の秒を替えた差が world の層のコマに出ない。
     pub def worldLayer(ctx: App.ViewCtx, res: Res.Res, w: World.World): List[Render.PlacedItem] =
         let env = envOfCtx(ctx, res, w);
@@ -132,15 +127,14 @@ mod View {
         let env = envOfCtx(ctx, res, w);
         // 画面（バックログ・セーブ・設定）の間は下の画面を描かない（幕越しに字が二重に透けて読みにくい）。背景の写真は frame が描き続ける。
         let screen = if (coversScreen(w#panel)) Nil else match w#scene {
-            case World.Scene.Title(item)      => title(atlas, env, item)
+            case World.Scene.Title(item)      => title(atlas, env, item, World.isPressWaiting(w))
             case World.Scene.Credits(startedAt, _) => credits(atlas, env, startedAt)
             case World.Scene.Reading(r)       => if (w#panel == World.Panel.Hidden) Nil
                                                  else if (Stage.isWindowHidden(env#storyNow, r#stage)) gameHud(env, r)
                                                  else List.append(gameHud(env, r), shakenWindow(env, r, List.append(fadedWindow(env, r, reading(atlas, env, r)), pageProps(env, r))))
         };
         let covered = World.readOf(w) |> Option.map(r -> ViewStage.screenOverlay(env, r#stage, zOverlay())) |> Option.getWithDefault(Nil);
-        let holding = World.readOf(w) |> Option.flatMap(r -> r#hold) |> Option.map(holdLayer(atlas, env)) |> Option.getWithDefault(Nil);
-        List.flatten(screen :: covered :: holding :: panel(res, atlas, env, w) :: askLayer(atlas, env, w#ask) :: editedBanner(atlas, env) :: toast(atlas, env, World.toastOf(res, w)) :: Nil)
+        List.flatten(screen :: covered :: panel(res, atlas, env, w) :: askLayer(atlas, env, w#ask) :: editedBanner(atlas, env) :: toast(atlas, env, World.toastOf(res, w)) :: Nil)
 
     /// GameView.hud の物を置く帯。UnderWindow = 文字の枠の覆いより奥（hud の一番奥。カメラと揺れを受けない。画面に掛かる血など）・
     /// OverWindow = 本文の上・選択肢の下（状態バー・コメント欄など）。
@@ -243,30 +237,9 @@ mod View {
         case _                           => true
     }
 
-    // ── 素材の待ち（ブラウザ版で背景・環境音がまだ届いていない間の暗転） ──
+    // ── 素材の待ちの印（サムネの写真がまだ届いていない時） ──
 
-    /// 画面を夜の地の色で覆う（黒へ重ねる・黒のまま・黒から戻す）。黒のまま holdMarkSeconds を過ぎたら待ちの印（形は novel.theme.json の loadingMark）。
-    /// 重ねの進みは物語の時計（画面を開くと止まる）、印の動きは実時間。
-    def holdLayer(atlas: FontAtlas, env: Env): World.Hold -> List[Render.PlacedItem] = hold ->
-        let k = kindOf(env);
-        let whole = Layout.screen(env#fit);
-        let veil = at(0.0, 0.0, RawDraw.box(whole#size, Backdrop.groundOf(env#res#backdrops), zHold()) |> Render.fade(holdAlphaOf(env, hold)));
-        let marked = hold#phase == World.HoldPhase.Waiting and hold#waited >= k#holdMarkSeconds;
-        let mark = if (marked) loadingMark(atlas, env, theme(env)#loadingMark, whole, { x = 60.0, y = 36.0 }, 1.0, zHoldMark()) else Nil;
-        veil :: mark
-
-    /// 素材の待ちの覆いの濃さ（黒へ重ねる間は 0 → 1・黒のまま 1・黒から戻す間は 1 → 0。進みは物語の時計）。
-    def holdAlphaOf(env: Env, hold: World.Hold): Float64 =
-        let k = kindOf(env);
-        let progress = if (k#holdFadeSeconds <= 0.0) 1.0
-                       else Float64.min(1.0, Float64.max(0.0, Clock.since(hold#phaseFrom, env#storyNow) / k#holdFadeSeconds));
-        match hold#phase {
-            case World.HoldPhase.FadingOut => progress
-            case World.HoldPhase.Waiting   => 1.0
-            case World.HoldPhase.FadingIn  => 1.0 - progress
-        }
-
-    /// 素材を待つ間の印を矩形 place（画面かサムネの枠）に置く。Dots = 右下の金の点 3 つ（左の点の中心を右下の角から inset だけ内へ）、
+    /// 素材を待つ間の印を矩形 place（サムネの枠）に置く。Dots = 右下の金の点 3 つ（左の点の中心を右下の角から inset だけ内へ）、
     /// Ring = 真ん中に回る点の輪と字のラベル、Hidden = 何も描かない。scale = 大きさの倍率（サムネは小さく）。
     def loadingMark(atlas: FontAtlas, env: Env, kind: ThemeDoc.LoadingMark, place: Rect2.Rect2, inset: Vec2.Vec2, scale: Float64, z: Int32): List[Render.PlacedItem] =
         let right = place#position#x + place#size#x;
@@ -571,7 +544,8 @@ mod View {
 
     // ── タイトル ──
 
-    def title(atlas: FontAtlas, env: Env, cursor: World.TitleItem): List[Render.PlacedItem] =
+    /// pressed = 押した所まで戻して engine が後回しの素材を待っている（選んだ行を脈打つ光で灯し、押しが届いた事を見せる）。
+    def title(atlas: FontAtlas, env: Env, cursor: World.TitleItem, pressed: Bool): List[Render.PlacedItem] =
         let t = theme(env);
         let s = StoryDoc.rec(env#res#story);
         let center = Layout.width(env#fit) / 2.0;
@@ -584,17 +558,39 @@ mod View {
         let sub = TextDraw.centered({ text = s#subtitle, atlas = atlas, size = 18.0, color = t#inkSeen, z = zText(), centerX = center, y = Layout.titleSubtitleY(fit) });
         let placed = WorldMenu.titleItems() |> List.zipWithIndex;
         let count = List.length(placed);
+        let pulse = if (pressed) pressPulse(env) else 0.0;
         let items = placed |> List.map(match (i, item) -> {
             let r = Layout.titleItem(fit, i, count);
-            let color = if (not WorldMenu.isTitleItemOpen(item, env#saves)) dim(env) else if (item == cursor) t#accent else t#ink;
+            let color = if (not WorldMenu.isTitleItemOpen(item, env#saves)) dim(env) else if (item == cursor and pressed) Color.lighten(t#accent, 0.3 * pulse) else if (item == cursor) t#accent else t#ink;
             textIn(r, label(titleLabel(item), env), atlas, Layout.titleItemTextSize(fit), color, zText())
         });
         let marker = placed |> List.find(match (_, item) -> item == cursor) |> Option.map(match (i, _) -> {
             let r = Layout.titleItem(fit, i, count);
-            at(r#position#x + 50.0, r#position#y + r#size#y - 3.0, RawDraw.box({ x = r#size#x - 100.0, y = 1.0 }, t#accent, zText()) |> Render.fade(0.6))
+            at(r#position#x + 50.0, r#position#y + r#size#y - 3.0, RawDraw.box({ x = r#size#x - 100.0, y = 1.0 }, t#accent, zText()) |> Render.fade(0.6 + 0.4 * pulse))
         }) |> Option.toList;
+        let glow = if (pressed) pressGlow(env, placed, cursor, count, pulse) else Nil;
         // WhyNot: 下に操作の案内を描かない — 項目そのものが押せる物として読め、指の端末で「クリックか Enter」は誤りになる。
-        List.flatten((shade :: heading :: sub :: Nil) :: marker :: items :: Nil)
+        List.flatten((shade :: heading :: sub :: Nil) :: glow :: marker :: items :: Nil)
+
+    /// 押した時の待ちの間の脈（0..1。実時間で 1 秒に 1 回ほど息をする）。
+    def pressPulse(env: Env): Float64 =
+        let wave = 0.5 + 0.5 * Num.sin(realSeconds(env) * 6.0);
+        0.35 + 0.65 * wave * wave
+
+    /// 選んだ行の後ろに滲む差し色の光（蛍と同じ足し算の光）。行の幅に沿って 3 つ並べ、横に長い光の帯にする。
+    def pressGlow(env: Env, placed: List[(Int32, World.TitleItem)], cursor: World.TitleItem, count: Int32, pulse: Float64): List[Render.PlacedItem] =
+        let t = theme(env);
+        placed |> List.find(match (_, item) -> item == cursor) |> Option.toList |> List.flatMap(match (i, _) -> {
+            let r = Layout.titleItem(env#fit, i, count);
+            let cy = r#position#y + r#size#y / 2.0;
+            let cx = r#position#x + r#size#x / 2.0;
+            let radius = r#size#y * 0.9;
+            (-1 :: 0 :: 1 :: Nil) |> List.flatMap(k -> {
+                let center = { x = cx + Int32.toFloat64(k) * radius * 0.9, y = cy };
+                let a = (if (k == 0) 0.32 else 0.2) * pulse;
+                Render.glowAt(center, radius, t#accent, { alpha = a, blend = DrawCmd.BlendMode.Add }, zText() - 1)
+            })
+        })
 
     pub def titleLabel(item: World.TitleItem): StoryDoc.Label = match item {
         case World.TitleItem.NewGame  => StoryDoc.Label.NewGame
@@ -848,7 +844,7 @@ mod View {
     /// 縮めた画面の中の前後は元の z のまま、枠のカードより手前（zThumb から）へ持ち上げる。
     def thumbnail(atlas: FontAtlas, env: Env, screen: Option[World.Read], r: Rect2.Rect2): List[Render.PlacedItem] =
         let t = theme(env);
-        let away = { pointer = { x = -1.0, y = -1.0 } | env };
+        let away = { pointer = { x = -1.0, y = -1.0 }, skipTextures = env#res#missing | env };
         let shown = screen |> Option.map(read ->
             List.flatten(ViewStage.thumbnail(away, read#stage, not ViewStage.propsOnPage(away, read#stage)) :: thumbHudUsing(GameView.hud, away, read) :: reading(atlas, away, read) :: pageProps(away, read) :: Nil))
             |> Option.getWithDefault(Nil);

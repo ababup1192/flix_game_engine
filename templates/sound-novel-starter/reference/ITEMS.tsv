@@ -5,9 +5,6 @@ choice	dynamic=187	static=0
 credits	dynamic=111	static=0
 eaves	dynamic=1112	static=0
 ending	dynamic=230	static=0
-hold	dynamic=108	static=0
-hold-none	dynamic=78	static=0
-hold-ring	dynamic=93	static=0
 invite	dynamic=348	static=0
 load	dynamic=830	static=0
 log	dynamic=346	static=0
@@ -20,7 +17,6 @@ portrait-choice	dynamic=187	static=0
 portrait-credits	dynamic=111	static=0
 portrait-eaves	dynamic=1112	static=0
 portrait-ending	dynamic=230	static=0
-portrait-hold-ring	dynamic=93	static=0
 portrait-log	dynamic=346	static=0
 portrait-menu	dynamic=230	static=0
 portrait-nvl	dynamic=166	static=0

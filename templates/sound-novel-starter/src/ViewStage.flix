@@ -273,9 +273,9 @@ mod ViewStage {
         case Picture.Painted(_)  => placed(picture, area, 0.0, p, View.zBackdropShot())
     }
 
-    /// 写真がまだ届いていなければ None（その層は描かず、下の暗い地が見える）。
+    /// 写真が skipTextures にあれば None（その層は描かず、下の暗い地が見える）。
     def specOf(shot: Stage.Shot, env: View.Env): Option[ShaderDoc.Spec] =
-        forM (photo <- BackdropDoc.photoOf(shot#photo, env#res#backdrops) |> Option.filter(p -> not Set.memberOf(p#texture, env#res#missing));
+        forM (photo <- BackdropDoc.photoOf(shot#photo, env#res#backdrops) |> Option.filter(p -> not Set.memberOf(p#texture, env#skipTextures));
               grade <- BackdropDoc.gradeOf(shot#grade, env#res#backdrops))
         yield Backdrop.specOf("${shot#photo}_${shot#grade}", photo, grade)
 
@@ -317,7 +317,7 @@ mod ViewStage {
         let progress = Stage.fadeProgress(env#storyNow, stage);
         let shown = Stage.shownShot(env#res#backdrops, stage);
         let light = if (progress >= 1.0) Cast.steadyLight(toneOf(shown)) else { previous = toneOf(stage#under), current = toneOf(shown), progress = progress };
-        { doc = env#res#cast, fit = env#fit, storyNow = env#storyNow, realNow = env#realNow, missing = env#res#missing, light = light,
+        { doc = env#res#cast, fit = env#fit, storyNow = env#storyNow, realNow = env#realNow, missing = env#skipTextures, light = light,
           props = stage#props, photo = shown |> Option.map(s -> s#photo), backdropShift = shiftOf(env, photoRect(env#fit), stage) }
 
     // ── パーティクル（蛍・雪） ──

@@ -5,7 +5,7 @@ mod ShotsDoc {
     use fge::{DocJson, JsonCodec, Log, Vec2}
     use Util.Json.Json
 
-    /// 場面で開く画面（Doc の open。title はタイトル画面のまま・hold は次の写真を待っている所）。
+    /// 場面で開く画面（Doc の open。title はタイトル画面のまま）。
     pub enum Screen with Eq, ToString {
         case Title
         case Log
@@ -14,7 +14,6 @@ mod ShotsDoc {
         case Settings
         case Ask
         case Credits
-        case Hold
     }
 
     /// ノードのどこまで進めるか（Doc の say と until。どちらも無ければノードの頭）。
@@ -180,7 +179,7 @@ mod ShotsDoc {
         case Some(w) => screenOf(w) |> Option.map(Some) |> Option.toOk("open の '${w}' を知らない（${String.intercalate("・", screenWords())}）")
     }
 
-    def screenWords(): List[String] = "title" :: "log" :: "save" :: "load" :: "settings" :: "ask" :: "credits" :: "hold" :: Nil
+    def screenWords(): List[String] = "title" :: "log" :: "save" :: "load" :: "settings" :: "ask" :: "credits" :: Nil
 
     def screenOf(word: String): Option[Screen] = match word {
         case "title"    => Some(Screen.Title)
@@ -190,7 +189,6 @@ mod ShotsDoc {
         case "settings" => Some(Screen.Settings)
         case "ask"      => Some(Screen.Ask)
         case "credits"  => Some(Screen.Credits)
-        case "hold"     => Some(Screen.Hold)
         case _          => None
     }
 

@@ -66,20 +66,7 @@ mod Shots {
             case ShotsDoc.Screen.Settings => quiet(() -> WorldSettings.openSettings(w))
             case ShotsDoc.Screen.Ask      => quiet(() -> World.askFor(World.Ask.ToTitle, w))
             case ShotsDoc.Screen.Credits  => World.toCredits(res, w)
-            case ShotsDoc.Screen.Hold     => holding(res, w)
         }
-
-    /// 次の写真を黒のまま待ち続けている形（待ちの目印が出る長さだけ待った所）。次の写真は novel.backdrops.json の photos のうち、
-    /// 絵を持つ物のうち今出ていない最初の物（鍵の順。絵を持つ写真が 1 枚だけならその写真）。
-    def holding(res: Res.Res, w: World.World): World.World =
-        let shown = World.readOf(w) |> Option.flatMap(r -> Stage.shownShot(res#backdrops, r#stage)) |> Option.map(s -> s#photo);
-        let photos = BackdropDoc.rec(res#backdrops)#photos |> Map.keysOf |> Set.toList
-                     |> List.filter(p -> Option.nonEmpty(BackdropDoc.textureOf(p, res#backdrops)));
-        let next = if (List.length(photos) == 1) List.head(photos) else List.find(p -> Some(p) != shown, photos);
-        let names = next |> Option.flatMap(p -> BackdropDoc.textureOf(p, res#backdrops)) |> Option.toList;
-        let hold = { phase = World.HoldPhase.Waiting, phaseFrom = World.now(w), waited = KindDoc.rec(res#kind)#holdMarkSeconds + 1.0,
-                     names = names, rest = Nil, last = None };
-        World.mapRead(r -> { hold = Some(hold) | r }, w)
 
     /// 物語の時計と実時間の今を、どちらも seconds 秒に据える。
     def at(seconds: Float64, w: World.World): World.World =
@@ -131,7 +118,7 @@ mod Shots {
     /// <<wait>> を明かす（描き出しは時計を進めないので、明ける時刻で 1 歩だけ流す）。
     def settleWait(res: Res.Res, w: World.World): World.World =
         match World.readOf(w) |> Option.flatMap(r -> YarnRunner.waitUntilOf(r#talk)) {
-            case Some(until) => quiet(() -> WorldRead.step(res, 0.0, { storyClock = Clock.startAt(Clock.secondsOf(until)) | w }))
+            case Some(until) => quiet(() -> WorldRead.step(res, { storyClock = Clock.startAt(Clock.secondsOf(until)) | w }))
             case None        => w
         }
 }

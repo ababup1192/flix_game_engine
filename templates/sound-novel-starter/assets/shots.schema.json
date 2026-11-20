@@ -66,10 +66,9 @@
               "load",
               "settings",
               "ask",
-              "credits",
-              "hold"
+              "credits"
             ],
-            "description": "開く画面（hold = 次の写真を待っている所）"
+            "description": "開く画面"
           },
           "pointer": {
             "type": "array",

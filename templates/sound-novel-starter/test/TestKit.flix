@@ -45,9 +45,8 @@ mod TestKit {
     pub def stepBy(res: Res.Res, dt: Float64, w: World.World): World.World = frameBy(res, idleFrame(dt), w)
 
     /// 規則だけの 1 歩（物語の時計を進めてから WorldRead.step。Controls と入力の解釈は通らない）。
-    // WhyNot: 素材を諦める所を App の道で流さない — Controls.step が諦めた素材を stderr に 1 行言い、stderr に出たテストは落ちる。
     pub def ruleStepBy(res: Res.Res, dt: Float64, w: World.World): World.World =
-        quiet(() -> WorldRead.step(res, dt, tickClocks(res, dt, w)))
+        quiet(() -> WorldRead.step(res, tickClocks(res, dt, w)))
 
     /// stepBy と、そのフレームで規則が出した出来事（古い順）。
     pub def stepHearing(res: Res.Res, dt: Float64, w: World.World): (World.World, List[World.Event]) =

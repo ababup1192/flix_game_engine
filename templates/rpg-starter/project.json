@@ -327,6 +327,14 @@
   },
   "web": {
     "keysDoc": "assets/rpg.keys.json",
+    "// deferred": "押して始めた後に裏で取る素材（使う順）。タイトルの曲は起動時に取る。曲（ループの音）は届く前に鳴らす所が来ても待たずに進み、届いたら鳴る。届く前の絵を描くコマは engine が出さずに待つので、絵を足す時はタイトルで使わない物だけをここへ",
+    "deferred": [
+      "assets/bgm/bgm_village.wav",
+      "assets/bgm/bgm_world.wav",
+      "assets/bgm/bgm_battle.wav",
+      "assets/bgm/bgm_mine.wav",
+      "assets/bgm/bgm_boss.wav"
+    ],
     "virtualPad": {
       "dpad": true,
       "buttons": [

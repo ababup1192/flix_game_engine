@@ -4,8 +4,8 @@ mod ThemeDoc {
     use fge::{Color, DocJson, JsonCodec, Log}
     use Util.Json.Json
 
-    /// 素材を待つ間（ブラウザ版で背景・環境音がまだ届いていない黒の間）に出す印。Dots = 右下の金の点 3 つの明滅、
-    /// Ring = 画面の真ん中に回る点の輪と字のラベル（字は novel.story.json の labels の waiting）、Hidden（JSON は "none"）= 黒の地だけ。
+    /// セーブ・ロードの枠のサムネの写真がまだ届いていない時（ブラウザ版の後回し）に出す印。Dots = 右下の金の点 3 つの明滅、
+    /// Ring = 枠の真ん中に回る点の輪と字のラベル（字は novel.story.json の labels の waiting）、Hidden（JSON は "none"）= 暗い地だけ。
     pub enum LoadingMark with Eq, ToString {
         case Dots
         case Ring
@@ -66,7 +66,7 @@ mod ThemeDoc {
     /// ink = 本文の字、inkSeen = 既読の行の字（スキップで飛ばせる行だと分かる色）、name = 話し手の名前、
     /// accent = 選んでいる物・オートやスキップの点灯、panel = ADV のウィンドウ・選択肢・画面の地（濃さは設定の「ウィンドウの濃さ」）、
     /// veil = NVL の頁の下に敷く幕の濃さを、ウィンドウの濃さに掛ける割合（頁は画面いっぱいなのでウィンドウより薄くしてよい）、firefly = 蛍の光、
-    /// loadingMark = 素材を待つ間の印、speakers = 話し手の id → 色（無い id は name と ink の色）、windows = メッセージ枠の型の名前 → 型、
+    /// loadingMark = サムネの写真がまだ届いていない時の印、speakers = 話し手の id → 色（無い id は name と ink の色）、windows = メッセージ枠の型の名前 → 型、
     /// legacyModes = セーブの Mark v3 の mode の古い値（Nvl・Adv）→ 読み替える型の名前（空の舞台の Nvl もここで引く）。
     pub type alias Rec = {
         version = Int32,
@@ -175,9 +175,6 @@ mod ThemeDoc {
         case Some(mark) => mark
         case None       => Log.warnThen("[theme] loadingMark '${name}' は知らない — dots で描く（dots / ring / none）", LoadingMark.Dots)
     }
-
-    /// 待ちの印だけを替えた Doc。
-    pub def withLoadingMark(mark: LoadingMark, doc: Doc): Doc = Doc.Doc({ loadingMark = mark | rec(doc) })
 
     pub def fromJson(text: String): Option[Doc] =
         DocJson.decodeObject(fromRoot, text)

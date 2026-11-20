@@ -103,7 +103,7 @@ mod BackdropDoc {
 
     /// defaultTransition = transition= を省いた <<bg>> の切り替え、defaultSeconds / defaultEase = time= / ease= を省いた <<bg>> の秒と進みの曲線、
     /// black = transition=black の暗転の形、initial = 背景が無い間の背景、title = タイトルの背景の動き（無ければ動かさない）、
-    /// ground = 写真の下に敷く地の色（blank の写真・素材の待ち・black の暗転で見える色。無ければ Backdrop.groundColor）。
+    /// ground = 写真の下に敷く地の色（blank の写真・black の暗転で見える色。無ければ Backdrop.groundColor）。
     pub type alias Rec = {
         version = Int32,
         defaultTransition = Transition,

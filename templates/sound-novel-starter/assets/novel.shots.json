@@ -1,7 +1,7 @@
 {
   "version": 1,
   "title": "描き出しの場面",
-  "note": "make render SHOT=<name> と make render-all（gallery/<name>.png）の場面と並び。実機でも START=shot:<name> で同じ World から開く。node = 開くノード、say = そのノードの何番目（0 から）の台詞を出し終えた所、until: \"choices\" = 選択肢が出るまで送った所（どちらも無ければノードの頭）。vars = シナリオの変数（$ を付けない名前 → 値）。open = 開く画面（title・log・save・load・settings・ask・credits・hold）。pointer = マウスの位置（design px）。at = 時計を据える秒。縦の画面・小さい画面・Doc を差し替える場面は src/render/SceneRender.flix がここの名前を引いて作る。node は bin/fge yarn build がシナリオにあるかを見る。slots = save・load の画面の場面で 1 ページ目の上の枠から書いておくセーブ（node の say 番目の台詞を出し終えた所・say を省けば 0。ノードがあるかはテストの testEveryShotBuildsFromTheApp が見る）。",
+  "note": "make render SHOT=<name> と make render-all（gallery/<name>.png）の場面と並び。実機でも START=shot:<name> で同じ World から開く。node = 開くノード、say = そのノードの何番目（0 から）の台詞を出し終えた所、until: \"choices\" = 選択肢が出るまで送った所（どちらも無ければノードの頭）。vars = シナリオの変数（$ を付けない名前 → 値）。open = 開く画面（title・log・save・load・settings・ask・credits）。pointer = マウスの位置（design px）。at = 時計を据える秒。縦の画面・小さい画面・Doc を差し替える場面は src/render/SceneRender.flix がここの名前を引いて作る。node は bin/fge yarn build がシナリオにあるかを見る。slots = save・load の画面の場面で 1 ページ目の上の枠から書いておくセーブ（node の say 番目の台詞を出し終えた所・say を省けば 0。ノードがあるかはテストの testEveryShotBuildsFromTheApp が見る）。",
   "shots": [
     { "name": "title", "open": "title", "at": 3.0 },
     { "name": "nvl", "node": "WinterRoute", "say": 2, "at": 4.0 },
@@ -12,7 +12,6 @@
     { "name": "invite", "node": "Invitation", "until": "choices", "vars": { "own_pace": true, "shared_tiredness": true }, "at": 4.0 },
     { "name": "ending", "node": "KeptMap", "say": 3, "at": 4.0 },
     { "name": "still", "node": "KeptMap", "say": 14, "at": 4.0 },
-    { "name": "hold", "node": "WinterRoute", "say": 7, "open": "hold", "at": 4.0 },
     { "name": "log", "open": "log", "pointer": [400.0, 300.0], "at": 4.0 },
     { "name": "save", "node": "Reply", "say": 2, "open": "save", "at": 4.0 },
     { "name": "load", "open": "load", "at": 4.0 },

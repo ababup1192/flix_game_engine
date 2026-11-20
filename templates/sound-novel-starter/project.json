@@ -231,7 +231,7 @@
       "assets/talk/*.yarn",
       "assets/*.schema.json"
     ],
-    "// deferred": "押して始めた後に裏で取る素材（シナリオで出てくる順）。タイトルの写真（slope）と環境音（winter_wind）、タイトルで鳴る返事の音は起動時に取る。届く前に使う所は暗転で待つ（背景・環境音）か、鳴らさずに進む（一発の音）。",
+    "// deferred": "押して始めた後に裏で取る素材（シナリオで出てくる順）。タイトルの写真（slope）と環境音（winter_wind）、タイトルで鳴る返事の音は起動時に取る。届く前の背景・立ち絵を描くコマは engine が出さずに待つ（押した所まで戻して待ち、届いたら押した入力を渡し直す。20 秒で諦めて進む）。一発の音は待たずに鳴らさず進む。扱いを替えるなら deferredPolicy（engine の docs/startup.md）。",
     "deferred": [
       "assets/sfx/ui_page.wav",
       "assets/bg/desk_room.jpg",

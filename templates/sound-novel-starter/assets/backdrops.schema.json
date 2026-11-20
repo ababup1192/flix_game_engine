@@ -51,7 +51,7 @@
     },
     "ground": {
       "type": "color",
-      "description": "写真の下に敷く地の色（blank の写真・素材の待ち・black の暗転で見える色。無ければ夜の紺 #0a0d14）"
+      "description": "写真の下に敷く地の色（blank の写真・black の暗転で見える色。無ければ夜の紺 #0a0d14）"
     },
     "initial": {
       "type": "object",

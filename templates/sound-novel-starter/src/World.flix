@@ -37,7 +37,7 @@
 //   実時間 realNow（Time[Clock.Real]）          … 蛍の光・タイトルの字の明滅・クレジット・知らせ・設定の文字の速さの見本。止まらない。
 //   セーブの日時は clockBase（起動した時のその土地の時刻。Main が読んで渡す）+ realNow の秒。
 mod World {
-    use fge::{Clock, Emit, Yarn, YarnRunner}
+    use fge::{Clock, Emit, LoadProgress, Yarn, YarnRunner}
 
     /// いまの場面と、その場面だけが持つ値。
     ///   Title(項目) = タイトルのメニュー（カーソルの項目）、Reading(Read) = 読んでいる間、
@@ -51,12 +51,11 @@ mod World {
     /// 読んでいる間だけの値。talk = シナリオの現在地、stage = 舞台、page = 出している文章、
     /// choices / choiceCursor = 出している選択肢（無ければ空）とそのカーソル、log = バックログ（新しい順）、
     /// playback = 送り方、doneAt = 今の行を出し終えた物語の時刻、autosavedNode = オートセーブを残した最後のノード、
-    /// hold = 素材の待ち（無ければ None）、gaveUp = 待ち切れずに諦めた素材の名前（もう待たない）、
     /// tip = 指の長押しで名前を出した縦の画面の右の列のボタンの番号と出した実時間（ブラウザ版の指は離した時にしか長押しと分からないので、離した後に出す）、
     /// cursor = シナリオの実行位置（今の台詞・選択肢か、<<wait>> で待っている演出コマンドの行。talkCursorOf）、
     /// entry = 今のノードに入った時の舞台（戻れる所の当て直しの始まり。WorldRead.trackEntry）、
     /// beat = 今のビート（入力 1 回から次の台詞・選択肢までの出来事の時刻表。NovelBeat）、
-    /// gate = 出来事を反映した後の今のゲート（払い・タップで選ぶ選択肢。素材の待ちとコマンドの待ちは見ない。読むのは WorldRead.gateOf）。
+    /// gate = 出来事を反映した後の今のゲート（払い・タップで選ぶ選択肢。コマンドの待ちは見ない。読むのは WorldRead.gateOf）。
     pub type alias Read = {
         talk = YarnRunner.Runner[Stage.Story],
         stage = Stage.Stage,
@@ -67,8 +66,6 @@ mod World {
         playback = Playback,
         doneAt = Option[Clock.Time[Stage.Story]],
         autosavedNode = Option[String],
-        hold = Option[Hold],
-        gaveUp = Set[String],
         tip = Option[(Int32, Clock.Time[Clock.Real])],
         cursor = Option[Yarn.Source],
         entry = NodeEntry,
@@ -86,28 +83,6 @@ mod World {
     /// 今のノードに入った時の記録。node = ノードの名前、lastLine = そのノードで最後に通った .yarn の行、
     /// visits = ノードに入った回数（自分への jump も 1 回）、start = 入る直前の舞台と頁。
     pub type alias NodeEntry = { node = String, lastLine = Int32, visits = Int32, start = Saves.NodeStart }
-
-    /// 素材の待ち: ブラウザ版で後回しにした背景・環境音が、使う時にまだ届いていない間の暗転（WorldRead の「素材の待ち」）。
-    /// phase = 今の段、phaseFrom = その段に入った物語の時刻（黒へ重ねる進みの元）、waited = Waiting に居た実時間の秒、
-    /// names = 待っている素材の名前（project.json の textures / sounds の name）、
-    /// rest = 止めた所から先のシナリオの出来事と、それぞれの後ろの入力の数（届いたら続きから反映する）、
-    /// last = 止めた時の最後のブックマーク（rest の台詞の戻れる所の元）。
-    pub type alias Hold = {
-        phase = HoldPhase,
-        phaseFrom = Clock.Time[Stage.Story],
-        waited = Float64,
-        names = List[String],
-        rest = List[(YarnRunner.Event, Int32)],
-        last = Option[YarnRunner.Bookmark]
-    }
-
-    /// 素材の待ちの段。FadingOut = 黒へ重ねている（物語の時計は動く）、Waiting = 黒のまま届くのを待つ（物語の時計を止める）、
-    /// FadingIn = 届いた（か諦めた）ので黒から戻している。
-    pub enum HoldPhase with Eq, ToString {
-        case FadingOut
-        case Waiting
-        case FadingIn
-    }
 
     /// 場面の上に開いている画面と、その画面だけの値（Closed 以外は物語の時計が止まる）。
     ///   Log(遡った量 px) / SaveSlots・LoadSlots(ページ, 枠のカーソル) / Settings(カーソルの行) / Hidden = 文章のウィンドウを隠して背景だけを見る /
@@ -135,7 +110,6 @@ mod World {
     pub enum Halt with Eq {
         case PanelOpen
         case Asking
-        case Loading
     }
 
     /// タイトルのメニューの項目。
@@ -254,7 +228,8 @@ mod World {
     /// ゲームの状態（遊びの状態だけ。Doc とシナリオは Res が持つ）。scene / panel / ask = 冒頭の「状態の形」、
     /// saves = セーブデータ・既読・設定、saveRev = saves を変えた回数（Saves を書く出力の鍵）、pointer = マウスの位置（触れている物を明るくする）、
     /// clockBase = 起動した時のその土地の時刻（秒。セーブの日時の元）、toast = 知らせの言葉と出した実時間、quitting = 終了を決めた、
-    /// events = 規則が出した出来事（音の材料）、gesture = 読む画面で押し始めた 1 回の押し（離した時にタップか払いかを決める）。
+    /// events = 規則が出した出来事（音の材料）、gesture = 読む画面で押し始めた 1 回の押し（離した時にタップか払いかを決める）、
+    /// loadWait = ブラウザ版で engine が後回しの素材を待っている間の様子（App.withLoadWait が毎コマ写す。デスクトップ・テスト・描き出しはいつも None）。
     /// 押している間の掴み。Free = 押していない、Slider(i) = 設定の画面で押し始めた所が i 行目のスライダーの帯、Other = それ以外を押している、
     /// LongPress(i, 時刻) = 縦の画面で読む間に右の列の i 番目のボタンを押し始めた実時間（押している秒は今との差で読む）。
     /// 離すまで、最初に掴んだスライダーだけを動かす（指やマウスが隣の行へずれても、そちらは動かさない）。
@@ -279,7 +254,8 @@ mod World {
         realNow = Clock.Time[Clock.Real],
         toast = Option[(StoryDoc.Label, Clock.Time[Clock.Real])],
         quitting = Bool,
-        events = Emit.Events[Event]
+        events = Emit.Events[Event],
+        loadWait = Option[LoadProgress.LoadWait]
     }
 
     /// 起動の World。タイトルから始まる（カーソルは「はじめから」）。
@@ -287,7 +263,7 @@ mod World {
     pub def initial(saves: Saves.Saves, clockBase: Int64): World =
         { scene = Scene.Title(TitleItem.NewGame), panel = Panel.Closed, ask = None,
           saves = saves, saveRev = 0, pointer = { x = -1.0, y = -1.0 }, grab = Grab.Free, gesture = Gesture.idle(), clockBase = clockBase,
-          storyClock = Clock.start(), realNow = Clock.zero(), toast = None, quitting = false, events = Emit.empty() }
+          storyClock = Clock.start(), realNow = Clock.zero(), toast = None, quitting = false, events = Emit.empty(), loadWait = None }
 
     /// 起動の World を、起動の時に読んだセーブから。この版では読めないセーブだった時は、タイトルで「読めない」（写して残せたなら
     /// そのことも）と知らせる。
@@ -302,7 +278,7 @@ mod World {
     pub def emptyRead(theme: ThemeDoc.Doc): Read =
         let stage = Stage.emptyFor(theme);
         { talk = YarnRunner.closed(), stage = stage, page = Page.empty(), choices = Nil, choiceCursor = 0,
-          log = Nil, playback = Playback.Manual, doneAt = None, autosavedNode = None, hold = None, gaveUp = Set.empty(), tip = None, cursor = None,
+          log = Nil, playback = Playback.Manual, doneAt = None, autosavedNode = None, tip = None, cursor = None,
           entry = { node = "", lastLine = 0, visits = 0, start = { stage = Stage.snapshotOf(stage), page = Page.empty() } }, beat = idleBeat(), gate = None }
 
     // ── 場面を読む口 ──
@@ -433,19 +409,17 @@ mod World {
     /// 画面も確認のウィンドウも開いていないか。
     pub def isFree(w: World): Bool = w#panel == Panel.Closed and Option.isEmpty(w#ask)
 
-    /// 物語の時計のこのフレームの進み方（App.addClock に渡す）。止める理由は確認のウィンドウと画面と、
-    /// 黒へ重ね切って素材を待っている間（Waiting。黒へ重ねる間と戻す間は物語の時計で動くので止めない）。
+    /// 物語の時計のこのフレームの進み方（App.addClock に渡す）。止める理由は確認のウィンドウと画面。
     pub def paceOf(w: World): Clock.Pace[Stage.Story, Halt] =
         if (Option.nonEmpty(w#ask)) Clock.paceOf(Clock.Run.Paused(Halt.Asking))
         else if (w#panel != Panel.Closed) Clock.paceOf(Clock.Run.Paused(Halt.PanelOpen))
-        else if (holdPhaseOf(w) == Some(HoldPhase.Waiting)) Clock.paceOf(Clock.Run.Paused(Halt.Loading))
         else Clock.paceOf(Clock.Run.Running)
 
-    /// 素材の待ちの段（待っていなければ None）。
-    pub def holdPhaseOf(w: World): Option[HoldPhase] = readOf(w) |> Option.flatMap(r -> r#hold) |> Option.map(h -> h#phase)
+    /// engine の待ちの様子を写す（App.withLoadWait）。
+    pub def withLoadWait(wait: Option[LoadProgress.LoadWait], w: World): World = { loadWait = wait | w }
 
-    /// 素材を待っているか（3 つの段のどれか。入力を受けない）。
-    pub def isHolding(w: World): Bool = Option.nonEmpty(holdPhaseOf(w))
+    /// 押した所まで戻して engine が待っているか（押した手応えを選んだ行に出す間）。
+    pub def isPressWaiting(w: World): Bool = w#loadWait |> Option.exists(lw -> lw#pressed)
 
     /// 確認のウィンドウを開く（カーソルは「いいえ」から。決定を押し続けても進まない）。オートとスキップは止め、長押しで出した名前は消す。
     pub def askFor(ask: Ask, w: World): World \ Emit[Event] =

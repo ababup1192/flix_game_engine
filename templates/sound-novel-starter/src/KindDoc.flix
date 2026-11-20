@@ -15,8 +15,6 @@ mod KindDoc {
     /// overlayStart = <<overlay>> を一度も書いていない間の覆いの濃さ（0〜1）、overlayLayer = <<overlay layer=stage>> の層の数（world の中・大きいほど手前）、
     /// textSizes = <<text size=名前>> の名前 → 本文とルビの字に掛ける倍率、
     /// fireflies = <<fx fireflies>> のパーティクルの数、snow = <<fx snow>> の雪（Snow）、creditsSpeed = クレジットが流れる速さ（px/秒）、toastSeconds = 知らせを出す秒、
-    /// holdFadeSeconds = 素材を待つ時に黒へ重ねる秒（戻す秒も同じ）、holdGiveUpSeconds = 黒のまま待って諦めるまでの秒、
-    /// holdMarkSeconds = 黒になってから隅に待ちの印を出すまでの秒（ブラウザ版で後回しの背景・環境音がまだ届いていない時）、
     /// tapSlop / longPressSeconds / swipeMin / swipeSeconds = 読む画面の 1 回の押しを分ける数（Gesture.Limits。押した所から tapSlop px より
     /// 離れずに離せばタップで送る、longPressSeconds 秒以上置けば長押し、swipeMin px 以上を swipeSeconds 秒の内に動かせば払い。長押しと左の払いの外は離すと送る）、
     /// *Slider = 設定の画面のスライダーの範囲と 1 押しの量（文字の速さの最大はノーウェイト = isNoWait）。
@@ -49,9 +47,6 @@ mod KindDoc {
         snow = Snow,
         creditsSpeed = Float64,
         toastSeconds = Float64,
-        holdFadeSeconds = Float64,
-        holdGiveUpSeconds = Float64,
-        holdMarkSeconds = Float64,
         tapSlop = Float64,
         longPressSeconds = Float64,
         swipeMin = Float64,
@@ -97,7 +92,6 @@ mod KindDoc {
                   shakes = Map.empty(), windowFadeSeconds = 0.0, overlayStart = 0.0, overlayLayer = 900,
                   textSizes = Map#{ "small" => 0.8, "normal" => 1.0, "large" => 1.4, "huge" => 2.0 },
                   fireflies = 28, snow = snowDefaults(), creditsSpeed = 34.0, toastSeconds = 1.6,
-                  holdFadeSeconds = 0.4, holdGiveUpSeconds = 20.0, holdMarkSeconds = 0.4,
                   tapSlop = 12.0, longPressSeconds = 0.65, swipeMin = 60.0, swipeSeconds = 0.5,
                   cpsSlider = { min = 10.0, max = 130.0, step = 10.0 }, autoWaitSlider = { min = 0.2, max = 4.0, step = 0.2 },
                   masterVolumeSlider = volume(), ambienceVolumeSlider = volume(), musicVolumeSlider = volume(), seVolumeSlider = volume(),
@@ -161,9 +155,6 @@ mod KindDoc {
                   textSizes = Map.get("textSizes", root) |> Option.flatMap(JsonCodec.decodeStringMap(JsonCodec.expectFloat)) |> Option.getWithDefault(d#textSizes),
                   fireflies = int("fireflies", d#fireflies), snow = snow, creditsSpeed = num("creditsSpeed", d#creditsSpeed),
                   toastSeconds = num("toastSeconds", d#toastSeconds),
-                  holdFadeSeconds = num("holdFadeSeconds", d#holdFadeSeconds),
-                  holdGiveUpSeconds = num("holdGiveUpSeconds", d#holdGiveUpSeconds),
-                  holdMarkSeconds = num("holdMarkSeconds", d#holdMarkSeconds),
                   tapSlop = num("tapSlop", d#tapSlop), longPressSeconds = num("longPressSeconds", d#longPressSeconds),
                   swipeMin = num("swipeMin", d#swipeMin), swipeSeconds = num("swipeSeconds", d#swipeSeconds),
                   cpsSlider = slider("cpsSlider", d#cpsSlider), autoWaitSlider = slider("autoWaitSlider", d#autoWaitSlider),

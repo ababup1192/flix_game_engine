@@ -366,33 +366,6 @@
       "max": 10,
       "default": 1.6
     },
-    "holdFadeSeconds": {
-      "kind": "field",
-      "type": "float",
-      "label": "素材を待つ時に黒へ重ねる秒・黒から戻す秒（ブラウザ版で後回しの背景・環境音がまだ届いていない時）",
-      "order": 22,
-      "min": 0.05,
-      "max": 3,
-      "default": 0.4
-    },
-    "holdGiveUpSeconds": {
-      "kind": "field",
-      "type": "float",
-      "label": "素材を待ち切れずに諦めて先へ進むまでの秒（黒のままの間だけ数える）",
-      "order": 23,
-      "min": 1,
-      "max": 120,
-      "default": 20.0
-    },
-    "holdMarkSeconds": {
-      "kind": "field",
-      "type": "float",
-      "label": "黒になってから隅に待ちの印（点の明滅）を出すまでの秒",
-      "order": 24,
-      "min": 0,
-      "max": 10,
-      "default": 0.4
-    },
     "tapSlop": {
       "kind": "field",
       "type": "float",

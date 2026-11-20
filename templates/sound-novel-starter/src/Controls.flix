@@ -9,18 +9,10 @@ mod Controls {
 
     // ── 毎フレームの系 ──
 
-    /// 実時間の今を World へ写し、文字送り・待ち・オート・スキップ（素材を待っている間は待ちの段）を 1 歩進める。
+    /// 実時間の今を World へ写し、文字送り・待ち・オート・スキップを 1 歩進める。
     pub def step(frame: App.Frame, res: Res.Res, w: World.World): World.World =
-        let (next, events) = Emit.collectInto(() -> WorldRead.step(res, frame#dt, { realNow = frame#realNow | w }), w#events);
-        noteGaveUp(res, w, { events = events | next })
-
-    /// このコマで待ち切れずに諦めた素材があれば 1 行知らせる（諦めた事は World の gaveUp に残る）。
-    // WhyNot: WorldRead の中で知らせない — 規則のテストが stderr に出た行で落ちる。
-    def noteGaveUp(res: Res.Res, before: World.World, after: World.World): World.World =
-        let gaveUpOf = (w: World.World) -> World.readOf(w) |> Option.map(r -> r#gaveUp) |> Option.getWithDefault(Set.empty());
-        let fresh = Set.difference(gaveUpOf(after), gaveUpOf(before));
-        if (Set.isEmpty(fresh) or not World.isReading(before)) after
-        else Log.warnThen("[hold] ${Set.join(", ", fresh)} が ${Float64.toString(KindDoc.rec(res#kind)#holdGiveUpSeconds)} 秒待っても届かないので、無いまま進む", after)
+        let (next, events) = Emit.collectInto(() -> WorldRead.step(res, { realNow = frame#realNow | w }), w#events);
+        { events = events | next }
 
     /// 入力の解釈。規則が出した出来事は events 欄に溜める（音は sounds が前後の差で読む）。
     pub def interact(frame: App.Frame, res: Res.Res, w: World.World): World.World =
@@ -48,8 +40,7 @@ mod Controls {
         else if (w#panel != World.Panel.Closed) panelInput(res, frame, dropLongPress(w))
         else match w#scene {
             case World.Scene.Title(_)      => titleInput(res, frame, w)
-            // WhyNot: 素材を待つ間にメニューやセーブを開かせない — 画面は黒で押せる物が見えず、待ちは長くても数十秒で明ける。
-            case World.Scene.Reading(_)    => if (World.isHolding(w)) dropLongPress(w) else readingInput(res, frame, w)
+            case World.Scene.Reading(_)    => readingInput(res, frame, w)
             case World.Scene.Credits(_, _) =>
                 let k = keysOf(res);
                 if (World.creditsOver(res, Layout.size(fitOf(res, frame)), w) or frame#mouseClicked or tapped(k#confirm, frame) or tapped(k#back, frame)) World.toTitle(w)
@@ -58,16 +49,16 @@ mod Controls {
 
     def dropGesture(w: World.World): World.World = { gesture = Gesture.idle() | w }
 
-    /// 列の長押しの途中で画面や確認のウィンドウが開いた・素材を待つ黒に入ったら、長押しを捨てる。
+    /// 列の長押しの途中で画面や確認のウィンドウが開いたら、長押しを捨てる。
     // WhyNot: 残したまま読む間へ戻さない — 戻った最初のフレームで「離した」と読み、開いた覚えの無いボタンを押してしまう。
     def dropLongPress(w: World.World): World.World = match w#grab {
         case World.Grab.LongPress(_, _) => { grab = World.Grab.Free | w }
         case _                          => w
     }
 
-    /// 入力が本文へ届く時か（確認のウィンドウも画面も開いていない・読んでいる・素材を待っていない）。
+    /// 入力が本文へ届く時か（確認のウィンドウも画面も開いていない・読んでいる）。
     def readsText(w: World.World): Bool =
-        Option.isEmpty(w#ask) and w#panel == World.Panel.Closed and World.isReading(w) and not World.isHolding(w)
+        Option.isEmpty(w#ask) and w#panel == World.Panel.Closed and World.isReading(w)
 
     // ── 確認のウィンドウ ──
 
@@ -460,8 +451,8 @@ mod Controls {
 
     // ── 後回しの素材を解く量（ブラウザ版。App.withDecodeBudget） ──
 
-    /// このコマに、届いた後回しの絵を登録してよい量。素材を待っている間（黒へ重ねる・黒のまま・黒から戻す）は Covered(50)、
-    /// 文字送りの途中とクレジット（流れている）は Paused、タップ待ち・選択肢・タイトル・画面を開いている間は Idle(4)。
+    /// このコマに、届いた後回しの絵を登録してよい量。文字送りの途中とクレジット（流れている）は Paused、
+    /// タップ待ち・選択肢・タイトル・画面を開いている間は Idle(4)。
     // WhyNot: 背景の写真の重ねの途中を Covered にしない — 見えている写真の重なりが登録の止まりで引っかかる。
     pub def decodeBudget(h: Resources.With[Res.Res, World.World]): LoadProgress.DecodeBudget =
         let w = h#world;
@@ -469,16 +460,12 @@ mod Controls {
             case World.Scene.Title(_)      => LoadProgress.DecodeBudget.Idle(idleMs())
             case World.Scene.Credits(_, _) => LoadProgress.DecodeBudget.Paused
             case World.Scene.Reading(r)    =>
-                if (Option.nonEmpty(r#hold)) LoadProgress.DecodeBudget.Covered(coveredMs())
-                else if (World.isFree(w) and not Page.isDone(r#page)) LoadProgress.DecodeBudget.Paused
+                if (World.isFree(w) and not Page.isDone(r#page)) LoadProgress.DecodeBudget.Paused
                 else LoadProgress.DecodeBudget.Idle(idleMs())
         }
 
     /// 画面が動いて見えている間に、1 コマで登録に使ってよい ms（1 本の道は必ず通る）。
     def idleMs(): Float64 = 4.0
-
-    /// 画面が黒い間に、1 コマで登録に使ってよい ms。
-    def coveredMs(): Float64 = 50.0
 
     // ── Doc の読み込み・読み直し（watchFile / F1） ──
 
