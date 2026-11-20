@@ -71,7 +71,7 @@ var exportWebDecodedImageExts = map[string]bool{".png": true, ".jpg": true, ".jp
 func cmdExportWeb(out, errOut *strings.Builder, rest []string, _ bool) int {
 	opts, err := parseExportWebArgs(rest)
 	if err != nil {
-		if errors.Is(err, errExportWebHelp) {
+		if errors.Is(err, errCommandHelp) {
 			fmt.Fprintln(out, exportWebUsage)
 			return 0
 		}
@@ -81,7 +81,8 @@ func cmdExportWeb(out, errOut *strings.Builder, rest []string, _ bool) int {
 	return runExportWeb(out, errOut, opts)
 }
 
-var errExportWebHelp = errors.New("help")
+// errCommandHelp は --help を読んだ時の値（呼び手は使い方を出して 0 で終える）。
+var errCommandHelp = errors.New("help")
 
 func parseExportWebArgs(args []string) (exportWebOptions, error) {
 	var o exportWebOptions
@@ -91,7 +92,7 @@ func parseExportWebArgs(args []string) (exportWebOptions, error) {
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if a == "--help" || a == "-h" {
-			return o, errExportWebHelp
+			return o, errCommandHelp
 		}
 		if a == "--check" {
 			o.Check = true
@@ -178,6 +179,11 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
 		return 1
 	}
+	if compress.Auto, err = loadWebAutoLossyRules(p.Engine); err != nil {
+		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
+		return 2
+	}
+	compress.DataImages = loadWebShaderTextures(p.Game, proj)
 	startPrompt, err := resolveWebStartPrompt(proj.Web)
 	if err != nil {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
@@ -205,6 +211,11 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		return 1
 	}
 	embedPlan, err := planWebEmbed(early, embed)
+	if err != nil {
+		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
+		return 1
+	}
+	losslessNotes, err := checkWebLosslessGlobs(early.Images, compress)
 	if err != nil {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
 		return 1
@@ -396,6 +407,7 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 	}
 
 	ewLogf("④ アセットの束 → %s", p.Out)
+	prevLossless := loadPreviousLosslessImages(p.Out)
 	if err := resetExportOut(p.Out); err != nil {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
 		return 2
@@ -434,6 +446,9 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 	ewLogf("⑥ 素材を小さくする（絵は WebP・音は Opus・アトラスは画素を WebP か gzip）")
 	enc := findWebEncoders(p.Engine, compress)
 	report := transcodeWebAssets(p.Out, &b, atlases, compress, enc)
+	report.Notes = append(report.Notes, losslessNotes...)
+	report.AutoLossyLines = buildWebAutoLossySummary(report.Verdicts, compress.Auto, compress.LossyImages, prevLossless)
+	logWebAutoLossy(report.Verdicts)
 	b.Deferred = webDeferredEntries(p.Out, &b, deferredPlan.Paths, textureNames)
 
 	ewLogf("⑦ 頁")
@@ -1277,6 +1292,9 @@ func writeExportSizes(out *strings.Builder, dir string, b webBundle, atlases []s
 	fmt.Fprintf(w, "  %-8s %22s  ブラウザが取る量\n", "合計", pair(total))
 	if n := len(strip.Stripped); n > 0 {
 		fmt.Fprintf(w, "  %-8s %22s  schema・制作の元ファイル %d 本（動く時に読まない。戻すなら web.keep）\n", "外した", humanBytes(strip.StrippedBytes), n)
+	}
+	for _, line := range r.AutoLossyLines {
+		fmt.Fprintf(w, "  %s\n", line)
 	}
 	start := webStartupSizeOf(dir, &b)
 	writeStartupEstimate(w, webStartupEstimateOf(dir, &b), start)

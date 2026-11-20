@@ -66,15 +66,19 @@
             "audio":             { "type": "bool", "label": "音（wav）を Opus にして小さくする", "order": 1, "default": true },
             "audioBitrateKbps":  { "type": "int",  "label": "音の強さ（kbps・ステレオの値。モノラルはその半分）", "order": 2, "min": 16, "max": 320, "default": 96 },
             "uncompressedAudio": { "type": { "list": "text" }, "label": "wav のまま配る音（ゲームの根からの glob。** は何段でも）", "order": 3 },
-            "images":            { "type": "bool", "label": "絵（png）を劣化しない WebP にして小さくする", "order": 4, "default": true },
+            "images":            { "type": "bool", "label": "絵（png）を WebP にして小さくする（写真寄りの絵は劣化あり・ほかは劣化なし）", "order": 4, "default": true },
             "lossyImages":       { "type": { "list": { "record": {
               "glob":    { "type": "text", "label": "劣化ありにする絵（ゲームの根からの glob。先に書いた方が勝つ）", "order": 1, "required": true },
               "quality": { "type": "int",  "label": "WebP の画質（1〜100）", "order": 2, "min": 1, "max": 100, "default": 80 }
-            } } }, "label": "劣化ありの WebP にする絵（写真の背景など。ドット絵には使わない）", "order": 5 },
-            "fontAtlasScale":    { "type": "float", "label": "字のアトラス（距離場）の細かさの倍率。0.5 で量が約半分・見た目は変わらない。1 で縮めない", "order": 6, "min": 0.5, "max": 1.0, "default": 0.5 },
-            "wasmBrotli":        { "type": "bool", "label": "wasm を brotli にして一緒に配る解き手で戻す（gzip より 4 割ほど小さい。brotli の道具が要る）", "order": 7, "default": true }
+            } } }, "label": "劣化ありの WebP にする絵と画質（写真寄りの png は書かなくても画質 90 で劣化ありになる。ドット絵には使わない）", "order": 5 },
+            "losslessImages":    { "type": { "list": { "record": {
+              "glob": { "type": "text", "label": "劣化なしに留める絵（ゲームの根からの glob。当たる png の無い glob は誤り）", "order": 1, "required": true },
+              "why":  { "type": "text", "label": "劣化なしに留める理由（字のふちが滲む・シェーダーが値として読む など）", "order": 2, "required": true }
+            } } }, "label": "写真寄りでも劣化なしの WebP に留める絵（lossyImages に当たる絵には効かない）", "order": 6 },
+            "fontAtlasScale":    { "type": "float", "label": "字のアトラス（距離場）の細かさの倍率。0.5 で量が約半分・見た目は変わらない。1 で縮めない", "order": 7, "min": 0.5, "max": 1.0, "default": 0.5 },
+            "wasmBrotli":        { "type": "bool", "label": "wasm を brotli にして一緒に配る解き手で戻す（gzip より 4 割ほど小さい。brotli の道具が要る）", "order": 8, "default": true }
           } },
-          "label": "書き出しの時だけ素材を小さくする（書かなければ音は Opus・絵は劣化しない WebP）",
+          "label": "書き出しの時だけ素材を小さくする（書かなければ音は Opus・写真寄りの絵は劣化ありの WebP・ほかの絵は劣化なしの WebP）",
           "order": 1
         },
         "embed": {

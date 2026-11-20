@@ -93,15 +93,51 @@ design の大きさの画面に描くつもりの絵（ぼかした背景だけ�
 
 ## 書き出しを小さくする（`web.compress`）
 
-`bin/fge export-web` は書き出し先の中だけで、png → WebP（既定は劣化なし）・wav → Opus・アトラス → 画素だけ劣化なしの WebP（戻してバイト一致を確かめた時だけ・ほかは gzip）に替える（assets/ とデスクトップは変わらない）。
+`bin/fge export-web` は書き出し先の中だけで、png → WebP（写真寄りの絵は劣化あり・ほかは劣化なし）・wav → Opus・アトラス → 画素だけ劣化なしの WebP（戻してバイト一致を確かめた時だけ・ほかは gzip）に替える（assets/ とデスクトップは変わらない）。
 
-- 強さは project.json の `web.compress`: `audioBitrateKbps`・`uncompressedAudio: [glob]`・`lossyImages: [{glob, quality}]`・`fontAtlasScale`・`wasmBrotli`・`audio` / `images` を false で止める
+- 強さは project.json の `web.compress`: `audioBitrateKbps`・`uncompressedAudio: [glob]`・`lossyImages: [{glob, quality}]`・`losslessImages: [{glob, why}]`・`fontAtlasScale`・`wasmBrotli`・`audio` / `images` を false で止める
 - 道具は ffmpeg（libopus）と cwebp・dwebp。無ければ圧縮せずに書き出して大きさの表に 1 行
 - アトラスの距離場は既定で辺を 1/2 に縮める（`fontAtlasScale: 0.5`・量は約半分・スマホの画面で見分けがつかない）。1 で縮めない。0.5 より下は込んだ漢字の縁が欠けるので受け付けない
 - wasm は brotli（最も強い 11）にした `classes.wasm.br` と解き手 `brotli-decode.js`（google/brotli・MIT）を一緒に配り、頁が自分で戻す（gzip より 4 割ほど小さい・置き場が gzip しか配らなくても効く）。解けない時は `classes.wasm` を取る。道具は brotli。止めるのは `wasmBrotli: false`
   - brotli は PATH → engine の devbox → Homebrew と nix の profile の bin → nix の store（`/nix/store/*-brotli-<版>/bin/brotli` の版の新しい物）の順に探す。Finder から開いた Studio のように PATH が細くても、手で PATH を足さずに見つかる。
   - どこにも無い時は gzip のまま配り、`★ wasm を brotli にできず …4G（1.6 Mbps）で起動が約 N 秒遅くなる` を書き出しの途中と終わりの両方に出す（止めない）。
 - wasm の名前の区画（関数名・素の量の 2〜3 割）は `classes.names` へ抜いて配る。頁は止まった時だけそれを取り、stack の `wasm-function[番号]` に名前を付けて console へ出す
+
+### 写真寄りの絵は既定で lossy（`losslessImages`）
+
+何も書かなくても、写真・塗りの絵・3D から撮った絵のような png は劣化ありの WebP（画質 90）にする。lossless のままだと起動の量の大半を絵が占める（インターネットダンジョンは絵 154 枚のうち塗りの絵 135 枚を lossy にした分が、4G の 58.9 → 22.0 秒の大半）。
+
+**判定**（数は `bin/lint-rules/export-web.json` の `autoLossy`）: 次の全部に当たる png
+1. lossless の WebP にした大きさが 48 KB 以上（小さい絵は lossy にしても秒がほとんど減らず、崩れる危うさだけが残る）
+2. `lossyImages` にも `losslessImages` にも当たらない
+3. 不透明な画素（α が 224 以上）だけで数えた色が 1,024 色を超える。ドット絵（パレットで数十〜数百色）・字や線・単色の UI（地と字の色とその間の中間色で数百色）はここで外れる。写真・塗り・3D の絵はグラデーションとノイズで数千色を超える
+4. データとして読む絵でない: 名前に `normal` `_n.` `height` `mask` `lut` `ramp` を含む物（部分一致。`abnormal` `trampoline` も外れるが、外れる向きは lossless のままなので崩れない）と、assets/ の下の JSON の ShaderDoc が `tex` `blur` `texSize` で読むテクスチャ（シェーダーが値を読むので、見た目の差が小さくても結果が変わる）。.flix のコードで組んだ ShaderDoc は読めないので、名前の形か `losslessImages` で外す
+
+透明の多い絵（不透明が 8 割未満・立ち絵など）も lossy にする。cwebp の lossy の α は劣化なしで、`-exact` で透明の所の色も残す。
+
+| 書いてある物 | 扱い |
+|---|---|
+| `lossyImages` に当たる絵 | 書いた quality で lossy（既定の判定より先。`losslessImages` にも当たっても lossy） |
+| `losslessImages` に当たる絵 | lossless。`why`（理由 1 行）は必須。当たる png の無い glob と、当たる png が全部 `lossyImages` にも当たる glob は誤りで、組む前に止まる |
+| どちらにも当たらない png | 上の判定で、写真寄りなら画質 90 の lossy・ほかは lossless |
+| jpg | 今まで通り（`lossyImages` に当たる物だけ WebP にする） |
+
+**書き出しの表に毎回出る物**:
+```
+  絵: 既定で lossy にした 135 枚（2.1 MB → 0.6 MB）・うち透明の多い絵 16 枚
+      色数の少なかった 3 枚: assets/ui/frame.png（1,180 色）・...
+      崩したくない物は "losslessImages": [{ "glob": "...", "why": "..." }]・見比べは bin/fge web-image-diff
+```
+- 色数の少なかった絵ほど、字・線・UI を取り違えた危うさが高い。名前が出たら一度 `web-image-diff` で見る
+- `losslessImages` に当たった写真寄りの絵は枚数・量・4G の秒を、シェーダーが読む絵で外した物は名前を出す
+- `lossyImages` の glob が消しても配る絵の変わらない物（画質 90 で写真寄りの png だけに当たる・当たる絵が全部前の glob に取られている）なら「消しても配る絵が変わらない」と知らせる（消さなくてもよい）
+- 1 つの `losslessImages` の glob が png の 6 割以上に当たる時（png が 5 枚以上）は知らせる。全部を lossless にして既定を外す形になっている
+- 1 枚ずつの色数・不透明の割合・大きさは書き出しのログ（`[export-web]   既定で lossy …`）。書き出しの report のファイルはまだ無い（起動の秒の予算の門と一緒に入る）
+- 前の書き出し（同じ `--out` の `bundle.json`）で lossless だった絵（WebP が VP8L の物と、png のまま配った物）を lossy に替えた時だけ、`★ 前の書き出しでは lossless だった絵 N 枚を既定で lossy にした` を 1 回出す。前の書き出しが無い `--out` では出ない
+
+**見比べ**: `bin/fge web-image-diff <ゲーム> [--out <png>] [--limit 12] [--explicit]` が、同じ判定で詰めた絵の元・lossy・差（8 倍に強めた、α を掛けた色の差）を 1 枚ずつ横に並べた PNG を書く（色数の少ない順・真ん中の 320 画素四方を 1:1 で切り出す）。`--explicit` は `lossyImages` で明示した絵も並べる。画素の差の門（reference の SHA256SUMS・gl-capture）はデスクトップの描き出しを見ていて、ブラウザの書き出しの絵を見ない。判定の誤りは人がこれで見るまで気づかない。
+
+**古い engine**: `web.compress` の読み手は知らない鍵で止まる。`losslessImages` を書いた project.json は 0.104.0 以前の `bin/fge export-web` では止まる（engine を上げてから書く）。
 
 ### 動く時に読まない形は配らない（`web.keep`）
 
