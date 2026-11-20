@@ -121,6 +121,15 @@ func TestGateLogoDoesNotCoverWhenGroupArrivesBeforeMinSeconds(t *testing.T) {
 	}
 }
 
+func TestGateNotesWaitingImagesOutsideGroup(t *testing.T) {
+	out, b := tapWaitFixture(t, webDeferredEntry{Path: "assets/a.webp", Group: "start"}, webDeferredEntry{Path: "assets/b.webp"})
+	withLogo(&b, "engine", "start")
+	g := webGateOf(out, &b, defaultWebStartupBudget())
+	if !strings.Contains(strings.Join(g.Notes, "\n"), "group の外に待つ後回しが 1 本") {
+		t.Errorf("group の外に待つ絵があれば、group の見積もりを確かとせず ★ で出すはず: %v", g.Notes)
+	}
+}
+
 func TestGateCapsLogoCoverAtThreeSeconds(t *testing.T) {
 	out, b := groupFixture(t)
 	withLogo(&b, "engine", "start")

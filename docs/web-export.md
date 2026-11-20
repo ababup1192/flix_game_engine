@@ -177,8 +177,8 @@ design の大きさの画面に描くつもりの絵（ぼかした背景だけ�
 
 - 起動の秒: 上の「起動まで」の行
 - 押してから動くまで: 書き出しの確かめ ⑨'' が、既定の頁を `?net=4g` で開いて「タッチして開始」を押し、すぐタイトルで `startKeys`（既定 Enter）を押して、押した時の待ちが明けるまでを測る（開始を押してから数える）。
-  門に入れるのは、測った値と、押した後のロゴが待つ group の最後が届く見積もり（group が無ければ 0 秒）の大きい方（4G のまねの届く秒は決まっていて、同じ束を 3 回測って同じ秒だった）。測れなかった時（Chrome が無い・`--no-browser-check`・古い頁・上限まで待ってもコマが進まない）は見積もりだけで決め、★ で知らせる（赤にはしない）
-- ロゴが覆う秒: 押した後のロゴが出る時だけ（`web.splash` の group を待つ時。group の無いゲーム・`afterTap: "none"` は 0）、`maxSeconds`（3 秒）
+  門に入れるのは、測った値と、押した後のロゴが待つ group の最後が届く見積もり（group が無ければ 0 秒）の大きい方（4G のまねの届く秒は決まっていて、同じ束を 3 回測って同じ秒だった）。測れなかった時（Chrome が無い・`--no-browser-check`・古い頁・上限まで待ってもコマが進まない・headless が遅くタイトルで押せたのが待つ後回しの届いた後だった）は見積もりだけで決め、★ で知らせる（赤にはしない）。group を付けていても、group が空か group の外に待つ後回しがあって測っていなければ ★
+- ロゴが覆う秒: 押した後のロゴが出る時だけ、`maxSeconds`（上限 3 秒）。頁がロゴを出すのは `web.splash` の group を待ち、その group の届く見積もりが `minSeconds`（既定 1.2 秒）以上の時だけ（group の無いゲーム・`afterTap: "none"` は 0）
 - すぐ要る物を後回しへ回しても、ロゴで覆えない分は起動から押した後へ移るだけで数字は減らない
 
 ```json
@@ -217,6 +217,10 @@ bin/fge web-check <書き出したフォルダ>
 - draft のマーカー・書き出しの時に 4G のタイトルで止まった記録
 
 頁が取らない控え（Opus の代わりの元の wav）が無いのは知らせだけ。`sums.json` に無い足したファイルは数えない。書き出しの時の 4G の確かめを飛ばした束は ★（`--browser` で Chrome を起こして流し直せる）。
+
+- `index.html` は `sums.json` に入れていない（版を書き込むので）ので、web-check も中身を見ない。`index.html` を書き出しの後に手で直しても止まらない
+- 写す先のリポで改行を CRLF に替えると `sums.json` と合わず赤になる。写す先の `.gitattributes` に `* -text`（少なくとも `*.json`・`*.js`・`*.wasm` に `-text`）を書く
+- `bin/fge tape publish` は、`bin/fge tape --play` で門を通した play/ をそのまま置く。publish の前に束を替えたら `bin/fge tape --play` で頁を作り直す（publish は門を掛け直さない）
 
 - fge の hook の無いリポ（LP・home-tape-live など）や、hook の走らない gh-pages の worktree（相対の `core.hooksPath` は worktree の根に `bin/githooks` が無い）は pre-commit で守れない。写す前に手で流す
 - ゲームのリポに束をコミットする時は、pre-commit がステージした `bundle.json`・`classes.wasm`・`classes.wasm.br`・`sums.json` から束のフォルダを選んで流す

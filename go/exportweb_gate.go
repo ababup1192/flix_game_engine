@@ -188,6 +188,10 @@ func webGateOf(dir string, b *webBundle, budget webStartupBudget) webGate {
 		g.Notes = append(g.Notes, "押した後を測ったが待ちの記録が無い（待たずに動いた。タイトルの既定の行が「はじめから」でないゲームは web.startupBudget.startKeys を書かないと測れない）")
 	case g.Unknown:
 		g.Notes = append(g.Notes, fmt.Sprintf("★ 押した後は測っていない（group が無く、最初の場面が待つかは分からないので 0 秒で数えた。待つなら最初の物は %.1f 秒目に届く）— Chrome のある機械で書き出すか web-check --browser で測る", t.Seconds))
+	case !g.Measured && len(t.Group) > 0 && (t.Count == 0 || webWaitingOutsideGroup(b, t.Group) > 0):
+		// WhyNot: group の見積もりを確かな数とみなさない — group は待つ物の申告で、空の group や group の外の待つ物を最初の場面が使えば、見積もりより待つ。
+		g.Notes = append(g.Notes, fmt.Sprintf("★ 押した後は測っていない（group %s が空か、group の外に待つ後回しが %d 本ある。最初の場面がそれを使えば見積もりより待つ）— Chrome のある機械で書き出すか web-check --browser で測る",
+			strings.Join(t.Group, "・"), webWaitingOutsideGroup(b, t.Group)))
 	case !g.Measured && t.Count > 0:
 		g.Notes = append(g.Notes, "★ 押した後は測っていない（group が届くまでの見積もり）— Chrome のある機械で書き出すか web-check --browser で測る")
 	}
@@ -239,6 +243,21 @@ func (g webGate) advise(b *webBundle, t webTapWait, est webStartupEstimate) []st
 		out = append(out, fmt.Sprintf("brotli が無い（wasm を gzip の大きさで配る）→ 入れると wasm が 約 -%.1f 秒（wasmBrotli: false は逃げ道にならない）", webSecondsFor(est.Boot.WasmWire-br)))
 	}
 	return out
+}
+
+// webWaitingOutsideGroup は groups の外にある、届く前に使うと engine が待つ後回しの数。
+func webWaitingOutsideGroup(b *webBundle, groups []string) int {
+	in := map[string]bool{}
+	for _, g := range groups {
+		in[g] = true
+	}
+	n := 0
+	for _, e := range b.Deferred {
+		if !in[e.Group] && webWaitsWhenMissing(e, webDeferredKindOf(e.Path, b)) {
+			n++
+		}
+	}
+	return n
 }
 
 // webPlaceholderImages は後回しの絵のうち onMissing が placeholder の物の数。

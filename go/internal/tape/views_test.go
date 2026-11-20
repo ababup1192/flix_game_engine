@@ -155,6 +155,7 @@ func TestBuildSkipsPlayWhenCheckIsRed(t *testing.T) {
 	dir, web := t.TempDir(), t.TempDir()
 	writeViews(t, dir, readFile(t, otherPath), nil)
 	writeExport(t, web, "wasm")
+	writeFile(t, filepath.Join(web, "bundle.json"), "{}")
 	if _, err := Build(Options{Dir: dir, Commit: "abc1234", Play: web, PlayCheck: redPlayCheck}); err != nil {
 		t.Fatal(err)
 	}
@@ -167,11 +168,36 @@ func TestBuildRemovesStalePlayWhenCheckIsRed(t *testing.T) {
 	dir := t.TempDir()
 	writeViews(t, dir, readFile(t, otherPath), nil)
 	writeExport(t, filepath.Join(dir, PlayDir), "wasm")
+	writeFile(t, filepath.Join(dir, PlayDir, "bundle.json"), "{}")
 	if _, err := Build(Options{Dir: dir, Commit: "abc1234", PlayCheck: redPlayCheck}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, PlayDir)); !os.IsNotExist(err) {
 		t.Fatalf("門が赤の前の play/ が残った: %v", err)
+	}
+}
+
+func TestBuildRefusesPlayWithoutBundleWhenChecked(t *testing.T) {
+	dir, web := t.TempDir(), t.TempDir()
+	writeViews(t, dir, readFile(t, otherPath), nil)
+	writeExport(t, web, "wasm")
+	if _, err := Build(Options{Dir: dir, Commit: "abc1234", Play: web, PlayCheck: redPlayCheck}); err == nil || !strings.Contains(err.Error(), "bundle.json") {
+		t.Fatalf("bundle.json の無い --play は書き出しでないと止めるはず: %v", err)
+	}
+}
+
+func TestBuildKeepsHandPlacedPlayWithoutBundle(t *testing.T) {
+	dir := t.TempDir()
+	writeViews(t, dir, readFile(t, otherPath), nil)
+	writeExport(t, filepath.Join(dir, PlayDir), "wasm")
+	if _, err := Build(Options{Dir: dir, Commit: "abc1234", PlayCheck: redPlayCheck}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, PlayDir, "index.html")); err != nil {
+		t.Fatalf("bundle.json の無い play/（人が置いた物）は消さないはず: %v", err)
+	}
+	if _, ok := pageTAPE(t, dir)["start"]; ok {
+		t.Fatal("書き出しでない play/ に start を付けた")
 	}
 }
 

@@ -286,12 +286,15 @@ func addPhoneView(ffmpeg, dir string, t *Tape) error {
 func addPlay(opt Options, t *Tape) error {
 	play, dir := opt.Play, opt.Dir
 	dst := filepath.Join(dir, PlayDir)
-	if play != "" && !playPasses(opt, play, dst) {
-		return nil
-	}
 	if play != "" {
 		if _, err := os.Stat(filepath.Join(play, "index.html")); err != nil {
 			return fmt.Errorf("--play %s に index.html が無い（bin/fge export-web の書き出しのフォルダを渡す）: %w", play, err)
+		}
+		if opt.PlayCheck != nil && !isExport(play) {
+			return fmt.Errorf("--play %s に bundle.json が無い（bin/fge export-web の書き出しのフォルダを渡す）", play)
+		}
+		if !playPasses(opt, play, dst) {
+			return nil
 		}
 		if err := os.RemoveAll(dst); err != nil {
 			return err
@@ -306,8 +309,14 @@ func addPlay(opt Options, t *Tape) error {
 	if err := checkNoHomePath(dst); err != nil {
 		return err
 	}
-	if play == "" && !playPasses(opt, dst, dst) {
-		return nil
+	if play == "" && opt.PlayCheck != nil {
+		// WhyNot: 書き出しでない play/（bundle.json の無い、人が置いた物）を門に掛けて消さない — 人のファイルを消す。start も付けない。
+		if !isExport(dst) {
+			return nil
+		}
+		if !playPasses(opt, dst, dst) {
+			return nil
+		}
 	}
 	t.raw["start"] = json.RawMessage(`"` + PlayDir + `/index.html"`)
 	return nil
@@ -516,7 +525,14 @@ func Render(t *Tape, commit string, strip Strip, splash Splash) ([]byte, error) 
 	return []byte(page), nil
 }
 
+// isExport は dir が bin/fge export-web の書き出し（bundle.json がある）か。
+func isExport(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, "bundle.json"))
+	return err == nil
+}
+
 // playPasses は src（写す前の書き出しか、残っている play/）に公開前の門を掛ける。赤なら dst の play/ を消し、Warn に 1 行書く。
+// dst を消すのは、dst が書き出し（bundle.json がある）の時だけ。
 // WhyNot: 赤の時に前の play/ を残さない — 前の版の書き出しが「はじめから遊ぶ」付きで公開され続ける。
 func playPasses(opt Options, src, dst string) bool {
 	if opt.PlayCheck == nil {
@@ -526,7 +542,9 @@ func playPasses(opt Options, src, dst string) bool {
 	if ok {
 		return true
 	}
-	os.RemoveAll(dst)
+	if isExport(dst) {
+		os.RemoveAll(dst)
+	}
 	if opt.Warn != nil {
 		fmt.Fprintf(opt.Warn, "tape: ブラウザ版を play/ に置かない（公開前の門が赤・頁は「はじめから遊ぶ」を出さない）: %s\n", report)
 	}

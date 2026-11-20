@@ -132,7 +132,7 @@ func rerunWebBrowserChecks(dir string, b *webBundle) error {
 		if b.StartupBudget != nil {
 			budget = *b.StartupBudget
 		}
-		m, why, err := measureWebTapWait(dir, budget.startKeys(), webLoadCheckWait())
+		m, why, err := measureWebTapWait(dir, budget.startKeys(), webLastWaitingArrival(b), webLoadCheckWait())
 		switch {
 		case err != nil:
 			// WhyNot: 測れない束で止めない — 古い fge-web.js の書き出しは待ちの記録を持たず、測れないのは束の誤りではない（書き出しと同じく見積もりと ★）。

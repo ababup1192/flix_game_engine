@@ -326,6 +326,9 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 				fmt.Fprintf(errOut, "fge export-web: 門が赤なので書き出し先 %s を消した（作業中に開くだけなら --draft）\n", p.Out)
 				return 1
 			}
+			if !r.Gate.green() && !o.Draft {
+				fmt.Fprintln(out, "  ★ 上の「止める」は公開の道（web-check）での扱い。web.startupBudget を書いていないので、移行の間は手元の書き出しを止めない（手で写す前に bin/fge web-check）")
+			}
 			return 0
 		}
 		// WhyNot: 前の指紋を残したまま組まない — 途中で止まると、半端な書き出し先を前の指紋が「同じ」と言う。
@@ -592,7 +595,7 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		}
 		if skipped == "" && webTapNeedsMeasure(&b) {
 			ewLogf("⑨'' 4G（?net=4g）で開いてすぐ押し、押してから最初の場面が動くまでを測る（タイトルで %s）", strings.Join(budget.startKeys(), "・"))
-			m, why, err := measureWebTapWait(p.Out, budget.startKeys(), webLoadCheckWait())
+			m, why, err := measureWebTapWait(p.Out, budget.startKeys(), webLastWaitingArrival(&b), webLoadCheckWait())
 			switch {
 			case err != nil:
 				checks.TapSkippedWhy = "測れなかった: " + err.Error()
@@ -629,6 +632,20 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		if hash, err = writeWebPageMeta(p, b, core); err != nil {
 			fmt.Fprintf(errOut, "fge export-web: %v\n", err)
 			return 1
+		}
+		// WhyNot: 書き直す前の判定のまま終えない — bundle.json が checks の分だけ大きくなり、境目の束は web-check で赤になる。
+		after := webGateOf(p.Out, &b, budget)
+		if g.green() && !after.green() {
+			after.Advice = g.Advice
+			g = after
+			stop = !o.Draft && budget.Declared
+			if o.Draft {
+				b.Draft, b.DraftReasons = true, g.Red
+				if hash, err = writeWebPageMeta(p, b, core); err != nil {
+					fmt.Fprintf(errOut, "fge export-web: %v\n", err)
+					return 1
+				}
+			}
 		}
 	}
 	cleanupExportWork(p, o.KeepWork)

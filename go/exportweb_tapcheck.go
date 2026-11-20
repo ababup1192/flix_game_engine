@@ -41,7 +41,7 @@ const webTapProbe = `(() => {
   var m = window.fgeTapMark, now = performance.now(), at = fgeNetClock.at;
   var ws = (window.fgeMissingWaits || []).filter(function (w) { return w.startedAt >= m.at - 20; });
   var p = ws.filter(function (w) { return w.kind === "pressed"; })[0] || null;
-  var res = { sinceTap: (now - m.at) / 1000, frames: fgeFrameNo - m.frame, state: "none", seconds: 0, stopped: 0, stoppedSecs: 0, placeholders: [] };
+  var res = { sinceTap: (now - m.at) / 1000, tapAfter: (m.at - at) / 1000, frames: fgeFrameNo - m.frame, state: "none", seconds: 0, stopped: 0, stoppedSecs: 0, placeholders: [] };
   if (p) {
     var open = p === fgeMissingWaitOpen;
     var end = open ? now : p.startedAt + p.seconds * 1000;
@@ -63,6 +63,7 @@ const webTapProbe = `(() => {
 type webTapProbeResult struct {
 	SinceTap     float64  `json:"sinceTap"`
 	Frames       int      `json:"frames"`
+	TapAfter     float64  `json:"tapAfter"`
 	State        string   `json:"state"`
 	Seconds      float64  `json:"seconds"`
 	ClosedFor    float64  `json:"closedFor"`
@@ -72,7 +73,7 @@ type webTapProbeResult struct {
 }
 
 // measureWebTapWait は書き出し先 out を手元のサーバーで配り、押した後の待ちを測る（Chrome が無ければ skipped に理由）。
-func measureWebTapWait(out string, keys []string, wait time.Duration) (m webTapMeasure, skipped string, err error) {
+func measureWebTapWait(out string, keys []string, lastArrival float64, wait time.Duration) (m webTapMeasure, skipped string, err error) {
 	if _, err := cdp.FindChrome(); err != nil {
 		return m, "Chrome が見つからない", nil
 	}
@@ -130,7 +131,7 @@ func measureWebTapWait(out string, keys []string, wait time.Duration) (m webTapM
 			break
 		}
 	}
-	m, skipped = webTapOutcome(r)
+	m, skipped = webTapOutcome(r, lastArrival)
 	return m, skipped, nil
 }
 
@@ -141,7 +142,11 @@ func webTapSawNoRecord(r webTapProbeResult) bool {
 
 // webTapOutcome は測りの最後の読みを結果にする。記録が無いまま上限で切れたら skipped に理由（測れなかった）。
 // WhyNot: 上限で切れた記録無しを「待たずに動いた」にしない — コマが進まなかった頁（止まった・極端に遅い）を 0 秒の測った値として門に入れる。
-func webTapOutcome(r webTapProbeResult) (webTapMeasure, string) {
+func webTapOutcome(r webTapProbeResult, lastArrival float64) (webTapMeasure, string) {
+	// WhyNot: 待つ後回しが全部届いた後に押した記録無しを「待たずに動いた」にしない — headless が遅くタイトルで押すまでに届き切っただけで、開いてすぐ押す人の待ちは測れていない。
+	if r.State == "none" && lastArrival > 0 && r.TapAfter >= lastArrival {
+		return webTapMeasure{}, fmt.Sprintf("タイトルで押せたのが開始から %.1f 秒後で、待つ後回しの最後（%.1f 秒目）が届いた後だった（headless が遅い）ので測れなかった", r.TapAfter, lastArrival)
+	}
 	if r.State == "none" && !webTapSawNoRecord(r) {
 		return webTapMeasure{}, fmt.Sprintf("上限まで待っても押した後のコマが %d 進まず測れなかった（%d コマ・%.0f 秒）", webTapNoRecordFrames, r.Frames, r.SinceTap)
 	}
@@ -157,6 +162,17 @@ func webTapNeedsMeasure(b *webBundle) bool {
 		}
 	}
 	return false
+}
+
+// webLastWaitingArrival は押した後に engine が待ちうる後回しのうち、最後に届く物の arrivalSeconds（開始を押してから）。
+func webLastWaitingArrival(b *webBundle) float64 {
+	last := 0.0
+	for _, e := range b.Deferred {
+		if webWaitsWhenMissing(e, webDeferredKindOf(e.Path, b)) || e.Group != "" {
+			last = math.Max(last, e.ArrivalSeconds)
+		}
+	}
+	return last
 }
 
 // writeWebTapMeasure は押した後の測りを表の後ろへ書く。

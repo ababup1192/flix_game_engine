@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/anim"
@@ -91,7 +92,15 @@ func cmdPrecommit(out, errOut *strings.Builder, rest []string, _ bool) int {
 			return orAbort(e, code, err)
 		},
 		"web-check": func(o, e *strings.Builder, args []string) int {
-			return cmdWebCheck(o, e, args, false)
+			// WhyNot: ステージの道をそのまま渡さない — 根からの相対で、検査が今いる所に頼ると別の所から呼んだ時に束を見失う。
+			paths := make([]string, len(args))
+			for i, a := range args {
+				paths[i] = a
+				if !filepath.IsAbs(a) {
+					paths[i] = filepath.Join(abs, a)
+				}
+			}
+			return cmdWebCheck(o, e, paths, false)
 		},
 		"anim": func(o, e *strings.Builder, args []string) int {
 			code, err := anim.Run(o, abs, args)

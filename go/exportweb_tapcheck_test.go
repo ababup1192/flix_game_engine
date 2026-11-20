@@ -53,20 +53,27 @@ window.fgeTapMark = { at: 2990, frame: 90 };
 `
 
 func TestTapOutcomeCutAtLimitWithoutFramesIsSkipped(t *testing.T) {
-	if _, skipped := webTapOutcome(webTapProbeResult{State: "none", Frames: 12, SinceTap: 40}); skipped == "" {
+	if _, skipped := webTapOutcome(webTapProbeResult{State: "none", Frames: 12, SinceTap: 40}, 0); skipped == "" {
 		t.Error("記録が無いまま上限で切れた（コマが進まなかった）なら、待たずに動いたでなく測れなかったのはず")
 	}
 }
 
 func TestTapOutcomeNoRecordAfterEnoughFrames(t *testing.T) {
-	m, skipped := webTapOutcome(webTapProbeResult{State: "none", Frames: webTapNoRecordFrames, SinceTap: 6})
+	m, skipped := webTapOutcome(webTapProbeResult{State: "none", Frames: webTapNoRecordFrames, SinceTap: 6}, 0)
 	if skipped != "" || !m.NoRecord {
 		t.Errorf("コマが十分進んで記録が無ければ、待たずに動いたのはず: %+v %q", m, skipped)
 	}
 }
 
+func TestTapOutcomeNoRecordAfterLastArrivalIsSkipped(t *testing.T) {
+	r := webTapProbeResult{State: "none", Frames: webTapNoRecordFrames, SinceTap: 6, TapAfter: 12}
+	if _, skipped := webTapOutcome(r, 10); skipped == "" {
+		t.Error("待つ後回しが全部届いた後に押して記録が無ければ、待たずに動いたでなく測れなかったのはず")
+	}
+}
+
 func TestTapOutcomeOpenAtLimitIsCapped(t *testing.T) {
-	if m, _ := webTapOutcome(webTapProbeResult{State: "open", Seconds: 41, SinceTap: 40}); !m.Capped {
+	if m, _ := webTapOutcome(webTapProbeResult{State: "open", Seconds: 41, SinceTap: 40}, 0); !m.Capped {
 		t.Errorf("明けないまま上限で切れた待ちは打ち切りのはず: %+v", m)
 	}
 }
