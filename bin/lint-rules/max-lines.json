@@ -12,9 +12,9 @@
   "maxLines": 1200,
   "hint": "読む所が見つからない大きさなので、役ごとに子のモジュールへ分ける（ゲームが呼ぶ関数は元のモジュールに残し、中身は <元>.Internal.<役> へ。例: App と App.Internal.*）。",
   "exempt": {
-    "engine_world/src/App.flix::max-lines": "ゲームが繋ぐ with* の口（withLetterboxView など）は App に置く決まりで、中身は App.Internal.Paint に出してある。ブラウザ版の待ちの with*（withLoadWait・withLoadWaitStyle・withLoadingIndicator・withLoadGate）と型も同じ決まりで App に置き、判断は App.Internal.LoadWait に出してある。with* の口を役ごとに App.Internal.* へ分ける時に外す"
+    "engine_world/src/App.flix::max-lines": "ゲームが繋ぐ with* の口（withLetterboxView など）は App に置く決まりで、中身は App.Internal.Paint に出してある。ブラウザ版の待ちの with*（withLoadWait・withLoadWaitStyle・withLoadingIndicator・withLoadGate・withLoadWaitCancelKeys）と型も同じ決まりで App に置き、判断は App.Internal.LoadWait に出してある。with* の口を役ごとに App.Internal.* へ分ける時に外す"
   },
   "exemptLines": {
-    "engine_world/src/App.flix::max-lines": 1218
+    "engine_world/src/App.flix::max-lines": 1221
   }
 }

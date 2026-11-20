@@ -14,6 +14,11 @@ pub mod App.Internal.LoadWait {
         let padB = GamepadMap.table() |> List.filter(entry -> snd(entry) == GamepadMap.PadInput.B) |> List.map(fst) |> List.toSet;
         { pressWindowSeconds = 1.5, giveUpSeconds = 20.0, cancelKeys = Set.insert(GameEngine.Key.Backspace, padB) }
 
+    /// 既定の決まりの、やめるキーだけを替えた物（None は既定のまま。App.withLoadWaitCancelKeys の値）。
+    pub def settingsOf(cancelKeys: Option[Set[GameEngine.Key]]): Settings =
+        let base = defaultSettings();
+        { cancelKeys = Option.getWithDefault(base#cancelKeys, cancelKeys) | base }
+
     /// 押した所の控え。world = 押す前の World・stepState = その時の StepState・atSec = 控えた時刻・
     /// frames = 押したコマとその次のコマの入力の組を、控えてから押した順に並べた物（渡し直すコマ。組は 2 コマ）・stored = 控えてから積んだ store の記録・
     /// played = 控えてから鳴らした一発の音の名前ごとの数・justCaptured = このコマの plan が組の 2 コマ目を足したか（同じコマを 2 度並べない）。

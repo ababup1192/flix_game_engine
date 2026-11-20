@@ -317,6 +317,23 @@ mod TestLoadWait {
         let (step, next) = LoadWait.plan(settings(), pressOf(Key.Backspace), watch(Set#{"bg"}, 0.5), 5, App.freshStepState(), pressedWait(Set#{"bg"}));
         Assert.assertEq(expected = ("idle", "idle", true), (stepText(step), modeText(next), Option.isEmpty(next#snapshot)))
 
+    /// ゲームが渡したやめるキー（X）で待ちをやめる
+    @Test
+    def testGivenCancelKeyDropsTheWait(): Unit \ Assert =
+        let (_, next) = LoadWait.plan(LoadWait.settingsOf(Some(Set#{Key.X})), pressOf(Key.X), watch(Set#{"bg"}, 0.5), 5, App.freshStepState(), pressedWait(Set#{"bg"}));
+        Assert.assertEq(expected = "idle", modeText(next))
+
+    /// やめるキーを渡したら、既定の Backspace では待ちをやめない
+    @Test
+    def testGivenCancelKeysReplaceTheDefault(): Unit \ Assert =
+        let (_, next) = LoadWait.plan(LoadWait.settingsOf(Some(Set#{Key.X})), pressOf(Key.Backspace), watch(Set#{"bg"}, 0.5), 5, App.freshStepState(), pressedWait(Set#{"bg"}));
+        Assert.assertEq(expected = "pressed-wait", modeText(next))
+
+    /// やめるキーを渡さなければ既定のまま（Backspace とパッドの B）
+    @Test
+    def testNoCancelKeysKeepsTheDefault(): Unit \ Assert =
+        Assert.assertEq(expected = LoadWait.defaultSettings()#cancelKeys, LoadWait.settingsOf(None)#cancelKeys)
+
     /// ほかのキーは待ちを取り消さない
     @Test
     def testOtherKeysDoNotCancel(): Unit \ Assert =

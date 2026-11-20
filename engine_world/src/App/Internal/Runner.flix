@@ -90,7 +90,7 @@ pub mod App.Internal.Runner {
                     cursorShown = App.CursorLook.State.Stale, captureShown = None, lastDiagnostics = None,
                     outputKeys = App.Internal.Output.keysAfterJump(app, world0, Nil), tools = started,
                     assets = assets, loadWait = App.Internal.LoadWait.initial(),
-                    waitSettings = App.Internal.LoadWait.defaultSettings(), publishedWait = None })
+                    waitSettings = App.Internal.LoadWait.settingsOf(App.rec(app)#loadWaitCancelKeys), publishedWait = None })
 
     /// loop が次のフレームへ渡し続ける物。app（不変）は入れない — 状態に混ぜると
     /// 「フレームごとに変わりうる物」に見える。

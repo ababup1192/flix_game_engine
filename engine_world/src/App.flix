@@ -249,9 +249,9 @@ pub mod App {
         backgroundSteps = List[(LoadProgress.DecodeBudget, Float64, w) -> App.Internal.BackgroundLoad.StepResult[w] \ {IO, Fs.FileRead}],
         // このコマに後回しの素材を解いてよい量を World から導く（withDecodeBudget）。全部の backgroundSteps が同じ値を受ける。
         decodeBudget = w -> LoadProgress.DecodeBudget,
-        // ブラウザ版で届いていない物を App が待つ間の替え口（withLoadWait・withLoadWaitStyle・withLoadingIndicator・withLoadGate）。
+        // ブラウザ版で届いていない物を App が待つ間の替え口（withLoadWait・withLoadWaitStyle・withLoadingIndicator・withLoadGate・withLoadWaitCancelKeys）。
         loadWaitView = Option[(Option[LoadProgress.LoadWait], w) -> w], loadWaitStyle = w -> LoadWaitStyle,
-        loadingIndicator = LoadingIndicator, loadGate = Option[w -> List[String]],
+        loadingIndicator = LoadingIndicator, loadGate = Option[w -> List[String]], loadWaitCancelKeys = Option[Set[GameEngine.Key]],
         // 毎フレームの「マウスの矢印をどう見せたいか」の宣言（withCursor）。None = App は触らない（F8 の十字だけ）。
         cursor = Option[w -> CursorSpec],
         // 毎フレームの「窓をフルスクリーンにしたいか」の宣言（withFullscreen）。None = App は触らない。
@@ -323,7 +323,7 @@ pub mod App {
           clocks = Nil,
           backgroundSteps = Nil,
           decodeBudget = _ -> LoadProgress.DecodeBudget.Idle(4.0),
-          loadWaitView = None, loadWaitStyle = _ -> LoadWaitStyle.KeepRunning, loadingIndicator = LoadingIndicator.Default, loadGate = None,
+          loadWaitView = None, loadWaitStyle = _ -> LoadWaitStyle.KeepRunning, loadingIndicator = LoadingIndicator.Default, loadGate = None, loadWaitCancelKeys = None,
           cursor = None,
           fullscreen = None,
           mouseCapture = None,
@@ -741,6 +741,9 @@ pub mod App {
     /// 次の場面で使う後回しの名前を World が言う。進めた World が届いていない名前を返したら、その World を出さずに待つ
     /// （押したコマなら押す前の場面のまま待つので、暗転を見せずに済む）。使う物が無い場面は空を返す。
     pub def withLoadGate(f: w -> List[String], app: App[w, ef]): App[w, ef] = App.App({ loadGate = Some(f) | rec(app) })
+
+    /// 押した時の待ちをやめるキーを替える（既定は Backspace とパッドの B）。ゲームの戻るのキーを渡す。
+    pub def withLoadWaitCancelKeys(keys: List[GameEngine.Key], app: App[w, ef]): App[w, ef] = App.App({ loadWaitCancelKeys = Some(List.toSet(keys)) | rec(app) })
 
     // ── 外への出力（系は IO を持たず、App が実機のフレームの後でだけ触る）──
 
