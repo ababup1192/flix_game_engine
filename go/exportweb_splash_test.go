@@ -146,3 +146,26 @@ func TestAfterTapRejectsUnknownField(t *testing.T) {
 		t.Error("知らない欄は誤りのはず")
 	}
 }
+
+func TestAfterTapRejectsMinOverMax(t *testing.T) {
+	_, err := resolveWebAfterTap(json.RawMessage(`{"splash": {"minSeconds": 2.5, "maxSeconds": 2}}`), webDeferredPolicy{}, nil, nil)
+	if err == nil {
+		t.Error("minSeconds が maxSeconds を超えたら誤りのはず")
+	}
+}
+
+func TestAfterTapCustomTakesBundledLogo(t *testing.T) {
+	in := map[string]bool{"assets/ui/logo.png": true}
+	got, err := resolveWebAfterTap(json.RawMessage(`{"splash": {"afterTap": "custom", "logo": "assets/ui/logo.png"}}`), webDeferredPolicy{}, in, nil)
+	if err != nil || got.Logo != "assets/ui/logo.png" {
+		t.Errorf("束の中の絵なら通るはず: %q %v", got.Logo, err)
+	}
+}
+
+func TestAfterTapEmptyWaitForWaitsForNothing(t *testing.T) {
+	pol := afterTapPolicy(t, `[{"match": "assets/a/*.png", "group": "start"}]`)
+	got, err := resolveWebAfterTap(json.RawMessage(`{"splash": {"waitFor": []}}`), pol, nil, nil)
+	if err != nil || len(got.WaitFor) != 0 {
+		t.Errorf("waitFor を空に書いたら group を待たないはず: %v %v", got.WaitFor, err)
+	}
+}

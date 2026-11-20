@@ -67,7 +67,7 @@ pub mod WebLayer {
         if (Browser.backendRequest() == "webgpu") withWebGpuOrGl(makeRenderer, config, g)
         else withWeb(makeRenderer, config, g)
 
-    /// 頁が ?usedAssets=1 で開かれていれば、2D で描いた絵の名前（スプライト・タイルマップ・面が読む絵）を初めて出たコマで
+    /// 頁が ?usedAssets=1 か ?net=4g で開かれていれば、2D で描いた絵の名前（スプライト・タイルマップ・面が読む絵）を初めて出たコマで
     /// fge-web.js に記録する（書き出しの確かめが後回しの候補を出すのに読む）。描く命令はそのまま外の handler へ渡す。
     def recordDrawnTextures(f: Unit -> a \ ef): a \ (ef - Platform.Draw2d) + Platform.Draw2d + IO =
         let recording = Browser.isRecordingUsedAssets();

@@ -22,7 +22,7 @@ public final class Browser {
     @JSBody(script = "return fgeUsedAssets !== null || fgeNet4g;")
     public static native boolean isRecordingUsedAssets();
 
-    /** 使った素材を記録する（kind は texture・sound・file。names は改行で区切った名前か道）。?usedAssets=1 でなければ何もしない。 */
+    /** 使った素材を記録する（kind は texture・sound・file。names は改行で区切った名前か道）。?usedAssets=1 でも ?net=4g でもなければ何もしない。 */
     @JSBody(params = {"kind", "names"}, script = "fgeNoteUsed(kind, names);")
     public static native void noteUsed(String kind, String names);
 

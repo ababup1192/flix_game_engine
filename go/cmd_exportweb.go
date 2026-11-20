@@ -555,7 +555,7 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 
 	fmt.Fprintf(out, "export-web: %s（版 %s）\n", p.Out, hash)
 	writeExportSizes(out, p.Out, b, atlases, report, strip)
-	writeWebMissingTitleTo(out, missing, &b)
+	writeWebMissingTitleTo(out, missing)
 	return writeTitleAssets(out, errOut, o, p, &b, proj, deferredFonts, embedPlan, used)
 }
 
@@ -598,20 +598,9 @@ func writeTitleAssets(out, errOut *strings.Builder, o exportWebOptions, p export
 }
 
 // writeWebMissingTitleTo は ?net=4g のタイトルの間の記録を書き出しの表の後へ書く。
-func writeWebMissingTitleTo(out *strings.Builder, r *webMissingReport, b *webBundle) {
-	policy := map[string]string{}
-	for _, e := range b.Deferred {
-		kind := webDeferredKindOf(e.Path, b)
-		for _, n := range e.Names {
-			if webWaitsWhenMissing(e, kind) {
-				policy[n] = "wait"
-				// 字の描き物が持つのはアトラスの texture の名前（font_<名前>）なので、その名前でも引く。
-				policy["font_"+n] = "wait"
-			}
-		}
-	}
+func writeWebMissingTitleTo(out *strings.Builder, r *webMissingReport) {
 	w := bufio.NewWriter(out)
-	writeWebMissingTitle(w, r, webTitleFrames, func(name string) string { return policy[name] })
+	writeWebMissingTitle(w, r, webTitleFrames)
 	w.Flush()
 }
 
@@ -1405,11 +1394,12 @@ func writeExportSizes(out *strings.Builder, dir string, b webBundle, atlases []s
 	}
 	start := webStartupSizeOf(dir, &b)
 	var waitFor []string
-	if b.Splash != nil && b.Splash.AfterTap != nil {
-		waitFor = b.Splash.AfterTap.WaitFor
+	logoMax := webAfterTapMaxSeconds
+	if t := b.Splash; t != nil && t.AfterTap != nil && t.AfterTap.Mode != "none" {
+		waitFor, logoMax = t.AfterTap.WaitFor, t.AfterTap.MaxSeconds
 	}
 	writeStartupEstimate(w, webStartupEstimateOf(dir, &b), start)
-	writeTapWaitEstimate(w, webTapWaitOf(dir, &b, waitFor))
+	writeTapWaitEstimate(w, webTapWaitOf(dir, &b, waitFor), logoMax)
 	if r.FallbackBytes > 0 {
 		fmt.Fprintf(w, "  置き場には元の wav（%s）も残す — Opus を解けないブラウザだけが取る\n", humanBytes(r.FallbackBytes))
 	}
@@ -1444,7 +1434,8 @@ func writeStartupEstimate(w io.Writer, s webStartupEstimate, start webStartupSiz
 }
 
 // writeTapWaitEstimate は「開いてすぐ押した時に、押してから最初の場面が動くまで」の 4G の見積もりを書く（人の要件の 2 本目の数字）。
-func writeTapWaitEstimate(w io.Writer, t webTapWait) {
+// logoMax は押した後のロゴの上限の秒（ゲームの web.splash.maxSeconds）。
+func writeTapWaitEstimate(w io.Writer, t webTapWait, logoMax float64) {
 	switch {
 	case t.Count == 0 && len(t.Group) > 0:
 		fmt.Fprintf(w, "  押してから動くまで（開いてすぐ押した時・4G）: 0 秒（group %s に後回しの物が無い）\n", strings.Join(t.Group, "・"))
@@ -1457,9 +1448,9 @@ func writeTapWaitEstimate(w io.Writer, t webTapWait) {
 		fmt.Fprintf(w, "  押してから動くまで（開いてすぐ押した時・4G）: 約 %.1f〜%.1f 秒（最初に届く待つ物 %s から、待つ物 %d 本の最後まで。最初の場面が使う物で決まる）\n",
 			t.Seconds, t.Until, t.FirstPath, t.Count)
 	}
-	if t.Count > 0 && t.Seconds > webAfterTapMaxSeconds {
-		fmt.Fprintf(w, "  知らせ: 押してから動くまでが 4G で押した後のロゴの上限 %.0f 秒を超える — すぐ要る物を web.deferred の頭へ並べ替えるか、後回しから外す（ロゴと待ちの合計が後回しにしない時の起動の秒を超えるなら後回しにしない）\n",
-			webAfterTapMaxSeconds)
+	if t.Count > 0 && t.Seconds > logoMax {
+		fmt.Fprintf(w, "  知らせ: 押してから動くまでが 4G で押した後のロゴの上限 %.1f 秒を超える — すぐ要る物を web.deferred の頭へ並べ替えるか、後回しから外す（ロゴと待ちの合計が後回しにしない時の起動の秒を超えるなら後回しにしない）\n",
+			logoMax)
 	}
 }
 

@@ -101,3 +101,14 @@ func TestCheckWebLoadsRecordingReturnsNilWhenPageHasNoRecord(t *testing.T) {
 		t.Fatalf("記録を持たない頁（古い engine）の used は nil のはず: used=%+v err=%v", used, err)
 	}
 }
+
+func TestWebMissingTitleCountsStoppedWaitsAndGaveUp(t *testing.T) {
+	var b strings.Builder
+	writeWebMissingTitle(&b, &webMissingReport{
+		Waits: []webMissingWait{{Kind: "stopped", Names: []string{"bg"}, Frames: 30}, {Kind: "pressed", Names: []string{"bg2"}}},
+		Skips: []webMissingSkip{{Name: "bg3", Why: "gaveUp"}, {Name: "se", Why: "skip"}},
+	}, 120)
+	if !strings.Contains(b.String(), "止まった待ち 1 回・押した時の待ち 1 回・描かずに / 鳴らさずに進んだ名前 2 個（うち待つはずの物 1 個）") {
+		t.Errorf("数が違う:\n%s", b.String())
+	}
+}

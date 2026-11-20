@@ -138,7 +138,7 @@ func checkWebMissingTitle(out string, titleFrames int, wait time.Duration) (*web
 }
 
 // writeWebMissingTitle は ?net=4g のタイトルの間の待ちと、wait の物を描かずに進んだ所を知らせる（止めない・初めは知らせだけ）。
-func writeWebMissingTitle(w io.Writer, r *webMissingReport, frames int, policyOf func(name string) string) {
+func writeWebMissingTitle(w io.Writer, r *webMissingReport, frames int) {
 	if r == nil {
 		return
 	}
@@ -154,7 +154,7 @@ func writeWebMissingTitle(w io.Writer, r *webMissingReport, frames int, policyOf
 	}
 	gaveUp := 0
 	for _, sk := range r.Skips {
-		if sk.Why == "gaveUp" || policyOf(sk.Name) == "wait" {
+		if sk.Why == "gaveUp" {
 			gaveUp++
 			fmt.Fprintf(w, "  知らせ: 4G（?net=4g）のタイトルで、待つはずの %s を描かずに進んだ（%d コマ目・%s）\n", sk.Name, sk.Frame, sk.Why)
 		}

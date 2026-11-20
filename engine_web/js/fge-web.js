@@ -409,6 +409,7 @@ function fgePointerDown(button) { return !!(fgePointer.buttons[button] || fgePoi
 var fgeFrameNo = 0;
 function fgeBeginFrame() {
   fgeFrameNo++;
+  if (fgeMissingWaitOpen !== null) fgeMissingWaitOpen.frames = fgeFrameNo - fgeMissingWaitOpen.firstFrame;
   if (fgeUsedAssets !== null) fgeUsedAssets.frame++;
   fgeFrameLatch = fgeLatch;
   fgeLatch = Object.create(null);
@@ -1285,15 +1286,17 @@ function fgeAfterTapSeen() {
 function fgeAfterTapMarkSeen() {
   try { window.localStorage.setItem(fgeAfterTapSeenKey(), "1"); } catch (e) { /* 持てない頁は次も待つ物が残る時だけ出す */ }
 }
-function fgeAfterTapGot(e) {
+// WhyNot: fgeDeferredArrived（絵は上げ終えて loaded）で切らない — main が動く前は誰も上げないので、ロゴが上限まで残る。バイトが手元に来たら切る。
+function fgeAfterTapSettled(e) {
   return e.state === "downloaded" || e.state === "loaded" || e.state === "released" || (e.state === "failed" && e.permanent);
 }
 function fgeAfterTapPending(cfg) {
   var groups = cfg.waitFor || [];
-  return fgeDeferred.entries.filter(function (e) { return e.group !== "" && groups.indexOf(e.group) >= 0 && !fgeAfterTapGot(e); });
+  return fgeDeferred.entries.filter(function (e) { return e.group !== "" && groups.indexOf(e.group) >= 0 && !fgeAfterTapSettled(e); });
 }
 function fgeAfterTapCodeReady() { return fgeCode.state === "none" || fgeCode.state === "loaded"; }
 // 待つ物がそろうまでの見込みの秒。?net=4g は書き出しの見積もり（押した時から数える）・ふつうは残りのバイトを今までの取る速さで割る。
+// WhyNot: 速さを細かく測らない（Service Worker の取り物や取りかけの分も数える）— 外れても速く見積もる側、つまりロゴを出さない側（待たせない側）に倒れる。
 function fgeAfterTapRemainingSeconds(cfg) {
   if (!fgeAfterTapCodeReady()) return Infinity;
   var pending = fgeAfterTapPending(cfg);
@@ -1309,23 +1312,25 @@ function fgeAfterTapStart() {
   if (fgeAfterTapRemainingSeconds(cfg) < cfg.minSeconds) return;
   fgeAfterTap.showing = true;
   fgeAfterTap.startedAt = performance.now();
-  var events = ["keydown", "click", "pointerup", "touchend"];
+  // ロゴの間の押しは捕捉の段で止め、ゲームの入力（fgeWireInput）へ渡さない（飛ばす押しが「はじめから」を決めないように）。離すのは止めない（押しっぱなしのキーが残らないように）。
+  var events = ["keydown", "pointerdown", "mousedown", "touchstart", "click", "pointerup", "touchend"];
   var skip = function (e) {
+    e.stopImmediatePropagation();
+    if (e.type === "keydown" && e.repeat) return;
     if (e.type === "pointerup" && e.pointerType === "mouse") return;
+    if (e.type === "pointerdown" || e.type === "mousedown" || e.type === "touchstart") return;
     if (performance.now() - fgeAfterTap.startedAt >= 300) fgeAfterTap.skip = true;
   };
-  fgeAfterTap.off = function () { events.forEach(function (n) { window.removeEventListener(n, skip); }); };
-  events.forEach(function (n) { window.addEventListener(n, skip); });
-  if (cfg.mode === "custom" && cfg.logo) {
-    var img = new Image();
-    img.onload = function () { fgeAfterTap.logo = img; fgeAfterTap.sweep = null; };
-    img.src = fgeVersioned(fgeServedPath(cfg.logo));
-  }
+  fgeAfterTap.off = function () { events.forEach(function (n) { window.removeEventListener(n, skip, true); }); };
+  events.forEach(function (n) { window.addEventListener(n, skip, true); });
+  if (cfg.mode === "custom" && cfg.logo) fgeAfterTap.logo = fgeImages.get(fgeNormPath(cfg.logo)) || null;
   fgeAfterTapSound(cfg);
 }
 function fgeAfterTapEnd() {
   fgeAfterTap.showing = false;
   if (fgeAfterTap.off) fgeAfterTap.off();
+  fgeLatch = Object.create(null);
+  fgePointer.latch = [false, false, false];
   fgeAfterTapMarkSeen();
   fgeSplash.drawn = "";
   fgeSplashDraw();
@@ -1405,9 +1410,11 @@ function fgeAfterTapDraw(t) {
   var logo = fgeAfterTap.logo || fgeSplash.logo;
   var rise = fgeEaseOut(t / 0.5);
   var lift = Math.round((1 - rise) * 12 * L.scale);
-  var logoH = !logo ? 0 : fgeAfterTap.logo ? Math.min(fgeSplash.design.h * 0.3, logo.naturalHeight) : L.logoH;
+  // custom の絵は起動の時に解いた ImageBitmap（naturalWidth が無く width で読む）。
+  var natW = logo ? logo.naturalWidth || logo.width : 0, natH = logo ? logo.naturalHeight || logo.height : 0;
+  var logoH = natH <= 0 ? 0 : fgeAfterTap.logo ? Math.min(fgeSplash.design.h * 0.3, natH) : L.logoH;
   if (logoH > 0) {
-    var lw = Math.max(1, Math.round(logoH * logo.naturalWidth / logo.naturalHeight)), lh = Math.max(1, Math.round(logoH));
+    var lw = Math.max(1, Math.round(logoH * natW / natH)), lh = Math.max(1, Math.round(logoH));
     var lx = Math.floor(L.cx - lw / 2), ly = L.logoTop + lift;
     ctx.globalAlpha = rise;
     ctx.drawImage(logo, lx, ly, lw, lh);
@@ -1419,6 +1426,7 @@ function fgeAfterTapDraw(t) {
     }
   }
   ctx.globalAlpha = 1;
+  if (fgeAfterTap.logo) return;
   var word = "Flix_GE";
   var shown = t < 0.55 ? 0 : Math.min(word.length, Math.floor((t - 0.55) / 0.06) + 1);
   if (shown > 0) fgeSplashTextPartial(ctx, word, shown, L, L.titleTop + lift, fgeSplashColors.brand);

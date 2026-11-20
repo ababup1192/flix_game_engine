@@ -383,8 +383,8 @@ func setWebArrivalSeconds(out string, b *webBundle) {
 }
 
 // webTapWait は「開いてすぐ押した時に、押してから最初の場面が動くまで」の 4G での見積もり。
-// Group が空でなければ押した後のロゴが待つ group の最後が届く秒（Seconds）。空なら engine が待ちうる後回し（絵・wait の物）の
-// 最初が届く秒（Seconds・少なくともこれだけ待つ）と最後が届く秒（Until・場面がどれを使うかで決まる上限）。待つ物が無ければ Count が 0。
+// Group が空でなければ押した後のロゴが待つ group の最後が届く秒（Seconds）。空なら engine が待ちうる後回し（絵・wait の物・group を付けたフォント）の
+// 最初が届く秒（Seconds・最初の場面が待つ物を使うなら少なくともこれだけ待つ）と最後が届く秒（Until・場面がどれを使うかで決まる上限）。待つ物が無ければ Count が 0。
 type webTapWait struct {
 	Group          []string
 	Seconds, Until float64

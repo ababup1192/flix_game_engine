@@ -329,3 +329,25 @@ func TestCheckDeferredFontNamesRejectsSoundName(t *testing.T) {
 		t.Fatal("音と同じ名前を通した")
 	}
 }
+
+func TestTapWaitEstimateWarnsOverTheGamesLogoLimit(t *testing.T) {
+	var b strings.Builder
+	writeTapWaitEstimate(&b, webTapWait{Group: []string{"start"}, Seconds: 2.5, Until: 2.5, Count: 3}, 2.0)
+	if !strings.Contains(b.String(), "知らせ") {
+		t.Errorf("ゲームの maxSeconds（2 秒）を超えたら知らせるはず:\n%s", b.String())
+	}
+}
+
+func TestTapWaitEstimateSaysZeroWithoutWaitingAssets(t *testing.T) {
+	var b strings.Builder
+	writeTapWaitEstimate(&b, webTapWait{}, webAfterTapMaxSeconds)
+	if !strings.Contains(b.String(), ": 0 秒") {
+		t.Errorf("待つ物が無ければ 0 秒のはず:\n%s", b.String())
+	}
+}
+
+func TestTapWaitCountsGroupedFontsAsWaiting(t *testing.T) {
+	if !webWaitsWhenMissing(webDeferredEntry{Path: "assets/f.fontatlas", Group: "start"}, "font") {
+		t.Error("group を付けたフォントは待つはず（fge-web.js の fgeDeferredPolicy と同じ）")
+	}
+}
