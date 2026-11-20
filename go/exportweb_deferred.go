@@ -31,23 +31,50 @@ type webDeferredEntry struct {
 	ArrivalSeconds float64 `json:"arrivalSeconds,omitempty"`
 }
 
-func resolveWebDeferred(raw json.RawMessage) ([]webGlob, error) {
+// webDeferredOrder は web.deferred の glob と、その間に書いた font:<名前> の行の位置。
+type webDeferredOrder struct {
+	Globs []webGlob
+	Fonts []webDeferredFontSlot
+}
+
+// webDeferredFontSlot は web.deferred の font:<名前> の 1 行。Before はその行より前に書いた glob の数。
+type webDeferredFontSlot struct {
+	Font   string
+	Before int
+}
+
+const webDeferredFontPrefix = "font:"
+
+func resolveWebDeferred(raw json.RawMessage) (webDeferredOrder, error) {
+	var order webDeferredOrder
 	if len(raw) == 0 || string(raw) == "null" {
-		return nil, nil
+		return order, nil
 	}
 	var s webDeferredSettings
 	if err := json.Unmarshal(raw, &s); err != nil {
-		return nil, fmt.Errorf("project.json の web.deferred を読めない: %v\n  次: glob の字の配列にする（例 [\"assets/bgm/*.wav\"]）", err)
+		return order, fmt.Errorf("project.json の web.deferred を読めない: %v\n  次: glob の字の配列にする（例 [\"assets/bgm/*.wav\"]）", err)
 	}
-	var globs []webGlob
+	seen := map[string]bool{}
 	for _, g := range s.Deferred {
+		if strings.HasPrefix(g, webDeferredFontPrefix) {
+			name := strings.TrimPrefix(g, webDeferredFontPrefix)
+			if name == "" {
+				return order, fmt.Errorf("project.json の web.deferred の %q にフォントの名前が無い。\n  次: font:<fonts[].name> の形にする", g)
+			}
+			if seen[name] {
+				return order, fmt.Errorf("project.json の web.deferred に %q が 2 行ある。\n  次: 取る順にしたい位置の 1 行だけ残す", g)
+			}
+			seen[name] = true
+			order.Fonts = append(order.Fonts, webDeferredFontSlot{Font: name, Before: len(order.Globs)})
+			continue
+		}
 		wg, err := compileWebGlob(g)
 		if err != nil {
-			return nil, fmt.Errorf("project.json の web.deferred: %v", err)
+			return order, fmt.Errorf("project.json の web.deferred: %v", err)
 		}
-		globs = append(globs, wg)
+		order.Globs = append(order.Globs, wg)
 	}
-	return globs, nil
+	return order, nil
 }
 
 // resolveWebDeferredFonts は project.json の web.deferredFonts（タイトルの後に読むフォントの名前）を、fonts の名前と照らして返す。
@@ -104,31 +131,113 @@ func checkDeferredFontNames(fonts []string, textureNames map[string][]string, so
 // webFontAtlasRel はフォントのアトラスを置く道（engine_web の WebAssets.atlasPathOf と同じ）。
 func webFontAtlasRel(name string) string { return "font-atlas/" + name + ".fontatlas" }
 
-// withDeferredFonts は後回しの列の頭へ、後回しのフォントのアトラスを足し、アトラスの道 → フォントの名前を names に足した物を返す。
+// withDeferredFonts は後回しの列へ後回しのフォントのアトラスを差し込み、アトラスの道 → フォントの名前を names に足した物を返す。
+// 差し込む位置は、web.deferred の font:<名前> の行があればその行の位置、無ければ groupAt（同じ group の最初の素材の位置）、どちらも無ければ列の頭。
 // 頁の届いていない名前（LoadProgress の missing）にフォントの名前が並び、ゲームは絵と同じ扱いで待てる。
-// WhyNot: 列の後ろに足さない — 字は最初の場面から使い、3D の部屋や後半の絵より先に要る。
-func withDeferredFonts(plan webDeferredPlan, fonts []string, names map[string][]string) (webDeferredPlan, map[string][]string) {
+// WhyNot: 書いていないフォントを列の後ろに回さない — 字は最初の場面から使うゲームが多く、font: の行を書いていないゲームの並びは今までの頭のまま残す。
+// WhyNot: deferredFonts に無いフォントを font: の行だけで後回しにしない — 後回しにするフォントを書く所が 2 つになり、候補を出す口と --apply-deferred が片方しか見ない。
+func withDeferredFonts(plan webDeferredPlan, fonts []string, slots []webDeferredFontSlot, groupAt map[string]int, names map[string][]string) (webDeferredPlan, map[string][]string, error) {
+	deferred := map[string]bool{}
+	for _, name := range fonts {
+		deferred[name] = true
+	}
+	slotAt := map[string]int{}
+	for _, slot := range slots {
+		if !deferred[slot.Font] {
+			return plan, names, fmt.Errorf("project.json の web.deferred の font:%s が web.deferredFonts に無い。\n  次: deferredFonts に %q を足す（後回しにするフォントは deferredFonts に書き、web.deferred の行は取る位置だけを決める）か行を消す", slot.Font, slot.Font)
+		}
+		at := len(plan.Paths)
+		if slot.Before < len(plan.GlobStarts) {
+			at = plan.GlobStarts[slot.Before]
+		}
+		slotAt[slot.Font] = at
+	}
 	if len(fonts) == 0 {
-		return plan, names
+		return plan, names, nil
 	}
 	merged := map[string][]string{}
 	for rel, n := range names {
 		merged[rel] = n
 	}
-	var heads []string
-	for _, name := range fonts {
-		rel := webFontAtlasRel(name)
-		heads = append(heads, rel)
-		merged[rel] = []string{name}
+	type placed struct {
+		rel string
+		at  int
 	}
-	plan.Paths = append(heads, plan.Paths...)
-	return plan, merged
+	var inserts []placed
+	add := func(name string, at int) {
+		rel := webFontAtlasRel(name)
+		merged[rel] = []string{name}
+		inserts = append(inserts, placed{rel, at})
+	}
+	for _, name := range fonts {
+		if _, ok := slotAt[name]; ok {
+			continue
+		}
+		at, ok := groupAt[name]
+		if !ok {
+			at = 0
+		}
+		add(name, at)
+	}
+	for _, slot := range slots {
+		add(slot.Font, slotAt[slot.Font])
+	}
+	sort.SliceStable(inserts, func(i, j int) bool { return inserts[i].at < inserts[j].at })
+	paths := make([]string, 0, len(plan.Paths)+len(inserts))
+	next := 0
+	for i, rel := range plan.Paths {
+		for next < len(inserts) && inserts[next].at <= i {
+			paths = append(paths, inserts[next].rel)
+			next++
+		}
+		paths = append(paths, rel)
+	}
+	for ; next < len(inserts); next++ {
+		paths = append(paths, inserts[next].rel)
+	}
+	plan.Paths = paths
+	return plan, merged, nil
+}
+
+// webFontGroupStarts は group を付けた後回しのフォント → 同じ group の最初の素材（フォントでない物）の plan.Paths の位置。
+// その group の素材が列に無いフォントは入れない（列の頭に置く）。
+func webFontGroupStarts(paths []string, fonts []string, pol webDeferredPolicy, b *webBundle, textureNames map[string][]string) map[string]int {
+	if len(fonts) == 0 || len(pol.Rows) == 0 {
+		return nil
+	}
+	var fontEntries []webDeferredEntry
+	for _, name := range fonts {
+		fontEntries = append(fontEntries, webDeferredEntry{Path: webFontAtlasRel(name), Names: []string{name}})
+	}
+	fontEntries, _, err := applyWebDeferredPolicy(fontEntries, pol, b)
+	if err != nil {
+		return nil
+	}
+	entries, _, err := applyWebDeferredPolicy(webDeferredEntries("", b, paths, textureNames), pol, b)
+	if err != nil {
+		return nil
+	}
+	first := map[string]int{}
+	for i, e := range entries {
+		if _, ok := first[e.Group]; !ok && e.Group != "" {
+			first[e.Group] = i
+		}
+	}
+	out := map[string]int{}
+	for i, e := range fontEntries {
+		if at, ok := first[e.Group]; ok && e.Group != "" {
+			out[fonts[i]] = at
+		}
+	}
+	return out
 }
 
 // webDeferredPlan は後回しにする道（取る順）と、知らせるだけの行。
+// GlobStarts[i] は web.deferred の i 本目の glob が当てた最初の道の Paths の位置（末尾に len(Paths) を足す・font: の行の位置に使う）。
 type webDeferredPlan struct {
-	Paths    []string
-	Warnings []string
+	Paths      []string
+	GlobStarts []int
+	Warnings   []string
 }
 
 // planWebDeferred は束の中身（files・images・sounds）に web.deferred を当てる。
@@ -136,10 +245,11 @@ type webDeferredPlan struct {
 // タイトル画面の背景らしい絵（textures の名前か道に title を含む）に当たる時は知らせるだけ（どの絵がタイトルかは Doc にしか無い）。
 // WhyNot: 当たらない glob を何も知らせずに通さない — 道を打ち間違えると、後回しにしたつもりの重い素材が起動の前に取られ、気付けない。
 func planWebDeferred(b webBundle, globs []webGlob, embed webEmbedPlan, fonts []string, textureNames map[string][]string) (webDeferredPlan, error) {
-	var plan webDeferredPlan
+	plan := webDeferredPlan{GlobStarts: []int{0}}
 	if len(globs) == 0 {
 		return plan, nil
 	}
+	plan.GlobStarts = nil
 	hidden := map[string]string{}
 	for _, rel := range embed.Embedded {
 		hidden[rel] = "web.embed"
@@ -175,6 +285,7 @@ func planWebDeferred(b webBundle, globs []webGlob, embed webEmbedPlan, fonts []s
 			return plan, fmt.Errorf("project.json の web.deferred の %q に当たる素材が束に無い。\n  次: ゲームの根からの道に直す（例 assets/bgm/*.wav）", g.Pattern)
 		}
 		sort.Strings(hits)
+		plan.GlobStarts = append(plan.GlobStarts, len(plan.Paths))
 		for _, rel := range hits {
 			if taken[rel] {
 				continue
@@ -183,6 +294,7 @@ func planWebDeferred(b webBundle, globs []webGlob, embed webEmbedPlan, fonts []s
 			plan.Paths = append(plan.Paths, rel)
 		}
 	}
+	plan.GlobStarts = append(plan.GlobStarts, len(plan.Paths))
 	for _, rel := range plan.Paths {
 		if looksLikeTitleImage(rel, textureNames[rel]) {
 			plan.Warnings = append(plan.Warnings, fmt.Sprintf("web.deferred の %s はタイトル画面の絵に見える — 届くまでタイトルに出ない（タイトルの背景は後回しにしない）", rel))
