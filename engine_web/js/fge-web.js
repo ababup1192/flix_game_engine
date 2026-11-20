@@ -1496,9 +1496,11 @@ function fgeDeferredMissingGen() {
   if (text !== fgeDeferredMissingSeen.text) { fgeDeferredMissingSeen.text = text; fgeDeferredMissingSeen.gen++; }
   return fgeDeferredMissingSeen.gen;
 }
+// WhyNot: 後回しのフォントを既定で待たない — 届くまでは最初のフォントで字を出せる（P4 の前の見え方）。待つと押した後の待ちが字の届くまで延びる。
 function fgeDeferredPolicy(name) {
   var e = fgeDeferred.byName.get(name);
-  return e ? e.onMissing + "\n" + e.group : "\n";
+  if (!e) return "\n";
+  return (e.onMissing || (e.font ? "placeholder" : "")) + "\n" + e.group;
 }
 // WhyNot: 届いたかを `deferred=all` の頁で 1 本ずつ待たない — 撮るコマの番号が、届いた順と engine の待ちでずれる。
 function fgeDeferredAllArrived() {

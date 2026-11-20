@@ -88,7 +88,7 @@ pub mod LoadProgress {
         case Skip
     }
 
-    /// 名前 1 つの扱い。onMissing = None は種類の既定（絵とフォントは待つ・一発の音は鳴らさず進む・ループの音は待たずに届いたら鳴る）・
+    /// 名前 1 つの扱い。onMissing = None は種類の既定（絵は待つ・一発の音は鳴らさず進む・ループの音は待たずに届いたら鳴る。ブラウザ版はフォントに placeholder を渡す）・
     /// group = 押した時の待ちで一緒に待つ組の名前（Unity の Addressables の group）。
     pub type alias MissingPolicy = { onMissing = Option[OnMissing], group = Option[String] }
 
