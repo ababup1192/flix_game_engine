@@ -1531,9 +1531,9 @@ ENGINE_FULL_STALE = if [ ! -f "$(ENGINE_FULL_FPKG_SRC)" ]; then echo "$(ENGINE_F
 	  find $(ROOT_SRC_PKGS:%=%/src) -name '*.flix' -newer "$(ENGINE_FULL_FPKG_SRC)" 2>/dev/null | head -5 | sed 's/^/ソースの方が新しい: /'; \
 	  entry=$$(bin/fpkg-store.sh path engine_full 2>/dev/null); base=$$(basename "$$entry" 2>/dev/null); \
 	  if [ -z "$$entry" ]; then echo "置き場（build/fpkg-store）に engine_full が無い"; \
-	  else case "$$base" in (engine_full-$(VERSION)-*) ;; (*) echo "置き場の今のエントリ（$$base）が v$(VERSION) の物ではない";; esac; \
+	  else case "$$base" in (engine_full-$(VERSION)-*) ;; (*) echo "置き場の今のエントリ（$${base}）が v$(VERSION) の物ではない";; esac; \
 	    { cmp -s "$$entry/package.fpkg" "$(ENGINE_FULL_FPKG_SRC)" && cmp -s "$$entry/flix.toml" "$(ENGINE_FULL_TOML_SRC)"; } || \
-	      echo "置き場の今の束（$$base）が $(ENGINE_FULL_FPKG_SRC)・$(ENGINE_FULL_TOML_SRC) と違う"; fi; fi
+	      echo "置き場の今の束（$${base}）が $(ENGINE_FULL_FPKG_SRC)・$(ENGINE_FULL_TOML_SRC) と違う"; fi; fi
 .PHONY: engine-full-fresh
 # 配った版はリリースが組んだ fpkg をそのまま使う（ソースの時刻は zip を開いた時刻なので、比べると空振りで止まる）。
 engine-full-fresh: ### | engine_full.fpkg が古くないか（古ければ作業コピーでは sync-engine-full を流す・new-game・upgrade-game の前提）

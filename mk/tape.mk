@@ -113,7 +113,7 @@ tape-args:
 	@test -n "$(TAPE_NAME)$(FLOWS)" || { echo "make tape FLOW=e2e/<名前>.flow（分岐は FLOWS=\"e2e/a.flow e2e/b.flow\"）"; exit 2; }
 	@test -z "$(FLOW)" -o -z "$(FLOWS)" || { echo "tape: FLOW と FLOWS はどちらか 1 つ（分岐は FLOWS だけに並べる）"; exit 2; }
 	@dup=$$(for f in $(FLOWS); do basename $$f .flow; done | sort | uniq -d); \
-	 test -z "$$dup" || { echo "tape: FLOWS に同じ名前の flow がある: $$dup（debug/tape/<名前> が重なるので名前を分ける）"; exit 2; }
+	 test -z "$$dup" || { echo "tape: FLOWS に同じ名前の flow がある: $${dup}（debug/tape/<名前> が重なるので名前を分ける）"; exit 2; }
 	@for v in $(TAPE_VIEWS); do case "$$v" in pc|phone) ;; *) echo "tape: TAPE_VIEWS に並べるのは phone と pc（$$v は知らない）"; exit 2;; esac; done
 
 tape: tape-args ## FLOW=e2e/<名前>.flow（か FLOWS="…"） [TAPE_FRESH=1] | flow を動画にしてテープの頁を作る（撮り終えた flow は入力が同じなら撮り直さない）
