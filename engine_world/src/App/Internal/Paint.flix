@@ -100,11 +100,11 @@ pub mod App.Internal.Paint {
 
     /// App が待っている間の表示（withLoadingIndicator の答え）。待っていなければ空。Custom はゲームの View と同じ ViewCtx で、待ちの間は毎コマ呼ぶ。
     pub def loadingOverlayOf(app: App[w, ef], warnOnce: String -> Unit, design: Vec2.Vec2, display: Display.Display,
-                             wait: Option[LoadProgress.LoadWait], press: Option[Vec2.Vec2]): List[Render.PlacedItem] \ Platform.GpuResources =
+                             wait: Option[LoadProgress.LoadWait], ripple: Option[Vec2.Vec2]): List[Render.PlacedItem] \ Platform.GpuResources =
         match (App.rec(app)#loadingIndicator, wait) {
             case (_, None)                                   => Nil
             case (App.LoadingIndicator.Hidden, _)            => Nil
-            case (App.LoadingIndicator.Default, Some(lw))    => App.Internal.LoadingView.itemsOf(design, lw, press)
+            case (App.LoadingIndicator.Default, Some(lw))    => App.Internal.LoadingView.itemsOf(design, lw, ripple)
             case (App.LoadingIndicator.Custom(f), Some(lw))  =>
                 f(baseCtx(app, design, display, Platform.GpuResources.getFontAtlas("default"), warnOnce, None), lw)
         }

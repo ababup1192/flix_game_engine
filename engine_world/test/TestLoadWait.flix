@@ -442,24 +442,34 @@ mod TestLoadWait {
 
     def design(): Vec2.Vec2 = { x = 320.0, y = 180.0 }
 
-    /// マウスかタッチで押して待ちに入ると、押した点はその時のカーソルの位置
+    def originText(origin: Option[Vec2.Vec2]): String = origin |> Option.map(p -> "${p#x},${p#y}") |> Option.getWithDefault("none")
+
+    /// マウスかタッチで押して待ちに入ると、波紋はその時のカーソルの位置から
     @Test
-    def testPressPointIsTheClickedCursor(): Unit \ Assert =
+    def testRippleStartsAtTheClickedCursor(): Unit \ Assert =
         let click = { mouseClicked = true, mouseDown = true, cursor = { x = 40.0, y = 30.0 } | live() };
         let (_, waiting) = LoadWait.decide(candidate(Set#{"bg"}, true), ctx(Set#{"bg"}, 0.0, click, 5), LoadWait.initial());
-        Assert.assertEq(expected = Some((40.0, 30.0)), LoadWait.pressPointOf(waiting) |> Option.map(p -> (p#x, p#y)))
+        Assert.assertEq(expected = "40.0,30.0", originText(LoadWait.rippleOriginOf(waiting, design())))
 
-    /// キーで押して待ちに入ると、押した点は無い（波紋は画面の真ん中から）
+    /// キーで押して待ちに入ると、波紋は画面の真ん中から
     @Test
-    def testPressPointIsNoneForAKey(): Unit \ Assert =
-        Assert.assertTrue(Option.isEmpty(LoadWait.pressPointOf(pressedWait(Set#{"bg"}))))
+    def testRippleStartsAtTheCenterForAKey(): Unit \ Assert =
+        Assert.assertEq(expected = "160.0,90.0", originText(LoadWait.rippleOriginOf(pressedWait(Set#{"bg"}), design())))
+
+    /// 渡し直しの途中で別の物に当たって待ちに入り直しても、波紋はもう出さない
+    @Test
+    def testReenteringDuringTheReplayHasNoRipple(): Unit \ Assert =
+        let (_, captured) = LoadWait.plan(settings(), live(), watch(Set#{"bg"}, 0.1), 5, App.freshStepState(), pressedWait(Set#{"bg"}));
+        let (_, replaying) = LoadWait.plan(settings(), live(), watch(Set#{"room"}, 0.2), 6, App.freshStepState(), captured);
+        let (_, next) = LoadWait.decide(candidate(Set#{"room"}, true), ctx(Set#{"room"}, 0.2, press(), 6), replaying);
+        Assert.assertEq(expected = "none", originText(LoadWait.rippleOriginOf(next, design())))
 
     /// 押した時の待ちの頭は、輪の出る秒の前でも波紋を出す
     @Test
     def testRippleShowsRightAfterThePress(): Unit \ Assert =
         Assert.assertFalse(List.isEmpty(App.Internal.LoadingView.itemsOf(design(), waitOf(0.1, true), Some({ x = 40.0, y = 30.0 }))))
 
-    /// 押していない待ちは、輪の出る秒までは何も出さない
+    /// 波紋の無い待ちは、輪の出る秒までは何も出さない
     @Test
     def testNothingBeforeTheIndicatorSeconds(): Unit \ Assert =
         Assert.assertTrue(List.isEmpty(App.Internal.LoadingView.itemsOf(design(), waitOf(0.3, false), None)))
@@ -469,9 +479,21 @@ mod TestLoadWait {
     def testIndicatorShowsAfterTheIndicatorSeconds(): Unit \ Assert =
         Assert.assertFalse(List.isEmpty(App.Internal.LoadingView.itemsOf(design(), waitOf(0.7, false), None)))
 
-    /// 表示はどれも読み込み中の表示の範囲の z（HUD より手前・デバッグより奥）
+    def inLoadingBand(items: List[Render.PlacedItem]): Bool =
+        items |> List.map(p -> Render.zOf(p#item)) |> List.forAll(z -> z >= ZBand.loadingBase() and z <= ZBand.loadingBase() + 10)
+
+    /// 波紋は読み込み中の表示の範囲の z（base から +10 まで）
+    @Test
+    def testRippleStaysInTheLoadingBand(): Unit \ Assert =
+        Assert.assertTrue(inLoadingBand(App.Internal.LoadingView.itemsOf(design(), waitOf(0.2, true), Some({ x = 40.0, y = 30.0 }))))
+
+    /// 輪は読み込み中の表示の範囲の z（base から +10 まで）
     @Test
     def testIndicatorStaysInTheLoadingBand(): Unit \ Assert =
-        let zs = App.Internal.LoadingView.itemsOf(design(), waitOf(0.3, true), None) |> List.map(p -> Render.zOf(p#item));
-        Assert.assertTrue(List.forAll(z -> z >= ZBand.loadingBase() and z < ZBand.debugBase(), zs))
+        Assert.assertTrue(inLoadingBand(App.Internal.LoadingView.itemsOf(design(), waitOf(0.7, false), None)))
+
+    /// 20 秒を超えた輪も読み込み中の表示の範囲の z
+    @Test
+    def testSlowIndicatorStaysInTheLoadingBand(): Unit \ Assert =
+        Assert.assertTrue(inLoadingBand(App.Internal.LoadingView.itemsOf(design(), waitOf(25.0, false), None)))
 }

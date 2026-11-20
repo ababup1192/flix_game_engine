@@ -15,19 +15,18 @@ pub mod App.Internal.LoadingView {
     /// 波紋が広がり切って消える秒。
     def rippleSeconds(): Float64 = 0.45
 
-    /// 待ちの表示の絵。press = 押した点（design 座標。キーで押した時は None で画面の真ん中）。
-    /// 波紋は押した時の待ちの頭だけ・輪は待ちが indicatorSeconds を超えてから。
-    pub def itemsOf(design: Vec2.Vec2, wait: LoadProgress.LoadWait, press: Option[Vec2.Vec2]): List[Render.PlacedItem] =
-        List.append(rippleOf(design, wait, press), indicatorOf(design, wait))
+    /// 待ちの表示の絵。ripple = 波紋を出す所（design 座標。None は波紋を出さない待ち）。
+    /// 波紋は待ちの頭の rippleSeconds の間だけ・輪は待ちが indicatorSeconds を超えてから。
+    pub def itemsOf(design: Vec2.Vec2, wait: LoadProgress.LoadWait, ripple: Option[Vec2.Vec2]): List[Render.PlacedItem] =
+        List.append(ripple |> Option.map(at -> rippleOf(design, wait, at)) |> Option.getWithDefault(Nil), indicatorOf(design, wait))
 
     def white(): Color = { r = 1.0, g = 1.0, b = 1.0 }
 
-    def rippleOf(design: Vec2.Vec2, wait: LoadProgress.LoadWait, press: Option[Vec2.Vec2]): List[Render.PlacedItem] =
+    def rippleOf(design: Vec2.Vec2, wait: LoadProgress.LoadWait, center: Vec2.Vec2): List[Render.PlacedItem] =
         let t = wait#waited / rippleSeconds();
-        if (not wait#pressed or t >= 1.0) Nil
+        if (t >= 1.0) Nil
         else {
-            let center = Option.getWithDefault({ x = design#x * 0.5, y = design#y * 0.5 }, press);
-            let left = 1.0 - Float64.max(0.0, t);
+            let left = 1.0 - t;
             let radius = Float64.max(2.0, (1.0 - left * left) * Float64.min(design#x, design#y) * 0.14);
             let z = ZBand.loadingBase();
             let disc = RawDraw.circleAt(center, radius, white(), z) |> Render.overItem(Render.fade(0.28 * left));
@@ -57,7 +56,7 @@ pub mod App.Internal.LoadingView {
                                  List.append(arcAt(center, ring, { fromT = 0.0, toT = sweep }, 0.85 * a, z + 2), glow :: dot :: Nil))
         }
 
-    /// center を中心に、fromT..toT（1 周 = 1.0・0 が真上・時計回り）の白い弧を台形を並べて描く。
+    /// center を中心にした、fromT..toT（1 周 = 1.0・0 が真上・時計回り）の白い弧。
     def arcAt(center: Vec2.Vec2, ring: { radius = Float64, width = Float64 }, sweep: { fromT = Float64, toT = Float64 },
               alpha: Float64, zIndex: Int32): List[Render.PlacedItem] =
         let inner = Float64.max(0.0, ring#radius - ring#width);

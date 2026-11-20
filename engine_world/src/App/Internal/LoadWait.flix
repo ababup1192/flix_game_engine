@@ -22,9 +22,10 @@ pub mod App.Internal.LoadWait {
 
     /// 待っている所。code = 後から取るコードを待つか・names = 待つ名前・total = 待ち始めた時の名前の数・startedSec = 待ち始めた時刻・
     /// pressed = 押した所まで戻して待っているか（偽は前の World で止まっている）・frozen = 戻した World を進めずに描き直すか・
-    /// chimed = 渡し直しで鳴らさない一発の音の名前ごとの数（待ちに入った時に鳴らした分と、控えから鳴らした分）。
+    /// chimed = 渡し直しで鳴らさない一発の音の名前ごとの数（待ちに入った時に鳴らした分と、控えから鳴らした分）・
+    /// ripple = 押した手応えの波紋を出す待ちか（待っていない所から押して入った待ちだけ。渡し直しの途中で入り直した待ちは出さない）。
     pub type alias Wait = { code = Bool, names = Set[String], total = Int32, startedSec = Float64, pressed = Bool, frozen = Bool,
-                            chimed = Map[String, Int32] }
+                            chimed = Map[String, Int32], ripple = Bool }
 
     /// 待ちの状態。Idle = 待っていない・Waiting = 待っている・Replaying = 届いたので、まだ渡していない控えた入力を先頭から渡し直す。
     // WhyNot: 渡し直す入力を控えの中から引かない — 渡し直しの途中で出力の鍵が変わって控えを捨てると、残りの入力も消える。
@@ -218,12 +219,12 @@ pub mod App.Internal.LoadWait {
                 let names = Set.union(hits, joinedOf(ctx, hits, state#gaveUp));
                 let wt = { code = candidate#failed, names = names, total = Set.size(names), startedSec = ctx#nowSec, pressed = true,
                            frozen = ctx#styleOf(restored) == App.LoadWaitStyle.Freeze,
-                           chimed = addCounts(Map.unionWith((x, y) -> x + y, state#owed, s#played), chime) };
+                           chimed = addCounts(Map.unionWith((x, y) -> x + y, state#owed, s#played), chime), ripple = isIdleMode(state#mode) };
                 (Show.Restored(restored, { real = ctx#real, pending = App.Internal.Frame.noPending() | s#stepState }, chime),
                  { mode = Mode.Waiting(wt), snapshot = Some({ world = restored, stored = Nil, played = Map.empty() | s }), owed = Map.empty() | state })
             case None =>
                 let wt = { code = candidate#failed, names = hits, total = Set.size(hits), startedSec = ctx#nowSec, pressed = false,
-                           frozen = true, chimed = Map.empty() };
+                           frozen = true, chimed = Map.empty(), ripple = false };
                 (Show.Loaded(Nil), { mode = Mode.Waiting(wt) | state })
         }
 
@@ -288,10 +289,14 @@ pub mod App.Internal.LoadWait {
         case _ => None
     }
 
-    /// 押した時の待ちの、押した点（控えの最初の入力がマウスかタッチで押していればその位置。キーで押した時と控えが無い時は None）。
-    pub def pressPointOf(state: State[w]): Option[Vec2.Vec2] =
-        state#snapshot |> Option.flatMap(s -> List.head(s#frames))
-            |> Option.flatMap(f -> if (f#mouseClicked or not Set.isEmpty(f#mouseClickedButtons)) Some(f#cursor) else None)
+    /// 押した手応えの波紋を出す所（design 座標）。待っていない所から押して入った待ちだけ Some: 控えの入力のうち最後にマウスかタッチで
+    /// 押した位置、無ければ（キーで押した時）画面の真ん中。
+    pub def rippleOriginOf(state: State[w], design: Vec2.Vec2): Option[Vec2.Vec2] = match (state#mode, state#snapshot) {
+        case (Mode.Waiting(wt), Some(s)) if wt#ripple =>
+            let clicked = s#frames |> List.filter(f -> f#mouseClicked or not Set.isEmpty(f#mouseClickedButtons)) |> List.last;
+            Some(clicked |> Option.map(f -> f#cursor) |> Option.getWithDefault({ x = design#x * 0.5, y = design#y * 0.5 }))
+        case _ => None
+    }
 
     /// 待つ名前の字（Runner が機種へ取れずに終わったかを問い合わせる名前）。待っていなければ空。
     pub def waitingNames(state: State[w]): Set[String] = match state#mode {

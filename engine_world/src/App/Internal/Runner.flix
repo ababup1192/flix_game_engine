@@ -502,11 +502,11 @@ pub mod App.Internal.Runner {
     def stillTrace(r: App.Rec[w, ef], frame: App.Frame, world: w, chime: List[String]): App.TraceStep[w] \ ef =
         { frame = frame, before = world, after = world, sounds = chime, sustained = (r#sustained)(world) }
 
-    /// world を組む（fps の重ねは st#anno から・待ちの表示は st#publishedWait と waitState の押した点から）。
+    /// world を組む（fps の重ねは st#anno から・待ちの表示は st#publishedWait と waitState の波紋の所から）。
     def buildFor(app: App[w, ef], st: LoopState[w], frame: App.Frame, world: w, waitState: App.Internal.LoadWait.State[w]): Option[App.Internal.Paint.Built] \ (ef + Platform.GpuResources + Platform.Window) =
         let r = App.rec(app);
         let display = Platform.Window.getDisplay();
-        let waiting = App.Internal.Paint.loadingOverlayOf(app, st#warnOnce, st#design, display, st#publishedWait, App.Internal.LoadWait.pressPointOf(waitState));
+        let waiting = App.Internal.Paint.loadingOverlayOf(app, st#warnOnce, st#design, display, st#publishedWait, App.Internal.LoadWait.rippleOriginOf(waitState, st#design));
         let fps = App.Internal.Paint.fpsOverlayOf(r, st#design, st#anno);
         App.Internal.Paint.buildPainted(app, st#warnOnce, frame#diagnostics, st#design, display, world,
                                         App.Internal.Paint.plainLook(if (List.isEmpty(waiting)) fps else List.append(waiting, fps)), st#tileCache)

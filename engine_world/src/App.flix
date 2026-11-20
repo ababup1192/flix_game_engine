@@ -726,7 +726,7 @@ pub mod App {
     /// Freeze = 進めずに描き直す（勝手に動かしたくない場面）。
     pub enum LoadWaitStyle with Eq, ToString { case KeepRunning, Freeze }
 
-    /// 待つ間の表示。Default = 押した点からの波紋と 0.5 秒を超えたら右下の輪・Hidden = どちらも出さない・Custom = 待ちの間は毎コマゲームが描く（字はゲームのフォントで）。
+    /// 待つ間の表示。Default = 押した点からの波紋と 0.5 秒を超えたら右下の輪・Hidden = どちらも出さない・Custom = 待ちの間は毎コマゲームが描く（z は ZBand.loadingBase から上・字はゲームのフォントで・後回しの絵とフォントを使うと待ちが明けない）。
     pub enum LoadingIndicator { case Default, Hidden, Custom((ViewCtx, LoadProgress.LoadWait) -> List[Render.PlacedItem]) }
 
     /// App が待っている間の様子を毎コマ World へ写す（待ちが明けたコマに 1 回 None）。選んだ行を光らせる・自前の表示を出す時だけ繋ぐ。
