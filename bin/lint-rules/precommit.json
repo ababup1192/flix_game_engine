@@ -358,6 +358,24 @@
       }
     },
     {
+      "id": "web-check",
+      "sub": "web-check",
+      "flags": [],
+      "pass": "matched",
+      "when": {
+        "basenames": [
+          "bundle.json",
+          "classes.wasm",
+          "classes.wasm.br",
+          "sums.json"
+        ],
+        "exceptPrefixes": [
+          "go/",
+          "testdata/"
+        ]
+      }
+    },
+    {
       "id": "jargon",
       "sub": "jargon",
       "flags": [],

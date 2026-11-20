@@ -75,6 +75,9 @@ type Options struct {
 	Warn io.Writer
 	// Play はゲームのブラウザ版の書き出しのフォルダ（--play）。空でなければテープのフォルダの play/ へ写す。
 	Play string
+	// PlayCheck は写す前の書き出しと、残っている play/ に掛ける公開前の門（bin/fge が web-check を渡す。nil なら掛けない）。
+	// 赤なら play/ を置かず、頁は「はじめから遊ぶ」を出さない。report は Warn へ書く 1 行。
+	PlayCheck func(dir string) (ok bool, report string)
 }
 
 // Splash は頁の SPLASH。ゲームのブラウザ版の bundle.json の splash と同じ形（ロゴと組み込みフォントの PNG・字の表・字の寸法）。
@@ -92,7 +95,7 @@ type Splash struct {
 }
 
 // Run は bin/fge tape の本体。splash は作る頁に埋める起動画面の材料（publish では使わない）。
-func Run(args []string, splash Splash, stdout, stderr io.Writer) int {
+func Run(args []string, splash Splash, playCheck func(string) (bool, string), stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "publish" {
 		return RunPublish(args[1:], stdout, stderr)
 	}
@@ -103,6 +106,7 @@ func Run(args []string, splash Splash, stdout, stderr io.Writer) int {
 		return 2
 	}
 	opt.Splash = splash
+	opt.PlayCheck = playCheck
 	opt.Warn = stderr
 	if len(opt.Group) > 0 {
 		outs, err := BuildGroup(opt, stderr)
@@ -200,7 +204,7 @@ func build(opt Options, t *Tape) (string, error) {
 	if err := addPhoneView(opt.FFmpeg, opt.Dir, t); err != nil {
 		return "", err
 	}
-	if err := addPlay(opt.Play, opt.Dir, t); err != nil {
+	if err := addPlay(opt, t); err != nil {
 		return "", err
 	}
 	addScript(opt.Dir, t, opt.Warn)
@@ -277,9 +281,14 @@ func addPhoneView(ffmpeg, dir string, t *Tape) error {
 	return nil
 }
 
-// addPlay は play（空なら写さない）を dir/play へ写し、dir/play/index.html があれば頁の start に足す。
-func addPlay(play, dir string, t *Tape) error {
+// addPlay は opt.Play（空なら写さない）を dir/play へ写し、dir/play/index.html があれば頁の start に足す。
+// opt.PlayCheck が赤なら写さず、前に写した play/ も消す。
+func addPlay(opt Options, t *Tape) error {
+	play, dir := opt.Play, opt.Dir
 	dst := filepath.Join(dir, PlayDir)
+	if play != "" && !playPasses(opt, play, dst) {
+		return nil
+	}
 	if play != "" {
 		if _, err := os.Stat(filepath.Join(play, "index.html")); err != nil {
 			return fmt.Errorf("--play %s に index.html が無い（bin/fge export-web の書き出しのフォルダを渡す）: %w", play, err)
@@ -296,6 +305,9 @@ func addPlay(play, dir string, t *Tape) error {
 	}
 	if err := checkNoHomePath(dst); err != nil {
 		return err
+	}
+	if play == "" && !playPasses(opt, dst, dst) {
+		return nil
 	}
 	t.raw["start"] = json.RawMessage(`"` + PlayDir + `/index.html"`)
 	return nil
@@ -502,4 +514,21 @@ func Render(t *Tape, commit string, strip Strip, splash Splash) ([]byte, error) 
 	page = strings.Replace(page, splashDecl+"__SPLASH_JSON__", splashDecl+string(splashJSON), 1)
 	page = strings.Replace(page, "__TAPE_TITLE__", html.EscapeString(t.Title), 1)
 	return []byte(page), nil
+}
+
+// playPasses は src（写す前の書き出しか、残っている play/）に公開前の門を掛ける。赤なら dst の play/ を消し、Warn に 1 行書く。
+// WhyNot: 赤の時に前の play/ を残さない — 前の版の書き出しが「はじめから遊ぶ」付きで公開され続ける。
+func playPasses(opt Options, src, dst string) bool {
+	if opt.PlayCheck == nil {
+		return true
+	}
+	ok, report := opt.PlayCheck(src)
+	if ok {
+		return true
+	}
+	os.RemoveAll(dst)
+	if opt.Warn != nil {
+		fmt.Fprintf(opt.Warn, "tape: ブラウザ版を play/ に置かない（公開前の門が赤・頁は「はじめから遊ぶ」を出さない）: %s\n", report)
+	}
+	return false
 }

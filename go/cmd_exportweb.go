@@ -24,7 +24,7 @@ import (
 
 const exportWebUsage = `使い方: fge export-web <ゲームのフォルダ> [--out <dir>] [--check] [--id <名前>] [--font-atlas-dir <dir>]
                        [--work <dir>] [--engine <dir>] [--keep-work] [--no-browser-check] [--reuse] [--show-leaks]
-                       [--apply-deferred]
+                       [--apply-deferred] [--draft]
   ゲームをブラウザ版（TeaVM の WASM GC）へ書き出す。出力の既定は <ゲーム>/build/web。
   --check           作業フォルダで flix check だけ流す（web/WebMain.flix の型検査）
   --id              bundle.json の id（既定はゲームのフォルダの名前）
@@ -37,6 +37,8 @@ const exportWebUsage = `使い方: fge export-web <ゲームのフォルダ> [--
                     前の書き出しと同じで、書き出し先がその時のままなら組まずに使い回す（指紋は作業フォルダの export.inputs）
   --apply-deferred  最後の確かめでタイトルの 120 コマ（2 秒）に使わなかった起動の素材（後回しの候補）を、project.json の
                     web.deferred・web.deferredFonts の後ろへ足す（無ければ候補を出すだけ。--reuse でも組み直す）
+  --draft           門（遊べるまでの予算・4G のタイトル）が赤でも書き出し、bundle.json に draft のマーカーを付ける（web-check が拒むので公開できない。
+                    緑なら旗無しと同じ物）。旗無しで赤なら、次に打つ手を出して書き出し先を消す
   --show-leaks      作業フォルダかホームのパスが jar か wasm に残って止まった時、残った字を手元の画面に出す（既定は件数と場所だけ）
   環境変数: FLIX_GE_TEAVM_DIR（TeaVM の jar のフォルダ。無ければ Maven から取る）・JAVA・FLIX_JAR・
             FGE_CHROME（確かめに使う Chrome）・FLIX_GE_WEB_CHECK_WAIT（確かめで待つ秒・既定 90）
@@ -49,7 +51,7 @@ func init() {
 type exportWebOptions struct {
 	Game, Out, Work, Engine, ID, FontAtlasDir string
 	Check, KeepWork, NoBrowserCheck, Reuse    bool
-	ShowLeaks, ApplyDeferred                  bool
+	ShowLeaks, ApplyDeferred, Draft           bool
 }
 
 // exportWebCopyExcludes はゲームの根の直下で写さない物。
@@ -119,6 +121,10 @@ func parseExportWebArgs(args []string) (exportWebOptions, error) {
 		}
 		if a == "--apply-deferred" {
 			o.ApplyDeferred = true
+			continue
+		}
+		if a == "--draft" {
+			o.Draft = true
 			continue
 		}
 		if a == "--json" {
@@ -209,6 +215,11 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
 		return 1
 	}
+	budget, err := resolveWebStartupBudget(proj.Web)
+	if err != nil {
+		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
+		return 1
+	}
 	id := o.ID
 	if id == "" {
 		id = filepath.Base(p.Game)
@@ -267,11 +278,20 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
 		return 1
 	}
-	if _, lines, err := applyWebDeferredPolicy(webDeferredEntries("", &early, deferredPlan.Paths, textureNames), deferredPolicy, &early); err != nil {
+	earlyEntries := webDeferredEntries("", &early, deferredPlan.Paths, textureNames)
+	if _, lines, err := applyWebDeferredPolicy(earlyEntries, deferredPolicy, &early); err != nil {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
 		return 1
 	} else {
 		deferredPlan.Warnings = append(deferredPlan.Warnings, lines...)
+	}
+	if rows := placeholderImageRowsWithoutWhy(earlyEntries, deferredPolicy, &early); len(rows) > 0 {
+		msg := fmt.Sprintf("web.deferredPolicy の %s が後回しの絵を placeholder にしているのに why が無い（届くまで描かずに進み、押した後に黒いコマが出る）。\n  次: 絵は待たせる（onMissing を消す）か、行に \"why\": \"<理由>\" を書く", quotedList(rows))
+		if budget.Declared {
+			fmt.Fprintf(errOut, "fge export-web: %s\n", msg)
+			return 1
+		}
+		ewLogf("★ %s（web.startupBudget を書くと止まる・0.107.0 から全部止まる）", msg)
 	}
 	for _, line := range deferredPlan.Warnings {
 		ewLogf("知らせ: %s", line)
@@ -292,6 +312,20 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		if canReuseExport(p, fingerprint) {
 			version, _ := os.ReadFile(filepath.Join(p.Out, "version.txt"))
 			fmt.Fprintf(out, "export-web: %s（版 %s・前と同じ入力なので使い回した）\n", p.Out, strings.TrimSpace(string(version)))
+			// WhyNot: 使い回す時に門を飛ばさない — 赤のまま書き出した物を緑の終わりの番号で返すと、写す手順がそのまま配る。
+			r, err := runWebCheck(p.Out, false)
+			if err != nil {
+				fmt.Fprintf(errOut, "fge export-web: 使い回す書き出しを読めない: %v\n", err)
+				return 1
+			}
+			var w strings.Builder
+			writeWebCheck(&w, r)
+			out.WriteString(w.String())
+			if !r.Gate.green() && !o.Draft && budget.Declared {
+				os.RemoveAll(p.Out)
+				fmt.Fprintf(errOut, "fge export-web: 門が赤なので書き出し先 %s を消した（作業中に開くだけなら --draft）\n", p.Out)
+				return 1
+			}
 			return 0
 		}
 		// WhyNot: 前の指紋を残したまま組まない — 途中で止まると、半端な書き出し先を前の指紋が「同じ」と言う。
@@ -496,6 +530,8 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 
 	ewLogf("⑦ 頁")
 	b.ServiceWorker = serviceWorker
+	bookedBudget := budget
+	b.StartupBudget = &bookedBudget
 	switch {
 	case enc.Brotli != "":
 		b.WasmBrotli = webWasmBrotliFile
@@ -525,8 +561,11 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 	}
 	var used *webUsedAssets
 	var missing *webMissingReport
+	checks := webBundleChecks{Title4g: "ok"}
+	var tap *webTapMeasure
 	if o.NoBrowserCheck {
 		ewLogf("⑨ ブラウザで wasm を読めるか: --no-browser-check で飛ばした")
+		checks.Title4g, checks.SkippedWhy = "skipped", "--no-browser-check"
 	} else {
 		ewLogf("⑨ ブラウザで wasm を読めるか（ヘッドレスの Chrome で ?capture=%d・タイトルの %d コマに使う素材を記録）", webLoadCheckFrames, webTitleFrames)
 		skipped, recorded, err := checkWebLoadsRecording(p.Out, webLoadCheckFrames, webTitleFrames, webLoadCheckWait())
@@ -540,18 +579,57 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		}
 		if skipped != "" {
 			ewLogf("知らせ: %s", skipped)
+			checks.Title4g, checks.SkippedWhy = "skipped", "Chrome が見つからない"
 		}
 		if skipped == "" && len(b.Deferred) > 0 {
 			ewLogf("⑨' 4G（?net=4g）のタイトルの %d コマで engine が待つか", webTitleFrames)
-			if missing, err = checkWebMissingTitle(p.Out, webTitleFrames, webLoadCheckWait()); err != nil {
-				// WhyNot: 止めない — 頁は上の確かめで開けている。4G の届き方をまねる頁だけの不具合で、配った物が止まるのとは違う。
+			missing, err = checkWebMissingTitle(p.Out, webTitleFrames, webLoadCheckWait())
+			checks.Title4g, checks.SkippedWhy = webTitle4gOf(missing, err)
+			if err != nil {
 				ewLogf("知らせ: %v", err)
 				missing = nil
 			}
 		}
+		if skipped == "" && webTapNeedsMeasure(&b) {
+			ewLogf("⑨'' 4G（?net=4g）で開いてすぐ押し、押してから最初の場面が動くまでを測る（タイトルで %s）", strings.Join(budget.startKeys(), "・"))
+			m, why, err := measureWebTapWait(p.Out, budget.startKeys(), webLoadCheckWait())
+			switch {
+			case err != nil:
+				checks.TapSkippedWhy = "測れなかった: " + err.Error()
+				ewLogf("知らせ: 押した後を測れなかった: %v", err)
+			case why != "":
+				checks.TapSkippedWhy = why
+			default:
+				tap = &m
+				checks.TapWaitSeconds, checks.TapNoRecord = tap.tapSeconds(), tap.NoRecord
+			}
+		}
+	}
+	if tap == nil && checks.TapSkippedWhy == "" && webTapNeedsMeasure(&b) {
+		checks.TapSkippedWhy = map[bool]string{true: "--no-browser-check", false: "Chrome が見つからない"}[o.NoBrowserCheck]
+	}
+	b.Checks = &checks
+	suggestion := webCandidateAdvice(p.Out, &b, proj, deferredFonts, embedPlan, used)
+	g := webGateOf(p.Out, &b, budget)
+	if checks.Title4g == "stopped" {
+		g.Red = append(g.Red, "4G（?net=4g）のタイトルで、届いていない後回しの物を待って止まった（上の知らせ）— タイトルで使う物は web.deferred から外す")
+	}
+	if suggestion != "" {
+		g.Advice = append([]string{suggestion}, g.Advice...)
+	}
+	stop := !g.green() && !o.Draft && budget.Declared
+	if !g.green() && o.Draft {
+		b.Draft, b.DraftReasons = true, g.Red
+	}
+	// WhyNot: 確かめの結果を書き出し先の外（report）に置かない — gh-pages の根や play/ に写したフォルダを web-check が Chrome 無しで読めなくなる。
+	if !stop {
+		if hash, err = writeWebPageMeta(p, b, core); err != nil {
+			fmt.Fprintf(errOut, "fge export-web: %v\n", err)
+			return 1
+		}
 	}
 	cleanupExportWork(p, o.KeepWork)
-	if fingerprint != "" {
+	if fingerprint != "" && !stop {
 		if err := os.WriteFile(exportReuseStamp(p), []byte(exportReuseLine(fingerprint, p.Out, hash)), 0o644); err != nil {
 			ewLogf("知らせ: 指紋を残せない（次の --reuse も組み直す）: %v", err)
 		}
@@ -560,7 +638,78 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 	fmt.Fprintf(out, "export-web: %s（版 %s）\n", p.Out, hash)
 	writeExportSizes(out, p.Out, b, atlases, report, strip)
 	writeWebMissingTitleTo(out, missing)
-	return writeTitleAssets(out, errOut, o, p, &b, proj, deferredFonts, embedPlan, used)
+	var tw strings.Builder
+	writeWebTapMeasure(&tw, tap, map[bool]string{true: checks.TapSkippedWhy, false: ""}[tap == nil && checks.TapSkippedWhy != ""])
+	writeWebGateSummary(&tw, g, budget, o.Draft)
+	out.WriteString(tw.String())
+	titleCode := writeTitleAssets(out, errOut, o, p, &b, proj, deferredFonts, embedPlan, used)
+	if stop {
+		// WhyNot: 赤の書き出し先を残さない — 手で gh-pages の根へ写す道は web-check を通らず、そのまま配られる。
+		os.RemoveAll(p.Out)
+		fmt.Fprintf(errOut, "fge export-web: 門が赤なので書き出し先 %s を消した。\n", p.Out)
+		for _, red := range g.Red {
+			fmt.Fprintf(errOut, "  止めた: %s\n", red)
+		}
+		var aw strings.Builder
+		writeWebGateAdvice(&aw, g.Advice, "")
+		fmt.Fprintf(errOut, "%s  作業中に開くだけなら --draft（web-check が拒む draft のマーカーが付く）\n", aw.String())
+		return 1
+	}
+	return titleCode
+}
+
+// webTitle4gOf は ?net=4g のタイトルの確かめの結果を bundle.json の checks の形にする。
+func webTitle4gOf(r *webMissingReport, err error) (string, string) {
+	switch {
+	case err != nil:
+		return "skipped", "?net=4g の頁が開けなかった"
+	case r == nil:
+		return "skipped", "頁が待ちの記録を持たない（古い fge-web.js）"
+	}
+	for _, wt := range r.Waits {
+		if wt.Kind == "stopped" {
+			return "stopped", ""
+		}
+	}
+	for _, sk := range r.Skips {
+		if sk.Why == "gaveUp" {
+			return "stopped", ""
+		}
+	}
+	return "ok", ""
+}
+
+// webCandidateAdvice は後回しの候補を貼った時の次に打つ手（記録が無いか、減らない時は空）。
+func webCandidateAdvice(out string, b *webBundle, proj exportProject, deferredFonts []string, embed webEmbedPlan, used *webUsedAssets) string {
+	if used == nil {
+		return ""
+	}
+	hidden := map[string]bool{}
+	for _, rel := range append(append([]string{}, embed.Embedded...), embed.Omitted...) {
+		hidden[rel] = true
+	}
+	s := suggestWebDeferred(out, b, proj, deferredFonts, hidden, *used, webTitleFrames)
+	if len(s.Candidates) == 0 || s.After >= s.Before {
+		return ""
+	}
+	return fmt.Sprintf("後回しの候補 %d 本（タイトルの %d コマで使わなかった）→ 起動 約 -%.1f 秒（押した直後に使う物は外してから貼る・export-web --apply-deferred）",
+		len(s.Candidates), webTitleFrames, s.Before-s.After)
+}
+
+// writeWebGateSummary は表の後ろへ門の 1 行と ★ を書く。予算を書いていないゲームが赤なら、移行の間は止めずに ★ で知らせる。
+func writeWebGateSummary(w io.Writer, g webGate, budget webStartupBudget, draft bool) {
+	fmt.Fprintf(w, "  %s\n", g.line())
+	for _, n := range g.Notes {
+		fmt.Fprintf(w, "  %s\n", n)
+	}
+	switch {
+	case g.green():
+	case draft:
+		fmt.Fprintf(w, "  ★ 門が赤のまま --draft で書き出した（draft のマーカー付き・web-check が拒むので公開できない）: %s\n", strings.Join(g.Red, " / "))
+	case !budget.Declared:
+		fmt.Fprintf(w, "  ★ %s。0.107.0 から書き出しも止まる。公開の道（web-check）は今も止めるので、手で写す前に bin/fge web-check <書き出し先>\n", strings.Join(g.Red, " / "))
+		writeWebGateAdvice(w, g.Advice, "")
+	}
 }
 
 // writeTitleAssets は最後の確かめで記録したタイトルの間の素材から後回しの候補を書き、--apply-deferred なら project.json へ足す。
@@ -1059,6 +1208,13 @@ type webBundle struct {
 	Boot *webStartupBytes `json:"boot,omitempty"`
 	// ServiceWorker は頁が sw.js を登録するか（project.json の web.serviceWorker・既定は入れる）。false なら頁は前に登録した物を外す。
 	ServiceWorker bool `json:"serviceWorker,omitempty"`
+	// StartupBudget は project.json の web.startupBudget の写し（web-check が gh-pages の根や play/ に写したフォルダで読む。why は公開される）。
+	StartupBudget *webStartupBudget `json:"startupBudget,omitempty"`
+	// Checks は書き出しの確かめ（4G のタイトル・押した後の測り）の結果。
+	Checks *webBundleChecks `json:"checks,omitempty"`
+	// Draft は --draft で門が赤のまま書き出した束か（web-check が拒む）。DraftReasons は赤の理由。
+	Draft        bool     `json:"draft,omitempty"`
+	DraftReasons []string `json:"draftReasons,omitempty"`
 }
 
 // withTouch は頁が起動の前に要る物（design の縦横比・パッド・ジェスチャー・向き）を束に足す。
@@ -1236,6 +1392,12 @@ func writeWebPage(p exportWebPaths, b webBundle, wasm, teavmCore, brotli string)
 			return "", err
 		}
 	}
+	return writeWebPageMeta(p, b, teavmCore)
+}
+
+// writeWebPageMeta は wasm を置いた後の頁の物（bundle.json・js・sw.js・sums.json・index.html・version.txt）を書き、版を返す。
+// 確かめの結果を bundle.json に足した後にも呼ぶ（wasm と .br は作り直さない）。
+func writeWebPageMeta(p exportWebPaths, b webBundle, teavmCore string) (string, error) {
 	boot := webStartupBytesOf(p.Out, &b)
 	b.Boot = &boot
 	bundle, err := marshalWebBundle(b)
@@ -1418,7 +1580,7 @@ func writeExportSizes(out *strings.Builder, dir string, b webBundle, atlases []s
 	w.Flush()
 }
 
-// writeStartupEstimate は起動まで（遊べるまで）の回線の量と 1.6 Mbps での秒数、後回しの最後が届く時刻を書く。目標を超えても止めない。
+// writeStartupEstimate は起動まで（遊べるまで）の回線の量と 1.6 Mbps での秒数、後回しの最後が届く時刻を書く（予算と比べて止めるのは門・webGateOf）。
 func writeStartupEstimate(w io.Writer, s webStartupEstimate, start webStartupSize) {
 	wire := s.Boot.WasmWire + s.Boot.AssetsWire + s.PageWire
 	fmt.Fprintf(w, "  起動まで（タッチして開始まで）%d 本・回線 %s（wasm %s・素材 %s・頁 %s）→ 4G（1.6 Mbps）で約 %.1f 秒（前置き %.1f 秒を含む）\n",
@@ -1430,10 +1592,6 @@ func writeStartupEstimate(w io.Writer, s webStartupEstimate, start webStartupSiz
 		for _, a := range s.Deferred {
 			ewLogf("  後回し %6.1f 秒目  %s", a.Seconds, a.Path)
 		}
-	}
-	if s.Seconds > webStartupTargetSeconds {
-		fmt.Fprintf(w, "  知らせ: 起動までが 4G で %.0f 秒を超える — タイトルより後で使う素材は web.deferred へ回せる（大物から: wasm %s・素材 %s）\n",
-			webStartupTargetSeconds, humanBytes(s.Boot.WasmWire), humanBytes(s.Boot.AssetsWire))
 	}
 }
 

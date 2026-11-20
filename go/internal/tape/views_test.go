@@ -149,6 +149,32 @@ func TestBuildCopiesPlayAndSetsStart(t *testing.T) {
 	}
 }
 
+func redPlayCheck(string) (bool, string) { return false, "予算を超えた" }
+
+func TestBuildSkipsPlayWhenCheckIsRed(t *testing.T) {
+	dir, web := t.TempDir(), t.TempDir()
+	writeViews(t, dir, readFile(t, otherPath), nil)
+	writeExport(t, web, "wasm")
+	if _, err := Build(Options{Dir: dir, Commit: "abc1234", Play: web, PlayCheck: redPlayCheck}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := pageTAPE(t, dir)["start"]; ok {
+		t.Fatal("門が赤の書き出しを play/ に置いた")
+	}
+}
+
+func TestBuildRemovesStalePlayWhenCheckIsRed(t *testing.T) {
+	dir := t.TempDir()
+	writeViews(t, dir, readFile(t, otherPath), nil)
+	writeExport(t, filepath.Join(dir, PlayDir), "wasm")
+	if _, err := Build(Options{Dir: dir, Commit: "abc1234", PlayCheck: redPlayCheck}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, PlayDir)); !os.IsNotExist(err) {
+		t.Fatalf("門が赤の前の play/ が残った: %v", err)
+	}
+}
+
 func TestBuildWithoutPlayHasNoStart(t *testing.T) {
 	dir := t.TempDir()
 	writeViews(t, dir, readFile(t, otherPath), nil)

@@ -14,6 +14,8 @@ type webDeferredPolicyRow struct {
 	Match     string `json:"match"`
 	OnMissing string `json:"onMissing,omitempty"`
 	Group     string `json:"group,omitempty"`
+	// Why は絵を placeholder にする理由（絵の placeholder には必須）。
+	Why string `json:"why,omitempty"`
 }
 
 type webDeferredPolicySettings struct {
@@ -170,4 +172,29 @@ func policyRowMatches(row webDeferredPolicyRow, g *webGlob, e webDeferredEntry, 
 		return false
 	}
 	return g.match(e.Path)
+}
+
+// placeholderImageRowsWithoutWhy は、後回しの絵に placeholder を当てているのに why の無い行の match（並びは行の順）。
+// WhyNot: 絵の placeholder を理由なしで通さない — 待ちが消えて門の秒は減るが、押した後に黒いコマで先へ進む（人の要件に反する）。
+func placeholderImageRowsWithoutWhy(entries []webDeferredEntry, pol webDeferredPolicy, b *webBundle) []string {
+	hit := make([]bool, len(pol.Rows))
+	for _, e := range entries {
+		kind := webDeferredKindOf(e.Path, b)
+		for r, row := range pol.Rows {
+			if !policyRowMatches(row, pol.globs[r], e, kind) {
+				continue
+			}
+			if kind == "image" && row.OnMissing == "placeholder" && strings.TrimSpace(row.Why) == "" {
+				hit[r] = true
+			}
+			break
+		}
+	}
+	var out []string
+	for r, ok := range hit {
+		if ok {
+			out = append(out, pol.Rows[r].Match)
+		}
+	}
+	return out
 }

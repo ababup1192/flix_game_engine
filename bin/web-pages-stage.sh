@@ -7,7 +7,7 @@
 #             PAGES_WT（gh-pages の worktree。既定はある物を使い、無ければ <ゲーム>/build/gh-pages）・NO_BROWSER_CHECK=1
 #   SRC を渡すと書き出さず、その書き出し済みのフォルダを置く（ゲームの側で写し方を変えた書き出し。bench/hd2d_town の explore-web-public）。
 #
-# 止める所: 音が 1 本でも残る（AUDIO=ok で通す）・gh-pages の worktree に未コミットの変更がある・置いた頁がサブフォルダの道で開けない。
+# 止める所: 音が 1 本でも残る（AUDIO=ok で通す）・公開前の門（bin/fge web-check）が赤・gh-pages の worktree に未コミットの変更がある・置いた頁がサブフォルダの道で開けない。
 # WhyNot: 音を既定で止める — 外から持ってきた BGM・効果音は配る許しが要る物が多く（docs/audio.md）、
 # 書き出しの残りの ogg が入ったまま出しかけた。自分で作った音だけのゲームは AUDIO=ok で通す。
 # WhyNot: 書き出しを build/web と分ける（build/web-pages）— 手元で曲を足して書き出した build/web の残りを、そのまま公開へ回さない。
@@ -67,6 +67,12 @@ if [ -n "$audio_files$bundle_audio" ]; then
   fi
   say "AUDIO=ok なので音を入れたまま進む"
 fi
+
+# ── 2'. 公開前の門（遊べるまでの予算・束の食い違い・パス） ──
+# WhyNot: gh-pages の worktree に触ってから確かめない — 赤の束がコミットに残る。gh-pages の worktree のコミットには hook も走らない（相対の core.hooksPath）。
+# WhyNot: 書き出した時は --browser を付けない — export-web が今流した 4G の確かめが bundle.json にあり、Chrome を 2 回起こすだけになる。
+check_flags=""; [ -z "$src" ] || check_flags="--browser"
+"$fge" web-check "$out" $check_flags || die "公開前の門で止めた（上の字を見る。予算を超えたなら次に打つ手を試すか、理由があれば project.json の web.startupBudget に why を書いて書き出し直す）"
 
 # ── 3. gh-pages の worktree ──
 wt=${PAGES_WT:-}

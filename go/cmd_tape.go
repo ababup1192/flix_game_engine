@@ -20,8 +20,20 @@ func init() {
 					fmt.Fprintln(os.Stderr, "tape:", warning)
 				}
 			}
-			return tape.Run(rest, splash, os.Stdout, os.Stderr)
+			return tape.Run(rest, splash, tapePlayCheck, os.Stdout, os.Stderr)
 		})
+}
+
+// tapePlayCheck はテープの play/ へ写すブラウザ版に掛ける web-check（緑か、赤の理由を 1 行）。
+func tapePlayCheck(dir string) (bool, string) {
+	r, err := runWebCheck(dir, false)
+	if err != nil {
+		return false, err.Error()
+	}
+	if r.Gate.green() {
+		return true, ""
+	}
+	return false, strings.Join(r.Gate.Red, " / ") + "（bin/fge web-check " + dir + " で全部）"
 }
 
 // tapeSplash はテープの頁が動画を取っている間に描く起動画面の材料を、ゲームのブラウザ版と同じ作り（buildWebSplash）で作る。

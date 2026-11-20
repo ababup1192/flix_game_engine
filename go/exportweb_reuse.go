@@ -12,7 +12,7 @@ import (
 )
 
 // exportReuseRevision は指紋の作り方の版。書き出しの中身を変える直しを入れたら上げる（前の指紋と合わなくする）。
-const exportReuseRevision = "4"
+const exportReuseRevision = "5"
 
 // exportReuseStamp は --reuse が前の書き出しの指紋を残す所（作業フォルダの中）。
 // WhyNot: 書き出し先（--out）の中に置かない — 書き出し先はそのままテープの play/ に写り、公開した頁に指紋が混ざる。
@@ -24,7 +24,7 @@ func exportReuseStamp(p exportWebPaths) string { return filepath.Join(p.Work, "e
 // WhyNot: --no-browser-check を指紋の外に置かない — 確かめずに組んだ書き出しを、確かめる呼び出しで使い回す。
 func exportInputsFingerprint(p exportWebPaths, o exportWebOptions, id string, enc webEncoders) (string, error) {
 	h := sha256.New()
-	fmt.Fprintf(h, "rev\x00%s\nid\x00%s\nversion\x00%s\nnocheck\x00%v\n", exportReuseRevision, id, p.Version, o.NoBrowserCheck)
+	fmt.Fprintf(h, "rev\x00%s\nid\x00%s\nversion\x00%s\nnocheck\x00%v\ndraft\x00%v\n", exportReuseRevision, id, p.Version, o.NoBrowserCheck, o.Draft)
 	// WhyNot: 道具の道を symlink のまま入れない — brew は版を上げても道を変えず、先の Cellar の道だけが変わる。
 	for _, tool := range []string{enc.FFmpeg, enc.Cwebp, enc.Dwebp, enc.Brotli} {
 		if real, err := filepath.EvalSymlinks(tool); err == nil {

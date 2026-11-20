@@ -215,6 +215,8 @@
     ]
   },
   "web": {
+    "// startupBudget": "ブラウザ版の起動の予算。開いてすぐ押した人が最初の場面を動かせるまでの 4G の秒（起動＋押した後の待ちのうちロゴで覆えない分）がこれを超えると、bin/fge export-web と web-check が止まる。16 秒を超えるなら why が要る（公開される）",
+    "startupBudget": { "seconds": 16, "why": "" },
     "startPrompt": "タッチして開始",
     "compress": {
       "lossyImages": [

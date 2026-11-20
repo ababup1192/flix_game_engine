@@ -276,7 +276,7 @@ const (
 	webStartupBitsPerSecond = 1.6e6
 	// webStartupPreludeSeconds は index.html → version.txt → js → bundle.json の直列の往復（測った値）。
 	webStartupPreludeSeconds = 1.5
-	// webStartupTargetSeconds を超えたら書き出しの終わりに知らせる（止めない）。
+	// webStartupTargetSeconds は web.startupBudget の既定の秒（「遊べるまで（すぐ押した時）」の上限）。
 	webStartupTargetSeconds = 16.0
 )
 

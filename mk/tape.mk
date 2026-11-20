@@ -60,7 +60,8 @@ TAPE_JOBS ?= 2
 TAPE_WEB_REUSE ?= 1
 TAPE_WEB ?= /tmp/fge-tape-web/$(notdir $(CURDIR))
 tape-play = $(if $(filter 1,$(TAPE_PLAY)),--play $(TAPE_WEB)/out)
-tape-export = "$(ENGINE)/bin/fge" export-web . --out "$(TAPE_WEB)/out" --work "$(TAPE_WEB)/work" $(if $(filter 1,$(TAPE_WEB_REUSE)),--reuse)
+# WhyNot: --draft を外さない — 遊べるまでの予算で赤の書き出しは消え、録画まで止まる。赤の束は bin/fge tape --play が web-check で見て play/ に置かない。
+tape-export = "$(ENGINE)/bin/fge" export-web . --draft --out "$(TAPE_WEB)/out" --work "$(TAPE_WEB)/work" $(if $(filter 1,$(TAPE_WEB_REUSE)),--reuse)
 tape-after-export = $(if $(strip $(TAPE_AFTER_EXPORT)),{ $(TAPE_AFTER_EXPORT); },:)
 # WhyNot: Windows（bash が無い）で jar を作り置かず並べもしない — headless-run が無く、入口ごとに flix run で組み直すので、並べると組むのが重なる。
 tape-jar = $(if $(filter 1,$(FGE_NO_BASH)),:,$(HEADLESS_RUN) --build-only)

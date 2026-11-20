@@ -121,7 +121,8 @@
           "type": { "list": { "record": {
             "match":     { "type": "text", "label": "当てる後回しの道（ゲームの根からの glob）か font:<フォントの名前>。1 つの名前に当たる行が複数あれば先の行が勝つ", "order": 1, "required": true },
             "onMissing": { "type": { "enum": ["wait", "placeholder", "skip"] }, "label": "届く前に使った時（wait = コマを出さずに待つ・placeholder = 絵とフォントを待たずに描かずか先頭のフォントで進む・skip = 音を待たずに鳴らさず進む）。書かなければ種類ごとの既定（絵は wait・フォントは placeholder・一発の音は skip・ループの音は待たない）", "order": 2 },
-            "group":     { "type": "text", "label": "押した時の待ちで一緒に待つ組の名前（同じ組の、まだ届いていない物も待つ）", "order": 3 }
+            "group":     { "type": "text", "label": "押した時の待ちで一緒に待つ組の名前（同じ組の、まだ届いていない物も待つ）", "order": 3 },
+            "why":       { "type": "text", "label": "絵を placeholder にする理由（絵の placeholder には必須。届くまで描かずに進み、押した後に黒いコマが出るため）", "order": 4 }
           } } },
           "label": "後回しの素材を届く前に使った時の扱い（deferred の道ごと）。書かなければ engine の既定のまま",
           "order": 9
@@ -137,6 +138,15 @@
           } },
           "label": "押した後のロゴ（待つ物が残る時だけ出る・同じ版では 2 回目から出ない）",
           "order": 10
+        },
+        "startupBudget": {
+          "type": { "record": {
+            "seconds":   { "type": "float", "label": "遊べるまで（開いてすぐ押した人が最初の場面を動かせるまで・4G）の上限の秒。起動の秒に、押した後の待ちのうちロゴで覆えない分を足した数", "order": 1, "min": 1, "max": 120, "default": 16 },
+            "why":       { "type": "text", "label": "16 秒を超える時の理由（必須・bundle.json に写るので公開される）", "order": 2 },
+            "startKeys": { "type": { "list": "text" }, "label": "書き出しの確かめが押した後を測る時にタイトルで押すキー（Enter・Space・矢印・英字 1 字。書かなければ Enter = タイトルの既定の行を決める）", "order": 3 }
+          } },
+          "label": "ブラウザ版の起動の予算（超えると書き出しと web-check が止まる）",
+          "order": 11
         }
       }
     }

@@ -293,7 +293,7 @@ func TestAddNoindexKeepsExistingRobots(t *testing.T) {
 
 func TestPublishHelpSaysDryRunIsDefault(t *testing.T) {
 	var out, errOut bytes.Buffer
-	code := Run([]string{"publish", "--help"}, Splash{}, &out, &errOut)
+	code := Run([]string{"publish", "--help"}, Splash{}, nil, &out, &errOut)
 	if code != 0 || !strings.Contains(out.String(), "既定は dry run") {
 		t.Fatalf("publish --help が分かる言葉で出ない（code %d）: %s", code, out.String())
 	}
@@ -322,7 +322,7 @@ func TestRunPublishWithoutYesSaysNothingPushed(t *testing.T) {
 	src := filepath.Join(t.TempDir(), "debug", "tape", "intro")
 	writeTapeDir(t, src)
 	var out, errOut bytes.Buffer
-	code := Run([]string{"publish", src, "--repo", "owner/tapes", "--remote", bare}, Splash{}, &out, &errOut)
+	code := Run([]string{"publish", src, "--repo", "owner/tapes", "--remote", bare}, Splash{}, nil, &out, &errOut)
 	t.Log(out.String())
 	if code != 0 || !strings.Contains(out.String(), "push していない") {
 		t.Fatalf("dry run の知らせが出ない（code %d）: %s%s", code, out.String(), errOut.String())

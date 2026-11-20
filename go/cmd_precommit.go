@@ -90,6 +90,9 @@ func cmdPrecommit(out, errOut *strings.Builder, rest []string, _ bool) int {
 			code, err := sprite.Run(o, e, abs, args)
 			return orAbort(e, code, err)
 		},
+		"web-check": func(o, e *strings.Builder, args []string) int {
+			return cmdWebCheck(o, e, args, false)
+		},
 		"anim": func(o, e *strings.Builder, args []string) int {
 			code, err := anim.Run(o, abs, args)
 			return orAbort(e, code, err)
