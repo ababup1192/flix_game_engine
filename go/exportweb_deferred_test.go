@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -212,8 +213,49 @@ func TestWebStartupEstimateSecondsAddPreludeToBandwidthTime(t *testing.T) {
 func TestWebStartupEstimateDeferredArrivesAfterStartup(t *testing.T) {
 	out, b := startupFixture(t)
 	s := webStartupEstimateOf(out, &b)
-	if got := s.Deferred[0].Seconds; got != s.Seconds+2.0 {
-		t.Errorf("後回しの 400 KB は起動の 2 秒後に届くはず: %.3f（起動 %.3f）", got, s.Seconds)
+	if got := s.Deferred[0].Seconds; math.Abs(got-(s.Seconds+2.0+webDeferredRoundTripSeconds)) > 1e-9 {
+		t.Errorf("後回しの 400 KB は起動の 2 秒と往復の分の後に届くはず: %.3f（起動 %.3f）", got, s.Seconds)
+	}
+}
+
+func TestSetWebArrivalSecondsCountsFromDeferredStart(t *testing.T) {
+	out, b := startupFixture(t)
+	setWebArrivalSeconds(out, &b)
+	if got := b.Deferred[0].ArrivalSeconds; got != 2.075 {
+		t.Errorf("arrivalSeconds は取り始めから 2 秒と往復の分のはず: %v", got)
+	}
+}
+
+func tapWaitFixture(t *testing.T, entries ...webDeferredEntry) (string, webBundle) {
+	t.Helper()
+	out := t.TempDir()
+	b := webBundle{Images: []string{"assets/a.webp", "assets/b.webp"}, Sounds: []webSound{{Name: "se", Path: "assets/se.ogg"}}}
+	for _, rel := range []string{"assets/a.webp", "assets/b.webp", "assets/se.ogg"} {
+		writeServed(t, out, rel, 200000)
+	}
+	b.Deferred = entries
+	return out, b
+}
+
+func TestTapWaitWithGroupUsesLastOfGroup(t *testing.T) {
+	out, b := tapWaitFixture(t, webDeferredEntry{Path: "assets/a.webp", Group: "start"}, webDeferredEntry{Path: "assets/b.webp", Group: "start"},
+		webDeferredEntry{Path: "assets/se.ogg"})
+	if got := webTapWaitOf(out, &b, []string{"start"}).Seconds; math.Abs(got-2*(1+webDeferredRoundTripSeconds)) > 1e-9 {
+		t.Errorf("group の 2 本目が届く秒のはず: %v", got)
+	}
+}
+
+func TestTapWaitWithoutGroupStartsAtFirstWaitingImage(t *testing.T) {
+	out, b := tapWaitFixture(t, webDeferredEntry{Path: "assets/se.ogg"}, webDeferredEntry{Path: "assets/a.webp"})
+	if got := webTapWaitOf(out, &b, nil).FirstPath; got != "assets/a.webp" {
+		t.Errorf("鳴らさず進む音を飛ばし、最初の絵が待つ物のはず: %q", got)
+	}
+}
+
+func TestTapWaitSkipsPlaceholderImages(t *testing.T) {
+	out, b := tapWaitFixture(t, webDeferredEntry{Path: "assets/a.webp", OnMissing: "placeholder"})
+	if got := webTapWaitOf(out, &b, nil).Count; got != 0 {
+		t.Errorf("placeholder の絵は待たないはず: %d 本", got)
 	}
 }
 

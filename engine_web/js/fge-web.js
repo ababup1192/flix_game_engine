@@ -406,7 +406,9 @@ var fgePointer = { x: 0, y: 0, dx: 0, dy: 0, wheel: 0, touch: false,
                    buttons: [false, false, false], latch: [false, false, false], frameLatch: [false, false, false] };
 function fgeKeyDown(code) { return !!(fgeKeys[code] || fgePadHeld[code] || fgeFrameLatch[code]); }
 function fgePointerDown(button) { return !!(fgePointer.buttons[button] || fgePointer.frameLatch[button]); }
+var fgeFrameNo = 0;
 function fgeBeginFrame() {
+  fgeFrameNo++;
   if (fgeUsedAssets !== null) fgeUsedAssets.frame++;
   fgeFrameLatch = fgeLatch;
   fgeLatch = Object.create(null);
@@ -885,6 +887,7 @@ function fgeWireInput() {
 var fgeUsedAssets = fgeQueryParam("usedAssets") === "1" ? { frame: 0, texture: {}, sound: {}, file: {}, early: {} } : null;
 window.fgeUsedAssets = fgeUsedAssets;
 function fgeNoteUsed(kind, joined) {
+  if (fgeNet4g && kind !== "file") fgeNoteMissingSkips(kind, joined);
   if (fgeUsedAssets === null) return;
   var seen = fgeUsedAssets[kind];
   var early = fgeUsedAssets.early;
@@ -895,6 +898,61 @@ function fgeNoteUsed(kind, joined) {
     if (kind === "file" || name in early) return;
     var e = fgeDeferred.byName.get(name);
     if (e && !fgeDeferredArrived(e)) early[name] = fgeUsedAssets.frame;
+  });
+}
+
+// ── ?net=4g: 後回しの 1 本ずつを、書き出しが見積もった 4G で届く秒（bundle.json の arrivalSeconds）まで渡さない ──
+// 秒は押した時から数える（開いてすぐ押した人が一番待つ形）。?capture= の頁は main を呼ぶ時から。
+// WhyNot: 頁の fetch を遅らせて回線をまねない — 手元のサーバーは速すぎ、Chrome の回線の絞りは Service Worker の取り物に掛からない。届いたと見せる時刻だけを見積もりに合わせる。
+var fgeNet4g = fgeQueryParam("net") === "4g";
+var fgeNetClock = { at: -1, waiters: [] };
+function fgeNetStartClock() {
+  if (fgeNetClock.at >= 0) return;
+  fgeNetClock.at = performance.now();
+  fgeNetClock.waiters.splice(0).forEach(function (f) { f(); });
+}
+function fgeNetGate(e) {
+  if (!fgeNet4g || !(e.arrivalSeconds > 0)) return null;
+  return new Promise(function (resolve) {
+    var wait = function () { setTimeout(resolve, Math.max(0, fgeNetClock.at + e.arrivalSeconds * 1000 - performance.now())); };
+    if (fgeNetClock.at >= 0) wait(); else fgeNetClock.waiters.push(wait);
+  });
+}
+// window.fgeMissingWaits: engine の待ちごとに { reason, kind（pressed = 押した所へ戻して待った・stopped = 前の World のまま止まった）, names, firstFrame, frames, seconds }。
+// window.fgeMissingSkips: 届く前に描かずに・鳴らさずに進んだ名前ごとに { name, kind（texture・sound）, why（placeholder・skip・gaveUp）, frame }（?net=4g の頁だけ）。
+// WhyNot: 待ちの記録を際限なく積まない — 長く遊ぶ頁で、控えの外の待ちを繰り返すと配列が育ち続ける。
+var fgeMissingLimit = 200;
+window.fgeMissingWaits = [];
+window.fgeMissingSkips = [];
+var fgeMissingWaitOpen = null;
+var fgeMissingSkipSeen = new Set();
+function fgeNoteMissingWait(lw) {
+  var cur = fgeMissingWaitOpen;
+  var kind = lw === null ? "" : lw.pressed ? "pressed" : "stopped";
+  if (cur !== null && (lw === null || cur.kind !== kind || cur.reason !== lw.reason)) {
+    cur.frames = fgeFrameNo - cur.firstFrame;
+    cur.seconds = Math.round(performance.now() - cur.startedAt) / 1000;
+    fgeMissingWaitOpen = cur = null;
+  }
+  if (lw === null) return;
+  if (cur === null) {
+    if (window.fgeMissingWaits.length >= fgeMissingLimit) return;
+    cur = fgeMissingWaitOpen = { reason: lw.reason, kind: kind, names: [], firstFrame: fgeFrameNo, frames: 0, seconds: 0, startedAt: performance.now() };
+    window.fgeMissingWaits.push(cur);
+  }
+  lw.names.forEach(function (n) { if (cur.names.indexOf(n) < 0) cur.names.push(n); });
+  cur.frames = fgeFrameNo - cur.firstFrame;
+}
+function fgeNoteMissingSkips(kind, joined) {
+  String(joined).split("\n").forEach(function (name) {
+    if (name.length === 0 || fgeMissingSkipSeen.has(name)) return;
+    var e = fgeDeferred.byName.get(name);
+    if (!e || fgeDeferredArrived(e)) return;
+    fgeMissingSkipSeen.add(name);
+    if (window.fgeMissingSkips.length >= fgeMissingLimit) return;
+    var onMissing = fgeDeferredPolicy(name).split("\n")[0];
+    var waits = onMissing === "wait" || (onMissing === "" && kind === "texture");
+    window.fgeMissingSkips.push({ name: name, kind: kind, why: waits ? "gaveUp" : onMissing || "skip", frame: fgeFrameNo });
   });
 }
 
@@ -1089,9 +1147,10 @@ function fgeSplashDesign(bundle, data) {
 function fgeSplashRun() {
   if (fgeSplash.running) return;
   fgeSplash.running = true;
+  // WhyNot: main の最初のコマ（fgeStarted）で描くのをやめない — 押した後のロゴと、待ちのあるコマの間は起動の画面が出たまま残る。
   var tick = function () {
-    if (!fgeSplash.running) return;
-    fgeSplashDraw();
+    if (!fgeSplash.running && !fgeAfterTap.showing && !fgeBootShown) return;
+    if (fgeAfterTap.showing) fgeAfterTapStep(); else fgeSplashDraw();
     requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
@@ -1142,19 +1201,7 @@ function fgeSplashTint(color) {
   return t;
 }
 function fgeSplashText(ctx, text, L, top, color) {
-  if (!text || !fgeSplash.font || !fgeSplash.glyphs) return;
-  var cellH = (fgeSplash.data && fgeSplash.data.cellH) || 11;
-  var width = 0;
-  for (var i = 0; i < text.length; i++) { var g0 = fgeSplash.glyphs.get(text.charCodeAt(i)); if (g0) width += g0.adv; }
-  var tint = fgeSplashTint(color);
-  var pen = 0;
-  var x0 = L.cx - width * L.scale / 2;
-  for (var j = 0; j < text.length; j++) {
-    var g = fgeSplash.glyphs.get(text.charCodeAt(j));
-    if (!g) continue;
-    if (g.w > 0) ctx.drawImage(tint, g.x, g.y, g.w, cellH, x0 + pen * L.scale, top, g.w * L.scale, cellH * L.scale);
-    pen += g.adv;
-  }
+  if (text) fgeSplashTextPartial(ctx, text, text.length, L, top, color);
 }
 function fgeSplashDraw() {
   var canvas = fgeSplash.canvas || (fgeSplash.canvas = document.getElementById("fge-splash"));
@@ -1170,20 +1217,9 @@ function fgeSplashDraw() {
   var key = [cw, ch, dw, dh, fgeSplash.phase, fgeSplash.ratio, turns, sub, !!fgeSplash.font, !!fgeSplash.logo].join("|");
   if (key === fgeSplash.drawn) return;
   fgeSplash.drawn = key;
-  if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
-  var ctx = fgeSplash.ctx || (fgeSplash.ctx = canvas.getContext("2d"));
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = fgeSplashColors.backdrop;
-  ctx.fillRect(0, 0, cw, ch);
-  if (dw <= 0 || dh <= 0) return;
-  // 黒帯の付け方は RenderFrame.calcViewport と同じ（design の比のまま描き先に収まる最大の枠）。
-  var vpW, vpH;
-  if (cw / ch > dw / dh) { vpH = ch; vpW = Math.trunc(ch * dw / dh); } else { vpW = cw; vpH = Math.trunc(cw * dh / dw); }
-  var vpX = Math.floor((cw - vpW) / 2), vpY = Math.floor((ch - vpH) / 2), k = vpW / dw;
-  ctx.setTransform(k, 0, 0, k, vpX, vpY);
-  ctx.imageSmoothingEnabled = false;
-  var L = fgeSplashLayout(dw, dh);
-  fgeSplash.layout = { L: L, k: k / dpr, x: vpX / dpr, y: vpY / dpr, dh: dh };
+  var ctx = fgeSplashBegin(canvas, cw, ch, dw, dh, dpr);
+  if (ctx === null) return;
+  var L = fgeSplash.layout.L;
   if (fgeSplash.logo && L.logoH > 0) {
     var lw = L.logoH * fgeSplash.logo.naturalWidth / fgeSplash.logo.naturalHeight;
     ctx.drawImage(fgeSplash.logo, Math.floor(L.cx - lw / 2), L.logoTop, lw, L.logoH);
@@ -1213,6 +1249,194 @@ function fgeSplashDraw() {
   }
   fgeSplashText(ctx, fgeSplash.phase, L, L.phaseTop, fgeSplashColors.dim);
   fgeSplashPlacePrompt();
+}
+// 地の色で塗り、design の座標で描けるように変換を置く（黒帯の付け方は RenderFrame.calcViewport と同じ・design の比のまま描き先に収まる最大の枠）。
+function fgeSplashBegin(canvas, cw, ch, dw, dh, dpr) {
+  if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+  var ctx = fgeSplash.ctx || (fgeSplash.ctx = canvas.getContext("2d"));
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = fgeSplashColors.backdrop;
+  ctx.fillRect(0, 0, cw, ch);
+  if (dw <= 0 || dh <= 0) return null;
+  var vpW, vpH;
+  if (cw / ch > dw / dh) { vpH = ch; vpW = Math.trunc(ch * dw / dh); } else { vpW = cw; vpH = Math.trunc(cw * dh / dw); }
+  var vpX = Math.floor((cw - vpW) / 2), vpY = Math.floor((ch - vpH) / 2), k = vpW / dw;
+  ctx.setTransform(k, 0, 0, k, vpX, vpY);
+  ctx.imageSmoothingEnabled = false;
+  fgeSplash.layout = { L: fgeSplashLayout(dw, dh), k: k / dpr, x: vpX / dpr, y: vpY / dpr, dh: dh };
+  return ctx;
+}
+
+// ── 押した後のロゴ（bundle.json の splash.afterTap）──
+// 待つ物（afterTap.waitFor の group と後から取るコード）が残る時だけ、押した直後に出す。最短 minSeconds・待つ物が届けば切り上げ・上限 maxSeconds・
+// 押すかキーで飛ばせる（押した拍から 0.3 秒は数えない）。この版で 1 度出したら（飛ばしても）localStorage に残し、2 回目からは出さない。
+// 出している間は engine が World を進めない（fgeIsSplashShowing）。
+// WhyNot: engine の View でロゴを描かない — main の起動が終わるまで描けず、押した後の起動と重ねられない。
+// WhyNot: 待つ物が残っていても、届くまでの見込みが minSeconds より短い時は出さない — 出すと最短の秒だけ押した後の待ちが延びる。
+var fgeAfterTap = { showing: false, startedAt: 0, skip: false, off: null, logo: null, sweep: null };
+function fgeIsSplashShowing() { return fgeAfterTap.showing; }
+function fgeAfterTapConfig() { return fgeSplash.data && fgeSplash.data.afterTap || null; }
+function fgeAfterTapSeenKey() { return "fge-after-tap:" + fgeGameId + ":" + fgeVersion; }
+// WhyNot: localStorage を読めない頁（sandbox の iframe）を「出した」扱いにしない — 決まりどおり、待つ物が残る時だけ出す。
+function fgeAfterTapSeen() {
+  try { return window.localStorage.getItem(fgeAfterTapSeenKey()) === "1"; } catch (e) { return false; }
+}
+function fgeAfterTapMarkSeen() {
+  try { window.localStorage.setItem(fgeAfterTapSeenKey(), "1"); } catch (e) { /* 持てない頁は次も待つ物が残る時だけ出す */ }
+}
+function fgeAfterTapGot(e) {
+  return e.state === "downloaded" || e.state === "loaded" || e.state === "released" || (e.state === "failed" && e.permanent);
+}
+function fgeAfterTapPending(cfg) {
+  var groups = cfg.waitFor || [];
+  return fgeDeferred.entries.filter(function (e) { return e.group !== "" && groups.indexOf(e.group) >= 0 && !fgeAfterTapGot(e); });
+}
+function fgeAfterTapCodeReady() { return fgeCode.state === "none" || fgeCode.state === "loaded"; }
+// 待つ物がそろうまでの見込みの秒。?net=4g は書き出しの見積もり（押した時から数える）・ふつうは残りのバイトを今までの取る速さで割る。
+function fgeAfterTapRemainingSeconds(cfg) {
+  if (!fgeAfterTapCodeReady()) return Infinity;
+  var pending = fgeAfterTapPending(cfg);
+  if (pending.length === 0) return 0;
+  if (fgeNet4g) return pending.reduce(function (a, e) { return Math.max(a, e.arrivalSeconds); }, 0);
+  var bytes = pending.reduce(function (a, e) { return a + e.bytes; }, 0);
+  var rate = fgeLoadLog.bytes / Math.max(0.001, performance.now() / 1000);
+  return rate > 0 ? bytes / rate : Infinity;
+}
+function fgeAfterTapStart() {
+  var cfg = fgeAfterTapConfig();
+  if (cfg === null || cfg.mode === "none" || fgeCaptureFrame > 0 || fgeAfterTapSeen()) return;
+  if (fgeAfterTapRemainingSeconds(cfg) < cfg.minSeconds) return;
+  fgeAfterTap.showing = true;
+  fgeAfterTap.startedAt = performance.now();
+  var events = ["keydown", "click", "pointerup", "touchend"];
+  var skip = function (e) {
+    if (e.type === "pointerup" && e.pointerType === "mouse") return;
+    if (performance.now() - fgeAfterTap.startedAt >= 300) fgeAfterTap.skip = true;
+  };
+  fgeAfterTap.off = function () { events.forEach(function (n) { window.removeEventListener(n, skip); }); };
+  events.forEach(function (n) { window.addEventListener(n, skip); });
+  if (cfg.mode === "custom" && cfg.logo) {
+    var img = new Image();
+    img.onload = function () { fgeAfterTap.logo = img; fgeAfterTap.sweep = null; };
+    img.src = fgeVersioned(fgeServedPath(cfg.logo));
+  }
+  fgeAfterTapSound(cfg);
+}
+function fgeAfterTapEnd() {
+  fgeAfterTap.showing = false;
+  if (fgeAfterTap.off) fgeAfterTap.off();
+  fgeAfterTapMarkSeen();
+  fgeSplash.drawn = "";
+  fgeSplashDraw();
+  fgeFramePresented();
+}
+function fgeAfterTapStep() {
+  var cfg = fgeAfterTapConfig();
+  var t = (performance.now() - fgeAfterTap.startedAt) / 1000;
+  var done = t >= cfg.minSeconds && fgeAfterTapCodeReady() && fgeAfterTapPending(cfg).length === 0;
+  if (fgeAfterTap.skip || done || t >= cfg.maxSeconds) { fgeAfterTapEnd(); return; }
+  fgeAfterTapDraw(t);
+}
+// 合成した短いジングル（3 つの音を上へ重ね、最後の音を 1 秒ほどで減らす）。custom の sound があればそれを 1 回鳴らす。
+// WhyNot: engine のジングルを ogg で配らない — 起動の前に取る物が 1 本増える。WebAudio で作れば 0 バイト。
+function fgeAfterTapSound(cfg) {
+  var ctx = fgeAudio.ctx;
+  if (!ctx || !fgeAudio.master) return;
+  if (cfg.mode === "custom") {
+    var bs = cfg.sound ? (fgeSplash.bundle.sounds || []).filter(function (s) { return fgeNormPath(s.path) === cfg.sound; })[0] : null;
+    var got = bs ? fgeAudio.sounds.get(bs.name) : null;
+    if (!got) return;
+    var src = ctx.createBufferSource();
+    src.buffer = got.buffer;
+    src.connect(fgeAudio.master);
+    src.start();
+    return;
+  }
+  var t0 = ctx.currentTime + 0.05;
+  [[523.25, 0.00], [659.25, 0.09], [783.99, 0.18], [1046.5, 0.30]].forEach(function (n, i) {
+    var osc = ctx.createOscillator(), gain = ctx.createGain();
+    var last = i === 3;
+    osc.type = last ? "sine" : "triangle";
+    osc.frequency.value = n[0];
+    var at = t0 + n[1], peak = last ? 0.10 : 0.07, len = last ? 1.2 : 0.9;
+    gain.gain.setValueAtTime(0, at);
+    gain.gain.linearRampToValueAtTime(peak, at + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0005, at + len);
+    osc.connect(gain);
+    gain.connect(fgeAudio.master);
+    osc.start(at);
+    osc.stop(at + len + 0.05);
+  });
+}
+function fgeEaseOut(x) { var c = Math.max(0, Math.min(1, x)); return 1 - (1 - c) * (1 - c) * (1 - c); }
+// ロゴの上を斜めに横切る薄い光: 帯の中だけを残したロゴの写し（描く側が lighter で足すので、明るい線だけが光る）。
+// WhyNot: 帯を白で塗って重ねない — ロゴの絵は暗い地まで不透明なので、地の四角ごと白く浮く。
+function fgeAfterTapSweep(logo, w, h, s) {
+  var sweep = fgeAfterTap.sweep;
+  if (sweep === null || sweep.width !== w || sweep.height !== h) {
+    sweep = fgeAfterTap.sweep = document.createElement("canvas");
+    sweep.width = w; sweep.height = h;
+  }
+  var sc = sweep.getContext("2d");
+  sc.globalCompositeOperation = "source-over";
+  sc.clearRect(0, 0, w, h);
+  sc.imageSmoothingEnabled = false;
+  sc.drawImage(logo, 0, 0, w, h);
+  sc.globalCompositeOperation = "destination-in";
+  var band = w * 0.35, x = -band + (w + 2 * band) * s;
+  var g = sc.createLinearGradient(x - band, 0, x + band, h);
+  g.addColorStop(0, "rgba(255,255,255,0)");
+  g.addColorStop(0.5, "rgba(255,255,255,0.8)");
+  g.addColorStop(1, "rgba(255,255,255,0)");
+  sc.fillStyle = g;
+  sc.fillRect(0, 0, w, h);
+  return sweep;
+}
+// ロゴが下から浮き上がり（0〜0.5 秒）、薄い光が斜めに横切り（0.45〜1.05 秒）、「Flix_GE」の字が 1 字ずつ出る（0.55 秒から）。
+function fgeAfterTapDraw(t) {
+  var canvas = fgeSplash.canvas || (fgeSplash.canvas = document.getElementById("fge-splash"));
+  if (!canvas) return;
+  var dpr = window.devicePixelRatio || 1;
+  var cw = Math.max(1, Math.round(canvas.clientWidth * dpr)), ch = Math.max(1, Math.round(canvas.clientHeight * dpr));
+  var ctx = fgeSplashBegin(canvas, cw, ch, fgeSplash.design.w, fgeSplash.design.h, dpr);
+  if (ctx === null) return;
+  var L = fgeSplash.layout.L;
+  var logo = fgeAfterTap.logo || fgeSplash.logo;
+  var rise = fgeEaseOut(t / 0.5);
+  var lift = Math.round((1 - rise) * 12 * L.scale);
+  var logoH = !logo ? 0 : fgeAfterTap.logo ? Math.min(fgeSplash.design.h * 0.3, logo.naturalHeight) : L.logoH;
+  if (logoH > 0) {
+    var lw = Math.max(1, Math.round(logoH * logo.naturalWidth / logo.naturalHeight)), lh = Math.max(1, Math.round(logoH));
+    var lx = Math.floor(L.cx - lw / 2), ly = L.logoTop + lift;
+    ctx.globalAlpha = rise;
+    ctx.drawImage(logo, lx, ly, lw, lh);
+    var s = (t - 0.45) / 0.6;
+    if (s > 0 && s < 1) {
+      ctx.globalCompositeOperation = "lighter";
+      ctx.drawImage(fgeAfterTapSweep(logo, lw, lh, s), lx, ly);
+      ctx.globalCompositeOperation = "source-over";
+    }
+  }
+  ctx.globalAlpha = 1;
+  var word = "Flix_GE";
+  var shown = t < 0.55 ? 0 : Math.min(word.length, Math.floor((t - 0.55) / 0.06) + 1);
+  if (shown > 0) fgeSplashTextPartial(ctx, word, shown, L, L.titleTop + lift, fgeSplashColors.brand);
+}
+// text の先頭 count 字だけを、全部を並べた時と同じ位置に描く（字が 1 つずつ出ても並びが動かない）。
+function fgeSplashTextPartial(ctx, text, count, L, top, color) {
+  if (!fgeSplash.font || !fgeSplash.glyphs) return;
+  var cellH = (fgeSplash.data && fgeSplash.data.cellH) || 11;
+  var width = 0;
+  for (var i = 0; i < text.length; i++) { var g0 = fgeSplash.glyphs.get(text.charCodeAt(i)); if (g0) width += g0.adv; }
+  var tint = fgeSplashTint(color);
+  var pen = 0, x0 = L.cx - width * L.scale / 2;
+  for (var j = 0; j < count; j++) {
+    var g = fgeSplash.glyphs.get(text.charCodeAt(j));
+    if (!g) continue;
+    if (g.w > 0) ctx.drawImage(tint, g.x, g.y, g.w, cellH, x0 + pen * L.scale, top, g.w * L.scale, cellH * L.scale);
+    pen += g.adv;
+  }
 }
 // 「押して始める」の文言と指のアイコンを、一行の下の空きへ置く（CSS px）。
 function fgeSplashPlacePrompt() {
@@ -1279,24 +1503,29 @@ function fgeWireFpsOverlay() {
 var fgeCode = { state: "none" };
 window.fgeCode = fgeCode;
 function fgeCodeState() { return fgeCode.state; }
-// 押した後のロゴを出している間か（ロゴを出すまでは出していない）。
-function fgeIsSplashShowing() { return false; }
 // ── engine の待ち（App のループが届いていない物を待っている所）──
 // window.fgeLoadWait = { reason, names, waited, progress, pressed } か null。
 window.fgeLoadWait = null;
 function fgeSetLoadWait(reason, joined, waited, progress, pressed) {
-  if (reason === null) { window.fgeLoadWait = null; return; }
+  if (reason === null) { window.fgeLoadWait = null; fgeNoteMissingWait(null); return; }
   var names = String(joined).split("\n").filter(function (n) { return n.length > 0; });
   window.fgeLoadWait = { reason: reason, names: names, waited: waited, progress: progress, pressed: pressed };
+  fgeNoteMissingWait(window.fgeLoadWait);
   // P3 の記録: 待ちに出た名前は「タイトルの間に早く使った名前」（待つと描かれず fgeNoteUsed の early に乗らない）。
   if (fgeUsedAssets !== null) names.forEach(function (n) { if (!(n in fgeUsedAssets.early)) fgeUsedAssets.early[n] = fgeUsedAssets.frame; });
 }
 var fgeBootShown = true;
 // WhyNot: 最初の pollEvents で起動の画面を外さない — 最初のコマから届いていない物を待つと、外した下に前の頁の色だけが出る。
+// 起動の画面は 0.25 秒で薄れさせて外す（下から最初のコマが出る）。薄れる間に押した物は下のゲームへ通す。
 function fgeFramePresented() {
-  if (!fgeBootShown || fgeSplash.running || window.fgeLoadWait !== null) return;
+  if (!fgeBootShown || fgeSplash.running || fgeAfterTap.showing || window.fgeLoadWait !== null) return;
   fgeBootShown = false;
-  fgeShow("fge-boot", false);
+  var boot = document.getElementById("fge-boot");
+  if (!boot) return;
+  boot.style.pointerEvents = "none";
+  boot.style.transition = "opacity .25s ease-out";
+  boot.style.opacity = "0";
+  setTimeout(function () { fgeShow("fge-boot", false); }, 250);
 }
 function fgeStarted() {
   fgeSplash.running = false;
@@ -1451,7 +1680,7 @@ function fgeDeferredPrepare(bundle, files, images, sounds) {
     // フォントは名前のほかに、字の描き物が持つアトラスの texture の名前（font_<名前>）でも引く（engine が描く物の名前と照らす）。
     var names = (d.names || []).concat(font ? (d.names || []).map(function (n) { return "font_" + n; }) : []);
     var e = { path: fgeNormPath(d.path), bytes: d.bytes || 0, names: names, file: false, image: false, sounds: [], font: font,
-              onMissing: d.onMissing || "", group: d.group || "",
+              onMissing: d.onMissing || "", group: d.group || "", arrivalSeconds: d.arrivalSeconds || 0,
               state: "queued", why: "", arrivedAtRelease: false, permanent: false, failedAt: 0, gen: 0, abort: null, startedAt: 0 };
     fgeDeferred.entries.push(e);
     fgeDeferred.byPath.set(e.path, e);
@@ -1614,6 +1843,8 @@ function fgeDeferredFetch(e) {
 async function fgeDeferredReceive(e, gen, signal) {
   if (e.sounds.length > 0) {
     var buffer = await fgeDecodeSound(e.sounds[0], signal);
+    var soundGate = fgeNetGate(e);
+    if (soundGate) await soundGate;
     if (e.gen !== gen) return;
     fgeWarnSoundLength(e.sounds, buffer);
     e.sounds.forEach(function (s) { fgeAddDecodedSound(s, buffer); });
@@ -1621,6 +1852,8 @@ async function fgeDeferredReceive(e, gen, signal) {
     return;
   }
   var bytes = await fgeFetchAsset(e.path, signal);
+  var gate = fgeNetGate(e);
+  if (gate) await gate;
   if (e.gen !== gen) return;
   if (e.file) fgeAssets.set(e.path, bytes);
   if (e.image) {
@@ -1918,7 +2151,9 @@ async function fgeBoot() {
       fgeAudio.ctx.resume();
       fgeAudio.started = true;
       fgeNoteTap();
+      fgeNetStartClock();
       fgeSplashTapped(e);
+      fgeAfterTapStart();
       events.forEach(function (name) { window.removeEventListener(name, go); });
       resolve();
     };
@@ -1951,6 +2186,7 @@ async function fgeBoot() {
       await new Promise(function (resolve) { setTimeout(resolve, 50); });
     }
   }
+  fgeNetStartClock();
   try {
     teavm.exports.main([]);
   } catch (e) {

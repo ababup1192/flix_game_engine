@@ -114,7 +114,21 @@ Backspace（パッドの B）で押した時の待ちをやめる（ゲームの
 - 待つ間の表示: 押した時の待ちに入ったら、押した点（キーなら画面の真ん中）から波紋を 1 回。待ちが 0.5 秒を超えたら画面の右下に小さな輪（届いた割合の弧と回る光の点・字は出さない・20 秒を超えたら回り方がゆっくりになる）。
   z は `ZBand.loadingBase`（HUD より手前・デバッグより奥）。替えるのは `App.withLoadingIndicator(App.LoadingIndicator.Custom(f))`（自分のフォントで字を出す時。z は `ZBand.loadingBase` から上に置き、後回しの絵とフォントは使わない — 使うと待ちが明けない）・出さないのは `Hidden`（波紋も出さない）。
   選んだ行を光らせるなど World の側で手応えを出すなら `App.withLoadWait` で `LoadWait#pressed`・`waited`・`progress` を写す
-- 頁の `window.fgeLoadWait` が今の待ち（理由・名前・待った秒・届いた割合・押した時の待ちか）。起動の画面は、待ちの無いコマを初めて出した時に外す
+- 頁の `window.fgeLoadWait` が今の待ち（理由・名前・待った秒・届いた割合・押した時の待ちか）。起動の画面は、待ちの無いコマを初めて出した時に 0.25 秒で薄れさせて外す
+- 待ちの記録: `window.fgeMissingWaits`（待ちごとに `pressed` = 押した所へ戻して待った・`stopped` = 前の場面のまま止まった、と名前・コマ数）。
+  4G の届き方で確かめるのは頁の `?net=4g`（[web-export.md](web-export.md) の「4G の届き方でタイトルを回す」）。`stopped` が出たら直す物（group を付ける・取る順を直す・`placeholder` にする）
+
+### 押した後のロゴ（`web.splash`）
+
+「タッチして開始」を押した後、**待つ物が残る時だけ** engine のロゴ（Flix_GE）を出す。待つ物は `web.splash.waitFor` の group（既定は `deferredPolicy` に最初に出てくる group）。
+group が無いゲームは出ない（P4 の間は後から取るコードも無いので、待つ物が無い）。届くまでの見込みが `minSeconds` より短い時も出さない（ロゴで押した後の待ちを延ばさない）。
+
+- 最短 `minSeconds`（既定 1.2 秒）・待つ物が届いたら切り上げ・上限 `maxSeconds`（既定 3 秒・3 秒より長くはできない）。押すかキーで飛ばせる（押した拍から 0.3 秒は数えない）
+- 同じ書き出しの版で 1 度出したら（飛ばしても）localStorage に残し、2 回目からは出さない。localStorage を使えない頁は待つ物が残る時だけ出す
+- 出している間、engine は World を進めず音も当てない（タイトルの BGM と演出の時計がロゴの裏で始まらない）。入力のエッジも捨てる
+- 動き: ロゴが下から浮き、光が横切り、「Flix_GE」が 1 字ずつ出る。音は WebAudio で作る短いジングル（取る物は増えない）
+- `"splash": { "afterTap": "none" }` で出さない・`"custom"` で絵と音を替える（`"logo"`・`"sound"` は束の中で後回しでない道。動きは engine の物）。
+  動きまで自分の物にしたいゲームは `none` にしてタイトルの場面で出す。`?capture=` の頁では出さない
 
 ### ループの中で区切って読む（`BackgroundLoad`・`App.withBackgroundLoad`）
 

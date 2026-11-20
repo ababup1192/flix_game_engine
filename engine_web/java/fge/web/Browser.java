@@ -18,8 +18,8 @@ public final class Browser {
     @JSBody(script = "return fgeCaptureFrame > 0;")
     public static native boolean isFrameCapture();
 
-    /** 頁の URL に ?usedAssets=1 があるか（使った素材の名前を記録する時。書き出しの確かめが開く）。 */
-    @JSBody(script = "return fgeUsedAssets !== null;")
+    /** 頁の URL に ?usedAssets=1 か ?net=4g があるか（使った素材の名前を記録する時。書き出しの確かめが開く）。 */
+    @JSBody(script = "return fgeUsedAssets !== null || fgeNet4g;")
     public static native boolean isRecordingUsedAssets();
 
     /** 使った素材を記録する（kind は texture・sound・file。names は改行で区切った名前か道）。?usedAssets=1 でなければ何もしない。 */

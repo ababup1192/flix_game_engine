@@ -449,6 +449,19 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		ewLogf("知らせ: %s", warning)
 	}
 	b.Splash = &splash
+	bundled, deferredSet := map[string]bool{}, map[string]bool{}
+	for _, rel := range b.copyList() {
+		bundled[rel] = true
+	}
+	for _, rel := range deferredPlan.Paths {
+		deferredSet[rel] = true
+	}
+	afterTap, err := resolveWebAfterTap(proj.Web, deferredPolicy, bundled, deferredSet)
+	if err != nil {
+		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
+		return 1
+	}
+	splash.AfterTap = &afterTap
 	for _, rel := range b.copyList() {
 		if err := copyFile(filepath.Join(p.Game, filepath.FromSlash(rel)), exportAssetPath(p.Out, rel)); err != nil {
 			fmt.Fprintf(errOut, "fge export-web: 素材を写せない: %v\n", err)
@@ -475,6 +488,7 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
 		return 1
 	}
+	setWebArrivalSeconds(p.Out, &b)
 
 	ewLogf("⑦ 頁")
 	b.ServiceWorker = serviceWorker
@@ -506,6 +520,7 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		}
 	}
 	var used *webUsedAssets
+	var missing *webMissingReport
 	if o.NoBrowserCheck {
 		ewLogf("⑨ ブラウザで wasm を読めるか: --no-browser-check で飛ばした")
 	} else {
@@ -522,6 +537,14 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		if skipped != "" {
 			ewLogf("知らせ: %s", skipped)
 		}
+		if skipped == "" && len(b.Deferred) > 0 {
+			ewLogf("⑨' 4G（?net=4g）のタイトルの %d コマで engine が待つか", webTitleFrames)
+			if missing, err = checkWebMissingTitle(p.Out, webTitleFrames, webLoadCheckWait()); err != nil {
+				// WhyNot: 止めない — 頁は上の確かめで開けている。4G の届き方をまねる頁だけの不具合で、配った物が止まるのとは違う。
+				ewLogf("知らせ: %v", err)
+				missing = nil
+			}
+		}
 	}
 	cleanupExportWork(p, o.KeepWork)
 	if fingerprint != "" {
@@ -532,6 +555,7 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 
 	fmt.Fprintf(out, "export-web: %s（版 %s）\n", p.Out, hash)
 	writeExportSizes(out, p.Out, b, atlases, report, strip)
+	writeWebMissingTitleTo(out, missing, &b)
 	return writeTitleAssets(out, errOut, o, p, &b, proj, deferredFonts, embedPlan, used)
 }
 
@@ -571,6 +595,24 @@ func writeTitleAssets(out, errOut *strings.Builder, o exportWebOptions, p export
 	}
 	writeAppliedDeferred(w, file, changed, s)
 	return 0
+}
+
+// writeWebMissingTitleTo は ?net=4g のタイトルの間の記録を書き出しの表の後へ書く。
+func writeWebMissingTitleTo(out *strings.Builder, r *webMissingReport, b *webBundle) {
+	policy := map[string]string{}
+	for _, e := range b.Deferred {
+		kind := webDeferredKindOf(e.Path, b)
+		for _, n := range e.Names {
+			if webWaitsWhenMissing(e, kind) {
+				policy[n] = "wait"
+				// 字の描き物が持つのはアトラスの texture の名前（font_<名前>）なので、その名前でも引く。
+				policy["font_"+n] = "wait"
+			}
+		}
+	}
+	w := bufio.NewWriter(out)
+	writeWebMissingTitle(w, r, webTitleFrames, func(name string) string { return policy[name] })
+	w.Flush()
 }
 
 // readWebEntry は web/WebMain.flix の字（読めなければ空）。
@@ -1362,7 +1404,12 @@ func writeExportSizes(out *strings.Builder, dir string, b webBundle, atlases []s
 		fmt.Fprintf(w, "  %s\n", line)
 	}
 	start := webStartupSizeOf(dir, &b)
+	var waitFor []string
+	if b.Splash != nil && b.Splash.AfterTap != nil {
+		waitFor = b.Splash.AfterTap.WaitFor
+	}
 	writeStartupEstimate(w, webStartupEstimateOf(dir, &b), start)
+	writeTapWaitEstimate(w, webTapWaitOf(dir, &b, waitFor))
 	if r.FallbackBytes > 0 {
 		fmt.Fprintf(w, "  置き場には元の wav（%s）も残す — Opus を解けないブラウザだけが取る\n", humanBytes(r.FallbackBytes))
 	}
@@ -1393,6 +1440,26 @@ func writeStartupEstimate(w io.Writer, s webStartupEstimate, start webStartupSiz
 	if s.Seconds > webStartupTargetSeconds {
 		fmt.Fprintf(w, "  知らせ: 起動までが 4G で %.0f 秒を超える — タイトルより後で使う素材は web.deferred へ回せる（大物から: wasm %s・素材 %s）\n",
 			webStartupTargetSeconds, humanBytes(s.Boot.WasmWire), humanBytes(s.Boot.AssetsWire))
+	}
+}
+
+// writeTapWaitEstimate は「開いてすぐ押した時に、押してから最初の場面が動くまで」の 4G の見積もりを書く（人の要件の 2 本目の数字）。
+func writeTapWaitEstimate(w io.Writer, t webTapWait) {
+	switch {
+	case t.Count == 0 && len(t.Group) > 0:
+		fmt.Fprintf(w, "  押してから動くまで（開いてすぐ押した時・4G）: 0 秒（group %s に後回しの物が無い）\n", strings.Join(t.Group, "・"))
+	case t.Count == 0:
+		fmt.Fprintln(w, "  押してから動くまで（開いてすぐ押した時・4G）: 0 秒（届く前に使うと engine が待つ後回しの物が無い）")
+	case len(t.Group) > 0:
+		fmt.Fprintf(w, "  押してから動くまで（開いてすぐ押した時・4G）: 約 %.1f 秒（押した後のロゴが待つ group %s の %d 本がそろうまで）\n",
+			t.Seconds, strings.Join(t.Group, "・"), t.Count)
+	default:
+		fmt.Fprintf(w, "  押してから動くまで（開いてすぐ押した時・4G）: 約 %.1f〜%.1f 秒（最初に届く待つ物 %s から、待つ物 %d 本の最後まで。最初の場面が使う物で決まる）\n",
+			t.Seconds, t.Until, t.FirstPath, t.Count)
+	}
+	if t.Count > 0 && t.Seconds > webAfterTapMaxSeconds {
+		fmt.Fprintf(w, "  知らせ: 押してから動くまでが 4G で押した後のロゴの上限 %.0f 秒を超える — すぐ要る物を web.deferred の頭へ並べ替えるか、後回しから外す（ロゴと待ちの合計が後回しにしない時の起動の秒を超えるなら後回しにしない）\n",
+			webAfterTapMaxSeconds)
 	}
 }
 

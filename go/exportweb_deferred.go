@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path"
 	"path/filepath"
@@ -26,6 +27,8 @@ type webDeferredEntry struct {
 	Names     []string `json:"names,omitempty"`
 	OnMissing string   `json:"onMissing,omitempty"`
 	Group     string   `json:"group,omitempty"`
+	// ArrivalSeconds は後回しを取り始めてから 4G（1.6 Mbps・往復 150 ms）で届くまでの見積もりの秒（頁の ?net=4g が使う）。
+	ArrivalSeconds float64 `json:"arrivalSeconds,omitempty"`
 }
 
 func resolveWebDeferred(raw json.RawMessage) ([]webGlob, error) {
@@ -351,10 +354,81 @@ func webStartupEstimateOf(out string, b *webBundle) webStartupEstimate {
 		s.PageWire += webWireSize(filepath.Join(out, name))
 	}
 	s.Seconds = webStartupPreludeSeconds + webSecondsFor(s.Boot.AssetsWire+s.Boot.WasmWire+s.PageWire)
-	at := s.Seconds
-	for _, e := range b.Deferred {
-		at += webSecondsFor(webWireSize(exportAssetPath(out, b.served(e.Path))))
-		s.Deferred = append(s.Deferred, webArrival{Path: e.Path, Seconds: at})
+	for i, after := range webDeferredArrivals(out, b) {
+		s.Deferred = append(s.Deferred, webArrival{Path: b.Deferred[i].Path, Seconds: s.Seconds + after})
 	}
 	return s
+}
+
+// webDeferredRoundTripSeconds は後回しの 1 本ごとに足す往復の秒（往復 150 ms を、頁が同時に取る 2 本で分け合う）。
+// WhyNot: 帯域だけで積まない — 小さな絵が百本を超えるゲームは、帯域より本数の往復で詰まる。
+const webDeferredRoundTripSeconds = 0.15 / 2
+
+// webDeferredArrivals は後回しの 1 本ずつが、後回しを取り始めて（タッチして開始の頃）から 4G で届くまでの秒（取る順に積む）。
+func webDeferredArrivals(out string, b *webBundle) []float64 {
+	arrivals := make([]float64, len(b.Deferred))
+	at := 0.0
+	for i, e := range b.Deferred {
+		at += webSecondsFor(webWireSize(exportAssetPath(out, b.served(e.Path)))) + webDeferredRoundTripSeconds
+		arrivals[i] = at
+	}
+	return arrivals
+}
+
+// setWebArrivalSeconds は bundle.json の後回しの項目に arrivalSeconds を書く（頁の ?net=4g がその秒まで渡さない）。
+func setWebArrivalSeconds(out string, b *webBundle) {
+	for i, at := range webDeferredArrivals(out, b) {
+		b.Deferred[i].ArrivalSeconds = math.Round(at*1000) / 1000
+	}
+}
+
+// webTapWait は「開いてすぐ押した時に、押してから最初の場面が動くまで」の 4G での見積もり。
+// Group が空でなければ押した後のロゴが待つ group の最後が届く秒（Seconds）。空なら engine が待ちうる後回し（絵・wait の物）の
+// 最初が届く秒（Seconds・少なくともこれだけ待つ）と最後が届く秒（Until・場面がどれを使うかで決まる上限）。待つ物が無ければ Count が 0。
+type webTapWait struct {
+	Group          []string
+	Seconds, Until float64
+	FirstPath      string
+	Count          int
+}
+
+// webWaitsWhenMissing は後回しの 1 本が、届く前に使われた時に engine が待つ扱いか（fge-web.js の fgeDeferredPolicy と種類の既定を合わせる）。
+func webWaitsWhenMissing(e webDeferredEntry, kind string) bool {
+	switch kind {
+	case "image":
+		return e.OnMissing != "placeholder"
+	case "font":
+		return e.OnMissing == "wait" || (e.OnMissing == "" && e.Group != "")
+	case "sound":
+		return e.OnMissing == "wait"
+	}
+	return false
+}
+
+func webTapWaitOf(out string, b *webBundle, waitFor []string) webTapWait {
+	arrivals := webDeferredArrivals(out, b)
+	want := map[string]bool{}
+	for _, g := range waitFor {
+		want[g] = true
+	}
+	w := webTapWait{Group: waitFor}
+	for i, e := range b.Deferred {
+		if len(want) > 0 {
+			if want[e.Group] {
+				w.Count++
+				w.Seconds = arrivals[i]
+				w.Until = arrivals[i]
+			}
+			continue
+		}
+		if !webWaitsWhenMissing(e, webDeferredKindOf(e.Path, b)) {
+			continue
+		}
+		if w.Count == 0 {
+			w.Seconds, w.FirstPath = arrivals[i], e.Path
+		}
+		w.Count++
+		w.Until = arrivals[i]
+	}
+	return w
 }

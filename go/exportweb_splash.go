@@ -9,6 +9,7 @@ import (
 	"image/color"
 	"image/png"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -33,6 +34,7 @@ type webSplash struct {
 	LineGap        float64               `json:"lineGap,omitempty"`
 	CellH          int                   `json:"cellH,omitempty"`
 	PortraitDesign *webPortraitDesignOut `json:"portraitDesign,omitempty"`
+	AfterTap       *webAfterTap          `json:"afterTap,omitempty"`
 }
 
 // webPortraitDesignOut は web.portraitDesign を頁が縦の design を決められる形にした物（maxHeight は既定を埋めてある）。
@@ -213,4 +215,115 @@ func buildWebSplash(engine, prompt string, portrait *webPortraitDesignOut) (webS
 	s.Font, s.Logo, s.Glyphs = pngDataURL(font), pngDataURL(logo), d.Glyphs
 	s.FontSize, s.Ascent, s.Descent, s.LineGap, s.CellH = d.FontSize, d.Ascent, d.Descent, d.Gap, d.CellH
 	return s, ""
+}
+
+// 押した後のロゴ（project.json の web.splash）の既定と上限。
+const (
+	webAfterTapMinSeconds = 1.2
+	// webAfterTapMaxSeconds は押した後のロゴの上限（人の要件: ロゴで押した後の待ちを延ばさない）。
+	webAfterTapMaxSeconds = 3.0
+)
+
+// webAfterTap は bundle.json の splash.afterTap。頁が「タッチして開始」を押した後、待つ物が残る時だけ出すロゴの設定。
+// Logo と Sound は custom の時の束の中の道（空なら engine のロゴ・合成のジングル）。WaitFor は待つ group。
+type webAfterTap struct {
+	Mode       string   `json:"mode"`
+	Logo       string   `json:"logo,omitempty"`
+	Sound      string   `json:"sound,omitempty"`
+	MinSeconds float64  `json:"minSeconds"`
+	MaxSeconds float64  `json:"maxSeconds"`
+	WaitFor    []string `json:"waitFor,omitempty"`
+}
+
+type webAfterTapSettings struct {
+	AfterTap   string    `json:"afterTap"`
+	Logo       string    `json:"logo"`
+	Sound      string    `json:"sound"`
+	MinSeconds *float64  `json:"minSeconds"`
+	MaxSeconds *float64  `json:"maxSeconds"`
+	WaitFor    *[]string `json:"waitFor"`
+}
+
+// resolveWebAfterTap は web.splash を読み、bundle.json の splash.afterTap にする。
+// waitFor の既定は deferredPolicy に最初に出てくる group（group が無ければ空 = 待つ物はコードだけ）。
+// bundled は束に入る道（custom の絵と音がそこに無ければ誤り）、deferred は後回しの道（押した直後に要るので誤り）。
+func resolveWebAfterTap(raw json.RawMessage, pol webDeferredPolicy, bundled, deferred map[string]bool) (webAfterTap, error) {
+	out := webAfterTap{Mode: "engine", MinSeconds: webAfterTapMinSeconds, MaxSeconds: webAfterTapMaxSeconds}
+	groups := map[string]bool{}
+	for _, row := range pol.Rows {
+		if row.Group == "" {
+			continue
+		}
+		if len(groups) == 0 {
+			out.WaitFor = []string{row.Group}
+		}
+		groups[row.Group] = true
+	}
+	var web struct {
+		Splash json.RawMessage `json:"splash"`
+	}
+	if len(raw) > 0 && string(raw) != "null" {
+		if err := json.Unmarshal(raw, &web); err != nil {
+			return out, fmt.Errorf("project.json の web を読めない: %v", err)
+		}
+	}
+	if len(web.Splash) == 0 || string(web.Splash) == "null" {
+		return out, nil
+	}
+	var s webAfterTapSettings
+	dec := json.NewDecoder(bytes.NewReader(web.Splash))
+	// WhyNot: 欄の書き違いを黙って通さない — maxSecond のような字は効かないまま残り、気付けない。
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&s); err != nil {
+		return out, fmt.Errorf("project.json の web.splash を読めない: %v\n  次: { \"afterTap\": \"engine|none|custom\", \"logo\", \"sound\", \"minSeconds\", \"maxSeconds\", \"waitFor\" } の形にする", err)
+	}
+	switch s.AfterTap {
+	case "", "engine":
+	case "none", "custom":
+		out.Mode = s.AfterTap
+	default:
+		return out, fmt.Errorf("project.json の web.splash.afterTap %q を知らない。\n  次: engine（既定）・none（出さない）・custom（絵と音を替える）のどれかにする", s.AfterTap)
+	}
+	if s.MinSeconds != nil {
+		out.MinSeconds = *s.MinSeconds
+	}
+	if s.MaxSeconds != nil {
+		out.MaxSeconds = *s.MaxSeconds
+	}
+	if out.MinSeconds < 0 || out.MaxSeconds < out.MinSeconds || out.MaxSeconds > webAfterTapMaxSeconds {
+		return out, fmt.Errorf("project.json の web.splash の minSeconds %.2f・maxSeconds %.2f が合わない。\n  次: 0 ≤ minSeconds ≤ maxSeconds ≤ %.0f にする（ロゴで押した後の待ちを延ばさない上限）", out.MinSeconds, out.MaxSeconds, webAfterTapMaxSeconds)
+	}
+	if s.WaitFor != nil {
+		out.WaitFor = nil
+		for _, g := range *s.WaitFor {
+			if !groups[g] {
+				return out, fmt.Errorf("project.json の web.splash.waitFor の %q は web.deferredPolicy のどの行の group にも無い。\n  次: deferredPolicy の行に \"group\": %q を書くか、waitFor から消す", g, g)
+			}
+			out.WaitFor = append(out.WaitFor, g)
+		}
+	}
+	for _, item := range []struct{ key, rel string }{{"logo", s.Logo}, {"sound", s.Sound}} {
+		if item.rel == "" {
+			continue
+		}
+		if out.Mode != "custom" {
+			return out, fmt.Errorf("project.json の web.splash.%s は afterTap が custom の時だけ使う（今は %s）。\n  次: afterTap を \"custom\" にするか %s を消す", item.key, out.Mode, item.key)
+		}
+		rel := pathpkg.Clean(strings.ReplaceAll(item.rel, "\\", "/"))
+		if !bundled[rel] {
+			return out, fmt.Errorf("project.json の web.splash.%s %q が束に無い。\n  次: assets/ の下に置き、project.json の textures か sounds に宣言する", item.key, item.rel)
+		}
+		if deferred[rel] {
+			return out, fmt.Errorf("project.json の web.splash.%s %q が web.deferred に当たる（押した直後に出すので起動の前に要る）。\n  次: web.deferred から外す", item.key, item.rel)
+		}
+		if item.key == "logo" {
+			out.Logo = rel
+		} else {
+			out.Sound = rel
+		}
+	}
+	if out.Mode == "custom" && out.Logo == "" {
+		return out, fmt.Errorf("project.json の web.splash.afterTap が custom なのに logo が無い。\n  次: logo に束の中の絵の道を書く（絵を替えないなら afterTap を engine に）")
+	}
+	return out, nil
 }
