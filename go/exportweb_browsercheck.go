@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -31,25 +32,45 @@ func webLoadCheckWait() time.Duration {
 // WhyNot: TeaVM が穴 0 件で訳し終えた事を合格にしない — JSO の物を Object を受ける所へ渡す形は、TeaVM は通るのに
 // ブラウザが wasm を読む所でモジュールごと落とし、配った先で真っ白になる。
 func checkWebLoads(out string, frames int, wait time.Duration) (skipped string, err error) {
+	skipped, _, err = checkWebLoadsRecording(out, frames, 0, wait)
+	return skipped, err
+}
+
+// checkWebLoadsRecording は checkWebLoads と同じ確かめをし、titleFrames が正なら既定の頁を `?capture=<titleFrames>&usedAssets=1` で開いて、
+// その間に使った素材の記録（window.fgeUsedAssets）も返す。頁が記録を持たない（古い engine の fge-web.js）・確かめを飛ばした時の used は nil。
+func checkWebLoadsRecording(out string, frames, titleFrames int, wait time.Duration) (skipped string, used *webUsedAssets, err error) {
 	if _, err := cdp.FindChrome(); err != nil {
-		return "Chrome が見つからないので、ブラウザで wasm を読めるかは確かめていない（" + cdp.EnvChrome + " で Chrome を指せる）", nil
+		return "Chrome が見つからないので、ブラウザで wasm を読めるかは確かめていない（" + cdp.EnvChrome + " で Chrome を指せる）", nil, nil
 	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		return "", fmt.Errorf("確かめ用のサーバーを開けない: %v", err)
+		return "", nil, fmt.Errorf("確かめ用のサーバーを開けない: %v", err)
 	}
 	srv := &http.Server{Handler: http.FileServer(http.Dir(out)), ReadHeaderTimeout: 10 * time.Second}
 	go srv.Serve(ln)
 	defer srv.Close()
 	// WhyNot: 既定の頁（WebGPU）だけを開かない — WebGL2 は WebGPU を使えないブラウザで頼る道で、書き出しの時に通さないと配った先で初めて落ちる。
+	// WhyNot: WebGL2 の頁でも記録しない — 記録は描き手より外（WebLayer）で取るので、同じ物がもう 1 回取れるだけで時間が延びる。
 	for _, query := range []string{"", "&backend=webgl2"} {
-		url := fmt.Sprintf("http://%s/index.html?capture=%d%s", ln.Addr().String(), frames, query)
-		if _, err := cdp.Capture(cdp.Options{URL: url, Wait: wait}); err != nil {
-			if query == "" {
-				return "", err
+		n, opt := frames, cdp.Options{Wait: wait}
+		if query == "" && titleFrames > 0 {
+			n, query, opt.Eval = max(frames, titleFrames), "&usedAssets=1", "window.fgeUsedAssets || null"
+		}
+		opt.URL = fmt.Sprintf("http://%s/index.html?capture=%d%s", ln.Addr().String(), n, query)
+		res, err := cdp.Capture(opt)
+		if err != nil {
+			if query != "&backend=webgl2" {
+				return "", nil, err
 			}
-			return "", fmt.Errorf("?backend=webgl2 の頁: %w", err)
+			return "", nil, fmt.Errorf("?backend=webgl2 の頁: %w", err)
+		}
+		if opt.Eval != "" && len(res.Eval) > 0 && string(res.Eval) != "null" {
+			var u webUsedAssets
+			if err := json.Unmarshal(res.Eval, &u); err != nil {
+				return "", nil, fmt.Errorf("頁の window.fgeUsedAssets の形が違う: %v", err)
+			}
+			used = &u
 		}
 	}
-	return "", nil
+	return "", used, nil
 }

@@ -79,3 +79,25 @@ func TestCheckWebLoadsFailsWhenOnlyWebGl2PageStops(t *testing.T) {
 		t.Fatalf("?backend=webgl2 の頁だけで止まる時も止まるはず: %v", err)
 	}
 }
+
+func TestCheckWebLoadsRecordingReadsUsedAssetsFromTitlePage(t *testing.T) {
+	skipWithoutChrome(t)
+	dir := writeWebCheckPage(t, "[0,97,115,109,1,0,0,0]")
+	page := strings.Replace(webCheckPage, "WASM", "[0,97,115,109,1,0,0,0]", 1)
+	page = strings.Replace(page, "<script>", `<script>if (new URLSearchParams(location.search).get("usedAssets") === "1") window.fgeUsedAssets = {frame: 5, texture: {title: 1}, sound: {}, file: {}, early: {}};`, 1)
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte(page), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, used, err := checkWebLoadsRecording(dir, 3, 5, 20*time.Second)
+	if err != nil || used == nil || used.Texture["title"] != 1 {
+		t.Fatalf("?usedAssets=1 の頁の記録を受け取るはず: used=%+v err=%v", used, err)
+	}
+}
+
+func TestCheckWebLoadsRecordingReturnsNilWhenPageHasNoRecord(t *testing.T) {
+	skipWithoutChrome(t)
+	dir := writeWebCheckPage(t, "[0,97,115,109,1,0,0,0]")
+	if _, used, err := checkWebLoadsRecording(dir, 3, 5, 20*time.Second); err != nil || used != nil {
+		t.Fatalf("記録を持たない頁（古い engine）の used は nil のはず: used=%+v err=%v", used, err)
+	}
+}
