@@ -2,7 +2,7 @@
 // 写真・時間帯・音量の名前・粒の名前は Doc（novel.backdrops.json・novel.mixer.json・novel.effects.json）から引き、期待値は Doc から導く。
 mod TestAudio {
 
-    use fge::{Clock, Curve, DocJson, JsonCodec, Render, Yarn}
+    use fge::{Clock, Curve, DocJson, GameEngine, JsonCodec, ProjectLoader, Render, Yarn}
     use Commands.Out
     use TestKit.{advance, begun, stepBy}
 
@@ -241,6 +241,25 @@ mod TestAudio {
         let header = List.flatten(tag("RIFF") :: le(4036) :: tag("WAVE") :: tag("fmt ") :: le(16) :: le(65537) :: le(8000) :: le(8000) :: le(65537) ::
                                   tag("data") :: le(4000) :: Nil);
         Assert.assertEq(expected = Some(0.5), SoundLength.wavSeconds(List.toVector(List.append(header, List.repeat(4000, 0i8)))))
+
+    @Test
+    def testRuntimeSoundLengthTakesThePlatformAnswerForUnloopedSounds(): Unit \ {Assert, Fs.FileRead} =
+        // 実機の長さは機種の答え（audioSeconds）。鳴り続ける音と、機種が 0 と答えた音（project.json の sounds の頭の鳴り続けない音）は入れない。
+        let unlooped = ProjectLoader.loadProject(".") |> Result.toOption |> Option.map(p -> p#config#soundManifest) |> Option.getWithDefault(Nil)
+            |> List.filter(s -> not s#looping) |> List.map(s -> s#name);
+        let silent = List.head(unlooped) |> Option.getWithDefault("");
+        let got = run { SoundLength.load() } with handler GameEngine.Audio {
+            def playAudio(_, k) = k(())
+            def stopAudio(_, k) = k(())
+            def setVolume(_, _, k) = k(())
+            def setPitch(_, _, k) = k(())
+            def setLooping(_, _, k) = k(())
+            def setMasterVolume(_, k) = k(())
+            def reloadAudio(_, _, k) = k(())
+            def setLowpass(_, _, k) = k(())
+            def audioSeconds(name, k) = k(if (name == silent) 0.0 else 1.5)
+        };
+        Assert.assertEq(expected = List.drop(1, unlooped) |> List.map(n -> (n, 1.5)) |> List.toMap, got)
 
     @Test
     def testSeVolumeIsAnError(): Unit \ {Assert, Fs.FileRead} =

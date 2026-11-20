@@ -338,6 +338,8 @@ pub mod GameEngine {
         def setLowpass(name: String, gainHF: Float64): Unit
         /// 指定した名前のサウンドの長さ（秒）。知らない名前は 0.0。
         /// AudioMixer が「効果音が鳴っている間」を知るために使う（ダッキングの長さ）。
+        /// 起動時の描く元づくり（App.loadAndLaunch に渡す関数・ブラウザ版の withProject の内側）からも呼べる。
+        /// デスクトップは読み込んだバッファの長さ、ブラウザは解いた音の長さで、届く前の後回しの音は書き出しが bundle.json に書いた元の長さ。
         def audioSeconds(name: String): Float64
     }
 

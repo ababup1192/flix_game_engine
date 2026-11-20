@@ -388,7 +388,7 @@ pub mod WebLayer {
     /// GameEngine.Audio を fge.web.WebAudio で受ける。知らない名前は名前ごとに 1 度だけ言って何もしない。
     /// 後回しでまだ届いていない音は鳴らさず、鳴らし方（playAudio・setLooping・setVolume・setPitch）を覚えて stopAudio で忘れる。
     /// 届いた時にまだ覚えていて、ループする音なら最後の音量・高さで鳴らす（playArrivedSounds）。取れなかった後回しの音は名前ごとに 1 度言う。
-    /// audioSeconds は届く前の音に 0 を返す（使う側は AssetDownloads#missing で届いていない名前を見る）。
+    /// audioSeconds は届く前の音（後回し・解けなかった音）にも書き出しが bundle.json に書いた元の長さを返す（WAV でない音は 0）。
     // WhyNot: setLowpass で高い音を削らない — 今は OpenAL の EFX と同じ聞こえ方にする対応の式が決まっていない（素通しのまま）。
     def handleAudio(st: State, f: Unit -> a \ ef): a \ (ef - GameEngine.Audio) + IO =
         let warnOnce = (name: String, message: String) ->

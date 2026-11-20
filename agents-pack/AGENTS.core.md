@@ -138,6 +138,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 演出の長さ・待ち・溜めの目安 | engine の `docs/pacing.md` |
 | 音の名前を型で止める（一発と鳴り続ける音を取り違えない） | `Sfx[s]` / `Loop[s]` + `Sfx.collect` / `Loop.collect` |
 | 曲の頭を 1 回だけ鳴らし本編をループ | `SfxSynth.renderLooped` + `App.withSustained` |
+| 音の長さ（秒）をゲームで使う（効果音が鳴り終わるまで次へ進まない） | `GameEngine.Audio.audioSeconds(name)`（描く元を組む所からも呼べる・ブラウザ版では音が Fs の表に無いので WAV を `Fs.FileRead.readBytes` で読む形は必ず失敗する・engine の `docs/audio.md` の「音の長さをゲームのコードで使う」） |
 | 効果音・曲を作る・直す（音割れも検査） | 台本 `*.snd.star` か `*.sndsrc.json` を `bin/fge snd build` |
 | 会話を人が書く・台詞と選択肢を順に出す・会話の中で数えて分ける | `*.yarn`（`<<declare>>` `<<set>>` `<<if>>` `{$x}` `visited`）を `bin/fge yarn build` → `Yarn.loadOr` + `YarnRunner.start` / `step`・値は `YarnRunner.valueOf` / `startWith` / `YarnStorage`・選べない選択肢は `DialogueOption` の `available` |
 | 会話の話し手・変数の表示名・最初のノード・描き出しの場面のノードを Doc に置き、台本の名前と build で照らす（名前を足すのに Flix を走らせない） | vocab.json の版 2 の `from`・`bin/fge yarn check <Doc>`（engine の `docs/novel.md` の「名前を Doc に置いて build で照らす」） |

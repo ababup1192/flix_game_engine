@@ -4,7 +4,7 @@
 mod Res {
     use fge::{AudioMixer, Yarn}
 
-    /// 描く元の束（Main・描き出し・テストが Controls.loadRes で同じ形に読む）。
+    /// 描く元の束（実機は Controls.loadRuntimeRes・描き出しとテストは Controls.loadRes / loadResIn で同じ形に読む）。
     /// story = 字と名前・kind = 遊びの数・theme = 色・backdrops = 背景の写真・credits = クレジットの行・
     /// keys = キーの割り当て・smallScreen = 小さい画面（スマホ）の時の字と押せる物の大きさ・
     /// portrait = 縦の画面（縦の design で起動した時）の字と押せる物の大きさ・cast = 立ち絵と小物（位置・一覧・出入りの秒）・shots = 描き出しの場面・mixer = 音のバス・

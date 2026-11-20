@@ -14,7 +14,7 @@ def main(): Unit \ IO =
             // Doc を読んで App を組む所ごと渡す（flow を記録する make debug の起動でも、ここで読んだ中身を使い Doc を読み直さない）。
             App.loadAndLaunch(() -> {
                 let downloads = LoadProgress.downloads();
-                let loaded = Res.withMissing(downloads#missing(), Controls.loadRes());
+                let loaded = Res.withMissing(downloads#missing(), Controls.loadRuntimeRes());
                 let res = Res.withGame(GameBoot.loadAssets(loaded#game), loaded);
                 Game.appFrom(res, World.opened(Saves.load(res#kind), localEpochSeconds()))
                     |> Game.withAssetLoading(downloads)

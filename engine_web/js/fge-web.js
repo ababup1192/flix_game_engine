@@ -937,7 +937,7 @@ function fgeHoldImage(path, done) {
 
 // ── 音 ──
 var fgeAudio = {
-  ctx: null, master: null, sounds: new Map(), wasRunning: false, started: false,
+  ctx: null, master: null, sounds: new Map(), manifestSeconds: new Map(), wasRunning: false, started: false,
   has: function (name) { return this.sounds.has(name); },
   play: function (name) {
     var s = this.sounds.get(name);
@@ -977,7 +977,8 @@ var fgeAudio = {
   },
   isLooping: function (name) { var s = this.sounds.get(name); return !!(s && s.loop); },
   setMaster: function (g) { if (this.master) this.master.gain.value = Math.max(0, Math.min(1, g)); },
-  seconds: function (name) { var s = this.sounds.get(name); return s ? s.buffer.duration : 0; },
+  // WhyNot: 届く前（後回し・解けなかった音）に 0 を返さない — 描く元を組む時（押した直後）に長さを読むゲームが、待つ秒を失う。元の長さは書き出しが bundle.json に書いてある。
+  seconds: function (name) { var s = this.sounds.get(name); return s ? s.buffer.duration : (this.manifestSeconds.get(name) || 0); },
   // WhyNot: タブが裏の間も鳴らし続けない — ゲームのループは止まるのに、ループの曲だけ先へ進む。
   onVisibility: function () {
     if (!this.ctx) return;
@@ -1766,6 +1767,7 @@ async function fgeBoot() {
   var allFiles = bundle.files || [];
   var allSounds = bundle.sounds || [];
   var allImages = bundle.images || [];
+  allSounds.forEach(function (s) { if (s.seconds > 0) fgeAudio.manifestSeconds.set(s.name, s.seconds); });
   fgeDeferredPrepare(bundle, allFiles, allImages, allSounds);
   fgeWireDeferred();
   var files = allFiles.filter(function (path) { return !fgeIsDeferredPath(path); });

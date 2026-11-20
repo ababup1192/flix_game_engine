@@ -4,7 +4,7 @@
 // 本文を送るのはキーの決定と、Gesture が離した時に決めた押し（タップ・ドラッグ・左の外の払い）と縦の払いのキー。押している間と長押しは送らない。
 // ゲート（払い・タップで選ぶ選択肢。Gate）は Gesture が離した時の払い・タップと、払いのキー（↑↓←→ / WASD・ブラウザ版の縦の払い）で選ぶ。
 mod Controls {
-    use fge::{App, AudioMixer, AudioMixerDoc, Display, DocTable, Emit, LoadProgress, Log, Rect2, Resources, Yarn}
+    use fge::{App, AudioMixer, AudioMixerDoc, Display, DocTable, Emit, GameEngine, LoadProgress, Log, Rect2, Resources, Yarn}
     use fge::GameEngine.Key
 
     // ── 毎フレームの系 ──
@@ -484,13 +484,20 @@ mod Controls {
 
     pub def mixerPath(): String = "assets/novel.mixer.json"
 
-    /// 起動時と描き出しが読む描く元（Doc とシナリオ。ゲームの直下から）。
+    /// ウィンドウなし（描き出し・flow）が読む描く元（Doc とシナリオ。ゲームの直下から。効果音の長さは WAV の頭から）。
     pub def loadRes(): Res.Res \ Fs.FileRead = loadResIn("")
+
+    /// 実機（デスクトップ・ブラウザ）の起動時に読む描く元。効果音の長さは機種に聞く（ブラウザ版でも wait=true が待つ）。
+    pub def loadRuntimeRes(): Res.Res \ {Fs.FileRead, GameEngine.Audio} = loadResWith("", SoundLength.load())
 
     /// root のフォルダを直下と見て、Doc とシナリオと project.json の音を読んだ描く元（root = "" でゲームの直下）。
     /// テストは作例の写し（test/fixtures/sample）を読み、ゲームの台本と Doc を書き換えても同じ物を見る。
     /// GameRes はゲームの直下から読む（ゲームの Doc の置き場はゲームが決めるので、GameRes.load は root を取らない）。
     pub def loadResIn(root: String): Res.Res \ Fs.FileRead =
+        loadResWith(root, SoundLength.loadIn(if (root == "") "." else root))
+
+    /// loadResIn と同じ描く元を、効果音の長さ seconds（鳴り続けない音の名前 → 秒）で組む。
+    def loadResWith(root: String, seconds: Map[String, Float64]): Res.Res \ Fs.FileRead =
         let at = path -> if (root == "") path else "${root}/${path}";
         let dialogue = Yarn.loadOr(Yarn.empty(), at(Talk.dialoguePath()));
         { story = StoryDoc.load(at(StoryDoc.path())),
@@ -505,7 +512,7 @@ mod Controls {
           shots = ShotsDoc.load(at(ShotsDoc.path())),
           mixer = AudioMixerDoc.load(AudioMixer.defaults(), at(mixerPath())),
           mixerExtras = MixerDoc.load(at(mixerPath())),
-          soundSeconds = soundSecondsOf(SoundLength.loadIn(if (root == "") "." else root), dialogue),
+          soundSeconds = soundSecondsOf(seconds, dialogue),
           effects = EffectsDoc.load(at(EffectsDoc.path())),
           prompts = PromptsDoc.load(at(PromptsDoc.path())),
           dialogue = dialogue,
@@ -518,9 +525,6 @@ mod Controls {
           onLine = Commands.lineHookOf(GameCommands.onLine) }
 
     /// 鳴り続けない音の長さ（秒）。シナリオが wait=true で鳴らす効果音のうち、長さが読めない物を 1 行ずつ知らせる（読み込みのたびに 1 回）。
-    def loadSoundSeconds(dialogue: Yarn.Program): Map[String, Float64] \ Fs.FileRead =
-        soundSecondsOf(SoundLength.load(), dialogue)
-
     def soundSecondsOf(seconds: Map[String, Float64], dialogue: Yarn.Program): Map[String, Float64] =
         let unread = Commands.waitSoundsOf(dialogue) |> List.filter(name -> not Map.memberOf(name, seconds));
         Log.warnAllThen(unread |> List.map(name -> "[stage] <<audio se ${name} wait=true>> の長さが読めない（project.json の sounds の WAV が読めない）ので、この音では待たない"), seconds)
@@ -537,7 +541,8 @@ mod Controls {
         Resources.reloadRow("story", StoryDoc.path(), res -> Res.withStory(StoryDoc.load(StoryDoc.path()), res), unchanged)
             :: Resources.reloadUnnamedRow(Talk.dialoguePath(), res -> {
                    let dialogue = Talk.load();
-                   Res.withDialogue(dialogue, res) |> Res.withSoundSeconds(loadSoundSeconds(dialogue))
+                   // WhyNot: 音の長さを読み直さない — 読み直しの関数は GameEngine.Audio を持たず、長さはシナリオでなく音の側で決まる。
+                   Res.withDialogue(dialogue, res) |> Res.withSoundSeconds(soundSecondsOf(res#soundSeconds, dialogue))
                }, WorldRead.settleDialogue)
             :: (Resources.reloadRow("kind", KindDoc.path(), res -> Res.withKind(KindDoc.load(KindDoc.path()), res), unchanged)
                 |> DocTable.withActiveWhen(Resources.read((_, w) -> World.isReading(w))))

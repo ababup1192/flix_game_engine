@@ -102,6 +102,8 @@ design の大きさの画面に描くつもりの絵（ぼかした背景だけ�
 
 減らすのは、タイトルより後で使う絵・音を `web.deferred` へ、タイトルで使わないフォントを `web.deferredFonts` へ回すのが先（アトラスは `fontAtlasScale` の既定 0.5 で縮めてある）。頁は進みの棒をこの量の重みで動かし、wasm まで読み終えてから「タッチして開始」を出す。
 
+音は Fs の表（`Fs.FileRead.readBytes`）に入らない。音の長さは `GameEngine.Audio.audioSeconds` で聞く（届く前の後回しの音も `bundle.json` の `sounds[].seconds` で答える。[audio.md](audio.md) の「音の長さをゲームのコードで使う」）。
+
 ## シナリオを開発者ツールから読まれにくくする（`web.embed`・`web.omit`）
 
 - `web.embed: [glob]`（例 `assets/talk/dialogue.json`）を `bin/fge export-web` が圧縮・符号にして wasm へ埋め込み、ばらのファイルとしては配らない（読む側の `Yarn.loadOr` などは変えない）

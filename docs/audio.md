@@ -223,6 +223,25 @@ App.make(initialWorld)
 エラーは出ず、音だけ鳴らない・別の音が鳴る。**論理名 = WAV ファイル名の茎 = 生成名**の
 1 本にそろえ、音を足した・改名したら `bin/fge audio` で突き合わせる。
 
+### 音の長さをゲームのコードで使う（`GameEngine.Audio.audioSeconds`）
+
+「効果音が鳴り終わるまで次へ進まない」のように音の長さ（秒）が要る時は、WAV を `Fs.FileRead.readBytes` で
+読まず `GameEngine.Audio.audioSeconds(name)` を呼ぶ。**ブラウザ版の音は WebAudio へ直に渡り、Fs の表に入らない**ので、
+WAV を読む形はブラウザで必ず失敗する（デスクトップでは動くので気づきにくい）。
+
+| どこで | 答え |
+|---|---|
+| デスクトップ | 起動時に読み込んだバッファの長さ |
+| ブラウザ（届いた音） | 解いた音の長さ |
+| ブラウザ（`web.deferred` で届く前・取れなかった音） | 書き出しが `bundle.json` の `sounds[].seconds` に書いた元の長さ（WAV でない音は 0） |
+| 知らない名前 | 0 |
+
+`GameEngine.Audio` は `Platform.Services` に入っているので、App の系の外でも **描く元（Res）を組む所**から呼べる:
+デスクトップは `App.loadAndLaunch` に渡す関数の中、ブラウザ版は `WebLayer.withProject` の内側の `run`。
+ウィンドウなし（テスト・描き出し・flow）には `GameEngine.Audio` の handler が無いので、そちらは WAV の頭を読むか
+テストの偽の handler で答える。手本は templates/sound-novel-starter の `SoundLength`（実機は `load`・ウィンドウなしは `loadIn`）と
+`Controls.loadRuntimeRes`。
+
 ## 外から持ってくる BGM・効果音（素材の候補）
 
 外から BGM・効果音を足す時は、まず次のフリー素材から、ゲームのジャンルに合う物を選ぶ（人の指定・2026-11-15）。
