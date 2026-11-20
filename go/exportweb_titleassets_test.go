@@ -193,6 +193,17 @@ func TestSuggestWebDeferredArrivalsFollowCurrentDeferred(t *testing.T) {
 	}
 }
 
+func TestSuggestWebDeferredFontArrivesBeforeFontPlacedLater(t *testing.T) {
+	out, b, pr := titleFixture(t, map[string]int{"assets/bgm/sea.wav": 200000, "font-atlas/gothic.fontatlas": 400000, "font-atlas/mincho.fontatlas": 1000})
+	b.Deferred = []webDeferredEntry{{Path: "assets/bgm/sea.wav"}, {Path: "font-atlas/gothic.fontatlas"}}
+	s := suggestWebDeferred(out, &b, pr, nil, nil, titleUsed(), webTitleFrames)
+	for _, a := range s.Arrivals {
+		if a.Path == "font-atlas/mincho.fontatlas" && a.Seconds >= s.After+webSecondsFor(200000) {
+			t.Errorf("足したフォントは列の頭に入り、font: の行で後ろに置いたフォントより先に届くはず: %.2f 秒目（起動 %.2f）", a.Seconds, s.After)
+		}
+	}
+}
+
 func TestDeferredGlobsOfJoinsWholeFolder(t *testing.T) {
 	paths := []string{"assets/cast/a_smile.png", "assets/cast/a_sad.png"}
 	all := []string{"assets/cast/a_smile.png", "assets/cast/a_sad.png", "assets/bg/title.png"}

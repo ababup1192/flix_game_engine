@@ -263,6 +263,7 @@ bin/fge web-check <書き出したフォルダ>
 
 **書き込む**: `bin/fge export-web <ゲーム> --apply-deferred` で、候補を project.json の `web.deferred`・`web.deferredFonts` の後ろへ足す
 （もうある物は足さない・字の並びと他の欄はそのまま・`// deferred` の説明に 1 文足す）。書き換えるのは project.json の 1 か所で、差分は git で見る。
+足した glob は列の末尾に入るので、末尾に `"font:<名前>"` の行を置いていたゲームは、足した後に行を末尾へ戻す（そのままだと足した素材より先にフォントを取る）。
 書き出し直すと後回しで配られる。何も聞かずに入れる仕組みにはしていない（タイトルの直後に使う物まで入るので、選ぶのは担当）。
 `--no-browser-check`・`--check` とは一緒に使えず、`--reuse` でも組み直す。
 

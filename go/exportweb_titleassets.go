@@ -220,7 +220,8 @@ func (s *webDeferredSuggestion) keepOneFont(fonts, deferredFonts []string) {
 }
 
 // estimate は候補を貼った時の起動の秒と、足した物が届く時刻を出す。並びは export-web が組む後回しの列と同じ
-// （フォントのアトラスが頭・今の web.deferred・足した glob の順。1 つの glob に当たる物は道の順）。
+// （今の列の頭に続くフォントのアトラスの後ろへ足したフォント・今の列の残り・足した glob の順。1 つの glob に当たる物は道の順）。
+// WhyNot: 今の列のフォントを全部頭へ寄せて数えない — web.deferred の font: の行や group で後ろに置いたフォントの分だけ、足した物が遅く見える。
 func (s *webDeferredSuggestion) estimate(out string, b *webBundle, deferred map[string]bool) {
 	wire := map[string]int64{}
 	var moved int64
@@ -237,13 +238,9 @@ func (s *webDeferredSuggestion) estimate(out string, b *webBundle, deferred map[
 		return webWireSize(exportAssetPath(out, b.served(rel)))
 	}
 	at := s.After
-	var oldFonts, oldRest []string
-	for _, e := range b.Deferred {
-		if strings.HasSuffix(e.Path, ".fontatlas") {
-			oldFonts = append(oldFonts, e.Path)
-		} else {
-			oldRest = append(oldRest, e.Path)
-		}
+	head := 0
+	for head < len(b.Deferred) && strings.HasSuffix(b.Deferred[head].Path, ".fontatlas") {
+		head++
 	}
 	added := map[string]bool{}
 	step := func(rel string, report bool) {
@@ -252,14 +249,14 @@ func (s *webDeferredSuggestion) estimate(out string, b *webBundle, deferred map[
 			s.Arrivals = append(s.Arrivals, webArrival{Path: rel, Seconds: at})
 		}
 	}
-	for _, rel := range oldFonts {
-		step(rel, false)
+	for _, e := range b.Deferred[:head] {
+		step(e.Path, false)
 	}
 	for _, name := range s.Fonts {
 		step(webFontAtlasRel(name), true)
 	}
-	for _, rel := range oldRest {
-		step(rel, false)
+	for _, e := range b.Deferred[head:] {
+		step(e.Path, false)
 	}
 	for _, g := range s.Globs {
 		wg, err := compileWebGlob(g)

@@ -446,6 +446,43 @@ func TestWithDeferredFontsKeepsGroupedFontAtHeadWithoutGroupAssets(t *testing.T)
 	}
 }
 
+func TestWithDeferredFontsPrefersFontLineOverGroup(t *testing.T) {
+	b := deferredFixtureBundle()
+	plan, order := fontOrderPlan(t, `{"deferred": ["assets/bg/sea.png", "assets/bgm/*.wav", "font:round"]}`)
+	pol := mustDeferredPolicy(t, `{"deferredPolicy": [{"match": "assets/bg/sea.png", "group": "start"}, {"match": "font:round", "group": "start"}]}`)
+	at := webFontGroupStarts(plan.Paths, []string{"round"}, pol, &b, nil)
+	plan, _, _ = withDeferredFonts(plan, []string{"round"}, order.Fonts, at, map[string][]string{})
+	if got := plan.Paths[len(plan.Paths)-1]; got != "font-atlas/round.fontatlas" {
+		t.Errorf("font: の行が group の位置より勝つはず: %v", plan.Paths)
+	}
+}
+
+func TestWithDeferredFontsTakesFontLineWithoutGlobs(t *testing.T) {
+	plan, order := fontOrderPlan(t, `{"deferred": ["font:round"]}`)
+	plan, _, _ = withDeferredFonts(plan, []string{"round"}, order.Fonts, nil, map[string][]string{})
+	if !reflect.DeepEqual(plan.Paths, []string{"font-atlas/round.fontatlas"}) {
+		t.Errorf("glob が無くても font: の行のフォントを取るはず: %v", plan.Paths)
+	}
+}
+
+func TestWithDeferredFontsPlacesFontLineAfterGlobWithNothingNew(t *testing.T) {
+	plan, order := fontOrderPlan(t, `{"deferred": ["assets/bg/sea.png", "assets/bgm/*.wav", "assets/bg/sea.png", "font:round", "assets/walk/*.glb"]}`)
+	plan, _, _ = withDeferredFonts(plan, []string{"round"}, order.Fonts, nil, map[string][]string{})
+	want := []string{"assets/bg/sea.png", "assets/bgm/sea.wav", "font-atlas/round.fontatlas", "assets/walk/gate.glb", "assets/walk/hall.glb"}
+	if !reflect.DeepEqual(plan.Paths, want) {
+		t.Errorf("取り済みの道しか当てない glob の後の font: は、次の glob の前のはず: %v", plan.Paths)
+	}
+}
+
+func TestWithDeferredFontsPutsUnwrittenFontBeforeFontLineAtSamePlace(t *testing.T) {
+	plan, order := fontOrderPlan(t, `{"deferred": ["font:round", "assets/bg/sea.png"]}`)
+	plan, _, _ = withDeferredFonts(plan, []string{"round", "default"}, order.Fonts, nil, map[string][]string{})
+	want := []string{"font-atlas/default.fontatlas", "font-atlas/round.fontatlas", "assets/bg/sea.png"}
+	if !reflect.DeepEqual(plan.Paths, want) {
+		t.Errorf("同じ位置では font: の行の無いフォントが先のはず: %v", plan.Paths)
+	}
+}
+
 func writeServedIncompressible(t *testing.T, out, rel string, size int) {
 	t.Helper()
 	data := make([]byte, size)
