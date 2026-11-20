@@ -1469,12 +1469,12 @@ function fgeDeferredIsDeferred(nameOrPath) { return fgeDeferred.byName.has(nameO
 function fgeDeferredEntry(nameOrPath) { return fgeDeferred.byPath.get(fgeNormPath(nameOrPath)) || fgeDeferred.byName.get(nameOrPath); }
 // 後回しでない道は起動の前に全部そろっているので loaded。
 // WhyNot: released を downloaded と言わない — 別のグループが同じ道を届いたと見て読み、無いバイトで Failed に固まる。
-// WhyNot: 取り直す失敗（5xx・回線）を failed と言わない — engine の待ちが上限を待たずに諦め、取り直せば届く絵を描かずに進む。
+// WhyNot: 取り直す失敗（5xx・回線）を queued と言わない — fgeFetchBytes が取り直し終えた後は 30 秒の見回りまで誰も取りに行かず、engine の待ちが上限まで空振りする。描かずに進めて、裏の取り直しで届いたら差し替わる。
 function fgeDeferredState(nameOrPath) {
   var e = fgeDeferredEntry(nameOrPath);
   if (!e) return "loaded";
   if (e.state === "released") return "queued";
-  if (e.state === "failed") return e.permanent ? "failed:" + e.why : "queued";
+  if (e.state === "failed") return "failed:" + (e.why || "fetch");
   return e.state;
 }
 // WhyNot: 絵と音とフォントのアトラスを素材の表に入っただけで「届いた」にしない — 絵とアトラスは WebLayer が上げるまで描けず、音は解くまで鳴らせない。
@@ -1496,11 +1496,11 @@ function fgeDeferredMissingGen() {
   if (text !== fgeDeferredMissingSeen.text) { fgeDeferredMissingSeen.text = text; fgeDeferredMissingSeen.gen++; }
   return fgeDeferredMissingSeen.gen;
 }
-// WhyNot: 後回しのフォントを既定で待たない — 届くまでは最初のフォントで字を出せる（P4 の前の見え方）。待つと押した後の待ちが字の届くまで延びる。
+// WhyNot: 後回しのフォントを既定で待たない — 届くまでは最初のフォントで字を出せる（P4 の前の見え方）。待つと押した後の待ちが字の届くまで延びる。group を書いた行だけはゲームが待つと決めた物なので外さない（placeholder にすると group が黙って効かない）。
 function fgeDeferredPolicy(name) {
   var e = fgeDeferred.byName.get(name);
   if (!e) return "\n";
-  return (e.onMissing || (e.font ? "placeholder" : "")) + "\n" + e.group;
+  return (e.onMissing || (e.font && !e.group ? "placeholder" : "")) + "\n" + e.group;
 }
 // WhyNot: 届いたかを `deferred=all` の頁で 1 本ずつ待たない — 撮るコマの番号が、届いた順と engine の待ちでずれる。
 function fgeDeferredAllArrived() {
