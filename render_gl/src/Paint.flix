@@ -260,7 +260,7 @@ mod RenderPaint {
     /// resolve（キャッシュ照合・必要なら作り直し）し、レンジ列を FrameArgs に載せる。None なら Nil。
     /// 控え（lastFrame）も世代も進めない — リサイズの描き直しと注釈のスクショも同じ物を通る。
     pub def paintFrame(gl: GlContext, paint: Paint, fbW: Int32, fbH: Int32, frame: Frame): Unit \ IO =
-        ensureRadialBuiltins(gl, paint, frame#sprites, frame#surfaces, frame#scenes);
+        ensureRadialBuiltins(gl, paint, frame#sprites, frame#surfaces, frame#scenes, frame#letterbox);
         let staticRanges = match frame#staticLayer {
             case None    => Nil
             case Some(l) => RenderStatic.resolve(glStaticAllocator(gl, paint), paint#staticCacheCell, l)
@@ -278,13 +278,14 @@ mod RenderPaint {
         if (fillLetterbox(gl, paint, args, screen, frame#letterbox)) GlRows.renderPass(gl, args, RenderList.withLetterboxKept(screen))
         else GlRows.renderPass(gl, args, screen)
 
-    /// これから描く sprites・surfaces・3D の場面が組み込みの放射の絵を引くなら、まだ上げていなければ上げる。
+    /// これから描く sprites・surfaces・3D の場面のビルボード・広げる絵 letterbox が組み込みの放射の絵を引くなら、まだ上げていなければ上げる。
+    // WhyNot: 3D の材質の Tex は見ない — 組み込みの名前は `__` で始まる予約の綴りで、ゲームが材質に書く名前ではない。
     def ensureRadialBuiltins(gl: GlContext, paint: Paint, sprites: List[GameEngine.Drawable],
-                             surfaces: List[DrawCmd.SurfaceRenderCmd], scenes: List[Scene3d.RenderCmd]): Unit \ IO =
+                             surfaces: List[DrawCmd.SurfaceRenderCmd], scenes: List[Scene3d.RenderCmd], letterbox: Option[String]): Unit \ IO =
         TextureTable.ensureRadialBuiltins(glUploads(gl), textureTables(paint), () ->
             TextureTable.isTextureRead(TextureTable.isRadialBuiltinName, sprites, surfaces)
-                or paint#scene3d#readsTexture(RadialBuiltin.lightName(), scenes)
-                or paint#scene3d#readsTexture(RadialBuiltin.darkName(), scenes))
+                or paint#scene3d#readsTexture(TextureTable.isRadialBuiltinName, scenes)
+                or Option.exists(TextureTable.isRadialBuiltinName, letterbox))
 
     /// name が組み込みの放射の絵の名前なら、まだ上げていなければ上げる（GpuResources.getTextureInfo が名前で引く前）。
     pub def ensureRadialBuiltinNamed(gl: GlContext, paint: Paint, name: String): Unit \ IO =
@@ -323,10 +324,10 @@ mod RenderPaint {
     def paintTarget(gl: GlContext, paint: Paint, target: RenderTarget.TargetSpec,
                     sprites: List[GameEngine.Drawable], polygons: List[GameEngine.PolygonRenderCmd],
                     surfaces: List[DrawCmd.SurfaceRenderCmd], scenes: List[Scene3d.RenderCmd]): Unit \ IO =
-        ensureRadialBuiltins(gl, paint, sprites, surfaces, scenes);
+        ensureRadialBuiltins(gl, paint, sprites, surfaces, scenes, None);
         let (name, tw, th, op) = (target#name, target#width, target#height, target#clear);
         let historyName = RenderTarget.historyName(name);
-        let readsHistory = TargetTable.isHistoryRead(name, sprites, surfaces) or paint#scene3d#readsTexture(historyName, scenes);
+        let readsHistory = TargetTable.isHistoryRead(name, sprites, surfaces) or paint#scene3d#readsTexture(texture -> texture == historyName, scenes);
         let history = TargetTable.historyFor(glTargetAllocator(gl, paint), textureTables(paint), paint#targets, (paint#screenW, paint#screenH),
                                              target, readsHistory, paint#keepHistory);
         let entry = TargetTable.rowByName(paint#targets, name) |> Option.flatMap(entryOf(paint));

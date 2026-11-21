@@ -63,6 +63,7 @@ pub mod RenderPaint.Internal.TextureTable {
 
     /// 組み込みの放射の絵をまだ上げていなくて、reads() が真（これから描く物が引く）なら 2 枚とも上げる。描く物を描き先へ流す前に呼ぶ。
     // WhyNot: 起動時に上げない — 256×256 を 2 枚、画素ごとに平方根を取る仕事が、ブラウザでは「タッチして開始」の後の待ちに入る。引くゲームは少ない。
+    // WhyNot: 同じ名前が登録簿にあれば上書きしない — `__` で始まる名前は engine の予約の綴りで、manifest の絵の名前に使われない。
     pub def ensureRadialBuiltins(uploads: Uploads, tables: Tables, reads: Unit -> Bool \ ef): Unit \ ef + IO =
         if (Map.memberOf(RadialBuiltin.lightName(), Ref.get(tables#registryRef))) ()
         else if (reads()) putRadialBuiltins(uploads, tables)
