@@ -17,6 +17,10 @@ type Options struct {
 	Height int           // 0 なら 600
 	Wait   time.Duration // 合図を待つ上限。0 なら 30 秒
 	Eval   string        // 合図の後に頁で評価する式（空なら評価しない）。値は Result.Eval
+	// InitScript は頁のどの script よりも先に流す（PageOptions.InitScript と同じ。頁の旗の window.fgeDev を入れる）。
+	InitScript string
+	// CPUThrottle は CPU を何倍遅くするか（PageOptions.CPUThrottle と同じ）。
+	CPUThrottle float64
 }
 
 // Result は受け取った絵と、頁が名乗った描き手（WebGL の UNMASKED_RENDERER など。無ければ空）。
@@ -54,7 +58,7 @@ func Capture(opt Options) (*Result, error) {
 	if opt.Wait <= 0 {
 		opt.Wait = 30 * time.Second
 	}
-	page, err := OpenPage(PageOptions{Chrome: opt.Chrome, Width: opt.Width, Height: opt.Height})
+	page, err := OpenPage(PageOptions{Chrome: opt.Chrome, Width: opt.Width, Height: opt.Height, InitScript: opt.InitScript, CPUThrottle: opt.CPUThrottle})
 	if err != nil {
 		return nil, err
 	}

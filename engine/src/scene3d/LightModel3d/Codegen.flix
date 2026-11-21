@@ -817,7 +817,7 @@ pub mod LightModel3d.Codegen {
 
     /// 字から doc の行（///）を除いた物。
     def withoutDocLines(text: String): String =
-        String.lines(text) |> List.filter(l -> not String.startsWith(prefix = "///", String.trim(l))) |> List.join("\n")
+        TextSplit.lines(text) |> List.filter(l -> not String.startsWith(prefix = "///", String.trim(l))) |> List.join("\n")
 
     /// 生成した関数が呼ぶ小さな関数（使う物だけ。Flix は使わない def を止める）。
     def flixHelpers(used: Set[String]): String =

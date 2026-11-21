@@ -17,13 +17,13 @@
 下の対応表の「GL」の列は GPU の backend を指す。WebGPU と GL の backend は同じ `RenderList` を流し、
 同じ機械で画素を比べる門がある（`make webgpu-v1-check`（2D・許す差は `bench/webgpu_v1/tolerance.tsv`）・`make -C bench/webgpu_v2 run`（3D・許す差は場面ごとに `bench/webgpu_v2/src`））。
 WebGPU を使えない機械（Dawn のネイティブを配っていない OS など）では、起動の時に `[backend] WebGPU を使えない: … — GL で起動する` を 1 行言って GL で描く。
-ブラウザも既定は WebGPU（`navigator.gpu`）で、頁の `?backend=webgl2`（`?backend=gl` も同じ）で WebGL2。WebGPU を使えないブラウザ
+ブラウザも既定は WebGPU（`navigator.gpu`）で、頁の `?fge=webgl2`（`?fge=gl` も同じ）で WebGL2。WebGPU を使えないブラウザ
 （`navigator.gpu` が無い・adapter や device が取れない・pipeline（WGSL）や絵を上げる所で落ちた）は console に
-`[backend] WebGPU を使えない: … — WebGL2 で起動する` を 1 行出して WebGL2 で描く。下の節の WebGL2 の数は `?backend=webgl2` の頁の物。
+`[backend] WebGPU を使えない: … — WebGL2 で起動する` を 1 行出して WebGL2 で描く。下の節の WebGL2 の数は WebGL2 の頁の物。
 
 ## ブラウザ（WebGL2）とデスクトップの絵
 
-ブラウザは GL の 3 本目の実装で、同じ `render_gl` の本体を `GlContext` の `WebGl2` で動かす。比べ方は `docs/web-capture.md` の `?capture=<n>`。
+ブラウザは GL の 3 本目の実装で、同じ `render_gl` の本体を `GlContext` の `WebGl2` で動かす。比べ方は `docs/web-capture.md` の頁の旗 `capture:<n>`。
 合格の線は、同じ場面・同じカメラ・同じ大きさで、RGB の差が 2/255 以下の画素が 99.9% 以上（cutout の縁は除く）。
 
 | 場面 | 大きさ | 差 2/255 以下 | 差 0 | 一番大きい差 |

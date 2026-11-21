@@ -14,8 +14,9 @@ import (
 	"github.com/ababup1192/flix_game_engine/go/internal/cdp"
 )
 
-const webCaptureUsage = "使い方: fge web-capture <URL> <出力.png> [--wait <秒>] [--size WxH] [--dir <書き出したフォルダ>]\n" +
-	"  --dir はそのフォルダを 127.0.0.1 の使い捨ての口で配り、<URL> をその頁の道とクエリ（例 index.html?capture=6）として読む\n" +
+const webCaptureUsage = "使い方: fge web-capture <URL> <出力.png> [--wait <秒>] [--size WxH] [--dir <書き出したフォルダ>] [--dev <語,語…>]\n" +
+	"  --dir はそのフォルダを 127.0.0.1 の使い捨ての口で配り、<URL> をその頁の道とクエリ（例 index.html）として読む\n" +
+	"  --dev は頁の旗を頁より先に window.fgeDev で入れる（例 --dev capture:6,deferred:all,webgl2。語は ?fge= と同じ・docs/web-capture.md の「頁の旗」）\n" +
 	"  頁の約束（window.fgeCaptureReady と window.fgeCapture()）は docs/web-capture.md"
 
 func init() {
@@ -30,6 +31,7 @@ func cmdWebCapture(out, errOut *strings.Builder, args []string) int {
 	opt := cdp.Options{}
 	var pos []string
 	serveDir := ""
+	var dev *webPageSwitches
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch a {
@@ -39,6 +41,19 @@ func cmdWebCapture(out, errOut *strings.Builder, args []string) int {
 				return 2
 			}
 			serveDir = args[i+1]
+			i++
+			continue
+		case "--dev":
+			if i+1 >= len(args) {
+				fmt.Fprintf(errOut, "--dev の値がありません\n%s\n", webCaptureUsage)
+				return 2
+			}
+			sw, err := parseWebDevWords(args[i+1])
+			if err != nil {
+				fmt.Fprintf(errOut, "--dev: %v\n", err)
+				return 2
+			}
+			opt.InitScript, dev = sw.initScript(), &sw
 			i++
 			continue
 		case "--wait", "--size":
@@ -85,6 +100,15 @@ func cmdWebCapture(out, errOut *strings.Builder, args []string) int {
 		}
 		defer closeServer()
 		opt.URL = "http://" + listener.Addr().String() + "/" + strings.TrimPrefix(pos[0], "/")
+		if dev != nil {
+			page, _, _ := strings.Cut(strings.TrimPrefix(pos[0], "/"), "?")
+			url, initScript, err := dev.openURL(opt.URL, filepath.Join(serveDir, filepath.FromSlash(page)))
+			if err != nil {
+				fmt.Fprintf(errOut, "web-capture: --dev: %v（頁が頁の旗の読み手を持たない前の engine の書き出し）\n", err)
+				return 2
+			}
+			opt.URL, opt.InitScript = url, initScript
+		}
 	}
 
 	res, err := cdp.Capture(opt)

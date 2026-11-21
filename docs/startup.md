@@ -94,7 +94,7 @@ fge-web.js が wasm を読み終えた後に別の行列で取り（同時 2 本
   textures・sounds の名前）・`downloads#stateOf(道)`・`downloads#request(道の並び)`（行列の頭へ）を使う。
   `setBudget` と `spentMs` は App の step が呼ぶ（ゲームは呼ばない）。`release(道の並び)` は生のバイトを捨てる（`BackgroundLoad` が鍵を解いた後に呼ぶ）。
   デスクトップと画面なしは `LoadProgress.localDownloads()`（全部 Loaded・missing は空）なので、後回しが無いのと同じに動く。
-- `?loadtime=1` を付けて開くと、console に後回しの 1 本ごとの届いた時刻と「押すまでに取った量」が出る。
+- `?fge=loadtime` を付けて開くと、console に後回しの 1 本ごとの届いた時刻と「押すまでに取った量」が出る。
 
 ### フォントを後から取る（`web.deferredFonts`）
 
@@ -117,13 +117,13 @@ Backspace（パッドの B）で押した時の待ちをやめる（ゲームの
 - 一発の効果音は既定で待たない（鳴らさず進む）。ループの音（BGM・環境音）も既定で待たない（届いたら鳴る）。後回しのフォントも既定で待たない（届くまで最初のフォントで出す）
 - 扱いを替えるのは `"web": { "deferredPolicy": [{ "match": "<後回しの道の glob か font:名前>", "onMissing": "wait|placeholder|skip", "group": "<組>" }] }`（先の行が勝つ）。
   絵とフォントは `wait`・`placeholder`（待たずに描かずに進む）、音は `wait`・`skip`。`group` を付けると、押した時の待ちで同じ組の残りも一緒に待つ
-- 撮る頁（`?capture=<n>`）で画素を比べる時は `&deferred=all` を付ける（後回しが全部届いてから main を呼ぶ。撮るコマの番号が待ちでずれない）
+- 撮る頁（旗 `capture:<n>`）で画素を比べる時は旗 `deferred:all` を足す（`web-capture --dev capture:6,deferred:all`）（後回しが全部届いてから main を呼ぶ。撮るコマの番号が待ちでずれない）
 - 待つ間の表示: 押した時の待ちに入ったら、押した点（キーなら画面の真ん中）から波紋を 1 回。待ちが 0.5 秒を超えたら画面の右下に小さな輪（届いた割合の弧と回る光の点・字は出さない・20 秒を超えたら回り方がゆっくりになる）。
   z は `ZBand.loadingBase`（HUD より手前・デバッグより奥）。替えるのは `App.withLoadingIndicator(App.LoadingIndicator.Custom(f))`（自分のフォントで字を出す時。z は `ZBand.loadingBase` から上に置き、後回しの絵とフォントは使わない — 使うと待ちが明けない）・出さないのは `Hidden`（波紋も出さない）。
   選んだ行を光らせるなど World の側で手応えを出すなら `App.withLoadWait` で `LoadWait#pressed`・`waited`・`progress` を写す
 - 頁の `window.fgeLoadWait` が今の待ち（理由・名前・待った秒・届いた割合・押した時の待ちか）。起動の画面は、待ちの無いコマを初めて出した時に 0.25 秒で薄れさせて外す
 - 待ちの記録: `window.fgeMissingWaits`（待ちごとに `pressed` = 押した所へ戻して待った・`stopped` = 前の場面のまま止まった、と名前・コマ数）。
-  4G の届き方で確かめるのは頁の `?net=4g`（[web-export.md](web-export.md) の「4G の届き方でタイトルを回す」）。`stopped` が出たら直す物（group を付ける・取る順を直す・`placeholder` にする）
+  4G の届き方で確かめるのは頁の `?fge=4g`（[web-export.md](web-export.md) の「4G の届き方でタイトルを回す」）。`stopped` が出たら直す物（group を付ける・取る順を直す・`placeholder` にする）
 
 ### 押した後のロゴ（`web.splash`）
 
@@ -135,7 +135,7 @@ group が無いゲームは出ない。届くまでの見込みが `minSeconds` 
 - 出している間、engine は World を進めず音も当てない（タイトルの BGM と演出の時計がロゴの裏で始まらない）。入力のエッジも捨てる
 - 動き: ロゴが下から浮き、光が横切り、「Flix_GE」が 1 字ずつ出る。音は WebAudio で作る短いジングル（取る物は増えない）
 - `"splash": { "afterTap": "none" }` で出さない・`"custom"` で絵と音を替える（`"logo"`・`"sound"` は束の中で後回しでない道。動きは engine の物）。
-  動きまで自分の物にしたいゲームは `none` にしてタイトルの場面で出す。`?capture=` の頁では出さない
+  動きまで自分の物にしたいゲームは `none` にしてタイトルの場面で出す。撮る頁（旗 `capture`）では出さない
 
 ### ループの中で区切って読む（`BackgroundLoad`・`App.withBackgroundLoad`）
 
@@ -188,7 +188,7 @@ project.json の `"web": { "virtualPad": { "stick": true, "buttons": [...] } }` 
 - `dpad` とは一緒に書けない（どちらも左のゾーン。書き出しで止まる）。`buttons` とは一緒に使える（左手でスティック・右手でボタン）。
   スティックだけなら `keysDoc` は要らない。
 - 左のゾーンで 2 本目に置いた指は、スティックを掴み直さない。向きを替えた時・タブが裏に回った時は、十字キーと同じく指を全部離す。
-- PC で確かめる時は頁を `?input=touch` で開き、左のゾーンをマウスで押して動かす。
+- PC で確かめる時は頁を `?fge=touch` で開き、左のゾーンをマウスで押して動かす。
 
 ## ブラウザ版の指の操作（`web.touchGestures`）
 

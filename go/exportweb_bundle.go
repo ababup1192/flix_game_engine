@@ -51,6 +51,8 @@ type webBundle struct {
 	ServiceWorker bool `json:"serviceWorker,omitempty"`
 	// StartupBudget は project.json の web.startupBudget の写し（web-check が gh-pages の根や play/ に写したフォルダで読む。why は公開される）。
 	StartupBudget *webStartupBudget `json:"startupBudget,omitempty"`
+	// EngineVersion は書き出した engine の版（ゲームの flix.toml の版。読めなければ空）。束の外の頁（テープの「はじめから遊ぶ」）が、束の頁が読める URL の旗の書き方を選ぶ。
+	EngineVersion string `json:"engineVersion,omitempty"`
 	// Checks は書き出しの確かめ（4G のタイトル・押した後の測り）の結果。
 	Checks *webBundleChecks `json:"checks,omitempty"`
 	// Draft は --draft で門が赤のまま書き出した束か（web-check が拒む）。DraftReasons は赤の理由。
@@ -292,6 +294,7 @@ func assembleWebBundle(o exportWebOptions, c exportConfig) (exportAssembly, *exp
 	if err != nil {
 		return a, exportFail(1, err)
 	}
+	b.EngineVersion = p.Version
 	b.Files = c.Strip.without(c.EmbedPlan.withoutHidden(b.Files))
 	if len(c.EmbedPlan.Omitted) > 0 {
 		ewLogf("  web.omit で配らない: %s", strings.Join(c.EmbedPlan.Omitted, "・"))

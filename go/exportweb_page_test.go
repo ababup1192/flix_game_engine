@@ -19,7 +19,7 @@ const stampTestHTML = "<head>\n<title>t</title>\n</head>\n<body>\n" + `<script s
 
 func stampForTest(t *testing.T, preload []webPreload) string {
 	t.Helper()
-	got, err := stampWebIndex(stampTestHTML, "abc123", preload)
+	got, err := stampWebIndex(stampTestHTML, "abc123", preload, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,15 +62,60 @@ func TestStampWebIndexListsPreloadsWithTheirAs(t *testing.T) {
 	}
 }
 
+func TestStampWebIndexPutsSwitchesReaderBeforeHeadScript(t *testing.T) {
+	got, err := stampWebIndex(stampTestHTML, "abc123", nil, "function fgePageSwitches() {}\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, head := strings.Index(got, "function fgePageSwitches() {}"), strings.Index(got, `var baked = "abc123";`)
+	if reader < 0 || reader > head || reader > strings.Index(got, "</head>") {
+		t.Errorf("頁の旗の読み手は head の起動役より前に入るはず: %s", got)
+	}
+}
+
+func TestStampWebIndexWithoutSwitchesReaderAddsNoScript(t *testing.T) {
+	got := stampForTest(t, nil)
+	head := got[:strings.Index(got, "</head>")]
+	if strings.Count(head, "<script>") != 1 {
+		t.Errorf("読み手が無い（前の engine）時は head の script は起動役の 1 本のはず: %s", head)
+	}
+}
+
+func TestHeadScriptReadsSwFromSwitchesAndOldKey(t *testing.T) {
+	got := webHeadScript("abc", nil)
+	for _, want := range []string{"fgePageSwitches().switches.sw === false", `/[?&]sw=0(&|$)/`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("head の起動役は %q で Service Worker を外す口を見るはず", want)
+		}
+	}
+}
+
+func TestWriteWebServiceWorkerPutsSwitchesReaderFirst(t *testing.T) {
+	jsDir, out := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(jsDir, webServiceWorkerSource), []byte(`var FGE_GAME_ID = "__FGE_GAME_ID__";`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(jsDir, webSwitchesSource), []byte("function fgeReadSwitches() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeWebServiceWorker(jsDir, out, "g", true); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(filepath.Join(out, webServiceWorkerFile))
+	if string(got) != "function fgeReadSwitches() {}\n\nvar FGE_GAME_ID = \"g\";" {
+		t.Errorf("sw.js は頁の旗の読み手の後ろに Service Worker をつなぐはず: %s", got)
+	}
+}
+
 func TestStampWebIndexFailsWhenScriptMissing(t *testing.T) {
-	if _, err := stampWebIndex("<head></head>"+`<script src="fge-web.js"></script>`, "abc", nil); err == nil {
+	if _, err := stampWebIndex("<head></head>"+`<script src="fge-web.js"></script>`, "abc", nil, ""); err == nil {
 		t.Error("wasm-gc-runtime.js の script が無ければ誤りのはず")
 	}
 }
 
 func TestStampWebIndexFailsWithoutHeadClose(t *testing.T) {
 	html := `<script src="wasm-gc-runtime.js"></script>` + `<script src="fge-web.js"></script>`
-	if _, err := stampWebIndex(html, "abc", nil); err == nil {
+	if _, err := stampWebIndex(html, "abc", nil, ""); err == nil {
 		t.Error("</head> が無ければ誤りのはず")
 	}
 }
@@ -234,7 +279,7 @@ func strconvQuote(s string) string {
 }
 
 func TestEngineWebScriptsParse(t *testing.T) {
-	for _, name := range []string{webServiceWorkerSource, webServiceWorkerOffSource, "fge-web.js"} {
+	for _, name := range []string{webServiceWorkerSource, webServiceWorkerOffSource, webSwitchesSource, "fge-web.js"} {
 		checkJsSyntax(t, filepath.Join("..", "engine_web", "js", name))
 	}
 }

@@ -1973,6 +1973,12 @@
 - 折り返した結果、何行になるかを数える。
   `pub def lineCount(advances: List[Float64], wrapWidth: Float64, scale: Float64, lineHeight: Float64): Int32`
 
+## TextSplit — `engine/src/core/TextSplit.flix`
+- s を区切りの字 sep で分ける。区切りは正規表現でなく字のまま見る。
+  `pub def split(sep: String, s: String): List[String]`
+- s を行に分ける。改行は \r\n・\n・\r のどれでも 1 つ。空の s は Nil・末尾に続く空の行は捨てる。
+  `pub def lines(s: String): List[String]`
+
 ## Texture3d — `engine/src/scene3d/Texture3d.flix`
 - 絵の画素の在りか。Argb = ARGB の並び（行優先・行 0 が絵の上）・PlatformImage(key) = 機種の側に解いて持つ絵
   `pub enum Source with Eq, ToString { case Argb(Vector[Int32]) case PlatformImage(String) }`

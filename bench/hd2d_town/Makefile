@@ -147,7 +147,7 @@ explore-pages: explore-web-public
 	../../bin/web-pages-stage.sh ../.. . "$(or $(DEST),hd2d-town)" build/web-public
 
 explore-serve:
-	@echo "[explore-serve] http://localhost:$(PORT)/ ・スマホは http://$$(ipconfig getifaddr en0 2>/dev/null || echo '<この機械の IP>'):$(PORT)/?fps=1&measure=1"
+	@echo "[explore-serve] http://localhost:$(PORT)/ ・スマホは http://$$(ipconfig getifaddr en0 2>/dev/null || echo '<この機械の IP>'):$(PORT)/?fge=fps&measure=1"
 	$(PYTHON3) -m http.server $(PORT) --bind 0.0.0.0 --directory build/web
 
 explore-grid:

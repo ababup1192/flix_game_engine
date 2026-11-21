@@ -284,7 +284,7 @@ pub mod Flow.Record {
                 def readLines(path, k) = {
                     let result = Fs.FileRead.read(path);
                     note(path, result);
-                    k(result |> Result.map(String.lines))
+                    k(result |> Result.map(TextSplit.lines))
                 }
                 def readBytes(path, k) = k(Fs.FileRead.readBytes(path))
             };

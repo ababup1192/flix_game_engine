@@ -10,7 +10,7 @@ use fge::LwjglLayer
 mod ParityMain {
     use fge::{
         App, Color, CpuTiming, FontAtlas, GameEngine, GlReadback, GpuHandle, HeadlessFont, HeadlessRender,
-        LwjglLayer, Platform, Render, RenderTarget, SoftRaster
+        LwjglLayer, Platform, Render, RenderTarget, SoftRaster, TextSplit
     }
 
     import java.io.File
@@ -185,7 +185,7 @@ mod ParityMain {
     /// 環境変数 PARITY_SCENES（名前をコンマで並べた物）で選んだ scene（無ければ全部）。
     /// PARITY_VIA_SCREEN=1 なら、ターゲット口の scene も画面口で撮る（GL のターゲットを直に読む口を通らない。WebGPU の描き手で流す時に置く）。
     def selectedScenes(): List[Scenes.Scene] \ IO =
-        let wanted = envOf("PARITY_SCENES") |> Option.map(text -> String.split(regex = ",", text) |> List.map(String.trim) |> List.toSet);
+        let wanted = envOf("PARITY_SCENES") |> Option.map(text -> TextSplit.split(",", text) |> List.map(String.trim) |> List.toSet);
         let viaScreen = envOf("PARITY_VIA_SCREEN") == Some("1");
         Scenes.all()
             |> List.filter(sc -> Option.forAll(names -> Set.memberOf(sc#name, names), wanted))

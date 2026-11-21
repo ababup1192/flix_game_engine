@@ -427,7 +427,7 @@ pub mod Mesh3d {
     //   文字の入った絵を貼るなら glb を使う。
     pub def fromObj(objText: String, mtlText: String): Result[String, Mesh3d] =
         let colors = parseMtl(mtlText);
-        let lines = String.lines(objText) |> List.map(String.words);
+        let lines = TextSplit.lines(objText) |> List.map(String.words);
         let numbered = List.zip(List.range(1, List.length(lines) + 1), lines);
         let pointsR = numbered |> List.foldLeft((acc, line) -> Result.flatMap(found -> {
             let (lineNo, words) = line;
@@ -498,7 +498,7 @@ pub mod Mesh3d {
 
     def parseMtl(text: String): Map[String, Color] =
         let num = (s: String) -> Float64.fromString(s) |> Option.getWithDefault(0.0);
-        let (_, found) = String.lines(text) |> List.map(String.words) |> List.foldLeft((acc, words) -> {
+        let (_, found) = TextSplit.lines(text) |> List.map(String.words) |> List.foldLeft((acc, words) -> {
             let (current, m) = acc;
             match words {
                 case "newmtl" :: name :: _ => (name, Map.insert(name, defaultGray(), m))

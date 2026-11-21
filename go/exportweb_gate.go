@@ -93,7 +93,7 @@ func (b webStartupBudget) startKeys() []string {
 }
 
 // webBundleChecks は書き出しの確かめの結果（bundle.json の checks）。web-check は Chrome を起こさずに読む。
-// Title4g は ?net=4g のタイトルの確かめ（ok・stopped・skipped）。TapWaitSeconds は押した後の測りで取れた、押してから動くまでの秒。
+// Title4g は ?fge=4g のタイトルの確かめ（ok・stopped・skipped）。TapWaitSeconds は押した後の測りで取れた、押してから動くまでの秒。
 type webBundleChecks struct {
 	Title4g        string   `json:"title4g"`
 	SkippedWhy     string   `json:"skippedWhy,omitempty"`

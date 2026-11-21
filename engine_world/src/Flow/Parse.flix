@@ -38,7 +38,7 @@ pub mod Flow.Parse {
 
     def linesInto(vocab: Vocab, file: String, text: String, read: String -> Result[String, String] \ ef,
                   depth: Int32, acc0: Acc): Acc \ ef =
-        String.lines(text) |> List.zipWithIndex |> List.foldLeft((acc, entry) -> {
+        TextSplit.lines(text) |> List.zipWithIndex |> List.foldLeft((acc, entry) -> {
             let (index, raw) = entry;
             let body = String.trim(stripComment(raw));
             let problem = why -> { problems = { file = file, number = index + 1, text = body, why = why } :: acc#problems | acc };

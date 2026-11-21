@@ -21,7 +21,7 @@ pub mod WebFs {
         let embedded = { spans = embeddedSpans(), decoded = Ref.fresh(Static, Map.empty()) };
         run f() with handler Fs.FileRead {
             def read(path, k)      = k(readText(embedded, path))
-            def readLines(path, k) = k(Result.map(String.lines, readText(embedded, path)))
+            def readLines(path, k) = k(Result.map(TextSplit.lines, readText(embedded, path)))
             def readBytes(path, k) = k(readBytes(embedded, path))
         }
 

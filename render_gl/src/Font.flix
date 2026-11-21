@@ -123,7 +123,7 @@ mod RenderFont {
             // なることはないので、落としても字は消えない。日本語で説明を書く流儀だと
             // 注釈の字の方が多く、拾うと用意する量が倍増する。
             let text = if (String.endsWith({ suffix = ".flix" }, file.getName()))
-                           String.lines(raw)
+                           TextSplit.lines(raw)
                                |> List.filter(line -> not String.startsWith({ prefix = "//" }, String.trimLeft(line)))
                                |> List.join("\n")
                        else raw;

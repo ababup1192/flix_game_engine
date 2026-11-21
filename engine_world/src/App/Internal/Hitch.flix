@@ -119,7 +119,7 @@ pub mod App.Internal.Hitch {
         }
 
     def perfNameOf(path: String): String =
-        let base = path |> String.split(regex = "/") |> List.last |> Option.getWithDefault(path);
+        let base = path |> TextSplit.split("/") |> List.last |> Option.getWithDefault(path);
         if (String.endsWith(suffix = ".flow", base)) String.dropRight(5, base) else base
 
     /// World の列を 1 コマずつ塗り、見張りと同じ判定に通す。返すのは全部の行・書いた報告・描き方の覚え。

@@ -53,14 +53,14 @@ pub mod WebLayer {
 
     /// 2D のゲームの入口。3D の描き手を持たないので、Scene3d の場面は描かず初回に 1 回知らせる。
     // WhyNot: 2D の入口を withProject3d に寄せて 1 本にしない — ここから Render3d へ届くと、3D を使わないゲームの wasm まで太る。
-    /// 既定は WebGPU で描く（使えなければ理由を console に出して WebGL2 で描く）。頁が ?backend=webgl2 で開かれていれば WebGL2 で描く。
+    /// 既定は WebGPU で描く（使えなければ理由を console に出して WebGL2 で描く）。頁が ?fge=webgl2 で開かれていれば WebGL2 で描く。
     pub def withProject(rootDir: String, f: Unit -> a \ ef): a \ ef - Platform.Services - LoadProgress + IO + Fs.FileRead =
         let config = loadBootConfigOrBug(rootDir);
         let g = () -> recordDrawnTextures(f);
         if (Browser.backendRequest() == "webgpu") withWebGpuOrGl((_, _) -> makeWarningRenderer(), (_, _, _) -> makeWarningScenes(), config, g)
         else withWeb((_, _) -> makeWarningRenderer(), config, g)
 
-    /// Scene3d を描くゲームの入口。既定は 3D も WebGPU で描く（使えなければ理由を console に出して WebGL2 で描く）。頁が ?backend=webgl2 で開かれていれば WebGL2 で描く。
+    /// Scene3d を描くゲームの入口。既定は 3D も WebGPU で描く（使えなければ理由を console に出して WebGL2 で描く）。頁が ?fge=webgl2 で開かれていれば WebGL2 で描く。
     pub def withProject3d(rootDir: String, f: Unit -> a \ ef): a \ ef - Platform.Services - LoadProgress + IO + Fs.FileRead =
         let config = loadBootConfigOrBug(rootDir);
         let makeRenderer = (gl, cfg) -> Render3d.makeRenderer(gl, cfg, Render3d.DrawMode.Instanced);
@@ -72,7 +72,7 @@ pub mod WebLayer {
         if (Browser.backendRequest() == "webgpu") withWebGpuOrGl(makeRenderer, makeScenes, config, g)
         else withWeb(makeRenderer, config, g)
 
-    /// 頁が ?usedAssets=1 か ?net=4g で開かれていれば、2D で描いた絵の名前（スプライト・タイルマップ・面が読む絵）を初めて出たコマで
+    /// 頁が旗 usedAssets か net:4g で開かれていれば、2D で描いた絵の名前（スプライト・タイルマップ・面が読む絵）を初めて出たコマで
     /// fge-web.js に記録する（書き出しの確かめが後回しの候補を出すのに読む）。描く命令はそのまま外の handler へ渡す。
     def recordDrawnTextures(f: Unit -> a \ ef): a \ (ef - Platform.Draw2d) + Platform.Draw2d + IO =
         let recording = Browser.isRecordingUsedAssets();
@@ -178,7 +178,7 @@ pub mod WebLayer {
         }
 
     // WhyNot: 頁を開いた時（素材を取る前）に測らない — 読み込みの間に回した端末で、古い向きのまま起動する。押して始めた後の main で測る。
-    /// 起動に使う設定。縦の design を選ぶ時（スマホを縦に持って開いた・頁の ?orientation=portrait）で、project.json に
+    /// 起動に使う設定。縦の design を選ぶ時（スマホを縦に持って開いた・頁の ?fge=portrait）で、project.json に
     /// web.portraitDesign があれば、その時の描き先の比から決めた縦の design に替える（Display#orientation が Portrait になる）。
     def bootConfigOf(proj: ProjectLoader.Project): GameEngine.EngineConfig \ IO =
         let wanted = Browser.wantsPortrait();
@@ -371,8 +371,8 @@ pub mod WebLayer {
           pointer = if (Pointer.isTouch()) Display.PointerKind.Touch else Display.PointerKind.Mouse,
           sizeClass = sizeClass(), orientation = Display.orientationOf(design) }
 
-    /// 端末の区分。頁の URL の ?size=small|medium|large があればそれ（PC で小さい画面の並べ方を確かめる時）、
-    /// 無ければ主な pointer が指か（?input= で上書きできる）と、起動の時に測った画面の短い辺から決める。
+    /// 端末の区分。頁の ?fge=small|medium|large があればそれ（PC で小さい画面の並べ方を確かめる時）、
+    /// 無ければ主な pointer が指か（?fge=touch|mouse で上書きできる）と、起動の時に測った画面の短い辺から決める。
     def sizeClass(): Display.SizeClass \ IO = match Browser.sizeOverride() {
         case "small"  => Display.SizeClass.Small
         case "medium" => Display.SizeClass.Medium
@@ -514,7 +514,7 @@ pub mod WebLayer {
     /// upload = アトラスを上げて FontAtlas を返す（上げられなければ None・仮の当てのまま）。上げた道は素材の表から手放す。
     // WhyNot: 文字送りの間（予算の Paused）も待たない — 字はどの画面でも使い、待つ間ずっと仮のフォントで出続ける。
     // WhyNot: コマに 2 本以上上げない — アトラスの検算と上げは 1 本で数 ms かかり、重ねるとコマが跳ねる。
-    //   ?capture= の頁だけは届いた物を全部上げる（1 本ずつだと最初の数コマが字を待ち、撮るコマの番号がデスクトップとずれる）。
+    //   撮る頁（旗 capture）だけは届いた物を全部上げる（1 本ずつだと最初の数コマが字を待ち、撮るコマの番号がデスクトップとずれる）。
     def registerArrivedFont(upload: RenderAsset.FontEntry -> Option[FontAtlas] \ IO, fonts: RenderPaint.Fonts, st: State): Unit \ IO =
         let (ready, waiting) = List.partition(entry -> AssetTable.has(WebAssets.atlasPathOf(entry)), Ref.get(st#pendingFonts));
         let (now, later) = if (Browser.isFrameCapture()) (ready, Nil) else (List.take(1, ready), List.drop(1, ready));
@@ -531,7 +531,7 @@ pub mod WebLayer {
     def registerArrivedTextures(gl: GlContext, paint: RenderPaint.Paint, st: State): Unit \ IO =
         Ref.put(0.0, st#spentMs);
         let pending = Ref.get(st#pendingTextures);
-        // WhyNot: ?capture= の頁で予算に従わない — 1 本ずつだと最初の数コマが絵を待ち、撮るコマの番号がデスクトップとずれる。
+        // WhyNot: 撮る頁（旗 capture）で予算に従わない — 1 本ずつだと最初の数コマが絵を待ち、撮るコマの番号がデスクトップとずれる。
         let limit = if (Browser.isFrameCapture()) Some(Float64.maxValue()) else match Ref.get(st#budget) {
             case LoadProgress.DecodeBudget.Paused     => None
             case LoadProgress.DecodeBudget.Idle(ms)    => Some(ms)
@@ -576,7 +576,7 @@ pub mod WebLayer {
 
     /// 頁の扱いの字（"onMissing\ngroup"・無い欄は空）を MissingPolicy へ。知らない onMissing は種類の既定。
     def policyOfText(text: String): LoadProgress.MissingPolicy =
-        let parts = String.split(regex = "\n", text);
+        let parts = TextSplit.split("\n", text);
         let nonEmpty = s -> if (String.isEmpty(s)) None else Some(s);
         let onMissing = List.head(parts) |> Option.flatMap(nonEmpty) |> Option.flatMap(onMissingOfText);
         let group = List.nth(1, parts) |> Option.flatMap(nonEmpty);
@@ -600,7 +600,7 @@ pub mod WebLayer {
     }
 
     def linesOf(text: String): List[String] =
-        if (String.isEmpty(text)) Nil else String.split(regex = "\n", text)
+        if (String.isEmpty(text)) Nil else TextSplit.split("\n", text)
 
     /// 起動中に、手を返さずに続けてよい長さ（ms）。
     def yieldMillis(): Float64 = 50.0

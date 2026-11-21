@@ -215,7 +215,7 @@ Blender の夜は地図の差分（hd2d_lab の town_avenue.map.json の variant
 ### スマホの重さを測る段取り（人と一緒に）
 
 1. `make explore-web`（数分・音なし）→ `make explore-serve`。表示された `http://<この機械の IP>:8765/` を、同じ Wi-Fi のスマホで開く。
-2. 開く URL に測る旗を付ける: `?fps=1&measure=1&debug=1`（`debug=1` は左上に engine の 1 コマの診断（CPU の送る時間・GPU の時間・3D の数と draw の数）を足す。ブラウザの WebGPU は GPU の時間を返さず「GPU -」になる）。左上（engine）に fps・1 コマの CPU の時間（中央値）・描き手（webgpu / webgl2）、
+2. 開く URL に測る旗を付ける: `?fge=fps&measure=1&debug=1`（`debug=1` は左上に engine の 1 コマの診断（CPU の送る時間・GPU の時間・3D の数と draw の数）を足す。ブラウザの WebGPU は GPU の時間を返さず「GPU -」になる）。左上（engine）に fps・1 コマの CPU の時間（中央値）・描き手（webgpu / webgl2）、
    最初のコマの後に左下（`web/measure.js`）に「押せるまで」「押してから最初のコマまで」・canvas の画素・dpr が出る。
 3. 測る数: 1 コマの時間（fps と cpu ms・歩いている時と止まっている時）・起動時間（押せるまで／押してから最初のコマまで）。PC のブラウザでも同じ URL で並べる
    （スマホの 3D の基準は fps3d-room で 46.5 fps・cpu 20.7 ms）。
@@ -227,11 +227,11 @@ Blender の夜は地図の差分（hd2d_lab の town_avenue.map.json の variant
 | `dof=0` | 手前と奥のぼけを外す |
 | `post=0` | 画面全体の後がけ（露出・色・周りの暗さ・FXAA）を外す |
 | `dpr=1` / `0.75` / `0.5` | 描く解像度（canvas の画素の細かさ。`web/measure.js` が `devicePixelRatio` を差し替える） |
-| `backend=webgl2` | WebGPU でなく WebGL2 で描く |
+| `fge=webgl2` | WebGPU でなく WebGL2 で描く（engine の頁の旗。`fge=fps,webgl2` のように並べる） |
 
-   例: `http://<IP>:8765/?fps=1&measure=1&shadow=2048&dof=0&dpr=1`。既定の値は `assets/explore.json` の `quality`（実機は環境変数 `SHADOW_MAP`・`DOF`・`POST`）。
+   例: `http://<IP>:8765/?fge=fps&measure=1&shadow=2048&dof=0&dpr=1`。既定の値は `assets/explore.json` の `quality`（実機は環境変数 `SHADOW_MAP`・`DOF`・`POST`）。
 5. 描き手は既定の WebGPU で測る（engine の材質の値の置き場の直し 5459049e を取り込んだ後は、歩いても GPUValidationError は 0 件）。
-   WebGL2 と並べたい時だけ `backend=webgl2` を足す。
+   WebGL2 と並べたい時だけ `fge=fps,webgl2` にする。
 
 ## ブラウザ版の曲のクレジット
 
