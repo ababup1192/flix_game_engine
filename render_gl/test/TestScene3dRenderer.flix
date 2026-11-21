@@ -27,15 +27,15 @@ mod TestScene3dRenderer {
     /// ビルボードが貼る絵の名前なら貼ると答える。
     @Test
     def testReadsBillboardTexture(): Unit \ Assert =
-        Assert.assertTrue(Render3d.readsTexture("hist", sceneWithBillboard("other") :: sceneWithBillboard("hist") :: Nil))
+        Assert.assertTrue(Render3d.readsTexture(name -> name == "hist", sceneWithBillboard("other") :: sceneWithBillboard("hist") :: Nil))
 
     /// どのビルボードも貼らない名前なら貼らないと答える。
     @Test
     def testIgnoresOtherTexture(): Unit \ Assert =
-        Assert.assertFalse(Render3d.readsTexture("hist", sceneWithBillboard("other") :: Nil))
+        Assert.assertFalse(Render3d.readsTexture(name -> name == "hist", sceneWithBillboard("other") :: Nil))
 
     /// 場面が無ければ貼らないと答える。
     @Test
     def testNoScenesReadNothing(): Unit \ Assert =
-        Assert.assertFalse(Render3d.readsTexture("hist", Nil))
+        Assert.assertFalse(Render3d.readsTexture(name -> name == "hist", Nil))
 }

@@ -89,6 +89,51 @@ mod TestPxSpriteAtlas {
                      PxSpriteAtlas.pixelAt(baked, r#x, r#y + 2)))
         }
 
+    /// 色の数・非 ASCII の字・legend に無い字・長さの揃わない行・使わない legend を混ぜた Doc。
+    def mixedDoc(): PxSpriteDoc.Doc =
+        { version = 1, note = None,
+          legend = Map#{'a' => "body", 'b' => "hair", '#' => "outline", '█' => "shade",
+                        'z' => "unused", '0' => "eye"},
+          sprites = Map#{
+              "guy" => { anchor = { x = 0.0, y = 0.0 }, clips = Map.empty(),
+                         frames = Map#{"f0" => ".ab#█" :: "a" :: "" :: "x0██a.b" :: Nil,
+                                       "f1" => "##" :: "#?#" :: Nil} },
+              "pot" => { anchor = { x = 0.0, y = 0.0 }, clips = Map.empty(),
+                         frames = Map#{"idle" => "███" :: "0a0" :: Nil} }} }
+
+    /// 端数の出る色を key ごとに返す（丸めの差も表で引く形と比べる）。
+    def mixedResolver(key: String): Color =
+        let n = Int32.toFloat64(String.length(key));
+        { r = n / 7.0, g = 1.0 / (n + 2.0), b = (n + 0.5) / 9.0 }
+
+    /// 1 画素ずつ legend と resolver を引いた画素（表で引く形と同じになるべき物）。
+    def pixelsResolvedPerCell(doc: PxSpriteDoc.Doc, resolver: String -> Color, baked: PxSpriteAtlas.Baked): Vector[Int32] = region rc {
+        let buf: Array[Int32, rc] = Array.empty(rc, baked#side * baked#side);
+        doc#sprites |> Map.forEach((name, sprite) -> sprite#frames |> Map.forEach((frame, rows) ->
+            Map.get((name, frame), baked#regions) |> Option.forEach(slot ->
+                rows |> List.forEachWithIndex((ry, row) ->
+                    String.toList(row) |> List.forEachWithIndex((rx, ch) ->
+                        Map.get(ch, doc#legend) |> Option.forEach(key ->
+                            Array.put(PxSpriteAtlas.argbOf(resolver(key)), (slot#y + ry) * baked#side + slot#x + rx, buf)))))));
+        Array.toVector(buf)
+    }
+
+    /// 生成した画素は、1 画素ずつ legend と resolver を引いた画素とバイト一致する。
+    @Test
+    def testBakePixelsMatchPerCellResolve(): Unit \ Assert =
+        let baked = PxSpriteAtlas.bake(mixedDoc(), mixedResolver);
+        Assert.assertEq(expected = pixelsResolvedPerCell(mixedDoc(), mixedResolver, baked), baked#pixels)
+
+    /// 格子に出てこない legend の key（unused）では止まる resolver。
+    def strictResolver(key: String): Color =
+        if (key == "unused") bug!("resolver に格子に無い key が来た") else mixedResolver(key)
+
+    /// resolver は格子に出てくる字の key でだけ呼ばれる（使わない key で止まる resolver でも生成できる）。
+    @Test
+    def testBakeDoesNotResolveUnusedLegendKeys(): Unit \ Assert =
+        let baked = PxSpriteAtlas.bake(mixedDoc(), strictResolver);
+        Assert.assertEq(expected = pixelsResolvedPerCell(mixedDoc(), mixedResolver, baked), baked#pixels)
+
     /// argbOf の丸めは SoftRaster.byteOf と同じ round(0.5 切り上げ)・不透明。
     @Test
     def testArgbOfRounds(): Unit \ Assert =

@@ -23,9 +23,10 @@ pub mod App.DevTools {
         List.head(kept) |> Option.map(first -> (fst(first), List.toMap(kept)))
 
     // WhyNot: fge-web.js の側で外さない — 外す一覧を Flix のテストで確かめられる所に 1 つだけ置く。頁に鍵を足したらここにも足す。
-    /// ブラウザ版の頁（fge-web.js）が自分で読む URL の鍵。始まりの引数に混ぜない。
+    /// ブラウザ版の頁（fge-web.js）と WebLayer が自分で読む URL の鍵。始まりの引数に混ぜない。
     pub def pageQueryKeys(): Set[String] =
-        Set#{"input", "size", "orientation", "glcheck", "loadtime", "capture", "fps"}
+        Set#{"input", "size", "orientation", "glcheck", "loadtime", "capture", "fps",
+             "backend", "net", "deferred", "sw", "usedAssets", "webgpuFail"}
 
     /// デスクトップの道具の組。env は入口の頭で読んだ環境変数の表（ProcessEnv.snapshot()。DEBUG_HTTP_PORT・FLOW_RECORD・START を読む）。
     /// 記録と保存検知は App の withDebug が真の時だけ、命令口とヒッチの見張りはさらに view か debugView がある時だけ動く。START はいつも効く。

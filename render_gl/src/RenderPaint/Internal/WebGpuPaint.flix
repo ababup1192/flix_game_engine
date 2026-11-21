@@ -223,13 +223,21 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         installBuiltins(paint);
         paint
 
-    /// 起動画面の字とロゴ・Render.lightAt と darkAt の組み込みの絵を上げて名前で引けるようにする（GL の RenderSplash.install と loadAssets の分）。
+    /// 起動画面の字とロゴを上げて名前で引けるようにする（GL の RenderSplash.install の分）。Render.lightAt と darkAt の組み込みの絵は、
+    /// 描く物が引いた時に ensureRadialBuiltins が上げる。
     def installBuiltins(paint: Paint): Unit \ IO =
         let side = BootFontData.side();
         putTexture(BootFont.textureName(), uploadBgra(paint, side, side, BootFont.pixelsArgb()), paint);
         let logoSide = BootFont.logoSide();
-        putTexture(BootFont.logoTextureName(), uploadBgra(paint, logoSide, logoSide, BootFont.logoArgb()), paint);
-        TextureTable.putRadialBuiltins(webGpuUploads(paint), textureTables(paint))
+        putTexture(BootFont.logoTextureName(), uploadBgra(paint, logoSide, logoSide, BootFont.logoArgb()), paint)
+
+    /// これから描く frame（スプライト・面・3D の場面のビルボード・広げる絵）が組み込みの放射の絵を引くなら、まだ上げていなければ上げる。
+    // WhyNot: 3D の材質の Tex は見ない — 組み込みの名前は `__` で始まる予約の綴りで、ゲームが材質に書く名前ではない。
+    def ensureRadialBuiltins(paint: Paint, frame: RenderPaint.Frame): Unit \ IO =
+        TextureTable.ensureRadialBuiltins(webGpuUploads(paint), textureTables(paint), () ->
+            TextureTable.isTextureRead(TextureTable.isRadialBuiltinName, frame#sprites, frame#surfaces)
+                or Render3d.WebGpuRenderer.readsTexture(TextureTable.isRadialBuiltinName, frame#scenes)
+                or Option.exists(TextureTable.isRadialBuiltinName, frame#letterbox))
 
     /// GL の RenderShader.setProjectionMatrix と同じ行列（列の順・64 バイト）。
     def projectionBytes(width: Float64, height: Float64): ByteBuffer \ IO =
@@ -773,6 +781,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
 
     /// 開いている Pass の texture へ描く（表に無い名前なら何もしない）。描く物（スプライト・面・3D の場面のビルボード）が自分の history を読むなら、pass を開く前に前のコマの絵を写す。
     def paintTarget(paint: Paint, spec: RenderTarget.TargetSpec, frame: RenderPaint.Frame): Unit \ IO =
+        ensureRadialBuiltins(paint, frame);
         let PaintData.PaintData(p) = paint;
         let history = TargetTable.historyFor(webGpuTargetAllocator(paint), textureTables(paint), p#targets, (p#designW, p#designH), spec,
                                              isHistoryReadIn(spec#name, frame), p#keepHistory);
@@ -789,7 +798,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
 
     /// 描き先 name へ描く frame が name の history を読むか（GL の RenderPaint.paintTarget と同じく、スプライトと面と 3D の場面のビルボードを見る）。
     pub def isHistoryReadIn(name: String, frame: RenderPaint.Frame): Bool =
-        TargetTable.isHistoryRead(name, frame#sprites, frame#surfaces) or Render3d.WebGpuRenderer.readsTexture(RenderTarget.historyName(name), frame#scenes)
+        TargetTable.isHistoryRead(name, frame#sprites, frame#surfaces) or Render3d.WebGpuRenderer.readsTexture(texture -> texture == RenderTarget.historyName(name), frame#scenes)
 
     /// pass を開く前の history の始末（TargetTable.historyFor の答え）を、同じ encoder へ積む。
     /// sourceId・source = 開いている描き先の slots の番号と texture（resolve 済みの 1 標本）。
@@ -845,6 +854,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         }
 
     def paintScreen(paint: Paint, frame: RenderPaint.Frame): Unit \ IO =
+        ensureRadialBuiltins(paint, frame);
         let PaintData.PaintData(p) = paint;
         let size = (Array.get(0, p#frameSize), Array.get(1, p#frameSize));
         let screen = RenderList.screenPass(size, (p#designW, p#designH), p#clearColor, DepthStencil.NoDepthStencil);
@@ -1079,6 +1089,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             def getFontAtlas(name, k) = k(RenderPaint.fontAtlas(fonts, name))
             def getTextureInfo(name, k) = {
                 let PaintData.PaintData(p) = paint;
+                TextureTable.ensureRadialBuiltins(webGpuUploads(paint), textureTables(paint), () -> TextureTable.isRadialBuiltinName(name));
                 k(Map.get(name, Ref.get(p#registryRef)))
             }
             def buildProgram(spec, k) = {

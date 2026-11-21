@@ -416,9 +416,9 @@ mod Render3d {
           readsTexture = readsTexture,
           preload = (gen, textureOf, cmd) -> Render3d.Preload.upload(gl, state, gen, textureOf, cmd) }
 
-    /// 場面のどれかのビルボードが name の絵を貼るか（材質の Tex は数えない）。
-    pub def readsTexture(name: String, scenes: List[Scene3d.RenderCmd]): Bool =
-        List.exists(cmd -> List.exists(b -> Scene3d.billboardFieldsOf(b)#texture == name, cmd#scene#billboards), scenes)
+    /// 場面のどれかのビルボードが、名前が isName に当たる絵を貼るか（材質の Tex は数えない）。
+    pub def readsTexture(isName: String -> Bool, scenes: List[Scene3d.RenderCmd]): Bool =
+        List.exists(cmd -> List.exists(b -> isName(Scene3d.billboardFieldsOf(b)#texture), cmd#scene#billboards), scenes)
 
     /// 場面を先に描いておき、番号で引いて描く形にする。
     def prepareNumbered(gl: GlContext, state: State, gen: Int64, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO,
