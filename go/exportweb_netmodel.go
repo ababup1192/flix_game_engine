@@ -15,7 +15,7 @@ type webStartupSize struct {
 	StartBytes, DeferredBytes int64
 }
 
-func webStartupSizeOf(out string, b *webBundle) webStartupSize {
+func webStartupSizeOf(sizes *webSizeTable, b *webBundle) webStartupSize {
 	deferred := map[string]bool{}
 	var s webStartupSize
 	for _, e := range b.Deferred {
@@ -28,9 +28,51 @@ func webStartupSizeOf(out string, b *webBundle) webStartupSize {
 			continue
 		}
 		s.StartCount++
-		s.StartBytes += fileSize(exportAssetPath(out, b.served(rel)))
+		s.StartBytes += sizes.assetRaw(b, rel)
 	}
 	return s
+}
+
+// webSizeTable は書き出し先の 1 本ずつの、素の大きさと回線に乗る量（webWireSize）。道は書き出し先から見た / 区切り。
+// 同じ物を何度引いても読むのは 1 回。書き出し先の物を書き直したら作り直す（前の大きさを覚えたままになる）。
+type webSizeTable struct {
+	dir       string
+	raw, wire map[string]int64
+}
+
+func newWebSizeTable(dir string) *webSizeTable {
+	return &webSizeTable{dir: dir, raw: map[string]int64{}, wire: map[string]int64{}}
+}
+
+func (t *webSizeTable) path(rel string) string { return filepath.Join(t.dir, filepath.FromSlash(rel)) }
+
+func (t *webSizeTable) rawOf(rel string) int64 {
+	if n, ok := t.raw[rel]; ok {
+		return n
+	}
+	n := fileSize(t.path(rel))
+	t.raw[rel] = n
+	return n
+}
+
+func (t *webSizeTable) wireOf(rel string) int64 {
+	if n, ok := t.wire[rel]; ok {
+		return n
+	}
+	n := webWireSize(t.path(rel))
+	t.wire[rel] = n
+	return n
+}
+
+func (t *webSizeTable) exists(rel string) bool { return fileExists(t.path(rel)) }
+
+// assetRaw と assetWire は束の論理の道 rel の、配る形（assets/ の下）の大きさ。
+func (t *webSizeTable) assetRaw(b *webBundle, rel string) int64 {
+	return t.rawOf("assets/" + b.served(rel))
+}
+
+func (t *webSizeTable) assetWire(b *webBundle, rel string) int64 {
+	return t.wireOf("assets/" + b.served(rel))
 }
 
 // 起動まで（遊べるまで）の見積もりの前提。測った 4G の回線（Lighthouse のモバイルと同じ 1.6 Mbps・往復 150 ms）に合わせる。
@@ -85,8 +127,8 @@ func webWireSize(p string) int64 {
 
 func webSecondsFor(wire int64) float64 { return float64(wire) * 8 / webStartupBitsPerSecond }
 
-// webStartupBytesOf は書き出し先 out の起動の素材（後回しでない物）と classes.wasm の大きさ。
-func webStartupBytesOf(out string, b *webBundle) webStartupBytes {
+// webStartupBytesOf は書き出し先の起動の素材（後回しでない物）と classes.wasm の大きさ。
+func webStartupBytesOf(sizes *webSizeTable, b *webBundle) webStartupBytes {
 	deferred := map[string]bool{}
 	for _, e := range b.Deferred {
 		deferred[e.Path] = true
@@ -96,27 +138,24 @@ func webStartupBytesOf(out string, b *webBundle) webStartupBytes {
 		if deferred[rel] {
 			continue
 		}
-		p := exportAssetPath(out, b.served(rel))
-		s.Assets += fileSize(p)
-		s.AssetsWire += webWireSize(p)
+		s.Assets += sizes.assetRaw(b, rel)
+		s.AssetsWire += sizes.assetWire(b, rel)
 	}
-	wasm := filepath.Join(out, "classes.wasm")
-	s.Wasm, s.WasmWire = fileSize(wasm), webWireSize(wasm)
-	if br := filepath.Join(out, b.WasmBrotli); b.WasmBrotli != "" && fileExists(br) {
-		decoder := webWireSize(filepath.Join(out, webBrotliDecoderFile))
-		s.Wasm, s.WasmWire = fileSize(br), fileSize(br)+decoder
+	s.Wasm, s.WasmWire = sizes.rawOf("classes.wasm"), sizes.wireOf("classes.wasm")
+	if br := b.WasmBrotli; br != "" && sizes.exists(br) {
+		s.Wasm, s.WasmWire = sizes.rawOf(br), sizes.rawOf(br)+sizes.wireOf(webBrotliDecoderFile)
 	}
 	return s
 }
 
-// webStartupEstimateOf は書き出し先 out から起動までの見積もりを作る。後回しは起動の後に、並べた順で回線を使い切るとして届く時刻を出す。
-func webStartupEstimateOf(out string, b *webBundle) webStartupEstimate {
-	s := webStartupEstimate{Boot: webStartupBytesOf(out, b)}
+// webStartupEstimateOf は書き出し先の大きさの表から起動までの見積もりを作る。後回しは起動の後に、並べた順で回線を使い切るとして届く時刻を出す。
+func webStartupEstimateOf(sizes *webSizeTable, b *webBundle) webStartupEstimate {
+	s := webStartupEstimate{Boot: webStartupBytesOf(sizes, b)}
 	for _, name := range []string{"index.html", "version.txt", "fge-web.js", "wasm-gc-runtime.js", "bundle.json"} {
-		s.PageWire += webWireSize(filepath.Join(out, name))
+		s.PageWire += sizes.wireOf(name)
 	}
 	s.Seconds = webStartupPreludeSeconds + webSecondsFor(s.Boot.AssetsWire+s.Boot.WasmWire+s.PageWire)
-	for i, after := range webDeferredArrivals(out, b) {
+	for i, after := range webDeferredArrivals(sizes, b) {
 		s.Deferred = append(s.Deferred, webArrival{Path: b.Deferred[i].Path, Seconds: s.Seconds + after})
 	}
 	return s
@@ -127,19 +166,19 @@ func webStartupEstimateOf(out string, b *webBundle) webStartupEstimate {
 const webDeferredRoundTripSeconds = 0.15 / 2
 
 // webDeferredArrivals は後回しの 1 本ずつが、後回しを取り始めて（タッチして開始の頃）から 4G で届くまでの秒（取る順に積む）。
-func webDeferredArrivals(out string, b *webBundle) []float64 {
+func webDeferredArrivals(sizes *webSizeTable, b *webBundle) []float64 {
 	arrivals := make([]float64, len(b.Deferred))
 	at := 0.0
 	for i, e := range b.Deferred {
-		at += webSecondsFor(webWireSize(exportAssetPath(out, b.served(e.Path)))) + webDeferredRoundTripSeconds
+		at += webSecondsFor(sizes.assetWire(b, e.Path)) + webDeferredRoundTripSeconds
 		arrivals[i] = at
 	}
 	return arrivals
 }
 
 // setWebArrivalSeconds は bundle.json の後回しの項目に arrivalSeconds を書く（頁の ?net=4g がその秒まで渡さない）。
-func setWebArrivalSeconds(out string, b *webBundle) {
-	for i, at := range webDeferredArrivals(out, b) {
+func setWebArrivalSeconds(sizes *webSizeTable, b *webBundle) {
+	for i, at := range webDeferredArrivals(sizes, b) {
 		b.Deferred[i].ArrivalSeconds = math.Round(at*1000) / 1000
 	}
 }
@@ -167,8 +206,8 @@ func webWaitsWhenMissing(e webDeferredEntry, kind string) bool {
 	return false
 }
 
-func webTapWaitOf(out string, b *webBundle, waitFor []string) webTapWait {
-	arrivals := webDeferredArrivals(out, b)
+func webTapWaitOf(sizes *webSizeTable, b *webBundle, waitFor []string) webTapWait {
+	arrivals := webDeferredArrivals(sizes, b)
 	want := map[string]bool{}
 	for _, g := range waitFor {
 		want[g] = true

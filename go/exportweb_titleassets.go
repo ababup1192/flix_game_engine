@@ -77,9 +77,9 @@ var webTextDocExts = map[string]bool{
 	".json": true, ".yarn": true, ".txt": true, ".md": true, ".csv": true, ".tsv": true, ".ink": true, ".xml": true,
 }
 
-// suggestWebDeferred は書き出し先 out の束と、タイトルの frames コマの間に使った素材の記録から、後回しの候補を出す。
+// suggestWebDeferred は書き出し先の大きさの表 sizes と束 b と、タイトルの frames コマの間に使った素材の記録から、後回しの候補を出す。
 // hidden は web.embed・web.omit に当たる道（候補にも glob の当たりにも入れない）。
-func suggestWebDeferred(out string, b *webBundle, pr exportProject, deferredFonts []string, hidden map[string]bool,
+func suggestWebDeferred(sizes *webSizeTable, b *webBundle, pr exportProject, deferredFonts []string, hidden map[string]bool,
 	used webUsedAssets, frames int) webDeferredSuggestion {
 	s := webDeferredSuggestion{Frames: frames}
 	texNames := textureNamesByPath(pr)
@@ -147,7 +147,7 @@ func suggestWebDeferred(out string, b *webBundle, pr exportProject, deferredFont
 			continue
 		}
 		kind := kindOf(rel)
-		c := webDeferredCandidate{Path: rel, Kind: kind, Wire: webWireSize(exportAssetPath(out, b.served(rel)))}
+		c := webDeferredCandidate{Path: rel, Kind: kind, Wire: sizes.assetWire(b, rel)}
 		// WhyNot: 読まなかったファイルを貼る形に入れない — ファイルの読み込み（Fs.FileRead）は後回しの物を待たず、届く前に読むと Err になる。
 		// 絵・音と違い「届くまで黒い」で済まないので、届いたかを見てから読む（BackgroundLoad）物だけを担当が選んで足す。
 		if kind == webDeferredFile {
@@ -193,7 +193,7 @@ func suggestWebDeferred(out string, b *webBundle, pr exportProject, deferredFont
 		}
 	}
 	s.Globs = deferredGlobsOf(plain, all, allowed)
-	s.estimate(out, b, deferred)
+	s.estimate(sizes, b, deferred)
 	return s
 }
 
@@ -223,20 +223,20 @@ func (s *webDeferredSuggestion) keepOneFont(fonts, deferredFonts []string) {
 // （今の列の頭に続くフォントのアトラスの後ろへ足したフォント・今の列の残り・足した glob の順。1 つの glob に当たる物は道の順）。
 // WhyNot: 今の列のフォントを全部頭へ寄せて数えない — web.deferred の font: の行や group で後ろに置いたフォントの分だけ、足した物が遅く見える。
 // WhyNot: 列の 1 行目の font: の行で置いたフォントを頭のフォントと分けない — bundle.json からは行で置いたか分からない（足した物が少し遅く見える側にずれるだけ）。
-func (s *webDeferredSuggestion) estimate(out string, b *webBundle, deferred map[string]bool) {
+func (s *webDeferredSuggestion) estimate(sizes *webSizeTable, b *webBundle, deferred map[string]bool) {
 	wire := map[string]int64{}
 	var moved int64
 	for _, c := range s.Candidates {
 		wire[c.Path] = c.Wire
 		moved += c.Wire
 	}
-	s.Before = webStartupEstimateOf(out, b).Seconds
+	s.Before = webStartupEstimateOf(sizes, b).Seconds
 	s.After = s.Before - webSecondsFor(moved)
 	wireOf := func(rel string) int64 {
 		if w, ok := wire[rel]; ok {
 			return w
 		}
-		return webWireSize(exportAssetPath(out, b.served(rel)))
+		return sizes.assetWire(b, rel)
 	}
 	at := s.After
 	head := 0

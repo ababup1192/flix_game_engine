@@ -135,10 +135,18 @@ func ewLogf(format string, a ...any) { fmt.Fprintf(exportWebLog, "[export-web] "
 func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 	code, fail := exportWeb(out, errOut, o)
 	if fail != nil {
-		errOut.WriteString(fail.text)
-		return fail.code
+		return reportExportFailure(errOut, fail)
 	}
 	return code
+}
+
+// reportExportFailure は止まった段の字を errOut へ書き、消すと決めた書き出し先を消して終わりの番号を返す。
+func reportExportFailure(errOut *strings.Builder, f *exportFailure) int {
+	if f.discard != "" {
+		os.RemoveAll(f.discard)
+	}
+	errOut.WriteString(f.text)
+	return f.code
 }
 
 // exportWeb は書き出しの段を順に流す。
@@ -209,43 +217,39 @@ func reuseExport(out *strings.Builder, o exportWebOptions, c exportConfig) (stri
 	var w strings.Builder
 	writeWebCheck(&w, r)
 	out.WriteString(w.String())
-	if !r.Gate.green() && !o.Draft && c.Budget.Declared {
-		os.RemoveAll(p.Out)
-		return "", true, exportFailf(1, "fge export-web: 門が赤なので書き出し先 %s を消した（作業中に開くだけなら --draft）\n", p.Out)
-	}
-	if !r.Gate.green() && !o.Draft {
+	switch exportVerdictOf(!r.Gate.green(), o.Draft, c.Budget) {
+	case exportStop:
+		return "", true, exportFailf(1, "fge export-web: 門が赤なので書き出し先 %s を消した（作業中に開くだけなら --draft）\n", p.Out).discarding(p.Out)
+	case exportMigrating:
 		fmt.Fprintln(out, "  ★ 上の「止める」は公開の道（web-check）での扱い。web.startupBudget を書いていないので、移行の間は手元の書き出しを止めない（手で写す前に bin/fge web-check）")
 	}
 	return "", true, nil
 }
 
-// finishExport は確かめの結果を束に書き足して門に掛け、表と後回しの候補を書く。門が赤なら書き出し先を消して 1 を返す。
+// finishExport は確かめの結果を束に書き足して門に掛け、表と後回しの候補を書く。門が赤で止める時は書き出し先を消して 1。
 func finishExport(out, errOut *strings.Builder, o exportWebOptions, c exportConfig, a *exportAssembly, w wasmBuild,
 	bc exportBrowserChecks, hash, fingerprint string) (int, *exportFailure) {
-	p, b, budget := c.Paths, &a.Bundle, c.Budget
+	p, b := c.Paths, &a.Bundle
 	checks := bc.Checks
 	b.Checks = &checks
-	g := webGateOf(p.Out, b, budget)
-	if checks.Title4g == "stopped" {
-		g.Red = append(g.Red, webTitle4gStoppedRed)
-	}
-	stop := !g.green() && !o.Draft && budget.Declared
-	if !g.green() && o.Draft {
+	g := exportGateOf(newWebSizeTable(p.Out), b, c.Budget)
+	v := exportVerdictOf(!g.green(), o.Draft, c.Budget)
+	if v == exportDraft {
 		b.Draft, b.DraftReasons = true, g.Red
 	}
 	var err error
 	// WhyNot: 確かめの結果を書き出し先の外（report）に置かない — gh-pages の根や play/ に写したフォルダを web-check が Chrome 無しで読めなくなる。
-	if !stop {
+	if v != exportStop {
 		if hash, err = writeWebPageMeta(p, *b, w.TeavmCore); err != nil {
 			return 0, exportFail(1, err)
 		}
 		// WhyNot: 書き直す前の判定のまま終えない — bundle.json が checks の分だけ大きくなり、境目の束は web-check で赤になる。
-		after := webGateOf(p.Out, b, budget)
+		after := exportGateOf(newWebSizeTable(p.Out), b, c.Budget)
 		if g.green() && !after.green() {
 			after.Advice = g.Advice
 			g = after
-			stop = !o.Draft && budget.Declared
-			if o.Draft {
+			v = exportVerdictOf(true, o.Draft, c.Budget)
+			if v == exportDraft {
 				b.Draft, b.DraftReasons = true, g.Red
 				if hash, err = writeWebPageMeta(p, *b, w.TeavmCore); err != nil {
 					return 0, exportFail(1, err)
@@ -253,23 +257,24 @@ func finishExport(out, errOut *strings.Builder, o exportWebOptions, c exportConf
 			}
 		}
 	}
-	suggestion := suggestTitleDeferred(p.Out, b, c, bc.Used)
+	sizes := newWebSizeTable(p.Out)
+	suggestion := suggestTitleDeferred(sizes, b, c, bc.Used)
 	if advice := webCandidateAdvice(suggestion); advice != "" {
 		g.Advice = append([]string{advice}, g.Advice...)
 	}
 	cleanupExportWork(p, o.KeepWork)
-	if fingerprint != "" && !stop {
+	if fingerprint != "" && v != exportStop {
 		if err := os.WriteFile(exportReuseStamp(p), []byte(exportReuseLine(fingerprint, p.Out, hash)), 0o644); err != nil {
 			ewLogf("知らせ: 指紋を残せない（次の --reuse も組み直す）: %v", err)
 		}
 	}
 
-	if stop {
+	if v == exportStop {
 		fmt.Fprintf(out, "export-web: %s（版 %s・門が赤なので最後に消す）\n", p.Out, hash)
 	} else {
 		fmt.Fprintf(out, "export-web: %s（版 %s）\n", p.Out, hash)
 	}
-	writeExportSizes(out, p.Out, *b, a.Atlases, a.Report, c.Strip)
+	writeExportSizes(out, sizes, *b, a.Atlases, a.Report, c.Strip)
 	writeWebMissingTitleTo(out, bc.Missing)
 	var tw strings.Builder
 	tapSkipped := ""
@@ -277,20 +282,33 @@ func finishExport(out, errOut *strings.Builder, o exportWebOptions, c exportConf
 		tapSkipped = checks.TapSkippedWhy
 	}
 	writeWebTapMeasure(&tw, bc.Tap, tapSkipped)
-	writeWebGateSummary(&tw, g, budget, o.Draft)
+	writeWebGateSummary(&tw, g, v)
 	out.WriteString(tw.String())
 	titleCode := writeTitleAssets(out, errOut, o, p, suggestion, bc.Used)
-	if stop {
+	if v == exportStop {
 		// WhyNot: 赤の書き出し先を残さない — 手で gh-pages の根へ写す道は web-check を通らず、そのまま配られる。
-		os.RemoveAll(p.Out)
-		fmt.Fprintf(errOut, "fge export-web: 門が赤なので書き出し先 %s を消した。\n", p.Out)
-		for _, red := range g.Red {
-			fmt.Fprintf(errOut, "  止めた: %s\n", red)
-		}
-		var aw strings.Builder
-		writeWebGateAdvice(&aw, g.Advice, "")
-		fmt.Fprintf(errOut, "%s  作業中に開くだけなら --draft（web-check が拒む draft のマーカーが付く）\n", aw.String())
-		return 1, nil
+		return 0, exportFailf(1, "%s", exportStopText(p.Out, g)).discarding(p.Out)
 	}
 	return titleCode, nil
+}
+
+// exportGateOf は書き出しの門（webGateOf に、確かめで 4G のタイトルが止まった赤を足した物）。
+func exportGateOf(sizes *webSizeTable, b *webBundle, budget webStartupBudget) webGate {
+	g := webGateOf(sizes, b, budget)
+	if b.Checks != nil && b.Checks.Title4g == "stopped" {
+		g.Red = append(g.Red, webTitle4gStoppedRed)
+	}
+	return g
+}
+
+// exportStopText は門が赤で止めた時に errOut へ書く字（赤の行・次に打つ手・--draft の案内）。
+func exportStopText(out string, g webGate) string {
+	var w strings.Builder
+	fmt.Fprintf(&w, "fge export-web: 門が赤なので書き出し先 %s を消した。\n", out)
+	for _, red := range g.Red {
+		fmt.Fprintf(&w, "  止めた: %s\n", red)
+	}
+	writeWebGateAdvice(&w, g.Advice, "")
+	w.WriteString("  作業中に開くだけなら --draft（web-check が拒む draft のマーカーが付く）\n")
+	return w.String()
 }

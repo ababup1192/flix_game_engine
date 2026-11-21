@@ -232,7 +232,7 @@ func runWebCheck(dir string, browser bool) (webCheckResult, error) {
 		budget = *b.StartupBudget
 		budget.Declared = true
 	}
-	g := webGateOf(dir, &b, budget)
+	g := webGateOf(newWebSizeTable(dir), &b, budget)
 	g.BudgetDefault = b.StartupBudget == nil
 	if err := budget.validate("bundle.json の startupBudget"); err != nil {
 		g.Red = append(g.Red, strings.SplitN(err.Error(), "\n", 2)[0])

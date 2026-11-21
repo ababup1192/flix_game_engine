@@ -199,7 +199,7 @@ func webFontGroupStarts(paths []string, fonts []string, pol webDeferredPolicy, b
 	if len(fonts) == 0 || len(pol.Rows) == 0 {
 		return nil
 	}
-	entries := webDeferredEntries("", b, paths, textureNames)
+	entries := webDeferredEntries(newWebSizeTable(""), b, paths, textureNames)
 	for _, name := range fonts {
 		entries = append(entries, webDeferredEntry{Path: webFontAtlasRel(name), Names: []string{name}})
 	}
@@ -324,7 +324,7 @@ func looksLikeTitleImage(rel string, names []string) bool {
 }
 
 // webDeferredEntries は後回しの道に、配る大きさと名前を付ける（素材を小さくした後に呼ぶ）。
-func webDeferredEntries(out string, b *webBundle, paths []string, textureNames map[string][]string) []webDeferredEntry {
+func webDeferredEntries(sizes *webSizeTable, b *webBundle, paths []string, textureNames map[string][]string) []webDeferredEntry {
 	soundNames := map[string][]string{}
 	for _, s := range b.Sounds {
 		soundNames[s.Path] = append(soundNames[s.Path], s.Name)
@@ -332,7 +332,7 @@ func webDeferredEntries(out string, b *webBundle, paths []string, textureNames m
 	var entries []webDeferredEntry
 	for _, rel := range paths {
 		names := append(append([]string{}, textureNames[rel]...), soundNames[rel]...)
-		entries = append(entries, webDeferredEntry{Path: rel, Bytes: fileSize(exportAssetPath(out, b.served(rel))), Names: names})
+		entries = append(entries, webDeferredEntry{Path: rel, Bytes: sizes.assetRaw(b, rel), Names: names})
 	}
 	return entries
 }

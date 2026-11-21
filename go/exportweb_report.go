@@ -11,7 +11,7 @@ import (
 )
 
 // suggestTitleDeferred は最後の確かめで記録したタイトルの間の素材から後回しの候補を出す（記録が無ければ nil）。
-func suggestTitleDeferred(out string, b *webBundle, c exportConfig, used *webUsedAssets) *webDeferredSuggestion {
+func suggestTitleDeferred(sizes *webSizeTable, b *webBundle, c exportConfig, used *webUsedAssets) *webDeferredSuggestion {
 	if used == nil {
 		return nil
 	}
@@ -19,7 +19,7 @@ func suggestTitleDeferred(out string, b *webBundle, c exportConfig, used *webUse
 	for _, rel := range append(append([]string{}, c.EmbedPlan.Embedded...), c.EmbedPlan.Omitted...) {
 		hidden[rel] = true
 	}
-	s := suggestWebDeferred(out, b, c.Project, c.DeferredFonts, hidden, *used, webTitleFrames)
+	s := suggestWebDeferred(sizes, b, c.Project, c.DeferredFonts, hidden, *used, webTitleFrames)
 	return &s
 }
 
@@ -33,16 +33,15 @@ func webCandidateAdvice(s *webDeferredSuggestion) string {
 }
 
 // writeWebGateSummary は表の後ろへ門の 1 行と ★ を書く。予算を書いていないゲームが赤なら、移行の間は止めずに ★ で知らせる。
-func writeWebGateSummary(w io.Writer, g webGate, budget webStartupBudget, draft bool) {
+func writeWebGateSummary(w io.Writer, g webGate, v exportVerdict) {
 	fmt.Fprintf(w, "  %s\n", g.line())
 	for _, n := range g.Notes {
 		fmt.Fprintf(w, "  %s\n", n)
 	}
-	switch {
-	case g.green():
-	case draft:
+	switch v {
+	case exportDraft:
 		fmt.Fprintf(w, "  ★ 門が赤のまま --draft で書き出した（draft のマーカー付き・web-check が拒むので公開できない）: %s\n", strings.Join(g.Red, " / "))
-	case !budget.Declared:
+	case exportMigrating:
 		fmt.Fprintf(w, "  ★ %s。移行が終わる版から書き出しも止まる（docs/migrations/0.106.0.md）。公開の道（web-check）は今も止めるので、手で写す前に bin/fge web-check <書き出し先>\n", strings.Join(g.Red, " / "))
 		writeWebGateAdvice(w, g.Advice, "")
 	}
@@ -104,7 +103,7 @@ func exportDocFiles(b webBundle, isAtlas map[string]bool) []string {
 }
 
 // writeExportSizes は配る大きさの内訳を 1 行ずつ出す（変換した種類は「前 → 後」）と、変換の知らせ。
-func writeExportSizes(out *strings.Builder, dir string, b webBundle, atlases []string, r webTranscodeReport, strip webStripPlan) {
+func writeExportSizes(out *strings.Builder, sizes *webSizeTable, b webBundle, atlases []string, r webTranscodeReport, strip webStripPlan) {
 	isAtlas := map[string]bool{}
 	for _, a := range atlases {
 		isAtlas[a] = true
@@ -112,11 +111,10 @@ func writeExportSizes(out *strings.Builder, dir string, b webBundle, atlases []s
 	docFiles := exportDocFiles(b, isAtlas)
 	var docs int64
 	for _, f := range docFiles {
-		docs += fileSize(exportAssetPath(dir, f))
+		docs += sizes.rawOf("assets/" + f)
 	}
-	page := fileSize(filepath.Join(dir, "index.html")) + fileSize(filepath.Join(dir, "fge-web.js")) +
-		fileSize(filepath.Join(dir, "wasm-gc-runtime.js")) + fileSize(filepath.Join(dir, "bundle.json"))
-	wasm := fileSize(filepath.Join(dir, "classes.wasm"))
+	page := sizes.rawOf("index.html") + sizes.rawOf("fge-web.js") + sizes.rawOf("wasm-gc-runtime.js") + sizes.rawOf("bundle.json")
+	wasm := sizes.rawOf("classes.wasm")
 	pair := func(p webSizePair) string {
 		if p.Before == p.After {
 			return humanBytes(p.After)
@@ -148,14 +146,14 @@ func writeExportSizes(out *strings.Builder, dir string, b webBundle, atlases []s
 	for _, line := range r.AutoLossyLines {
 		fmt.Fprintf(w, "  %s\n", line)
 	}
-	start := webStartupSizeOf(dir, &b)
+	start := webStartupSizeOf(sizes, &b)
 	var waitFor []string
 	logoMax := webAfterTapMaxSeconds
 	if t := b.Splash; t != nil && t.AfterTap != nil && t.AfterTap.Mode != "none" {
 		waitFor, logoMax = t.AfterTap.WaitFor, t.AfterTap.MaxSeconds
 	}
-	writeStartupEstimate(w, webStartupEstimateOf(dir, &b), start)
-	writeTapWaitEstimate(w, webTapWaitOf(dir, &b, waitFor), logoMax)
+	writeStartupEstimate(w, webStartupEstimateOf(sizes, &b), start)
+	writeTapWaitEstimate(w, webTapWaitOf(sizes, &b, waitFor), logoMax)
 	if r.FallbackBytes > 0 {
 		fmt.Fprintf(w, "  置き場には元の wav（%s）も残す — Opus を解けないブラウザだけが取る\n", humanBytes(r.FallbackBytes))
 	}

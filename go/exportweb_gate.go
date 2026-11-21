@@ -128,13 +128,36 @@ type webGate struct {
 
 func (g webGate) green() bool { return len(g.Red) == 0 }
 
+// exportVerdict は門の判定を受けた手元の書き出しの扱い。
+type exportVerdict int
+
+const (
+	exportPublish   exportVerdict = iota // 緑
+	exportDraft                          // 赤で --draft: draft のマーカーを付けて残す
+	exportStop                           // 赤で web.startupBudget を書いたゲーム: 書き出し先を消して止める
+	exportMigrating                      // 赤で web.startupBudget を書いていないゲーム: 移行の間は止めずに ★ で知らせる
+)
+
+// exportVerdictOf は門が赤か（red）・--draft か・予算を書いたかから書き出しの扱いを決める。
+func exportVerdictOf(red, draft bool, budget webStartupBudget) exportVerdict {
+	switch {
+	case !red:
+		return exportPublish
+	case draft:
+		return exportDraft
+	case budget.Declared:
+		return exportStop
+	}
+	return exportMigrating
+}
+
 func round1(v float64) float64 { return math.Round(v*10) / 10 }
 
-// webGateOf は書き出し先 dir の束 b から門を計算する（export-web と web-check で同じ物）。
+// webGateOf は書き出し先の大きさの表 sizes と束 b から門を計算する（export-web と web-check で同じ物）。
 // budget は書き出しなら project.json の物・web-check なら bundle.json の物。
-func webGateOf(dir string, b *webBundle, budget webStartupBudget) webGate {
+func webGateOf(sizes *webSizeTable, b *webBundle, budget webStartupBudget) webGate {
 	g := webGate{Budget: budget}
-	est := webStartupEstimateOf(dir, b)
+	est := webStartupEstimateOf(sizes, b)
 	g.Startup = est.Seconds
 	var waitFor []string
 	var after *webAfterTap
@@ -142,7 +165,7 @@ func webGateOf(dir string, b *webBundle, budget webStartupBudget) webGate {
 		after = b.Splash.AfterTap
 		waitFor = after.WaitFor
 	}
-	t := webTapWaitOf(dir, b, waitFor)
+	t := webTapWaitOf(sizes, b, waitFor)
 	// WhyNot: group の無いゲームで、最初に届く待つ物の秒を足さない — 最初の場面が後回しの物を使わなければ待ちは 0 で（よその子は押した後 8 秒の映像）、
 	// 足すと待たないゲームまで止まる。分からない分は押した後の測り（⑨''）で埋める。
 	if len(t.Group) > 0 {

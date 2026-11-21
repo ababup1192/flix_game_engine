@@ -65,7 +65,7 @@ func candidatePaths(s webDeferredSuggestion) []string {
 
 func TestSuggestWebDeferredLeavesOutWhatTitleUsed(t *testing.T) {
 	out, b, pr := titleFixture(t, nil)
-	s := suggestWebDeferred(out, &b, pr, nil, nil, titleUsed(), webTitleFrames)
+	s := suggestWebDeferred(newWebSizeTable(out), &b, pr, nil, nil, titleUsed(), webTitleFrames)
 	for _, rel := range candidatePaths(s) {
 		if rel == "assets/bg/title.png" || rel == "assets/bgm/title.wav" || rel == "font-atlas/gothic.fontatlas" {
 			t.Errorf("タイトルで使った %s は候補に出ないはず: %v", rel, candidatePaths(s))
@@ -75,7 +75,7 @@ func TestSuggestWebDeferredLeavesOutWhatTitleUsed(t *testing.T) {
 
 func TestSuggestWebDeferredCountsUseAfterTitleFramesAsUnused(t *testing.T) {
 	out, b, pr := titleFixture(t, nil)
-	s := suggestWebDeferred(out, &b, pr, nil, nil, titleUsed(), webTitleFrames)
+	s := suggestWebDeferred(newWebSizeTable(out), &b, pr, nil, nil, titleUsed(), webTitleFrames)
 	found := false
 	for _, rel := range candidatePaths(s) {
 		found = found || rel == "assets/bg/sea.png"
@@ -87,7 +87,7 @@ func TestSuggestWebDeferredCountsUseAfterTitleFramesAsUnused(t *testing.T) {
 
 func TestSuggestWebDeferredSkipsDocsAndProjectJSON(t *testing.T) {
 	out, b, pr := titleFixture(t, nil)
-	s := suggestWebDeferred(out, &b, pr, nil, nil, titleUsed(), webTitleFrames)
+	s := suggestWebDeferred(newWebSizeTable(out), &b, pr, nil, nil, titleUsed(), webTitleFrames)
 	for _, rel := range candidatePaths(s) {
 		if strings.HasSuffix(rel, ".json") {
 			t.Errorf("Doc と project.json は候補に出ないはず: %v", candidatePaths(s))
@@ -97,7 +97,7 @@ func TestSuggestWebDeferredSkipsDocsAndProjectJSON(t *testing.T) {
 
 func TestSuggestWebDeferredListsUnreadBinaryFileApart(t *testing.T) {
 	out, b, pr := titleFixture(t, nil)
-	s := suggestWebDeferred(out, &b, pr, nil, nil, titleUsed(), webTitleFrames)
+	s := suggestWebDeferred(newWebSizeTable(out), &b, pr, nil, nil, titleUsed(), webTitleFrames)
 	if len(s.Files) != 1 || s.Files[0].Path != "assets/walk/hall.glb" {
 		t.Errorf("読まなかった glb は読まなかったファイルの一覧に出るはず: %+v", s.Files)
 	}
@@ -105,7 +105,7 @@ func TestSuggestWebDeferredListsUnreadBinaryFileApart(t *testing.T) {
 
 func TestSuggestWebDeferredKeepsUnreadFileOutOfGlobs(t *testing.T) {
 	out, b, pr := titleFixture(t, nil)
-	s := suggestWebDeferred(out, &b, pr, nil, nil, titleUsed(), webTitleFrames)
+	s := suggestWebDeferred(newWebSizeTable(out), &b, pr, nil, nil, titleUsed(), webTitleFrames)
 	for _, g := range s.Globs {
 		if strings.Contains(g, "walk") {
 			t.Errorf("読まなかったファイルは貼る形に入れないはず（読み込みは届くのを待たない）: %v", s.Globs)
@@ -115,7 +115,7 @@ func TestSuggestWebDeferredKeepsUnreadFileOutOfGlobs(t *testing.T) {
 
 func TestSuggestWebDeferredOffersUnusedFontByGlyphTexture(t *testing.T) {
 	out, b, pr := titleFixture(t, nil)
-	s := suggestWebDeferred(out, &b, pr, nil, nil, titleUsed(), webTitleFrames)
+	s := suggestWebDeferred(newWebSizeTable(out), &b, pr, nil, nil, titleUsed(), webTitleFrames)
 	if !reflect.DeepEqual(s.Fonts, []string{"mincho"}) {
 		t.Errorf("字を描かなかったフォントだけが deferredFonts の候補のはず（アトラスを読んだかは見ない）: %v", s.Fonts)
 	}
@@ -125,7 +125,7 @@ func TestSuggestWebDeferredKeepsOneFontWhenAllWouldBeDeferred(t *testing.T) {
 	out, b, pr := titleFixture(t, nil)
 	used := titleUsed()
 	delete(used.Texture, "font_gothic")
-	s := suggestWebDeferred(out, &b, pr, nil, nil, used, webTitleFrames)
+	s := suggestWebDeferred(newWebSizeTable(out), &b, pr, nil, nil, used, webTitleFrames)
 	if !reflect.DeepEqual(s.Fonts, []string{"mincho"}) || s.KeptFont != "gothic" {
 		t.Errorf("全部のフォントが候補なら fonts の先頭を外すはず: fonts=%v kept=%q", s.Fonts, s.KeptFont)
 	}
@@ -134,7 +134,7 @@ func TestSuggestWebDeferredKeepsOneFontWhenAllWouldBeDeferred(t *testing.T) {
 func TestSuggestWebDeferredSkipsAlreadyDeferredAndHidden(t *testing.T) {
 	out, b, pr := titleFixture(t, nil)
 	b.Deferred = []webDeferredEntry{{Path: "assets/bgm/sea.wav"}}
-	s := suggestWebDeferred(out, &b, pr, nil, map[string]bool{"assets/walk/hall.glb": true}, titleUsed(), webTitleFrames)
+	s := suggestWebDeferred(newWebSizeTable(out), &b, pr, nil, map[string]bool{"assets/walk/hall.glb": true}, titleUsed(), webTitleFrames)
 	for _, rel := range candidatePaths(s) {
 		if rel == "assets/bgm/sea.wav" || rel == "assets/walk/hall.glb" {
 			t.Errorf("後回しの物と web.embed・web.omit の物は候補に出ないはず: %v", candidatePaths(s))
@@ -147,7 +147,7 @@ func TestSuggestWebDeferredWarnsWhenDeferredIsUsedBeforeArrival(t *testing.T) {
 	b.Deferred = []webDeferredEntry{{Path: "assets/bgm/title.wav", Names: []string{"bgm_title"}}}
 	used := titleUsed()
 	used.Early = map[string]int{"bgm_title": 1}
-	s := suggestWebDeferred(out, &b, pr, nil, nil, used, webTitleFrames)
+	s := suggestWebDeferred(newWebSizeTable(out), &b, pr, nil, nil, used, webTitleFrames)
 	if !reflect.DeepEqual(s.UsedLate, []string{"assets/bgm/title.wav"}) {
 		t.Errorf("届く前に鳴らそうとした後回しの音を知らせるはず: %v", s.UsedLate)
 	}
@@ -156,7 +156,7 @@ func TestSuggestWebDeferredWarnsWhenDeferredIsUsedBeforeArrival(t *testing.T) {
 func TestSuggestWebDeferredStaysQuietWhenDeferredIsUsedAfterArrival(t *testing.T) {
 	out, b, pr := titleFixture(t, nil)
 	b.Deferred = []webDeferredEntry{{Path: "assets/bgm/title.wav", Names: []string{"bgm_title"}}}
-	s := suggestWebDeferred(out, &b, pr, nil, nil, titleUsed(), webTitleFrames)
+	s := suggestWebDeferred(newWebSizeTable(out), &b, pr, nil, nil, titleUsed(), webTitleFrames)
 	if len(s.UsedLate) != 0 {
 		t.Errorf("届いた後に使った後回しの物は知らせないはず: %v", s.UsedLate)
 	}
@@ -164,7 +164,7 @@ func TestSuggestWebDeferredStaysQuietWhenDeferredIsUsedAfterArrival(t *testing.T
 
 func TestSuggestWebDeferredSortsBySizeLargestFirst(t *testing.T) {
 	out, b, pr := titleFixture(t, map[string]int{"assets/bg/gate.png": 9000, "assets/sfx/hit.wav": 20000, "assets/cast/b_plain.png": 100})
-	s := suggestWebDeferred(out, &b, pr, nil, nil, titleUsed(), webTitleFrames)
+	s := suggestWebDeferred(newWebSizeTable(out), &b, pr, nil, nil, titleUsed(), webTitleFrames)
 	if got := candidatePaths(s); len(got) < 2 || got[0] != "assets/sfx/hit.wav" || got[1] != "assets/bg/gate.png" {
 		t.Errorf("候補は大きい順のはず: %v", got)
 	}
@@ -172,7 +172,7 @@ func TestSuggestWebDeferredSortsBySizeLargestFirst(t *testing.T) {
 
 func TestSuggestWebDeferredSecondsDropByMovedBytes(t *testing.T) {
 	out, b, pr := titleFixture(t, map[string]int{"assets/sfx/hit.wav": 200000})
-	s := suggestWebDeferred(out, &b, pr, nil, nil, titleUsed(), webTitleFrames)
+	s := suggestWebDeferred(newWebSizeTable(out), &b, pr, nil, nil, titleUsed(), webTitleFrames)
 	var moved int64
 	for _, c := range s.Candidates {
 		moved += c.Wire
@@ -185,7 +185,7 @@ func TestSuggestWebDeferredSecondsDropByMovedBytes(t *testing.T) {
 func TestSuggestWebDeferredArrivalsFollowCurrentDeferred(t *testing.T) {
 	out, b, pr := titleFixture(t, map[string]int{"assets/bgm/sea.wav": 200000, "assets/sfx/hit.wav": 1000})
 	b.Deferred = []webDeferredEntry{{Path: "assets/bgm/sea.wav"}}
-	s := suggestWebDeferred(out, &b, pr, nil, nil, titleUsed(), webTitleFrames)
+	s := suggestWebDeferred(newWebSizeTable(out), &b, pr, nil, nil, titleUsed(), webTitleFrames)
 	for _, a := range s.Arrivals {
 		if a.Path == "assets/sfx/hit.wav" && a.Seconds < s.After+webSecondsFor(200000) {
 			t.Errorf("足した物は今の後回しの後に届くはず: %.2f 秒目（起動 %.2f）", a.Seconds, s.After)
@@ -196,7 +196,7 @@ func TestSuggestWebDeferredArrivalsFollowCurrentDeferred(t *testing.T) {
 func TestSuggestWebDeferredFontArrivesBeforeFontPlacedLater(t *testing.T) {
 	out, b, pr := titleFixture(t, map[string]int{"assets/bgm/sea.wav": 200000, "font-atlas/gothic.fontatlas": 400000, "font-atlas/mincho.fontatlas": 1000})
 	b.Deferred = []webDeferredEntry{{Path: "assets/bgm/sea.wav"}, {Path: "font-atlas/gothic.fontatlas"}}
-	s := suggestWebDeferred(out, &b, pr, nil, nil, titleUsed(), webTitleFrames)
+	s := suggestWebDeferred(newWebSizeTable(out), &b, pr, nil, nil, titleUsed(), webTitleFrames)
 	got := -1.0
 	for _, a := range s.Arrivals {
 		if a.Path == "font-atlas/mincho.fontatlas" {

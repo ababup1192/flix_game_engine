@@ -250,7 +250,7 @@ func writeWebPage(p exportWebPaths, b webBundle, wasm, teavmCore, brotli string)
 // writeWebPageMeta は wasm を置いた後の頁の物（bundle.json・js・sw.js・sums.json・index.html・version.txt）を書き、版を返す。
 // 確かめの結果を bundle.json に足した後にも呼ぶ（wasm と .br は作り直さない）。
 func writeWebPageMeta(p exportWebPaths, b webBundle, teavmCore string) (string, error) {
-	boot := webStartupBytesOf(p.Out, &b)
+	boot := webStartupBytesOf(newWebSizeTable(p.Out), &b)
 	b.Boot = &boot
 	bundle, err := marshalWebBundle(b)
 	if err != nil {
@@ -354,8 +354,7 @@ func writeExportPage(c exportConfig, a *exportAssembly, w wasmBuild) (string, *e
 		unchecked, err := checkEmbedLeaks(p.Out, p.Game, c.EmbedPlan.Embedded)
 		if err != nil {
 			// WhyNot: 止めた書き出し先を残さない — 頁と版はもう書いてあり、置き場へ写すだけの手順だと平文の残る版が配られる。
-			os.RemoveAll(p.Out)
-			return "", exportFailf(1, "fge export-web: %v\n  書き出し先 %s は消した\n", err, p.Out)
+			return "", exportFailf(1, "fge export-web: %v\n  書き出し先 %s は消した\n", err, p.Out).discarding(p.Out)
 		}
 		for _, rel := range unchecked {
 			ewLogf("  %s は ASCII でない字が続く所が無く、平文の残りを探せなかった", rel)

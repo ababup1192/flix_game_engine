@@ -337,9 +337,10 @@ func assembleWebBundle(o exportWebOptions, c exportConfig) (exportAssembly, *exp
 	report.Notes = append(report.Notes, c.LosslessNotes...)
 	report.AutoLossyLines = buildWebAutoLossySummary(report.Verdicts, c.Compress.Auto, c.Compress.LossyImages, prevLossless)
 	logWebAutoLossy(report.Verdicts)
-	if b.Deferred, _, err = applyWebDeferredPolicy(webDeferredEntries(p.Out, &b, c.DeferredPlan.Paths, c.TextureNames), c.DeferredPolicy, &b); err != nil {
+	sizes := newWebSizeTable(p.Out)
+	if b.Deferred, _, err = applyWebDeferredPolicy(webDeferredEntries(sizes, &b, c.DeferredPlan.Paths, c.TextureNames), c.DeferredPolicy, &b); err != nil {
 		return a, exportFail(1, err)
 	}
-	setWebArrivalSeconds(p.Out, &b)
+	setWebArrivalSeconds(sizes, &b)
 	return exportAssembly{Bundle: b, Atlases: atlases, Report: report, Enc: enc}, nil
 }

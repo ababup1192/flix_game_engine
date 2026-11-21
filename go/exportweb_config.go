@@ -95,17 +95,25 @@ func scene3dEntryWarning(game, entry string) string {
 }
 
 // exportFailure は書き出しの段が止まった時の終わりの番号と、errOut へ書く字（改行まで含む）。
+// discard は消す書き出し先（空なら消さない）。
 type exportFailure struct {
-	code int
-	text string
+	code    int
+	text    string
+	discard string
 }
 
 func exportFail(code int, err error) *exportFailure {
-	return &exportFailure{code, fmt.Sprintf("fge export-web: %v\n", err)}
+	return &exportFailure{code: code, text: fmt.Sprintf("fge export-web: %v\n", err)}
 }
 
 func exportFailf(code int, format string, a ...any) *exportFailure {
-	return &exportFailure{code, fmt.Sprintf(format, a...)}
+	return &exportFailure{code: code, text: fmt.Sprintf(format, a...)}
+}
+
+// discarding は書き出し先 out を消してから止める形にする。
+func (f *exportFailure) discarding(out string) *exportFailure {
+	f.discard = out
+	return f
 }
 
 // exportConfig は書き出しの前に読んで検査した物の一式（project.json の web 欄・道・後回しの計画）。
@@ -223,7 +231,7 @@ func (c *exportConfig) planDeferred(early *webBundle) *exportFailure {
 	if c.DeferredPlan, c.TextureNames, err = withDeferredFonts(c.DeferredPlan, c.DeferredFonts, deferredOrder.Fonts, fontGroupAt, c.TextureNames); err != nil {
 		return exportFail(1, err)
 	}
-	earlyEntries := webDeferredEntries("", early, c.DeferredPlan.Paths, c.TextureNames)
+	earlyEntries := webDeferredEntries(newWebSizeTable(""), early, c.DeferredPlan.Paths, c.TextureNames)
 	_, lines, err := applyWebDeferredPolicy(earlyEntries, c.DeferredPolicy, early)
 	if err != nil {
 		return exportFail(1, err)
@@ -231,7 +239,7 @@ func (c *exportConfig) planDeferred(early *webBundle) *exportFailure {
 	c.DeferredPlan.Warnings = append(c.DeferredPlan.Warnings, lines...)
 	if rows := placeholderImageRowsWithoutWhy(earlyEntries, c.DeferredPolicy, early); len(rows) > 0 {
 		msg := fmt.Sprintf("web.deferredPolicy の %s が後回しの絵を placeholder にしているのに why が無い（届くまで描かずに進み、押した後に黒いコマが出る）。\n  次: 絵は待たせる（onMissing を消す）か、行に \"why\": \"<理由>\" を書く", quotedList(rows))
-		if c.Budget.Declared {
+		if exportVerdictOf(true, false, c.Budget) == exportStop {
 			return exportFailf(1, "fge export-web: %s\n", msg)
 		}
 		ewLogf("★ %s（web.startupBudget を書くと止まる・移行が終わる版から全部止まる）", msg)
