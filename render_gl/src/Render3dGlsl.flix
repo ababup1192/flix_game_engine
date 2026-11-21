@@ -13,25 +13,33 @@ pub mod Render3dGlsl {
     use LightModel3d.Vec3Input
 
     /// 置いた物の頂点シェーダー（深度だけのプログラム・uv の無い材質のプログラムで共有。頂点の色は値のまま渡す）。
-    pub def meshVertexSource(): String =
+    pub def meshVertexSource(): String = meshVertexSourceFor(false)
+
+    /// psx（PS1 風の変種 +psx）なら頂点を丸める版の meshVertexSource。
+    def meshVertexSourceFor(psx: Bool): String =
         meshVertexSourceOf({ declarations = "", prelude = "", position = "vec4(aPos, 1.0)", normal = "aNormal", tangent = None, uv2 = false,
-                             vertexColorToLinear = false })
+                             vertexColorToLinear = false, psx = psx })
 
     /// 頂点の色のプログラム（lit）の頂点シェーダー。頂点の色を線形の量へ戻してから渡す（三角形の中は線形の量でつなぐ）。
     /// skinned なら骨つきの版。
     // WhyNot: meshVertexSource と共有しない — uv の無い材質の Spec の VertexColor まで線形の値になり、出口でもう一度戻して暗くなる。
-    pub def litVertexSource(skinned: Bool): String =
+    pub def litVertexSource(skinned: Bool): String = litVertexSourceFor(skinned, Render3d.defaultShaderVariant())
+
+    /// 変種 v の litVertexSource（v#psx なら頂点を丸める）。
+    pub def litVertexSourceFor(skinned: Bool, v: Render3d.ShaderVariant): String =
         if (skinned)
             meshVertexSourceOf({ declarations = skinDeclarations() + colorSpaceSource(), prelude = skinPrelude(), position = "skin * vec4(aPos, 1.0)",
-                                 normal = "mat3(skin) * aNormal", tangent = None, uv2 = false, vertexColorToLinear = true })
+                                 normal = "mat3(skin) * aNormal", tangent = None, uv2 = false, vertexColorToLinear = true, psx = v#psx })
         else
             meshVertexSourceOf({ declarations = colorSpaceSource(), prelude = "", position = "vec4(aPos, 1.0)", normal = "aNormal",
-                                 tangent = None, uv2 = false, vertexColorToLinear = true })
+                                 tangent = None, uv2 = false, vertexColorToLinear = true, psx = v#psx })
 
     /// 骨つきの版: 位置と法線を joint 行列の重みつきの和（Pose3d.jointMatrices の並び）で曲げてから model を掛ける。
     // WhyNot: 法線を skin の逆行列の転置で曲げない — 左上 3×3 のままだと倍率が軸ごとに違うジョイントで少し傾くが、
     //   CPU の描き手も同じ式なので GL と CPU の絵は一致する。その差は許す。
-    pub def skinnedMeshVertexSource(): String =
+    pub def skinnedMeshVertexSource(): String = skinnedMeshVertexSourceFor(false)
+
+    def skinnedMeshVertexSourceFor(psx: Bool): String =
         meshVertexSourceOf({
             declarations = skinDeclarations(),
             prelude = skinPrelude(),
@@ -39,25 +47,30 @@ pub mod Render3dGlsl {
             normal = "mat3(skin) * aNormal",
             tangent = None,
             uv2 = false,
-            vertexColorToLinear = false })
+            vertexColorToLinear = false,
+            psx = psx })
 
     /// 材質のプログラムの頂点シェーダー。uv の無い形は頂点の色のプログラムと同じ物・uv つきは vUv と vTangent も出す・
     /// lightmap つき（骨の無い版だけ）は 2 本目の uv の vUv2 も出す。骨つきの版は lightmap を読まない（Scene3d.lightmapOf が None）。
-    pub def materialVertexSource(kind: { skinned = Bool, uv = Bool, lightmap = Bool }): String =
+    pub def materialVertexSource(kind: { skinned = Bool, uv = Bool, lightmap = Bool }): String = materialVertexSourceFor(kind, false)
+
+    /// psx（PS1 風の変種 +psx）なら頂点を丸め、uv つきの版は遠近で補正する uv（vUvPerspective）と画面の上でまっすぐつなぐ uv（vUvAffine）の 2 本を出す版の
+    /// materialVertexSource（materialFragmentSource が uPsx.w で混ぜる）。
+    pub def materialVertexSourceFor(kind: { skinned = Bool, uv = Bool, lightmap = Bool }, psx: Bool): String =
         match (kind#skinned, kind#uv, kind#lightmap) {
-            case (false, false, false) => meshVertexSource()
-            case (true, false, _)      => skinnedMeshVertexSource()
+            case (false, false, false) => meshVertexSourceFor(psx)
+            case (true, false, _)      => skinnedMeshVertexSourceFor(psx)
             case (false, false, true)  =>
                 meshVertexSourceOf({ declarations = uv2Declarations(), prelude = "", position = "vec4(aPos, 1.0)", normal = "aNormal",
-                                     tangent = None, uv2 = true, vertexColorToLinear = false })
+                                     tangent = None, uv2 = true, vertexColorToLinear = false, psx = psx })
             case (false, true, lm)     =>
-                meshVertexSourceOf({ declarations = surfaceDeclarations() + (if (lm) uv2Declarations() else ""), prelude = "",
+                meshVertexSourceOf({ declarations = surfaceDeclarations(psx) + (if (lm) uv2Declarations() else ""), prelude = "",
                                      position = "vec4(aPos, 1.0)", normal = "aNormal", tangent = Some("aTangent.xyz"), uv2 = lm,
-                                     vertexColorToLinear = false })
+                                     vertexColorToLinear = false, psx = psx })
             case (true, true, _)       =>
-                meshVertexSourceOf({ declarations = skinDeclarations() + surfaceDeclarations(), prelude = skinPrelude(),
+                meshVertexSourceOf({ declarations = skinDeclarations() + surfaceDeclarations(psx), prelude = skinPrelude(),
                                      position = "skin * vec4(aPos, 1.0)", normal = "mat3(skin) * aNormal",
-                                     tangent = Some("mat3(skin) * aTangent.xyz"), uv2 = false, vertexColorToLinear = false })
+                                     tangent = Some("mat3(skin) * aTangent.xyz"), uv2 = false, vertexColorToLinear = false, psx = psx })
         }
 
     def uv2Declarations(): String =
@@ -79,11 +92,50 @@ pub mod Render3dGlsl {
         "    mat4 skin = aWeights.x * jointMatrix(poseRow, aJoints.x) + aWeights.y * jointMatrix(poseRow, aJoints.y)\n" +
         "              + aWeights.z * jointMatrix(poseRow, aJoints.z) + aWeights.w * jointMatrix(poseRow, aJoints.w);\n"
 
-    def surfaceDeclarations(): String =
+    def surfaceDeclarations(psx: Bool): String =
         "layout (location = 5) in vec2 aUv;\n" +
         "layout (location = 6) in vec4 aTangent;\n" +
-        "out vec2 vUv;\n" +
+        (if (psx) "out vec2 vUvPerspective;\nnoperspective out vec2 vUvAffine;\n" else "out vec2 vUv;\n") +
         "out vec4 vTangent;\n"
+
+    /// PS1 風の変種の頂点を丸める式 r3d_vertexSnap(clip の位置)（CPU の描き手は SoftRaster3d.Psx.snapVertex）。uPsxTarget.zw = 場面の描き先の幅と高さ（画素）・
+    /// uVertexSnap = 格子の大きさ（画素。0 で丸めない）。x・y を描き先の左上を 0 とする画素へ写して格子の一番近い点へ丸め、clip へ戻す（z と w は変えない）。
+    // WhyNot: w が 0 以下（目の後ろ）の頂点を丸めない — 画素へ写せず、GPU が手前の面で切る前の形を壊す。
+    def vertexSnapSource(): String =
+        "uniform vec4 uPsxTarget;\n" +
+        "uniform float uVertexSnap;\n" +
+        "vec4 r3d_vertexSnap(vec4 p) {\n" +
+        "    if (uVertexSnap <= 0.0 || p.w <= 0.0) return p;\n" +
+        "    vec2 s = floor(vec2((p.x / p.w + 1.0) * 0.5 * uPsxTarget.z, (1.0 - p.y / p.w) * 0.5 * uPsxTarget.w) / uVertexSnap + 0.5) * uVertexSnap;\n" +
+        "    return vec4((s.x / uPsxTarget.z * 2.0 - 1.0) * p.w, (1.0 - s.y / uPsxTarget.w * 2.0) * p.w, p.z, p.w);\n" +
+        "}\n"
+
+    /// PS1 風の変種の色の丸め r3d_colorDepth(画面の値の色)（式は Scene3d.Psx.quantize・CPU の描き手は SoftRaster3d.Psx.quantized）と、それが読む uniform。
+    /// uPsx = (段の数 2^bits − 1（0 で丸めない）, ディザの表の番号 Scene3d.Psx.patternCode, ディザの強さ, アフィンの割合)・
+    /// uPsxTarget = (描き先の左下の画素の x, y, 幅, 高さ)。ディザの格子は描き先の左上を 0 とする画素の x・y の下 2 ビット。
+    // WhyNot: 表を uniform の配列で渡さない — 2 つの表は決まった値で、const の配列なら変種の uniform が 2 つで済む。
+    def colorDepthSource(): String =
+        let table = (xs: List[Int32]) -> String.intercalate(", ", xs |> List.map(x -> "${x}.0"));
+        "uniform vec4 uPsx;\n" +
+        "uniform vec4 uPsxTarget;\n" +
+        "const float r3d_psxTable[16] = float[16](${table(Scene3d.Psx.psxTable())});\n" +
+        "const float r3d_bayerTable[16] = float[16](${table(Scene3d.Psx.bayer4Table())});\n" +
+        "float r3d_psxDither(ivec2 p) {\n" +
+        "    int i = (p.y & 3) * 4 + (p.x & 3);\n" +
+        "    if (uPsx.y < 0.5) return r3d_psxTable[i] / 8.0;\n" +
+        "    if (uPsx.y < 1.5) return (r3d_bayerTable[i] + 0.5) / 16.0 - 0.5;\n" +
+        "    return 0.0;\n" +
+        "}\n" +
+        "vec3 r3d_colorDepth(vec3 c) {\n" +
+        "    if (uPsx.x <= 0.0) return c;\n" +
+        "    ivec2 p = ivec2(int(floor(gl_FragCoord.x - uPsxTarget.x)), int(floor(uPsxTarget.y + uPsxTarget.w - gl_FragCoord.y)));\n" +
+        "    float step = 256.0 / (uPsx.x + 1.0);\n" +
+        "    vec3 v = floor(clamp(c, 0.0, 1.0) * 255.0 + 0.5) + r3d_psxDither(p) * uPsx.z * step;\n" +
+        "    return floor(clamp(v, 0.0, 255.0) / step) / uPsx.x;\n" +
+        "}\n"
+
+    /// 変種 v の frag の色の出口: v#psx なら r3d_colorDepth に通した式、ほかは c のまま。
+    def colorOut(v: Render3d.ShaderVariant, c: String): String = if (v#psx) "r3d_colorDepth(" + c + ")" else c
 
     /// 頂点シェーダーへ数を渡すテクスチャの幅（texel）。
     pub def dataTextureWidth(): Int32 = Skin3d.maxJoints() * 4
@@ -122,11 +174,11 @@ pub mod Render3dGlsl {
     /// vertexColorToLinear = 頂点の色を r3d_srgbToLinear3 に通すか（declarations に colorSpaceSource() を入れる）。
     // WhyNot: タンジェントを normalMatrix で写さない — 法線の行列は面に垂直な向きを保つための物で、面の上の向きは model のまま写る。
     def meshVertexSourceOf(parts: { declarations = String, prelude = String, position = String, normal = String,
-                                    tangent = Option[String], uv2 = Bool, vertexColorToLinear = Bool }): String =
+                                    tangent = Option[String], uv2 = Bool, vertexColorToLinear = Bool, psx = Bool }): String =
         let surfaceBody = match parts#tangent {
             case None    => ""
             case Some(t) =>
-                "    vUv = aUv;\n" +
+                (if (parts#psx) "    vUvPerspective = aUv;\n    vUvAffine = aUv;\n" else "    vUv = aUv;\n") +
                 "    mat3 modelLinear = mat3(model);\n" +
                 "    vTangent = vec4(modelLinear * (" + t + "), aTangent.w * sign(determinant(modelLinear)));\n"
         };
@@ -135,6 +187,7 @@ pub mod Render3dGlsl {
         "layout (location = 1) in vec3 aNormal;\n" +
         "layout (location = 2) in vec3 aColor;\n" +
         parts#declarations +
+        (if (parts#psx) vertexSnapSource() else "") +
         instanceDeclarations() +
         "uniform mat4 uView;\n" +
         "uniform mat4 uProj;\n" +
@@ -150,7 +203,7 @@ pub mod Render3dGlsl {
         (if (parts#vertexColorToLinear) "    vColor = r3d_srgbToLinear3(aColor);\n" else "    vColor = aColor;\n") +
         surfaceBody +
         (if (parts#uv2) "    vUv2 = aUv2;\n" else "") +
-        "    gl_Position = uProj * uView * world;\n" +
+        (if (parts#psx) "    gl_Position = r3d_vertexSnap(uProj * uView * world);\n" else "    gl_Position = uProj * uView * world;\n") +
         "}\n"
 
     /// 光の uniform と、光の式（lightAt）・かすみ（fogged）。式は LightModel3d の木から作る（CPU の描き手と同じ木）。
@@ -179,6 +232,7 @@ pub mod Render3dGlsl {
         shadowSource() +
         (if (v#pointShadows) pointShadowSource() else "") +
         (if (v#physicalUnits) "uniform float uInverseUnitsPerMeterSquared;\n" else "") +
+        (if (v#psx) colorDepthSource() else "") +
         LightModel3d.Codegen.toGlsl("lightAt", Vec3Input.Position :: Vec3Input.Normal :: Nil, LightModel3d.lightingModelFor(Render3d.lightVariantOf(v))) +
         LightModel3d.Codegen.toGlsl("fogAt", Vec3Input.Position :: Vec3Input.Color :: Nil, LightModel3d.fogModel()) +
         "vec3 fogged(vec3 c, vec3 p) {\n" +
@@ -317,7 +371,7 @@ pub mod Render3dGlsl {
         "    vec3 n = normalize(vNormal);\n" +
         "    r3d_sunLit = sunLitAt(vWorld, n, n);\n" +
         (if (v#pointShadows) "    r3d_pointShadowsAt(vWorld, n, n);\n" else "") +
-        "    fragColor = vec4(r3d_surfaceOut(vColor, vTint, lightAt(vWorld, n), vec3(0.0), 1.0, vWorld, true), 1.0);\n" +
+        "    fragColor = vec4(" + colorOut(v, "r3d_surfaceOut(vColor, vTint, lightAt(vWorld, n), vec3(0.0), 1.0, vWorld, true)") + ", 1.0);\n" +
         "}\n"
 
     /// 材質の frag。光の式は litFragmentSource と同じで、頂点の色の代わりに materialEval の albedo を使う（頂点の色は
@@ -346,7 +400,8 @@ pub mod Render3dGlsl {
         "in vec3 vColor;\n" +
         "flat in vec3 vTint;\n" +
         "flat in float vEmissionIntensity;\n" +
-        (if (surface#uv) "in vec2 vUv;\n" else "const vec2 vUv = vec2(0.0, 0.0);\n") +
+        (if (surface#uv and v#psx) "in vec2 vUvPerspective;\nnoperspective in vec2 vUvAffine;\nvec2 vUv;\n"
+         else if (surface#uv) "in vec2 vUv;\n" else "const vec2 vUv = vec2(0.0, 0.0);\n") +
         (if (surface#lightmap) "in vec2 vUv2;\n" else "") +
         "out vec4 fragColor;\n" +
         "uniform int uCutout;\n" +
@@ -361,6 +416,7 @@ pub mod Render3dGlsl {
         (if (surface#lightmap) lightmapSource(v) else "") +
         (if (surface#metallicRoughness) metallicRoughnessSourceFor(v) else "") +
         "void main() {\n" +
+        (if (surface#uv and v#psx) "    vUv = mix(vUvPerspective, vUvAffine, uPsx.w);\n" else "") +
         "    vec4 albedo;\n" +
         "    vec3 emission;\n" +
         (if (surface#metallicRoughness) "    vec2 metalRough;\n    materialEval(albedo, emission, metalRough);\n" else "    materialEval(albedo, emission);\n") +
@@ -380,13 +436,13 @@ pub mod Render3dGlsl {
             "    vec3 envColor = vec3(0.0);\n" +
             "    if (uEnvOn == 1) envColor = environmentColorAt(vWorld, n, base, vec3(metalRough, 0.0));\n" +
             "    vec3 lit = pbrAt(vWorld, n, base, light, vec3(metalRough, 0.0), envColor);\n" +
-            "    fragColor = vec4(r3d_surfaceOutLit(lit, emission, vEmissionIntensity, vWorld), " + alpha + ");\n"
+            "    fragColor = vec4(" + colorOut(v, "r3d_surfaceOutLit(lit, emission, vEmissionIntensity, vWorld)") + ", " + alpha + ");\n"
          else
             (if (surface#lightmap)
                 "    vec3 light = lightmapLightAt(vWorld, n, lightmapColor());\n"
              else
                 "    vec3 light = lightAt(vWorld, n);\n") +
-            "    fragColor = vec4(r3d_surfaceOut(r3d_srgbToLinear3(albedo.rgb), vTint, light, emission, vEmissionIntensity, vWorld, true), " + alpha + ");\n") +
+            "    fragColor = vec4(" + colorOut(v, "r3d_surfaceOut(r3d_srgbToLinear3(albedo.rgb), vTint, light, emission, vEmissionIntensity, vWorld, true)") + ", " + alpha + ");\n") +
         "}\n"
 
     /// metallic と roughness を持つ材質の色 pbrAt(p, n, albedo × tint, 拡散の光, vec3(metallic, roughness, 0))（LightModel3d.pbrModel の木から作る）と、
@@ -510,7 +566,10 @@ pub mod Render3dGlsl {
     /// ビルボードの頂点シェーダー: カメラの right / up で四角を立てる（aCorner は 0〜1・y は下向き）。板ごとの値は instance の attribute（location 1〜4・
     /// 並びは Render3d.SceneList.billboardValueFloats: 点と光の当て方・anchor と size・貼る範囲の uv・tint と影を受ける点を離す長さ）。
     /// uRightPerBillboard = 1 なら板の横の向きを tint の欄から読む（影の地図の点光源の面）。
-    pub def billboardVertexSource(): String =
+    pub def billboardVertexSource(): String = billboardVertexSourceFor(Render3d.defaultShaderVariant())
+
+    /// 変種 v の billboardVertexSource（v#psx なら四角の角を丸める）。
+    pub def billboardVertexSourceFor(v: Render3d.ShaderVariant): String =
         "#version 330 core\n" +
         "layout (location = 0) in vec2 aCorner;\n" +
         "layout (location = 1) in vec4 aCenterLit;\n" +
@@ -522,6 +581,7 @@ pub mod Render3dGlsl {
         "uniform vec3 uRight;\n" +
         "uniform vec3 uUp;\n" +
         "uniform int uRightPerBillboard;\n" +
+        (if (v#psx) vertexSnapSource() else "") +
         "out vec3 vWorld;\n" +
         "out vec2 vUv;\n" +
         "out vec3 vShadowBase;\n" +
@@ -541,7 +601,7 @@ pub mod Render3dGlsl {
         "    vTint = aTintOffset.xyz;\n" +
         "    vLit = int(aCenterLit.w + 0.5);\n" +
         "    vShadowOffset = aTintOffset.w;\n" +
-        "    gl_Position = uProj * uView * vec4(world, 1.0);\n" +
+        (if (v#psx) "    gl_Position = r3d_vertexSnap(uProj * uView * vec4(world, 1.0));\n" else "    gl_Position = uProj * uView * vec4(world, 1.0);\n") +
         "}\n"
 
     /// vLit（光の当て方）が 2 なら太陽の影を受ける。受ける点は vShadowBase（Scene3d.billboardShadowPointOf の太陽の方へ進める前の点）を
@@ -574,7 +634,7 @@ pub mod Render3dGlsl {
         "    }\n" +
         "    if (vLit == 2) r3d_sunLit = sunLitAt(vShadowBase + uSunDir * (vShadowOffset / max(length(uSunDir.xz), ${Scene3d.billboardShadowMinFlat()})), uSunDir, normalize(uFacing));\n" +
         "    vec3 light = vLit >= 1 ? lightAt(vWorld, normalize(uFacing)) : vec3(1.0);\n" +
-        "    fragColor = vec4(r3d_surfaceOut(r3d_srgbToLinear3(texel.rgb), vTint, light, vec3(0.0), 1.0, vWorld, vLit >= 1), 1.0);\n" +
+        "    fragColor = vec4(" + colorOut(v, "r3d_surfaceOut(r3d_srgbToLinear3(texel.rgb), vTint, light, vec3(0.0), 1.0, vWorld, vLit >= 1)") + ", 1.0);\n" +
         "}\n"
 
     /// 空の frag（式は LightModel3d.skyModel・向きは Scene3d.skyDirectionOf。NDC は画素の真ん中の gl_FragCoord と viewport から）。

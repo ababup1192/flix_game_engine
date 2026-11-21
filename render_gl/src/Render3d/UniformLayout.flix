@@ -136,18 +136,20 @@ pub mod Render3d.UniformLayout {
 
     // ── R3dLight（変種の group 0 の binding 6） ──
 
-    /// R3dLight の欄（点光源の影の値と 1 / unitsPerMeter²）。
+    /// R3dLight の欄（点光源の影の値と 1 / unitsPerMeter² と PS1 風の値）。
     pub enum LightField with Eq, Order, ToString {
-        case PointShadow, PointShadowAtlas, PointShadowBias, InverseUnitsPerMeterSquared, Pad0
+        case PointShadow, PointShadowAtlas, PointShadowBias, InverseUnitsPerMeterSquared, Pad0, Psx
     }
 
-    /// R3dLight の表。uPointShadow = 点光源ごとの (slot, A, B, strength)・uPointShadowAtlas = (大きさ, 列, 縮み, pcf)・uPointShadowBias = (bias, normalBias)。
+    /// R3dLight の表。uPointShadow = 点光源ごとの (slot, A, B, strength)・uPointShadowAtlas = (大きさ, 列, 縮み, pcf)・uPointShadowBias = (bias, normalBias)・
+    /// uPsx = PS1 風の (段の数, ディザの表の番号, 強さ, アフィンの割合)（GLSL の uPsx と同じ値）。
     pub def lightFields(): List[Field[LightField]] =
         (LightField.PointShadow, "uPointShadow", FieldType.Vec4Array(Scene3d.maxPointLights())) ::
         (LightField.PointShadowAtlas, "uPointShadowAtlas", FieldType.Vec4f) ::
         (LightField.PointShadowBias, "uPointShadowBias", FieldType.Vec2f) ::
         (LightField.InverseUnitsPerMeterSquared, "uInverseUnitsPerMeterSquared", FieldType.F32) ::
-        (LightField.Pad0, "pad0", FieldType.F32) :: Nil
+        (LightField.Pad0, "pad0", FieldType.F32) ::
+        (LightField.Psx, "uPsx", FieldType.Vec4f) :: Nil
 
     /// R3dLight の欄の位置。
     pub def lightOffsets(): Map[LightField, Int32] = offsetsOf(lightFields())

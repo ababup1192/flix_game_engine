@@ -1382,6 +1382,16 @@
   `pub type alias Environment3d = { ambient = Color, hemisphere = Float64, toonSteps = Int32, fog = Option[DistanceFog], background = Option[Color] }`
 - 描く解像度。Native = 窓の画素で描く・Design = 設計の解像度で描いてから拡げる（ドット絵と画素の大きさをそろえる）。
   `pub enum Resolution with Eq { case Native case Design }`
+- ディザの表（4×4 の画素の格子で繰り返す）。Psx = PS1 の GPU の表（−4〜3。5 ビットの色の 1 段の半分ほど揺らす）・
+  `pub enum DitherPattern with Eq, ToString { case Psx case Bayer4x4 case Off }`
+- PS1 風の描き方（PSX 風シェーダーの手。psxOff の値で全部切れる）。
+  `pub type alias PsxLook = { colorDepth = Int32, dither = DitherPattern, ditherStrength = Float64, vertexSnap = Float64, affineTextureMapping = Float64 }`
+- 全部切った PsxLook（Scene3d.scene の既定）。欄を書き替えて使う: `{ colorDepth = 5 | Scene3d.psxOff() }`。
+  `pub def psxOff(): PsxLook`
+- PS1 の GPU に近い値（15 ビットの色・PS1 の表のディザ・1 画素の頂点の揺れ・完全なアフィン）。大きな床と壁は流れが強いので affineTextureMapping を下げる。
+  `pub def psxLook(): PsxLook`
+- 場面の PS1 風の描き方を替える（Scene3dCmd の psx）。
+  `pub def withPsx(look: PsxLook, scene: Scene3dCmd): Scene3dCmd`
 - `pub enum Output { case Color case Depth({ near = Float64, range = Float64 }) }`
 - uv が 0..1 の外へ出た時の読み方。Repeat = 繰り返す・Clamp = 端の色を伸ばす。
   `pub enum Wrap with Eq { case Repeat case Clamp }`
@@ -1520,7 +1530,7 @@
 - ビルボードの中身を読む（GL・CPU・鍵が使う）。
   `pub def billboardFieldsOf(b: Billboard3d): BillboardFields`
 - 場面 1 つ。size = 描き物の大きさ（位置は PlacedItem の at。Shader 面と同じ決まり）・zIndex = 2D の並びの中の重なり順・
-  `pub type alias Scene3dCmd = { size = Vec2.Vec2, camera = Camera3d.Camera3d, instances = List[Instance3d], groups = List[StaticGroup], billboards = List[Billboard3d], pointLights = List[PointLight], spotLights = List[SpotLight], directionalLight = Option[DirectionalLight], environment = Environment3d, resolution = Resolution, output = Output, zIndex = Int32, time = Float64, textures = List[Texture3d.Texture3d], sky = Option[Sky3d], environmentMap = Option[EnvironmentMap], unitsPerMeter = Float64, pointShadows = Option[PointShadowMap], lightUnits = LightUnits }`
+  `pub type alias Scene3dCmd = { size = Vec2.Vec2, camera = Camera3d.Camera3d, instances = List[Instance3d], groups = List[StaticGroup], billboards = List[Billboard3d], pointLights = List[PointLight], spotLights = List[SpotLight], directionalLight = Option[DirectionalLight], environment = Environment3d, resolution = Resolution, output = Output, zIndex = Int32, time = Float64, textures = List[Texture3d.Texture3d], sky = Option[Sky3d], environmentMap = Option[EnvironmentMap], unitsPerMeter = Float64, pointShadows = Option[PointShadowMap], lightUnits = LightUnits, psx = PsxLook }`
 - `pub def scene(camera: Camera3d.Camera3d, size: Vec2.Vec2): Scene3dCmd`
 - 1 m が場面の長さのいくつかを言う（既定 1 = glTF・Blender と同じ）。Blender の 1 m を 16 で置いた場面は 16。
   `pub def withUnitsPerMeter(k: Float64, scene: Scene3dCmd): Scene3dCmd`
@@ -1610,10 +1620,10 @@
 - textures が空・variants が空の宣言（`{ textures = () -> .. | Scene3d.preloadCmd(key, instances) }` で替える）。
   `pub def preloadCmd(key: DrawCmd.StaticKey, instances: Unit -> List[Instance3d]): PreloadCmd`
 - 先に組むシェーダーの変種（場面の設定で決まる版）。pointShadows = 点光源の影を引く版（場面の pointShadows が Some・描き手の鍵の +ps）・
-  `pub type alias PreloadVariant = { pointShadows = Bool, physicalUnits = Bool }`
+  `pub type alias PreloadVariant = { pointShadows = Bool, physicalUnits = Bool, psx = Bool }`
 - 場面 scene を描く時に描き手が組む変種（先に上げる宣言に、遊びで出す場面の設定から渡す）。
   `pub def preloadVariantOf(scene: Scene3dCmd): PreloadVariant`
-- 変種 v の字（"" = 既定・+ps・+pu・+ps+pu。描き手のプログラムの鍵と同じ並び）。
+- 変種 v の字（"" = 既定・+ps・+pu・+psx の組。描き手のプログラムの鍵と同じ並び）。
   `pub def preloadVariantKey(v: PreloadVariant): String`
 
 ## Scene3d.PointShadows — `engine/src/scene3d/Scene3d/PointShadows.flix`
@@ -1637,6 +1647,28 @@
   `pub def depthTermsOf(light: ShadowedPointLight): (Float64, Float64)`
 - 点光源 light の影の地図に描くビルボード（castShadows が真で shadowCasterScale の成分が両方正・板の外の円が光の range の球に掛かる物。来た順）と、
   `pub def castingBillboardsOf(scene: Scene3d.Scene3dCmd, light: ShadowedPointLight): List[(Scene3d.BillboardFields, Vec3.Vec3)]`
+
+## Scene3d.Psx — `engine/src/scene3d/Scene3d/Psx.flix`
+- 色の 1 成分のビット数を 0（切る）か 1〜8 にそろえた物。
+  `pub def colorDepthOf(look: Scene3d.PsxLook): Int32`
+- 頂点を丸める格子（0 以下・NaN は 0 = 切る）。
+  `pub def vertexSnapOf(look: Scene3d.PsxLook): Float64`
+- アフィンの割合を 0..1 にそろえた物（NaN は 0）。
+  `pub def affineOf(look: Scene3d.PsxLook): Float64`
+- ディザの強さ（0 以下・NaN は 0）。
+  `pub def ditherStrengthOf(look: Scene3d.PsxLook): Float64`
+- PS1 風の手が 1 つでも効くか（偽なら描き手は今までと同じプログラムと同じ絵）。
+  `pub def isOn(look: Scene3d.PsxLook): Bool`
+- ディザの表の値（4×4 の格子の x・y。上の行が y = 0）。色の 1 段（2^(8 − ビット数) の 8 bit の段）を 1 とした量で、ditherStrength を掛ける前。
+  `pub def ditherAt(pattern: Scene3d.DitherPattern, x: Int32, y: Int32): Float64`
+- PS1 の GPU のディザの表（行優先 4×4・8 bit の値に足す量）。
+  `pub def psxTable(): List[Int32]`
+- 4×4 の Bayer 行列（行優先・0〜15）。
+  `pub def bayer4Table(): List[Int32]`
+- ディザの表の番号（描き手の uniform・CPU の分岐で使う。Psx = 0・Bayer4x4 = 1・Off = 2）。
+  `pub def patternCode(pattern: Scene3d.DitherPattern): Int32`
+- 画面の値の色の 1 成分 c（0..1）を、ビット数 bits・ディザの量 d（ditherAt × 強さ。1 段 = 1）で丸めた値（3 つの描き手が同じ式を書く）:
+  `pub def quantize(bits: Int32, d: Float64, c: Float64): Float64`
 
 ## ShaderDoc — `engine/src/shader/ShaderDoc.flix`
 - 位置 (u,v) のどちらの軸を読むか。

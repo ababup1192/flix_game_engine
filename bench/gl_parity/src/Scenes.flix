@@ -46,7 +46,7 @@ mod Scenes {
             :: passChain() :: passLaterRead() :: passMask() :: passHalf() :: passQuarterOdd() :: linearRead()
             :: castShadow() :: paramRead() :: depthRed() :: afterScene3d() :: sceneBetweenBoxes() :: materialStripes() :: spotShadow() :: skinBend()
             :: texturedBox() :: normalBump() :: skinNormal()
-            :: mipFloor() :: mipFloorScaled() :: mipFloorWorld() :: gltfTextured() :: windowPass3d()
+            :: mipFloor() :: mipFloorScaled() :: mipFloorWorld() :: psxFloor3d() :: psxBox3d() :: psxSkin3d() :: gltfTextured() :: windowPass3d()
             :: hdrPass() :: hdrWindowHalf() :: hdrMultiply() :: texSizeScaled() :: tonemap() :: fxaa()
             :: lightmapBaked3d() :: lightmapNormal3d() :: spotSoftEdge3d() :: gltfEmissive3d() :: cullOffscreen3d()
             :: skyGradient3d() :: glassPane3d() :: doubleSided3d() :: msaaEdges()
@@ -88,7 +88,14 @@ mod Scenes {
     /// PostStack の 2 つ（Apple Silicon で postStackLook 2,188 px ±4・postStackDepthBand 547 px ±72）: 前者は tonemap と同じ HDR の補間の丸めの ±1〜4 が
     /// 平らな面とブルームの坂に出る。後者は奥行きの絵の縁（板と床の境・床の奥の端）で、くっきりとぼかした場面の混ぜ方が奥行きの丸めで割れる 1〜2 px の帯。
     /// 奥行きの帯の取り違え（near・range）やブルームの足し忘れは面の全部（数万 px）が違う。
+    /// PS1 風の 3 つ（Apple Silicon で psxFloor3d 424 px・psxBox3d 6 px・psxSkin3d 29 px）: 色の丸めは 8 bit の ±1 を段の境目で 1 段（5 ビットで ±8）に
+    /// 広げ、頂点の丸めは Float32 と Float64 の丸めが格子の真ん中に落ちた頂点を 1 画素ずらす（縁の 1 列が丸ごと割れる）。アフィンの床は Nearest の絵の
+    /// texel の境が画面の上で長い斜めの線になり、その線の上の画素が GPU の補間の丸めで隣の texel を読む（max ±214 は色の違う texel どうし）。
+    /// 色の丸めかアフィンを取り違えると床の面（数万 px）が丸ごと違う。
     pub def toleranceOf(name: String): Option[Int32] = match name {
+        case "psxFloor3d"      => Some(800)
+        case "psxBox3d"        => Some(100)
+        case "psxSkin3d"       => Some(150)
         case "depthRed"        => Some(300)
         case "afterScene3d"    => Some(200)
         case "materialStripes" => Some(300)
@@ -953,6 +960,49 @@ mod Scenes {
                                                                                                    b = ShaderDoc.Field.Ref("lit") }),
                                                                      alpha = ShaderDoc.Field.Const(1.0) }) });
         floorScene("mipFloorWorld", floorMesh(None), material, tex)
+
+    // ── PS1 風の描き方（Scene3d.PsxLook）。B 段階 ──
+    // psxFloor3d: 奥へ伸びる象限の絵（parityTexture）の床に全部の手（15 ビットの色・PS1 の表のディザ・1 画素の頂点の丸め・完全なアフィン）。床は 2 枚の三角形で、
+    //   アフィンの uv は三角形の対角線で折れる（遠近の補正が無い）。アフィンを取り違えると床の模様が丸ごと別の形になる。
+    // psxBox3d: Design の解像度（FBO の画素がディザの格子）で、絵つきの箱を staticGroup に入れ（持ち越した行にも頂点の丸めが掛かる）、
+    //   アフィン 0.5・Bayer のディザ・2 画素の格子・市松のビルボード（角も丸める）。
+    // psxSkin3d: 骨つきの板（Pose）に頂点の丸めと色の丸め。
+    def psxFloor3d(): Scene =
+        let tex = parityTexture();
+        let base = floorScene("psxFloor3d", floorMesh(Some(1.0)), Scene3d.texturedMaterial(Texture3d.name(tex), ShaderDoc.FilterMode.Nearest), tex);
+        let camera = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.2, fovY = 1.0, near = 1.0, far = 100.0, lensShift = Vec2.zero() };
+        let floor = Scene3d.meshInstance(floorMesh(Some(1.0)), Mat4.identity()) |> Scene3d.withMaterial(Scene3d.texturedMaterial(Texture3d.name(tex), ShaderDoc.FilterMode.Nearest));
+        let scene = { instances = floor :: Nil, textures = tex :: Nil, zIndex = 1,
+                      environment = { ambient = c8(255, 255, 255), hemisphere = 0.0, toonSteps = 0, fog = None, background = Some(c8(10, 10, 30)) }
+                      | Scene3d.scene(camera, { x = 240.0, y = 140.0 }) } |> Scene3d.withPsx(Scene3d.psxLook());
+        { items = Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil | base }
+
+    def psxBox3d(): Scene =
+        let tex = parityTexture();
+        let world = Mat4.mul(Mat4.translate(Vec3.v3(-2.3, 0.0, 10.0)), Mat4.mul(Mat4.rotateX(0.45), Mat4.rotateY(0.6)));
+        let box = Scene3d.meshInstance(Mesh3d.withBoxUvs(0.5, boxMesh()), world)
+            |> Scene3d.withMaterial(Scene3d.texturedMaterial(Texture3d.name(tex), ShaderDoc.FilterMode.Nearest));
+        let plate = Scene3d.meshInstance(texturedQuad(0.8, 4.6, -2.4, 2.4, 10.0, -0.25, 1.25), Mat4.identity())
+            |> Scene3d.withMaterial(Scene3d.texturedMaterial(Texture3d.name(tex), ShaderDoc.FilterMode.Nearest));
+        let board = Scene3d.billboard("atlas", { position = { x = 0.0, y = 0.0 }, size = { x = 16.0, y = 16.0 } },
+                                      Vec3.v3(0.3, -2.6, 8.0), { x = 1.7, y = 1.7 }) |> Scene3d.unlit;
+        let flat = flatScene({ x = 240.0, y = 140.0 }, 1, plate :: Nil, board :: Nil);
+        let look = { affineTextureMapping = 0.5, dither = Scene3d.DitherPattern.Bayer4x4, vertexSnap = 2.0 | Scene3d.psxLook() };
+        let scene = { textures = tex :: Nil, groups = Scene3d.staticGroup("psxBox", ("box", box) :: Nil) :: Nil, resolution = Scene3d.Resolution.Design,
+                      environment = { hemisphere = 0.3, ambient = c8(180, 180, 180) | flat#environment } | flat } |> Scene3d.withPsx(look);
+        { name = "psxBox3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
+
+    def psxSkin3d(): Scene =
+        let back = shape(facingQuad(-8.0, 8.0, -6.0, 6.0, 20.0, c8(200, 200, 200)) :: Nil);
+        let left = Scene3d.meshInstance(skinPlate(), Mat4.translate(Vec3.v3(-2.5, 0.0, 0.0))) |> Scene3d.withPose(skinBendPose(0.7));
+        let right = Scene3d.meshInstance(skinPlate(), Mat4.translate(Vec3.v3(2.5, 0.0, 0.0)))
+            |> Scene3d.withMaterial(stripeMaterial()) |> Scene3d.withPose(skinBendPose(-0.7));
+        let scene = { instances = back :: left :: right :: Nil, spotLights = skinBendSpot() :: Nil, zIndex = 1,
+                      environment = { ambient = c8(90, 90, 90), hemisphere = 0.0, toonSteps = 0, fog = None, background = Some(c8(10, 10, 30)) }
+                      | Scene3d.scene(flatCamera(), { x = 240.0, y = 140.0 }) } |> Scene3d.withPsx({ affineTextureMapping = 0.0 | Scene3d.psxLook() });
+        { name = "psxSkin3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
 
     // ── scene 27: Blender で書き出した絵つきの glb（Gltf.loadTexturedUsing → parts の材質と textures）。B 段階 ──
     // 板 A（4 × 4 の絵・左上が赤・NEAREST・法線マップ）と板 B（baseColorFactor の水色・材質なし）。glb の板の表は engine の +Z を向くので、

@@ -3,7 +3,7 @@ mod Render3d.Light {
     import fge.gl.GlContext
     use Render3d.{LightData, LightLocs}
 
-    /// 光を uniform の並びへ詰める（点光源・スポットは選んだ後の物）。光の color・ambient・かすみの色は線形の量へ戻してから詰める
+    /// 光を uniform の並びへ詰める（点光源・スポットは選んだ後の物）。PS1 風の値（psx・vertexSnap）も詰める。psxTarget（描き先の矩形）は 0 のままで、描き手が描き先を決めた所で入れる。光の color・ambient・かすみの色は線形の量へ戻してから詰める
     /// （hemisphere・intensity・range は線形の量のまま）。
     /// environmentLevels = 場面の環境マップの絵の段の数（環境マップが無い場面は 0。Render3d.Material.bindEnvironmentMap の答え）。
     pub def lightDataOf(scene: Scene3d.Scene3dCmd, environmentLevels: Int32): LightData \ IO =
@@ -37,7 +37,11 @@ mod Render3d.Light {
         let reflectArray = (c: Color) -> { let a = Array.repeat(Static, 3, 0.0f32); fillVec3(a, 0, colorVec(c)); a };
         let environment = environmentUniforms(scene, environmentLevels);
         let sun = sunUniforms(scene);
-        { sunDir = sun#direction, sunColor = sun#color, inverseUnitsPerMeterSquared = RenderUtil.f32(inverseUnitsPerMeterSquaredOf(scene)), ambient = ambient, hemisphere = RenderUtil.f32(env#hemisphere), toonSteps = env#toonSteps,
+        let psx = scene#psx;
+        { psx = Array#{ RenderUtil.f32(Int32.toFloat64(Int32.leftShift(1, Scene3d.Psx.colorDepthOf(psx)) - 1)), RenderUtil.f32(Int32.toFloat64(Scene3d.Psx.patternCode(psx#dither))),
+                        RenderUtil.f32(Scene3d.Psx.ditherStrengthOf(psx)), RenderUtil.f32(Scene3d.Psx.affineOf(psx)) } @ Static,
+          psxTarget = Array.repeat(Static, 4, 0.0f32), vertexSnap = RenderUtil.f32(Scene3d.Psx.vertexSnapOf(psx)),
+          sunDir = sun#direction, sunColor = sun#color, inverseUnitsPerMeterSquared = RenderUtil.f32(inverseUnitsPerMeterSquaredOf(scene)), ambient = ambient, hemisphere = RenderUtil.f32(env#hemisphere), toonSteps = env#toonSteps,
           pointCount = List.length(points), pointPos = pointPos, pointColor = pointColor, pointRange = pointRange,
           spotCount = List.length(spots), spotPos = spot#position, spotDir = spot#direction, spotColor = spot#color,
           spotRange = spot#range, spotCone = spot#cone,
@@ -123,7 +127,13 @@ mod Render3d.Light {
         gl.uniform3fv(locs#sunDir, d#sunDir);
         gl.uniform3fv(locs#sunColor, d#sunColor);
         if (locs#inverseUnitsPerMeterSquared < 0) () else gl.uniform1f(locs#inverseUnitsPerMeterSquared, d#inverseUnitsPerMeterSquared);
+        if (locs#psx < 0) () else putVec4(gl, locs#psx, d#psx);
+        if (locs#psxTarget < 0) () else putVec4(gl, locs#psxTarget, d#psxTarget);
+        if (locs#vertexSnap < 0) () else gl.uniform1f(locs#vertexSnap, d#vertexSnap);
         putReflection(gl, locs, d)
+
+    def putVec4(gl: GlContext, location: Int32, v: Array[Float32, Static]): Unit \ IO =
+        gl.uniform4f(location, Array.get(0, v), Array.get(1, v), Array.get(2, v), Array.get(3, v))
 
     /// 映り込みに使う空の 3 色と curve を渡す（metallic と roughness を持つ材質のプログラムだけが宣言している。無いプログラムは何も呼ばない）。
     // WhyNot: location が -1 のままで GL を呼ばない — 持たないプログラムが大半で、毎回 4 回の無駄な呼び出しになる。
@@ -159,5 +169,6 @@ mod Render3d.Light {
           envOn = Render3d.loc(gl, program, "uEnvOn"), envBoxOn = Render3d.loc(gl, program, "uEnvBoxOn"), envBoxMin = Render3d.loc(gl, program, "uEnvBoxMin"),
           envBoxMax = Render3d.loc(gl, program, "uEnvBoxMax"), envBoxCenter = Render3d.loc(gl, program, "uEnvBoxCenter"),
           envLevels = Render3d.loc(gl, program, "uEnvLevels"), envIntensity = Render3d.loc(gl, program, "uEnvIntensity"),
-          sunDir = Render3d.loc(gl, program, "uSunDir"), sunColor = Render3d.loc(gl, program, "uSunColor"), inverseUnitsPerMeterSquared = -1 }
+          sunDir = Render3d.loc(gl, program, "uSunDir"), sunColor = Render3d.loc(gl, program, "uSunColor"), inverseUnitsPerMeterSquared = -1,
+          psx = -1, psxTarget = -1, vertexSnap = -1 }
 }

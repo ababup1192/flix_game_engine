@@ -18,11 +18,11 @@ pub mod Render3dWgsl {
         "@group(0) @binding(3) var uEnvMap: texture_2d<f32>;\n" +
         "@group(0) @binding(4) var uEnvSampler: sampler;\n"
 
-    /// 変種 v の pipeline だけが group 0 に足す binding（どちらも偽なら空の字）。6 = 点光源の影と光の量の読み方の値の buffer（R3dLight・+ps か +pu）・
+    /// 変種 v の pipeline だけが group 0 に足す binding（どれも偽なら空の字）。6 = 点光源の影と光の量の読み方と PS1 風の値の buffer（R3dLight・+ps か +pu か +psx）・
     /// 7 = 点光源の影の atlas（+ps だけ）。R3dLight の欄の名前は Render3dGlsl の uniform と同じで、並びは Render3d.UniformLayout.lightFields。
     // WhyNot: 既定の R3dScene の struct に欄を足さない — 既定の pipeline の WGSL の字と group 0 の layout が変わり、変種を使わない場面まで値の並びが動く。
     pub def variantDeclarations(v: Render3d.ShaderVariant): String =
-        if (not v#pointShadows and not v#physicalUnits) ""
+        if (not v#pointShadows and not v#physicalUnits and not v#psx) ""
         else
             Render3d.UniformLayout.structSource("R3dLight", Render3d.UniformLayout.lightFields()) +
             "@group(0) @binding(${lightBinding()}) var<uniform> r3dLight: R3dLight;\n" +
@@ -79,7 +79,46 @@ pub mod Render3dWgsl {
         "    if (r3d.uFogOn == 0) { return c; }\n" +
         "    return fogAt(p, c);\n" +
         "}\n" +
-        surfaceOutSource()
+        surfaceOutSource() +
+        (if (v#psx) colorDepthSource() else "")
+
+    /// PS1 風の変種の色の丸め r3d_colorDepth(画面の値の色, 画素の位置)（Render3dGlsl.colorDepthSource と同じ式）。r3dLight.uPsx = (段の数, 表の番号, 強さ, アフィンの割合)。
+    /// 画素の位置は frag の @builtin(position)（場面ごとの描き先の左上が 0 なので、GLSL の uPsxTarget の原点を引かない）。
+    // WhyNot: 表を const の配列で添字を引かない — 決まった値の配列を実行時の添字で引けない実装がある。関数の中の var の配列にする。
+    def colorDepthSource(): String =
+        let table = (xs: List[Int32]) -> String.intercalate(", ", xs |> List.map(x -> "${x}.0"));
+        "fn r3d_psxDither(p: vec2i) -> f32 {\n" +
+        "    let i = (p.y & 3) * 4 + (p.x & 3);\n" +
+        "    var psx = array<f32, 16>(${table(Scene3d.Psx.psxTable())});\n" +
+        "    var bayer = array<f32, 16>(${table(Scene3d.Psx.bayer4Table())});\n" +
+        "    if (r3dLight.uPsx.y < 0.5) { return psx[i] / 8.0; }\n" +
+        "    if (r3dLight.uPsx.y < 1.5) { return (bayer[i] + 0.5) / 16.0 - 0.5; }\n" +
+        "    return 0.0;\n" +
+        "}\n" +
+        "fn r3d_colorDepth(c: vec3f, at: vec4f) -> vec3f {\n" +
+        "    let q = r3dLight.uPsx;\n" +
+        "    if (q.x <= 0.0) { return c; }\n" +
+        "    let p = vec2i(i32(floor(at.x)), i32(floor(at.y)));\n" +
+        "    let step = 256.0 / (q.x + 1.0);\n" +
+        "    let v = floor(clamp(c, vec3f(0.0), vec3f(1.0)) * 255.0 + 0.5) + r3d_psxDither(p) * q.z * step;\n" +
+        "    return floor(clamp(v, vec3f(0.0), vec3f(255.0)) / step) / q.x;\n" +
+        "}\n"
+
+    /// 変種 v の frag の色の出口: v#psx なら r3d_colorDepth(c, at) の式、ほかは c のまま（at = 画素の位置の式）。
+    def colorOut(v: Render3d.ShaderVariant, c: String, at: String): String = if (v#psx) "r3d_colorDepth(" + c + ", " + at + ")" else c
+
+    /// PS1 風の変種の頂点を丸める式 r3d_vertexSnap(GL の clip の位置)（Render3dGlsl.vertexSnapSource と同じ式）。r3dCamera.uSnap = (描き先の幅, 高さ, 格子, 0)。
+    def vertexSnapSource(): String =
+        "fn r3d_vertexSnap(p: vec4f) -> vec4f {\n" +
+        "    let g = r3dCamera.uSnap.z;\n" +
+        "    if (g <= 0.0 || p.w <= 0.0) { return p; }\n" +
+        "    let size = r3dCamera.uSnap.xy;\n" +
+        "    let s = floor(vec2f((p.x / p.w + 1.0) * 0.5 * size.x, (1.0 - p.y / p.w) * 0.5 * size.y) / g + 0.5) * g;\n" +
+        "    return vec4f((s.x / size.x * 2.0 - 1.0) * p.w, (1.0 - s.y / size.y * 2.0) * p.w, p.z, p.w);\n" +
+        "}\n"
+
+    /// 変種 v の頂点シェーダーの clip の位置の出口（GL の clip の式 c を sg_clipFromGl へ。v#psx なら先に r3d_vertexSnap で丸める）。
+    def clipOut(psx: Bool, c: String): String = if (psx) "sg_clipFromGl(r3d_vertexSnap(" + c + "))" else "sg_clipFromGl(" + c + ")"
 
     /// Render3dGlsl.surfaceOutSource と同じ式。
     pub def surfaceOutSource(): String =
@@ -222,6 +261,7 @@ pub mod Render3dWgsl {
     // WhyNot: flat の値を最後の頂点から取る形（GL の既定）にそろえない — WGSL の flat は最初の頂点を取るが、vTint と vEmissionIntensity は置いた物 1 つで同じ値。
     def inputStruct(surface: Render3d.ProgramKind, normalMapped: Bool): String =
         "struct R3dIn {\n" +
+        (if (surface#psx) "    @builtin(position) fragPos: vec4f,\n" else "") +
         "    @location(0) vWorld: vec3f,\n" +
         "    @location(1) vNormal: vec3f,\n" +
         "    @location(2) vColor: vec3f,\n" +
@@ -230,6 +270,7 @@ pub mod Render3dWgsl {
         (if (surface#uv) "    @location(5) vUv: vec2f,\n" else "") +
         (if (surface#lightmap) "    @location(6) vUv2: vec2f,\n" else "") +
         (if (normalMapped) "    @location(7) vTangent: vec4f,\n" else "") +
+        (if (surface#uv and surface#psx) "    @location(8) @interpolate(linear) vUvAffine: vec2f,\n" else "") +
         (if (surface#doubleSided) "    @builtin(front_facing) frontFacing: bool,\n" else "") +
         "};\n"
 
@@ -265,7 +306,8 @@ pub mod Render3dWgsl {
         "    let vColor = i.vColor;\n" +
         "    let vTint = i.vTint;\n" +
         "    let vEmissionIntensity = i.vEmissionIntensity;\n" +
-        (if (surface#uv) "    let vUv = i.vUv;\n" else "    let vUv = vec2f(0.0, 0.0);\n") +
+        (if (surface#uv and v#psx) "    let vUv = mix(i.vUv, i.vUvAffine, r3dLight.uPsx.w);\n"
+         else if (surface#uv) "    let vUv = i.vUv;\n" else "    let vUv = vec2f(0.0, 0.0);\n") +
         "    let material = materialEval(vUv, vWorld, vNormal, vColor);\n" +
         "    let albedo = material.albedo;\n" +
         "    let emission = material.emission;\n" +
@@ -285,9 +327,9 @@ pub mod Render3dWgsl {
             "    var envColor = vec3f(0.0);\n" +
             "    if (r3d.uEnvOn == 1) { envColor = environmentColorAt(vWorld, n, base, vec3f(metalRough, 0.0)); }\n" +
             "    let lit = pbrAt(vWorld, n, base, light, vec3f(metalRough, 0.0), envColor);\n" +
-            "    return vec4f(r3d_surfaceOutLit(lit, emission, vEmissionIntensity, vWorld), " + alpha + ");\n"
+            "    return vec4f(" + colorOut(v, "r3d_surfaceOutLit(lit, emission, vEmissionIntensity, vWorld)", "i.fragPos") + ", " + alpha + ");\n"
          else
-            "    return vec4f(r3d_surfaceOut(r3d_srgbToLinear3(albedo.rgb), vTint, light, emission, vEmissionIntensity, vWorld, true), " + alpha + ");\n") +
+            "    return vec4f(" + colorOut(v, "r3d_surfaceOut(r3d_srgbToLinear3(albedo.rgb), vTint, light, emission, vEmissionIntensity, vWorld, true)", "i.fragPos") + ", " + alpha + ");\n") +
         "}\n"
 
     /// 奥行きの書き出し（Output.Depth）の形だけの frag（Render3dGlsl.depthFragmentSource と同じ）。頂点シェーダーは litVertexSource で、読む varying は vWorld だけ。入口は fs_main。
@@ -307,6 +349,7 @@ pub mod Render3dWgsl {
         sceneDeclarations() +
         variantDeclarations(v) +
         "struct R3dLitIn {\n" +
+        (if (v#psx) "    @builtin(position) fragPos: vec4f,\n" else "") +
         "    @location(0) vWorld: vec3f,\n" +
         "    @location(1) vNormal: vec3f,\n" +
         "    @location(2) vColor: vec3f,\n" +
@@ -318,7 +361,7 @@ pub mod Render3dWgsl {
         "    let n = normalize(i.vNormal);\n" +
         "    r3d_sunLit = sunLitAt(i.vWorld, n, n);\n" +
         (if (v#pointShadows) "    r3d_pointShadowsAt(i.vWorld, n, n);\n" else "") +
-        "    return vec4f(r3d_surfaceOut(i.vColor, i.vTint, lightAt(i.vWorld, n), vec3f(0.0), 1.0, i.vWorld, true), 1.0);\n" +
+        "    return vec4f(" + colorOut(v, "r3d_surfaceOut(i.vColor, i.vTint, lightAt(i.vWorld, n), vec3f(0.0), 1.0, i.vWorld, true)", "i.fragPos") + ", 1.0);\n" +
         "}\n"
 
     /// 1 体ごとの値の 1 体のバイト数（Render3d.InstanceValues の 1 体 = 32 float）。
@@ -326,24 +369,36 @@ pub mod Render3dWgsl {
 
     /// 目と射影の行列とカメラの向き（group 0 の binding 5）。詰める側は uView・uProj の順に列優先で 128 バイトの後に、
     /// カメラの right・up・カメラへ向く向き（−forward）を xyz に 16 バイトずつ（ビルボードが四角を立て、法線にする。GLSL の uRight・uUp・uFacing）。
-    pub def cameraDeclarations(): String =
-        "struct R3dCamera { uView: mat4x4f, uProj: mat4x4f, uRight: vec4f, uUp: vec4f, uFacing: vec4f };\n" +
-        "@group(0) @binding(5) var<uniform> r3dCamera: R3dCamera;\n"
+    pub def cameraDeclarations(): String = cameraDeclarationsFor(false)
 
-    /// R3dCamera のバイト数。
-    pub def cameraBytes(): Int32 = 176
+    /// psx（PS1 風の変種）なら末尾に uSnap（描き先の幅・高さ・頂点を丸める格子・0）を足し、r3d_vertexSnap も置く版の cameraDeclarations。
+    // WhyNot: 既定の struct に uSnap を足さない — 既定の頂点シェーダーの字が変わる。buffer は cameraBytes() の大きさで作るので、短い struct の版もそのまま読める。
+    def cameraDeclarationsFor(psx: Bool): String =
+        (if (psx) "struct R3dCamera { uView: mat4x4f, uProj: mat4x4f, uRight: vec4f, uUp: vec4f, uFacing: vec4f, uSnap: vec4f };\n"
+         else "struct R3dCamera { uView: mat4x4f, uProj: mat4x4f, uRight: vec4f, uUp: vec4f, uFacing: vec4f };\n") +
+        "@group(0) @binding(5) var<uniform> r3dCamera: R3dCamera;\n" +
+        (if (psx) vertexSnapSource() else "")
+
+    /// R3dCamera の buffer のバイト数（PS1 風の変種の uSnap まで。既定の struct は前の 176 バイトだけを読む）。
+    pub def cameraBytes(): Int32 = 192
+
+    /// R3dCamera の uSnap のバイトの位置。
+    pub def cameraSnapAt(): Int32 = 176
 
     /// ビルボードの頂点シェーダー（Render3dGlsl.billboardVertexSource と同じ式）。入口は vs_main。
     /// 四角の角は vertex_index の 6 点（GL の Render3d.buildQuad と同じ並び・y は下向き）。ビルボードの値は buffer 0（instance ごと・stride は値 1 つ）の location 0〜3
     /// （並びは Render3d.SceneList.billboardValueFloats: 点と光の当て方・anchor と size・貼る範囲の uv・tint と影を受ける点を板から離す長さ）。影の地図へ描く時も同じ（group 0 が光の目と板の向き）。
-    pub def billboardVertexSource(): String = billboardVertexSourceWith("r3dCamera.uRight.xyz")
+    pub def billboardVertexSource(): String = billboardVertexSourceWith("r3dCamera.uRight.xyz", false)
+
+    /// 変種 v の billboardVertexSource（v#psx なら四角の角を丸める）。
+    pub def billboardVertexSourceFor(v: Render3d.ShaderVariant): String = billboardVertexSourceWith("r3dCamera.uRight.xyz", v#psx)
 
     /// 板の横の向きを行の値の tint の rgb から読む billboardVertexSource（点光源の影の面へ描く時。Render3d.SceneList.putBillboardValues）。
-    pub def billboardRowRightVertexSource(): String = billboardVertexSourceWith("v.tint.xyz")
+    pub def billboardRowRightVertexSource(): String = billboardVertexSourceWith("v.tint.xyz", false)
 
-    /// right = 板の横の向きの式。
-    def billboardVertexSourceWith(right: String): String =
-        cameraDeclarations() +
+    /// right = 板の横の向きの式・psx = 角を丸めるか。
+    def billboardVertexSourceWith(right: String, psx: Bool): String =
+        cameraDeclarationsFor(psx) +
         "struct R3dBillboardIn {\n" +
         "    @location(0) center: vec4f,\n" +
         "    @location(1) anchorSize: vec4f,\n" +
@@ -365,7 +420,7 @@ pub mod Render3dWgsl {
         "    o.vFacing = r3dCamera.uFacing.xyz;\n" +
         "    o.vShadowBase = v.center.xyz + vec3f(0.0, (v.anchorSize.y - corner.y) * v.anchorSize.w, 0.0);\n" +
         "    o.vShadowOffset = v.tint.w;\n" +
-        "    o.position = sg_clipFromGl(r3dCamera.uProj * r3dCamera.uView * vec4f(world, 1.0));\n" +
+        "    o.position = " + clipOut(psx, "r3dCamera.uProj * r3dCamera.uView * vec4f(world, 1.0)") + ";\n" +
         "    return o;\n" +
         "}\n"
 
@@ -394,7 +449,7 @@ pub mod Render3dWgsl {
         variantDeclarations(bv) +
         "@group(1) @binding(0) var uImage: texture_2d<f32>;\n" +
         "@group(1) @binding(1) var uImageSampler: sampler;\n" +
-        billboardVaryings("R3dBillboardIn", false) +
+        billboardVaryings("R3dBillboardIn", bv#psx) +
         colorSpaceSource() +
         lightSourceWith(billboardShadowSource(), bv) +
         depthGraySource() +
@@ -409,7 +464,7 @@ pub mod Render3dWgsl {
         "    if (i.vLit > 1.5) { r3d_sunLit = sunLitAt(i.vShadowBase + r3d.uSunDir * (i.vShadowOffset / max(length(r3d.uSunDir.xz), ${Scene3d.billboardShadowMinFlat()})), r3d.uSunDir, normalize(i.vFacing)); }\n" +
         "    var light = vec3f(1.0);\n" +
         "    if (lit) { light = lightAt(i.vWorld, normalize(i.vFacing)); }\n" +
-        "    return vec4f(r3d_surfaceOut(r3d_srgbToLinear3(texel.rgb), i.vTint, light, vec3f(0.0), 1.0, i.vWorld, lit), 1.0);\n" +
+        "    return vec4f(" + colorOut(bv, "r3d_surfaceOut(r3d_srgbToLinear3(texel.rgb), i.vTint, light, vec3f(0.0), 1.0, i.vWorld, lit)", "i.position") + ", 1.0);\n" +
         "}\n"
 
     /// ビルボードを影の地図へ描く frag（色を出さず、絵の α < 0.5 の画素を捨てるだけ。GL は billboardFragmentSource の uDepthOut の枝で同じ事をする）。
@@ -474,9 +529,12 @@ pub mod Render3dWgsl {
     /// location 3〜10 で読む。行の頭の物は draw の firstInstance で引く。skinned なら骨つきの版（location 14・15 と group 2 の姿勢）。varying は litFragmentSource の R3dLitIn と同じ並び。
     // WhyNot: 1 体ごとの値を storage buffer から instance_index で引かない — 頂点の属性で読む形と 1 コマの時間の差が揺れの内（plans/engine-webgpu.md の 12.29）で、属性の数は一番多い版（uv つきの骨つきの材質）でも 15 個で上限 16 の内。
     //   storage から引く形は、頂点の段で storage を読めない機種（WebGPU の互換の版）で骨の無い物まで描けなくなる（姿勢の storage は骨つきの物だけが読む）。
-    pub def litVertexSource(skinned: Bool): String =
+    pub def litVertexSource(skinned: Bool): String = litVertexSourceFor(skinned, false)
+
+    /// psx（PS1 風の変種）なら頂点を丸める版の litVertexSource。
+    pub def litVertexSourceFor(skinned: Bool, psx: Bool): String =
         let local = localOf(skinned);
-        cameraDeclarations() +
+        cameraDeclarationsFor(psx) +
         (if (skinned) poseDeclarations() else "") +
         "struct R3dVertexIn {\n" +
         "    @location(0) aPos: vec3f,\n" +
@@ -503,7 +561,7 @@ pub mod Render3dWgsl {
         "    o.vNormal = (normalMatrix * vec4f(" + local#normal + ", 0.0)).xyz;\n" +
         "    o.vColor = r3d_srgbToLinear3(v.aColor);\n" +
         "    o.vTint = v.tint.rgb;\n" +
-        "    o.position = sg_clipFromGl(r3dCamera.uProj * r3dCamera.uView * world);\n" +
+        "    o.position = " + clipOut(psx, "r3dCamera.uProj * r3dCamera.uView * world") + ";\n" +
         "    return o;\n" +
         "}\n"
 
@@ -511,10 +569,13 @@ pub mod Render3dWgsl {
     /// 形の頂点は buffer 0 の location 0〜2（位置・法線・色）と、uv つきの版は 11（uv）・12（タンジェント）、2 本目の uv つきは 13、骨つきの版は 14・15（Render3d.WebGpuRows の並び）。
     /// 1 体ごとの値は litVertexSource と同じ buffer 1 の location 3〜10。varying は materialFragmentSource の R3dIn の並び（frag が読まない物も出す）。
     /// 頂点の色は線形へ戻さない（材質の式が VertexColor を sRGB のまま読む・GLSL と同じ）。骨つきの版は lightmap を読まない（Scene3d.lightmapOf が None）。
-    pub def materialVertexSource(uv: Bool, lightmap: Bool, skinned: Bool): String =
+    pub def materialVertexSource(uv: Bool, lightmap: Bool, skinned: Bool): String = materialVertexSourceFor(uv, lightmap, skinned, false)
+
+    /// psx（PS1 風の変種）なら頂点を丸め、uv つきの版は画面の上でまっすぐつなぐ uv（location 8 の vUvAffine）も出す版の materialVertexSource。
+    pub def materialVertexSourceFor(uv: Bool, lightmap: Bool, skinned: Bool, psx: Bool): String =
         let local = localOf(skinned);
         let lm = lightmap and not skinned;
-        cameraDeclarations() +
+        cameraDeclarationsFor(psx) +
         (if (skinned) poseDeclarations() else "") +
         "struct R3dVertexIn {\n" +
         "    @location(0) aPos: vec3f,\n" +
@@ -535,6 +596,7 @@ pub mod Render3dWgsl {
         (if (uv) "    @location(5) vUv: vec2f,\n" else "") +
         (if (lm) "    @location(6) vUv2: vec2f,\n" else "") +
         (if (uv) "    @location(7) vTangent: vec4f,\n" else "") +
+        (if (uv and psx) "    @location(8) @interpolate(linear) vUvAffine: vec2f,\n" else "") +
         "};\n" +
         ShaderGen.Wgsl.clipFromGlSource() +
         "@vertex fn vs_main(v: R3dVertexIn) -> R3dMaterialOut {\n" +
@@ -549,11 +611,12 @@ pub mod Render3dWgsl {
         "    o.vEmissionIntensity = v.normal0.w;\n" +
         (if (uv)
             "    o.vUv = v.aUv;\n" +
+            (if (psx) "    o.vUvAffine = v.aUv;\n" else "") +
             "    let modelLinear = mat3x3f(model[0].xyz, model[1].xyz, model[2].xyz);\n" +
             "    o.vTangent = vec4f(modelLinear * (" + local#tangent + "), v.aTangent.w * sign(determinant(modelLinear)));\n"
          else "") +
         (if (lm) "    o.vUv2 = v.aUv2;\n" else "") +
-        "    o.position = sg_clipFromGl(r3dCamera.uProj * r3dCamera.uView * world);\n" +
+        "    o.position = " + clipOut(psx, "r3dCamera.uProj * r3dCamera.uView * world") + ";\n" +
         "    return o;\n" +
         "}\n"
 

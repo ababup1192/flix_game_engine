@@ -71,7 +71,7 @@ pub mod Render3d.WebGpuMaterials {
     pub type alias PlatformImages = { has = (String, Int32, Int32) -> Bool \ IO, copy = (String, Texture) -> Bool \ IO }
 
     /// 状態。programs = materialKey → 組んだ program（組めなければ None）・current = 今の prepare の問い合わせの順の program（行の欄 1 が引く）・
-    /// vertexModules = (uv つきか, lightmap つきか, 骨つきか) → 材質の頂点シェーダー・pipelines = MaterialPipelineKey → pipeline・
+    /// vertexModules = (uv つきか, lightmap つきか, 骨つきか, PS1 風か) → 材質の頂点シェーダー・pipelines = MaterialPipelineKey → pipeline・
     /// textures = 絵の表・store = 絵の表の番号 → 絵・samplers = [Repeat Nearest, Repeat Linear, Clamp Nearest, Clamp Linear]・blank = 無い絵の代わり（1 × 1 の透明な黒）・
     /// values = 値の buffer（要素 1 つ・足りなければ作り直す）・valuesUsed = 今の encoder で使ったバイト数・groups = 今の encoder の group 1（submit の後に手放す）・
     /// bound = 今の pass で最後に付けた (pipeline の鍵の番号, 行の値の位置)・warned = 知らせ済みの材質の名前。
@@ -82,7 +82,7 @@ pub mod Render3d.WebGpuMaterials {
             programs = Ref[Map[String, Option[Program]], Static],
             nextId = Array[Int32, Static],
             current = Ref[Vector[Option[Program]], Static],
-            vertexModules = Ref[Map[(Bool, Bool, Bool), ShaderModule], Static],
+            vertexModules = Ref[Map[(Bool, Bool, Bool, Bool), ShaderModule], Static],
             pipelines = Ref[Map[MaterialPipelineSlot, RenderPipeline], Static],
             textures = TextureTable3d.Table,
             store = Ref[Map[Int32, GpuTexture], Static],
@@ -595,7 +595,7 @@ pub mod Render3d.WebGpuMaterials {
             case None =>
                 let desc = new RenderPipelineDesc("fge material");
                 let skinned = p#kind#skinned;
-                discard desc.bindGroupLayout(mp#sceneLayout).bindGroupLayout(p#layout).vertex(vertexModuleOf(m, p#kind#uv, p#kind#lightmap, skinned), "vs_main").fragment(p#fragment, "fs_main");
+                discard desc.bindGroupLayout(mp#sceneLayout).bindGroupLayout(p#layout).vertex(vertexModuleOf(m, p#kind#uv, p#kind#lightmap, skinned, p#kind#psx), "vs_main").fragment(p#fragment, "fs_main");
                 if (skinned) discard desc.bindGroupLayout(mp#poseLayout) else ();
                 discard desc.vertexBuffer(mesh#stride, false).attribute(VertexFormat.FLOAT32X3, 0, 0).attribute(VertexFormat.FLOAT32X3, 12, 1).attribute(VertexFormat.FLOAT32X3, 24, 2);
                 if (p#kind#uv) discard desc.attribute(VertexFormat.FLOAT32X2, 36, 11).attribute(VertexFormat.FLOAT32X4, 44, 12) else ();
@@ -617,15 +617,15 @@ pub mod Render3d.WebGpuMaterials {
                 made
         }
 
-    /// 材質の頂点シェーダー（uv つきの版か・lightmap つきの版か・骨つきの版か。無ければ作る）。
-    def vertexModuleOf(m: Materials, uv: Bool, lightmap: Bool, skinned: Bool): ShaderModule \ IO =
+    /// 材質の頂点シェーダー（uv つきの版か・lightmap つきの版か・骨つきの版か・PS1 風の版か。無ければ作る）。
+    def vertexModuleOf(m: Materials, uv: Bool, lightmap: Bool, skinned: Bool, psx: Bool): ShaderModule \ IO =
         let MaterialsData.MaterialsData(s) = m;
         let baked = lightmap and not skinned;
-        let key = (uv, baked, skinned);
+        let key = (uv, baked, skinned, psx);
         match Map.get(key, Ref.get(s#vertexModules)) {
             case Some(found) => found
             case None =>
-                let made = s#gpu.createShaderModule("fge material vs", Render3dWgsl.materialVertexSource(uv, baked, skinned));
+                let made = s#gpu.createShaderModule("fge material vs", Render3dWgsl.materialVertexSourceFor(uv, baked, skinned, psx));
                 Ref.put(Map.insert(key, made, Ref.get(s#vertexModules)), s#vertexModules);
                 made
         }

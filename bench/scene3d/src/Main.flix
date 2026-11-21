@@ -4,6 +4,7 @@
 //   書斎の場面（SCENE=study）… 実写スキャンの家具（Poly Haven の glb。MODELS=<フォルダ>・既定 ../../build/polyhaven-glb・git に入れない）の卓に光る球・燭台・ランタン（src/Study.flix）
 //   夜の街灯の場面（SCENE=lamps）… 街灯 8 本・SHADOWS=n で影を落とす灯りの数（0 = 影なし）・MAPSIZE・PCF（src/Lighting.flix）
 //   光る球の場面（SCENE=orb）… 暗い部屋に強く光る緑の球・ろうそく・赤い瓶・本（src/Orb.flix。view transform の見比べ用）
+// PSX=dither|full で部屋を PS1 風の描き方（Scene3d.PsxLook・src/PsxRoom.flix）で描く（Design の解像度・板目の床。PSX=off は同じ場面を切って描く）。
 // POST=1 で画面全体の後がけ（App.withPostStack の夕方の屋外の preset）を掛ける（後がけの重さを前後で比べる・PostStack の手本）。
 // 描く道は実機と同じ（App の view → App.Internal.Paint.submitGpuItems → Platform.Draw3d.drawScene3d）。
 use fge::LwjglLayer
@@ -16,6 +17,7 @@ mod SceneBench {
     /// 描く場面。
     pub enum Scene {
         case Room(Room.Kit)
+        case PsxRoom(PsxRoom.Kit, String)
         case Field(Field.Kit)
         case Orb
         case Study(Study.Kit)
@@ -43,6 +45,7 @@ mod SceneBench {
         let head = ("bench", BenchRun.quoted("scene3d")) :: ("segment", Int32.toString(segment)) :: Nil;
         match scene {
             case Scene.Room(_)    => List.append(head, ("scene", BenchRun.quoted("room")) :: Nil)
+            case Scene.PsxRoom(_, look) => List.append(head, ("scene", BenchRun.quoted("room")) :: ("psx", BenchRun.quoted(look)) :: Nil)
             case Scene.Field(kit) => List.append(head, ("scene", BenchRun.quoted("field")) :: Field.knobFields(kit#config))
             case Scene.Orb        => List.append(head, ("scene", BenchRun.quoted("orb")) :: Nil)
             case Scene.Study(_)   => List.append(head, ("scene", BenchRun.quoted("study")) :: Nil)
@@ -59,6 +62,7 @@ mod SceneBench {
 
     pub def items(scene: Scene, w: World): List[Render.PlacedItem] = match scene {
         case Scene.Room(kit)  => Room.items(kit, yawAt(w#t))
+        case Scene.PsxRoom(kit, look) => PsxRoom.items(kit, PsxRoom.lookOf(look), yawAt(w#t))
         case Scene.Field(kit) => Field.items(kit, w#t)
         case Scene.Orb        => Orb.items(0.0)
         case Scene.Study(kit) => Study.items(kit)
@@ -117,12 +121,15 @@ mod SceneBench {
         else if (Map.get("scene", knobs) == Some("orb")) Ok(Scene.Orb)
         else if (Map.get("scene", knobs) == Some("lamps")) Ok(Scene.Lamps(lampsConfigOf(knobs)))
         else if (Map.get("scene", knobs) == Some("study")) Study.load(Map.getWithDefault("models", "../../build/polyhaven-glb", knobs)) |> Result.map(Scene.Study)
-        else Room.loadMeshes() |> Result.map(meshes -> Scene.Room(Room.kitOf(meshes)))
+        else match Map.get("psx", knobs) {
+            case Some(look) => Room.loadMeshes() |> Result.map(meshes -> Scene.PsxRoom(PsxRoom.kitOf(Room.kitOf(meshes)), look))
+            case None       => Room.loadMeshes() |> Result.map(meshes -> Scene.Room(Room.kitOf(meshes)))
+        }
 
     pub def go(): Unit \ IO =
         let knobs = BenchEnv.knobs(("SCENE", "scene") :: ("COUNT", "n") :: ("SHAPES", "shapes") :: ("MATS", "mats") :: ("MOVING", "moving") ::
                                    ("ALPHA", "alpha") :: ("SHADOW", "shadow") :: ("GROUP", "group") :: ("FRAMES", "frames") :: ("REPEAT", "repeat") :: ("DIAG", "diag") :: ("POST", "post") :: ("MODELS", "models") ::
-                                   ("SHADOWS", "shadows") :: ("MAPSIZE", "mapsize") :: ("PCF", "pcf") :: ("CROWD", "crowd") :: Nil);
+                                   ("SHADOWS", "shadows") :: ("MAPSIZE", "mapsize") :: ("PCF", "pcf") :: ("CROWD", "crowd") :: ("PSX", "psx") :: Nil);
         run {
             match loadScene(knobs) {
                 case Err(why) =>

@@ -266,6 +266,31 @@ pub mod Scene3d {
         case Design
     }
 
+    /// ディザの表（4×4 の画素の格子で繰り返す）。Psx = PS1 の GPU の表（−4〜3。5 ビットの色の 1 段の半分ほど揺らす）・
+    /// Bayer4x4 = 4×4 の Bayer 行列（1 段を 16 に割った揺らし）・Off = ディザなしで切り捨てるだけ。
+    pub enum DitherPattern with Eq, ToString {
+        case Psx
+        case Bayer4x4
+        case Off
+    }
+
+    /// PS1 風の描き方（PSX 風シェーダーの手。psxOff の値で全部切れる）。
+    /// colorDepth = 色の 1 成分のビット数（0 で切る・1〜8。PS1 は 5 = 15 ビットの色）・dither = 丸める前に足すディザの表・
+    /// ditherStrength = ディザの強さ（1 で表のまま・0 でディザなし）・
+    /// vertexSnap = 投影した頂点の x・y を丸める格子の大きさ（場面の描き先の画素。0 で切る・1 で 1 画素・2 で 2 画素。奥行きは丸めない）・
+    /// affineTextureMapping = 材質の uv を遠近で補正しない割合（0 = 遠近の補正どおり・1 = 画面の上でまっすぐつなぐアフィン。間は 2 つの uv を混ぜる）。
+    /// 色の丸めとディザの格子は場面の描き先の画素（Resolution.Design なら design の画素）にそろう。
+    pub type alias PsxLook = { colorDepth = Int32, dither = DitherPattern, ditherStrength = Float64, vertexSnap = Float64, affineTextureMapping = Float64 }
+
+    /// 全部切った PsxLook（Scene3d.scene の既定）。欄を書き替えて使う: `{ colorDepth = 5 | Scene3d.psxOff() }`。
+    pub def psxOff(): PsxLook = { colorDepth = 0, dither = DitherPattern.Psx, ditherStrength = 1.0, vertexSnap = 0.0, affineTextureMapping = 0.0 }
+
+    /// PS1 の GPU に近い値（15 ビットの色・PS1 の表のディザ・1 画素の頂点の揺れ・完全なアフィン）。大きな床と壁は流れが強いので affineTextureMapping を下げる。
+    pub def psxLook(): PsxLook = { colorDepth = 5, dither = DitherPattern.Psx, ditherStrength = 1.0, vertexSnap = 1.0, affineTextureMapping = 1.0 }
+
+    /// 場面の PS1 風の描き方を替える（Scene3dCmd の psx）。
+    pub def withPsx(look: PsxLook, scene: Scene3dCmd): Scene3dCmd = { psx = look | scene }
+
     /// 書き出す物。Color = 色・Depth = 目からの奥行きの灰色（near で黒・near + range で白。ピントの Pass の入力）。
     // WhyNot: with Eq を付けない — Depth の欄に名前を残すためのレコードには Eq が無い。比べたい所は match で開く。
     pub enum Output {
@@ -766,14 +791,15 @@ pub mod Scene3d {
     /// directionalLight = 太陽（1 つまで。None なら無し。使うかどうかは directionalLightOf で決める）・
     /// groups = 動かない物の集まり（staticGroup。中の物は instances と同じに描かれる。読むのは instancesOf）・
     /// unitsPerMeter = 1 m が場面の長さのいくつか（withUnitsPerMeter。Legacy の光では描き方は変えず、m で受ける値（PostStack の奥行きのぼかし）と Physical の光の逆二乗が読む）・
-    /// pointShadows = 点光源の影（withPointShadows。None なら影なし）・lightUnits = 光の量の読み方（withLightUnits。既定 Legacy）。
+    /// pointShadows = 点光源の影（withPointShadows。None なら影なし）・lightUnits = 光の量の読み方（withLightUnits。既定 Legacy）・
+    /// psx = PS1 風の描き方（withPsx。既定 psxOff = 全部切る）。
     pub type alias Scene3dCmd = { size = Vec2.Vec2, camera = Camera3d.Camera3d, instances = List[Instance3d], groups = List[StaticGroup], billboards = List[Billboard3d],
                                   pointLights = List[PointLight], spotLights = List[SpotLight], directionalLight = Option[DirectionalLight], environment = Environment3d,
                                   resolution = Resolution, output = Output, zIndex = Int32, time = Float64,
                                   textures = List[Texture3d.Texture3d], sky = Option[Sky3d], environmentMap = Option[EnvironmentMap], unitsPerMeter = Float64,
-                                  pointShadows = Option[PointShadowMap], lightUnits = LightUnits }
+                                  pointShadows = Option[PointShadowMap], lightUnits = LightUnits, psx = PsxLook }
 
-    /// 空の場面（環境光は白・光なし・かすみなし・地の色なし・Native・色を書き出す・zIndex 0・時刻 0・絵なし・空なし・1 m = 1・点光源の影なし・Legacy の光）。
+    /// 空の場面（環境光は白・光なし・かすみなし・地の色なし・Native・色を書き出す・zIndex 0・時刻 0・絵なし・空なし・1 m = 1・点光源の影なし・Legacy の光・PS1 風は切る）。
     /// time = 材質の ShaderDoc の時刻（秒）（ゲームの遊びの時計を渡すと、ポーズやヒットストップで材質の動きも止まる）。
     /// Scene3dCmd は開いたレコードなので `{ instances = … | s }` で足す。
     // WhyNot: 環境光を黒にしない — 光を置く前の場面が真っ黒になり、形を置いたのに何も出ないように見える。
@@ -781,7 +807,7 @@ pub mod Scene3d {
         { size = size, camera = camera, instances = Nil, groups = Nil, billboards = Nil, pointLights = Nil, spotLights = Nil, directionalLight = None,
           environment = { ambient = Color.rgb(1.0, 1.0, 1.0), hemisphere = 0.0, toonSteps = 0, fog = None, background = None },
           resolution = Resolution.Native, output = Output.Color, zIndex = 0, time = 0.0, textures = Nil, sky = None, environmentMap = None,
-          unitsPerMeter = 1.0, pointShadows = None, lightUnits = LightUnits.Legacy }
+          unitsPerMeter = 1.0, pointShadows = None, lightUnits = LightUnits.Legacy, psx = psxOff() }
 
     /// 1 m が場面の長さのいくつかを言う（既定 1 = glTF・Blender と同じ）。Blender の 1 m を 16 で置いた場面は 16。
     pub def withUnitsPerMeter(k: Float64, scene: Scene3dCmd): Scene3dCmd = { unitsPerMeter = k | scene }
@@ -1135,14 +1161,14 @@ pub mod Scene3d {
         { key = key, instances = instances, textures = () -> Nil, variants = Nil }
 
     /// 先に組むシェーダーの変種（場面の設定で決まる版）。pointShadows = 点光源の影を引く版（場面の pointShadows が Some・描き手の鍵の +ps）・
-    /// physicalUnits = Physical の光の版（場面の lightUnits が Physical・+pu）。どちらも偽なら既定の版（いつも組む）。
-    pub type alias PreloadVariant = { pointShadows = Bool, physicalUnits = Bool }
+    /// physicalUnits = Physical の光の版（場面の lightUnits が Physical・+pu）・psx = PS1 風の版（場面の psx が Scene3d.Psx.isOn・+psx）。どれも偽なら既定の版（いつも組む）。
+    pub type alias PreloadVariant = { pointShadows = Bool, physicalUnits = Bool, psx = Bool }
 
     /// 場面 scene を描く時に描き手が組む変種（先に上げる宣言に、遊びで出す場面の設定から渡す）。
     pub def preloadVariantOf(scene: Scene3dCmd): PreloadVariant =
-        { pointShadows = Option.nonEmpty(scene#pointShadows), physicalUnits = scene#lightUnits == LightUnits.Physical }
+        { pointShadows = Option.nonEmpty(scene#pointShadows), physicalUnits = scene#lightUnits == LightUnits.Physical, psx = Scene3d.Psx.isOn(scene#psx) }
 
-    /// 変種 v の字（"" = 既定・+ps・+pu・+ps+pu。描き手のプログラムの鍵と同じ並び）。
+    /// 変種 v の字（"" = 既定・+ps・+pu・+psx の組。描き手のプログラムの鍵と同じ並び）。
     pub def preloadVariantKey(v: PreloadVariant): String =
-        (if (v#pointShadows) "+ps" else "") + (if (v#physicalUnits) "+pu" else "")
+        (if (v#pointShadows) "+ps" else "") + (if (v#physicalUnits) "+pu" else "") + (if (v#psx) "+psx" else "")
 }

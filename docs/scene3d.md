@@ -32,6 +32,9 @@ GL と WebGPU（窓・ブラウザ）と CPU（画面なしの描き出し・テ
 - [画面の歪み（熱のゆらぎ・水の中・魔法）](#画面の歪み熱のゆらぎ水の中魔法)
 - [地面を這う霧（高さの霧・街灯のにじみ）](#地面を這う霧高さの霧街灯のにじみ)
   - [明るい所へ入った直後の白飛び（ExposureAdaptation）](#明るい所へ入った直後の白飛びexposureadaptation)
+- [PS1 風の描き方（色の丸めとディザ・頂点の揺れ・アフィンの uv）](#ps1-風の描き方色の丸めとディザ頂点の揺れアフィンの-uv)
+  - [3 つの描き手の違い](#3-つの描き手の違い)
+  - [見送った物（頂点ごとの光）](#見送った物頂点ごとの光)
 - [場面の絵の予算](#場面の絵の予算)
 - [初めて出る物を先に上げる](#初めて出る物を先に上げる)
 - [一人称の視点](#一人称の視点)
@@ -538,6 +541,69 @@ PostStack.withExposure(ExposureAdaptation.computeExposure(ExposureAdaptation.def
 
 - 絵を測らない（ゲームが場所ごとの狙いの明るさを持つ）。3 つの描き手と描き出しで同じ値。明るくなる時は `speedUp`（既定 3/秒）、暗くなる時は `speedDown`（1/秒）で寄る
 - 露出はブルームの後に掛かるので、白飛びの間もブルームが光り始める明るさは変わらない
+
+## PS1 風の描き方（色の丸めとディザ・頂点の揺れ・アフィンの uv）
+
+PSX 風シェーダーの界隈の手を、場面ごとに選んで掛ける（`Scene3d.withPsx`）。どれも既定は切で、切っている時は今までと同じプログラムと同じ絵になる。
+
+```flix
+// 15 ビットの色 + PS1 の表のディザ（まずはこれだけ）
+{ resolution = Scene3d.Resolution.Design | Scene3d.scene(camera, size) } |> Scene3d.withPsx({ colorDepth = 5 | Scene3d.psxOff() })
+// 頂点の揺れと弱いアフィンも足す
+|> Scene3d.withPsx({ colorDepth = 5, vertexSnap = 1.0, affineTextureMapping = 0.35 | Scene3d.psxOff() })
+// PS1 の GPU に近い値（大きな床と壁は流れが強い）
+|> Scene3d.withPsx(Scene3d.psxLook())
+```
+
+| 欄 | 値 | 効き方 |
+|---|---|---|
+| `colorDepth` | 0（切る）・1〜8（PS1 は 5） | 色の 1 成分を何ビットに丸めるか。5 で 15 ビットの色 |
+| `dither` | `Psx`（既定）・`Bayer4x4`・`Off` | 丸める前に足すディザの表（4×4 の格子）。`Psx` は PS1 の GPU の表（8 bit の値に −4〜3） |
+| `ditherStrength` | 0 以上（既定 1） | ディザの量に掛ける数。0 でディザなし |
+| `vertexSnap` | 0（切る）・格子の画素（1 = 1 画素） | 投影した頂点の x・y を描き先の画素の格子に丸める。2 で 2 画素の格子（揺れが大きい）。奥行きは丸めない |
+| `affineTextureMapping` | 0（遠近の補正どおり）〜 1（アフィン） | 材質の uv を画面の上でまっすぐつなぐ割合。間は 2 つの uv を混ぜる |
+
+- **格子は場面の描き先の画素**。`Resolution.Design` の場面なら design の画素（320×240 で描いて拡げるなら 320×240 の画素）にそろうので、拡げた後もディザの粒と頂点の揺れが大きな画素のまま見える。
+  `Native` の場面は窓の画素（場面の矩形の左上が格子の原点）
+- 色の式（3 つの描き手が同じ式・`Scene3d.Psx.quantize`）: 画面の値の色を 8 bit の値 `v = floor(c × 255 + 0.5)` にし、ディザの量 × 2^(8 − bits) を足して 0..255 に切り、
+  2^(8 − bits) で割って切り捨てた段 q を `q ÷ (2^bits − 1)` へ戻す。丸めるのは 3D の色を作った直後（emission・かすみの後）で、半透明の物は丸めた色を下に重ねる
+- 掛かる物: 置いた物（頂点の色・材質・骨つき・staticGroup で持ち越した物）・ビルボード（角も丸める）。アフィンは材質の 1 本目の uv だけ（lightmap の 2 本目の uv は遠近の補正のまま）
+- 掛からない物: 空（`sky`）と地の色（`background`）・奥行きの書き出し（`Output.Depth`。DoF と HeightFog が読む奥行きの絵は丸めない頂点で描く）・影の地図・2D・PostStack の後がけ
+- **頂点の揺れは T 字の継ぎ目に隙間を開ける**（辺の途中に別の面の頂点が乗る所。タイルを別々の面で並べた壁・天井と壁の境）。地の色が透けて黒い線になる。PS1 と同じ壊れ方で、
+  気になる所は面を共有の頂点でつなぐか、地の色を壁の色に寄せるか、`vertexSnap` を切る
+- **アフィンは大きな面ほど強く流れる**（1 枚の床や壁の三角形が画面の大半を覆うと、模様が対角線で折れる）。0.2〜0.4 の弱めから。PS1 のゲームは大きな面を細かく割っていた（割るのはゲームの側の形）
+- 1 を超える明るさは丸める時に 1 に切れる（HDR の Pass に描いても、丸めた場面の emission はブルームの元にならない）
+- 霧は今の `Environment3d.fog`（DistanceFog）で足りる: 色を黒にすると目から near〜far で黒へまっすぐ溶ける（PS1 の depth cue と同じ形）。far より先は真っ黒で描かれる
+  （描く量を減らすなら camera の `far` も縮める）。emission は霧に沈まない（非常口の灯りは遠くでも光る）。地の色を黒にすると継ぎ目がそろう
+- 入れていない物: Z バッファを外して奥から塗る形（ordering table）・テクスチャの色数を減らす CLUT・GTE の固定小数点の精度落ち・頂点ごとの光（グーロー。下の「見送った物」）
+
+### 3 つの描き手の違い
+
+GL・WebGPU・CPU は同じ式を書く（GLSL の `r3d_colorDepth`・`r3d_vertexSnap`・WGSL の同じ名前・CPU の `SoftRaster3d.Psx` の `quantized`・`snapVertex`・`affineUv`）。
+変種は Unity の shader variant と同じ考えで、場面の psx が `Scene3d.Psx.isOn` の時だけ `+psx` のプログラムを組む（切っている場面の GLSL・WGSL の字は変わらない）。
+
+- 色の丸めは 8 bit の ±1 の差を段の境目で 1 段（5 ビットで ±8）に広げる。頂点の丸めは Float32 と Float64 の丸めが格子の真ん中に落ちた頂点を 1 画素ずらす（縁の 1 列が割れる）
+- アフィンの uv: GPU は `noperspective`（WGSL は `@interpolate(linear)`）の補間、CPU は画面の上の重みでつなぐ。手前の面（near）で切った三角形は、GPU の切り方と CPU の切り方（clip 空間でつなぐ）が違い、
+  切った所の近くの uv がずれる。Nearest の絵の texel の境が画面の上で長い斜めの線になり、その線の上の画素が隣の texel を読む
+- 門の許す差: `make gl-parity` の `psxFloor3d`（アフィン 1 の床・800 px）・`psxBox3d`（Design・staticGroup・ビルボード・100 px）・`psxSkin3d`（骨つき・150 px）。
+  bench/scene3d の部屋（`make psx-video`・Design 320×180・960×540 に拡げた絵）の PSNR: 切った時の GL と CPU 50.3 dB・`dither` 49.8 dB・`full` 45.5 dB。WebGPU と GL は切った時 94.5 dB・`full` 61.5 dB
+
+### 重さ
+
+- GL（M4 Pro）の部屋（Design 320×180・16 物・11 draw）で GPU の時間 0.19 ms → 0.20 ms。1 コマの CPU は変わらない（uniform 3 つ）。スマホと Native の大きな窓は【未測定】
+- 変種の分だけプログラムが増える（場面に初めて `+psx` が出た時に組む）。遊びの途中で初めて出すなら `App.withPreload3d` の `variants` に `Scene3d.preloadVariantOf(その場面)` を渡す
+
+### 確かめの入口
+
+- bench/scene3d: `make psx-video LOOK=off|dither|full`（`FGE_GPU=on` で GL・`FGE_PNG_PAINTER=webgpu` で WebGPU・`FGE_GPU=off` で CPU）・`make run PSX=off|dither|full`（重さ）
+- `make gl-parity` の `psx*` の 3 場面
+
+### 見送った物（頂点ごとの光）
+
+頂点ごとに光を計算して面の中をつなぐ形（グーロー）は入れていない。光の式の木（`LightModel3d`）は今は frag で 1 回評価する前提で、頂点の段で評価するには
+影の地図の読み（PCF）・点光源の影・lightmap・法線マップの入力を頂点の段に持ち込むか、それらを外した木を別に作ることになり、GLSL・WGSL・CPU の 3 か所で頂点の出口を足す。
+大きな面では懐中電灯の丸い光が出ない（三角形の頂点にしか光が乗らない）ので、懐中電灯を主役にする場面では使いにくい。入れるなら
+`LightModel3d.Codegen` に頂点の段へ出す口（`toGlslVertex`）を足し、影を引かない光だけの木（`lightingModelFor` の影なしの変種）を頂点で評価して `vLight` で frag へ渡す形が近い。
 
 ## 場面の絵の予算
 

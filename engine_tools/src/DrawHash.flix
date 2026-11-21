@@ -194,7 +194,7 @@ pub mod DrawHash {
         case { size = size, camera = camera, instances = _, groups = _, billboards = billboards,
                pointLights = pointLights, spotLights = spotLights, directionalLight = _, environment = environment,
                resolution = resolution, output = output, zIndex = zIndex, time = time, textures = textures, sky = sky, environmentMap = environmentMap, unitsPerMeter = unitsPerMeter,
-               pointShadows = pointShadows, lightUnits = lightUnits } =>
+               pointShadows = pointShadows, lightUnits = lightUnits, psx = psx } =>
             out.writeDouble(time);
             putVec2(out, size);
             putCamera(out, camera);
@@ -222,8 +222,18 @@ pub mod DrawHash {
             environmentMap |> Option.forEach(putEnvironmentMap(out));
             Scene3d.directionalLightOf(scene) |> Option.forEach(putDirectionalLight(out));
             pointShadows |> Option.forEach(putPointShadowMap(out));
-            if (lightUnits == Scene3d.LightUnits.Physical) { out.writeByte(0x55); putF(out, unitsPerMeter) } else ()
+            if (lightUnits == Scene3d.LightUnits.Physical) { out.writeByte(0x55); putF(out, unitsPerMeter) } else ();
+            if (Scene3d.Psx.isOn(psx)) putPsx(out, psx) else ()
     }
+
+    // WhyNot: PS1 風を切った場面に印を書かない — 欄を足す前の鍵の字を保ち、キャッシュの PNG を塗り直させない。
+    def putPsx(out: DataOutputStream, look: Scene3d.PsxLook): Unit \ IO =
+        out.writeByte(0x58);
+        out.writeInt(Scene3d.Psx.colorDepthOf(look));
+        out.writeInt(Scene3d.Psx.patternCode(look#dither));
+        putF(out, Scene3d.Psx.ditherStrengthOf(look));
+        putF(out, Scene3d.Psx.vertexSnapOf(look));
+        putF(out, Scene3d.Psx.affineOf(look))
 
     // WhyNot: 点光源の影の無い場面・Legacy の光の場面に印を書かない — 欄を足す前の鍵の字を保ち、キャッシュの PNG を塗り直させない。
     //   ある時は印を先に書き、後ろの欄の中身と同じバイト列にならないようにする。

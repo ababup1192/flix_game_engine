@@ -334,6 +334,19 @@ mod TestDrawHash {
                           and at(same) != at(physical(1.0)) and at(physical(1.0)) != at(physical(16.0))
                           and at(same) == at(legacyUpm))
 
+    // PS1 風を切った場面の鍵は欄を足す前のまま・入れると鍵が変わる（値の違いでも変わる）。
+    @Test
+    def testPsxChangesKeyOnlyWhenOn(): Unit \ Assert =
+        let f = frame();
+        let base = sceneAt(Mat4.identity());
+        let at = (s: Scene3d.Scene3dCmd -> Scene3d.Scene3dCmd) ->
+            keyOf(inputs(), { req = { scenes = { scene = s(base#scene) | base } :: Nil | f#req } | f });
+        let psx = (look: Scene3d.PsxLook) -> (s: Scene3d.Scene3dCmd) -> Scene3d.withPsx(look, s);
+        let same = (s: Scene3d.Scene3dCmd) -> s;
+        Assert.assertTrue(at(same) == at(psx({ dither = Scene3d.DitherPattern.Bayer4x4 | Scene3d.psxOff() }))
+                          and at(same) != at(psx(Scene3d.psxLook()))
+                          and at(psx(Scene3d.psxLook())) != at(psx({ vertexSnap = 2.0 | Scene3d.psxLook() })))
+
     // pose の無い置いた物の鍵は、pose の欄を足す前の字のまま（3D の場面のキャッシュの PNG を塗り直させない）。
     @Test
     def testSceneKeyWithoutPoseIsPinned(): Unit \ Assert =

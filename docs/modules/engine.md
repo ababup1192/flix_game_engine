@@ -80,6 +80,7 @@
 | 屋外の 3D に太陽の光と影を足す（町・都市・野原。向き 1 つの平行光源） | Scene3d の directionalLight（Scene3d.directionalLight(direction) を `directionalLight = Some(..)` へ。影は shadow = Some(Scene3d.directionalShadow())・太陽を足したら ambient を下げる・docs/scene3d.md） |
 | 3D の点光源が 8 本を超える（遠い灯りまで全部置きたい） | Scene3d の pointLights に全部入れる（ゲームで選び直さない・選び方は docs/scene3d.md の「点光源」） |
 | 3D の点光源に影を付ける（街灯・たいまつの放射状の影） | Scene3d.withPointShadows(Scene3d.pointShadowMap()) と Scene3d.PointShadows（6 方向の深度を 1 枚の atlas に並べる約束は PointShadows.atlasOf・docs/scene3d.md の「点光源の影」） |
+| 3D の場面を PS1 風に描く（15 ビットの色とディザ・頂点の揺れ・アフィンの uv） | Scene3d.withPsx（PsxLook・psxOff から欄を書き替える・psxLook は PS1 の GPU に近い値・docs/scene3d.md の「PS1 風の描き方」） |
 | 3D の光の量を物理の単位で読む（逆二乗・拡散に 1/π・Godot の Use Physical Light Units） | Scene3d.LightUnits（Legacy / Physical）を Scene3d.withLightUnits で。場面の長さが m でなければ Scene3d.withUnitsPerMeter（docs/scene3d.md の「光の量の読み方」） |
 | 3D の光の式の変種（点光源の影の有無・光の量の読み方）を選ぶ（shader variant） | LightModel3d.LightVariant（variantOf(scene) で場面から選ぶ・lightingModelFor / pbrModelFor。ゲームは使わない） |
 | 3D のカメラの向きを変えずに写す範囲を上下左右へずらす（レンズシフト・縦の線を平行のまま見下ろす HD-2D） | Camera3d の欄 lensShift（Camera3d.camera(eye, yaw, pitch, fovY) から `{ lensShift = Vec2.v2(0.0, -0.5) \| .. }`・docs/scene3d.md の「縦の線を平行のまま見下ろす」） |

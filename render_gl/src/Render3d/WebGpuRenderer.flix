@@ -160,6 +160,7 @@ pub mod Render3d.WebGpuRenderer {
             pasteLayout = BindGroupLayout,
             vertexModule = ShaderModule,
             skinnedModule = ShaderModule,
+            psxVertexModules = Ref[Map[Bool, ShaderModule], Static],
             fragmentModule = ShaderModule,
             depthModule = ShaderModule,
             poseLayout = BindGroupLayout,
@@ -241,6 +242,7 @@ pub mod Render3d.WebGpuRenderer {
             variantFragments = Ref.fresh(Static, Map.empty()), cpuLight = directBytes(Render3dWgsl.lightValueBytes()), sceneOffsets = Render3d.UniformLayout.sceneOffsets(),
             vertexModule = gpu.createShaderModule("fge scene3d lit vs", Render3dWgsl.litVertexSource(false)),
             skinnedModule = gpu.createShaderModule("fge scene3d skinned vs", Render3dWgsl.litVertexSource(true)),
+            psxVertexModules = Ref.fresh(Static, Map.empty()),
             fragmentModule = gpu.createShaderModule("fge scene3d lit fs", Render3dWgsl.litFragmentSource()),
             depthModule = gpu.createShaderModule("fge scene3d depth fs", Render3dWgsl.depthFragmentSource()),
             poseLayout = gpu.createBindGroupLayout(poseDesc), emptyLayout = emptyLayout,
@@ -283,8 +285,8 @@ pub mod Render3d.WebGpuRenderer {
         if (code >= 2) discard desc.texture(Render3dWgsl.pointShadowMapBinding(), ShaderStage.FRAGMENT, TextureSampleType.DEPTH) else ();
         desc
 
-    /// 変種 v の場面の group 0 の形の番号（0 = 既定・1 = +pu だけ・2 = +ps がある。ビルボード・空も同じ場面の pass ではこの layout で作る）。
-    pub def layoutCodeOf(v: ShaderVariant): Int32 = if (v#pointShadows) 2 else if (v#physicalUnits) 1 else 0
+    /// 変種 v の場面の group 0 の形の番号（0 = 既定・1 = +pu か +psx だけ・2 = +ps がある。ビルボード・空も同じ場面の pass ではこの layout で作る）。
+    pub def layoutCodeOf(v: ShaderVariant): Int32 = if (v#pointShadows) 2 else if (v#physicalUnits or v#psx) 1 else 0
 
     /// 形の番号 code の group 0 の layout。
     def sceneLayoutOf(r: Renderer, code: Int32): BindGroupLayout =
@@ -323,6 +325,7 @@ pub mod Render3d.WebGpuRenderer {
         s#emptyLayout.release();
         s#poseLayout.release();
         s#skinnedModule.release();
+        Map.forEach((_, m) -> m.release(), Ref.get(s#psxVertexModules));
         s#blankDepth.destroy();
         s#blankImage.destroy();
         s#environmentSampler.release();
@@ -978,6 +981,10 @@ pub mod Render3d.WebGpuRenderer {
         WebGpuSceneValues.putVec3(camera, 128, cameraVec(Camera3d.right(scene#camera)), 0);
         WebGpuSceneValues.putVec3(camera, 144, cameraVec(Camera3d.up(scene#camera)), 0);
         WebGpuSceneValues.putVec3(camera, 160, cameraVec(Vec3.mul(Camera3d.forward(scene#camera), -1.0)), 0);
+        let snapAt = Render3dWgsl.cameraSnapAt();
+        let snap = if (passVariantOf(scene)#psx) Scene3d.Psx.vertexSnapOf(scene#psx) else 0.0;
+        discard camera.putFloat(snapAt, Int32.toFloat32(target#width)).putFloat(snapAt + 4, Int32.toFloat32(target#height));
+        discard camera.putFloat(snapAt + 8, RenderUtil.f32(snap)).putFloat(snapAt + 12, 0.0f32);
         s#gpu.writeBuffer(target#camera, 0i64, camera, 0, Render3dWgsl.cameraBytes())
 
     /// 変種の場面の R3dLight（点光源の影の値と 1 / unitsPerMeter²。GL の Render3d.Shadow.putPointShadow と Render3d.Light.putLights が渡す値と同じ）を target#lightValues へ書く。
@@ -1078,6 +1085,17 @@ pub mod Render3d.WebGpuRenderer {
             case ScenePassSpec.DepthOut(_) => s#depthModule
         }
 
+    /// PS1 風の変種の頂点の色の頂点シェーダー（skinned なら骨つきの版。初めて要る時に作って控える）。
+    def psxVertexModuleOf(r: Renderer, skinned: Bool): ShaderModule \ IO =
+        let RendererData.RendererData(s) = r;
+        match Map.get(skinned, Ref.get(s#psxVertexModules)) {
+            case Some(m) => m
+            case None    =>
+                let made = s#gpu.createShaderModule("fge scene3d lit vs+psx", Render3dWgsl.litVertexSourceFor(skinned, true));
+                Ref.put(Map.insert(skinned, made, Ref.get(s#psxVertexModules)), s#psxVertexModules);
+                made
+        }
+
     /// 変種 variant（鍵 key）の光の frag（初めて要る時に作って控える）。
     def variantFragmentOf(r: Renderer, variant: ShaderVariant, key: String): ShaderModule \ IO =
         let RendererData.RendererData(s) = r;
@@ -1105,7 +1123,7 @@ pub mod Render3d.WebGpuRenderer {
             case Some(p) => p
             case None =>
                 let desc = new RenderPipelineDesc("fge scene3d lit");
-                let vertexModule = if (Option.nonEmpty(skin)) s#skinnedModule else s#vertexModule;
+                let vertexModule = if (variant#psx) psxVertexModuleOf(r, Option.nonEmpty(skin)) else if (Option.nonEmpty(skin)) s#skinnedModule else s#vertexModule;
                 discard desc.bindGroupLayout(sceneLayoutOf(r, layoutCodeOf(variant))).vertex(vertexModule, "vs_main").fragment(fragmentOf(r, spec, variant), "fs_main");
                 if (Option.nonEmpty(skin)) discard desc.bindGroupLayout(s#emptyLayout).bindGroupLayout(s#poseLayout) else ();
                 discard desc.vertexBuffer(stride, false).attribute(VertexFormat.FLOAT32X3, 0, 0).attribute(VertexFormat.FLOAT32X3, 12, 1).attribute(VertexFormat.FLOAT32X3, 24, 2);

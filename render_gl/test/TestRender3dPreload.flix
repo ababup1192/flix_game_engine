@@ -159,8 +159,8 @@ mod Render3d.TestPreload {
     /// variants に +ps と +pu を渡すと、その版の頂点の色のプログラムまで組み、既定の版だけの宣言では変種を組まない（同じ変種を 2 回書いても 1 つ）。
     @Test
     def testVariantsBuildVariantPrograms(): Unit \ {Assert, IO} =
-        let ps = { pointShadows = true, physicalUnits = false };
-        let pu = { pointShadows = false, physicalUnits = true };
+        let ps = { pointShadows = true, physicalUnits = false, psx = false };
+        let pu = { pointShadows = false, physicalUnits = true, psx = false };
         let withVariants = { variants = ps :: pu :: ps :: Nil | cmdWith("v", 1.0) };
         Assert.assertEq(expected = (2, 0), (Map.size(Ref.get(stateAfter(false, withVariants)#variantLitRef)), Map.size(Ref.get(stateAfter(false, cmdWith("d", 1.0))#variantLitRef))))
 

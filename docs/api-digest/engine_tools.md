@@ -1,4 +1,4 @@
-<!-- engine v0.105.0 / 生成: 2026-11-20 -->
+<!-- engine v0.105.0 / 生成: 2026-11-21 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_tools
@@ -425,6 +425,19 @@
   `pub def unshadowedPointsOf(lights: SoftRaster3d.Lights): Vector[Float64]`
 - 点 p（g = 形の法線・n = 光の計算の法線）の点光源ごとの影の割合（影の無い場面は全部 1 の並びを使い回す）。
   `pub def pointLitOf(lights: SoftRaster3d.Lights, p: (Float64, Float64, Float64), g: Vec3.Vec3, n: Vec3.Vec3): Vector[Float64]`
+
+## SoftRaster3d.Psx — `engine_tools/src/SoftRaster3d/Psx.flix`
+- 色の丸め（Scene3d.PsxLook の colorDepth・dither・ditherStrength）。bits = 1 成分のビット数（0 で丸めない）・
+  `pub type alias PsxColor = { bits = Int32, dither = Vector[Float64] }`
+- `pub def colorOf(look: Scene3d.PsxLook): PsxColor`
+- 層の画素 (x, y) の画面の値の色 c を PsxColor で丸めた色（Scene3d.Psx.quantize）。
+  `pub def quantized(p: PsxColor, x: Int32, y: Int32, c: (Float64, Float64, Float64)): (Float64, Float64, Float64)`
+- clip の段の頂点 v（頭の 4 つが clip の x, y, z, w）の x・y を、size（幅・高さの画素）の画面の格子 grid（画素・左上が 0）の一番近い点へ動かす。
+  `pub def snapVertex(grid: Float64, size: (Float64, Float64), v: Vector[Float64]): Vector[Float64]`
+- clip の段の頂点 v（w は 4 つ目）の後ろに、アフィンの uv の材料 (u × w, v × w, 割合 k) を足す（uv は v の uvAt 番目から 2 つ）。
+  `pub def withAffineUv(k: Float64, uvAt: Int32, v: Vector[Float64]): Vector[Float64]`
+- 遠近で補正した uv (pu, pv) を、割合 k だけ画面の上でまっすぐつないだ uv へ寄せる（k が 0 なら (pu, pv) のまま）。
+  `pub def affineUv(k: Float64, depth: Float64, perspective: (Float64, Float64), weighted: (Float64, Float64)): { x = Float64, y = Float64 }`
 
 ## SoftRaster3d.ShadowMaps — `engine_tools/src/SoftRaster3d/ShadowMaps.flix`
 - spots（pickLights の後の並び）のうち shadow が Some の最初の 1 本の地図。mapSize が 0 以下なら影を落とさない。

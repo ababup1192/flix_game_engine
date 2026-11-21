@@ -15,12 +15,14 @@
 #   make run POST=haze … POST=1 に床から立つ陽炎（PostStack.Distortion）を足す（歪みの Pass の重さを POST=1 と並べる）
 #   make run POST=fog … POST=1 に床を這う霧（PostStack.HeightFog）を足す
 #   make haze-video [LOOK=haze|fog|off] … 陽炎か霧の部屋を VideoOut で書き出す（FGE_GPU=on で GL・FGE_PNG_PAINTER=webgpu で WebGPU・FGE_GPU=off で CPU。src/render/HazeVideo.flix）
+#   make run PSX=dither|full|off … 部屋を Design の解像度・板目の床で、PS1 風の描き方（Scene3d.PsxLook）を掛けて描く（off は同じ場面を切って描く。重さを並べる）
+#   make psx-video [LOOK=off|dither|full] … 部屋を PS1 風の描き方（Scene3d.PsxLook）で Design の解像度に書き出す（2 秒の首振り。塗る物の選び方は haze-video と同じ。src/render/PsxVideo.flix）
 #   make check … 型検査だけ走らせる
 #
 # 家具は assets/models/*.obj（fps3d_lab の写し。Blender の 1 m = world の 16）。
 # 基準は RESULTS.md。ブラウザ版は engine の根で make bench-web BENCH=scene3d ARGS='scene=field&n=12000'。
 
-.PHONY: common-fresh still presets haze haze-video cpu-time run check lighting lighting-frames
+.PHONY: common-fresh still presets haze haze-video psx-video cpu-time run check lighting lighting-frames
 
 still:
 	../../bin/flix run --entrypoint Still.write
@@ -30,6 +32,9 @@ presets:
 
 haze:
 	../../bin/flix run --entrypoint Still.haze
+
+psx-video:
+	../../bin/flix run --entrypoint PsxVideo.write
 
 haze-video:
 	../../bin/flix run --entrypoint HazeVideo.write

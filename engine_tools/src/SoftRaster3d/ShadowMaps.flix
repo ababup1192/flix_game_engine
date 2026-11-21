@@ -48,7 +48,7 @@ mod SoftRaster3d.ShadowMaps {
     pub def buildShadowMap(instances: List[Placed], billboards: BillboardCasters, eye: LightEye, frustum: Frustum.Frustum, n: Int32): Vector[Float64] \ IO = region rc {
         let view = eye#view;
         let proj = eye#proj;
-        let screen = { w = Int32.toFloat64(n), h = Int32.toFloat64(n), projection = eye#projection };
+        let screen = { w = Int32.toFloat64(n), h = Int32.toFloat64(n), projection = eye#projection, vertexSnap = 0.0, affine = 0.0 };
         let meshTris = instances |> List.filter(f -> not Scene3d.isOutsideFrustumFields(frustum, f#fields))
             |> List.flatMap(f -> instanceTris(view, proj, screen, None, false, f, -1));
         let casterTris = List.zipWithIndex(billboards#casters) |> List.flatMap(entry -> {

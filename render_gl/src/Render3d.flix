@@ -102,7 +102,7 @@ mod Render3d {
         fogOn = Int32, fogColor = Int32, fogRange = Int32, eye = Int32,
         reflectZenith = Int32, reflectHorizon = Int32, reflectGround = Int32, reflectCurve = Int32,
         envOn = Int32, envBoxOn = Int32, envBoxMin = Int32, envBoxMax = Int32, envBoxCenter = Int32, envLevels = Int32, envIntensity = Int32,
-        sunDir = Int32, sunColor = Int32, inverseUnitsPerMeterSquared = Int32
+        sunDir = Int32, sunColor = Int32, inverseUnitsPerMeterSquared = Int32, psx = Int32, psxTarget = Int32, vertexSnap = Int32
     }
 
     /// instanceBase = batch の頭の 1 体ごとの値の番号の uniform。
@@ -187,23 +187,24 @@ mod Render3d {
     /// blend = 半透明（出す α を材質の α に）・doubleSided = 裏の面の光の法線を裏返す・
     /// coverage = cutout を discard でなく alpha to coverage で抜く（isCoverageCutout が真の時だけ）・
     /// metallicRoughness = metallic と roughness を持つ材質（鏡面ハイライトと空の映り込みを足す式のプログラム。持たない材質の GLSL は変わらない）・
-    /// pointShadows と physicalUnits = 場面のシェーダーの変種（ShaderVariant。点光源の影を引く・Physical の光）。
-    // WhyNot: blend・doubleSided・coverage・metallicRoughness・pointShadows・physicalUnits を uniform で切り替えない — 使わない材質の GLSL の字が変わり、
+    /// pointShadows と physicalUnits と psx = 場面のシェーダーの変種（ShaderVariant。点光源の影を引く・Physical の光・PS1 風）。
+    // WhyNot: blend・doubleSided・coverage・metallicRoughness・pointShadows・physicalUnits・psx を uniform で切り替えない — 使わない材質の GLSL の字が変わり、
     //   どの GPU でも同じ絵になる保証が崩れる。どれも偽の版は、それらを足す前と 1 字も同じ GLSL を組む。
     pub type alias ProgramKind = { skinned = Bool, uv = Bool, normalMap = Bool, lightmap = Bool, blend = Bool, doubleSided = Bool, coverage = Bool,
-                                   metallicRoughness = Bool, pointShadows = Bool, physicalUnits = Bool }
+                                   metallicRoughness = Bool, pointShadows = Bool, physicalUnits = Bool, psx = Bool }
 
-    /// 場面ごとのシェーダーの変種（Unity の shader variant に当たる）。pointShadows = 点光源の影を引く（鍵の +ps）・physicalUnits = Physical の光（鍵の +pu）。
-    /// どちらも偽なら既定のプログラム（変種を足す前と同じ字）。
-    pub type alias ShaderVariant = { pointShadows = Bool, physicalUnits = Bool }
+    /// 場面ごとのシェーダーの変種（Unity の shader variant に当たる）。pointShadows = 点光源の影を引く（鍵の +ps）・physicalUnits = Physical の光（鍵の +pu）・
+    /// psx = PS1 風の描き方（Scene3d.Psx.isOn。鍵の +psx。色の丸めとディザ・頂点の揺れ・アフィンの uv を uniform で渡す）。
+    /// どれも偽なら既定のプログラム（変種を足す前と同じ字）。
+    pub type alias ShaderVariant = { pointShadows = Bool, physicalUnits = Bool, psx = Bool }
 
-    /// 点光源の影なし・Legacy の光の変種。
-    pub def defaultShaderVariant(): ShaderVariant = { pointShadows = false, physicalUnits = false }
+    /// 点光源の影なし・Legacy の光・PS1 風なしの変種。
+    pub def defaultShaderVariant(): ShaderVariant = { pointShadows = false, physicalUnits = false, psx = false }
 
     /// 場面 scene の変種（pointShadows が Some なら +ps — このコマで影を落とす灯りが 0 本でも +ps のまま・Physical なら +pu）。
     // WhyNot: このコマで影を落とす灯りの数で +ps を決めない — 灯りが画面に出入りするたびにシェーダーを組み直す。
     pub def shaderVariantOf(scene: Scene3d.Scene3dCmd): ShaderVariant =
-        { pointShadows = Option.nonEmpty(scene#pointShadows), physicalUnits = scene#lightUnits == Scene3d.LightUnits.Physical }
+        { pointShadows = Option.nonEmpty(scene#pointShadows), physicalUnits = scene#lightUnits == Scene3d.LightUnits.Physical, psx = Scene3d.Psx.isOn(scene#psx) }
 
     /// 場面 scene の pass のプログラムの変種（色の場面は shaderVariantOf・奥行きの書き出しは既定。Render3d.ScenePlan の groupScene と同じ決め方）。
     pub def passVariantOf(scene: Scene3d.Scene3dCmd): ShaderVariant = match scene#output {
@@ -212,18 +213,18 @@ mod Render3d {
     }
 
     /// 材質のプログラムの版 kind の変種。
-    pub def shaderVariantOfKind(kind: ProgramKind): ShaderVariant = { pointShadows = kind#pointShadows, physicalUnits = kind#physicalUnits }
+    pub def shaderVariantOfKind(kind: ProgramKind): ShaderVariant = { pointShadows = kind#pointShadows, physicalUnits = kind#physicalUnits, psx = kind#psx }
 
     /// ビルボードのプログラムの変種（点光源の影を受けないので +ps を落とす）。
-    pub def billboardVariantOf(v: ShaderVariant): ShaderVariant = { pointShadows = false, physicalUnits = v#physicalUnits }
+    pub def billboardVariantOf(v: ShaderVariant): ShaderVariant = { pointShadows = false, physicalUnits = v#physicalUnits, psx = v#psx }
 
     /// 変種 v の光の式の木の変種（LightModel3d.lightingModelFor などへ渡す）。
     pub def lightVariantOf(v: ShaderVariant): LightModel3d.LightVariant =
         { pointShadows = v#pointShadows, lightUnits = Some(if (v#physicalUnits) Scene3d.LightUnits.Physical else Scene3d.LightUnits.Legacy) }
 
-    /// 変種 v の鍵の字（+ps・+pu。既定は空）。
+    /// 変種 v の鍵の字（+ps・+pu・+psx。既定は空）。
     pub def variantKeyOf(v: ShaderVariant): String =
-        (if (v#pointShadows) "+ps" else "") + (if (v#physicalUnits) "+pu" else "")
+        (if (v#pointShadows) "+ps" else "") + (if (v#physicalUnits) "+pu" else "") + (if (v#psx) "+psx" else "")
 
     /// 材質のプログラムの鍵（2D の Shader 面の鍵 = spec の名前 と重ならない）。骨つき・uv つき・法線マップつき・lightmap つきの版は GLSL が違うので別の鍵。
     /// 材質の側は spec と emission の中身の鍵（MaterialFields#shaderHash）なので、同じ名前で木の違う材質が並んでも組み直さず、ゲームは名前を分けなくてよい。
@@ -267,7 +268,8 @@ mod Render3d {
         reflectZenith = Array[Float32, Static], reflectHorizon = Array[Float32, Static], reflectGround = Array[Float32, Static], reflectCurve = Float32,
         envOn = Int32, envBoxOn = Int32, envBoxMin = Array[Float32, Static], envBoxMax = Array[Float32, Static], envBoxCenter = Array[Float32, Static],
         envLevels = Float32, envIntensity = Float32,
-        sunDir = Array[Float32, Static], sunColor = Array[Float32, Static], inverseUnitsPerMeterSquared = Float32
+        sunDir = Array[Float32, Static], sunColor = Array[Float32, Static], inverseUnitsPerMeterSquared = Float32,
+        psx = Array[Float32, Static], psxTarget = Array[Float32, Static], vertexSnap = Float32
     }
 
     /// 3D の描き手の状態（GL の文脈ごとに 1 つ）。meshes = 形の置き場の表（番号と上限）・meshEntriesRef = 表の番号 → GPU に置いたメッシュ。
@@ -594,7 +596,7 @@ mod Render3d {
         let picked = Scene3d.pickLights(scene);
         noteDroppedLights(state, scene);
         Render3d.ScenePlan.noteStaticGroupHint(state#planner, Scene3d.instancesOf(scene) |> List.length, scene);
-        let lights = lightDataOf(picked, environmentLevels);
+        let lights = withPsxTarget(area#viewport, lightDataOf(picked, environmentLevels));
         let view = matrixArray(Camera3d.viewMatrix(scene#camera));
         let proj = matrixArray(Camera3d.projectionMatrix(scene#camera, Scene3d.aspectOf(scene)));
         let shadows = inputs#shadows;
@@ -609,6 +611,10 @@ mod Render3d {
         inputs#passes |> List.forEach(match (spec, list) -> drawPass(gl, state, gen, ctx, inputs, spec, list));
         releaseEnvironmentMap(gl, scene);
         endScene(gl)
+
+    /// 光の値 d の psxTarget を、描き先の矩形 viewport（GL の左下が原点の画素）にする（PS1 風の変種のディザの格子と頂点の丸めの描き先）。
+    def withPsxTarget(viewport: PixelBox, d: LightData): LightData \ IO =
+        { psxTarget = Array#{ Int32.toFloat32(viewport#x), Int32.toFloat32(viewport#y), Int32.toFloat32(viewport#width), Int32.toFloat32(viewport#height) } @ Static | d }
 
     /// drawPass が場面 1 つの中で pass をまたいで使う物。billboard = ビルボードのプログラム。
     type alias PassContext = { camera = CameraData, eye = Vec3.Vec3, source = TextureSource, billboard = BillboardLocs, scene = Scene3d.Scene3dCmd }

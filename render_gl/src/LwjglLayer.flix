@@ -101,7 +101,7 @@ pub mod LwjglLayer {
     /// なので、外から読む形にはできない）。
     /// 枚数上限は env の消し忘れ保険 — 実機 run に残ると毎フレームの全画面読み出しと
     /// PNG 圧縮が挟まり、ゲームが止まったように見えるほど遅くなる。
-    def frameShotLimit(): Int32 = 64
+    def frameShotLimit(): Int32 = 96
 
     def frameShot(dirOpt: Option[String], fbW: Int32, fbH: Int32, taken: Array[Int32, Static]): Unit \ IO =
         let count = Array.get(0, taken);

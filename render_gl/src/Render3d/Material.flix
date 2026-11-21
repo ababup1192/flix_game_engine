@@ -3,7 +3,7 @@ mod Render3d.Material {
     import fge.gl.GlConst
     import fge.gl.GlContext
     use Render3d.Shadow.{putPointShadow, putShadow, putSunShadow, shadowLocsOf, sunShadowLocsOf}
-    use Render3dGlsl.{materialFragmentSource, materialVertexSource}
+    use Render3dGlsl.{materialFragmentSource, materialVertexSourceFor}
     use Render3d.Light.{lightLocsOf, putLights}
     use Render3d.{materialKey, ProgramKind, BoundTexture, CameraData, MaterialEntry, MaterialLocs, MaterialPass, MeshDraw, State, TextureSlot, TextureSource, bindDataTextureUnits, ensureTangents, environmentTextureUnit, lightmapTextureUnit, loc, meshLocsOf, normalMapTextureUnit, putDepthRange, useMeshProgram, warnDroppedTextures, warnSceneOnce}
     use Render3d.Batch.{MaterialBatch, SpanBatch}
@@ -504,7 +504,7 @@ mod Render3d.Material {
             + (if (kind#doubleSided) ":ds" else "") + (if (kind#coverage) ":cov" else "") + (if (kind#metallicRoughness) ":mr" else "")
             + String.replace(src = "+", dst = ":", Render3d.variantKeyOf(Render3d.shaderVariantOfKind(kind))) + ":${m#spec#name}";
         noteMaterialBuild(state, label, reason);
-        let vertex = materialVertexSource({ skinned = kind#skinned, uv = kind#uv, lightmap = kind#lightmap });
+        let vertex = materialVertexSourceFor({ skinned = kind#skinned, uv = kind#uv, lightmap = kind#lightmap }, kind#psx);
         let fragment = materialFragmentSource(glsl, kind);
         let program = match RenderShader.tryCreateProgram(gl, vertex, fragment, label) {
             case Some(p) => p
