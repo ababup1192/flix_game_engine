@@ -1,5 +1,7 @@
 github.com/ababup1192/flixlint/go v0.0.0-20261118130033-a9f938ce3ce1 h1:jpdAsKBMvgdQePBO2bw1tofJrp3KX5UXWLTK5uAI+xM=
 github.com/ababup1192/flixlint/go v0.0.0-20261118130033-a9f938ce3ce1/go.mod h1:Q46xYm9oASVlnSWmVsHOQEGfYeOBkRL91uYExCkoyLk=
+github.com/andybalholm/brotli v1.3.0 h1:IdkhjSe/+34U+fP7FSR2Q6Poj1hnHUa2GoWmzXJd6qY=
+github.com/andybalholm/brotli v1.3.0/go.mod h1:rzTDkvFWvIrjDXZHkuS16NPggd91W3kUSvPlQ1pLaKY=
 github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=
 github.com/google/go-cmp v0.7.0/go.mod h1:pXiqmnSA92OHEEa9HXL2W4E7lf9JzCmGVUdgjX3N/iU=
 go.starlark.net v0.0.0-20261016124120-4811d7e34ea3 h1:ud4x+QbEBQbM2T6e0C3VuNwyap/+vUU7W9PFhIxmqDM=

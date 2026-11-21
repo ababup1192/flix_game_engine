@@ -26,7 +26,7 @@ func exportInputsFingerprint(p exportWebPaths, o exportWebOptions, id string, en
 	h := sha256.New()
 	fmt.Fprintf(h, "rev\x00%s\nid\x00%s\nversion\x00%s\nnocheck\x00%v\ndraft\x00%v\n", exportReuseRevision, id, p.Version, o.NoBrowserCheck, o.Draft)
 	// WhyNot: 道具の道を symlink のまま入れない — brew は版を上げても道を変えず、先の Cellar の道だけが変わる。
-	for _, tool := range []string{enc.FFmpeg, enc.Cwebp, enc.Dwebp, enc.Brotli} {
+	for _, tool := range []string{enc.FFmpeg, enc.Cwebp, enc.Dwebp} {
 		if real, err := filepath.EvalSymlinks(tool); err == nil {
 			tool = real
 		}

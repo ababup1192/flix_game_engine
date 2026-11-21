@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"math"
 	"os"
 	"path"
@@ -232,14 +231,4 @@ func webTapWaitOf(sizes *webSizeTable, b *webBundle, waitFor []string) webTapWai
 		w.Until = arrivals[i]
 	}
 	return w
-}
-
-// webBrotliToGzipRatio は wasm を brotli（11）にした大きさの、gzip にした大きさに対する割合（測った値: 1.4 MB / 2.4 MB）。
-const webBrotliToGzipRatio = 0.58
-
-// brotliMissingNote は brotli が無く wasm を gzip で配る時の知らせ。gzWire は gzip にした wasm の大きさ。
-func brotliMissingNote(gzWire int64) string {
-	lost := webSecondsFor(gzWire - int64(float64(gzWire)*webBrotliToGzipRatio))
-	return fmt.Sprintf("★ wasm を brotli にできず gzip（%s）で配る — 4G（1.6 Mbps）で起動が約 %.1f 秒遅くなる。"+
-		"入れ方: brew install brotli（Windows は brotli.exe を PATH に置く）", humanBytes(gzWire), lost)
 }

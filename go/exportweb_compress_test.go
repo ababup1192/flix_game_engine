@@ -348,38 +348,3 @@ func TestFindWebToolInFindsToolOutsidePath(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
-
-func TestNewestNixStoreToolPicksHighestVersion(t *testing.T) {
-	store := t.TempDir()
-	want := filepath.Join(store, strings.Repeat("a", 32)+"-brotli-1.10.0", "bin", "brotli")
-	writeFakeTool(t, want)
-	writeFakeTool(t, filepath.Join(store, strings.Repeat("b", 32)+"-brotli-1.9.2", "bin", "brotli"))
-	if got := newestNixStoreTool(store, "brotli", "brotli"); got != want {
-		t.Fatalf("got %q", got)
-	}
-}
-
-func TestNewestNixStoreToolSkipsLibOutputWithoutBin(t *testing.T) {
-	store := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(store, strings.Repeat("c", 32)+"-brotli-1.2.0-lib", "lib"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if got := newestNixStoreTool(store, "brotli", "brotli"); got != "" {
-		t.Fatalf("got %q", got)
-	}
-}
-
-func TestNewestNixStoreToolIgnoresOtherPackageEndingInSameName(t *testing.T) {
-	store := t.TempDir()
-	writeFakeTool(t, filepath.Join(store, strings.Repeat("d", 32)+"-python3.13-brotli-1.2.0", "bin", "brotli"))
-	if got := newestNixStoreTool(store, "brotli", "brotli"); got != "" {
-		t.Fatalf("got %q", got)
-	}
-}
-
-func TestBrotliMissingNoteStatesSecondsLostOn4G(t *testing.T) {
-	// 2,000,000 B の 42% = 840,000 B → 6,720,000 bit ÷ 1.6 Mbps = 4.2 秒
-	if got := brotliMissingNote(2_000_000); !strings.Contains(got, "約 4.2 秒") {
-		t.Fatalf("got %q", got)
-	}
-}
