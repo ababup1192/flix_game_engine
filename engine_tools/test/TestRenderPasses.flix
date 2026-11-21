@@ -64,6 +64,18 @@ mod TestRenderPasses {
         Assert.assertEq(expected = (255, 0, 0, 0) :: (255, 255, 0, 0) :: Nil,
             channels(img.getRGB(2i32, 0i32)) :: channels(img.getRGB(2i32, 1i32)) :: Nil)
 
+    // 8×4 の赤い箱（左上 (0,2)・中心 (4,4)）を 1/4 回して squashY 0.5 でつぶすと、回してからつぶすので
+    // 4×4（x 2〜6・y 2〜6）になる。順が逆なら 2×8（x 3〜5・y 0〜8）— (2,4) は赤・(4,0) は背景の黒。
+    @Test
+    def testSquashYAppliesAfterRotation(): Unit \ {Assert, IO} =
+        let box = DrawCmd.make({ position = { x = 0.0, y = 2.0 }, scale = { x = 8.0, y = 4.0 }, rotation = 1.5707963267948966,
+                                 color = { r = 1.0, g = 0.0, b = 0.0 }, squashY = 0.5 | DrawCmd.toSpec(drawable("")) });
+        let big = { design = { x = 8.0, y = 8.0 }, frameW = 8, frameH = 8 | cfg(1) };
+        let img: BufferedImage =
+            renderArgb(big, { drawables = box :: Nil | emptyPass(RenderTarget.LoadOp.Clear({ r = 0.0, g = 0.0, b = 0.0 })) }, None);
+        Assert.assertEq(expected = (255, 255, 0, 0) :: (255, 0, 0, 0) :: Nil,
+            channels(img.getRGB(2i32, 4i32)) :: channels(img.getRGB(4i32, 0i32)) :: Nil)
+
     // clear Keep は前フレームのターゲットの中身が残ったまま始まる（残像が作れる）。
     @Test
     def testRenderPassImageNoneKeepsPrevContent(): Unit \ {Assert, IO} =

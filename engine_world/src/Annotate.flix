@@ -295,8 +295,8 @@ pub mod Annotate {
                 };
                 let size = { x = base#x * Float64.abs(s#scale#x), y = base#y * Float64.abs(s#scale#y) };
                 // centered な sprite は位置が中心なので、左上へ半分ずらす
-                let topLeft = if (s#centered) Vec2.sub(pos, Vec2.div(size, 2.0)) else pos;
-                { position = topLeft, size = size }
+                let unsquashedTopLeft = if (s#centered) Vec2.sub(pos, Vec2.div(size, 2.0)) else pos;
+                squashedAabb(s#squashY, { position = unsquashedTopLeft, size = size })
             case Render.Item.Text(t) =>
                 { position = pos, size = Text.measure(Text.make(t#text, t#fontAtlas, t#fontSize)) }
             case Render.Item.Box(b) =>
@@ -338,6 +338,15 @@ pub mod Annotate {
             else None
         })
 
+    /// 矩形を中心のまわりで縦に |k| 倍する（squashY の外形）。Item と Drawable の 2 つの経路が同じ形を出すよう、ここだけで計算する。
+    /// WhyNot: 回した後のつぶしを正確に出さない — 外形はどちらの経路も回転を無視した近似で、片方だけ正確にすると 2 つが食い違う。
+    def squashedAabb(k: Float64, r: Rect2.Rect2): Rect2.Rect2 =
+        if (k == 1.0) r
+        else {
+            let h = Float64.abs(r#size#y * k);
+            { position = { x = r#position#x, y = r#position#y + (r#size#y - h) / 2.0 }, size = { x = r#size#x, y = h } }
+        }
+
     /// Drawable 1 件を覆う矩形（デザイン座標）。回転は無視した外形の近似。
     def drawableAabb(sizeOf: String -> Option[GameEngine.TextureInfo] \ ef,
                      d: DrawCmd.DrawableSpec): Rect2.Rect2 \ ef =
@@ -348,9 +357,7 @@ pub mod Annotate {
                    };
         let size = { x = base#x * Float64.abs(d#scale#x), y = base#y * Float64.abs(d#scale#y) };
         let unsquashedTopLeft = if (d#centered) Vec2.sub(d#position, Vec2.div(size, 2.0)) else d#position;
-        let h = Float64.abs(size#y * d#squashY);
-        let topLeft = { x = unsquashedTopLeft#x, y = unsquashedTopLeft#y + (size#y - h) / 2.0 };
-        let aabb = { position = topLeft, size = { x = size#x, y = h } };
+        let aabb = squashedAabb(d#squashY, { position = unsquashedTopLeft, size = size });
         // clip 矩形の外は描かれない — 外形も clip 矩形と交差させる(itemAabb の Clipped と同じ理由)。
         match d#clip {
             case None    => aabb

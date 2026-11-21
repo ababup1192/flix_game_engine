@@ -6,6 +6,19 @@ mod TestRender {
 
     def red(): Color = { r = 1.0, g = 0.0, b = 0.0 }
 
+    /// Sprite なら squashY、ほかの描き物なら None。
+    def squashOf(item: Render.Item): Option[Float64] = match item {
+        case Render.Item.Sprite(s) => Some(s#squashY)
+        case _                     => None
+    }
+
+    // squashedY は Sprite にだけ縦のつぶしを載せ、Box には何も足さない。
+    @Test
+    def testSquashedYTouchesOnlySprites(): Unit \ Assert =
+        Assert.assertEq(expected = (Some(0.5), None),
+            (squashOf(Render.squashedY(0.5, Render.sprite("tex", 0))),
+             squashOf(Render.squashedY(0.5, RawDraw.box({ x = 2.0, y = 2.0 }, red(), 0)))))
+
     // draw の振り分け: Box は Drawable に、Poly は PolygonRenderCmd に出る。
     // Poly の頂点は置き場所相対 → 出力では加算済み（(0,0) が (100,200) になる）。
     @Test

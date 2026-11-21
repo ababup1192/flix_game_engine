@@ -75,7 +75,9 @@ pub mod SoftRaster.Internal.Sprite {
     /// 切り抜き矩形（clip）は device 空間で保たれるので、傾けても切り抜きは画面に平行なまま（Render の決まりどおり）。
     def withRotation(g: Graphics2D, sf: Float64, rot: Float64, squashY: Float64, center: Vec2.Vec2,
                      draw: Unit -> Unit \ ef): Unit \ IO + ef =
-        if (squashY != 1.0) {
+        // WhyNot: k がほぼ 0 の時に scale(1, 0) を掛けない — 逆行列の無い変換の中では getClip が null を返し、外の clip が消える。描く面積も 0 なので描かずに抜ける。
+        if (Float64.abs(squashY) < 0.000001) ()
+        else if (squashY != 1.0) {
             let saved = g.getTransform();
             // WhyNot: 回してからつぶす順を逆にしない — Java2D は後から足した変換ほど先に点へ掛かるので、
             //   scale を rotate より前に足すと「回した後でつぶす」になる。
