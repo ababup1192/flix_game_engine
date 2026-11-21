@@ -66,7 +66,9 @@ pub mod WebLayer {
         let makeRenderer = (gl, cfg) -> Render3d.makeRenderer(gl, cfg, Render3d.DrawMode.Instanced);
         let g = () -> recordSceneTextures(() -> recordDrawnTextures(f));
         let makeScenes = (gpu, pasteLayout, imageLayout) ->
-            Render3d.WebGpuRenderer.makeScenesWithPlatformImages((key, texture) -> BrowserWebGpu.copyPlatformImage(gpu, key, texture), gpu, pasteLayout, imageLayout);
+            Render3d.WebGpuRenderer.makeScenesWithPlatformImages(
+                { has = (key, width, height) -> BrowserWebGpu.hasPlatformImage(key, width, height),
+                  copy = (key, texture) -> BrowserWebGpu.copyPlatformImage(gpu, key, texture) }, gpu, pasteLayout, imageLayout);
         if (Browser.backendRequest() == "webgpu") withWebGpuOrGl(makeRenderer, makeScenes, config, g)
         else withWeb(makeRenderer, config, g)
 

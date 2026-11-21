@@ -65,9 +65,10 @@ pub mod Render3d.WebGpuMaterials {
     /// noteCopy = 写しを 1 枚作ったと数える（診断の mipCopies）。
     pub type alias Registered = { textureById = Int32 -> Option[Texture] \ IO, encoding = Render3d.WebGpuMipmaps.Encoding, noteCopy = Unit -> Unit \ IO }
 
-    /// 機種の側に持つ絵（Texture3d.Source.PlatformImage の key）を texture のレベル 0 の左上へ写す口（写せたら真）。
+    /// 機種の側に持つ絵（Texture3d.Source.PlatformImage の key）を GPU へ写す口。
+    /// has(key, 幅, 高さ) = その大きさの絵を今写せるか・copy(key, texture) = texture のレベル 0 の左上へ写す（写せたら真）。
     /// texture は RGBA8・usage に COPY_DST と RENDER_ATTACHMENT を持ち、絵と同じ大きさ。写した値は色の変換も α の前乗算もせず、行 0 が絵の上。
-    pub type alias PlatformImageCopy = (String, Texture) -> Bool \ IO
+    pub type alias PlatformImages = { has = (String, Int32, Int32) -> Bool \ IO, copy = (String, Texture) -> Bool \ IO }
 
     /// 状態。programs = materialKey → 組んだ program（組めなければ None）・current = 今の prepare の問い合わせの順の program（行の欄 1 が引く）・
     /// vertexModules = (uv つきか, lightmap つきか, 骨つきか) → 材質の頂点シェーダー・pipelines = MaterialPipelineKey → pipeline・
@@ -93,7 +94,7 @@ pub mod Render3d.WebGpuMaterials {
             warned = Ref[Set[String], Static],
             textureEpoch = Array[Int64, Static],
             mipmaps = Render3d.WebGpuMipmaps.Mipmaps,
-            platformImages = Ref[PlatformImageCopy, Static]
+            platformImages = Ref[Option[PlatformImages], Static]
         })
     }
 
@@ -123,14 +124,14 @@ pub mod Render3d.WebGpuMaterials {
             blank = blank, values = Array#{createValueBuffer(gpu, initialValueBytes())} @ Static, valuesUsed = Array#{0} @ Static,
             groups = Ref.fresh(Static, Nil), warned = Ref.fresh(Static, Set.empty()), textureEpoch = Array#{0i64} @ Static,
             mipmaps = Render3d.WebGpuMipmaps.create(gpu),
-            platformImages = Ref.fresh(Static, (_, _) -> checked_ecast(false))
+            platformImages = Ref.fresh(Static, None)
         })
 
-    /// 機種の側に持つ絵を写す口を copy にする（作った時は何も写せない口で、その絵は上げない）。
-    // WhyNot: create の引数にしない — create を呼ぶ所（bench と Dawn の門）は機種の側の絵を持たず、全部に「写せない口」を書き足すことになる。
-    pub def setPlatformImageCopy(copy: PlatformImageCopy, m: Materials): Unit \ IO =
+    /// 機種の側に持つ絵を写す口を images にする（作った時は口が無く、その絵は上げない）。
+    // WhyNot: create の引数にしない — create を呼ぶ所（bench と Dawn の門）は機種の側の絵を持たず、全部に「口が無い」を書き足すことになる。
+    pub def setPlatformImages(images: PlatformImages, m: Materials): Unit \ IO =
         let MaterialsData.MaterialsData(s) = m;
-        Ref.put(copy, s#platformImages)
+        Ref.put(Some(images), s#platformImages)
 
     /// 値の buffer（uniform と storage と、ビルボードの値を読む頂点の buffer として bind する）。
     def createValueBuffer(gpu: WebGpu, bytes: Int32): Buffer \ IO =
@@ -398,21 +399,38 @@ pub mod Render3d.WebGpuMaterials {
     /// 機種の側の絵 key（大きさは t の物）を段つきの texture のレベル 0 へ写し、上の段を作る pass を up の encoder へ積んで、番号 handle で控える（写せなければ texture を捨てて None）。
     // WhyNot: GL のように段を素の値のまま平均しない — 同じ置き場の ARGB の絵と全体の登録の絵の写しは average（Mip.build と同じ決まり）で作っていて、絵の出どころで遠くの面の色がずれる。
     // WhyNot: 写した後に頁の ImageBitmap を手放さない — 2 つの部屋が同じ絵を貼ると後の部屋が同じ key でまた写す（GL の texImagePlatform も手放さない）。
+    // WhyNot: 口が無い（デスクトップ）時に知らせない — デスクトップの ImageDecoder は機種の側の絵を作らず、来るのは bench が手で作った時だけ。
     def uploadPlatformImage(m: Materials, up: TextureUploads, handle: Int32, average: Mip.Average, key: String, t: Texture3d.Texture3d): Option[{ levels = Int32, bytes = Int64 }] \ IO =
         let MaterialsData.MaterialsData(s) = m;
+        Ref.get(s#platformImages) |> Option.flatMap(images -> uploadPlatformImageWith(m, images, up, handle, average, key, t))
+
+    /// uploadPlatformImage の、写す口 images がある時。今写せない絵は texture を作らずに None（作り直しを待つ間のコマごとに段つきの texture を作って捨てない）。
+    // WhyNot: usage から COPY_SRC を外さない — Dawn の門が段を読み戻して Mip.build と比べる（全体の登録の絵の写しも同じ usage）。
+    def uploadPlatformImageWith(m: Materials, images: PlatformImages, up: TextureUploads, handle: Int32, average: Mip.Average, key: String, t: Texture3d.Texture3d): Option[{ levels = Int32, bytes = Int64 }] \ IO =
+        let MaterialsData.MaterialsData(s) = m;
         let (width, height) = (Texture3d.width(t), Texture3d.height(t));
-        let levels = TextureTable3d.levelsOf(width, height);
-        let usage = Int32.bitwiseOr(Int32.bitwiseOr(TextureUsage.TEXTURE_BINDING, TextureUsage.COPY_DST),
-                                    Int32.bitwiseOr(TextureUsage.RENDER_ATTACHMENT, TextureUsage.COPY_SRC));
-        let texture = s#gpu.createTexture("fge material ${Texture3d.name(t)}", width, height, TextureFormat.RGBA8_UNORM, usage, levels, 1);
-        if (Ref.get(s#platformImages)(key, texture)) {
-            let bytes = Render3d.WebGpuMipmaps.fillLevels(s#mipmaps, up#registered#encoding, texture, levels, average);
-            Ref.put(Map.insert(handle, { texture = texture, levels = levels }, Ref.get(s#store)), s#store);
-            Some({ levels = levels, bytes = bytes })
-        } else {
-            texture.destroy();
+        if (not images#has(key, width, height)) {
+            warnPlatformImageOnce(m, key, "頁に ${Int32.toString(width)} × ${Int32.toString(height)} の ImageBitmap が無い");
             None
+        } else {
+            let levels = TextureTable3d.levelsOf(width, height);
+            let usage = Int32.bitwiseOr(Int32.bitwiseOr(TextureUsage.TEXTURE_BINDING, TextureUsage.COPY_DST),
+                                        Int32.bitwiseOr(TextureUsage.RENDER_ATTACHMENT, TextureUsage.COPY_SRC));
+            let texture = s#gpu.createTexture("fge material ${Texture3d.name(t)}", width, height, TextureFormat.RGBA8_UNORM, usage, levels, 1);
+            if (images#copy(key, texture)) {
+                let bytes = Render3d.WebGpuMipmaps.buildMipLevels(s#mipmaps, up#registered#encoding, texture, levels, average);
+                Ref.put(Map.insert(handle, { texture = texture, levels = levels }, Ref.get(s#store)), s#store);
+                Some({ levels = levels, bytes = bytes })
+            } else {
+                texture.destroy();
+                warnPlatformImageOnce(m, key, "copyExternalImageToTexture で写せない");
+                None
+            }
         }
+
+    /// 機種の側の絵 key を上げられなかった事を、key ごとに初回 1 回だけ知らせる。
+    def warnPlatformImageOnce(m: Materials, key: String, reason: String): Unit \ IO =
+        warnOnce(m, "@platform:${key}", () -> Log.fellBack("scene3d", "機種の側の絵 ${key}", "絵なし（黒）", reason))
 
     /// ARGB の int の列を little-endian のバイト（B・G・R・A）にする。
     // WhyNot: 1 要素ずつ put しない — Flix の Vector は JVM の int[] のままで、1 回で写せる（WebGpuPaint.argbBytes と同じ）。
@@ -475,13 +493,7 @@ pub mod Render3d.WebGpuMaterials {
         } else ()
 
     /// 値の buffer の知らせを 1 回だけ出す。
-    def warnValuesOnce(m: Materials, line: String): Unit \ IO =
-        let MaterialsData.MaterialsData(s) = m;
-        if (Set.memberOf("@values", Ref.get(s#warned))) ()
-        else {
-            Ref.put(Set.insert("@values", Ref.get(s#warned)), s#warned);
-            Log.warn(line)
-        }
+    def warnValuesOnce(m: Materials, line: String): Unit \ IO = warnOnce(m, "@values", () -> Log.warn(line))
 
     def roundUp(n: Int32, step: Int32): Int32 = ((n + step - 1) / step) * step
 
