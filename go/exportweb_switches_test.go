@@ -91,6 +91,27 @@ func TestWebPageSwitchesInitScriptKeepsEarlierDev(t *testing.T) {
 	}
 }
 
+func TestWebCheckRejectsMeasureFlagsWithoutBrowser(t *testing.T) {
+	var out, errOut strings.Builder
+	if code := cmdWebCheck(&out, &errOut, []string{t.TempDir(), "--cpu", "4"}, false); code != 2 {
+		t.Errorf("--cpu は --browser と一緒でなければ呼び方の誤り（2）のはず: %d %s", code, errOut.String())
+	}
+}
+
+func TestWebCheckRejectsCPUBelowOne(t *testing.T) {
+	var out, errOut strings.Builder
+	if code := cmdWebCheck(&out, &errOut, []string{t.TempDir(), "--browser", "--cpu", "0.5"}, false); code != 2 {
+		t.Errorf("--cpu は 1 以上の倍率のはず: %d %s", code, errOut.String())
+	}
+}
+
+func TestMeasureConditionsLabelNamesDelayAndCPU(t *testing.T) {
+	got := webMeasureConditions{CPU: 4, TapDelay: 1500 * time.Millisecond}.label()
+	if got != "1.5 秒置いて押す・CPU 4 倍" {
+		t.Errorf("条件の字は %q のはず: %q", "1.5 秒置いて押す・CPU 4 倍", got)
+	}
+}
+
 func TestOpenURLGivesFgeDevToPageWithSwitchesReader(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("<script>function fgePageSwitches() {}</script>"), 0o644); err != nil {

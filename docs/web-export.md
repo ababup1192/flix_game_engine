@@ -66,7 +66,8 @@ Flix はゲームの .flix の位置（`bug!`・match の網羅漏れ・`???` �
 `web/WebMain.flix` で `App.launchWithDevTools(WebLayer.devTools(), app)` にする。
 
 - クエリの最初の鍵が Start の名前で、その鍵と値も含めた全部が引数（`?talk=Lair&line=46` は `start talk talk=Lair line=46`・値の空白や改行もそのまま届く）
-- 頁が使う鍵（`input` `size` `orientation` `glcheck` `loadtime` `capture` `fps`）は外す（`App.DevTools.pageQueryKeys`）
+- 頁が使う鍵 `fge`（頁の旗。下の「頁の旗」）と `sw` は外す（`App.DevTools.pageQueryKeys`）。旗はクエリのどこに置いてもよい（`?talk=Lair&line=46&fge=fps`）
+- 前の鍵（`fps` `backend` `size` など 12 個）はこの版のあいだだけ外す（`App.DevTools.legacyPageQueryKeys`・次の版で Start の名前に戻る）
 - クエリが無ければ先頭の始まり。知らない名前や組めない引数は止めずに先頭の始まりで開いて console.error に 1 行
 - 読み方だけの純粋な口は `App.DevTools.startOfQuery`
 
