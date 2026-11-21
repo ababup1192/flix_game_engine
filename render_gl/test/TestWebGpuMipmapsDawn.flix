@@ -1,4 +1,5 @@
 // 全体の登録の絵の mip つきの写し（Render3d.WebGpuMipmaps）が、PC の Dawn で CPU の Mip.build と同じレベルを作る事を、レベルごとに読み戻して固定する。
+// 機種の側の絵（ブラウザの ImageBitmap）を材質の絵の置き場へ上げる道も、写す口を Dawn の writeTexture に替えて同じく固定する。
 // WhyNot: mod TestWebGpuMipmapsDawn にしない — Render3d.WebGpuMipmaps は pub でなく、子の mod からだけ見える。
 // 組まずに通すのは、Dawn のネイティブを配っていない機種と adapter が無い機械だけ（TestWebGpuScene3dDawn と同じ。`[mipmaps-dawn] SKIP:` の行を出す）。
 mod Render3d.WebGpuMipmaps.TestWebGpuMipmapsDawn {
@@ -112,4 +113,74 @@ mod Render3d.WebGpuMipmaps.TestWebGpuMipmapsDawn {
     /// SrgbCurve の写しのレベルが、縦長の絵で Mip.build のレベルと成分ごとに ±1 以内。
     @Test
     def testSrgbCopyMatchesMipBuildOnTallTexture(): Unit \ {Assert, IO} = assertChainWithin(1, Mip.Average.SrgbCurve, source(3, 8))
+
+    // ── 機種の側の絵（Texture3d.Source.PlatformImage）を材質の絵の置き場へ上げる ──
+
+    /// 機種の側の絵 key を tex の画素で表す場面の絵の置き場（材質の絵の使い方）。
+    def platformSource(key: String, tex: ShaderEval.TexData): Render3d.TextureSource =
+        match Texture3d.fromPlatformImage({ key = key, width = tex#width, height = tex#height }) {
+            case Ok(t)  => { textureOf = _ -> checked_ecast(None), own = Map#{Texture3d.name(t) => t} }
+            case Err(e) => bug!(e)
+        }
+
+    /// 写す口 copy を付けた材質の置き場へ、Dawn で機種の側の絵 key（画素 tex）を上げた答え。Some なら (レベルごとに読み戻した ARGB の列, 写す口へ渡った key の列)。
+    def uploadPlatform(gpu: WebGpu, copy: Option[Render3d.WebGpuMaterials.PlatformImageCopy], key: String, tex: ShaderEval.TexData): Option[(List[Vector[Int32]], List[String])] \ IO =
+        let materials = Render3d.WebGpuMaterials.create(gpu, Render3d.WebGpuMaterials.ValuesBinding.Uniform);
+        let keys = Ref.fresh(Static, Nil);
+        copy |> Option.forEach(c -> Render3d.WebGpuMaterials.setPlatformImageCopy((k, texture) -> { Ref.put(k :: Ref.get(keys), keys); c(k, texture) }, materials));
+        let encoder = gpu.createCommandEncoder("test platform image");
+        let registered = { textureById = _ -> checked_ecast(None), encoding = { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()) }, noteCopy = () -> checked_ecast(()) };
+        let source = platformSource(key, tex);
+        let name = Map.keysOf(source#own) |> Set.toList |> List.head |> Option.getWithDefault("");
+        let found = Render3d.WebGpuMaterials.ensureEnvironmentTexture(materials, source, registered, 1i64, name);
+        gpu.submit(encoder.finish());
+        Render3d.WebGpuMaterials.afterSubmit(materials);
+        let answer = found |> Option.map(match (texture, levels) -> (List.range(0, levels) |> List.map(level -> readLevel(gpu, texture, level)), Ref.get(keys)));
+        Render3d.WebGpuMaterials.release(materials);
+        answer
+
+    /// レベル 0 へ tex の画素を書く写す口（頁の copyExternalImageToTexture の代わり）。
+    def writingCopy(gpu: WebGpu, tex: ShaderEval.TexData): Render3d.WebGpuMaterials.PlatformImageCopy = (_, texture) -> {
+        gpu.writeTexture(texture, 0, 0, 0, tex#width, tex#height, rgbaBytes(tex#pixels), 0, tex#width * 4);
+        true
+    }
+
+    /// Dawn の device で f を流す（開けなければ SKIP の行を出して通す）。
+    def withDawn(f: WebGpu -> Unit \ {Assert, IO}): Unit \ {Assert, IO} =
+        match WebGpuDevice.runDawn(() -> WebGpuDevice.requestDevice()) {
+            case Err(why) =>
+                if (isSkippable(why)) {
+                    println("[mipmaps-dawn] SKIP: Dawn で開かない（${why}）");
+                    Assert.assertEq(expected = 0, 0)
+                } else
+                    Assert.assertEq(expected = "Dawn の device が開ける", why)
+            case Ok(gpu) =>
+                f(gpu);
+                gpu.destroy()
+        }
+
+    /// 機種の側の絵のレベルが、材質の絵の平均の仕方（SrgbCurve）の Mip.build のレベルと成分ごとに ±1 以内（GPU で上の段を作る）。
+    @Test
+    def testPlatformImageLevelsMatchMipBuild(): Unit \ {Assert, IO} = withDawn(gpu -> {
+        let tex = source(5, 3);
+        let found = uploadPlatform(gpu, Some(writingCopy(gpu, tex)), "rooms/hall.jpg@v1", tex) |> Option.map(fst);
+        Assert.assertTrue(found |> Option.exists(levels -> isWithin(1, Mip.build(Mip.Average.SrgbCurve, tex) |> List.map(td -> td#pixels), levels)))
+    })
+
+    /// 写す口へ渡る key は、場面の絵の PlatformImage の key のまま。
+    @Test
+    def testPlatformImageCopyReceivesTheKey(): Unit \ {Assert, IO} = withDawn(gpu -> {
+        let tex = source(4, 2);
+        Assert.assertEq(expected = Some("rooms/hall.jpg@v1" :: Nil), uploadPlatform(gpu, Some(writingCopy(gpu, tex)), "rooms/hall.jpg@v1", tex) |> Option.map(snd))
+    })
+
+    /// 写せない口（偽を返す）の機種の側の絵は上げない。
+    @Test
+    def testPlatformImageNotCopiedIsNotUploaded(): Unit \ {Assert, IO} = withDawn(gpu ->
+        Assert.assertEq(expected = None, uploadPlatform(gpu, Some((_, _) -> checked_ecast(false)), "rooms/hall.jpg@v1", source(4, 2)) |> Option.map(snd)))
+
+    /// 写す口を付けていない置き場（デスクトップ）は、機種の側の絵を上げない。
+    @Test
+    def testPlatformImageWithoutCopyIsNotUploaded(): Unit \ {Assert, IO} = withDawn(gpu ->
+        Assert.assertEq(expected = None, uploadPlatform(gpu, None, "rooms/hall.jpg@v1", source(4, 2)) |> Option.map(snd)))
 }

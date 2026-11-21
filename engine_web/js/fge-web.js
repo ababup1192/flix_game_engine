@@ -350,6 +350,18 @@ function fgeCopyImageBitmap(device, path, buffer, row) {
   return "";
 }
 
+// 3D の場面の絵（key = fgePlatformKey の字）の ImageBitmap を texture のレベル 0 へ写す（fgeTexImagePlatform の WebGPU の版）。絵が無ければ偽。
+function fgeCopyPlatformImage(device, key, texture) {
+  var path = key.slice(0, key.lastIndexOf("@"));
+  var bmp = fgeImages.get(path);
+  if (!bmp) {
+    console.warn("[fge] 絵 " + path + " の ImageBitmap が無い — 上げない");
+    return false;
+  }
+  device.queue.copyExternalImageToTexture({ source: bmp }, { texture: texture, premultipliedAlpha: false }, [bmp.width, bmp.height]);
+  return true;
+}
+
 // 人の決定（device lost）: WebGL の文脈を失った時と同じく、戻すのは頁の読み直しとセーブから。
 function fgeWatchDeviceLost(device) {
   device.lost.then(function (info) {
