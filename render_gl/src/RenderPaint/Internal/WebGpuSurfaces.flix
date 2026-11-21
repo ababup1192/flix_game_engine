@@ -93,7 +93,7 @@ pub mod RenderPaint.Internal.WebGpuSurfaces {
     def compileProgram(surfaces: Surfaces, spec: ShaderDoc.Spec): Int32 \ IO =
         let out = ShaderGen.Wgsl.compile(spec);
         let module = surfaces#gpu.createShaderModule("fge surface ${spec#name}", out#module);
-        let errors = String.lines(surfaces#gpu.getCompilationInfo(module)) |> List.filter(l -> String.startsWith({ prefix = "Error" }, l));
+        let errors = TextSplit.lines(surfaces#gpu.getCompilationInfo(module)) |> List.filter(l -> String.startsWith({ prefix = "Error" }, l));
         match errors {
             case first :: _ =>
                 module.release();

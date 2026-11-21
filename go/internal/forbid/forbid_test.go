@@ -209,3 +209,53 @@ func TestFrameDiagnosticsRuleStopsFrameButNotViewCtx(t *testing.T) {
 		t.Fatalf("1・3・5 行目だけ当たるはず: %+v", hits)
 	}
 }
+
+// Java の正規表現に行き着く呼び方は止め、正規表現を使わない区切りとコメント・文字列の中は止めない。
+func TestJavaRegexRuleStopsRegexButNotSplitOn(t *testing.T) {
+	rules, err := LoadRules(filepath.Join("..", "..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rule *Rule
+	for i := range rules.List {
+		if rules.List[i].ID == "java-regex" {
+			rule = &rules.List[i]
+		}
+	}
+	if rule == nil {
+		t.Fatal("java-regex が無い")
+	}
+	only := &Rules{List: []Rule{*rule}}
+	src := "    let a = String.split(regex = \",\", s)\n" +
+		"    let b = String.splitOn(substr = \",\", s)\n" +
+		"    let c = String.lines(s)\n" +
+		"    // String.lines は使わない\n" +
+		"    let d = \"String.lines\"\n" +
+		"    let e = Regex.isMatch(r, s)\n" +
+		"    let f = String.replace(src = \"a\", dst = \"b\", s)\n" +
+		"    let g = TextSplit.split(\",\", s) |> TextSplit.lines\n"
+	lines := []int{}
+	for _, h := range only.TextHits("src/Parse.flix", src) {
+		lines = append(lines, h.Line)
+	}
+	if len(lines) != 3 || lines[0] != 1 || lines[1] != 3 || lines[2] != 6 {
+		t.Fatalf("1・3・6 行目だけ当たるはず: %v", lines)
+	}
+}
+
+func TestJavaRegexRuleStopsJavaSplit(t *testing.T) {
+	rules, err := LoadRules(filepath.Join("..", "..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	only := &Rules{}
+	for _, r := range rules.List {
+		if r.ID == "java-regex" {
+			only.List = append(only.List, r)
+		}
+	}
+	hits := only.TextHits("engine_web/java/fge/web/X.java", "        String[] parts = text.split(\"\\n\");\n        int n = text.indexOf('a');\n")
+	if len(hits) != 1 || hits[0].Line != 1 {
+		t.Fatalf("1 行目だけ当たるはず: %+v", hits)
+	}
+}

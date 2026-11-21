@@ -7,7 +7,7 @@
 use fge::LwjglLayer
 
 mod ShaderCacheSoak {
-    use fge::{DrawCmd, GameEngine, GpuHandle, LwjglLayer, Platform, ShaderDoc}
+    use fge::{DrawCmd, GameEngine, GpuHandle, LwjglLayer, Platform, ShaderDoc, TextSplit}
 
     import java.io.ByteArrayOutputStream
     import java.io.PrintStream
@@ -103,7 +103,7 @@ mod ShaderCacheSoak {
           with Fs.FileRead.runWithIO;
         capture.flush();
         System.setErr(realErr);
-        let captured = buf.toString(StandardCharsets.UTF_8) |> String.lines;
+        let captured = buf.toString(StandardCharsets.UTF_8) |> TextSplit.lines;
         let (evictLines, otherLines) =
             List.partition(l -> String.contains({ substr = evictionMark() }, l), captured);
         otherLines |> List.forEach(l -> if (String.isEmpty(l)) () else realErr.println(l));

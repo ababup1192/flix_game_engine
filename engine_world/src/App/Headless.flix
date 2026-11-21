@@ -145,7 +145,7 @@ pub mod App.Headless {
 
     /// /run の本文（`KEY=VALUE` の行）を env の表へ。`=` の無い行と鍵の空の行は捨てる。値の中の `=` は残す。
     pub def parseEnvLines(body: String): Map[String, String] =
-        String.lines(body)
+        TextSplit.lines(body)
             |> List.filterMap(line -> String.indexOfLeft({substr = "="}, line) |> Option.flatMap(i ->
                 if (i == 0) None else Some((String.takeLeft(i, line), String.dropLeft(i + 1, line)))))
             |> List.toMap
@@ -241,7 +241,7 @@ pub mod App.Headless {
 
     /// [shot] の答えの `ok png=<パス>` の行のパス（無ければ None）。
     pub def pngPathOf(block: String): Option[String] =
-        String.lines(block)
+        TextSplit.lines(block)
             |> List.findMap(line -> String.stripPrefix(substr = "ok png=", String.trim(line)))
             |> Option.map(String.trim)
             |> Option.filter(path -> not String.isEmpty(path))

@@ -10,6 +10,14 @@
       "hint": "TeaVM の JSO（JS の物）は fge.web（engine_web/java/fge/web）の外へ出さない。Flix の総称のデータや Object へ JS の物が入ると wasm が落ちる。fge.web に int・字・数・java.nio だけを受け渡す static の関数を足して、それを呼ぶ"
     },
     {
+      "id": "java-regex",
+      "suffixes": [".java", ".flix"],
+      "skip": ["plans/", ".claude/", "engine_full/src/", "src/engine/", "src/engine_world/", "src/engine_tools/", "src/render_gl/"],
+      "skipDirs": ["test", "build", "lib"],
+      "pattern": "\\bString\\.(split|lines|isMatch|isSubmatch|replaceMatches|replaceFirstMatch|toRegex|toRegexWithFlags)\\b|\\bRegex\\.[a-z]|\\bregex\"|\\bjava\\.util\\.regex\\b|\\bPattern\\.(compile|matches|quote)\\b|(?:(?:^|[^A-Za-z0-9_])[a-z_][A-Za-z0-9_]*|[\\])\"])\\.(split|matches|replaceAll|replaceFirst)\\(",
+      "hint": "Java の正規表現（java.util.regex）を使わない。1 か所でも呼ぶとブラウザ版の wasm に正規表現の一式（brotli で約 18 KB・4G で約 0.1 秒）が入る。Flix の String.split・String.lines・isMatch・replaceMatches・Regex も中で使う。決まった字で区切るなら TextSplit.split(区切り, s)、行に分けるなら TextSplit.lines（どちらも標準と同じ答え）、探すなら String.contains・indexOfLeft、替えるなら String.replace(src = …, dst = …)"
+    },
+    {
       "id": "render-gl-body-desktop-import",
       "prefixes": ["render_gl/src/"],
       "basenames": ["Sprite.flix", "Paint.flix", "Frame.flix", "Target.flix", "Static.flix", "Shader.flix", "Buf.flix", "RenderTexture.flix", "PaintHandlers.flix", "Scene3dRenderer.flix", "Render3d.flix", "Render3dGlsl.flix", "Material.flix", "Shadow.flix", "Light.flix", "Counts.flix", "Preload.flix"],
@@ -445,6 +453,7 @@
     }
   ],
   "exempt": {
+    "engine_web/teavm/java/fge/teavmfix/Rewrite.java::java-regex": "書き出しの時に jar の中の正規表現の字を TeaVM 向けに直す道具（コメントで String.lines の名を出すだけ）。wasm には入らない",
     "engine/test/TestShaderGenWgsl.flix::light-uniform-in-glsl": "LightModel3d.Codegen.toWgsl が出した字の欄の読み（vec4 の配列の x）を確かめるテスト。光の式を手で書いてはいない",
     "src/AssistShow.flix::game-unchecked-pure": "internet_dungeon の Math.sin・cos の包み。Num.sin・Num.cos へ寄せるまで",
     "src/CardPile.flix::game-unchecked-pure": "internet_dungeon の Math.sin の包み。Num.sin へ寄せるまで",

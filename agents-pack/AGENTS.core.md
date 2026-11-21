@@ -22,6 +22,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | やりたいこと | 使う道具 |
 |---|---|
 | 列を並べ替える（同じ鍵は来た順・並んだ入力でも速い） | `Sort.sortStableBy(鍵の関数, 列)`（標準の `List.sortBy` は二乗） |
+| 字を区切る・行に分ける（ブラウザ版に正規表現を入れない） | `TextSplit.split(区切り, s)`・`TextSplit.lines(s)`（標準の `String.split`・`lines` は lint が止める） |
 | 物を重ねる・手前と奥を決める | `ZStack.of` / `leaf` の木を根で `SortingLayer.compose` |
 | 必ず手前に出す（確認の窓・ポーズ） | `ZStack.topLayer(層, 木)`・層は `SortingLayer` の enum |
 | 足元の y で重なり順を決める（y ソート・見下ろしで人が木の裏に回る） | `ZStack.zIndex(Depth.orderAt(足元のy), leaf(人))` |

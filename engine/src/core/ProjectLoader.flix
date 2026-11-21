@@ -338,7 +338,7 @@ pub mod ProjectLoader {
 
     /// flix.toml の依存の行 `"github:ababup1192/flix_game_engine" = { version = "x.y.z", … }` の版。
     pub def engineVersionOf(toml: String): Option[String] =
-        String.lines(toml)
+        TextSplit.lines(toml)
             |> List.find(line -> String.contains(substr = "\"github:ababup1192/flix_game_engine\"", line))
             |> Option.flatMap(line -> String.splitOn(substr = "version", line) |> List.drop(1) |> List.head)
             |> Option.flatMap(rest -> String.splitOn(substr = "\"", rest) |> List.drop(1) |> List.head)

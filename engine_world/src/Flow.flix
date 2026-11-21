@@ -667,7 +667,7 @@ pub mod Flow {
                 case None                  => k(Fs.FileRead.read(path))
             }
             def readLines(path, k) = match Map.get(path, files) {
-                case Some(File.Text(text)) => k(Ok(String.lines(text)))
+                case Some(File.Text(text)) => k(Ok(TextSplit.lines(text)))
                 case Some(File.Missing)    => k(Err(IoError.IoError(IoError.ErrorKind.NotFound, path)))
                 case None                  => k(Fs.FileRead.readLines(path))
             }

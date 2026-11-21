@@ -3,7 +3,7 @@
 // 直すのは bench/common の物。engine の根の make bench-common が sprite_stress・crowd2d・scene3d の src へ写す。
 // WhyNot: src へ symlink しない — flix build（headless-run・gl-capture が使う）は symlink の .flix を読まない。
 mod BenchRun {
-    use fge::{App, FrameDiagnostics, RenderUtil, Sort}
+    use fge::{App, FrameDiagnostics, RenderUtil, Sort, TextSplit}
 
     /// 1 コマの値。frameMs = 前のコマの全部・workMs = ベンチが自分で測った区間（無ければ 0）・diagnostics = 前のコマの診断。
     pub type alias Sample = { frameMs = Float64, workMs = Float64, diagnostics = Option[FrameDiagnostics.Diagnostics] }
@@ -144,7 +144,7 @@ mod BenchRun {
     /// カンマで区切った数のつまみ。無い・1 つも読めない時は fallback。
     pub def intsKnob(key: String, fallback: List[Int32], knobs: Map[String, String]): List[Int32] =
         let read = Map.get(key, knobs)
-            |> Option.map(text -> String.split(regex = ",", text) |> List.filterMap(Int32.fromString))
+            |> Option.map(text -> TextSplit.split(",", text) |> List.filterMap(Int32.fromString))
             |> Option.getWithDefault(Nil);
         if (List.isEmpty(read)) fallback else read
 }

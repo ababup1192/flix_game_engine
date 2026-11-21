@@ -576,7 +576,7 @@ pub mod WebLayer {
 
     /// 頁の扱いの字（"onMissing\ngroup"・無い欄は空）を MissingPolicy へ。知らない onMissing は種類の既定。
     def policyOfText(text: String): LoadProgress.MissingPolicy =
-        let parts = String.split(regex = "\n", text);
+        let parts = TextSplit.split("\n", text);
         let nonEmpty = s -> if (String.isEmpty(s)) None else Some(s);
         let onMissing = List.head(parts) |> Option.flatMap(nonEmpty) |> Option.flatMap(onMissingOfText);
         let group = List.nth(1, parts) |> Option.flatMap(nonEmpty);
@@ -600,7 +600,7 @@ pub mod WebLayer {
     }
 
     def linesOf(text: String): List[String] =
-        if (String.isEmpty(text)) Nil else String.split(regex = "\n", text)
+        if (String.isEmpty(text)) Nil else TextSplit.split("\n", text)
 
     /// 起動中に、手を返さずに続けてよい長さ（ms）。
     def yieldMillis(): Float64 = 50.0

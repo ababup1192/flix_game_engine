@@ -19,7 +19,7 @@ pub mod LogCapture {
         // WhyNot: f() を差し替えた後に読んだ値（buffer.size()）の分かれ道の外に置かない — 純粋に見える f は差し替えより前へ動かされうる。
         Ref.put(if (buffer.size() >= 0) Some(f()) else None, result);
         System.setErr(saved);
-        let lines = String.lines(buffer.toString("UTF-8")) |> List.filter(line -> not String.isEmpty(line));
+        let lines = TextSplit.lines(buffer.toString("UTF-8")) |> List.filter(line -> not String.isEmpty(line));
         match Ref.get(result) {
             case Some(value) => (value, lines)
             case None        => bug!("LogCapture.capture: f の値を受け取る前に Ref を読んだ")

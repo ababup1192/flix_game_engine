@@ -348,7 +348,7 @@ pub mod App.RemoteDebug {
 
     /// Bridge から受けた生文字列をリクエストへ分解する。
     pub def parseRequest(raw: String): Request =
-        let (headLine, bodyLines) = match String.lines(raw) {
+        let (headLine, bodyLines) = match TextSplit.lines(raw) {
             case first :: rest => (first, rest)
             case Nil           => ("", Nil)
         };
@@ -582,7 +582,7 @@ pub mod App.RemoteDebug {
     /// （古い Studio は 1 行目を "ok " で始まるかだけで読むので、足しても読み方は変わらない）。
     pub def renderJobDoneText(job: Int64, ms: Int64, paths: List[String]): String =
         let text = renderDoneText(ms, paths);
-        match String.lines(text) {
+        match TextSplit.lines(text) {
             case first :: rest => String.intercalate("\n", "${first} job=${job}" :: rest) + "\n"
             case Nil           => text
         }

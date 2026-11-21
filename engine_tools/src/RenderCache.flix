@@ -231,7 +231,7 @@ pub mod RenderCache {
                     let file = new File(stamp);
                     if (not file.isFile()) false
                     else {
-                        let lines = String.lines(Files.readString(file.toPath()));
+                        let lines = TextSplit.lines(Files.readString(file.toPath()));
                         let kept = not List.isEmpty(lines) and List.forAll(fileMatchesLine, lines);
                         if (kept) discard file.setLastModified(System.currentTimeMillis()) else ();
                         kept
@@ -522,7 +522,7 @@ pub mod RenderCache {
     /// packages.lock の字から、エンジンの版の fpkg の SHA-256（`fpkg = "sha256:…"`）を取り出す（純粋）。無ければ None。
     pub def lockedEngineDigestOf(version: String, lock: String): Option[String] =
         let header = "[packages.\"github:ababup1192/flix_game_engine\".\"${version}\"]";
-        String.lines(lock)
+        TextSplit.lines(lock)
             |> List.dropWhile(line -> String.trim(line) != header)
             |> List.drop(1)
             |> List.takeWhile(line -> not String.startsWith(prefix = "[", String.trim(line)))

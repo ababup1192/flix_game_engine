@@ -106,8 +106,8 @@ pub mod RenderService {
 
     /// "a=1&b=2" → 表。値の中の + は空白へ戻す（フォーム形式の最小限だけ）。
     pub def parseParams(raw: String): Map[String, String] =
-        String.split(regex = "&", raw)
-            |> List.filterMap(pair -> match String.split(regex = "=", pair) {
+        TextSplit.split("&", raw)
+            |> List.filterMap(pair -> match TextSplit.split("=", pair) {
                 case k :: v :: Nil => Some((k, String.replace(src = "+", dst = " ", v)))
                 case k :: Nil      => if (k == "") None else Some((k, ""))
                 case _             => None

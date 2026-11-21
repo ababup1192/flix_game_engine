@@ -230,7 +230,7 @@ pub mod Render3d.WebGpuMaterials {
         let wgsl = ShaderGen.Wgsl.compile3d(spec, emission, metallicRoughness, 1);
         let source = valuesDeclared(s#binding, Render3dWgsl.materialFragmentSource(wgsl, kind));
         let module = s#gpu.createShaderModule("fge material ${spec#name}", source);
-        let errors = String.lines(s#gpu.getCompilationInfo(module)) |> List.filter(l -> String.startsWith({ prefix = "Error" }, l));
+        let errors = TextSplit.lines(s#gpu.getCompilationInfo(module)) |> List.filter(l -> String.startsWith({ prefix = "Error" }, l));
         match errors {
             case first :: _ =>
                 module.release();
