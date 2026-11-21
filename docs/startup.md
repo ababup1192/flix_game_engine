@@ -75,12 +75,17 @@ fge-web.js が `#fge-splash` の canvas に描く。押した後も wasm の読�
 project.json の `"web": { "deferred": ["assets/bgm/*.wav", ...] }` に当たる素材は、ブラウザ版で「押して始める」の前に取らない。
 fge-web.js が wasm を読み終えた後に別の行列で取り（同時 2 本・glob の並び順）、押すのを待つ間もゲームの間も取り続ける。
 
-- 書き出し（`bin/fge export-web`）: bundle.json の `deferred` に道と配る大きさを書き、大きさの表に「起動 m 本・y MB／後回し n 本・x MB」を出す。
+- 書き出し（`bin/fge export-web`）: bundle.json の `deferred` に道と配る大きさ・4G で届く見積もりの秒（`arrivalSeconds`）を書き、終わりの表に次の 2 行を出す
+  （読み方は [web-export.md](web-export.md) の「遊べるまでの量を見る」）。
+  ```
+    起動まで（タッチして開始まで）43 本・回線 2.9 MB（wasm 2.0 MB・素材 0.9 MB・頁 0.04 MB）→ 4G（1.6 Mbps）で約 16.0 秒（前置き 1.5 秒を含む）
+    後回し 12 本・8.4 MB → 最後の assets/bg/ending.webp が届くのは約 58 秒目（1 本ずつの時刻は書き出しのログ）
+  ```
   当たらない glob・project.json・`web.embed` と `web.omit` の素材・フォントのアトラスに当たる glob は誤りで止まる。
   タイトル画面の背景は後回しにしない（届くまで出ない）。
 - 2D の絵は届いたら WebLayer がコマの頭で登録する（`App.withDecodeBudget` の予算の内。既定の `Idle(4)` なら 1 コマに 1 本の道と、4 ms に収まる分）。
   1 本の道を複数の名前で宣言していれば、その道の全部の名前を同じコマで登録する。まだ届いていない絵を描くと「見つからない」で描かれない。
-- 音は届くまで鳴らない（`audioSeconds` は 0 を返す。使う側は `downloads#missing()` に名前があるかで見分ける）。
+- 音は届くまで鳴らない（`GameEngine.Audio.audioSeconds` は届く前も bundle.json の `sounds[].seconds` の元の長さを返す。届いたかは `downloads#missing()` に名前があるかで見分ける）。
   ループの音（環境音・BGM）は鳴らせと言われた事を覚えておき、届いたら最後の音量・高さで鳴らす。一発の効果音は鳴らさず進む。
   1 本の道を複数の名前で宣言した音は、1 回取って全部の名前で鳴らせる。取れなかった音は名前ごとに 1 回警告する。
 - 取れなかった素材（回線が切れた）は、fge-web.js が間を置いて取り直す（頼まれた時は 5 秒・タブが表に戻った時・回線が戻った時・30 秒ごと）。
@@ -123,7 +128,7 @@ Backspace（パッドの B）で押した時の待ちをやめる（ゲームの
 ### 押した後のロゴ（`web.splash`）
 
 「タッチして開始」を押した後、**待つ物が残る時だけ** engine のロゴ（Flix_GE）を出す。待つ物は `web.splash.waitFor` の group（既定は `deferredPolicy` に最初に出てくる group）。
-group が無いゲームは出ない（P4 の間は後から取るコードも無いので、待つ物が無い）。届くまでの見込みが `minSeconds` より短い時も出さない（ロゴで押した後の待ちを延ばさない）。
+group が無いゲームは出ない。届くまでの見込みが `minSeconds` より短い時も出さない（ロゴで押した後の待ちを延ばさない）。
 
 - 最短 `minSeconds`（既定 1.2 秒）・待つ物が届いたら切り上げ・上限 `maxSeconds`（既定 3 秒・3 秒より長くはできない）。押すかキーで飛ばせる（押した拍から 0.3 秒は数えない）
 - 同じ書き出しの版で 1 度出したら（飛ばしても）localStorage に残し、2 回目からは出さない。localStorage を使えない頁は待つ物が残る時だけ出す

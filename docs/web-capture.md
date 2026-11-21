@@ -1,14 +1,15 @@
 # ブラウザの canvas を撮る（bin/fge web-capture）
 
-ヘッドレスの Chrome を CDP（Chrome DevTools Protocol）で動かし、頁が WebGL2 の `readPixels` で読んだ画素を
+ヘッドレスの Chrome を CDP（Chrome DevTools Protocol）で動かし、頁が読んだ canvas の画素（WebGL2 なら `readPixels`・WebGPU は下の「書き出した頁のコマを撮る」）を
 PNG に書く道具。gl_parity の web 版（WebGL2 の絵と SoftRaster の絵を同じ物差しで比べる）の土台。
 Node と Playwright は使わない（Go の bin/fge の中で WebSocket から CDP を話す・`go/internal/cdp`）。
 
 ```
-bin/fge web-capture <URL> <出力.png> [--wait <秒>] [--size WxH]
+bin/fge web-capture <URL> <出力.png> [--wait <秒>] [--size WxH] [--dir <書き出したフォルダ>]
 ```
 
 - `--wait` は頁の合図を待つ上限（既定 30 秒）。`--size` は頁の viewport（既定 800x600・deviceScaleFactor は常に 1）。
+- `--dir` はそのフォルダを 127.0.0.1 の使い捨ての口で配り、`<URL>` を頁の道とクエリ（例 `index.html?capture=6`）として読む（静的なサーバーを起こさずに済む）。
 - Chrome は `FGE_CHROME` → `/Applications/Google Chrome.app` など決まった場所 → PATH の `google-chrome` / `chromium` の順に探す。
   見つからなければ探した場所を全部並べて exit 1。
 - 起こすのは `--headless=new --remote-debugging-port=0` と使い捨ての `--user-data-dir` の Chrome。止めるのは自分が起こした
@@ -72,7 +73,7 @@ bin/fge web-capture "http://127.0.0.1:<port>/index.html?capture=6" <出力.png> 
 同じ形（`origin: "bottom-left"`・canvas は opaque なので alpha は 1）で置く。`renderer` は `webgpu: <adapter>`。WebGPU を使えない頁
 （`navigator.gpu` が無い・device が取れない）は理由を console に出して WebGL2 で描くので、`renderer` を見て WebGPU で撮れたかを確かめる。
 同じ `?` に `backend=webgl2`（`backend=gl` も同じ）を足すと WebGL2 で描く（`renderer` は WebGL2 の名前）。WebGL2 の絵と比べる時はこちら。
-書き出したフォルダは `--dir` で配れる（静的なサーバーを起こさずに済む）。V1 の門は `make webgpu-v1-check-web`（`?backend=webgl2`・既定・WebGPU の無い頁を撮って比べる）。
+V1 の門は `make webgpu-v1-check-web`（`?backend=webgl2`・既定・WebGPU の無い頁を撮って比べる）。
 
 ```
 bin/fge web-capture "index.html?capture=6&backend=webgl2" <WebGL2 の絵.png> --dir <書き出したフォルダ> --size 640x600 --wait 90
@@ -89,15 +90,25 @@ bin/fge pixel-diff <WebGL2 の絵.png> <WebGPU の絵.png> --tolerance bench/web
 ## 書き出しの門（ブラウザで wasm を読めるか）
 
 `bin/fge export-web` は頁を書いた後の最後の段（⑨）で、書き出し先を 127.0.0.1 の使い捨てのサーバーで配り、ヘッドレスの Chrome で
-`index.html?capture=3` を開く。上の約束のとおり 3 コマ目が撮れたら通り、`fgeCaptureError` が出たら（wasm の compile・instantiate・
-`main` の例外）exit 1 で止まる。書き出し先は消さずに残す。1 回およそ 1 秒（rpg-starter・M4 Pro・Chrome 156）。
+次の頁を順に開く（頁ごとに Chrome を起こし直す）。
+
+| 段 | 開く頁 | 見る物 | 外れた時 |
+|---|---|---|---|
+| ⑨ | `index.html?capture=120&usedAssets=1`（既定の WebGPU の頁） | 120 コマ目まで撮れるか・タイトルの 120 コマに使った素材の記録（後回しの候補の元） | `fgeCaptureError`（wasm の compile・instantiate・`main` の例外）で exit 1 |
+| ⑨ | `index.html?capture=3&backend=webgl2` | WebGL2 の頁でも 3 コマ目まで撮れるか（WebGPU を使えないブラウザが頼る道） | 同上 |
+| ⑨' | `index.html?capture=120&net=4g`（後回しがある時だけ） | 4G の届き方でタイトルが後回しの物を待って止まらないか | 止まれば門が赤（[web-export.md](web-export.md) の「起動の予算」）。頁が開けない時は知らせだけ |
+| ⑨'' | `index.html?net=4g`（engine が待ちうる後回しか group がある時だけ） | 「タッチして開始」とタイトルの `startKeys` を押し、押した時の待ちが明けるまでの秒 | 測れなければ知らせだけ（門は見積もりで決める） |
+
+⑨ で止まった時は書き出し先を消さずに残す。⑨'' は押してから 40 秒で打ち切り、待ちが明けた後も 10 秒は途中の待ちを見るので、後回しの多いゲームではここが一番長い。
+Chrome は後回しの無いゲームで 2 回、ある時は 3〜4 回起こすので、書き出しはその分延びる。
 
 - 止めたい形: TeaVM は穴 0 件で訳し終えるのに、ブラウザが wasm を読む所でモジュールごと落ちる（頁は真っ白）。
   JSO の物を `Object` を受ける所へ渡すと起きる（Flix の `Object.isNull(jsoの値)` の 1 行でも）。どの書き方で落ちるかは前もって読みにくいので、
   JSO は `fge.web` の Java の普通の類に包んで渡す。
-- Chrome が見つからない機械では確かめずに 1 行知らせて通す（探し方は上の `FGE_CHROME` と同じ）。`--no-browser-check` で飛ばせる。
-  待つ上限は既定 90 秒・`FLIX_GE_WEB_CHECK_WAIT`（秒）で替える。
-- 確かめ: `go test -run CheckWebLoads ./`（`go/`。壊れた wasm を compile させる頁で赤になる事と、通る頁で緑になる事）。
+- Chrome が見つからない機械では確かめずに 1 行知らせて通す（探し方は上の `FGE_CHROME` と同じ）。`--no-browser-check` で飛ばせるが、
+  ⑨'・⑨'' も飛ぶので bundle.json の `checks` に「飛ばした」と残り、web-check が ★ を出す（Chrome のある機械で `bin/fge web-check --browser` で流し直せる）。
+  頁が合図を出すまで待つ上限は既定 90 秒・`FLIX_GE_WEB_CHECK_WAIT`（秒）で替える。
+- 確かめ: `go test -run 'CheckWebLoads|WebMissingTitle|TapOutcome' ./`（`go/`。壊れた wasm を compile させる頁・WebGL2 の頁だけ止まる頁で赤になる事、通る頁で緑になる事、4G のタイトルの待ちと押した後の測りの読み方）。
 
 ## gl_parity とのつなぎ（案）
 
