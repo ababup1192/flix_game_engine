@@ -118,6 +118,13 @@ pub mod Render3d.WebGpuRenderer {
     pub def makeScenes(gpu: WebGpu, pasteLayout: BindGroupLayout, imageLayout: BindGroupLayout): Scenes \ IO =
         scenesOf(create(gpu, pasteLayout, imageLayout))
 
+    /// makeScenes の、機種の側に持つ絵（Texture3d.Source.PlatformImage）を copy で GPU へ写す版（ブラウザの頁）。
+    pub def makeScenesWithPlatformImages(copy: WebGpuMaterials.PlatformImageCopy, gpu: WebGpu, pasteLayout: BindGroupLayout, imageLayout: BindGroupLayout): Scenes \ IO =
+        let r = create(gpu, pasteLayout, imageLayout);
+        let RendererData.RendererData(s) = r;
+        WebGpuMaterials.setPlatformImageCopy(copy, s#materials);
+        scenesOf(r)
+
     /// r を Scenes に包む。
     pub def scenesOf(r: Renderer): Scenes =
         { prepare = (host, dest, cmds) -> prepare(r, host, dest, cmds), preload = (host, cmd) -> preload(r, host, cmd),

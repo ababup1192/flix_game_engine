@@ -589,6 +589,18 @@ public final class BrowserWebGpu implements WebGpu {
     @JSBody(params = {"device", "path", "buffer", "row"}, script = "return fgeCopyImageBitmap(device, path, buffer, row);")
     private static native String copyBitmapToBuffer(GPUDevice device, String path, GPUBuffer buffer, int row);
 
+    /**
+     * 頁が持つ機種の側の絵（key = WebImages.platformKey の字）を、gpu（BrowserWebGpu）の texture のレベル 0 の左上へ copyExternalImageToTexture で写す（待たない）。
+     * 写した値は ImageBitmap のまま（premultipliedAlpha: false・色の変換なし・行 0 が絵の上）。絵が無ければ偽。texture は COPY_DST と RENDER_ATTACHMENT を持つ RGBA8。
+     * WhyNot: 写した後に ImageBitmap を手放さない — 同じ key を別の部屋がまた写す（WebGL2 の texImagePlatform と同じ）。
+     */
+    public static boolean copyPlatformImage(fge.webgpu.WebGpu gpu, String key, fge.webgpu.Texture texture) {
+        return copyPlatformImageToTexture(((BrowserWebGpu) gpu).device, key, ((BrowserObjects.BrowserTexture) texture).texture);
+    }
+
+    @JSBody(params = {"device", "key", "texture"}, script = "return fgeCopyPlatformImage(device, key, texture);")
+    private static native boolean copyPlatformImageToTexture(GPUDevice device, String key, GPUTexture texture);
+
     /** device を失ったら、頁に WebGL の時と同じ文で読み直しを案内する。 */
     public void onDeviceLost() { watchLost(device); }
 
