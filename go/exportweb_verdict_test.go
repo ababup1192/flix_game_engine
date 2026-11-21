@@ -231,25 +231,25 @@ func TestRunExportWebRemovesDiscardedOut(t *testing.T) {
 
 func TestBrotliWindowBitsEmptyIsSmallest(t *testing.T) {
 	if got := brotliWindowBits(0); got != 10 {
-		t.Errorf("空は最も小さい窓 10 のはず: %d", got)
+		t.Errorf("空は最も小さいウィンドウ 10 のはず: %d", got)
 	}
 }
 
 func TestBrotliWindowBitsFitsSmallestWindowExactly(t *testing.T) {
 	if got := brotliWindowBits(1008); got != 10 {
-		t.Errorf("2^10−16 = 1008 バイトは窓 10 に収まるはず: %d", got)
+		t.Errorf("2^10−16 = 1008 バイトはウィンドウ 10 に収まるはず: %d", got)
 	}
 }
 
 func TestBrotliWindowBitsGrowsPastSmallestWindow(t *testing.T) {
 	if got := brotliWindowBits(1009); got != 11 {
-		t.Errorf("1009 バイトは窓 11 のはず: %d", got)
+		t.Errorf("1009 バイトはウィンドウ 11 のはず: %d", got)
 	}
 }
 
 func TestBrotliWindowBitsCapsAtLargestWindow(t *testing.T) {
 	if got := brotliWindowBits(1<<24 - 15); got != 24 {
-		t.Errorf("2^24−16 を超えても窓は 24 で止まるはず: %d", got)
+		t.Errorf("2^24−16 を超えてもウィンドウは 24 で止まるはず: %d", got)
 	}
 }
 

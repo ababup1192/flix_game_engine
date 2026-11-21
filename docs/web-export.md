@@ -122,7 +122,7 @@ design の大きさの画面に描くつもりの絵（ぼかした背景だけ�
 - 道具は ffmpeg（libopus）と cwebp・dwebp。無ければ圧縮せずに書き出して大きさの表に 1 行
 - アトラスの距離場は既定で辺を 1/2 に縮める（`fontAtlasScale: 0.5`・量は約半分・スマホの画面で見分けがつかない）。1 で縮めない。0.5 より下は込んだ漢字の縁が欠けるので受け付けない
 - wasm は brotli（最も強い 11）にした `classes.wasm.br` と解き手 `brotli-decode.js`（google/brotli・MIT）を一緒に配り、頁が自分で戻す（gzip より 4 割ほど小さい・置き場が gzip しか配らなくても効く）。解けない時は `classes.wasm` を取る。止めるのは `wasmBrotli: false`
-  - 詰めるのは bin/fge 自身（pure Go の brotli・窓は brotli の CLI の既定と同じ大きさ）。brotli の道具は要らず、Finder から開いた Studio のように PATH が細い機械でも同じ `classes.wasm.br` ができる。
+  - 詰めるのは bin/fge 自身（pure Go の brotli・ウィンドウは brotli の CLI の既定と同じ大きさ）。brotli の道具は要らず、Finder から開いた Studio のように PATH が細い機械でも同じ `classes.wasm.br` ができる。
   - `wasmBrotli: false` の時は gzip の大きさで秒に入り、門の次に打つ手に「wasmBrotli: false を外すと wasm が約 N 秒減る」が出る。
 - wasm の名前の区画（関数名・素の量の 2〜3 割）は `classes.names` へ抜いて配る。頁は止まった時だけそれを取り、stack の `wasm-function[番号]` に名前を付けて console へ出す
 

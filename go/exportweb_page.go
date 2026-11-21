@@ -336,7 +336,7 @@ func writeWebWasmBrotli(jsDir, out string) error {
 }
 
 // brotliBytes は data を brotli の CLI（brotli -q 11）の既定と同じ形で詰める。
-// WhyNot: 窓を 24 に決め打ちしない — brotli -q 11 で詰めた物とバイトがそろわず、sums.json と版の字を手元の CLI の出力と突き合わせられない。
+// WhyNot: ウィンドウを 24 に決め打ちしない — brotli -q 11 で詰めた物とバイトがそろわず、sums.json と版の字を手元の CLI の出力と突き合わせられない。
 func brotliBytes(data []byte) ([]byte, error) {
 	var buf bytes.Buffer
 	zw := brotli.NewWriterOptions(&buf, brotli.WriterOptions{Quality: 11, LGWin: brotliWindowBits(len(data))})
@@ -349,7 +349,7 @@ func brotliBytes(data []byte) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// brotliWindowBits は n バイトが収まる最も小さい窓の bit 数（10〜24。窓の大きさは 2^bits − 16）。brotli の CLI が入力の大きさから窓を決める形と同じ。
+// brotliWindowBits は n バイトが収まる最も小さいウィンドウの bit 数（10〜24。ウィンドウの大きさは 2^bits − 16）。brotli の CLI が入力の大きさからウィンドウを決める形と同じ。
 func brotliWindowBits(n int) int {
 	bits := 10
 	for bits < 24 && (1<<bits)-16 < n {
