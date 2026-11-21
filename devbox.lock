@@ -357,6 +357,44 @@
           "store_path": "/nix/store/xg48dl68ar4ivqlid9rbdi3wz1q33fv6-libwebp-1.6.0"
         }
       }
+    },
+    "tinygo@0.43.0": {
+      "last_modified": "2026-11-19T13:46:25Z",
+      "resolved": "github:NixOS/nixpkgs/19cfded70b91ca0981373973c5b1efffdd4d6647#tinygo",
+      "source": "devbox-search",
+      "version": "0.43.0",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/mvrbr94r1sxzjb7kiagdqcl6zng19qd4-tinygo-0.43.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/mvrbr94r1sxzjb7kiagdqcl6zng19qd4-tinygo-0.43.0"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/ab8qsvnqqq070d6485p843cvrzyv81ma-tinygo-0.43.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/ab8qsvnqqq070d6485p843cvrzyv81ma-tinygo-0.43.0"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/dgw52xlfpyz2gk9cnl439d44v8pgi62a-tinygo-0.43.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/dgw52xlfpyz2gk9cnl439d44v8pgi62a-tinygo-0.43.0"
+        }
+      }
     }
   }
 }
