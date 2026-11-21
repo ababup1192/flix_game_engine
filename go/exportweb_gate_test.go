@@ -85,7 +85,7 @@ func groupFixture(t *testing.T) (string, webBundle) {
 func TestGateLogoCoversGroupWait(t *testing.T) {
 	out, b := groupFixture(t)
 	withLogo(&b, "engine", "start")
-	g := webGateOf(out, &b, defaultWebStartupBudget())
+	g := webGateOf(newWebSizeTable(out), &b, defaultWebStartupBudget())
 	if g.Playable != g.Startup {
 		t.Errorf("group の待ち 2.15 秒はロゴの 3 秒に収まり、数字に入らないはず: %+v", g)
 	}
@@ -95,7 +95,7 @@ func TestGateCountsGroupWaitBeyondLogo(t *testing.T) {
 	out, b := tapWaitFixture(t, webDeferredEntry{Path: "assets/a.webp", Group: "start"}, webDeferredEntry{Path: "assets/b.webp", Group: "start"},
 		webDeferredEntry{Path: "assets/se.ogg", Group: "start"})
 	withLogo(&b, "engine", "start")
-	g := webGateOf(out, &b, defaultWebStartupBudget())
+	g := webGateOf(newWebSizeTable(out), &b, defaultWebStartupBudget())
 	if math.Abs(g.Playable-(g.Startup+g.TapWait-webAfterTapMaxSeconds)) > 1e-9 {
 		t.Errorf("ロゴの 3 秒を超えた分だけ足すはず: %+v", g)
 	}
@@ -104,7 +104,7 @@ func TestGateCountsGroupWaitBeyondLogo(t *testing.T) {
 func TestGateLogoNoneDoesNotCover(t *testing.T) {
 	out, b := groupFixture(t)
 	withLogo(&b, "none", "start")
-	g := webGateOf(out, &b, defaultWebStartupBudget())
+	g := webGateOf(newWebSizeTable(out), &b, defaultWebStartupBudget())
 	if g.LogoCover != 0 {
 		t.Errorf("ロゴを出さないゲームは覆わないはず: %+v", g)
 	}
@@ -115,7 +115,7 @@ func TestGateLogoDoesNotCoverWhenGroupArrivesBeforeMinSeconds(t *testing.T) {
 	withLogo(&b, "engine", "start")
 	b.Splash.AfterTap.MinSeconds = 2
 	b.Checks = &webBundleChecks{TapWaitSeconds: ptrFloat(4)}
-	g := webGateOf(out, &b, defaultWebStartupBudget())
+	g := webGateOf(newWebSizeTable(out), &b, defaultWebStartupBudget())
 	if g.LogoCover != 0 {
 		t.Errorf("group が minSeconds より前に届けば頁はロゴを出さないので、測った待ちが長くても覆わないはず: %+v", g)
 	}
@@ -124,7 +124,7 @@ func TestGateLogoDoesNotCoverWhenGroupArrivesBeforeMinSeconds(t *testing.T) {
 func TestGateNotesWaitingImagesOutsideGroup(t *testing.T) {
 	out, b := tapWaitFixture(t, webDeferredEntry{Path: "assets/a.webp", Group: "start"}, webDeferredEntry{Path: "assets/b.webp"})
 	withLogo(&b, "engine", "start")
-	g := webGateOf(out, &b, defaultWebStartupBudget())
+	g := webGateOf(newWebSizeTable(out), &b, defaultWebStartupBudget())
 	if !strings.Contains(strings.Join(g.Notes, "\n"), "group の外に待つ後回しが 1 本") {
 		t.Errorf("group の外に待つ絵があれば、group の見積もりを確かとせず ★ で出すはず: %v", g.Notes)
 	}
@@ -134,7 +134,7 @@ func TestGateCapsLogoCoverAtThreeSeconds(t *testing.T) {
 	out, b := groupFixture(t)
 	withLogo(&b, "engine", "start")
 	b.Splash.AfterTap.MaxSeconds = 30
-	if g := webGateOf(out, &b, defaultWebStartupBudget()); g.LogoCover != webAfterTapMaxSeconds {
+	if g := webGateOf(newWebSizeTable(out), &b, defaultWebStartupBudget()); g.LogoCover != webAfterTapMaxSeconds {
 		t.Errorf("bundle.json の maxSeconds を書き換えても 3 秒までしか覆わないはず: %v", g.LogoCover)
 	}
 }
@@ -142,7 +142,7 @@ func TestGateCapsLogoCoverAtThreeSeconds(t *testing.T) {
 func TestGateOldBundleWithoutSplashDoesNotCover(t *testing.T) {
 	out, b := groupFixture(t)
 	b.Checks = &webBundleChecks{TapWaitSeconds: ptrFloat(2)}
-	g := webGateOf(out, &b, defaultWebStartupBudget())
+	g := webGateOf(newWebSizeTable(out), &b, defaultWebStartupBudget())
 	if g.LogoCover != 0 {
 		t.Errorf("splash の無い古い束はロゴが出ないので覆わないはず: %+v", g)
 	}
@@ -151,7 +151,7 @@ func TestGateOldBundleWithoutSplashDoesNotCover(t *testing.T) {
 func TestGateWithoutGroupCountsZeroWhenUnmeasured(t *testing.T) {
 	out, b := tapWaitFixture(t, webDeferredEntry{Path: "assets/a.webp"})
 	withLogo(&b, "engine")
-	g := webGateOf(out, &b, defaultWebStartupBudget())
+	g := webGateOf(newWebSizeTable(out), &b, defaultWebStartupBudget())
 	if g.TapWait != 0 || !g.Unknown {
 		t.Errorf("group が無く測っていなければ 0 秒で数え、分からない印を立てるはず: %+v", g)
 	}
@@ -161,7 +161,7 @@ func TestGateWithoutGroupAddsMeasuredWaitUncovered(t *testing.T) {
 	out, b := tapWaitFixture(t, webDeferredEntry{Path: "assets/a.webp"})
 	withLogo(&b, "engine")
 	b.Checks = &webBundleChecks{TapWaitSeconds: ptrFloat(5)}
-	g := webGateOf(out, &b, defaultWebStartupBudget())
+	g := webGateOf(newWebSizeTable(out), &b, defaultWebStartupBudget())
 	if math.Abs(g.Playable-(g.Startup+5)) > 1e-9 {
 		t.Errorf("group の無いゲームはロゴが出ないので、測った 5 秒をそのまま足すはず: %+v", g)
 	}
@@ -171,7 +171,7 @@ func TestGateMeasuredWaitLongerThanGroupEstimateIsUsed(t *testing.T) {
 	out, b := groupFixture(t)
 	withLogo(&b, "engine", "start")
 	b.Checks = &webBundleChecks{TapWaitSeconds: ptrFloat(9)}
-	if g := webGateOf(out, &b, defaultWebStartupBudget()); g.TapWait != 9 {
+	if g := webGateOf(newWebSizeTable(out), &b, defaultWebStartupBudget()); g.TapWait != 9 {
 		t.Errorf("測った値が group の見積もりより長ければ測った値を使うはず: %+v", g)
 	}
 }
@@ -180,21 +180,21 @@ func TestGateUsesLargerOfMeasuredAndGroupEstimate(t *testing.T) {
 	out, b := groupFixture(t)
 	withLogo(&b, "engine", "start")
 	b.Checks = &webBundleChecks{TapWaitSeconds: ptrFloat(0.5)}
-	if g := webGateOf(out, &b, defaultWebStartupBudget()); g.TapWait < 2 {
+	if g := webGateOf(newWebSizeTable(out), &b, defaultWebStartupBudget()); g.TapWait < 2 {
 		t.Errorf("測った値が group の見積もりより短くても、見積もりを使うはず: %+v", g)
 	}
 }
 
 func TestGateRedWhenOverBudget(t *testing.T) {
 	out, b := tapWaitFixture(t)
-	if g := webGateOf(out, &b, webStartupBudget{Seconds: 1}); g.green() {
+	if g := webGateOf(newWebSizeTable(out), &b, webStartupBudget{Seconds: 1}); g.green() {
 		t.Errorf("予算 1 秒は超えるはず: %+v", g)
 	}
 }
 
 func TestGateNotesBudgetOverDefault(t *testing.T) {
 	out, b := tapWaitFixture(t)
-	g := webGateOf(out, &b, webStartupBudget{Seconds: 20, Why: "理由"})
+	g := webGateOf(newWebSizeTable(out), &b, webStartupBudget{Seconds: 20, Why: "理由"})
 	if len(g.Notes) == 0 || !strings.Contains(g.Notes[0], "★ 予算 20 秒") {
 		t.Errorf("既定より上の予算は ★ で出すはず: %v", g.Notes)
 	}

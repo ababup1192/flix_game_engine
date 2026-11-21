@@ -1,7 +1,11 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -122,31 +126,185 @@ func rerunWebBrowserChecks(dir string, b *webBundle) error {
 		fmt.Fprintln(os.Stderr, "web-check: Chrome が見つからないので --browser の確かめは飛ばした（bundle.json の checks を使う）")
 		return nil
 	}
-	checks := webBundleChecks{Title4g: "ok"}
-	if len(b.Deferred) > 0 {
-		r, err := checkWebMissingTitle(dir, webTitleFrames, webLoadCheckWait())
-		checks.Title4g, checks.SkippedWhy = webTitle4gOf(r, err)
-	}
-	if webTapNeedsMeasure(b) {
-		budget := defaultWebStartupBudget()
-		if b.StartupBudget != nil {
-			budget = *b.StartupBudget
-		}
-		m, why, err := measureWebTapWait(dir, budget.startKeys(), webLastWaitingArrival(b), webLoadCheckWait())
-		switch {
-		case err != nil:
-			// WhyNot: 測れない束で止めない — 古い fge-web.js の書き出しは待ちの記録を持たず、測れないのは束の誤りではない（書き出しと同じく見積もりと ★）。
-			checks.TapSkippedWhy = "測れなかった: " + err.Error()
-			fmt.Fprintf(os.Stderr, "web-check: 押した後を測れなかった: %v\n", err)
-		case why != "":
-			checks.TapSkippedWhy = why
-		default:
-			checks.TapWaitSeconds, checks.TapNoRecord = m.tapSeconds(), m.NoRecord
+	r := runWebBrowserChecks(dir, b, webBundleBudget(b).startKeys(), webBrowserCheckLog{
+		TapFailed: func(err error) { fmt.Fprintf(os.Stderr, "web-check: 押した後を測れなかった: %v\n", err) },
+		TapMeasured: func(m webTapMeasure) {
 			var w strings.Builder
 			writeWebTapMeasure(&w, &m, "")
 			fmt.Fprint(os.Stderr, strings.ReplaceAll(w.String(), "  押した後", "web-check: 押した後"))
+		},
+	})
+	b.Checks = &r.Checks
+	return nil
+}
+
+// webBundleBudget は束に写した予算（無ければ既定の 16 秒）。束に予算があれば書いた扱い（Declared）。
+func webBundleBudget(b *webBundle) webStartupBudget {
+	if b.StartupBudget == nil {
+		return defaultWebStartupBudget()
+	}
+	budget := *b.StartupBudget
+	budget.Declared = true
+	return budget
+}
+
+// webSumsReport は束のファイルと sums.json の照らし合わせ。
+type webSumsReport struct {
+	Mismatch     []string // 中身が合わない
+	MissingUsed  []string // 載っているのに無い・頁が取る物
+	MissingSpare []string // 載っているのに無い・頁が取らない控え（Opus の代わりの元の wav など）
+	VersionBad   bool
+	NoSums       bool
+}
+
+// checkWebSums は dir の sums.json と中身・version.txt を照らす。
+func checkWebSums(dir string, b *webBundle) webSumsReport {
+	var r webSumsReport
+	raw, err := os.ReadFile(filepath.Join(dir, webSumsFile))
+	if err != nil {
+		r.NoSums = true
+		return r
+	}
+	sums := map[string]string{}
+	if json.Unmarshal(raw, &sums) != nil {
+		r.NoSums = true
+		return r
+	}
+	h := sha256.Sum256(raw)
+	if v, err := os.ReadFile(filepath.Join(dir, "version.txt")); err == nil && strings.TrimSpace(string(v)) != hex.EncodeToString(h[:])[:12] {
+		r.VersionBad = true
+	}
+	used := webServedPaths(b)
+	keys := make([]string, 0, len(sums))
+	for k := range sums {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, rel := range keys {
+		data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(rel)))
+		if err != nil {
+			if used[rel] {
+				r.MissingUsed = append(r.MissingUsed, rel)
+			} else {
+				r.MissingSpare = append(r.MissingSpare, rel)
+			}
+			continue
+		}
+		got := sha256.Sum256(data)
+		if hex.EncodeToString(got[:]) != sums[rel] {
+			r.Mismatch = append(r.Mismatch, rel)
 		}
 	}
-	b.Checks = &checks
-	return nil
+	return r
+}
+
+// webServedPaths は頁が取る物の道（書き出し先から・/ 区切り）。
+func webServedPaths(b *webBundle) map[string]bool {
+	used := map[string]bool{"bundle.json": true, "fge-web.js": true, "wasm-gc-runtime.js": true}
+	if b.WasmBrotli != "" {
+		used[b.WasmBrotli] = true
+		used[webBrotliDecoderFile] = true
+	} else {
+		used["classes.wasm"] = true
+	}
+	for _, rel := range b.copyList() {
+		used["assets/"+b.served(rel)] = true
+	}
+	return used
+}
+
+// webCheckResult は web-check の 1 束の結果。
+type webCheckResult struct {
+	Dir   string
+	Gate  webGate
+	Sums  webSumsReport
+	Leaks int
+}
+
+// runWebCheck は書き出し済みの束 dir を、束のファイルだけから計算し直して門に掛ける。
+func runWebCheck(dir string, browser bool) (webCheckResult, error) {
+	res := webCheckResult{Dir: dir}
+	b, err := loadWebBundle(dir)
+	if err != nil {
+		return res, err
+	}
+	if browser {
+		if err := rerunWebBrowserChecks(dir, &b); err != nil {
+			return res, err
+		}
+	}
+	budget := webBundleBudget(&b)
+	g := webGateOf(newWebSizeTable(dir), &b, budget)
+	g.BudgetDefault = b.StartupBudget == nil
+	if err := budget.validate("bundle.json の startupBudget"); err != nil {
+		g.Red = append(g.Red, strings.SplitN(err.Error(), "\n", 2)[0])
+	}
+	if b.Draft {
+		g.Red = append(g.Red, "draft の書き出し（"+strings.Join(b.DraftReasons, "・")+"）— --draft を付けずに書き出し直す")
+	}
+	g.Red = append(g.Red, webChecksRed(&b)...)
+	switch {
+	case b.Checks == nil:
+		g.Notes = append(g.Notes, "★ 4G のタイトルの確かめの記録が無い（0.105.0 までの書き出し）— web-check --browser で流す")
+	case b.Checks.Title4g == "skipped":
+		g.Notes = append(g.Notes, "★ 4G のタイトルの確かめを飛ばした書き出し（"+b.Checks.SkippedWhy+"）— web-check --browser で流す")
+	}
+	res.Sums = checkWebSums(dir, &b)
+	s := res.Sums
+	if s.NoSums {
+		g.Red = append(g.Red, "sums.json が無い（bin/fge export-web の書き出しでない・古い書き出し）— 書き出し直す")
+	}
+	if s.VersionBad {
+		g.Red = append(g.Red, "version.txt が sums.json と合わない — 書き出した後に束を替えた。書き出し直す")
+	}
+	if n := len(s.Mismatch); n > 0 {
+		g.Red = append(g.Red, fmt.Sprintf("書き出した後に中身が替わったファイル %d 本（%s）— 書き出し直す（Service Worker もキャッシュしない）", n, headList(s.Mismatch, 3)))
+	}
+	if n := len(s.MissingUsed); n > 0 {
+		g.Red = append(g.Red, fmt.Sprintf("頁が取るのに無いファイル %d 本（%s）", n, headList(s.MissingUsed, 3)))
+	}
+	if n := len(s.MissingSpare); n > 0 {
+		g.Notes = append(g.Notes, fmt.Sprintf("頁が取らない控え %d 本が無い（%s・消しても動く）", n, headList(s.MissingSpare, 2)))
+	}
+	finder := newWebLeakFinder(os.Getenv("HOME"), os.Getenv("USERPROFILE"))
+	for _, name := range []string{"classes.wasm", webWasmNamesFile} {
+		if data, err := os.ReadFile(filepath.Join(dir, name)); err == nil {
+			res.Leaks += len(finder.find(data))
+		}
+	}
+	if res.Leaks > 0 {
+		g.Red = append(g.Red, fmt.Sprintf("作業フォルダかホームのパスの形が wasm に %d 件 — bin/fge export-web で書き出し直す", res.Leaks))
+	}
+	res.Gate = g
+	return res, nil
+}
+
+func headList(list []string, n int) string {
+	if len(list) <= n {
+		return strings.Join(list, "・")
+	}
+	return strings.Join(list[:n], "・") + fmt.Sprintf(" ほか %d 本", len(list)-n)
+}
+
+// writeWebCheck は web-check の結果を書く（緑なら 1 行と ★）。
+func writeWebCheck(w io.Writer, r webCheckResult) {
+	g := r.Gate
+	verdict := "通す"
+	if !g.green() {
+		verdict = "止める"
+	}
+	fmt.Fprintf(w, "web-check: %s — %s・パス %d 件・食い違い %d 件（%s）\n", r.Dir, g.line(), r.Leaks,
+		len(r.Sums.Mismatch)+len(r.Sums.MissingUsed), verdict)
+	if g.BudgetDefault {
+		fmt.Fprintf(w, "  予算は bundle.json に無いので既定の %.0f 秒\n", webStartupTargetSeconds)
+	}
+	for _, red := range g.Red {
+		fmt.Fprintf(w, "  止めた: %s\n", red)
+	}
+	for _, n := range g.Notes {
+		fmt.Fprintf(w, "  %s\n", n)
+	}
+	if !g.green() && g.Playable > g.Budget.Seconds {
+		writeWebGateAdvice(w, g.Advice, "bin/fge export-web <ゲーム> の終わりの「後回しの候補」を見る")
+	}
 }

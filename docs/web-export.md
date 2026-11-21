@@ -121,9 +121,9 @@ design の大きさの画面に描くつもりの絵（ぼかした背景だけ�
 - 強さは project.json の `web.compress`: `audioBitrateKbps`・`uncompressedAudio: [glob]`・`lossyImages: [{glob, quality}]`・`losslessImages: [{glob, why}]`・`fontAtlasScale`・`wasmBrotli`・`audio` / `images` を false で止める
 - 道具は ffmpeg（libopus）と cwebp・dwebp。無ければ圧縮せずに書き出して大きさの表に 1 行
 - アトラスの距離場は既定で辺を 1/2 に縮める（`fontAtlasScale: 0.5`・量は約半分・スマホの画面で見分けがつかない）。1 で縮めない。0.5 より下は込んだ漢字の縁が欠けるので受け付けない
-- wasm は brotli（最も強い 11）にした `classes.wasm.br` と解き手 `brotli-decode.js`（google/brotli・MIT）を一緒に配り、頁が自分で戻す（gzip より 4 割ほど小さい・置き場が gzip しか配らなくても効く）。解けない時は `classes.wasm` を取る。道具は brotli。止めるのは `wasmBrotli: false`
-  - brotli は PATH → engine の devbox → Homebrew と nix の profile の bin → nix の store（`/nix/store/*-brotli-<版>/bin/brotli` の版の新しい物）の順に探す。Finder から開いた Studio のように PATH が細くても、手で PATH を足さずに見つかる。
-  - どこにも無い時は gzip のまま配り、`★ wasm を brotli にできず …4G（1.6 Mbps）で起動が約 N 秒遅くなる` を書き出しの途中と終わりの両方に出す（止めない）。
+- wasm は brotli（最も強い 11）にした `classes.wasm.br` と解き手 `brotli-decode.js`（google/brotli・MIT）を一緒に配り、頁が自分で戻す（gzip より 4 割ほど小さい・置き場が gzip しか配らなくても効く）。解けない時は `classes.wasm` を取る。止めるのは `wasmBrotli: false`
+  - 詰めるのは bin/fge 自身（pure Go の brotli・ウィンドウは brotli の CLI の既定と同じ大きさ）。brotli の道具は要らず、Finder から開いた Studio のように PATH が細い機械でも同じ `classes.wasm.br` ができる。
+  - `wasmBrotli: false` の時は gzip の大きさで秒に入り、門の次に打つ手に「wasmBrotli: false を外すと wasm が約 N 秒減る」が出る。
 - wasm の名前の区画（関数名・素の量の 2〜3 割）は `classes.names` へ抜いて配る。頁は止まった時だけそれを取り、stack の `wasm-function[番号]` に名前を付けて console へ出す
 
 ### 写真寄りの絵は既定で lossy（`losslessImages`）
@@ -215,7 +215,7 @@ design の大きさの画面に描くつもりの絵（ぼかした背景だけ�
 - 後回しの絵を `deferredPolicy` で `onMissing: "placeholder"` にする行は `why` が要る（届くまで描かずに進み、押した後に黒いコマが出るため）
 - ⑨'（`?net=4g` のタイトルの 120 コマ）で、タイトルが届いていない後回しの物を待って止まったら、それも止める（タイトルで使う物は後回しにしない）
 
-止まった時は、門の理由と「次に打つ手」（4G の秒が減る順に 3 つまで: 押した後の待ち・後回しの候補・brotli）が出て、**書き出し先は消える**（手で写す道へ赤の書き出しを残さない）。
+止まった時は、門の理由と「次に打つ手」（4G の秒が減る順に 3 つまで: 押した後の待ち・後回しの候補・`wasmBrotli: false` の時はそれを外す）が出て、**書き出し先は消える**（手で写す道へ赤の書き出しを残さない）。
 
 | 旗 | 赤の時 |
 |---|---|
@@ -328,7 +328,7 @@ bin/fge web-check <書き出したフォルダ>
 頁の物は全部 `?v=<版>` の付いた URL で取る。書き出しは 1 本ずつのファイルの sha256 の表 `sums.json` を置き、版はその `sums.json` の sha256 の頭 12 字（`version.txt` にも書く）。`index.html` は置き場のキャッシュで古い物が出ることがあるので、
 頁の起動役は `version.txt` をキャッシュを使わずに取り、その版で `fge-web.js` などを読む（取れない・3 秒で返らない時は書き出した時の版）。
 
-`index.html` の head の起動役は、起動の最初に要る物（`bundle.json`・`classes.wasm.br` と `brotli-decode.js`（brotli が無ければ `classes.wasm`）・2 本の js）の
+`index.html` の head の起動役は、起動の最初に要る物（`bundle.json`・`classes.wasm.br` と `brotli-decode.js`（`wasmBrotli: false` なら `classes.wasm`）・2 本の js）の
 `<link rel=preload>` をその版で出す。いつ出すか:
 
 | 頁 | preload を出す時 |
