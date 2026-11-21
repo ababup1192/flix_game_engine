@@ -3,8 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"net"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -109,14 +107,12 @@ func cmdWebBench(out, errOut *strings.Builder, args []string) int {
 		fmt.Fprintf(errOut, "web-bench: %s に index.html が無い。\n  次: make bench-web-export BENCH=<名前> で書き出す\n", o.Dir)
 		return 2
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, closeServer, err := serveLocalDir(o.Dir)
 	if err != nil {
 		fmt.Fprintf(errOut, "web-bench: 配る口を開けない: %v\n", err)
 		return 1
 	}
-	server := &http.Server{Handler: http.FileServer(http.Dir(o.Dir))}
-	go func() { _ = server.Serve(listener) }()
-	defer server.Close()
+	defer closeServer()
 
 	url := "http://" + listener.Addr().String() + "/index.html"
 	if o.Query != "" {

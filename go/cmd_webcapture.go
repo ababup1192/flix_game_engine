@@ -3,8 +3,6 @@ package main
 import (
 	"fmt"
 	"image/png"
-	"net"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -78,14 +76,12 @@ func cmdWebCapture(out, errOut *strings.Builder, args []string) int {
 	opt.URL = pos[0]
 	dest := pos[1]
 	if serveDir != "" {
-		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		listener, closeServer, err := serveLocalDir(serveDir)
 		if err != nil {
 			fmt.Fprintf(errOut, "web-capture: 配る口を開けない: %v\n", err)
 			return 1
 		}
-		server := &http.Server{Handler: http.FileServer(http.Dir(serveDir))}
-		go func() { _ = server.Serve(listener) }()
-		defer server.Close()
+		defer closeServer()
 		opt.URL = "http://" + listener.Addr().String() + "/" + strings.TrimPrefix(pos[0], "/")
 	}
 

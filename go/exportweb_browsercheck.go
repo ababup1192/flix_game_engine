@@ -75,15 +75,13 @@ func checkWebLoadsRecording(out string, frames, titleFrames int, wait time.Durat
 	return "", used, nil
 }
 
-// serveWebCheck は書き出し先 out を 127.0.0.1 の使い捨てのサーバーで配る。
+// serveWebCheck は書き出し先 out を確かめのために配る。
 func serveWebCheck(out string) (net.Listener, func(), error) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, closeServer, err := serveLocalDir(out)
 	if err != nil {
 		return nil, nil, fmt.Errorf("確かめ用のサーバーを開けない: %v", err)
 	}
-	srv := &http.Server{Handler: http.FileServer(http.Dir(out)), ReadHeaderTimeout: 10 * time.Second}
-	go srv.Serve(ln)
-	return ln, func() { srv.Close() }, nil
+	return ln, closeServer, nil
 }
 
 // webMissingWait は頁の window.fgeMissingWaits の 1 本（engine_web の fge-web.js が engine の待ちごとに積む）。
@@ -287,4 +285,15 @@ func runExportBrowserChecks(o exportWebOptions, c exportConfig, b *webBundle) (e
 		}
 	}
 	return r, nil
+}
+
+// serveLocalDir は dir を 127.0.0.1 の空いた口の使い捨ての http サーバーで配る（web-capture・web-bench・書き出しの確かめで共用）。
+func serveLocalDir(dir string) (net.Listener, func(), error) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, nil, err
+	}
+	srv := &http.Server{Handler: http.FileServer(http.Dir(dir)), ReadHeaderTimeout: 10 * time.Second}
+	go srv.Serve(ln)
+	return ln, func() { srv.Close() }, nil
 }
