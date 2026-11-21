@@ -350,16 +350,25 @@ function fgeCopyImageBitmap(device, path, buffer, row) {
   return "";
 }
 
-// 3D の場面の絵（key = fgePlatformKey の字）の ImageBitmap を texture のレベル 0 へ写す（fgeTexImagePlatform の WebGPU の版）。絵が無ければ偽。
+// 3D の場面の絵（key = fgePlatformKey の字）の ImageBitmap。
+function fgePlatformBitmap(key) { return fgeImages.get(key.slice(0, key.lastIndexOf("@"))); }
+// 3D の場面の絵を width × height の ImageBitmap で持っているか（閉じた bitmap は幅が 0）。
+function fgeHasPlatformImage(key, width, height) {
+  var bmp = fgePlatformBitmap(key);
+  return !!bmp && bmp.width === width && bmp.height === height;
+}
+// 3D の場面の絵を texture のレベル 0 へ写す（fgeTexImagePlatform の WebGPU の版）。絵が無い・大きさが texture と違う・同期に投げたら偽。
+// 知らせは呼ぶ側（WebGpuMaterials）が絵ごとに 1 回だけ出す。
 function fgeCopyPlatformImage(device, key, texture) {
-  var path = key.slice(0, key.lastIndexOf("@"));
-  var bmp = fgeImages.get(path);
-  if (!bmp) {
-    console.warn("[fge] 絵 " + path + " の ImageBitmap が無い — 上げない");
+  var bmp = fgePlatformBitmap(key);
+  if (!bmp || bmp.width !== texture.width || bmp.height !== texture.height) return false;
+  try {
+    device.queue.copyExternalImageToTexture({ source: bmp }, { texture: texture, premultipliedAlpha: false }, [bmp.width, bmp.height]);
+    return true;
+  } catch (e) {
+    console.warn("[fge] 絵 " + key + " を写せない: " + (e && e.message || e));
     return false;
   }
-  device.queue.copyExternalImageToTexture({ source: bmp }, { texture: texture, premultipliedAlpha: false }, [bmp.width, bmp.height]);
-  return true;
 }
 
 // 人の決定（device lost）: WebGL の文脈を失った時と同じく、戻すのは頁の読み直しとセーブから。

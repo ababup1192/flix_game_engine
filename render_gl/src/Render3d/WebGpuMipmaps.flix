@@ -85,11 +85,11 @@ mod Render3d.WebGpuMipmaps {
         let usage = Int32.bitwiseOr(Int32.bitwiseOr(TextureUsage.TEXTURE_BINDING, TextureUsage.RENDER_ATTACHMENT), TextureUsage.COPY_SRC);
         let texture = mm#gpu.createTexture(label, width, height, TextureFormat.RGBA8_UNORM, usage, levels, 1);
         encodeStep(mm, enc, Step.Copy, source.createView(), texture.createView(0, 1));
-        { texture = texture, levels = levels, bytes = fillLevels(mm, enc, texture, levels, average) }
+        { texture = texture, levels = levels, bytes = buildMipLevels(mm, enc, texture, levels, average) }
 
     /// レベル 0 が埋まった texture（levels レベル・RGBA8・usage に RENDER_ATTACHMENT と TEXTURE_BINDING）のレベル 1 から上を作る pass を enc の encoder へ積み
     /// （平均の仕方は average・呼ぶのは pass を開いていない時だけ）、レベルを合わせた置き場の大きさを返す。
-    pub def fillLevels(mm: Mipmaps, enc: Encoding, texture: Texture, levels: Int32, average: Mip.Average): Int64 \ IO =
+    pub def buildMipLevels(mm: Mipmaps, enc: Encoding, texture: Texture, levels: Int32, average: Mip.Average): Int64 \ IO =
         List.range(1, levels) |> List.forEach(level ->
             encodeStep(mm, enc, Step.Halve(average), texture.createView(level - 1, 1), texture.createView(level, 1)));
         bytesOf(texture.width(), texture.height(), levels)

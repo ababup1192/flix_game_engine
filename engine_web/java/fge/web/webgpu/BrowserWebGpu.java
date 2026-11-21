@@ -591,7 +591,7 @@ public final class BrowserWebGpu implements WebGpu {
 
     /**
      * 頁が持つ機種の側の絵（key = WebImages.platformKey の字）を、gpu（BrowserWebGpu）の texture のレベル 0 の左上へ copyExternalImageToTexture で写す（待たない）。
-     * 写した値は ImageBitmap のまま（premultipliedAlpha: false・色の変換なし・行 0 が絵の上）。絵が無ければ偽。texture は COPY_DST と RENDER_ATTACHMENT を持つ RGBA8。
+     * 写した値は ImageBitmap のまま（premultipliedAlpha: false・色の変換なし・行 0 が絵の上）。絵が無い・大きさが texture と違う・写せなければ偽。texture は COPY_DST と RENDER_ATTACHMENT を持つ RGBA8。
      * WhyNot: 写した後に ImageBitmap を手放さない — 同じ key を別の部屋がまた写す（WebGL2 の texImagePlatform と同じ）。
      */
     public static boolean copyPlatformImage(fge.webgpu.WebGpu gpu, String key, fge.webgpu.Texture texture) {
@@ -600,6 +600,10 @@ public final class BrowserWebGpu implements WebGpu {
 
     @JSBody(params = {"device", "key", "texture"}, script = "return fgeCopyPlatformImage(device, key, texture);")
     private static native boolean copyPlatformImageToTexture(GPUDevice device, String key, GPUTexture texture);
+
+    /** 頁が機種の側の絵 key を width × height の ImageBitmap で今も持っているか（copyPlatformImage で写せるか）。 */
+    @JSBody(params = {"key", "width", "height"}, script = "return fgeHasPlatformImage(key, width, height);")
+    public static native boolean hasPlatformImage(String key, int width, int height);
 
     /** device を失ったら、頁に WebGL の時と同じ文で読み直しを案内する。 */
     public void onDeviceLost() { watchLost(device); }
