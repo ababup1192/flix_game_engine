@@ -256,7 +256,7 @@ func (g webGate) advise(b *webBundle, t webTapWait, est webStartupEstimate) []st
 		out = append(out, fmt.Sprintf("押した後の待ち %.1f 秒（ロゴで覆えない分 %.1f 秒）→ %s", g.TapWait, over, hint))
 	}
 	if b.WasmBrotli == "" {
-		br := int64(float64(est.Boot.WasmWire) * 0.6)
+		br := int64(float64(est.Boot.WasmWire) * webBrotliToGzipRatio)
 		out = append(out, fmt.Sprintf("brotli が無い（wasm を gzip の大きさで配る）→ 入れると wasm が 約 -%.1f 秒（wasmBrotli: false は逃げ道にならない）", webSecondsFor(est.Boot.WasmWire-br)))
 	}
 	return out
