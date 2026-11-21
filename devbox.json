@@ -6,8 +6,7 @@
     "path:./nix/flix#flix_0_80_0",
     "ffmpeg@latest",
     "go@1.26",
-    "libwebp@latest",
-    "tinygo@0.43.0"
+    "libwebp@latest"
   ],
   "shell": {
     "init_hook": [
