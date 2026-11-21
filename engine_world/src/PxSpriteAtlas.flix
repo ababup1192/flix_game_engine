@@ -63,7 +63,7 @@ pub mod PxSpriteAtlas {
             })
         }) |> List.toMap;
         let buf: Array[Int32, rc] = Array.empty(rc, side * side);
-        let colors = colorTable(rc, doc#legend, resolver);
+        let colors = colorCache(rc, doc#legend, resolver);
         frames |> List.forEach(f -> {
             let (key, rows) = f;
             match Map.get(key, regions) {
@@ -173,27 +173,50 @@ pub mod PxSpriteAtlas {
         (rows |> List.foldLeft((acc, row) -> Int32.max(acc, String.length(row)), 0),
          List.length(rows))
 
-    /// legend の文字の番号 → ARGB の表。legend に無い文字の番号は 0（透明・書かない）。
-    // WhyNot: 画素ごとに resolver と argbOf を呼ばない — legend は数十色なのに格子は数十万画素あり、生成の時間の大半が同じ色の引き直しになる。
-    // WhyNot: 0 を「legend に無い」の値に使ってよい — argbOf は常に不透明（alpha 255）なので 0 を返さない。
-    def colorTable(rc: Region[r], legend: Map[Char, String], resolver: String -> Color): Array[Int32, r] \ r =
+    /// 1 回の生成の間だけ持つ、文字の番号 → ARGB の控え。table の値は 0 = legend に無い（透明・書かない）・
+    /// unresolved() = まだ引いていない・それ以外 = 引いた色。table の長さは legend の文字の番号の最大 + 1。
+    type alias ColorCache[r: Region] = {
+        table = Array[Int32, r],
+        legend = Map[Char, String],
+        resolver = String -> Color
+    }
+
+    /// まだ引いていない印。
+    // WhyNot: 0 と unresolved() を色と取り違えない — argbOf は常に不透明（alpha 255）なので、どちらも返さない。
+    def unresolved(): Int32 = 1
+
+    /// 全部の文字を「まだ引いていない」にした控え。
+    // WhyNot: legend の全部の key で先に resolver を呼ばない — 格子に出てこない key を知らない resolver（そこで止まる作り）が通らなくなる。
+    def colorCache(rc: Region[r], legend: Map[Char, String], resolver: String -> Color): ColorCache[r] \ r =
         let size = legend |> Map.foldLeftWithKey((acc, ch, _) -> Int32.max(acc, Char.toBmpCodePoint(ch) + 1), 0);
-        let table = Array.repeat(rc, size, 0);
-        legend |> Map.forEach((ch, key) -> Array.put(argbOf(resolver(key)), Char.toBmpCodePoint(ch), table));
-        table
+        { table = Array.repeat(rc, size, unresolved()), legend = legend, resolver = resolver }
+
+    /// 文字 ch の ARGB（legend に無ければ 0）。初めての文字だけ legend と resolver を引いて控える。
+    // WhyNot: 画素ごとに resolver と argbOf を呼ばない — legend は数十色なのに格子は数十万画素あり、生成の時間の大半が同じ色の引き直しになる。
+    def colorOf(colors: ColorCache[r], ch: Char): Int32 \ r =
+        let code = Char.toBmpCodePoint(ch);
+        if (code >= Array.length(colors#table)) 0
+        else {
+            let cached = Array.get(code, colors#table);
+            if (cached != unresolved()) cached
+            else {
+                let argb = Map.get(ch, colors#legend) |> Option.map(key -> argbOf(colors#resolver(key))) |> Option.getWithDefault(0);
+                Array.put(argb, code, colors#table);
+                argb
+            }
+        }
 
     /// 1 コマを buf の slot の位置に書き込む。legend に無い文字は透明のまま(書かない)。
-    def blitFrame(buf: Array[Int32, r], side: Int32, slot: Slot, colors: Array[Int32, r],
+    def blitFrame(buf: Array[Int32, r], side: Int32, slot: Slot, colors: ColorCache[r],
                   rows: List[String]): Unit \ r =
         rows |> List.forEachWithIndex((ry, row) ->
             blitRow(buf, colors, row, (slot#y + ry) * side + slot#x, 0))
 
     /// row の rx 文字目から行末までを buf の base + rx へ書き込む。
-    def blitRow(buf: Array[Int32, r], colors: Array[Int32, r], row: String, base: Int32, rx: Int32): Unit \ r =
+    def blitRow(buf: Array[Int32, r], colors: ColorCache[r], row: String, base: Int32, rx: Int32): Unit \ r =
         if (rx >= String.length(row)) ()
         else {
-            let code = Char.toBmpCodePoint(String.charAt(rx, row));
-            let argb = if (code < Array.length(colors)) Array.get(code, colors) else 0;
+            let argb = colorOf(colors, String.charAt(rx, row));
             if (argb != 0) Array.put(argb, base + rx, buf) else ();
             blitRow(buf, colors, row, base, rx + 1)
         }

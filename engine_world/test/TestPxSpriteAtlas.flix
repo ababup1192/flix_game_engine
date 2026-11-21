@@ -124,6 +124,16 @@ mod TestPxSpriteAtlas {
         let baked = PxSpriteAtlas.bake(mixedDoc(), mixedResolver);
         Assert.assertEq(expected = pixelsResolvedPerCell(mixedDoc(), mixedResolver, baked), baked#pixels)
 
+    /// 格子に出てこない legend の key（unused）では止まる resolver。
+    def strictResolver(key: String): Color =
+        if (key == "unused") bug!("resolver に格子に無い key が来た") else mixedResolver(key)
+
+    /// resolver は格子に出てくる字の key でだけ呼ばれる（使わない key で止まる resolver でも生成できる）。
+    @Test
+    def testBakeDoesNotResolveUnusedLegendKeys(): Unit \ Assert =
+        let baked = PxSpriteAtlas.bake(mixedDoc(), strictResolver);
+        Assert.assertEq(expected = pixelsResolvedPerCell(mixedDoc(), mixedResolver, baked), baked#pixels)
+
     /// argbOf の丸めは SoftRaster.byteOf と同じ round(0.5 切り上げ)・不透明。
     @Test
     def testArgbOfRounds(): Unit \ Assert =
