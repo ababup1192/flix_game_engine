@@ -94,6 +94,7 @@
 | 3D の当たり判定の形（向きのある箱・球・縦のカプセル）を作る・glb のノードから箱を作る・回す扉の箱 | CollisionShape3d（boxOfNode / boxesOfNodes・transformBox・debugMesh。2D は CollisionShape2D） |
 | 動かない 3D の箱をたくさん持ち、足元の近くの箱だけを引く | CollisionWorld3d（build / boxesNear。歩くのは engine_world の CharacterBody3d） |
 | 一人称で見ている物を調べる（クロスヘアの先の物の名前・壁で遮る）・画面の点から 3D のレイを伸ばす | Ray3d.pickNearest（Camera3d.forwardRay / screenPointToRay・的は Ray3d.boxTargetsOf・docs/scene3d.md の「見ている物を調べる」） |
+| Blender で頂点の色にベイクした明るさ（glTF の COLOR_0）で 3D の部屋を描く・PS1 の頂点の色の 2 倍 | Gltf の読み込みが COLOR_0 を読む（線形 → 画面の値で baseColorFactor に掛ける）+ Model3d.withVertexColorScale（docs/scene3d.md の「glb の頂点の色」） |
 | Blender でベイクした光（lightmap と 2 本目の uv）を 3D の部屋に貼る | Scene3d.withLightmap（Gltf の TEXCOORD_1 → Mesh3d.uvs2・docs/lightmap.md） |
 | 3D の絵が場面の絵の上限（256 MB・64 枚）を超える・大きすぎる絵を縮める | Gltf.loadTexturedUsing（limits）・Texture3d.limitSize・project.json の scene3dTextureBudgetMB / scene3dTextureBudgetCount（docs/lightmap.md の「場面の絵の予算」） |
 | 8bit の絵の値の意味（sRGB の曲線か線形か）と変換の式 | Texture3d.ColorSpace・srgbToLinear・linearToSrgb |

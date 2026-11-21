@@ -21,6 +21,7 @@ GL と WebGPU（窓・ブラウザ）と CPU（画面なしの描き出し・テ
   - [縦の線を平行のまま見下ろす（レンズシフト・HD-2D のカメラ）](#縦の線を平行のまま見下ろすレンズシフトhd-2d-のカメラ)
 - [glb のノードを名前で引く](#glb-のノードを名前で引く)
 - [glb の emissive](#glb-の-emissive)
+- [glb の頂点の色（COLOR_0・Blender でベイクした明るさ）](#glb-の頂点の色color_0blender-でベイクした明るさ)
 - [金属っぽさと粗さ（鏡面ハイライトと空の映り込み）](#金属っぽさと粗さ鏡面ハイライトと空の映り込み)
 - [周りの景色を映す（環境マップと箱の補正）](#周りの景色を映す環境マップと箱の補正)
 - [描く量（視錐台の外を間引く）](#描く量視錐台の外を間引く)
@@ -294,6 +295,30 @@ let byName = Model3d.nodesByName(collision);                     // たくさん
 - 絵の上限は `TextureLimits#baseColor`（emissive の絵も同じ色の絵）。`emissiveFactor` は emission の色（画面の値として読む）に、
   `KHR_materials_emissive_strength`（Blender の強さ 40 など）は線形の倍率として `emissionIntensity` に入る。spec の名前には factor だけが入る
   （強さだけ違う材質は同じプログラムを使う）。`Scene3d.withoutEmission` は `emissionIntensity` も 1 に戻す
+
+## glb の頂点の色（COLOR_0・Blender でベイクした明るさ）
+
+`Gltf` の読み込み（`load`・`fromGlb`・`loadTexturedUsing`・`loadTexturedPbrUsing`）は、primitive の `COLOR_0` を頂点の色として読み、baseColorFactor と頂点ごとに掛けて
+形の頂点の色にする。絵つきの材質は「絵 × 頂点の色」なので、Blender で部屋の明るさを頂点の色にベイクした glb は、ベイクした明るさで描かれる（GL・WebGPU・CPU とも同じ式）。
+
+```flix
+// 読み込みの時に 1 回。PS1 の GPU と同じく頂点の色の 0.5 を 1 倍として扱う（0.5 より明るくベイクした所が絵より明るくなる）
+let model = Gltf.loadTexturedUsing(decoder, Gltf.noTextureLimits(), "assets/room.glb") |> Result.map(Model3d.withVertexColorScale(2.0));
+// ベイクした明るさだけで見せる場面: 環境光を白・光なし（かすみは掛かる）
+{ environment = { ambient = Color.rgb(1.0, 1.0, 1.0), hemisphere = 0.0 | s#environment } | s }
+```
+
+- 読める形: `VEC3` と `VEC4`（α は読まない）。型: `FLOAT`・正規化した `UNSIGNED_BYTE`（÷255）・`UNSIGNED_SHORT`（÷65535）。ほかの型・正規化していない整数・
+  数が頂点の数と違う・NaN は、COLOR_0 を使わずに読んで 1 行知らせる（形は描ける）
+- 色の空間: glTF の決まりどおり線形の値として読み、0..1 に切ってから画面の値（sRGB の値）へ戻す（`Gltf.Internal.colorsOf`）
+- `COLOR_0` の無い glb は今までと同じ色（baseColorFactor だけ）
+- `Model3d.withVertexColorScale(k, model)` = 形と全部の parts の頂点の色に k を掛ける（`Mesh3d.withColorScale`。既定の読み込みは 1 倍・中身の鍵も変わる）。
+  頂点の色の 1 を超える値はそのまま描き手へ渡り、絵 × 頂点の色の後に画面の値で切れる（PS1 の 2 倍の掛け算と同じ）
+- WhyNot（Blender の見た目とのずれ）: 描き手は「絵 × 頂点の色」を画面の値どうしで掛け、その後で線形へ戻して光を掛ける。Blender は線形の値どうしで掛けるので、
+  暗くベイクした所（頂点の色が 0.2 前後）は engine の方が少し明るく、絵の色の差も少し大きく見える。線形どうしで掛けると、絵つきの材質を使う今までの全部の glb の色が変わるので掛け方は変えていない。
+  合わせるなら Blender の側でベイクした色を少し下げるか、`withVertexColorScale` で寄せる
+- 材質の無い part（頂点の色だけの形）は頂点の色を線形へ戻してから光を掛ける。`withVertexColorScale(2.0)` の 1 を超える色は線形へ戻すと 2 倍より強く伸びる（2.0 → 約 4.95）
+- gl-parity の `vertexColorTexture3d` が、絵 × 頂点の色（1 倍と 2 倍）の GL と CPU のそろいを見る（32 px・±1）
 
 ## 金属っぽさと粗さ（鏡面ハイライトと空の映り込み）
 

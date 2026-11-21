@@ -72,7 +72,7 @@ pub mod Gltf {
     pub def noTextureLimits(): TextureLimits = { baseColor = Texture3d.maxSide(), normal = Texture3d.maxSide() }
 
     /// path の .glb を、絵と材質つきで読む。parts に材質（baseColorTexture → Scene3d.texturedMaterial・normalTexture → 法線マップ・
-    /// emissive → emission・sampler の wrap）、textures に BIN に埋めた画像（decoder で解く）。baseColorFactor は頂点の色に書き込んであり、VertexColor で掛かる。
+    /// emissive → emission・sampler の wrap）、textures に BIN に埋めた画像（decoder で解く）。baseColorFactor × COLOR_0（線形 → 画面の値・Gltf.Internal.colorsOf）は頂点の色に書き込んであり、VertexColor で掛かる。
     /// 絵も emissive も無い材質の primitive は材質 None（頂点の色で描く）。読めない・壊れている時は Err（パスつき）。
     /// emissive（emissiveFactor。emissiveTexture があれば絵 × それ。KHR_materials_emissive_strength は Scene3d.withEmissionIntensity）の付く材質は光る
     /// （glTF の決まりどおり。止めるなら Scene3d.withoutEmission）。emissive の付く材質の spec の名前は "gltf:" で始まり、
@@ -901,6 +901,7 @@ pub mod Gltf {
             color <- baseColorOf(linear, glb, prim)
         ) yield {
             let count = positions#count;
+            let vertexColors = vertexColorsOf(glb, attributes, count) |> Option.map(a -> (a#width, a#values));
             let uvs = optionalAttribute(glb, attributes, "TEXCOORD_0", 2, count);
             let uvs2 = optionalAttribute(glb, attributes, "TEXCOORD_1", 2, count);
             let tangents = optionalAttribute(glb, attributes, "TANGENT", 4, count);
@@ -914,11 +915,23 @@ pub mod Gltf {
                 Vec3.normalized(Mat4.applyDir(normalMat, Gltf.Internal.vec3At(n#values, v * 3))))), normals);
             let placedTangents = forM (_ <- uvs; t <- tangents) yield placeTangents(transform, t#values);
             let part = { positions = placedPositions, normals = Option.getWithDefault(Vector.empty(), placedNormals),
-                         colors = rowsOf(count, Vector.length(color), (_, c) -> Vector.get(c, color)), indices = indexList,
+                         colors = Gltf.Internal.colorsOf(count, color, vertexColors), indices = indexList,
                          joints = fst(skin), weights = snd(skin), uvs = Option.map(a -> a#values, uvs), tangents = placedTangents,
                          uvs2 = Option.map(a -> a#values, uvs2), material = intOf("material", prim) };
             if (Option.nonEmpty(normals)) part else flatShaded(part)
         }
+
+    /// COLOR_0 を読む（読める形と型は Gltf.Internal.colorAccessorProblem）。無ければ None・読めない時は使わずに 1 行知らせる。
+    def vertexColorsOf(glb: Glb, attributes: Obj, count: Int32): Option[Accessor] =
+        intOf("COLOR_0", attributes) |> Option.flatMap(k -> {
+            let normalized = objectAt("accessors", k, glb#json) |> Result.toOption |> Option.exists(acc -> Map.get("normalized", acc) == Some(Util.Json.Json.JBool(true)));
+            let checked = readAccessor(glb, k) |> Result.flatMap(a ->
+                Gltf.Internal.colorAccessorProblem(a#width, a#componentType, normalized) |> Option.map(Err) |> Option.getWithDefault(Ok(a)));
+            match checked {
+                case Ok(a)  => usableAttribute("COLOR_0", count, a)
+                case Err(e) => Log.warnThen("${e} — COLOR_0 を使わずに読む", None)
+            }
+        })
 
     /// 無くても形は描ける頂点の欄（TEXCOORD_0・TANGENT）を読む。読めない・数が頂点の数と違う・NaN か無限がある時は、
     /// その欄を使わずに続けて 1 行知らせる（None）。
@@ -977,7 +990,7 @@ pub mod Gltf {
     /// baseColorFactor を頂点の色にする。材質や baseColorFactor が無ければ白。linear が偽なら値をそのまま（画面の値として）、
     /// 真なら glTF の決まりどおり線形の値として読み、頂点の色（画面の値）へ戻して書く（描き手は頂点の色を線形へ戻すので、元の線形の値に戻る）。
     // WhyNot: 既存の口（loadTexturedUsing）は線形として読まない — OBJ の Kd も Blender の値を画面の値（sRGB の値）として読む。
-    //   片方だけ直すと同じ Blender の色が形式で違って見え、既存のゲームの色が変わる。COLOR_0 と emissiveFactor も同じく画面の値として読む。
+    //   片方だけ直すと同じ Blender の色が形式で違って見え、既存のゲームの色が変わる。emissiveFactor も同じく画面の値として読む（COLOR_0 は Gltf.Internal.colorsOf）。
     // WhyNot: PBR の口（loadTexturedPbrUsing）は線形として読む — 画面の値として読むと、金・赤が濃く、暗い色が黒く潰れて Blender の手本と合わない。
     def baseColorOf(linear: Bool, glb: Glb, prim: Obj): Result[String, Vector[Float64]] =
         let white = Vector#{ 1.0, 1.0, 1.0 };

@@ -896,6 +896,8 @@
 - 2 本目の uv（lightmap を読む UV。頂点ごとに u・v の 2 つ・(0, 0) が絵の左上）を付ける。Unity の uv2・Godot の UV2・
   `pub def withUvs2(uvs: Vector[Float64], m: Mesh3d): Result[String, Mesh3d]`
 - `pub def fromObj(objText: String, mtlText: String): Result[String, Mesh3d]`
+- 頂点の色に k を掛けた形（1 を超えてよい。材質は絵 × 頂点の色なので、2 で頂点の色の 0.5 が絵のままの明るさになる）。
+  `pub def withColorScale(k: Float64, m: Mesh3d): Mesh3d`
 - 中身の鍵（位置・色・番号の SHA-256 の 16 進。uv つきは uv とタンジェントも）。同じ中身なら同じ字になる。GL はこれで頂点バッファを引く。
   `pub def contentHash(m: Mesh3d): String`
 - `pub def withContentKey(key: String, m: Mesh3d): Mesh3d`
@@ -942,6 +944,8 @@
 - primitive 1 つ。mesh = 形（uv を持つ primitive だけ uv つき。ノードの world の行列は焼き込んである）・
   `pub type alias ModelPart = { mesh = Mesh3d.Mesh3d, material = Option[Scene3d.Material3d], node = Option[Int32], gltfMaterial = Option[GltfMaterial] }`
 - `pub type alias Model3d = { mesh = Mesh3d.Mesh3d, skin = Option[Skin3d.Skin3d], clips = Map[String, AnimationClip3d.AnimationClip3d], parts = List[ModelPart], textures = List[Texture3d.Texture3d], nodes = List[ModelNode] }`
+- 形と全部の parts の頂点の色に k を掛けた物（Mesh3d.withColorScale）。PS1 の GPU と同じく頂点の色の 0.5 を 1 倍として明るくもできる掛け算は k = 2
+  `pub def withVertexColorScale(k: Float64, model: Model3d): Model3d`
 - glTF のノード 1 つ。座標は engine の座標（左手系。Gltf の頭の X の反転を済ませた物）。
   `pub type alias ModelNode = { name = String, parent = Option[Int32], local = Mat4.Mat4, world = Mat4.Mat4, localBounds = Option[Mesh3d.Bounds], parts = List[Int32] }`
 - glTF の材質の alphaMode。Opaque = 不透明・Mask = alphaCutoff で抜く・Blend = 半透明。

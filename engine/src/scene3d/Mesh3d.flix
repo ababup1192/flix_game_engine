@@ -508,6 +508,16 @@ pub mod Mesh3d {
         }, ("", Map.empty()));
         found
 
+    /// 頂点の色に k を掛けた形（1 を超えてよい。材質は絵 × 頂点の色なので、2 で頂点の色の 0.5 が絵のままの明るさになる）。
+    /// 中身の鍵も k を足した物にする（withContentKey の鍵の形でも、掛ける前と同じ鍵にならない）。k が 1 なら m のまま。
+    pub def withColorScale(k: Float64, m: Mesh3d): Mesh3d =
+        if (k == 1.0) m
+        else {
+            let r = recOf(m);
+            let tag = (h: Lazy[String]) -> lazy digestOf("colorScale|${k}|${force h}", Nil, Nil);
+            Mesh3dData.Mesh3dData({ vertices = { colors = Vector.map(c -> c * k, r#vertices#colors) | r#vertices }, hash = tag(r#hash), baseHash = tag(r#baseHash) | r })
+        }
+
     /// 中身の鍵（位置・色・番号の SHA-256 の 16 進。uv つきは uv とタンジェントも）。同じ中身なら同じ字になる。GL はこれで頂点バッファを引く。
     pub def contentHash(m: Mesh3d): String = force recOf(m)#hash
 

@@ -46,7 +46,7 @@ mod Scenes {
             :: passChain() :: passLaterRead() :: passMask() :: passHalf() :: passQuarterOdd() :: linearRead()
             :: castShadow() :: paramRead() :: depthRed() :: afterScene3d() :: sceneBetweenBoxes() :: materialStripes() :: spotShadow() :: skinBend()
             :: texturedBox() :: normalBump() :: skinNormal()
-            :: mipFloor() :: mipFloorScaled() :: mipFloorWorld() :: psxFloor3d() :: psxBox3d() :: psxSkin3d() :: gltfTextured() :: windowPass3d()
+            :: mipFloor() :: mipFloorScaled() :: mipFloorWorld() :: psxFloor3d() :: psxBox3d() :: psxSkin3d() :: vertexColorTexture3d() :: gltfTextured() :: windowPass3d()
             :: hdrPass() :: hdrWindowHalf() :: hdrMultiply() :: texSizeScaled() :: tonemap() :: fxaa()
             :: lightmapBaked3d() :: lightmapNormal3d() :: spotSoftEdge3d() :: gltfEmissive3d() :: cullOffscreen3d()
             :: skyGradient3d() :: glassPane3d() :: doubleSided3d() :: msaaEdges()
@@ -92,10 +92,12 @@ mod Scenes {
     /// 広げ、頂点の丸めは Float32 と Float64 の丸めが格子の真ん中に落ちた頂点を 1 画素ずらす（縁の 1 列が丸ごと割れる）。アフィンの床は Nearest の絵の
     /// texel の境が画面の上で長い斜めの線になり、その線の上の画素が GPU の補間の丸めで隣の texel を読む（max ±214 は色の違う texel どうし）。
     /// 色の丸めかアフィンを取り違えると床の面（数万 px）が丸ごと違う。
+    /// vertexColorTexture3d（Apple Silicon で 32 px ±1）: 頂点の色の坂の補間の丸め。頂点の色を掛け忘れる・2 倍を取り違えると板の面（千 px の桁）が違う。
     pub def toleranceOf(name: String): Option[Int32] = match name {
         case "psxFloor3d"      => Some(800)
         case "psxBox3d"        => Some(100)
         case "psxSkin3d"       => Some(150)
+        case "vertexColorTexture3d" => Some(100)
         case "depthRed"        => Some(300)
         case "afterScene3d"    => Some(200)
         case "materialStripes" => Some(300)
@@ -578,6 +580,29 @@ mod Scenes {
             case Ok(mesh) => mesh
             case Err(e)   => bug!(e)
         }
+
+    // ── 頂点の色をベイクした絵つきの板（glTF の COLOR_0 → Mesh3d の頂点の色。材質は絵 × 頂点の色）。B 段階 ──
+    // 左の板は頂点ごとに暗い灰・橙・青・明るい灰の色、右の板は同じ色に Mesh3d.withColorScale(2.0)（PS1 の 2 倍の掛け算・1 を超える頂点の色）。
+    // 光は白の環境光だけ（ベイクした明るさで見せる場面の形）。頂点の色の補間か 2 倍を取り違えると板の面（数千 px）が丸ごと違う。
+    def bakedQuad(x0: Float64, x1: Float64, y0: Float64, y1: Float64, z: Float64): Mesh3d.Mesh3d =
+        let positions = Vector#{ x0, y0, z, x0, y1, z, x1, y1, z, x1, y0, z };
+        let normals = Vector#{ 0.0, 0.0, -1.0, 0.0, 0.0, -1.0, 0.0, 0.0, -1.0, 0.0, 0.0, -1.0 };
+        let colors = Vector#{ 0.2, 0.2, 0.2, 1.0, 0.6, 0.3, 0.5, 0.5, 1.0, 0.45, 0.45, 0.45 };
+        let built = Mesh3d.fromArrays({ positions = positions, normals = normals, colors = colors, indices = Vector#{ 0, 1, 2, 0, 2, 3 }, skin = None })
+            |> Result.flatMap(Mesh3d.withUvs(Vector#{ 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0 }));
+        match built {
+            case Ok(mesh) => mesh
+            case Err(e)   => bug!(e)
+        }
+
+    def vertexColorTexture3d(): Scene =
+        let tex = parityTexture();
+        let material = Scene3d.texturedMaterial(Texture3d.name(tex), ShaderDoc.FilterMode.Nearest);
+        let left = Scene3d.meshInstance(bakedQuad(-4.6, -0.6, -2.4, 2.4, 10.0), Mat4.identity()) |> Scene3d.withMaterial(material);
+        let right = Scene3d.meshInstance(Mesh3d.withColorScale(2.0, bakedQuad(0.6, 4.6, -2.4, 2.4, 10.0)), Mat4.identity()) |> Scene3d.withMaterial(material);
+        let scene = { textures = tex :: Nil | flatScene({ x = 240.0, y = 140.0 }, 1, left :: right :: Nil, Nil) };
+        { name = "vertexColorTexture3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
 
     // ── scene 18: 3D の材質（Scene3d.withMaterial → GL は材質のプログラム・CPU は ShaderEval の材質）。B 段階 ──
     // 左の板は World.x の 1 単位ごとの縞（赤と黄）。右の板は cutout で World.y の縞の半分を抜き、色は Param で渡す。

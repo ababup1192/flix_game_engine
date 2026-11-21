@@ -17,6 +17,11 @@ pub mod Model3d {
     pub type alias Model3d = { mesh = Mesh3d.Mesh3d, skin = Option[Skin3d.Skin3d], clips = Map[String, AnimationClip3d.AnimationClip3d],
                                parts = List[ModelPart], textures = List[Texture3d.Texture3d], nodes = List[ModelNode] }
 
+    /// 形と全部の parts の頂点の色に k を掛けた物（Mesh3d.withColorScale）。PS1 の GPU と同じく頂点の色の 0.5 を 1 倍として明るくもできる掛け算は k = 2
+    /// （Blender で 0.5 より明るくベイクした所が絵より明るくなる）。既定の読み込みは 1 倍。読み込みの時に 1 回呼ぶ。
+    pub def withVertexColorScale(k: Float64, model: Model3d): Model3d =
+        { mesh = Mesh3d.withColorScale(k, model#mesh), parts = model#parts |> List.map(p -> { mesh = Mesh3d.withColorScale(k, p#mesh) | p }) | model }
+
     /// glTF のノード 1 つ。座標は engine の座標（左手系。Gltf の頭の X の反転を済ませた物）。
     /// - name = glTF の name（無ければ ""。glTF は同じ名前を許す）
     /// - parent = 親のノードの番号（nodes の何番目か。根は None）
@@ -89,9 +94,9 @@ pub mod Model3d {
     /// ノードの world の原点（world の行列の平行移動の列）。
     pub def nodeOrigin(node: ModelNode): Vec3.Vec3 = Mat4.apply(node#world, Vec3.zero())
 
-    /// ノード node から出た parts の形（world を焼き込んだ頂点）を、そのノードの局所の座標へ戻す行列（焼き込みに使った world の逆行列）。
+    /// ノード node から出た parts の形（world をベイクした頂点）を、そのノードの局所の座標へ戻す行列（焼き込みに使った world の逆行列）。
     /// 回す扉は、そのノードの parts を `node#world × 回転 × これ` で置く（ノードの原点のまわりで回る）。
-    /// None: 逆行列の無い world・skin のある glb（skin のある glb の形はジョイントに付けて焼く物があり、ノードの world と焼いた行列が違いうる）。
+    /// None: 逆行列の無い world・skin のある glb（skin のある glb の形はジョイントに付けてベイクする物があり、ノードの world とベイクした行列が違いうる）。
     // WhyNot: 部品の番号で引かない — parts と nodes をそのたびに頭から辿り、全部の部品に回すと二乗になる。部品はノードの parts から引ける。
     pub def partLocalToNode(node: ModelNode, model: Model3d): Option[Mat4.Mat4] =
         if (Option.nonEmpty(model#skin)) None else Mat4.inverse(node#world)
