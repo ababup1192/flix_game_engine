@@ -312,6 +312,8 @@ let model = Gltf.loadTexturedUsing(decoder, Gltf.noTextureLimits(), "assets/room
 - 読める形: `VEC3` と `VEC4`（α は読まない）。型: `FLOAT`・正規化した `UNSIGNED_BYTE`（÷255）・`UNSIGNED_SHORT`（÷65535）。ほかの型・正規化していない整数・
   数が頂点の数と違う・NaN は、COLOR_0 を使わずに読んで 1 行知らせる（形は描ける）
 - 色の空間: glTF の決まりどおり線形の値として読み、0..1 に切ってから画面の値（sRGB の値）へ戻す（`Gltf.Internal.colorsOf`）
+  - WhyNot（ベイクの道具が画面の値を書く時）: 決まりは線形。画面の値（sRGB の値）を線形に直さずに COLOR_0 へ書くと、読む時にもう一度画面の値へ戻すので、
+    暗い所が持ち上がって明るく白っぽく出る（0.5 → 約 0.74）。書き出す前に線形へ直す（スクリプトで数を直に入れる時は sRGB → 線形の式を通す）
 - `COLOR_0` の無い glb は今までと同じ色（baseColorFactor だけ）
 - `Model3d.withVertexColorScale(k, model)` = 形と全部の parts の頂点の色に k を掛ける（`Mesh3d.withColorScale`。既定の読み込みは 1 倍・中身の鍵も変わる）。
   頂点の色の 1 を超える値はそのまま描き手へ渡り、絵 × 頂点の色の後に画面の値で切れる（PS1 の 2 倍の掛け算と同じ）
