@@ -116,24 +116,36 @@ pub mod PostStack.Internal.Passes {
             |> Option.getWithDefault(Nil);
         let focusParams = focus |> Option.map(fo -> fo#params) |> Option.getWithDefault(Map.empty());
         let main = Render.withShaderParams(Map.union(paramsOf(f), focusParams), fill(mainSpec(aspect, current, f, focus)));
-        let finishing = finishingOf(input#size, f#fxaa, main, after);
+        let finishing = finishingOf(input#size, f#fxaa, f#crt |> Option.filter(isCrtVisible), main, after);
         let all = List.flatten((scenePass :: beforePasses) :: depthPasses :: fogDepthPasses :: fogPasses :: distortPasses :: softPasses :: bloomPasses :: finishing#passes :: Nil);
         { plan = { targets = List.toMap(List.map(e -> (fst(e)#name, snd(e)), all)) | Render.passPlan(List.map(fst, all)) },
           present = finishing#present, issues = issues }
 
-    /// 本編の面の後ろ: ps_post と自分の AfterViewTransform の Pass、画面へ置く面。
-    def finishingOf(size: Vec2.Vec2, fxaa: Bool, main: Render.PlacedItem, after: List[CustomPass]):
+    /// 本編の面の後ろ: ps_post と自分の AfterViewTransform の Pass、画面へ置く面。crt があれば FXAA の後（FXAA は ps_fxaa へ描く）に CRT のにじみの面を置く。
+    def finishingOf(size: Vec2.Vec2, fxaa: Bool, crt: Option[PostStack.Crt], main: Render.PlacedItem, after: List[CustomPass]):
             { passes = List[(Render.Pass, RenderTarget.Descriptor)], present = Render.PlacedItem } =
         let black = RenderTarget.LoadOp.Clear(Color.rgb(0.0, 0.0, 0.0));
-        if (not fxaa and List.isEmpty(after)) { passes = Nil, present = main }
+        if (not fxaa and List.isEmpty(after) and Option.isEmpty(crt)) { passes = Nil, present = main }
         else {
             let post = ({ name = PostStack.postName(), clear = black, items = main :: Nil }, RenderTarget.windowDescriptor());
             let afterPasses = after |> List.map(c ->
                 ({ name = c#name, clear = black, items = fullFill(size, c#spec) :: Nil }, { scale = c#scale | RenderTarget.windowDescriptor() }));
             let last = after |> List.map(c -> c#name) |> List.last |> Option.getWithDefault(PostStack.postName());
-            let present = if (fxaa) fullFill(size, PostProcess.fxaaSpec(last)) else fullFill(size, copySpec(last));
-            { passes = post :: afterPasses, present = present }
+            match crt {
+                case None    =>
+                    let present = if (fxaa) fullFill(size, PostProcess.fxaaSpec(last)) else fullFill(size, copySpec(last));
+                    { passes = post :: afterPasses, present = present }
+                case Some(c) =>
+                    let fxaaPasses = if (fxaa) ({ name = crtSourcePass(), clear = black, items = fullFill(size, PostProcess.fxaaSpec(last)) :: Nil }, RenderTarget.windowDescriptor()) :: Nil else Nil;
+                    let source = if (fxaa) crtSourcePass() else last;
+                    { passes = List.append(post :: afterPasses, fxaaPasses), present = fullFill(size, PostStack.Internal.Crt.spec(size, source, c)) }
+            }
         }
+
+    /// CRT のにじみの前に FXAA を描く Pass（FXAA と CRT の両方がある時だけ）。
+    def crtSourcePass(): String = "ps_fxaa"
+
+    def isCrtVisible(c: PostStack.Crt): Bool = c#compositeBlur > 0.0 or c#scanlines > 0.0 or c#chromaBleed > 0.0
 
     /// 場面の Pass を 1 を超える値を持てる形にするか（ブルーム・露出・曲線が 1 を超える値を読む時と、自分の Spec がある時）。
     def isHdrNeeded(f: Fields): Bool =

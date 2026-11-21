@@ -1859,6 +1859,8 @@
   `pub enum DistortionMask { case Full case BottomBand({ top = Float64, soft = Float64 }) case Texture(String) }`
 - 画面の歪み（熱のゆらぎ・水の中・魔法）。時間で流れる揺らぎの模様（向きと長さの違う波を重ねた物）で、場面の絵を読む位置をずらす。
   `pub type alias Distortion = { strength = Vec2.Vec2, noiseSize = Float64, speed = Vec2.Vec2, mask = DistortionMask }`
+- CRT のにじみ（ブラウン管にコンポジット映像で映した見え方）。仕上がりの絵の一番後に掛ける（PS1 風の色の丸めとディザの網目が横に溶けて中間色に見える）。
+  `pub type alias Crt = { compositeBlur = Float64, scanlines = Float64, chromaBleed = Float64 }`
 - 霧のむら（ゆっくり流れる濃い所と薄い所）。size = むらの大きさ（場面の長さ）・amount = 濃さを揺らす割合（0..1）・
   `pub type alias FogNoise = { size = Float64, amount = Float64, speed = Vec2.Vec2 }`
 - 高さの霧（地面の近くほど濃く、遠いほど濃くなる霧）。Unreal の Exponential Height Fog と同じ式で、名前もそろえた。
@@ -1885,6 +1887,8 @@
   `pub def colorGrade(): ColorGrade`
 - 画面全体を上へ流れる揺らぎで歪める（strength (2, 1)・noiseSize 24・speed (0, −20)・mask Full）。
   `pub def distortion(): Distortion`
+- compositeBlur 1・走査線と色のにじみ無しの CRT のにじみ。
+  `pub def crt(): Crt`
 - size 8・amount 0.4・speed (0.5, 0.2) の霧のむら。
   `pub def fogNoise(): FogNoise`
 - 青みの灰色・density 0.02・heightFalloff 0.2・むらと灯りのにじみ無しの高さの霧。
@@ -1913,6 +1917,7 @@
   `pub def withBackground(c: Color, s: Stack): Stack`
 - `pub def withDistortion(d: Option[Distortion], s: Stack): Stack`
 - `pub def withHeightFog(h: Option[HeightFog], s: Stack): Stack`
+- `pub def withCrt(c: Option[Crt], s: Stack): Stack`
 - `pub def withTime(t: Clock.Time[c], s: Stack): Stack`
 - `pub def exposureOf(s: Stack): Float64`
 - `pub def viewTransformOf(s: Stack): ViewTransform`
@@ -1928,6 +1933,7 @@
 - `pub def backgroundOf(s: Stack): Option[Color]`
 - `pub def distortionOf(s: Stack): Option[Distortion]`
 - `pub def heightFogOf(s: Stack): Option[HeightFog]`
+- `pub def crtOf(s: Stack): Option[Crt]`
 - withTime の秒。
   `pub def timeOf(s: Stack): Float64`
 - 場面（View が返す絵）を描いた Pass。BeforeBloom の自分の Spec はこれを読む。

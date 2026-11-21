@@ -518,4 +518,28 @@ mod TestPostStack {
     @Test
     def testDocWithoutDistortionHasNone(): Unit \ Assert =
         Assert.assertEq(expected = Some(true), parsed("{\"preset\": \"DuskOutdoor\"}") |> Result.toOption |> Option.map(x -> Option.isEmpty(PostStack.distortionOf(x))))
+
+    // ── CRT のにじみ ──
+
+    def crt(): PostStack.Crt = { compositeBlur = 1.5, scanlines = 0.3, chromaBleed = 2.0 }
+
+    @Test
+    def testCrtAllZeroKeepsThePlanAndThePicture(): Unit \ Assert =
+        let off = { compositeBlur = 0.0, scanlines = 0.0, chromaBleed = 0.0 };
+        Assert.assertEq(expected = planText(built(Nil, neutral())), planText(built(Nil, neutral() |> PostStack.withCrt(Some(off)))))
+
+    @Test
+    def testCrtDrawsThePostPassThenPresentsTheCrtSurface(): Unit \ Assert =
+        let b = built(Nil, neutral() |> PostStack.withCrt(Some(crt())));
+        Assert.assertEq(expected = (PostStack.postName() :: Nil, true),
+                        (b#plan#passes |> List.map(p -> p#name) |> List.filter(n -> n != PostStack.sceneName()),
+                         specOf(b#present) |> Option.exists(sp -> String.startsWith(prefix = "ps_crt:", sp#name))))
+
+    @Test
+    def testCrtAfterFxaaReadsTheFxaaPass(): Unit \ Assert =
+        Assert.assertTrue(List.memberOf("ps_fxaa", passNames(neutral() |> PostStack.withFxaa(true) |> PostStack.withCrt(Some(crt())))))
+
+    @Test
+    def testDocReadsCrt(): Unit \ Assert =
+        Assert.assertEq(expected = Some(Some(2.5)), parsed("{\"crt\": {\"compositeBlur\": 2.5}}") |> Result.toOption |> Option.map(x -> PostStack.crtOf(x) |> Option.map(c -> c#compositeBlur)))
 }

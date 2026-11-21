@@ -34,6 +34,7 @@ GL と WebGPU（窓・ブラウザ）と CPU（画面なしの描き出し・テ
 - [地面を這う霧（高さの霧・街灯のにじみ）](#地面を這う霧高さの霧街灯のにじみ)
   - [明るい所へ入った直後の白飛び（ExposureAdaptation）](#明るい所へ入った直後の白飛びexposureadaptation)
 - [PS1 風の描き方（色の丸めとディザ・頂点の揺れ・アフィンの uv）](#ps1-風の描き方色の丸めとディザ頂点の揺れアフィンの-uv)
+  - [テレビのにじみ（CRT・コンポジット映像）](#テレビのにじみcrtコンポジット映像)
   - [3 つの描き手の違い](#3-つの描き手の違い)
   - [見送った物（頂点ごとの光）](#見送った物頂点ごとの光)
 - [場面の絵の予算](#場面の絵の予算)
@@ -601,6 +602,28 @@ PSX 風シェーダーの界隈の手を、場面ごとに選んで掛ける（`
 - 霧は今の `Environment3d.fog`（DistanceFog）で足りる: 色を黒にすると目から near〜far で黒へまっすぐ溶ける（PS1 の depth cue と同じ形）。far より先は真っ黒で描かれる
   （描く量を減らすなら camera の `far` も縮める）。emission は霧に沈まない（非常口の灯りは遠くでも光る）。地の色を黒にすると継ぎ目がそろう
 - 入れていない物: Z バッファを外して奥から塗る形（ordering table）・テクスチャの色数を減らす CLUT・GTE の固定小数点の精度落ち・頂点ごとの光（グーロー。下の「見送った物」）
+
+### テレビのにじみ（CRT・コンポジット映像）
+
+PS1 の頃はテレビに映していたので、画素の境目とディザの網目が横ににじんで柔らかく見えた。PostStack の欄の 1 つで、仕上がりの一番後（FXAA の後）に掛かる:
+
+```flix
+App.withPostStack(_ -> PostStack.preset(PostStack.Preset.Neutral)
+    |> PostStack.withCrt(Some({ compositeBlur = 1.5, scanlines = 0.3, chromaBleed = 1.5 | PostStack.crt() })))
+```
+
+- `compositeBlur` = 横だけのぼかしの半径（design の px。1〜2 でコンポジットの帯域の狭さ。縦はにじませない）。横の 5 点（重み 1・4・6・4・1）を Linear で読む
+- `scanlines` = 走査線の濃さ（0..1。design の画素の行の境目を `1 − scanlines` まで暗くする。平均の明るさは `scanlines ÷ 2` だけ下がる）。
+  窓の画素で読むので、窓が design の 2 倍以上の時だけ見える（gl-parity の 320×180 の窓では効かない）
+- `chromaBleed` = 色の信号だけを足す横のにじみ（design の px）。明るさ（Rec.601 の重み）は `compositeBlur` の半径のまま、色（rgb − 明るさ）を `compositeBlur + chromaBleed` の半径で広げる
+- PS1 風の色の丸めとディザ（`Scene3d.withPsx`）は場面の中で掛かるので、にじみはその後: ディザの網目が横に溶けて中間色に見える
+- 掛かる範囲は View の絵の全部（2D も）。HUD（`App.withHudView`）には掛からない（字幕をにじませたくなければ HUD に置く）
+- どれも 0 以下なら Pass を足さない（使わない時の絵は前と同じ）。`Neutral` の preset だけで掛ける時も、場面を Pass へ描いて写し直す分だけ絵が変わりうるので、
+  にじみを使わないゲームは `App.withPostStack` を付けない
+- 3 つの描き手は同じ Spec を読む（新しい式は無い・`PostStack.Internal.Crt`）。bench/scene3d の部屋（`make psx-video LOOK=crt`・960×540）の PSNR: GL と CPU 51.6 dB・WebGPU と GL 67.8 dB・WebGPU と CPU 51.7 dB。
+  gl-parity の `postStackCrt`（54 px・元の psxBox3d の縁の割れを横のぼかしが広げた物）
+- 値は post.json の `crt` でも書ける（schema は [post.schema.json](post.schema.json)）
+- 重さ: 本編の面を ps_post へ描いて、画面へ 15 回（横の 5 点 × r・g・b。chromaBleed があれば 30 回）読む面を 1 枚
 
 ### 3 つの描き手の違い
 

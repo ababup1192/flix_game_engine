@@ -21,6 +21,12 @@ mod PostScenes {
                 |> PostStack.withVignette(Some({ strength = 0.35, inner = 0.35, outer = 1.05, center = { x = 0.5, y = 0.5 } }))
                 |> PostStack.withFxaa(true))
 
+    /// PS1 風の箱（Design の解像度・Bayer のディザ）に CRT のにじみ（横のぼかし 1.5 px・色だけのにじみ 2 px・走査線 0.3）。
+    /// 窓が design と同じ大きさなので、走査線は行の真ん中だけを読んで効かない（形が組めて GL と CPU で同じ絵になるかを見る）。
+    pub def postStackCrt(): Scenes.Scene =
+        sceneOf("postStackCrt", Scenes.psxWorld(),
+            PostStack.preset(PostStack.Preset.Neutral) |> PostStack.withCrt(Some({ compositeBlur = 1.5, scanlines = 0.3, chromaBleed = 2.0 })))
+
     /// 3D の場面（太陽で照らした床と板）に、ピントの奥行きを中心とする帯の外をぼかす。奥行きの絵は PostStack が場面から作る。
     pub def postStackDepthBand(): Scenes.Scene =
         sceneOf("postStackDepthBand", Scenes.sunWorld(),

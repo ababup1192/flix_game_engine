@@ -50,9 +50,10 @@ pub mod PostStack.Internal.Doc {
               dof <- dofFrom(Map.get("depthOfField", top), start#depthOfField);
               fxaa <- boolOr("fxaa", start#fxaa, top);
               distortion <- effectFrom("distortion", distortionFrom, PostStack.distortion(), top, start#distortion);
-              heightFog <- effectFrom("heightFog", heightFogFrom, PostStack.heightFog(), top, start#heightFog))
+              heightFog <- effectFrom("heightFog", heightFogFrom, PostStack.heightFog(), top, start#heightFog);
+              crt <- effectFrom("crt", crtFrom, PostStack.crt(), top, start#crt))
         yield { exposure = exposure, viewTransform = vt, bloom = bloom, vignette = vignette, colorGrade = grade, depthOfField = dof, fxaa = fxaa, distortion = distortion,
-                heightFog = heightFog,
+                heightFog = heightFog, crt = crt,
                 quality = qualityFrom(top, start#quality), msaa = msaaFrom(top, start#msaa) | start }
 
     // ── 名前の欄 ──
@@ -123,6 +124,10 @@ pub mod PostStack.Internal.Doc {
         forM (threshold <- numOr("threshold", b#threshold, m); smoothness <- numOr("smoothness", b#smoothness, m);
               size <- numOr("size", b#size, m); strength <- numOr("strength", b#strength, m))
         yield { threshold = threshold, smoothness = smoothness, size = size, strength = strength }
+
+    def crtFrom(m: Map[String, Json], c: PostStack.Crt): Result[JsonError, PostStack.Crt] =
+        forM (blur <- numOr("compositeBlur", c#compositeBlur, m); lines <- numOr("scanlines", c#scanlines, m); bleed <- numOr("chromaBleed", c#chromaBleed, m))
+        yield { compositeBlur = blur, scanlines = lines, chromaBleed = bleed }
 
     def vignetteFrom(m: Map[String, Json], v: Vignette): Result[JsonError, Vignette] =
         forM (strength <- numOr("strength", v#strength, m); inner <- numOr("inner", v#inner, m); outer <- numOr("outer", v#outer, m);

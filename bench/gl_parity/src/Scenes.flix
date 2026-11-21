@@ -56,7 +56,7 @@ mod Scenes {
             :: billboardShadowOf(BillboardShadowYard.SunSide.Axis, "billboardShadowAxis")
             :: billboardShadowOf(BillboardShadowYard.SunSide.Diagonal, "billboardShadowDiagonal")
             :: billboardShadowOf(BillboardShadowYard.SunSide.Side, "billboardShadowSide")
-            :: PostScenes.postStackLook() :: PostScenes.postStackDepthBand() :: Nil
+            :: PostScenes.postStackLook() :: PostScenes.postStackDepthBand() :: PostScenes.postStackCrt() :: Nil
 
     /// B 段階の scene のうち、違う画素の数に上限を置く物（名前 → 許す画素数）。3D の場面は GL と CPU で三角形の縁の
     /// 画素の取り方と浮動小数の丸めが違い、バイトでは一致しない（docs/backend-parity.md の Shader 面と同じ扱い）。
@@ -92,6 +92,7 @@ mod Scenes {
     /// 広げ、頂点の丸めは Float32 と Float64 の丸めが格子の真ん中に落ちた頂点を 1 画素ずらす（縁の 1 列が丸ごと割れる）。アフィンの床は Nearest の絵の
     /// texel の境が画面の上で長い斜めの線になり、その線の上の画素が GPU の補間の丸めで隣の texel を読む（max ±214 は色の違う texel どうし）。
     /// 色の丸めかアフィンを取り違えると床の面（数万 px）が丸ごと違う。
+    /// postStackCrt（Apple Silicon で 54 px ±63）: 元の psxBox3d の縁の割れ（6 px）を横のぼかしが 5 点に広げた物。ぼかしの向きか半径を取り違えると面の縁の全部（千 px の桁）が違う。
     /// vertexColorTexture3d（Apple Silicon で 32 px ±1）: 頂点の色の坂の補間の丸め。頂点の色を掛け忘れる・2 倍を取り違えると板の面（千 px の桁）が違う。
     pub def toleranceOf(name: String): Option[Int32] = match name {
         case "psxFloor3d"      => Some(800)
@@ -117,6 +118,7 @@ mod Scenes {
         case "fxaa"            => Some(300)
         case "postStackLook"      => Some(3000)
         case "postStackDepthBand" => Some(800)
+        case "postStackCrt"       => Some(200)
         case "lightmapBaked3d" => Some(600)
         case "lightmapNormal3d" => Some(400)
         case "spotSoftEdge3d"  => Some(100)
@@ -1102,6 +1104,9 @@ mod Scenes {
     // 値は half の丸めと 8bit の丸めがどちらの経路でも同じ側に落ちる数（×255 が .5 から離れる）にしてある。
     /// HDR の Pass に描く 2D の絵（PostScenes の後がけの場面も読む）。
     pub def hdrWorld(): List[Render.PlacedItem] = hdrPassItems()
+
+    /// PS1 風の箱の場面（psxBox3d）の描き物（PostScenes の CRT のにじみの場面が読む）。
+    pub def psxWorld(): List[Render.PlacedItem] = psxBox3d()#items
 
     /// 太陽で照らした床と板の 3D の場面を画面いっぱいに 1 つ（PostScenes の奥行きのぼかしの場面が読む）。
     pub def sunWorld(): List[Render.PlacedItem] =

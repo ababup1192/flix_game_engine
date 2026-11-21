@@ -76,6 +76,15 @@
       },
       "required": ["kind"]
     },
+    "crt": {
+      "type": ["object", "null"], "label": "CRT のにじみ",
+      "description": "ブラウン管にコンポジット映像で映した見え方。仕上がりの一番後に掛ける。null で外す",
+      "properties": {
+        "compositeBlur": { "type": "number", "minimum": 0, "maximum": 4, "label": "横のぼかし（design px）" },
+        "scanlines": { "type": "number", "minimum": 0, "maximum": 1, "label": "走査線の濃さ", "description": "窓が design の 2 倍以上の時だけ見える" },
+        "chromaBleed": { "type": "number", "minimum": 0, "maximum": 6, "label": "色だけの横のにじみ（design px）" }
+      }
+    },
     "fxaa": { "type": "boolean", "label": "FXAA", "description": "縁のギザギザをならす（曲線の後の表示の値に掛ける）" },
     "heightFog": {
       "type": ["object", "null"], "label": "高さの霧",

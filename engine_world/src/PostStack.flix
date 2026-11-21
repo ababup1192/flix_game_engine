@@ -3,7 +3,7 @@
 // ゲームは「どの効果をどの値で」を言い、順・Pass・描き先の大きさと形式・Spec はここが決める。中身は Render.Pass と ShaderDoc の面に展開する純粋な関数で、
 // 描き手（GL・WebGPU・CPU）は触らない。式の部品（トーンマップの曲線・FXAA・luma）が要る時だけ PostProcess を使う。
 //
-// 掛かる順（Blender の Color Management の順。霧と歪みはその前で、場面の絵そのものを描き替える）: 高さの霧 → 画面の歪み → 奥行きのぼかし → ブルーム → 色の仕上げ → ビネット → 露出 → view transform → FXAA。
+// 掛かる順（Blender の Color Management の順。霧と歪みはその前で、場面の絵そのものを描き替える）: 高さの霧 → 画面の歪み → 奥行きのぼかし → ブルーム → 色の仕上げ → ビネット → 露出 → view transform → FXAA → CRT のにじみ。
 // Standard と KhronosNeutral は場面の値を線形へ戻してから掛ける（Blender と同じ線形の値の上の式。曲線の門は engine_world/test の TestPostStackBlender）。
 // 掛ける範囲は View が返す絵の全部（App.withPostStack）。HUD（App.withHudView）とデバッグの重ねには掛からない —
 // トーンマップもぼかしも掛けたくない UI（会話の窓・メニュー・字幕）は HUD に置く。
@@ -83,6 +83,13 @@ pub mod PostStack {
     /// 毎コマ動かしてよいのは strength と時刻（Param で渡る）。noiseSize・mask を毎コマ動かすと描き手が program を作り直す。
     /// noiseSize ≤ 0 か strength が x・y とも 0 なら Pass を足さない（無いのと同じ絵）。
     pub type alias Distortion = { strength = Vec2.Vec2, noiseSize = Float64, speed = Vec2.Vec2, mask = DistortionMask }
+
+    /// CRT のにじみ（ブラウン管にコンポジット映像で映した見え方）。仕上がりの絵の一番後に掛ける（PS1 風の色の丸めとディザの網目が横に溶けて中間色に見える）。
+    /// compositeBlur = 横だけのぼかしの半径（design の px。1〜2 でコンポジットの帯域の狭さ。縦はにじませない）・
+    /// scanlines = 走査線の濃さ（0..1。design の画素の行の境目を 1 − scanlines まで暗くする。窓が design の 2 倍以上の時だけ見える）・
+    /// chromaBleed = 色の信号だけを足す横のにじみ（design の px。明るさは compositeBlur のまま、色だけ compositeBlur + chromaBleed の半径で広げる）。
+    /// どれも 0 以下なら Pass を足さない（無いのと同じ絵）。
+    pub type alias Crt = { compositeBlur = Float64, scanlines = Float64, chromaBleed = Float64 }
 
     /// 霧のむら（ゆっくり流れる濃い所と薄い所）。size = むらの大きさ（場面の長さ）・amount = 濃さを揺らす割合（0..1）・
     /// speed = 流れる速さ（場面の長さ / 秒・x と z）。
@@ -167,6 +174,9 @@ pub mod PostStack {
     /// 画面全体を上へ流れる揺らぎで歪める（strength (2, 1)・noiseSize 24・speed (0, −20)・mask Full）。
     pub def distortion(): Distortion = { strength = { x = 2.0, y = 1.0 }, noiseSize = 24.0, speed = { x = 0.0, y = -20.0 }, mask = DistortionMask.Full }
 
+    /// compositeBlur 1・走査線と色のにじみ無しの CRT のにじみ。
+    pub def crt(): Crt = { compositeBlur = 1.0, scanlines = 0.0, chromaBleed = 0.0 }
+
     /// size 8・amount 0.4・speed (0.5, 0.2) の霧のむら。
     pub def fogNoise(): FogNoise = { size = 8.0, amount = 0.4, speed = { x = 0.5, y = 0.2 } }
 
@@ -191,14 +201,14 @@ pub mod PostStack {
     type alias Fields = { exposure = Float64, viewTransform = ViewTransform, bloom = Option[Bloom], colorGrade = Option[ColorGrade],
                           vignette = Option[Vignette], depthOfField = Option[DepthOfField], fxaa = Bool, custom = List[CustomPass],
                           quality = Quality, msaa = Msaa, debugView = DebugView, background = Option[Color],
-                          distortion = Option[Distortion], time = Float64, heightFog = Option[HeightFog] }
+                          distortion = Option[Distortion], time = Float64, heightFog = Option[HeightFog], crt = Option[Crt] }
 
     def fieldsOf(s: Stack): Fields = match s { case StackData.StackData(f) => f }
 
     def neutralFields(): Fields =
         { exposure = 0.0, viewTransform = ViewTransform.Standard, bloom = None, colorGrade = None, vignette = None,
           depthOfField = None, fxaa = false, custom = Nil, quality = Quality.Auto, msaa = Msaa.Off, debugView = DebugView.Final,
-          background = None, distortion = None, time = 0.0, heightFog = None }
+          background = None, distortion = None, time = 0.0, heightFog = None, crt = None }
 
     def presetVignette(strength: Float64): Option[Vignette] = Some({ strength = strength, inner = 0.35, outer = 1.05, center = { x = 0.5, y = 0.5 } })
 
@@ -261,6 +271,8 @@ pub mod PostStack {
 
     pub def withHeightFog(h: Option[HeightFog], s: Stack): Stack = mapFields(f -> { heightFog = h | f }, s)
 
+    pub def withCrt(c: Option[Crt], s: Stack): Stack = mapFields(f -> { crt = c | f }, s)
+
     /// 時間で動く後がけ（Distortion と HeightFog のむら）の時刻。陽炎と霧は遊びの時計（ポーズで止まる）を渡す。描き出しとテストは決まった時刻を渡す。
     // WhyNot: App が自分の時刻を配らない — App は遊びの時計と実時間のどちらで流すかを知らない（docs/clock.md）。
     pub def withTime(t: Clock.Time[c], s: Stack): Stack = mapFields(f -> { time = Clock.secondsOf(t) | f }, s)
@@ -294,6 +306,8 @@ pub mod PostStack {
     pub def distortionOf(s: Stack): Option[Distortion] = fieldsOf(s)#distortion
 
     pub def heightFogOf(s: Stack): Option[HeightFog] = fieldsOf(s)#heightFog
+
+    pub def crtOf(s: Stack): Option[Crt] = fieldsOf(s)#crt
 
     /// withTime の秒。
     pub def timeOf(s: Stack): Float64 = fieldsOf(s)#time
