@@ -90,7 +90,7 @@ CI の `make release-publish` は版を出す前に `make gl-jar-publish` で置
 置き場の Release は `--prerelease --latest=false` で作る（「最新のリリース」は版のリリースのままにする。`bin/fge fetch-engine` が
 `releases/latest` でそれを見る）。`make gl-jar` は同じ機械・同じ JDK なら同じソースから同じバイトの jar を作る（中の時刻は `--date` で固定。JDK や機械が違えばバイトはずれうるが、pin はソースのハッシュなので門は変わらない）。
 
-`bin/fge export-web` は、書き出しの flix.toml（engine_full_web）が宣言する名前で `build/gl-jar` の jar を拾い、ゲームの `lib/external` へ置く。手元の書き出しは置き場の Release へ取りに行かない。
+`bin/fge export-web` は、書き出しの flix.toml（engine_full_web）が宣言する名前で GL の jar を拾い、ゲームの `lib/external` へ置く。拾う所は、束の置き場 `build/fpkg-store` の engine_full_web のエントリ（`make sync-engine-full-web` が入れる。置いた後は変わらない）が先で、そのエントリが無い engine（配った版など）だけ `build/gl-jar`。手元の書き出しは jar の置き場の Release へ取りに行かない。
 
 ## こけやすいゲート（特にエンジン拡張のあと）
 
