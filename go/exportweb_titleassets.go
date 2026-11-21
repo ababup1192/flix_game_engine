@@ -15,7 +15,7 @@ import (
 // WhyNot: もっと長くしない — 確かめは入力を送らないので、タイトルの後の場面へは進まない。長くしても候補は減らず、書き出しが延びるだけ。
 const webTitleFrames = 120
 
-// webUsedAssets は頁の window.fgeUsedAssets（engine_web の fge-web.js が ?usedAssets=1 で記録する物）。
+// webUsedAssets は頁の window.fgeUsedAssets（engine_web の fge-web.js が 旗 usedAssets で記録する物）。
 // 種類ごとに 名前か道 → 初めて使ったコマ（0 は最初のコマの前の読み込み）。Texture は描いた絵の名前（フォントの字は font_<名前>）・
 // Sound は鳴らした音の名前・File は読んだ素材の道・Early は後回しの絵か音を届く前に描こうとした・鳴らそうとした名前。
 type webUsedAssets struct {

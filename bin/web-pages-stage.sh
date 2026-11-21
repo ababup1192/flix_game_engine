@@ -117,7 +117,7 @@ fi
 # ── 5. サブフォルダの道で開けるか ──
 if [ "${NO_BROWSER_CHECK:-}" != 1 ]; then
   shot="$game/build/web-pages-check.png"
-  if "$fge" web-capture "$dest/index.html?capture=3&deferred=all" "$shot" --dir "$wt" --wait 90 >/dev/null; then
+  if "$fge" web-capture "$dest/index.html" "$shot" --dir "$wt" --dev capture:3,deferred:all --wait 90 >/dev/null; then
     say "ヘッドレスの Chrome で $dest/index.html を開き、3 コマ目まで描けた（${shot}）"
   else
     die "置いた頁を $dest/ の道で開けなかった（上の字を見る。コミットは残っているので、直したら流し直す）"
@@ -132,7 +132,7 @@ if [[ "$remote" =~ github\.com[:/]([^/]+)/([^/.]+)(\.git)?$ ]]; then
 fi
 echo
 say "手元で開く: $engine/bin/py3 -m http.server 8000 --bind 0.0.0.0 --directory $wt"
-say "  PC は http://127.0.0.1:8000/$dest/ ・スマホ（同じ Wi-Fi）は http://$(ipconfig getifaddr en0 2>/dev/null || echo '<この機械の IP>'):8000/$dest/?fps=1"
+say "  PC は http://127.0.0.1:8000/$dest/ ・スマホ（同じ Wi-Fi）は http://$(ipconfig getifaddr en0 2>/dev/null || echo '<この機械の IP>'):8000/$dest/?fge=fps"
 say "  見終えたら Ctrl-C でサーバーを止める"
 say "公開する（人が打つ）: git -C $wt push origin $branch"
 [ -z "$url" ] || say "  公開の後の URL: ${url}（Pages の反映に 1〜2 分）"

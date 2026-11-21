@@ -210,7 +210,7 @@ func reuseExport(out *strings.Builder, o exportWebOptions, c exportConfig) (stri
 	version, _ := os.ReadFile(filepath.Join(p.Out, "version.txt"))
 	fmt.Fprintf(out, "export-web: %s（版 %s・前と同じ入力なので使い回した）\n", p.Out, strings.TrimSpace(string(version)))
 	// WhyNot: 使い回す時に門を飛ばさない — 赤のまま書き出した物を緑の終わりの番号で返すと、写す手順がそのまま配る。
-	r, err := runWebCheck(p.Out, false)
+	r, err := runWebCheck(p.Out, false, webMeasureConditions{})
 	if err != nil {
 		return "", true, exportFailf(1, "fge export-web: 使い回す書き出しを読めない: %v\n", err)
 	}

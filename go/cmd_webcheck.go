@@ -9,17 +9,22 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/cdp"
 )
 
-const webCheckUsage = `使い方: fge web-check <書き出したフォルダ | 束の中のファイル…> [--browser]
+const webCheckUsage = `使い方: fge web-check <書き出したフォルダ | 束の中のファイル…> [--browser [--cpu <倍>] [--tap-delay <秒>]]
   bin/fge export-web の書き出し（gh-pages の根・site/・play/ に写した物も）を、束のファイルだけから計算し直して門に掛ける。
   見る物: 遊べるまで（すぐ押した時・4G）と bundle.json の startupBudget（無ければ既定 16 秒）・sums.json と中身の食い違い・
           wasm に残ったパスの形・draft のマーカー・書き出しの時の 4G のタイトルの確かめ（bundle.json の checks）
   ファイルの道を渡すと、上へ辿って bundle.json と sums.json がそろうフォルダを見る（同じフォルダは 1 回。束の外のファイルは飛ばす）
-  --browser  ヘッドレスの Chrome で 4G のタイトルの確かめと押した後の測りを流し直し、その結果で決める（Chrome が要る）
+  --browser  ヘッドレスの Chrome で 4G のタイトルの確かめと押した後の測りを流し直し、その結果で決める（Chrome が要る）。
+             押した後の速さの表（押してから最初のコマ・押してから波紋まで・Service Worker が付いた後の 2 回目の起動）も出す
+  --cpu <倍>        CPU を絞った測りを表と知らせに足す（例 4。門の数字は替えない）
+  --tap-delay <秒>  「タッチして開始」が出てから押すまでの間を空けた測りを表と知らせに足す（例 1.5。門の数字は替えない）
   終わりの番号: 0 通す / 1 止める / 2 呼び方の誤りか、書き出しのフォルダでない`
 
 func init() {
@@ -28,14 +33,33 @@ func init() {
 
 func cmdWebCheck(out, errOut *strings.Builder, rest []string, _ bool) int {
 	browser := false
+	var cond webMeasureConditions
 	var args []string
-	for _, a := range rest {
+	for i := 0; i < len(rest); i++ {
+		a := rest[i]
 		switch {
 		case a == "--help" || a == "-h":
 			fmt.Fprintln(out, webCheckUsage)
 			return 0
 		case a == "--browser":
 			browser = true
+		case a == "--cpu" || a == "--tap-delay":
+			v, ok := 0.0, i+1 < len(rest)
+			if ok {
+				var err error
+				v, err = strconv.ParseFloat(rest[i+1], 64)
+				ok = err == nil && v >= 0 && (a == "--tap-delay" || v >= 1)
+			}
+			if !ok {
+				fmt.Fprintf(errOut, "fge web-check: %s の値は数（--cpu は 1 以上の倍率・--tap-delay は 0 以上の秒）\n%s\n", a, webCheckUsage)
+				return 2
+			}
+			i++
+			if a == "--cpu" {
+				cond.CPU = v
+			} else {
+				cond.TapDelay = time.Duration(v * float64(time.Second))
+			}
 		case strings.HasPrefix(a, "--"):
 			fmt.Fprintf(errOut, "fge web-check: 知らない引数 %s\n%s\n", a, webCheckUsage)
 			return 2
@@ -47,6 +71,10 @@ func cmdWebCheck(out, errOut *strings.Builder, rest []string, _ bool) int {
 		fmt.Fprintf(errOut, "fge web-check: 書き出したフォルダを渡してください\n%s\n", webCheckUsage)
 		return 2
 	}
+	if !browser && !cond.isGate() {
+		fmt.Fprintf(errOut, "fge web-check: --cpu と --tap-delay は --browser と一緒に使う\n%s\n", webCheckUsage)
+		return 2
+	}
 	dirs, err := webCheckDirs(args)
 	if err != nil {
 		fmt.Fprintf(errOut, "fge web-check: %v\n", err)
@@ -54,7 +82,7 @@ func cmdWebCheck(out, errOut *strings.Builder, rest []string, _ bool) int {
 	}
 	code := 0
 	for _, dir := range dirs {
-		r, err := runWebCheck(dir, browser)
+		r, err := runWebCheck(dir, browser, cond)
 		if err != nil {
 			fmt.Fprintf(errOut, "fge web-check: %s: %v\n", dir, err)
 			return 2
@@ -120,22 +148,42 @@ func webBundleDirOf(file string) string {
 	}
 }
 
-// rerunWebBrowserChecks は ?net=4g のタイトルの確かめと押した後の測りを流し直し、b.Checks を置き替える（--browser）。
-func rerunWebBrowserChecks(dir string, b *webBundle) error {
+// rerunWebBrowserChecks は ?fge=4g のタイトルの確かめと押した後の測りを流し直し、b.Checks を置き替える（--browser）。
+// 押した後の速さの表（2 回目の起動を含む）も出す。cond が門の条件でなければ、同じ確かめを cond でもう 1 回流して表と知らせに足す（b.Checks は替えない）。
+func rerunWebBrowserChecks(dir string, b *webBundle, cond webMeasureConditions) error {
 	if _, err := cdp.FindChrome(); err != nil {
 		fmt.Fprintln(os.Stderr, "web-check: Chrome が見つからないので --browser の確かめは飛ばした（bundle.json の checks を使う）")
 		return nil
 	}
-	r := runWebBrowserChecks(dir, b, webBundleBudget(b).startKeys(), webBrowserCheckLog{
-		TapFailed: func(err error) { fmt.Fprintf(os.Stderr, "web-check: 押した後を測れなかった: %v\n", err) },
+	keys := webBundleBudget(b).startKeys()
+	r := runWebBrowserChecks(dir, b, keys, webBrowserCheckOptions{Speed: true}, webCheckBrowserLog(webMeasureConditions{}))
+	b.Checks = &r.Checks
+	rows := r.Timing
+	if !cond.isGate() {
+		extra := runWebBrowserChecks(dir, b, keys, webBrowserCheckOptions{Cond: cond, Speed: true}, webCheckBrowserLog(cond))
+		if len(b.Deferred) > 0 {
+			fmt.Fprintf(os.Stderr, "web-check: 知らせ（%s）: 4G のタイトルの確かめ %s\n", cond.label(), extra.Checks.Title4g)
+		}
+		rows = append(rows, extra.Timing...)
+	}
+	writeWebTapTimingRows(os.Stderr, rows)
+	return nil
+}
+
+// webCheckBrowserLog は web-check --browser の押した後の待ちの出し方（門の条件でない時は条件を頭に付けて知らせにする）。
+func webCheckBrowserLog(cond webMeasureConditions) webBrowserCheckLog {
+	head := "web-check: "
+	if !cond.isGate() {
+		head = "web-check: 知らせ（" + cond.label() + "）: "
+	}
+	return webBrowserCheckLog{
+		TapFailed: func(err error) { fmt.Fprintf(os.Stderr, "%s押した後を測れなかった: %v\n", head, err) },
 		TapMeasured: func(m webTapMeasure) {
 			var w strings.Builder
 			writeWebTapMeasure(&w, &m, "")
-			fmt.Fprint(os.Stderr, strings.ReplaceAll(w.String(), "  押した後", "web-check: 押した後"))
+			fmt.Fprint(os.Stderr, strings.ReplaceAll(w.String(), "  押した後", head+"押した後"))
 		},
-	})
-	b.Checks = &r.Checks
-	return nil
+	}
 }
 
 // webBundleBudget は束に写した予算（無ければ既定の 16 秒）。束に予算があれば書いた扱い（Declared）。
@@ -222,14 +270,15 @@ type webCheckResult struct {
 }
 
 // runWebCheck は書き出し済みの束 dir を、束のファイルだけから計算し直して門に掛ける。
-func runWebCheck(dir string, browser bool) (webCheckResult, error) {
+// cond は --browser の時に門とは別に流す測りの条件（零の値なら流さない）。
+func runWebCheck(dir string, browser bool, cond webMeasureConditions) (webCheckResult, error) {
 	res := webCheckResult{Dir: dir}
 	b, err := loadWebBundle(dir)
 	if err != nil {
 		return res, err
 	}
 	if browser {
-		if err := rerunWebBrowserChecks(dir, &b); err != nil {
+		if err := rerunWebBrowserChecks(dir, &b, cond); err != nil {
 			return res, err
 		}
 	}

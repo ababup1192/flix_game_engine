@@ -36,7 +36,8 @@ func webPreloads(b webBundle) []webPreload {
 // WhyNot: index.html に版を焼き込むだけにしない — GitHub Pages などの置き先は index.html にも max-age を付けて配り
 // （ゲームの側からは変えられない）、古い index.html が残ると古い ?v= を通して前の版を丸ごと読む。
 // 起動役が version.txt をキャッシュを使わずに確かめる。
-func stampWebIndex(html, hash string, preload []webPreload) (string, error) {
+// switchesJS は頁の旗の読み手（engine_web/js/fge-switches.js の中身。前の engine で無ければ空）で、頭の起動役の前に埋める。
+func stampWebIndex(html, hash string, preload []webPreload, switchesJS string) (string, error) {
 	seen := map[string]bool{}
 	first := -1
 	for _, loc := range webScriptTagRe.FindAllStringSubmatchIndex(html, -1) {
@@ -55,7 +56,27 @@ func stampWebIndex(html, hash string, preload []webPreload) (string, error) {
 		return "", fmt.Errorf("script の行より前に </head> が無い。次: index.html の head を閉じる")
 	}
 	rest := webScriptTagRe.ReplaceAllString(html[first:], "")
-	return html[:head] + webHeadScript(hash, preload) + html[head:first] + webBootScript + strings.TrimLeft(rest, "\n"), nil
+	return html[:head] + webSwitchesScript(switchesJS) + webHeadScript(hash, preload) + html[head:first] + webBootScript + strings.TrimLeft(rest, "\n"), nil
+}
+
+// webSwitchesSource は頁の旗の読み手の置き場の名前（engine_web/js の中）。
+const webSwitchesSource = "fge-switches.js"
+
+// readWebSwitchesJS は jsDir の頁の旗の読み手を読む（前の engine で無ければ空）。
+func readWebSwitchesJS(jsDir string) (string, error) {
+	src, err := os.ReadFile(filepath.Join(jsDir, webSwitchesSource))
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+	return string(src), err
+}
+
+// WhyNot: 読み手を別の <script src> にしない — 頭の起動役より先に要るので、取り物が 1 本増え、その往復を起動の頭で待つ。
+func webSwitchesScript(src string) string {
+	if src == "" {
+		return ""
+	}
+	return "<script>\n" + strings.TrimRight(src, "\n") + "\n</script>\n"
 }
 
 var webScriptTagRe = regexp.MustCompile(`<script\s+src="(fge-web\.js|wasm-gc-runtime\.js)"></script>\n?`)
@@ -74,6 +95,7 @@ var webScriptTagRe = regexp.MustCompile(`<script\s+src="(fge-web\.js|wasm-gc-run
 // WhyNot: 押した後は読み直さない — 遊び始めた所を消す。その時は古い版のまま遊び、次に開いた時に新しい版になる。
 // WhyNot: 読み直しを版ごとに 1 回にしない — 置き場の入れ替えの最中は version.txt が 2 つの版の間で揺れ、読み直しが止まらない。1 つのタブで 60 秒に 1 回まで。
 // WhyNot: 3 秒で打ち切った時に他の版のキャッシュを消させない — version.txt が答えていないので、今の版かどうか分からない。
+// WhyNot: 頁の旗の読み手（fgePageSwitches）が無い時に ?sw=0 を見ないままにしない — 前の engine で書き出すと読み手が埋まらず、抜け出す口が消える。
 func webHeadScript(hash string, preload []webPreload) string {
 	items := make([]string, 0, len(preload))
 	for _, p := range preload {
@@ -111,7 +133,8 @@ func webHeadScript(hash string, preload []webPreload) string {
   var sw = null;
   try {
     var c = navigator.serviceWorker && navigator.serviceWorker.controller;
-    if (c && c.scriptURL === new URL("sw.js", location.href).href && !/[?&]sw=0(&|$)/.test(location.search)) sw = c;
+    var off = typeof fgePageSwitches === "function" ? fgePageSwitches().switches.sw === false : /[?&]sw=0(&|$)/.test(location.search);
+    if (c && c.scriptURL === new URL("sw.js", location.href).href && !off) sw = c;
   } catch (e) { sw = null; }
   var nav = performance.getEntriesByType ? performance.getEntriesByType("navigation")[0] : null;
   if (sw || (nav && nav.transferSize > 0)) warm(baked);
@@ -191,7 +214,14 @@ func writeWebServiceWorker(jsDir, out, id string, on bool) error {
 	if err != nil {
 		return err
 	}
+	switches, err := readWebSwitchesJS(jsDir)
+	if err != nil {
+		return err
+	}
 	sw := strings.Replace(string(src), webServiceWorkerIDMark, string(quoted), 1)
+	if switches != "" {
+		sw = strings.TrimRight(switches, "\n") + "\n\n" + sw
+	}
 	return os.WriteFile(filepath.Join(out, webServiceWorkerFile), []byte(sw), 0o644)
 }
 
@@ -282,7 +312,11 @@ func writeWebPageMeta(p exportWebPaths, b webBundle, teavmCore string) (string, 
 	if err != nil {
 		return "", err
 	}
-	html, err := stampWebIndex(string(index), hash, webPreloads(b))
+	switches, err := readWebSwitchesJS(filepath.Dir(p.WebJS))
+	if err != nil {
+		return "", err
+	}
+	html, err := stampWebIndex(string(index), hash, webPreloads(b), switches)
 	if err != nil {
 		return "", fmt.Errorf("%s: %v", p.IndexHTML, err)
 	}

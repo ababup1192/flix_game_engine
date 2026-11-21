@@ -14,19 +14,27 @@ public final class Browser {
     @JSBody(script = "return fgeQueryPairs();")
     public static native String[] queryPairs();
 
-    /** 頁の URL に ?capture=<n> があるか（dt を固定して撮る時）。 */
+    /** 頁の旗 capture:&lt;n&gt; があるか（dt を固定して撮る時）。 */
     @JSBody(script = "return fgeCaptureFrame > 0;")
     public static native boolean isFrameCapture();
 
-    /** 頁の URL に ?usedAssets=1 か ?net=4g があるか（使った素材の名前を記録する時。書き出しの確かめが開く）。 */
+    /** 頁の旗 capture:&lt;n&gt; の n（撮るコマ。無ければ 0）。 */
+    @JSBody(script = "return fgeCaptureFrame;")
+    public static native int captureFrame();
+
+    /** 頁の旗 webgpuFail の値（prepare・canvas。無ければ空）。WebGPU から WebGL2 へ落ちる道を手で起こす時。 */
+    @JSBody(script = "return fgeSwitches.webgpuFail;")
+    public static native String webGpuFailMode();
+
+    /** 頁の旗 usedAssets か net:4g があるか（使った素材の名前を記録する時。書き出しの確かめが開く）。 */
     @JSBody(script = "return fgeUsedAssets !== null || fgeNet4g;")
     public static native boolean isRecordingUsedAssets();
 
-    /** 使った素材を記録する（kind は texture・sound・file。names は改行で区切った名前か道）。?usedAssets=1 でも ?net=4g でもなければ何もしない。 */
+    /** 使った素材を記録する（kind は texture・sound・file。names は改行で区切った名前か道）。頁の旗 usedAssets でも net:4g でもなければ何もしない。 */
     @JSBody(params = {"kind", "names"}, script = "fgeNoteUsed(kind, names);")
     public static native void noteUsed(String kind, String names);
 
-    /** 1 コマを描き終えた。?capture=<n> の n コマ目なら読んでおく。 */
+    /** 1 コマを描き終えた。頁の旗 capture:&lt;n&gt; の n コマ目なら読んでおく。 */
     @JSBody(script = "fgeFrameDrawn();")
     public static native void frameDrawn();
 
@@ -50,7 +58,7 @@ public final class Browser {
     @JSBody(script = "return window.devicePixelRatio || 1;")
     public static native double devicePixelRatio();
 
-    /** 起動の時に主な pointer が指の端末だったか（matchMedia の pointer: coarse。頁の ?input=touch|mouse で上書き。遊んでいる間は変わらない）。 */
+    /** 起動の時に主な pointer が指の端末だったか（matchMedia の pointer: coarse。頁の ?fge=touch|mouse で上書き。遊んでいる間は変わらない）。 */
     @JSBody(script = "return fgeCoarseAtBoot;")
     public static native boolean isCoarsePointer();
 
@@ -58,11 +66,11 @@ public final class Browser {
     @JSBody(script = "return fgeScreenShortSide;")
     public static native double screenShortSide();
 
-    /** 頁の ?size=small|medium|large の値（無ければ空）。 */
+    /** 頁の ?fge=small|medium|large の値（無ければ空）。 */
     @JSBody(script = "return fgeSizeOverride;")
     public static native String sizeOverride();
 
-    /** 縦の design を選ぶか（頁の ?orientation=portrait|landscape、無ければスマホ（区分 Small）で今の画面が縦長か）。起動の時に 1 回だけ聞く。 */
+    /** 縦の design を選ぶか（頁の ?fge=portrait|landscape、無ければスマホ（区分 Small）で今の画面が縦長か）。起動の時に 1 回だけ聞く。 */
     @JSBody(script = "return fgeWantsPortrait();")
     public static native boolean wantsPortrait();
 
@@ -129,18 +137,18 @@ public final class Browser {
     @JSBody(script = "fgeBeginFrame();")
     public static native void beginFrame();
 
-    /** 頁が WebGPU で描くことを頼まれているか（navigator.gpu があり、?backend=webgl2 / ?backend=gl でない時に "webgpu"・ほかは空）。頼まれた時、頁は WebGL2 の文脈を取らずに main を呼ぶ。 */
+    /** 頁が WebGPU で描くことを頼まれているか（navigator.gpu があり、?fge=webgl2 / ?fge=gl でない時に "webgpu"・ほかは空）。頼まれた時、頁は WebGL2 の文脈を取らずに main を呼ぶ。 */
     @JSBody(script = "return fgeWantWebGpu ? 'webgpu' : '';")
     public static native String backendRequest();
 
     /**
      * WebGPU を使えなかった理由を console に出し、canvas の WebGL2 の文脈を取る（GL の道へ入る前に呼ぶ）。取れたら真。
-     * canvas が既に webgpu の文脈を持つ時は同じ canvas から WebGL2 を取れないので、?backend=webgl2 の URL で頁を開き直して偽を返す。
+     * canvas が既に webgpu の文脈を持つ時は同じ canvas から WebGL2 を取れないので、?fge= に webgl2 を足した URL で頁を開き直して偽を返す。
      */
     @JSBody(params = {"reason"}, script = "return fgeFallbackToWebGl2(reason);")
     public static native boolean initWebGl2(String reason);
 
-    /** ?capture=<n> の画素を置く（rgba は width × height × 4 バイト・下の行から。renderer は描き手の名前）。web-capture が読む。 */
+    /** 頁の旗 capture:&lt;n&gt; の画素を置く（rgba は width × height × 4 バイト・下の行から。renderer は描き手の名前）。web-capture が読む。 */
     public static void publishCapture(java.nio.ByteBuffer rgba, int width, int height, String renderer) {
         java.nio.ByteBuffer whole = rgba.duplicate();
         whole.position(0).limit(width * height * 4);

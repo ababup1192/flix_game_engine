@@ -228,7 +228,7 @@ mod Explore {
         });
         Render.gradPolygon(vertices, z)
 
-    /// 1 コマの診断（CPU・GPU の時間と 3D の数）を左上に出す（engine の ?fps=1 の行の下）。
+    /// 1 コマの診断（CPU・GPU の時間と 3D の数）を左上に出す（engine の ?fge=fps の行の下）。
     def debugItems(ctx: App.ViewCtx, res: Res): List[Render.PlacedItem] =
         if (not res#debugHud) Nil
         else ctx#diagnostics |> Option.map(d -> {

@@ -26,7 +26,7 @@ func init() {
 
 // tapePlayCheck はテープの play/ へ写すブラウザ版に掛ける web-check（緑か、赤の理由を 1 行）。
 func tapePlayCheck(dir string) (bool, string) {
-	r, err := runWebCheck(dir, false)
+	r, err := runWebCheck(dir, false, webMeasureConditions{})
 	if err != nil {
 		return false, err.Error()
 	}

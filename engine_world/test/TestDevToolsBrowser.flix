@@ -7,12 +7,30 @@ mod App.DevTools.TestBrowser {
         Assert.assertEq(expected = Some(("talk", Map#{"talk" => "Lair", "line" => "46"})), start)
 
     @Test
-    def testPageKeysAreLeftOut(): Unit \ Assert =
+    def testPageSwitchKeyIsLeftOut(): Unit \ Assert =
+        let start = App.DevTools.startOfQuery(("fge", "fps,webgl2") :: ("talk", "Lair") :: ("line", "46") :: Nil);
+        Assert.assertEq(expected = Some(("talk", Map#{"talk" => "Lair", "line" => "46"})), start)
+
+    @Test
+    def testServiceWorkerEscapeKeyIsLeftOut(): Unit \ Assert =
+        let start = App.DevTools.startOfQuery(("sw", "0") :: ("talk", "Lair") :: Nil);
+        Assert.assertEq(expected = Some(("talk", Map#{"talk" => "Lair"})), start)
+
+    @Test
+    def testPageKeysAreOnlyFgeAndSw(): Unit \ Assert =
+        Assert.assertEq(expected = Set#{"fge", "sw"}, App.DevTools.pageQueryKeys())
+
+    @Test
+    def testOnlyPageSwitchKeyHasNoStart(): Unit \ Assert =
+        Assert.assertEq(expected = None, App.DevTools.startOfQuery(("fge", "fps") :: ("sw", "0") :: Nil))
+
+    @Test
+    def testOldPageKeysAreLeftOut(): Unit \ Assert =
         let start = App.DevTools.startOfQuery(("input", "touch") :: ("talk", "Lair") :: ("size", "small") :: ("line", "46") :: Nil);
         Assert.assertEq(expected = Some(("talk", Map#{"talk" => "Lair", "line" => "46"})), start)
 
     @Test
-    def testLoaderKeysAreLeftOut(): Unit \ Assert =
+    def testOldLoaderKeysAreLeftOut(): Unit \ Assert =
         let start = App.DevTools.startOfQuery(
             ("backend", "webgl2") :: ("talk", "Lair") :: ("net", "4g") :: ("deferred", "0") ::
             ("sw", "0") :: ("usedAssets", "1") :: ("webgpuFail", "prepare") :: Nil);
@@ -23,7 +41,7 @@ mod App.DevTools.TestBrowser {
         Assert.assertEq(expected = None, App.DevTools.startOfQuery(Nil))
 
     @Test
-    def testOnlyPageKeysHaveNoStart(): Unit \ Assert =
+    def testOnlyOldPageKeysHaveNoStart(): Unit \ Assert =
         let start = App.DevTools.startOfQuery(("glcheck", "1") :: ("orientation", "portrait") :: ("capture", "30") :: Nil);
         Assert.assertEq(expected = None, start)
 

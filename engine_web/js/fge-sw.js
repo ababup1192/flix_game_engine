@@ -1,4 +1,4 @@
-// fge-sw.js — 書き出しの Service Worker。bin/fge export-web が書き出しの根へ sw.js として置き、束の id の所を替える。
+// fge-sw.js — 書き出しの Service Worker。bin/fge export-web が fge-switches.js（頁の旗の読み手）の後ろにつないで書き出しの根へ sw.js として置き、束の id の所を替える。
 // 何をどう返すかは docs/web-export.md の「起動の始まりと 2 回目からの起動」。
 "use strict";
 
@@ -37,9 +37,9 @@ self.addEventListener("fetch", function (event) {
   var path = url.origin + url.pathname;
   if (req.mode === "navigate") {
     if (path !== FGE_SCOPE && path !== FGE_INDEX_URL) return;
-    // WhyNot: ?sw=0 の頁の物をキャッシュから返さない — 壊れたキャッシュで起動の途中に落ちると、頁の側の外す処理まで届かない。
+    // WhyNot: ?sw=0（?fge=nosw）の頁の物をキャッシュから返さない — 壊れたキャッシュで起動の途中に落ちると、頁の側の外す処理まで届かない。
     // unregister は頁が全部閉じるまで効かず、その間もこの頁は受け持たれたままなので、fgeRemoving で fetch を全部素のネットへ回す。
-    if (url.searchParams.get("sw") === "0") {
+    if (fgeNoServiceWorker(url.search)) {
       fgeRemoving = true;
       event.waitUntil(fgeRemoveSelf());
       return;
@@ -84,15 +84,20 @@ function fgeLater(event) {
 
 // WhyNot: 自分の scope の頁でない物を受けない — ドメインの根に置いたゲームの Service Worker は、まだ自分のを持たない
 // サブフォルダのゲームの頁も受け持つ。その頁の ?v= を根のゲームの版で入れると、版の違う物を混ぜる。
-// WhyNot: ?sw=0 の頁の物を fgeRemoving だけで見分けない — Service Worker は止まって起こし直されると旗を忘れる。
+// WhyNot: ?sw=0（?fge=nosw）の頁の物を fgeRemoving だけで見分けない — Service Worker は止まって起こし直されると旗を忘れる。
 function fgeOwnClient(event) {
   if (!event.clientId) return Promise.resolve(true);
   return self.clients.get(event.clientId).then(function (c) {
     if (!c) return true;
     var u = new URL(c.url);
-    if (u.searchParams.get("sw") === "0") return false;
+    if (fgeNoServiceWorker(u.search)) return false;
     return u.pathname === FGE_SCOPE_PATH || u.pathname === FGE_SCOPE_PATH + "index.html";
   }, function () { return true; });
+}
+
+// 頁の URL が Service Worker を外す口（?sw=0・?fge=nosw）か。
+function fgeNoServiceWorker(search) {
+  return fgeReadSwitches(search, null).switches.sw === false;
 }
 
 function fgeOrNetwork(promise, req) {

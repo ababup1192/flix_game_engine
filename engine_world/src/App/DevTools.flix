@@ -10,7 +10,7 @@ pub mod App.DevTools {
 
     /// ブラウザ版の組。道具なし（none）と同じだが、URL のクエリ（鍵と値の並び・デコード済み）を始まりとして読む:
     /// 最初の鍵が始まりの名前、その鍵と値も含めた全部の鍵と値が引数（`?talk=Lair&line=46` → 始まり talk、引数 talk=Lair line=46）。
-    /// 頁が使う鍵（pageQueryKeys）は外す。外した後に何も無ければ先頭の始まり。
+    /// 頁が使う鍵（pageQueryKeys と、この版だけの legacyPageQueryKeys）は外す。外した後に何も無ければ先頭の始まり。
     /// 始まりを組めない時（知らない名前・引数の誤り）は止めずに先頭の始まりで開き、訳を console へ出す。
     pub def browser(pairs: List[(String, String)]): App.DevTools[w, {}] =
         App.DevToolsFactory.DevToolsFactory(_ -> App.Internal.DevTools.browserOf(startOfQuery(pairs)))
@@ -18,15 +18,19 @@ pub mod App.DevTools {
     /// URL のクエリを始まりの名前と引数に変える（browser の読み方）。頁が使う鍵と、名前の無い鍵を外し、残りが無ければ None。
     /// 同じ鍵が 2 つあれば後の値。
     pub def startOfQuery(pairs: List[(String, String)]): Option[(String, Map[String, String])] =
-        let pageKeys = pageQueryKeys();
+        let pageKeys = Set.union(pageQueryKeys(), legacyPageQueryKeys());
         let kept = List.filter(pair -> { let (key, _) = pair; not String.isEmpty(key) and not Set.memberOf(key, pageKeys) }, pairs);
         List.head(kept) |> Option.map(first -> (fst(first), List.toMap(kept)))
 
-    // WhyNot: fge-web.js の側で外さない — 外す一覧を Flix のテストで確かめられる所に 1 つだけ置く。頁に鍵を足したらここにも足す。
-    /// ブラウザ版の頁（fge-web.js）と WebLayer が自分で読む URL の鍵。始まりの引数に混ぜない。
-    pub def pageQueryKeys(): Set[String] =
-        Set#{"input", "size", "orientation", "glcheck", "loadtime", "capture", "fps",
-             "backend", "net", "deferred", "sw", "usedAssets", "webgpuFail"}
+    // WhyNot: fge-web.js の側で外さない — 外す一覧を Flix のテストで確かめられる所に 1 つだけ置く。
+    // WhyNot: sw を fge の語だけにしない — 壊れた Service Worker から抜け出す口で、遊ぶ人の端末に残る前の版の sw.js は ?sw=0 しか読めない。
+    /// ブラウザ版の頁（fge-web.js）が自分で読む URL の鍵。始まりの引数に混ぜない。頁の旗は全部 ?fge=<語>,<語>,… に並ぶ（docs/web-export.md の「頁の旗」）。
+    pub def pageQueryKeys(): Set[String] = Set#{"fge", "sw"}
+
+    /// 頁が ?fge= の前に読んでいた鍵。頁はこの版のあいだ読んで console に ?fge= の書き方を知らせるので、始まりの引数に混ぜない（次の版で外し、始まりの名前に戻る）。
+    pub def legacyPageQueryKeys(): Set[String] =
+        Set#{"fps", "backend", "net", "input", "orientation", "size", "glcheck", "loadtime", "capture",
+             "deferred", "usedAssets", "webgpuFail"}
 
     /// デスクトップの道具の組。env は入口の頭で読んだ環境変数の表（ProcessEnv.snapshot()。DEBUG_HTTP_PORT・FLOW_RECORD・START を読む）。
     /// 記録と保存検知は App の withDebug が真の時だけ、命令口とヒッチの見張りはさらに view か debugView がある時だけ動く。START はいつも効く。

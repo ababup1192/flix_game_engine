@@ -177,7 +177,7 @@ func webDeferredArrivals(sizes *webSizeTable, b *webBundle) []float64 {
 	return arrivals
 }
 
-// setWebArrivalSeconds は bundle.json の後回しの項目に arrivalSeconds を書く（頁の ?net=4g がその秒まで渡さない）。
+// setWebArrivalSeconds は bundle.json の後回しの項目に arrivalSeconds を書く（頁の ?fge=4g がその秒まで渡さない）。
 func setWebArrivalSeconds(sizes *webSizeTable, b *webBundle) {
 	for i, at := range webDeferredArrivals(sizes, b) {
 		b.Deferred[i].ArrivalSeconds = math.Round(at*1000) / 1000
