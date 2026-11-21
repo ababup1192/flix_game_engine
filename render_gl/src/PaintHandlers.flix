@@ -25,7 +25,10 @@ mod RenderPaintHandlers {
                 k(())
             }
             def getFontAtlas(name, k) = k(RenderPaint.fontAtlas(fonts, name))
-            def getTextureInfo(name, k) = k(RenderPaint.textureInfo(paint, name))
+            def getTextureInfo(name, k) = {
+                RenderPaint.ensureRadialBuiltinNamed(gl, paint, name);
+                k(RenderPaint.textureInfo(paint, name))
+            }
             def buildProgram(spec, k) = k(RenderPaint.buildProgram(gl, paint, spec))
         }
 

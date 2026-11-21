@@ -55,11 +55,27 @@ pub mod RenderPaint.Internal.TextureTable {
         }
 
     /// 組み込みの放射の絵（Render.lightAt / darkAt が引く）を上げて名前で引けるようにする。ゲームの manifest には載らない名前なので、
-    /// 起動時に必ず上げる（ここで足さないと「アセット配線をしたゲームだけ光が出る」になる）。
+    /// engine が上げる（ゲームに上げさせると「アセット配線をしたゲームだけ光が出る」になる）。上げる時は ensureRadialBuiltins が決める。
     pub def putRadialBuiltins(uploads: Uploads, tables: Tables): Unit \ IO =
         let side = RadialBuiltin.size();
         putTexture(tables, RadialBuiltin.lightName(), uploads#createArgb(side, side, RadialBuiltin.lightPixels()));
         putTexture(tables, RadialBuiltin.darkName(), uploads#createArgb(side, side, RadialBuiltin.darkPixels()))
+
+    /// 組み込みの放射の絵をまだ上げていなくて、reads() が真（これから描く物が引く）なら 2 枚とも上げる。描く物を描き先へ流す前に呼ぶ。
+    // WhyNot: 起動時に上げない — 256×256 を 2 枚、画素ごとに平方根を取る仕事が、ブラウザでは「タッチして開始」の後の待ちに入る。引くゲームは少ない。
+    pub def ensureRadialBuiltins(uploads: Uploads, tables: Tables, reads: Unit -> Bool \ ef): Unit \ ef + IO =
+        if (Map.memberOf(RadialBuiltin.lightName(), Ref.get(tables#registryRef))) ()
+        else if (reads()) putRadialBuiltins(uploads, tables)
+        else ()
+
+    /// Render.lightAt / darkAt の組み込みの絵の名前か。
+    pub def isRadialBuiltinName(name: String): Bool =
+        name == RadialBuiltin.lightName() or name == RadialBuiltin.darkName()
+
+    /// sprites と surfaces のどれかが、名前が isName に当たる絵を引くか。
+    pub def isTextureRead(isName: String -> Bool, sprites: List[DrawCmd.Drawable], surfaces: List[DrawCmd.SurfaceRenderCmd]): Bool =
+        List.exists(d -> isName(DrawCmd.textureOf(d)), sprites)
+            or List.exists(cmd -> List.exists(read -> isName(fst(read)), cmd#texReads), surfaces)
 
     /// GpuResources.ensureTexture の中身。key が前と同じなら何もしない（毎フレーム呼ばれる前提）。
     /// 大きさが同じなら画素だけ差し替え（GPU の絵を作り直さない）、違えば古い方を捨てて作り直す（漏らすと作り直すたびに GPU のメモリが増え続ける）。

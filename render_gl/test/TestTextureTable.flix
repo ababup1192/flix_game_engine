@@ -3,7 +3,7 @@
 
 mod TestTextureTable {
     import java.nio.ByteBuffer
-    use RenderPaint.Internal.TextureTable.{Tables, Uploads, ensureTexture, putRadialBuiltins, putTexture}
+    use RenderPaint.Internal.TextureTable.{Tables, Uploads, ensureRadialBuiltins, ensureTexture, isRadialBuiltinName, putRadialBuiltins, putTexture}
     use RenderPaint.Internal.TextureTable.{opaqueRgbaOf}
 
     // ── 組み立て ──
@@ -71,6 +71,41 @@ mod TestTextureTable {
         let side = Int32.toString(RadialBuiltin.size());
         let named = (Map.memberOf(RadialBuiltin.lightName(), Ref.get(tables#registryRef)), Map.memberOf(RadialBuiltin.darkName(), Ref.get(tables#registryRef)));
         Assert.assertEq(expected = (("create ${side}x${side}" :: "create ${side}x${side}" :: Nil), (true, true)), (List.reverse(Ref.get(log)), named))
+
+    /// 描く物が引かないうちは、組み込みの放射の絵を作らない。
+    @Test
+    def testRadialBuiltinsWaitUntilRead(): Unit \ {Assert, IO} =
+        let log = Ref.fresh(Static, Nil);
+        let tables = freshTables();
+        ensureRadialBuiltins(recordingUploads(log), tables, () -> false);
+        Assert.assertEq(expected = (Nil, false), (Ref.get(log), Map.memberOf(RadialBuiltin.lightName(), Ref.get(tables#registryRef))))
+
+    /// 引いた最初のコマで 2 枚を作り、次のコマからは作り直さない。
+    @Test
+    def testRadialBuiltinsAreMadeOnceWhenRead(): Unit \ {Assert, IO} =
+        let log = Ref.fresh(Static, Nil);
+        let tables = freshTables();
+        let uploads = recordingUploads(log);
+        ensureRadialBuiltins(uploads, tables, () -> true);
+        ensureRadialBuiltins(uploads, tables, () -> true);
+        Assert.assertEq(expected = 2, List.length(Ref.get(log)))
+
+    /// 作った後は、描く物を調べ直さない（毎コマの列を回さない）。
+    @Test
+    def testRadialBuiltinsSkipTheCheckAfterMade(): Unit \ {Assert, IO} =
+        let asked = Ref.fresh(Static, 0);
+        let tables = freshTables();
+        let uploads = recordingUploads(Ref.fresh(Static, Nil));
+        let reads = () -> { Ref.put(Ref.get(asked) + 1, asked); true };
+        ensureRadialBuiltins(uploads, tables, reads);
+        ensureRadialBuiltins(uploads, tables, reads);
+        Assert.assertEq(expected = 1, Ref.get(asked))
+
+    /// 組み込みの名前は光と闇の 2 つだけ。
+    @Test
+    def testRadialBuiltinNames(): Unit \ Assert =
+        Assert.assertEq(expected = (true, true, false),
+            (isRadialBuiltinName(RadialBuiltin.lightName()), isRadialBuiltinName(RadialBuiltin.darkName()), isRadialBuiltinName("atlas")))
 
     /// 上げた時だけ診断へ知らせる（同じ key の 2 回目は知らせない）。
     @Test

@@ -260,6 +260,7 @@ mod RenderPaint {
     /// resolve（キャッシュ照合・必要なら作り直し）し、レンジ列を FrameArgs に載せる。None なら Nil。
     /// 控え（lastFrame）も世代も進めない — リサイズの描き直しと注釈のスクショも同じ物を通る。
     pub def paintFrame(gl: GlContext, paint: Paint, fbW: Int32, fbH: Int32, frame: Frame): Unit \ IO =
+        ensureRadialBuiltins(gl, paint, frame#sprites, frame#surfaces, frame#scenes);
         let staticRanges = match frame#staticLayer {
             case None    => Nil
             case Some(l) => RenderStatic.resolve(glStaticAllocator(gl, paint), paint#staticCacheCell, l)
@@ -276,6 +277,18 @@ mod RenderPaint {
         let screen = GlRows.passOfArgs(args);
         if (fillLetterbox(gl, paint, args, screen, frame#letterbox)) GlRows.renderPass(gl, args, RenderList.withLetterboxKept(screen))
         else GlRows.renderPass(gl, args, screen)
+
+    /// これから描く sprites・surfaces・3D の場面が組み込みの放射の絵を引くなら、まだ上げていなければ上げる。
+    def ensureRadialBuiltins(gl: GlContext, paint: Paint, sprites: List[GameEngine.Drawable],
+                             surfaces: List[DrawCmd.SurfaceRenderCmd], scenes: List[Scene3d.RenderCmd]): Unit \ IO =
+        TextureTable.ensureRadialBuiltins(glUploads(gl), textureTables(paint), () ->
+            TextureTable.isTextureRead(TextureTable.isRadialBuiltinName, sprites, surfaces)
+                or paint#scene3d#readsTexture(RadialBuiltin.lightName(), scenes)
+                or paint#scene3d#readsTexture(RadialBuiltin.darkName(), scenes))
+
+    /// name が組み込みの放射の絵の名前なら、まだ上げていなければ上げる（GpuResources.getTextureInfo が名前で引く前）。
+    pub def ensureRadialBuiltinNamed(gl: GlContext, paint: Paint, name: String): Unit \ IO =
+        TextureTable.ensureRadialBuiltins(glUploads(gl), textureTables(paint), () -> TextureTable.isRadialBuiltinName(name))
 
     /// 絵 tex の拡大と縮小の読み方を filter にする。
     // WhyNot: Pass の絵をいつも LINEAR で作らない — Pass を読むほかの描き物（後がけ・合成）は画素を 1 つずつ読む前提で組んである。広げて貼る間だけ替える。
@@ -310,6 +323,7 @@ mod RenderPaint {
     def paintTarget(gl: GlContext, paint: Paint, target: RenderTarget.TargetSpec,
                     sprites: List[GameEngine.Drawable], polygons: List[GameEngine.PolygonRenderCmd],
                     surfaces: List[DrawCmd.SurfaceRenderCmd], scenes: List[Scene3d.RenderCmd]): Unit \ IO =
+        ensureRadialBuiltins(gl, paint, sprites, surfaces, scenes);
         let (name, tw, th, op) = (target#name, target#width, target#height, target#clear);
         let historyName = RenderTarget.historyName(name);
         let readsHistory = TargetTable.isHistoryRead(name, sprites, surfaces) or paint#scene3d#readsTexture(historyName, scenes);
@@ -467,7 +481,7 @@ mod RenderPaint {
     pub type alias FontsLoaded = { atlases = Map[String, FontAtlas], registry = RenderAsset.TextureRegistry,
                                    grow = (FontAtlas, Set[Int32]) -> FontAtlas \ IO }
 
-    /// project.json の textures・fonts を読み、組み込みの放射テクスチャと一緒に登録簿へ載せる。
+    /// project.json の textures・fonts を読み、登録簿へ載せる（組み込みの放射テクスチャは描く物が引いた時に paintFrame / paintTarget が上げる）。
     /// progress = 進み具合（文言・済んだ数・全部の数。窓では起動画面に出す。出さないなら何もしない関数）。
     pub def loadAssets(gl: GlContext, paint: Paint, loader: AssetLoader,
                        config: { textureManifest = List[RenderAsset.TextureEntry], fontManifest = List[RenderAsset.FontEntry],
@@ -488,8 +502,6 @@ mod RenderPaint {
             Map.insert(BootFont.name(), BootFont.atlas(), gameAtlases));
         // 起動画面の分（組み込みフォント・ロゴ）を残したままゲームのテクスチャを足す。
         addTextures(registry, paint);
-
-        TextureTable.putRadialBuiltins(glUploads(gl), textureTables(paint));
 
         { atlases = fontAtlasesRef, grow = loaded#grow,
           missing = Ref.fresh(Static, Set.empty()) }
