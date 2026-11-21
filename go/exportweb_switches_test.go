@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -117,8 +119,8 @@ func TestOpenURLGivesFgeDevToPageWithSwitchesReader(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("<script>function fgePageSwitches() {}</script>"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	url, script := webPageSwitches{Capture: 3}.openURL("http://h/index.html", dir)
-	if url != "http://h/index.html" || !strings.Contains(script, `"capture":3`) {
+	url, script, err := webPageSwitches{Capture: 3}.openURL("http://h/index.html", filepath.Join(dir, "index.html"))
+	if err != nil || url != "http://h/index.html" || !strings.Contains(script, `"capture":3`) {
 		t.Errorf("読み手を持つ頁は URL にクエリを付けず fgeDev で渡すはず: %s / %s", url, script)
 	}
 }
@@ -128,9 +130,59 @@ func TestOpenURLFallsBackToOldKeysForOldEnginePage(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("<script>/* 前の engine */</script>"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	url, script := webPageSwitches{Capture: 120, UsedAssets: true, Backend: "webgl2", Net: "4g", Deferred: "all"}.openURL("http://h/index.html", dir)
-	if url != "http://h/index.html?capture=120&usedAssets=1&backend=webgl2&net=4g&deferred=all" || script != "" {
+	off := false
+	url, script, err := webPageSwitches{Capture: 120, UsedAssets: true, Backend: "webgl2", Net: "4g", Deferred: "all", Fps: true, Sw: &off, WebgpuFail: "canvas"}.openURL("http://h/index.html", filepath.Join(dir, "index.html"))
+	if err != nil || url != "http://h/index.html?fps=1&backend=webgl2&net=4g&sw=0&capture=120&deferred=all&usedAssets=1&webgpuFail=canvas" || script != "" {
 		t.Errorf("前の engine の頁は前の鍵のクエリで渡すはず: %s / %s", url, script)
+	}
+}
+
+func TestLegacyPageKeysAgreeAcrossPageFlixAndGo(t *testing.T) {
+	js, err := os.ReadFile(filepath.Join("..", "engine_web", "js", webSwitchesSource))
+	if err != nil {
+		t.Fatal(err)
+	}
+	flix, err := os.ReadFile(filepath.Join("..", "engine_world", "src", "App", "DevTools.flix"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var jsFields, jsKeys []string
+	for _, m := range regexp.MustCompile(`\{ field: "(\w+)",[^\n]*legacy: "(\w+)"`).FindAllStringSubmatch(string(js), -1) {
+		jsFields, jsKeys = append(jsFields, m[1]), append(jsKeys, m[2])
+	}
+	var goFields, goKeys []string
+	for _, k := range webLegacyPageKeys {
+		goFields, goKeys = append(goFields, k.Field), append(goKeys, k.Key)
+	}
+	var tagFields []string
+	st := reflect.TypeOf(webPageSwitches{})
+	for i := 0; i < st.NumField(); i++ {
+		tag, _, _ := strings.Cut(st.Field(i).Tag.Get("json"), ",")
+		tagFields = append(tagFields, tag)
+	}
+	block := regexp.MustCompile(`(?s)def legacyPageQueryKeys\(\): Set\[String\] =\s*Set#\{(.*?)\}`).FindStringSubmatch(string(flix))
+	if block == nil {
+		t.Fatal("DevTools.flix に legacyPageQueryKeys が見つからない")
+	}
+	flixKeys := regexp.MustCompile(`"(\w+)"`).FindAllStringSubmatch(block[1], -1)
+	var flixSet []string
+	for _, m := range flixKeys {
+		flixSet = append(flixSet, m[1])
+	}
+	withoutSw := slices.DeleteFunc(slices.Clone(goKeys), func(k string) bool { return k == "sw" })
+	sortedEq := func(a, b []string) bool {
+		a, b = slices.Clone(a), slices.Clone(b)
+		slices.Sort(a)
+		slices.Sort(b)
+		return slices.Equal(a, b)
+	}
+	switch {
+	case !slices.Equal(jsFields, goFields) || !slices.Equal(jsKeys, goKeys):
+		t.Errorf("頁の FGE_SWITCHES の前の鍵 %v %v と Go の webLegacyPageKeys %v %v が同じはず", jsFields, jsKeys, goFields, goKeys)
+	case !sortedEq(flixSet, withoutSw):
+		t.Errorf("Flix の legacyPageQueryKeys %v と Go の前の鍵（sw を除く）%v が同じはず", flixSet, withoutSw)
+	case !sortedEq(tagFields, goFields):
+		t.Errorf("webPageSwitches の欄 %v の全部が前の鍵を持つはず（webLegacyPageKeys %v）", tagFields, goFields)
 	}
 }
 

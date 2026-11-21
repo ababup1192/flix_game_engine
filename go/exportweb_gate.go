@@ -102,8 +102,6 @@ type webBundleChecks struct {
 	TapSkippedWhy string `json:"tapSkippedWhy,omitempty"`
 	// TapNoRecord は測ったが押した時の待ちの記録が無かった（待たずに動いたか、startKeys がタイトルに合わず何も始まらなかった）。
 	TapNoRecord bool `json:"tapNoRecord,omitempty"`
-	// TapToFirstFrameSeconds は回線を絞らずに開いてすぐ押し、押してから最初のコマまでの秒（知らせ・門には入れない。押した時の待ちが起きない束でも残る）。
-	TapToFirstFrameSeconds *float64 `json:"tapToFirstFrameSeconds,omitempty"`
 }
 
 // webGateUsesMeasuredTap は押した後の測り（⑨”）の値を門の数字に入れるか。

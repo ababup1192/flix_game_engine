@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -56,7 +56,10 @@ func checkWebLoadsRecording(out string, frames, titleFrames int, wait time.Durat
 		if backend == "" && titleFrames > 0 {
 			sw.Capture, sw.UsedAssets, opt.Eval = max(frames, titleFrames), true, "window.fgeUsedAssets || null"
 		}
-		opt.URL, opt.InitScript = sw.openURL(fmt.Sprintf("http://%s/index.html", ln.Addr().String()), out)
+		opt.URL, opt.InitScript, err = sw.openURL(fmt.Sprintf("http://%s/index.html", ln.Addr().String()), filepath.Join(out, "index.html"))
+		if err != nil {
+			return "", nil, err
+		}
 		res, err := cdp.Capture(opt)
 		if err != nil {
 			if backend == "" {
@@ -117,7 +120,10 @@ func checkWebMissingTitle(out string, titleFrames int, wait time.Duration, cond 
 		return nil, err
 	}
 	defer closeServer()
-	url, initScript := webPageSwitches{Capture: titleFrames, Net: "4g"}.openURL(fmt.Sprintf("http://%s/index.html", ln.Addr().String()), out)
+	url, initScript, err := webPageSwitches{Capture: titleFrames, Net: "4g"}.openURL(fmt.Sprintf("http://%s/index.html", ln.Addr().String()), filepath.Join(out, "index.html"))
+	if err != nil {
+		return nil, err
+	}
 	res, err := cdp.Capture(cdp.Options{
 		URL:         url,
 		InitScript:  initScript,
@@ -213,15 +219,16 @@ type webBrowserCheckResult struct {
 	Timing  []webTapTimingRow
 }
 
-// webBrowserCheckOptions は確かめの条件。零の値が書き出しの門の条件。Warm なら押した後の速さに 2 回目の起動（Service Worker が付いた後）も足す。
+// webBrowserCheckOptions は確かめの条件。零の値が書き出しの門の条件。Speed なら押した後の速さ（1 回目と、Service Worker が付いた後の 2 回目の起動）も測る。
+// WhyNot: 書き出しで速さを測らない — 値を bundle.json に残すと書き出すたびに版と sums が変わり、遊ぶ人の Service Worker のキャッシュが毎回入れ替わる。
+// 残さないなら書き出しで測っても見る人がいない（web-check --browser の表で見る）。
 type webBrowserCheckOptions struct {
-	Cond webMeasureConditions
-	Warm bool
+	Cond  webMeasureConditions
+	Speed bool
 }
 
-// runWebBrowserChecks は書き出し先 dir の束 b を、?fge=4g のタイトルの確かめ（後回しがある時）・押した後の速さ・押した後の待ちの測り（測る後回しがある時）に掛ける。
+// runWebBrowserChecks は書き出し先 dir の束 b を、?fge=4g のタイトルの確かめ（後回しがある時）・押した後の速さ（opt.Speed の時）・押した後の待ちの測り（測る後回しがある時）に掛ける。
 // Chrome がある前提（呼び手が先に確かめる）。startKeys は押した後の測りでタイトルで押すキー。
-// 押してから最初のコマまでの秒は、条件が門の条件の時だけ Checks に残す。
 func runWebBrowserChecks(dir string, b *webBundle, startKeys []string, opt webBrowserCheckOptions, log webBrowserCheckLog) webBrowserCheckResult {
 	r := webBrowserCheckResult{Checks: webBundleChecks{Title4g: "ok"}}
 	if len(b.Deferred) > 0 {
@@ -238,13 +245,11 @@ func runWebBrowserChecks(dir string, b *webBundle, startKeys []string, opt webBr
 		}
 		r.Missing = missing
 	}
-	if log.Step != nil {
-		log.Step("⑨'' 押してから最初のコマまでを測る（回線を絞らない・%s）", opt.Cond.label())
-	}
-	r.Timing = measureWebTapTimingRows(dir, opt.Cond, opt.Warm, webLoadCheckWait())
-	if opt.Cond.isGate() && r.Timing[0].Why == "" {
-		v := math.Round(r.Timing[0].Timing.FirstFrameSeconds*100) / 100
-		r.Checks.TapToFirstFrameSeconds = &v
+	if opt.Speed {
+		if log.Step != nil {
+			log.Step("押した後の速さ: 押してから最初のコマまでを測る（回線を絞らない・%s）", opt.Cond.label())
+		}
+		r.Timing = measureWebTapTimingRows(dir, opt.Cond, webLoadCheckWait())
 	}
 	if !webTapNeedsMeasure(b) {
 		return r
@@ -304,7 +309,6 @@ func runExportBrowserChecks(o exportWebOptions, c exportConfig, b *webBundle) (e
 				TitleFailed: func(err error) { ewLogf("知らせ: %v", err) },
 				TapFailed:   func(err error) { ewLogf("知らせ: 押した後を測れなかった: %v", err) },
 			})
-			writeWebTapTimingNotice(r.Timing)
 		}
 	}
 	if r.Tap == nil && r.Checks.TapSkippedWhy == "" && webTapNeedsMeasure(b) {

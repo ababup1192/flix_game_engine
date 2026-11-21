@@ -8,8 +8,8 @@ import (
 	"github.com/ababup1192/flix_game_engine/go/internal/cdp"
 )
 
-// 押した後の速さ（⑨'' の足し）: 回線を絞らずに頁を開いて「タッチして開始」を押し、押してから最初のコマまでと、押した反応が画面に出るまでを測る。
-// 押した時の待ち（⑨''）が起きないゲームでも値が出る。Service Worker が付いた後の 2 回目の起動も同じ頁で測れる。
+// 押した後の速さ（web-check --browser だけ）: 回線を絞らずに頁を開いて「タッチして開始」を押し、押してから最初のコマまでと、押した反応が画面に出るまでを測る。
+// 押した時の待ちの測り（⑨''）が流れないゲームでも値が出る。Service Worker が付いた後の 2 回目の起動も同じ頁で測れる。
 
 // webBootTimes は頁の window.fgeBootTimes（engine_web の fge-web.js が置く・performance.now の ms・まだなら -1）。
 type webBootTimes struct {
@@ -42,9 +42,9 @@ type webTapTimingRow struct {
 	Why    string
 }
 
-// measureWebTapTiming は書き出し先 out を配り、cond の条件で 1 回起動して押し、速さを測る。warm なら Service Worker が付いた後にもう 1 回開いて測る
-// （warm の結果は、Service Worker を持たない束では nil で whyNoWarm に理由）。
-func measureWebTapTiming(out string, cond webMeasureConditions, warm bool, wait time.Duration) (cold webTapTiming, second *webTapTiming, whyNoWarm string, err error) {
+// measureWebTapTiming は書き出し先 out を配り、cond の条件で 1 回起動して押し、速さを測る。Service Worker が付いた後にもう 1 回開いて測る
+// （2 回目の結果は、Service Worker を持たない束では nil で whyNoWarm に理由）。
+func measureWebTapTiming(out string, cond webMeasureConditions, wait time.Duration) (cold webTapTiming, second *webTapTiming, whyNoWarm string, err error) {
 	ln, closeServer, err := serveWebCheck(out)
 	if err != nil {
 		return cold, nil, "", err
@@ -56,7 +56,7 @@ func measureWebTapTiming(out string, cond webMeasureConditions, warm bool, wait 
 		return cold, nil, "", err
 	}
 	defer page.Close()
-	if cold, err = tapAndReadTiming(page, wait); err != nil || !warm {
+	if cold, err = tapAndReadTiming(page, wait); err != nil {
 		return cold, nil, "", err
 	}
 	if b, err := loadWebBundle(out); err != nil || !b.ServiceWorker {
@@ -134,34 +134,18 @@ func waitServiceWorkerCached(page *cdp.Page, wait time.Duration) error {
 	return fmt.Errorf("%s 待っても Service Worker が頁を受け持ってキャッシュを入れ終えない（入った数 %d）", wait, last)
 }
 
-// measureWebTapTimingRows は cond の条件の起動（warm なら 2 回目の起動も）を測り、表の行にする（1 行目はいつも 1 回目の起動）。
-func measureWebTapTimingRows(out string, cond webMeasureConditions, warm bool, wait time.Duration) []webTapTimingRow {
+// measureWebTapTimingRows は cond の条件の 1 回目と 2 回目の起動を測り、表の行にする。
+func measureWebTapTimingRows(out string, cond webMeasureConditions, wait time.Duration) []webTapTimingRow {
 	label := cond.label()
-	cold, second, whyNoWarm, err := measureWebTapTiming(out, cond, warm, wait)
+	cold, second, whyNoWarm, err := measureWebTapTiming(out, cond, wait)
 	if err != nil {
 		return []webTapTimingRow{{Label: label, Why: err.Error()}}
-	}
-	rows := []webTapTimingRow{{Label: label, Timing: cold}}
-	if !warm {
-		return rows
 	}
 	row := webTapTimingRow{Label: "2 回目の起動・" + label, Why: whyNoWarm}
 	if second != nil {
 		row.Timing = *second
 	}
-	return append(rows, row)
-}
-
-// writeWebTapTimingNotice は書き出しの時の押した後の速さ（1 行目）を 1 行で知らせる。
-func writeWebTapTimingNotice(rows []webTapTimingRow) {
-	if len(rows) == 0 {
-		return
-	}
-	if r := rows[0]; r.Why != "" {
-		ewLogf("知らせ: 押してから最初のコマまでを測れなかった: %s", r.Why)
-	} else {
-		ewLogf("押してから最初のコマまで %.2f 秒・押してから波紋まで %.0f ms（回線を絞らない・%s。知らせ）", r.Timing.FirstFrameSeconds, r.Timing.TapPaintMs, r.Label)
-	}
+	return []webTapTimingRow{{Label: label, Timing: cold}, row}
 }
 
 // writeWebTapTimingRows は押した後の速さの表を書く（知らせ・門ではない）。

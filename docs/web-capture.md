@@ -99,13 +99,14 @@ bin/fge pixel-diff <WebGL2 の絵.png> <WebGPU の絵.png> --tolerance bench/web
 | ⑨ | `index.html`・`{capture: 3, backend: "webgl2"}` | WebGL2 の頁でも 3 コマ目まで撮れるか（WebGPU を使えないブラウザが頼る道） | 同上 |
 | ⑨' | `index.html`・`{capture: 120, net: "4g"}`（後回しがある時だけ） | 4G の届き方でタイトルが後回しの物を待って止まらないか | 止まれば門が赤（[web-export.md](web-export.md) の「起動の予算」）。頁が開けない時は知らせだけ |
 | ⑨'' | `index.html`・`{net: "4g"}`（engine が待ちうる後回しか group がある時だけ） | 「タッチして開始」とタイトルの `startKeys` を押し、押した時の待ちが明けるまでの秒 | 測れなければ知らせだけ（門は見積もりで決める） |
-| ⑨''（速さ） | `index.html`・`{}`（いつも・回線を絞らない） | 「タッチして開始」が出たらすぐ押し、押してから最初のコマまでの秒（`bundle.json` の `checks.tapToFirstFrameSeconds`）と押してから波紋が描けるまでの ms | 知らせだけ（門に入れない） |
 
-`bin/fge web-check <書き出したフォルダ> --browser` は ⑨' と ⑨'' を流し直し、押した後の速さを表で出す（すぐ押す・CPU 1 倍の 1 回目と、
+`bin/fge web-check <書き出したフォルダ> --browser` は ⑨' と ⑨'' を流し直し、押した後の速さ（回線を絞らずに開き、「タッチして開始」が出たら押して、押してから最初のコマまでの秒と押してから波紋が描けるまでの ms）を表で出す（すぐ押す・CPU 1 倍の 1 回目と、
 Service Worker が付いた後の 2 回目の起動）。`--cpu 4`（CPU を 4 倍遅くする・`Emulation.setCPUThrottlingRate`）と `--tap-delay 1.5`
 （「タッチして開始」が出てから 1.5 秒置いて押す）を付けると、その条件の ⑨'・⑨''・速さをもう 1 回流して表と知らせに足す。
 門（`checks.tapWaitSeconds` と赤）はいつも「すぐ押す・CPU 1 倍」の値だけで決める（門の判定が測る機械の速さで揺れない）。
 頁の側の時刻は `window.fgeBootTimes`（`readyAt`・`tapAt`・`tapEventAt`・`tapPaintAt`・`firstFrameAt`。performance.now の ms）。
+速さは書き出し（export-web）では測らない。値を `bundle.json` に残すと書き出すたびに版と sums が変わり、遊ぶ人の Service Worker のキャッシュが毎回入れ替わるため。
+「押してから波紋まで」は押した後の最初の rAF の時刻から引いた値で、画面に出るまでより 1 コマ近く短い（下限の値として読む）。
 
 ## 頁の旗（道具が入れる window.fgeDev）
 

@@ -156,11 +156,11 @@ func rerunWebBrowserChecks(dir string, b *webBundle, cond webMeasureConditions) 
 		return nil
 	}
 	keys := webBundleBudget(b).startKeys()
-	r := runWebBrowserChecks(dir, b, keys, webBrowserCheckOptions{Warm: true}, webCheckBrowserLog(webMeasureConditions{}))
+	r := runWebBrowserChecks(dir, b, keys, webBrowserCheckOptions{Speed: true}, webCheckBrowserLog(webMeasureConditions{}))
 	b.Checks = &r.Checks
 	rows := r.Timing
 	if !cond.isGate() {
-		extra := runWebBrowserChecks(dir, b, keys, webBrowserCheckOptions{Cond: cond, Warm: true}, webCheckBrowserLog(cond))
+		extra := runWebBrowserChecks(dir, b, keys, webBrowserCheckOptions{Cond: cond, Speed: true}, webCheckBrowserLog(cond))
 		if len(b.Deferred) > 0 {
 			fmt.Fprintf(os.Stderr, "web-check: 知らせ（%s）: 4G のタイトルの確かめ %s\n", cond.label(), extra.Checks.Title4g)
 		}

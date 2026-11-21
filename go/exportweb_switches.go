@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -39,40 +38,69 @@ func (s webPageSwitches) initScript() string {
 	return "window.fgeDev = Object.assign(window.fgeDev || {}, " + string(raw) + ");"
 }
 
-// webPageReadsDev は書き出し先 out の頁が window.fgeDev を読むか（index.html に頁の旗の読み手が埋まっているか）。
-func webPageReadsDev(out string) bool {
-	html, err := os.ReadFile(filepath.Join(out, "index.html"))
+// webPageReadsDev は頁の HTML（書き出しの index.html など）が window.fgeDev を読むか（頁の旗の読み手が埋まっているか）。読めなければ読む物とみる。
+func webPageReadsDev(htmlPath string) bool {
+	html, err := os.ReadFile(htmlPath)
 	return err != nil || strings.Contains(string(html), "function fgePageSwitches(")
 }
 
-// openURL は道具が書き出しの頁を開く URL と、頁より先に流す script。頁が window.fgeDev を読まなければ（前の engine の書き出し）、
-// 道具が使う旗だけを前の鍵の URL のクエリにする。
-// WhyNot: 前の engine の書き出しにも fgeDev だけを渡さない — bin/fge は engine の根の物で、ゲームの engine が前の版のことがある。
-// 前の頁は fgeDev を知らず、撮る旗が届かないまま「押して始める」で止まり、上限の秒まで待って書き出しが落ちる。
-func (s webPageSwitches) openURL(base, out string) (url, initScript string) {
-	if webPageReadsDev(out) {
-		return base, s.initScript()
+// webLegacyPageKeys は欄（window.fgeDev の名前）ごとの前の鍵（?fge= の前の頁が読む URL の鍵）。並びは URL に書く順。
+// 頁の FGE_SWITCHES の legacy と Flix の App.DevTools.legacyPageQueryKeys（sw を除く）と同じ一覧（テストで突き合わせる）。
+var webLegacyPageKeys = []struct{ Field, Key string }{
+	{"fps", "fps"}, {"backend", "backend"}, {"net", "net"}, {"sw", "sw"}, {"input", "input"}, {"orientation", "orientation"},
+	{"size", "size"}, {"glcheck", "glcheck"}, {"loadtime", "loadtime"}, {"capture", "capture"}, {"deferred", "deferred"},
+	{"usedAssets", "usedAssets"}, {"webgpuFail", "webgpuFail"},
+}
+
+// legacyQuery は旗を前の鍵の URL のクエリ（? を除く）にする。前の鍵を持たない欄があれば誤り。
+func (s webPageSwitches) legacyQuery() (string, error) {
+	raw, err := json.Marshal(s)
+	if err != nil {
+		return "", err
+	}
+	fields := map[string]any{}
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return "", err
 	}
 	var q []string
-	if s.Capture > 0 {
-		q = append(q, "capture="+strconv.Itoa(s.Capture))
+	for _, k := range webLegacyPageKeys {
+		v, ok := fields[k.Field]
+		if !ok {
+			continue
+		}
+		delete(fields, k.Field)
+		switch t := v.(type) {
+		case bool:
+			q = append(q, k.Key+"="+map[bool]string{true: "1", false: "0"}[t])
+		case float64:
+			q = append(q, k.Key+"="+strconv.Itoa(int(t)))
+		default:
+			q = append(q, k.Key+"="+fmt.Sprint(t))
+		}
 	}
-	if s.UsedAssets {
-		q = append(q, "usedAssets=1")
+	for f := range fields {
+		return "", fmt.Errorf("頁の旗 %s は前の engine の頁へ渡す鍵が無い", f)
 	}
-	if s.Backend != "" {
-		q = append(q, "backend="+s.Backend)
+	return strings.Join(q, "&"), nil
+}
+
+// openURL は道具が頁 htmlPath を base で開く URL と、頁より先に流す script。頁が window.fgeDev を読まなければ（前の engine の書き出し）、
+// 旗を前の鍵の URL のクエリにする（前の鍵の無い旗があれば誤り）。
+// WhyNot: 前の engine の書き出しにも fgeDev だけを渡さない — bin/fge は engine の根の物で、ゲームの engine が前の版のことがある。
+// 前の頁は fgeDev を知らず、撮る旗が届かないまま「押して始める」で止まり、上限の秒まで待って書き出しが落ちる。
+func (s webPageSwitches) openURL(base, htmlPath string) (url, initScript string, err error) {
+	if webPageReadsDev(htmlPath) {
+		return base, s.initScript(), nil
 	}
-	if s.Net != "" {
-		q = append(q, "net="+s.Net)
+	q, err := s.legacyQuery()
+	if err != nil || q == "" {
+		return base, "", err
 	}
-	if s.Deferred != "" {
-		q = append(q, "deferred="+s.Deferred)
+	sep := "?"
+	if strings.Contains(base, "?") {
+		sep = "&"
 	}
-	if len(q) == 0 {
-		return base, ""
-	}
-	return base + "?" + strings.Join(q, "&"), ""
+	return base + sep + q, "", nil
 }
 
 // parseWebDevWords は ?fge= と同じ字の決まり（<語>,<語>,…・語は 名前 か 名前:値 か短い書き方）を頁の旗にする（web-capture の --dev）。
@@ -112,9 +140,12 @@ func (s *webPageSwitches) applyWord(w string) bool {
 	case "net":
 		return pick(&s.Net, "4g")
 	case "sw":
+		if value != "0" {
+			return false
+		}
 		off := false
 		s.Sw = &off
-		return value == "0"
+		return true
 	case "input":
 		return pick(&s.Input, "touch", "mouse")
 	case "orientation":

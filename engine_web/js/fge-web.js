@@ -40,12 +40,18 @@ function fgeQueryPairs() {
 }
 
 // 頁の旗（?fge= と道具が入れる window.fgeDev。読み手は書き出しが index.html の頭に埋める fge-switches.js・docs/web-export.md の「頁の旗」）。
-var fgeSwitchesRead = fgePageSwitches();
-var fgeSwitches = fgeSwitchesRead.switches;
-fgeSwitchesRead.legacy.forEach(function (l) {
-  console.warn("[fge] ?" + l.from + " は ?fge=" + l.to + " に替わった（次の版で読まなくなる）");
-});
-if (fgeSwitchesRead.unknown.length > 0) console.warn("[fge] ?fge= の知らない語を捨てた: " + fgeSwitchesRead.unknown.join(","));
+// WhyNot: 読み手が無い頁で止めない — 書き出しを通さずに置いた頁でも、旗の効かない普段の起動として遊べる。
+var fgeSwitches = (function () {
+  if (typeof fgePageSwitches !== "function") {
+    console.error("[fge] 頁の旗の読み手（fge-switches.js）が index.html に無い — 旗は効かない（bin/fge export-web で書き出し直す）");
+    return { fps: false, backend: "", net: "", sw: true, input: "", orientation: "", size: "", glcheck: false, loadtime: false,
+             capture: 0, deferred: "", usedAssets: false, webgpuFail: "" };
+  }
+  var read = fgePageSwitches();
+  read.legacy.forEach(function (l) { console.warn("[fge] ?" + l.from + " は ?fge=" + l.to + " に替わった（次の版で読まなくなる）"); });
+  if (read.unknown.length > 0) console.warn("[fge] ?fge= の知らない語を捨てた: " + read.unknown.join(","));
+  return read.switches;
+})();
 
 // WhyNot: 普段の起動で見ない — getError は GPU の待ちになり、1 コマが何倍にも延びる。
 var fgeGlCheck = { calls: 0, errors: 0, seen: Object.create(null), counts: Object.create(null) };

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -126,7 +127,10 @@ func measureWebTapWait(out string, keys []string, lastArrival float64, wait time
 		return m, "", err
 	}
 	defer closeServer()
-	url, initScript := webPageSwitches{Net: "4g"}.openURL(fmt.Sprintf("http://%s/index.html", ln.Addr().String()), out)
+	url, initScript, err := webPageSwitches{Net: "4g"}.openURL(fmt.Sprintf("http://%s/index.html", ln.Addr().String()), filepath.Join(out, "index.html"))
+	if err != nil {
+		return m, "", err
+	}
 	page, err := openReadyPage(url, initScript, cond, wait)
 	if err != nil {
 		return m, "", err

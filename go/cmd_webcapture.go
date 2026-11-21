@@ -31,6 +31,7 @@ func cmdWebCapture(out, errOut *strings.Builder, args []string) int {
 	opt := cdp.Options{}
 	var pos []string
 	serveDir := ""
+	var dev *webPageSwitches
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch a {
@@ -52,7 +53,7 @@ func cmdWebCapture(out, errOut *strings.Builder, args []string) int {
 				fmt.Fprintf(errOut, "--dev: %v\n", err)
 				return 2
 			}
-			opt.InitScript = sw.initScript()
+			opt.InitScript, dev = sw.initScript(), &sw
 			i++
 			continue
 		case "--wait", "--size":
@@ -99,6 +100,15 @@ func cmdWebCapture(out, errOut *strings.Builder, args []string) int {
 		}
 		defer closeServer()
 		opt.URL = "http://" + listener.Addr().String() + "/" + strings.TrimPrefix(pos[0], "/")
+		if dev != nil {
+			page, _, _ := strings.Cut(strings.TrimPrefix(pos[0], "/"), "?")
+			url, initScript, err := dev.openURL(opt.URL, filepath.Join(serveDir, filepath.FromSlash(page)))
+			if err != nil {
+				fmt.Fprintf(errOut, "web-capture: --dev: %v（頁が頁の旗の読み手を持たない前の engine の書き出し）\n", err)
+				return 2
+			}
+			opt.URL, opt.InitScript = url, initScript
+		}
 	}
 
 	res, err := cdp.Capture(opt)

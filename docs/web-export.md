@@ -384,7 +384,7 @@ GitHub Pages は全部のファイルに `max-age=600` を付けるので、Serv
 旗は URL の 1 つの鍵 `?fge=` にコンマで並べる（`?fge=fps,webgl2`）。読み手は `engine_web/js/fge-switches.js`（書き出しが index.html の頭と `sw.js` に埋める）。
 
 - 語は `名前` か `名前:値`。値が決まった語の旗は値だけを書けばよい（`webgl2`・`4g`・`small`・`touch`・`portrait`）
-- 大文字と小文字は区別しない。同じ旗が 2 回あれば後の語。知らない語は console に 1 行出して捨てる（止めない）
+- 大文字と小文字は区別しない。同じ旗が 2 回あれば後の語。`fge` の鍵が 2 つある時（`?fge=a&fge=b`）は最初の 1 つだけを読む。知らない語は console に 1 行出して捨てる（止めない）
 - `fge` はクエリのどこに置いてもよい（`?talk=Lair&line=46&fge=fps`）
 - 道具（書き出しの確かめ・`web-capture --dev`）は URL を使わず、頁より先に `window.fgeDev = { capture: 6, … }` を入れる（欄は下の表の左の名前。[web-capture.md](web-capture.md)）。
   同じ旗は `window.fgeDev` → `?fge=` → 前の鍵の順で、最初に値を持つ所を使う。`backend` だけはどこか 1 つでも `webgl2` なら WebGL2
