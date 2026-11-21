@@ -292,12 +292,10 @@ func finishExport(out, errOut *strings.Builder, o exportWebOptions, c exportConf
 	return titleCode, nil
 }
 
-// exportGateOf は書き出しの門（webGateOf に、確かめで 4G のタイトルが止まった赤を足した物）。
+// exportGateOf は書き出しの門（webGateOf に、書き出しの確かめの結果の赤を足した物）。
 func exportGateOf(sizes *webSizeTable, b *webBundle, budget webStartupBudget) webGate {
 	g := webGateOf(sizes, b, budget)
-	if b.Checks != nil && b.Checks.Title4g == "stopped" {
-		g.Red = append(g.Red, webTitle4gStoppedRed)
-	}
+	g.Red = append(g.Red, webChecksRed(b)...)
 	return g
 }
 

@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bytes"
-	"compress/gzip"
 	"fmt"
 	"io"
 	"os"
@@ -55,19 +53,4 @@ func humanBytes(n int64) string {
 		return fmt.Sprintf("%.1f KB", float64(n)/(1<<10))
 	}
 	return fmt.Sprintf("%d B", n)
-}
-
-func gzipBytes(data []byte) ([]byte, error) {
-	var buf bytes.Buffer
-	zw, err := gzip.NewWriterLevel(&buf, gzip.BestCompression)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := zw.Write(data); err != nil {
-		return nil, err
-	}
-	if err := zw.Close(); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
 }

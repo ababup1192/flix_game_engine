@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -185,6 +184,14 @@ func webTitle4gOf(r *webMissingReport, err error) (string, string) {
 // webTitle4gStoppedRed は 4G のタイトルで止まった束の門の赤の 1 行（export-web と web-check で同じ字）。
 const webTitle4gStoppedRed = "4G（?net=4g）のタイトルで、届いていない後回しの物を待って止まった — タイトルで使う物は web.deferred から外す"
 
+// webChecksRed は束の書き出しの確かめの結果（bundle.json の checks）から門を赤にする行（export-web と web-check で同じ）。
+func webChecksRed(b *webBundle) []string {
+	if b.Checks != nil && b.Checks.Title4g == "stopped" {
+		return []string{webTitle4gStoppedRed}
+	}
+	return nil
+}
+
 // webBrowserCheckLog は確かめの途中の様子の出し方。nil の欄は黙る。
 type webBrowserCheckLog struct {
 	Step        func(format string, a ...any)
@@ -285,15 +292,4 @@ func runExportBrowserChecks(o exportWebOptions, c exportConfig, b *webBundle) (e
 		}
 	}
 	return r, nil
-}
-
-// serveLocalDir は dir を 127.0.0.1 の空いた口の使い捨ての http サーバーで配る（web-capture・web-bench・書き出しの確かめで共用）。
-func serveLocalDir(dir string) (net.Listener, func(), error) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return nil, nil, err
-	}
-	srv := &http.Server{Handler: http.FileServer(http.Dir(dir)), ReadHeaderTimeout: 10 * time.Second}
-	go srv.Serve(ln)
-	return ln, func() { srv.Close() }, nil
 }

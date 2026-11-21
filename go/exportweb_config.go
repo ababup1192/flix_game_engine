@@ -239,7 +239,8 @@ func (c *exportConfig) planDeferred(early *webBundle) *exportFailure {
 	c.DeferredPlan.Warnings = append(c.DeferredPlan.Warnings, lines...)
 	if rows := placeholderImageRowsWithoutWhy(earlyEntries, c.DeferredPolicy, early); len(rows) > 0 {
 		msg := fmt.Sprintf("web.deferredPolicy の %s が後回しの絵を placeholder にしているのに why が無い（届くまで描かずに進み、押した後に黒いコマが出る）。\n  次: 絵は待たせる（onMissing を消す）か、行に \"why\": \"<理由>\" を書く", quotedList(rows))
-		if exportVerdictOf(true, false, c.Budget) == exportStop {
+		// WhyNot: --draft でも止める — draft は門（秒と 4G のタイトル）の赤を残す口で、web 欄の書き落としは書き出す前に直せる。
+		if c.Budget.Declared {
 			return exportFailf(1, "fge export-web: %s\n", msg)
 		}
 		ewLogf("★ %s（web.startupBudget を書くと止まる・移行が終わる版から全部止まる）", msg)

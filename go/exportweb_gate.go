@@ -215,7 +215,7 @@ func webGateOf(sizes *webSizeTable, b *webBundle, budget webStartupBudget) webGa
 	if n := webPlaceholderImages(b); n > 0 {
 		g.Notes = append(g.Notes, fmt.Sprintf("★ placeholder の後回しの絵 %d 枚（届くまで描かずに進む）", n))
 	}
-	g.Advice = g.advise(t)
+	g.Advice = g.advise(b, t, est)
 	return g
 }
 
@@ -246,7 +246,7 @@ func (g webGate) line() string {
 }
 
 // advise は予算を超えた時の次に打つ手（候補は書き出しの確かめで取れた時に呼び手が先頭へ足す）。
-func (g webGate) advise(t webTapWait) []string {
+func (g webGate) advise(b *webBundle, t webTapWait, est webStartupEstimate) []string {
 	var out []string
 	if over := g.TapWait - g.LogoCover; over > 0 {
 		hint := "押した直後に要る物を web.deferred の頭へ並べ替えるか後回しから外す"
@@ -254,6 +254,10 @@ func (g webGate) advise(t webTapWait) []string {
 			hint += "・deferredPolicy に group を付けると押した後のロゴが 3 秒まで覆う"
 		}
 		out = append(out, fmt.Sprintf("押した後の待ち %.1f 秒（ロゴで覆えない分 %.1f 秒）→ %s", g.TapWait, over, hint))
+	}
+	if b.WasmBrotli == "" {
+		br := int64(float64(est.Boot.WasmWire) * webBrotliToGzipRatio)
+		out = append(out, fmt.Sprintf("wasm を gzip の大きさで配っている → web.compress の wasmBrotli: false を外すと wasm が 約 -%.1f 秒", webSecondsFor(est.Boot.WasmWire-br)))
 	}
 	return out
 }

@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"image/png"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -130,4 +132,15 @@ func parseSize(s string) (int, int, bool) {
 		return 0, 0, false
 	}
 	return w, h, true
+}
+
+// serveLocalDir は dir を 127.0.0.1 の空いた口の使い捨ての http サーバーで配る（web-capture・web-bench・書き出しの確かめで共用）。
+func serveLocalDir(dir string) (net.Listener, func(), error) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, nil, err
+	}
+	srv := &http.Server{Handler: http.FileServer(http.Dir(dir)), ReadHeaderTimeout: 10 * time.Second}
+	go srv.Serve(ln)
+	return ln, func() { srv.Close() }, nil
 }

@@ -126,11 +126,7 @@ func rerunWebBrowserChecks(dir string, b *webBundle) error {
 		fmt.Fprintln(os.Stderr, "web-check: Chrome が見つからないので --browser の確かめは飛ばした（bundle.json の checks を使う）")
 		return nil
 	}
-	budget := defaultWebStartupBudget()
-	if b.StartupBudget != nil {
-		budget = *b.StartupBudget
-	}
-	r := runWebBrowserChecks(dir, b, budget.startKeys(), webBrowserCheckLog{
+	r := runWebBrowserChecks(dir, b, webBundleBudget(b).startKeys(), webBrowserCheckLog{
 		TapFailed: func(err error) { fmt.Fprintf(os.Stderr, "web-check: 押した後を測れなかった: %v\n", err) },
 		TapMeasured: func(m webTapMeasure) {
 			var w strings.Builder
@@ -140,6 +136,16 @@ func rerunWebBrowserChecks(dir string, b *webBundle) error {
 	})
 	b.Checks = &r.Checks
 	return nil
+}
+
+// webBundleBudget は束に写した予算（無ければ既定の 16 秒）。束に予算があれば書いた扱い（Declared）。
+func webBundleBudget(b *webBundle) webStartupBudget {
+	if b.StartupBudget == nil {
+		return defaultWebStartupBudget()
+	}
+	budget := *b.StartupBudget
+	budget.Declared = true
+	return budget
 }
 
 // webSumsReport は束のファイルと sums.json の照らし合わせ。
@@ -227,11 +233,7 @@ func runWebCheck(dir string, browser bool) (webCheckResult, error) {
 			return res, err
 		}
 	}
-	budget := defaultWebStartupBudget()
-	if b.StartupBudget != nil {
-		budget = *b.StartupBudget
-		budget.Declared = true
-	}
+	budget := webBundleBudget(&b)
 	g := webGateOf(newWebSizeTable(dir), &b, budget)
 	g.BudgetDefault = b.StartupBudget == nil
 	if err := budget.validate("bundle.json の startupBudget"); err != nil {
@@ -240,11 +242,10 @@ func runWebCheck(dir string, browser bool) (webCheckResult, error) {
 	if b.Draft {
 		g.Red = append(g.Red, "draft の書き出し（"+strings.Join(b.DraftReasons, "・")+"）— --draft を付けずに書き出し直す")
 	}
+	g.Red = append(g.Red, webChecksRed(&b)...)
 	switch {
 	case b.Checks == nil:
 		g.Notes = append(g.Notes, "★ 4G のタイトルの確かめの記録が無い（0.105.0 までの書き出し）— web-check --browser で流す")
-	case b.Checks.Title4g == "stopped":
-		g.Red = append(g.Red, webTitle4gStoppedRed)
 	case b.Checks.Title4g == "skipped":
 		g.Notes = append(g.Notes, "★ 4G のタイトルの確かめを飛ばした書き出し（"+b.Checks.SkippedWhy+"）— web-check --browser で流す")
 	}

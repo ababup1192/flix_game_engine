@@ -220,17 +220,63 @@ func TestRunExportWebWithoutGameFolderIsCallError(t *testing.T) {
 	}
 }
 
-func TestExportFailureDiscardingNamesFolder(t *testing.T) {
-	if f := exportFailf(1, "x").discarding("/x/out"); f.discard != "/x/out" {
-		t.Errorf("消す書き出し先を持つはず: %+v", f)
-	}
-}
-
 func TestRunExportWebRemovesDiscardedOut(t *testing.T) {
 	out := t.TempDir()
 	f := exportFailf(1, "止めた\n").discarding(out)
 	var errOut strings.Builder
 	if code := reportExportFailure(&errOut, f); code != 1 || dirExists(out) || errOut.String() != "止めた\n" {
 		t.Errorf("消す書き出し先を消して字を書き、番号を返すはず: code=%d exists=%v", code, dirExists(out))
+	}
+}
+
+func TestBrotliWindowBitsEmptyIsSmallest(t *testing.T) {
+	if got := brotliWindowBits(0); got != 10 {
+		t.Errorf("空は最も小さい窓 10 のはず: %d", got)
+	}
+}
+
+func TestBrotliWindowBitsFitsSmallestWindowExactly(t *testing.T) {
+	if got := brotliWindowBits(1008); got != 10 {
+		t.Errorf("2^10−16 = 1008 バイトは窓 10 に収まるはず: %d", got)
+	}
+}
+
+func TestBrotliWindowBitsGrowsPastSmallestWindow(t *testing.T) {
+	if got := brotliWindowBits(1009); got != 11 {
+		t.Errorf("1009 バイトは窓 11 のはず: %d", got)
+	}
+}
+
+func TestBrotliWindowBitsCapsAtLargestWindow(t *testing.T) {
+	if got := brotliWindowBits(1<<24 - 15); got != 24 {
+		t.Errorf("2^24−16 を超えても窓は 24 で止まるはず: %d", got)
+	}
+}
+
+func TestGateAdviceNamesWasmBrotliFalseWhenOff(t *testing.T) {
+	b := webBundle{}
+	g := webGateOf(newWebSizeTable(t.TempDir()), &b, defaultWebStartupBudget())
+	if len(g.Advice) != 1 || !strings.Contains(g.Advice[0], "wasmBrotli: false を外すと") {
+		t.Errorf("brotli で配らない束は wasmBrotli: false を外す手を出すはず: %v", g.Advice)
+	}
+}
+
+func TestGateAdviceOmitsBrotliWhenOn(t *testing.T) {
+	b := webBundle{WasmBrotli: webWasmBrotliFile}
+	if g := webGateOf(newWebSizeTable(t.TempDir()), &b, defaultWebStartupBudget()); len(g.Advice) != 0 {
+		t.Errorf("brotli で配る束は brotli の手を出さないはず: %v", g.Advice)
+	}
+}
+
+func TestBundleBudgetWithoutBudgetIsDefault(t *testing.T) {
+	if got := webBundleBudget(&webBundle{}); got.Seconds != webStartupTargetSeconds || got.Declared {
+		t.Errorf("束に予算が無ければ既定の 16 秒で書いた扱いにしないはず: %+v", got)
+	}
+}
+
+func TestBundleBudgetCopiedIsDeclared(t *testing.T) {
+	b := webBundle{StartupBudget: &webStartupBudget{Seconds: 12}}
+	if got := webBundleBudget(&b); got.Seconds != 12 || !got.Declared {
+		t.Errorf("束の予算は書いた扱いのはず: %+v", got)
 	}
 }

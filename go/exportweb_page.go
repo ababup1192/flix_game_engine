@@ -335,15 +335,11 @@ func writeWebWasmBrotli(jsDir, out string) error {
 	return copyFile(filepath.Join(jsDir, webBrotliDecoderFile), filepath.Join(out, webBrotliDecoderFile))
 }
 
-// brotliBytes は data を brotli の CLI（brotli -q 11）の既定と同じ形で詰める: 窓は 2^24 から、data が収まる最も小さい大きさまで縮める。
-// WhyNot: 窓を 24 のままにしない — CLI と窓の大きさが違うと、同じ wasm から別のバイトの .br ができる（大きさは同じ）。
+// brotliBytes は data を brotli の CLI（brotli -q 11）の既定と同じ形で詰める。
+// WhyNot: 窓を 24 に決め打ちしない — brotli -q 11 で詰めた物とバイトがそろわず、sums.json と版の字を手元の CLI の出力と突き合わせられない。
 func brotliBytes(data []byte) ([]byte, error) {
-	lgwin := 10
-	for lgwin < 24 && (1<<lgwin)-16 < len(data) {
-		lgwin++
-	}
 	var buf bytes.Buffer
-	zw := brotli.NewWriterOptions(&buf, brotli.WriterOptions{Quality: 11, LGWin: lgwin})
+	zw := brotli.NewWriterOptions(&buf, brotli.WriterOptions{Quality: 11, LGWin: brotliWindowBits(len(data))})
 	if _, err := zw.Write(data); err != nil {
 		return nil, err
 	}
@@ -351,6 +347,15 @@ func brotliBytes(data []byte) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+// brotliWindowBits は n バイトが収まる最も小さい窓の bit 数（10〜24。窓の大きさは 2^bits − 16）。brotli の CLI が入力の大きさから窓を決める形と同じ。
+func brotliWindowBits(n int) int {
+	bits := 10
+	for bits < 24 && (1<<bits)-16 < n {
+		bits++
+	}
+	return bits
 }
 
 // writeExportPage は頁の物（wasm・js・bundle.json・index.html など）を書き、埋め込んだ素材の平文が残っていないかを見る。版を返す。

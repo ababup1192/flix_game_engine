@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"math"
 	"os"
 	"path"
@@ -231,4 +233,22 @@ func webTapWaitOf(sizes *webSizeTable, b *webBundle, waitFor []string) webTapWai
 		w.Until = arrivals[i]
 	}
 	return w
+}
+
+// webBrotliToGzipRatio は wasm を brotli（11）にした大きさの、gzip にした大きさに対する割合（測った値: 1.4 MB / 2.4 MB）。
+const webBrotliToGzipRatio = 0.58
+
+func gzipBytes(data []byte) ([]byte, error) {
+	var buf bytes.Buffer
+	zw, err := gzip.NewWriterLevel(&buf, gzip.BestCompression)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := zw.Write(data); err != nil {
+		return nil, err
+	}
+	if err := zw.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
