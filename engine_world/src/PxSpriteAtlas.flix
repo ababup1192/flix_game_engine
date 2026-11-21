@@ -63,11 +63,12 @@ pub mod PxSpriteAtlas {
             })
         }) |> List.toMap;
         let buf: Array[Int32, rc] = Array.empty(rc, side * side);
+        let colors = colorTable(rc, doc#legend, resolver);
         frames |> List.forEach(f -> {
             let (key, rows) = f;
             match Map.get(key, regions) {
                 case None    => ()
-                case Some(r) => blitFrame(buf, side, r, doc#legend, resolver, rows)
+                case Some(r) => blitFrame(buf, side, r, colors, rows)
             }
         });
         { side = side, regions = regions, pixels = Array.toVector(buf) }
@@ -172,19 +173,28 @@ pub mod PxSpriteAtlas {
         (rows |> List.foldLeft((acc, row) -> Int32.max(acc, String.length(row)), 0),
          List.length(rows))
 
-    /// 1 コマを buf の region 位置に書き込む。legend に無い文字は透明のまま(書かない)。
-    def blitFrame(buf: Array[Int32, rc], side: Int32, r: Slot,
-                  legend: Map[Char, String], resolver: String -> Color,
-                  rows: List[String]): Unit \ rc =
-        rows |> List.zipWithIndex |> List.forEach(entry -> {
-            let (ry, row) = entry;
-            String.toList(row) |> List.zipWithIndex |> List.forEach(cell -> {
-                let (rx, ch) = cell;
-                match Map.get(ch, legend) {
-                    case None      => ()
-                    case Some(key) =>
-                        Array.put(argbOf(resolver(key)), (r#y + ry) * side + (r#x + rx), buf)
-                }
-            })
-        })
+    /// legend の文字の番号 → ARGB の表。legend に無い文字の番号は 0（透明・書かない）。
+    // WhyNot: 画素ごとに resolver と argbOf を呼ばない — legend は数十色なのに格子は数十万画素あり、生成の時間の大半が同じ色の引き直しになる。
+    // WhyNot: 0 を「legend に無い」の値に使ってよい — argbOf は常に不透明（alpha 255）なので 0 を返さない。
+    def colorTable(rc: Region[r], legend: Map[Char, String], resolver: String -> Color): Array[Int32, r] \ r =
+        let size = legend |> Map.foldLeftWithKey((acc, ch, _) -> Int32.max(acc, Char.toBmpCodePoint(ch) + 1), 0);
+        let table = Array.repeat(rc, size, 0);
+        legend |> Map.forEach((ch, key) -> Array.put(argbOf(resolver(key)), Char.toBmpCodePoint(ch), table));
+        table
+
+    /// 1 コマを buf の slot の位置に書き込む。legend に無い文字は透明のまま(書かない)。
+    def blitFrame(buf: Array[Int32, r], side: Int32, slot: Slot, colors: Array[Int32, r],
+                  rows: List[String]): Unit \ r =
+        rows |> List.forEachWithIndex((ry, row) ->
+            blitRow(buf, colors, row, (slot#y + ry) * side + slot#x, 0))
+
+    /// row の rx 文字目から行末までを buf の base + rx へ書き込む。
+    def blitRow(buf: Array[Int32, r], colors: Array[Int32, r], row: String, base: Int32, rx: Int32): Unit \ r =
+        if (rx >= String.length(row)) ()
+        else {
+            let code = Char.toBmpCodePoint(String.charAt(rx, row));
+            let argb = if (code < Array.length(colors)) Array.get(code, colors) else 0;
+            if (argb != 0) Array.put(argb, base + rx, buf) else ();
+            blitRow(buf, colors, row, base, rx + 1)
+        }
 }
