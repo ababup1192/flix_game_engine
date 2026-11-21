@@ -299,12 +299,13 @@ let byName = Model3d.nodesByName(collision);                     // たくさん
 
 ## glb の頂点の色（COLOR_0・Blender でベイクした明るさ）
 
-`Gltf` の読み込み（`load`・`fromGlb`・`loadTexturedUsing`・`loadTexturedPbrUsing`）は、primitive の `COLOR_0` を頂点の色として読み、baseColorFactor と頂点ごとに掛けて
-形の頂点の色にする。絵つきの材質は「絵 × 頂点の色」なので、Blender で部屋の明るさを頂点の色にベイクした glb は、ベイクした明るさで描かれる（GL・WebGPU・CPU とも同じ式）。
+`Gltf.loadTexturedUsingOptions`（バイトの版は `fromGlbTexturedUsingOptions`）に `vertexColors = true` を渡すと、primitive の `COLOR_0` を頂点の色として読み、baseColorFactor と頂点ごとに掛けて
+形の頂点の色にする。選ばなければ COLOR_0 は読まない（今までと同じ。`load`・`fromGlb`・`loadTexturedUsing`・`loadTexturedPbrUsing` も読まない）。絵つきの材質は「絵 × 頂点の色」なので、Blender で部屋の明るさを頂点の色にベイクした glb は、ベイクした明るさで描かれる（GL・WebGPU・CPU とも同じ式）。
 
 ```flix
 // 読み込みの時に 1 回。PS1 の GPU と同じく頂点の色の 0.5 を 1 倍として扱う（0.5 より明るくベイクした所が絵より明るくなる）
-let model = Gltf.loadTexturedUsing(decoder, Gltf.noTextureLimits(), "assets/room.glb") |> Result.map(Model3d.withVertexColorScale(2.0));
+let model = Gltf.loadTexturedUsingOptions(decoder, { vertexColors = true | Gltf.defaultLoadOptions() }, "assets/room.glb")
+    |> Result.map(Model3d.scaleVertexColors(2.0));
 // ベイクした明るさだけで見せる場面: 環境光を白・光なし（かすみは掛かる）
 { environment = { ambient = Color.rgb(1.0, 1.0, 1.0), hemisphere = 0.0 | s#environment } | s }
 ```
@@ -314,13 +315,16 @@ let model = Gltf.loadTexturedUsing(decoder, Gltf.noTextureLimits(), "assets/room
 - 色の空間: glTF の決まりどおり線形の値として読み、0..1 に切ってから画面の値（sRGB の値）へ戻す（`Gltf.Internal.colorsOf`）
   - WhyNot（ベイクの道具が画面の値を書く時）: 決まりは線形。画面の値（sRGB の値）を線形に直さずに COLOR_0 へ書くと、読む時にもう一度画面の値へ戻すので、
     暗い所が持ち上がって明るく白っぽく出る（0.5 → 約 0.74）。書き出す前に線形へ直す（スクリプトで数を直に入れる時は sRGB → 線形の式を通す）
-- `COLOR_0` の無い glb は今までと同じ色（baseColorFactor だけ）
-- `Model3d.withVertexColorScale(k, model)` = 形と全部の parts の頂点の色に k を掛ける（`Mesh3d.withColorScale`。既定の読み込みは 1 倍・中身の鍵も変わる）。
+- 選ばなければ COLOR_0 は読まない（今までと同じ。baseColorFactor だけ）。`COLOR_0` の無い glb は選んでも baseColorFactor だけ
+  - WhyNot（既定で読まない）: Blender の書き出しは頂点の色の層があると COLOR_0 を書くので、白でない COLOR_0 を持つ既存のゲームの glb の色が engine を上げただけで変わる
+- `LoadOptions` のほかの欄: `limits` = 絵の大きさの上限（`loadTexturedUsing` の limits）・`pbr` = metallic・roughness も読む（`loadTexturedPbrUsing` と同じ）
+- `Model3d.scaleVertexColors(k, model)` = 形と全部の parts の頂点の色に k を掛ける（`Mesh3d.scaleColors`。既定の読み込みは 1 倍・中身の鍵も変わる）。
+  今の色に掛けるので 2 回呼ぶと k × k 倍。k が NaN・負・無限の時は 1 として扱い、1 行知らせる。
   頂点の色の 1 を超える値はそのまま描き手へ渡り、絵 × 頂点の色の後に画面の値で切れる（PS1 の 2 倍の掛け算と同じ）
 - WhyNot（Blender の見た目とのずれ）: 描き手は「絵 × 頂点の色」を画面の値どうしで掛け、その後で線形へ戻して光を掛ける。Blender は線形の値どうしで掛けるので、
   暗くベイクした所（頂点の色が 0.2 前後）は engine の方が少し明るく、絵の色の差も少し大きく見える。線形どうしで掛けると、絵つきの材質を使う今までの全部の glb の色が変わるので掛け方は変えていない。
-  合わせるなら Blender の側でベイクした色を少し下げるか、`withVertexColorScale` で寄せる
-- 材質の無い part（頂点の色だけの形）は頂点の色を線形へ戻してから光を掛ける。`withVertexColorScale(2.0)` の 1 を超える色は線形へ戻すと 2 倍より強く伸びる（2.0 → 約 4.95）
+  合わせるなら Blender の側でベイクした色を少し下げるか、`scaleVertexColors` で寄せる
+- 材質の無い part（頂点の色だけの形）は頂点の色を線形へ戻してから光を掛ける。`scaleVertexColors(2.0)` の 1 を超える色は線形へ戻すと 2 倍より強く伸びる（2.0 → 約 4.95）
 - gl-parity の `vertexColorTexture3d` が、絵 × 頂点の色（1 倍と 2 倍）の GL と CPU のそろいを見る（32 px・±1）
 
 ## 金属っぽさと粗さ（鏡面ハイライトと空の映り込み）
@@ -580,7 +584,7 @@ PSX 風シェーダーの界隈の手を、場面ごとに選んで掛ける（`
 // 頂点の揺れと弱いアフィンも足す
 |> Scene3d.withPsx({ colorDepth = 5, vertexSnap = 1.0, affineTextureMapping = 0.35 | Scene3d.psxOff() })
 // PS1 の GPU に近い値（大きな床と壁は流れが強い）
-|> Scene3d.withPsx(Scene3d.psxLook())
+|> Scene3d.withPsx(Scene3d.psxPreset())
 ```
 
 | 欄 | 値 | 効き方 |
@@ -630,17 +634,18 @@ App.withPostStack(_ -> PostStack.preset(PostStack.Preset.Neutral)
 ### 3 つの描き手の違い
 
 GL・WebGPU・CPU は同じ式を書く（GLSL の `r3d_colorDepth`・`r3d_vertexSnap`・WGSL の同じ名前・CPU の `SoftRaster3d.Psx` の `quantized`・`snapVertex`・`affineUv`）。
-変種は Unity の shader variant と同じ考えで、場面の psx が `Scene3d.Psx.isOn` の時だけ `+psx` のプログラムを組む（切っている場面の GLSL・WGSL の字は変わらない）。
+変種は Unity の shader variant と同じ考えで、場面の psx が `Scene3d.Psx.isOn` の時だけ `+psx` のプログラムを組む（既定の変種（`+ps`・`+pu`・`+psx` のどれも無い場面）の GLSL・WGSL の字は変わらない。`+ps`・`+pu` の WGSL は `R3dLight` の欄が 1 つ増える）。
 
 - 色の丸めは 8 bit の ±1 の差を段の境目で 1 段（5 ビットで ±8）に広げる。頂点の丸めは Float32 と Float64 の丸めが格子の真ん中に落ちた頂点を 1 画素ずらす（縁の 1 列が割れる）
 - アフィンの uv: GPU は `noperspective`（WGSL は `@interpolate(linear)`）の補間、CPU は画面の上の重みでつなぐ。手前の面（near）で切った三角形は、GPU の切り方と CPU の切り方（clip 空間でつなぐ）が違い、
   切った所の近くの uv がずれる。Nearest の絵の texel の境が画面の上で長い斜めの線になり、その線の上の画素が隣の texel を読む
-- 門の許す差: `make gl-parity` の `psxFloor3d`（アフィン 1 の床・800 px）・`psxBox3d`（Design・staticGroup・ビルボード・100 px）・`psxSkin3d`（骨つき・150 px）。
+- 門の許す差: `make gl-parity` の `psxFloor3d`（アフィン 1 の床・800 px）・`psxBox3d`（Design・staticGroup・ビルボード・20 px）・`psxSkin3d`（骨つき・60 px）。
   bench/scene3d の部屋（`make psx-video`・Design 320×180・960×540 に拡げた絵）の PSNR: 切った時の GL と CPU 50.3 dB・`dither` 49.8 dB・`full` 45.5 dB。WebGPU と GL は切った時 94.5 dB・`full` 61.5 dB
 
 ### 重さ
 
 - GL（M4 Pro）の部屋（Design 320×180・16 物・11 draw）で GPU の時間 0.19 ms → 0.20 ms。1 コマの CPU は変わらない（uniform 3 つ）。スマホと Native の大きな窓は【未測定】
+- CPU の描き手（bench/scene3d の `make cpu-time`・960×540・`FGE_SOFT_SERIAL=1`・M4 Pro）の切った部屋: 入れる前 中央値 165〜166 ms → 入れた後 166〜167 ms（揺れの幅 ±2 ms の中）。切った場面は頂点の欄が 2 つ（u × w・v × w。中身は 0）増えるだけで、画素ごとの丸めとアフィンの計算は通らない
 - 変種の分だけプログラムが増える（場面に初めて `+psx` が出た時に組む）。遊びの途中で初めて出すなら `App.withPreload3d` の `variants` に `Scene3d.preloadVariantOf(その場面)` を渡す
 
 ### 確かめの入口

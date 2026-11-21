@@ -11,17 +11,23 @@ mod TestPsxLook {
 
     @Test
     def testPresetTurnsPsxOn(): Unit \ Assert =
-        Assert.assertTrue(Scene3d.Psx.isOn(Scene3d.withPsx(Scene3d.psxLook(), plain())#psx))
+        Assert.assertTrue(Scene3d.Psx.isOn(Scene3d.withPsx(Scene3d.psxPreset(), plain())#psx))
 
     @Test
     def testColorDepthAloneTurnsPsxOn(): Unit \ Assert =
         Assert.assertTrue(Scene3d.Psx.isOn({ colorDepth = 5 | Scene3d.psxOff() }))
 
     @Test
+    def testNegativeColorDepthIsOff(): Unit \ Assert =
+        Assert.assertEq(expected = 0, Scene3d.Psx.colorDepthOf({ colorDepth = -3 | Scene3d.psxOff() }))
+
+    @Test
     def testColorDepthIsClampedToEightBits(): Unit \ Assert =
-        Assert.assertEq(expected = (0, 8, 5), (Scene3d.Psx.colorDepthOf({ colorDepth = -3 | Scene3d.psxOff() }),
-                                                Scene3d.Psx.colorDepthOf({ colorDepth = 12 | Scene3d.psxOff() }),
-                                                Scene3d.Psx.colorDepthOf({ colorDepth = 5 | Scene3d.psxOff() })))
+        Assert.assertEq(expected = 8, Scene3d.Psx.colorDepthOf({ colorDepth = 12 | Scene3d.psxOff() }))
+
+    @Test
+    def testColorDepthInRangeIsKept(): Unit \ Assert =
+        Assert.assertEq(expected = 5, Scene3d.Psx.colorDepthOf({ colorDepth = 5 | Scene3d.psxOff() }))
 
     @Test
     def testNanSnapAndAffineAreOff(): Unit \ Assert =
@@ -37,24 +43,47 @@ mod TestPsxLook {
     def testQuantizeFiveBitsWithoutDither(): Unit \ Assert =
         Assert.assertEq(expected = 12.0 / 31.0, Scene3d.Psx.quantize(5, 0.0, 100.0 / 255.0))
 
-    /// ディザ +3（PS1 の表の最大 × 8）は 8 bit の値 100 を 103 にし、まだ 12 段のまま。+4 段相当（0.5 段）なら 104 で 13 段。
+    /// ディザ +3（PS1 の表の最大 × 8）は 8 bit の値 100 を 103 にし、まだ 12 段のまま。
     @Test
-    def testQuantizeAddsDitherInEightBitSteps(): Unit \ Assert =
-        Assert.assertEq(expected = (12.0 / 31.0, 13.0 / 31.0), (Scene3d.Psx.quantize(5, 3.0 / 8.0, 100.0 / 255.0), Scene3d.Psx.quantize(5, 0.5, 100.0 / 255.0)))
+    def testQuantizeDitherBelowTheStepKeepsTheStep(): Unit \ Assert =
+        Assert.assertEq(expected = 12.0 / 31.0, Scene3d.Psx.quantize(5, 3.0 / 8.0, 100.0 / 255.0))
+
+    /// +4 段相当（0.5 段）なら 104 で 13 段。
+    @Test
+    def testQuantizeDitherReachingTheStepMovesUp(): Unit \ Assert =
+        Assert.assertEq(expected = 13.0 / 31.0, Scene3d.Psx.quantize(5, 0.5, 100.0 / 255.0))
 
     @Test
-    def testQuantizeKeepsWhiteAndBlack(): Unit \ Assert =
-        Assert.assertEq(expected = (1.0, 0.0), (Scene3d.Psx.quantize(5, 0.375, 1.0), Scene3d.Psx.quantize(5, -0.5, 0.0)))
+    def testQuantizeKeepsWhite(): Unit \ Assert =
+        Assert.assertEq(expected = 1.0, Scene3d.Psx.quantize(5, 0.375, 1.0))
+
+    @Test
+    def testQuantizeKeepsBlack(): Unit \ Assert =
+        Assert.assertEq(expected = 0.0, Scene3d.Psx.quantize(5, -0.5, 0.0))
 
     @Test
     def testZeroBitsLeavesColor(): Unit \ Assert =
         Assert.assertEq(expected = 0.4242, Scene3d.Psx.quantize(0, 0.3, 0.4242))
 
-    /// PS1 の表の左上は −4（÷ 8 で −0.5）・(1, 1) は −2・(2, 0) は −3。格子は 4 で繰り返す。
+    /// PS1 の表の左上は −4（÷ 8 で −0.5）。
     @Test
-    def testPsxDitherTable(): Unit \ Assert =
-        let at = (x, y) -> Scene3d.Psx.ditherAt(Scene3d.DitherPattern.Psx, x, y);
-        Assert.assertEq(expected = (-0.5, -0.25, -0.375, -0.5), (at(0, 0), at(1, 1), at(2, 0), at(4, 8)))
+    def testPsxDitherTopLeft(): Unit \ Assert =
+        Assert.assertEq(expected = -0.5, Scene3d.Psx.ditherAt(Scene3d.DitherPattern.Psx, 0, 0))
+
+    /// (1, 1) は −2。
+    @Test
+    def testPsxDitherDiagonal(): Unit \ Assert =
+        Assert.assertEq(expected = -0.25, Scene3d.Psx.ditherAt(Scene3d.DitherPattern.Psx, 1, 1))
+
+    /// (2, 0) は −3。
+    @Test
+    def testPsxDitherTopRow(): Unit \ Assert =
+        Assert.assertEq(expected = -0.375, Scene3d.Psx.ditherAt(Scene3d.DitherPattern.Psx, 2, 0))
+
+    /// 格子は 4 で繰り返す（(4, 8) は (0, 0) と同じ）。
+    @Test
+    def testPsxDitherRepeatsEveryFour(): Unit \ Assert =
+        Assert.assertEq(expected = -0.5, Scene3d.Psx.ditherAt(Scene3d.DitherPattern.Psx, 4, 8))
 
     @Test
     def testBayerDitherIsCentered(): Unit \ Assert =
@@ -66,7 +95,10 @@ mod TestPsxLook {
         Assert.assertEq(expected = 0.0, Scene3d.Psx.ditherAt(Scene3d.DitherPattern.Off, 3, 2))
 
     @Test
+    def testPreloadVariantKeyOfPlainSceneIsEmpty(): Unit \ Assert =
+        Assert.assertEq(expected = "", Scene3d.preloadVariantKey(Scene3d.preloadVariantOf(plain())))
+
+    @Test
     def testPreloadVariantKeyHasPsx(): Unit \ Assert =
-        Assert.assertEq(expected = ("", "+psx"), (Scene3d.preloadVariantKey(Scene3d.preloadVariantOf(plain())),
-                                                  Scene3d.preloadVariantKey(Scene3d.preloadVariantOf(Scene3d.withPsx(Scene3d.psxLook(), plain())))))
+        Assert.assertEq(expected = "+psx", Scene3d.preloadVariantKey(Scene3d.preloadVariantOf(Scene3d.withPsx(Scene3d.psxPreset(), plain()))))
 }

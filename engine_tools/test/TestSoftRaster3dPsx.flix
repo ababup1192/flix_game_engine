@@ -46,9 +46,14 @@ mod TestSoftRaster3dPsx {
     @Test
     def testFiveBitsLandOnThirtyOneSteps(): Unit \ {Assert, IO} =
         let img = render(Scene3d.withPsx({ colorDepth = 5, dither = Scene3d.DitherPattern.Off | Scene3d.psxOff() }, grayPlate()));
-        let r = red(img, 4, 4);
         let steps = List.range(0, 32) |> List.map(q -> Float64.round(Int32.toFloat64(q) * 255.0 / 31.0) |> Float64.tryToInt32 |> Option.getWithDefault(-1));
-        Assert.assertTrue(List.memberOf(r, steps) and r != red(render(grayPlate()), 4, 4))
+        Assert.assertTrue(List.memberOf(red(img, 4, 4), steps))
+
+    /// 板の灰（8 bit で 130）は 31 段の値に無いので、5 ビットに丸めると丸めない時と違う値になる。
+    @Test
+    def testFiveBitsChangeTheGray(): Unit \ {Assert, IO} =
+        let img = render(Scene3d.withPsx({ colorDepth = 5, dither = Scene3d.DitherPattern.Off | Scene3d.psxOff() }, grayPlate()));
+        Assert.assertFalse(red(img, 4, 4) == red(render(grayPlate()), 4, 4))
 
     /// ディザの表は 4×4 の格子で画素ごとに足す量を変えるので、同じ色の板でも隣り合う画素の値が分かれる。
     @Test
@@ -59,7 +64,26 @@ mod TestSoftRaster3dPsx {
 
     /// 左の縁が画面の x = 2.6 の板。丸めなしなら画素 2（真ん中 2.5）は塗らず、格子 2 で丸めると縁が 2 へ動いて塗る。
     @Test
+    def testWithoutVertexSnapTheEdgePixelStaysEmpty(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = 0, red(render(sceneOf(plate(Color.rgb(1.0, 0.0, 0.0), 2.0, -0.7, 1.0) :: Nil)), 2, 4))
+
+    @Test
     def testVertexSnapMovesAnEdge(): Unit \ {Assert, IO} =
         let s = sceneOf(plate(Color.rgb(1.0, 0.0, 0.0), 2.0, -0.7, 1.0) :: Nil);
-        Assert.assertEq(expected = (0, true), (red(render(s), 2, 4), red(render(Scene3d.withPsx({ vertexSnap = 2.0 | Scene3d.psxOff() }, s)), 2, 4) > 0))
+        Assert.assertTrue(red(render(Scene3d.withPsx({ vertexSnap = 2.0 | Scene3d.psxOff() }, s)), 2, 4) > 0)
+
+    def pairOf(uv: { x = Float64, y = Float64 }): (Float64, Float64) = (uv#x, uv#y)
+
+    /// 遠近で補正した uv (0.25, 0.5)・頂点の (u × w, v × w) を補正した重みで足した物 (1.5, 0.75)・depth 2 → 画面の重みの uv は (0.75, 0.375)。
+    @Test
+    def testAffineUvAtZeroKeepsThePerspectiveUv(): Unit \ Assert =
+        Assert.assertEq(expected = (0.25, 0.5), pairOf(SoftRaster3d.Psx.affineUv(0.0, 2.0, (0.25, 0.5), (1.5, 0.75))))
+
+    @Test
+    def testAffineUvAtOneIsTheScreenWeightedUv(): Unit \ Assert =
+        Assert.assertEq(expected = (0.75, 0.375), pairOf(SoftRaster3d.Psx.affineUv(1.0, 2.0, (0.25, 0.5), (1.5, 0.75))))
+
+    @Test
+    def testAffineUvAtHalfMixesTheTwo(): Unit \ Assert =
+        Assert.assertEq(expected = (0.5, 0.4375), pairOf(SoftRaster3d.Psx.affineUv(0.5, 2.0, (0.25, 0.5), (1.5, 0.75))))
 }

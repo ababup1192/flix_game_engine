@@ -66,7 +66,7 @@ mod SoftRaster3d.ShadowMaps {
             let w0: Array[Float64, rr] = Array.repeat(rr, n, 0.0);
             let w1: Array[Float64, rr] = Array.repeat(rr, n, 0.0);
             let py = Int32.toFloat64(y) + 0.5;
-            Vector.get(y, bins) |> List.forEach(ti -> coverRow(n, py, tris, inks, noMats, 0.0, ti, depth, winner, w0, w1));
+            Vector.get(y, bins) |> List.forEach(ti -> coverRow(n, py, tris, inks, noMats, 0.0, 0.0, ti, depth, winner, w0, w1));
             // WhyNot: 画面の行の順（上が行 0）のまま置かない — GL の深度テクスチャは行 0 が NDC の y = −1 側で、向きをそろえる。
             List.range(0, n) |> List.forEach(x -> {
                 let z = Array.get(x, depth);

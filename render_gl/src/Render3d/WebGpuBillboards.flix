@@ -128,6 +128,7 @@ mod Render3d.WebGpuBillboards {
         else match Map.get(key, Ref.get(b#variantModules)) {
             case Some(vf) => vf
             case None     =>
+                // WhyNot: +pu だけの時に b#vertexModule を使い回さない — release は変種の表の頂点シェーダーも離すので、共有すると既定の物を 2 回離す。
                 let vertex = if (bv#psx) b#gpu.createShaderModule("fge scene3d billboard vs" + key, Render3dWgsl.billboardVertexSourceFor(bv))
                              else b#gpu.createShaderModule("fge scene3d billboard vs" + key, Render3dWgsl.billboardVertexSource());
                 let made = (vertex, b#gpu.createShaderModule("fge scene3d billboard fs" + key, Render3dWgsl.billboardFragmentSourceFor(variant)));

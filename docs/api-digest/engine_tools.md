@@ -1,4 +1,4 @@
-<!-- engine v0.105.0 / 生成: 2026-11-21 -->
+<!-- engine v0.105.0 / 生成: 2026-11-22 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_tools
@@ -434,8 +434,6 @@
   `pub def quantized(p: PsxColor, x: Int32, y: Int32, c: (Float64, Float64, Float64)): (Float64, Float64, Float64)`
 - clip の段の頂点 v（頭の 4 つが clip の x, y, z, w）の x・y を、size（幅・高さの画素）の画面の格子 grid（画素・左上が 0）の一番近い点へ動かす。
   `pub def snapVertex(grid: Float64, size: (Float64, Float64), v: Vector[Float64]): Vector[Float64]`
-- clip の段の頂点 v（w は 4 つ目）の後ろに、アフィンの uv の材料 (u × w, v × w, 割合 k) を足す（uv は v の uvAt 番目から 2 つ）。
-  `pub def withAffineUv(k: Float64, uvAt: Int32, v: Vector[Float64]): Vector[Float64]`
 - 遠近で補正した uv (pu, pv) を、割合 k だけ画面の上でまっすぐつないだ uv へ寄せる（k が 0 なら (pu, pv) のまま）。
   `pub def affineUv(k: Float64, depth: Float64, perspective: (Float64, Float64), weighted: (Float64, Float64)): { x = Float64, y = Float64 }`
 

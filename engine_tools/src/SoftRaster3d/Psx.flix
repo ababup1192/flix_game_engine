@@ -34,11 +34,6 @@ pub mod SoftRaster3d.Psx {
             Vector.mapWithIndex((i, x) -> if (i == 0) cx else if (i == 1) cy else x, v)
         }
 
-    /// clip の段の頂点 v（w は 4 つ目）の後ろに、アフィンの uv の材料 (u × w, v × w, 割合 k) を足す（uv は v の uvAt 番目から 2 つ）。
-    pub def withAffineUv(k: Float64, uvAt: Int32, v: Vector[Float64]): Vector[Float64] =
-        let w = Vector.get(3, v);
-        Vector.append(v, Vector#{ Vector.get(uvAt, v) * w, Vector.get(uvAt + 1, v) * w, k })
-
     /// 遠近で補正した uv (pu, pv) を、割合 k だけ画面の上でまっすぐつないだ uv へ寄せる（k が 0 なら (pu, pv) のまま）。
     /// weighted = 頂点の (u × w, v × w) を遠近で補正した重み b で足した物・depth = 重みの和の逆数（SoftRaster3d.Internal.perspectiveWeights の 4 つ目）。
     /// まっすぐつないだ uv = Σ λ_i uv_i = Σ b_i (uv_i × w_i) ÷ depth。

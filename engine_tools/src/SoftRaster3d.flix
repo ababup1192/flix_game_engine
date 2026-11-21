@@ -59,6 +59,7 @@
 // WhyNot: 半透明の混ぜを線形の量どうしで行わない — GL は描き先の画面の値の上でハードウェアで混ぜ、MSAA の平均も画面の値どうし。
 //   線形で混ぜるには 3D を別の float の描き先へ描いて貼り直す形が要り、背景の無い場面の縁は 2D の上で結局画面の値で混ざる。
 pub mod SoftRaster3d {
+    use SoftRaster3d.Internal.{bendVertices, vec3At, vec4At, xyzOf}
     import java.awt.image.BufferedImage
     import java.lang.System
     import java.util.function.IntConsumer
@@ -347,11 +348,11 @@ pub mod SoftRaster3d {
     // 場面 1 つを lw × lh の ARGB へ
     // ════════════════════════════════════════════════════════
 
-    // 1 頂点の欄の数。clip の段では (clip x, y, z, w, world x, y, z, 法線 x, y, z, 色 r, g, b, uv u, v, タンジェント x, y, z, w, 2 本目の uv u, v, アフィンの uv の材料 u × w, v × w, アフィンの割合)、
+    // 1 頂点の欄の数。clip の段では (clip x, y, z, w, world x, y, z, 法線 x, y, z, 色 r, g, b, uv u, v, タンジェント x, y, z, w, 2 本目の uv u, v, アフィンの uv の材料 u × w, v × w)、
     // 画面へ写した後は先頭 4 つが (画面 x, y, NDC の z, 1 / w) に替わる。
     // 材質の無い物の色の欄は 頂点の色 × tint（両方を線形の量へ戻してから）・材質のある物は頂点の色だけ（tint は Mat）・ビルボードは白で、uv の欄に絵の px。
-    // 2 本目の uv の無い形とビルボードは 2 本目の uv が (0, 0)・ビルボードのアフィンの欄は 0。
-    def stride(): Int32 = 24
+    // 2 本目の uv の無い形とビルボードは 2 本目の uv が (0, 0)・アフィンを切った場面とビルボードのアフィンの欄は 0。
+    def stride(): Int32 = 23
 
     def colorSlot(): Int32 = 10
 
@@ -438,36 +439,6 @@ pub mod SoftRaster3d {
         let (positions, normals, tangents) = Option.getWithDefault((Mesh3d.positions(f#mesh), Mesh3d.normals(f#mesh), Mesh3d.tangents(f#mesh)), bent);
         { fields = f, positions = positions, normals = normals, tangents = tangents }
 
-    /// 形 mesh の頂点を、頂点ごとの 4 つのジョイント（joints の番号・weights の重み。頂点 k は [4k, 4k + 4)）で曲げた位置と法線とタンジェント。
-    // WhyNot: 重み 0 の欄を飛ばす — 足しても値が変わらず、多くの頂点は 1〜2 本しか使わない。
-    def bendVertices(matrices: Vector[Mat4.Mat4], joints: Vector[Int32], weights: Vector[Float64],
-                     mesh: Mesh3d.Mesh3d): (Vector[Float64], Vector[Float64], Option[Vector[Float64]]) =
-        let blendAt = (move: (Mat4.Mat4, Vec3.Vec3) -> Vec3.Vec3, v: Vec3.Vec3, k: Int32) ->
-            List.range(k * 4, k * 4 + 4) |> List.foldLeft((acc, s) -> {
-                let w = Vector.get(s, weights);
-                if (w == 0.0) acc else Vec3.add(acc, Vec3.mul(move(Vector.get(Vector.get(s, joints), matrices), v), w))
-            }, Vec3.zero());
-        let ps = Mesh3d.positions(mesh);
-        let ns = Mesh3d.normals(mesh);
-        let bent = Vector.range(0, Mesh3d.vertexCount(mesh)) |> Vector.map(k ->
-            (blendAt(Mat4.apply, vec3At(ps, k), k), blendAt(Mat4.applyDir, vec3At(ns, k), k)));
-        let tangents = Mesh3d.tangents(mesh) |> Option.map(ts -> Vector.range(0, Mesh3d.vertexCount(mesh)) |> Vector.flatMap(k -> {
-            let (xyz, w) = vec4At(ts, k);
-            let moved = blendAt(Mat4.applyDir, xyz, k);
-            Vector#{ moved#x, moved#y, moved#z, w }
-        }));
-        (Vector.flatMap(pair -> xyzOf(fst(pair)), bent), Vector.flatMap(pair -> xyzOf(snd(pair)), bent), tangents)
-
-    /// 頂点ごとに 3 つ並んだ v の k 番目の頂点。
-    def vec3At(v: Vector[Float64], k: Int32): Vec3.Vec3 =
-        Vec3.v3(Vector.get(k * 3, v), Vector.get(k * 3 + 1, v), Vector.get(k * 3 + 2, v))
-
-    def xyzOf(v: Vec3.Vec3): Vector[Float64] = Vector#{ v#x, v#y, v#z }
-
-    /// 頂点ごとに 4 つ並んだ v の k 番目の頂点（xyz と w）。
-    def vec4At(v: Vector[Float64], k: Int32): (Vec3.Vec3, Float64) =
-        (Vec3.v3(Vector.get(k * 4, v), Vector.get(k * 4 + 1, v), Vector.get(k * 4 + 2, v)), Vector.get(k * 4 + 3, v))
-
     /// ビルボード 1 枚の絵。画素・region の px 矩形（x0, y0, x1, y1。x1・y1 は含まない）・tint r, g, b・光を当てるか・太陽の影を受けるか（lit の時だけ真）・
     /// ビルボードの中身（影を受ける点を求める）。
     enum Ink { case Ink(ShaderEval.TexData, Int32, Int32, Int32, Int32, Float64, Float64, Float64, Bool, Bool, Scene3d.BillboardFields) }
@@ -545,7 +516,7 @@ pub mod SoftRaster3d {
         let sky = hoist(rc, scene#sky |> Option.map(sk -> (SoftRaster3d.Internal.linearSkyColorsOf(sk), Scene3d.skyBasisOf(scene))));
         let reflection = hoist(rc, SoftRaster3d.Internal.reflectionColorsOf(scene));
         let environment = hoist(rc, SoftRaster3d.Internal.environmentLookupOf(textures, scene));
-        let shadeEnv = hoist(rc, { time = time, lights = lights, fog = fog, eye = eye, lut = lut, reflection = reflection, environment = environment });
+        let shadeEnv = hoist(rc, { time = time, lights = lights, fog = fog, eye = eye, lut = lut, reflection = reflection, environment = environment, affine = screen#affine });
         let backgroundMap = hoist(rc, Scene3d.backgroundEnvironmentOf(scene) |> Option.flatMap(_ -> environment) |> Option.map(e -> (e, Scene3d.skyBasisOf(scene))));
         let fillAt = (x: Int32, y: Int32) -> match backgroundMap {
             case Some((e, basis)) => SoftRaster3d.Internal.environmentBackgroundAt(e, basis, isDepth, (lw, lh), (x, y))
@@ -595,22 +566,24 @@ pub mod SoftRaster3d {
         let depthBand = rows#depthBand;
         let fill = rows#fill;
         let psx = blended#psx;
+        let quantize = psx#bits > 0 and Option.isEmpty(depthBand);
         let depth: Array[Float64, rr] = Array.repeat(rr, lw, 2.0);
         let winner: Array[Int32, rr] = Array.repeat(rr, lw, -1);
         let w0: Array[Float64, rr] = Array.repeat(rr, lw, 0.0);
         let w1: Array[Float64, rr] = Array.repeat(rr, lw, 0.0);
         let py = Int32.toFloat64(y) + 0.5;
-        Vector.get(y, rows#bins) |> List.forEach(ti -> coverRow(lw, py, tris, inks, mats, env#time, ti, depth, winner, w0, w1));
+        Vector.get(y, rows#bins) |> List.forEach(ti -> coverRow(lw, py, tris, inks, mats, env#time, env#affine, ti, depth, winner, w0, w1));
         let blendedRow = Vector.get(y, rows#blendedBins);
         let shadeAt = (x: Int32) -> {
             let ti = Array.get(x, winner);
             if (ti < 0) fill(x, y)
-            else {
+            else if (quantize) {
                 let (r, g, b, a) = shadePixel(Vector.get(ti, tris), inks, mats, bakes, env, lights, fog, eye, lut, depthBand, (x, y),
                                               Array.get(x, w0), Array.get(x, w1));
-                if (psx#bits <= 0 or Option.nonEmpty(depthBand)) (r, g, b, a)
-                else { let (qr, qg, qb) = SoftRaster3d.Psx.quantized(psx, x, y, (r, g, b)); (qr, qg, qb, a) }
+                let (qr, qg, qb) = SoftRaster3d.Psx.quantized(psx, x, y, (r, g, b));
+                (qr, qg, qb, a)
             }
+            else shadePixel(Vector.get(ti, tris), inks, mats, bakes, env, lights, fog, eye, lut, depthBand, (x, y), Array.get(x, w0), Array.get(x, w1))
         };
         if (List.isEmpty(blendedRow))
             List.range(0, lw) |> List.forEach(x -> {
@@ -659,7 +632,7 @@ pub mod SoftRaster3d {
                 let l2 = 1.0 - l0 - l1;
                 let z = l0 * z0 + l1 * z1 + l2 * z2;
                 let covered = inside(l0, own0) and inside(l1, own1) and inside(l2, own2) and z >= -1.0 and z <= 1.0 and z < Array.get(x, depth);
-                if (covered and not isCutAway(material, blended#env#time, v, SoftRaster3d.Internal.perspectiveWeights(l0, l1, l2, q0, q1, q2))) {
+                if (covered and not isCutAway(material, blended#env#time, blended#env#affine, v, SoftRaster3d.Internal.perspectiveWeights(l0, l1, l2, q0, q1, q2))) {
                     let (lr, lg, lb, sa) = materialPixel(tri, material, Vector.get(mat, blended#bakes), blended#env, (x, y), l0, l1);
                     let (sr, sg, sb) = SoftRaster3d.Psx.quantized(blended#psx, x, y, toSrgbColor(blended#env#lut, (lr, lg, lb)));
                     let a = clamp01(sa);
@@ -721,23 +694,24 @@ pub mod SoftRaster3d {
         case Orthographic
     }
 
-    /// 三角形を写す画面。vertexSnap = 頂点の x・y を丸める格子（画素。0 で丸めない）・affine = 材質の uv をアフィンへ寄せる割合（Scene3d.PsxLook）。
+    /// 三角形を写す画面。vertexSnap = 頂点の x・y を丸める格子（画素。0 で丸めない）・affine = 材質の uv をアフィンへ寄せる割合（Scene3d.PsxLook。0 なら頂点にアフィンの材料を書かない）。
     type alias Screen = { w = Float64, h = Float64, projection = Projection, vertexSnap = Float64, affine = Float64 }
 
     /// 影の地図を描く光の目。
     pub type alias LightEye = { view = Mat4.Mat4, proj = Mat4.Mat4, projection = Projection }
 
     /// clip の段の頂点（stride() 個）。w は透視なら目の座標の −z（Mat4.perspective の 4 行目が (0, 0, −1, 0)）・正射影なら 1。
-    /// rest = 色 3・uv 2・タンジェント 4・2 本目の uv 2 の欄。
+    /// restOf = w を受けて、色 3・uv 2・タンジェント 4・2 本目の uv 2・アフィンの uv の材料 2 の欄を返す。
     // WhyNot: proj × view の 1 本の行列で w を出さない — Mat4 は閉じた型で 4 行目を読めず、apply は w を返さない。
-    def clipVertex(projection: Projection, view: Mat4.Mat4, proj: Mat4.Mat4, p: Vec3.Vec3, n: Vec3.Vec3, rest: Vector[Float64]): Vector[Float64] =
+    // WhyNot: アフィンの材料を clip の後で足さない — 頂点ごとに欄の写しが 1 回増え、アフィンを切った場面まで重くなる。
+    def clipVertex(projection: Projection, view: Mat4.Mat4, proj: Mat4.Mat4, p: Vec3.Vec3, n: Vec3.Vec3, restOf: Float64 -> Vector[Float64]): Vector[Float64] =
         let e = Mat4.apply(view, p);
         let c = Mat4.apply(proj, e);
         let w = match projection {
             case Projection.Perspective(_) => 0.0 - e#z
             case Projection.Orthographic   => 1.0
         };
-        Vector.append(Vector#{ c#x, c#y, c#z, w, p#x, p#y, p#z, n#x, n#y, n#z }, rest)
+        Vector.append(Vector#{ c#x, c#y, c#z, w, p#x, p#y, p#z, n#x, n#y, n#z }, restOf(w))
 
     /// 置いた物 placed の三角形（頂点は placedOf で曲げた後の物）。mat = 材質の番号（−1 なら頂点の色 × tint を色の欄に、それ以外は頂点の色だけを入れる）。
     /// lut が Some なら、材質の無い物の頂点の色と tint を線形の量へ戻してから掛ける（材質のある物の頂点の色は戻さない — Spec の出口で戻す）。
@@ -758,7 +732,8 @@ pub mod SoftRaster3d {
         let tint = if (mat < 0 and Option.nonEmpty(lut)) Texture3d.srgbToLinearColor(f#tint)
                    else if (mat < 0) f#tint
                    else { r = 1.0, g = 1.0, b = 1.0 };
-        let surfaceAt = (k: Int32) -> {
+        let affineOn = screen#affine > 0.0;
+        let surfaceAt = (k: Int32, cw: Float64) -> {
             let (u, v) = match uvs {
                 case Some(uv) => (Vector.get(k * 2, uv), Vector.get(k * 2 + 1, uv))
                 case None     => (0.0, 0.0)
@@ -772,11 +747,11 @@ pub mod SoftRaster3d {
                 case None     => (0.0, 0.0)
             };
             Vector#{ Vector.get(k * 3, cs) * tint#r, Vector.get(k * 3 + 1, cs) * tint#g, Vector.get(k * 3 + 2, cs) * tint#b,
-                     u, v, t#x, t#y, t#z, w, u2, v2 }
+                     u, v, t#x, t#y, t#z, w, u2, v2, if (affineOn) u * cw else 0.0, if (affineOn) v * cw else 0.0 }
         };
         let vertices = List.range(0, Mesh3d.vertexCount(f#mesh)) |> List.map(k ->
-            SoftRaster3d.Psx.withAffineUv(screen#affine, uvSlot(), snapVertex(screen, clipVertex(screen#projection, view, proj, Mat4.apply(world, vec3At(placed#positions, k)),
-                                                               Vec3.normalized(Mat4.applyDir(nm, vec3At(placed#normals, k))), surfaceAt(k)))))
+            snapVertex(screen, clipVertex(screen#projection, view, proj, Mat4.apply(world, vec3At(placed#positions, k)),
+                                          Vec3.normalized(Mat4.applyDir(nm, vec3At(placed#normals, k))), cw -> surfaceAt(k, cw))))
             |> List.toVector;
         let idx = Mesh3d.indices(f#mesh);
         List.range(0, Vector.length(idx) / 3) |> List.flatMap(t ->
@@ -802,9 +777,8 @@ pub mod SoftRaster3d {
         let corner = (u: Float64, v: Float64) -> {
             let p = Vec3.add(f#position, Vec3.add(Vec3.mul(right, (u - f#anchor#x) * f#size#x),
                                                   Vec3.mul(up, (f#anchor#y - v) * f#size#y)));
-            Vector.append(snapVertex(screen, clipVertex(screen#projection, view, proj, p, facing,
-                                                        Vector#{ 1.0, 1.0, 1.0, r#position#x + u * r#size#x, r#position#y + v * r#size#y, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 })),
-                          Vector#{ 0.0, 0.0, 0.0 })
+            snapVertex(screen, clipVertex(screen#projection, view, proj, p, facing,
+                                          _ -> Vector#{ 1.0, 1.0, 1.0, r#position#x + u * r#size#x, r#position#y + v * r#size#y, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 }))
         };
         let tl = corner(0.0, 0.0);
         let tr = corner(1.0, 0.0);
@@ -885,7 +859,7 @@ pub mod SoftRaster3d {
 
     /// 三角形 ti が行 py（画素の中心の y）で覆う画素の奥行きを比べ、手前なら番号と重み（画面の段の λ0・λ1）を残す。
     /// ビルボードの α の抜きと cutout の材質の α の抜きは、深度を書く前に行う（抜いた画素の奥の物が見える）。
-    def coverRow(lw: Int32, py: Float64, tris: Vector[Tri], inks: Vector[Ink], mats: Vector[Mat], time: Float64, ti: Int32,
+    def coverRow(lw: Int32, py: Float64, tris: Vector[Tri], inks: Vector[Ink], mats: Vector[Mat], time: Float64, affine: Float64, ti: Int32,
                  depth: Array[Float64, r], winner: Array[Int32, r],
                  w0: Array[Float64, r], w1: Array[Float64, r]): Unit \ r =
         let Tri.Tri(v, area, ink, mat) = Vector.get(ti, tris);
@@ -907,7 +881,7 @@ pub mod SoftRaster3d {
                 let keep = covered and (ink < 0 or {
                     let (u, uv) = perspectiveUv(v, l0, l1, l2, q0, q1, q2);
                     alphaOf(sampleInk(Vector.get(ink, inks), u, uv)) >= billboardCutoff()
-                }) and (mat < 0 or not isCutAway(Vector.get(mat, mats), time, v, SoftRaster3d.Internal.perspectiveWeights(l0, l1, l2, q0, q1, q2)));
+                }) and (mat < 0 or not isCutAway(Vector.get(mat, mats), time, affine, v, SoftRaster3d.Internal.perspectiveWeights(l0, l1, l2, q0, q1, q2)));
                 if (keep) {
                     Array.put(z, x, depth);
                     Array.put(ti, x, winner);
@@ -938,13 +912,20 @@ pub mod SoftRaster3d {
         let (b0, b1, b2, _) = weights;
         let (c, uv) = (colorSlot(), uvSlot());
         { world = worldAt(v, weights), normal = normalAt(v, weights),
-          uv = uvAt(v, weights, attr(v, uv, b0, b1, b2), attr(v, uv + 1, b0, b1, b2)),
+          uv = { x = attr(v, uv, b0, b1, b2), y = attr(v, uv + 1, b0, b1, b2) },
           color = { r = attr(v, c, b0, b1, b2), g = attr(v, c + 1, b0, b1, b2), b = attr(v, c + 2, b0, b1, b2) } }
 
-    /// 頂点のアフィンの割合だけ画面の上でまっすぐつないだ uv（SoftRaster3d.Psx.affineUv）。
-    def uvAt(v: Vector[Float64], weights: (Float64, Float64, Float64, Float64), pu: Float64, pv: Float64): { x = Float64, y = Float64 } =
-        let (b0, b1, b2, depth) = weights;
-        SoftRaster3d.Psx.affineUv(Vector.get(affineSlot() + 2, v), depth, (pu, pv), (attr(v, affineSlot(), b0, b1, b2), attr(v, affineSlot() + 1, b0, b1, b2)))
+    /// 材質が読む画素の入力（surfaceAt）の uv を、場面のアフィンの割合 affine だけ画面の上でまっすぐつないだ uv へ寄せた物（SoftRaster3d.Psx.affineUv）。
+    /// affine が 0 なら surfaceAt のまま。
+    // WhyNot: surfaceAt で寄せない — ビルボードも surfaceAt の uv で絵の px を読み、GPU の描き手のビルボードはアフィンにしない。
+    def materialSurfaceAt(affine: Float64, v: Vector[Float64], weights: (Float64, Float64, Float64, Float64)): ShaderEval.SurfacePoint =
+        let point = surfaceAt(v, weights);
+        if (affine <= 0.0) point
+        else {
+            let (b0, b1, b2, depth) = weights;
+            let weighted = (attr(v, affineSlot(), b0, b1, b2), attr(v, affineSlot() + 1, b0, b1, b2));
+            { uv = SoftRaster3d.Psx.affineUv(affine, depth, (point#uv#x, point#uv#y), weighted) | point }
+        }
 
     /// 奥行きで補正した重みでのタンジェント（xyz は長さをそろえない・w は ±1 の補間）。
     def tangentAt(v: Vector[Float64], weights: (Float64, Float64, Float64, Float64)): (Vec3.Vec3, Float64) =
@@ -978,9 +959,9 @@ pub mod SoftRaster3d {
         (at(l0 - sx * (y2 - y1) / area, l1 - sx * (y0 - y2) / area), at(l0 + sy * (x2 - x1) / area, l1 + sy * (x0 - x2) / area))
 
     /// 頂点の欄 v の、横隣と縦隣の画素（neighborWeights の重み）の材質が読む入力。
-    def neighborPoints(v: Vector[Float64], neighbors: NeighborWeights): (ShaderEval.SurfacePoint, ShaderEval.SurfacePoint) =
+    def neighborPoints(affine: Float64, v: Vector[Float64], neighbors: NeighborWeights): (ShaderEval.SurfacePoint, ShaderEval.SurfacePoint) =
         let (nextX, nextY) = neighbors;
-        (surfaceAt(v, nextX), surfaceAt(v, nextY))
+        (materialSurfaceAt(affine, v, nextX), materialSurfaceAt(affine, v, nextY))
 
     /// 奥行きで補正した重みでの 2 本目の uv。
     def uv2At(v: Vector[Float64], weights: (Float64, Float64, Float64, Float64)): (Float64, Float64) =
@@ -1045,9 +1026,9 @@ pub mod SoftRaster3d {
         }
 
     /// cutout の材質 m で、この画素の α が materialCutoff() 未満か（cutout でない材質は捨てない）。
-    def isCutAway(m: Mat, time: Float64, v: Vector[Float64], weights: (Float64, Float64, Float64, Float64)): Bool =
+    def isCutAway(m: Mat, time: Float64, affine: Float64, v: Vector[Float64], weights: (Float64, Float64, Float64, Float64)): Bool =
         let Mat.Mat(compiled, cutout, _, _, _, _, _) = m;
-        cutout and ShaderEval.evalMaterial3(compiled, surfaceAt(v, weights), time)#alpha < materialCutoff()
+        cutout and ShaderEval.evalMaterial3(compiled, materialSurfaceAt(affine, v, weights), time)#alpha < materialCutoff()
 
     def perspectiveUv(v: Vector[Float64], l0: Float64, l1: Float64, l2: Float64,
                       q0: Float64, q1: Float64, q2: Float64): (Float64, Float64) =
@@ -1106,8 +1087,9 @@ pub mod SoftRaster3d {
     /// 画素の色を塗る時に場面ごとに決まっている物。lut = 頂点ごと・画素ごとの色の変換の表。
     /// reflection = metallic と roughness を持つ材質の映り込みに使う空の 3 色と curve（線形の量。LightModel3d.reflectionSkyOf）。
     /// environment = 場面の環境マップ（Some なら映り込みは空の 3 色の代わりに絵を読む）。
+    /// affine = 材質の uv をアフィンへ寄せる割合（Scene3d.Psx.affineOf・奥行きの書き出しの場面は 0）。
     type alias ShadeEnv = { time = Float64, lights = Lights, fog = Fog, eye = (Float64, Float64, Float64), lut = Texture3d.ColorLut,
-                            reflection = SoftRaster3d.Internal.SkyColors, environment = Option[SoftRaster3d.Internal.EnvironmentLookup] }
+                            reflection = SoftRaster3d.Internal.SkyColors, environment = Option[SoftRaster3d.Internal.EnvironmentLookup], affine = Float64 }
 
     /// 材質 material の三角形 tri の画面の重み (l0, l1) の画素の色（線形の量のまま — 呼び手が画面の値へ戻す）と α（α は材質の α。不透明の物を塗る呼び手は捨てる）。
     /// 裏の三角形（画面で反時計回り。両面の材質の物だけが残る）は、光の計算の法線を裏返す（spec の Normal は裏返さない）。
@@ -1116,11 +1098,11 @@ pub mod SoftRaster3d {
         let Tri.Tri(v, area, _, _) = tri;
         let s = stride();
         let weights = SoftRaster3d.Internal.perspectiveWeights(l0, l1, 1.0 - l0 - l1, Vector.get(3, v), Vector.get(s + 3, v), Vector.get(s * 2 + 3, v));
-        let point = surfaceAt(v, weights);
+        let point = materialSurfaceAt(env#affine, v, weights);
         let (px, py, pz) = (point#world#x, point#world#y, point#world#z);
         let (ex, ey, ez) = env#eye;
         let nextWeights = neighborWeights(tri, pixel, l0, l1);
-        let neighbors = neighborPoints(v, nextWeights);
+        let neighbors = neighborPoints(env#affine, v, nextWeights);
         let facingPoint = if (area < 0.0) { normal = Vec3.mul(point#normal, -1.0) | point } else point;
         let lightNormal = mappedNormal(normalMappingOf(material), facingPoint, neighbors, tangentAt(v, weights));
         let sunLit = sunLitOf(env#lights, (px, py, pz), facingPoint#normal, lightNormal);

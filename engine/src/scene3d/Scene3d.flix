@@ -286,7 +286,7 @@ pub mod Scene3d {
     pub def psxOff(): PsxLook = { colorDepth = 0, dither = DitherPattern.Psx, ditherStrength = 1.0, vertexSnap = 0.0, affineTextureMapping = 0.0 }
 
     /// PS1 の GPU に近い値（15 ビットの色・PS1 の表のディザ・1 画素の頂点の揺れ・完全なアフィン）。大きな床と壁は流れが強いので affineTextureMapping を下げる。
-    pub def psxLook(): PsxLook = { colorDepth = 5, dither = DitherPattern.Psx, ditherStrength = 1.0, vertexSnap = 1.0, affineTextureMapping = 1.0 }
+    pub def psxPreset(): PsxLook = { colorDepth = 5, dither = DitherPattern.Psx, ditherStrength = 1.0, vertexSnap = 1.0, affineTextureMapping = 1.0 }
 
     /// 場面の PS1 風の描き方を替える（Scene3dCmd の psx）。
     pub def withPsx(look: PsxLook, scene: Scene3dCmd): Scene3dCmd = { psx = look | scene }

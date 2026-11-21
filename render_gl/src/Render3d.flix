@@ -195,16 +195,15 @@ mod Render3d {
 
     /// 場面ごとのシェーダーの変種（Unity の shader variant に当たる）。pointShadows = 点光源の影を引く（鍵の +ps）・physicalUnits = Physical の光（鍵の +pu）・
     /// psx = PS1 風の描き方（Scene3d.Psx.isOn。鍵の +psx。色の丸めとディザ・頂点の揺れ・アフィンの uv を uniform で渡す）。
-    /// どれも偽なら既定のプログラム（変種を足す前と同じ字）。
-    pub type alias ShaderVariant = { pointShadows = Bool, physicalUnits = Bool, psx = Bool }
+    /// どれも偽なら既定のプログラム（変種を足す前と同じ字）。先に組む宣言の Scene3d.PreloadVariant と同じ形。
+    pub type alias ShaderVariant = Scene3d.PreloadVariant
 
     /// 点光源の影なし・Legacy の光・PS1 風なしの変種。
     pub def defaultShaderVariant(): ShaderVariant = { pointShadows = false, physicalUnits = false, psx = false }
 
     /// 場面 scene の変種（pointShadows が Some なら +ps — このコマで影を落とす灯りが 0 本でも +ps のまま・Physical なら +pu）。
     // WhyNot: このコマで影を落とす灯りの数で +ps を決めない — 灯りが画面に出入りするたびにシェーダーを組み直す。
-    pub def shaderVariantOf(scene: Scene3d.Scene3dCmd): ShaderVariant =
-        { pointShadows = Option.nonEmpty(scene#pointShadows), physicalUnits = scene#lightUnits == Scene3d.LightUnits.Physical, psx = Scene3d.Psx.isOn(scene#psx) }
+    pub def shaderVariantOf(scene: Scene3d.Scene3dCmd): ShaderVariant = Scene3d.preloadVariantOf(scene)
 
     /// 場面 scene の pass のプログラムの変種（色の場面は shaderVariantOf・奥行きの書き出しは既定。Render3d.ScenePlan の groupScene と同じ決め方）。
     pub def passVariantOf(scene: Scene3d.Scene3dCmd): ShaderVariant = match scene#output {
@@ -223,8 +222,7 @@ mod Render3d {
         { pointShadows = v#pointShadows, lightUnits = Some(if (v#physicalUnits) Scene3d.LightUnits.Physical else Scene3d.LightUnits.Legacy) }
 
     /// 変種 v の鍵の字（+ps・+pu・+psx。既定は空）。
-    pub def variantKeyOf(v: ShaderVariant): String =
-        (if (v#pointShadows) "+ps" else "") + (if (v#physicalUnits) "+pu" else "") + (if (v#psx) "+psx" else "")
+    pub def variantKeyOf(v: ShaderVariant): String = Scene3d.preloadVariantKey(v)
 
     /// 材質のプログラムの鍵（2D の Shader 面の鍵 = spec の名前 と重ならない）。骨つき・uv つき・法線マップつき・lightmap つきの版は GLSL が違うので別の鍵。
     /// 材質の側は spec と emission の中身の鍵（MaterialFields#shaderHash）なので、同じ名前で木の違う材質が並んでも組み直さず、ゲームは名前を分けなくてよい。

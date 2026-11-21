@@ -80,7 +80,7 @@
 | 屋外の 3D に太陽の光と影を足す（町・都市・野原。向き 1 つの平行光源） | Scene3d の directionalLight（Scene3d.directionalLight(direction) を `directionalLight = Some(..)` へ。影は shadow = Some(Scene3d.directionalShadow())・太陽を足したら ambient を下げる・docs/scene3d.md） |
 | 3D の点光源が 8 本を超える（遠い灯りまで全部置きたい） | Scene3d の pointLights に全部入れる（ゲームで選び直さない・選び方は docs/scene3d.md の「点光源」） |
 | 3D の点光源に影を付ける（街灯・たいまつの放射状の影） | Scene3d.withPointShadows(Scene3d.pointShadowMap()) と Scene3d.PointShadows（6 方向の深度を 1 枚の atlas に並べる約束は PointShadows.atlasOf・docs/scene3d.md の「点光源の影」） |
-| 3D の場面を PS1 風に描く（15 ビットの色とディザ・頂点の揺れ・アフィンの uv） | Scene3d.withPsx（PsxLook・psxOff から欄を書き替える・psxLook は PS1 の GPU に近い値・docs/scene3d.md の「PS1 風の描き方」） |
+| 3D の場面を PS1 風に描く（15 ビットの色とディザ・頂点の揺れ・アフィンの uv） | Scene3d.withPsx（PsxLook・psxOff から欄を書き替える・psxPreset は PS1 の GPU に近い値・docs/scene3d.md の「PS1 風の描き方」） |
 | 3D の光の量を物理の単位で読む（逆二乗・拡散に 1/π・Godot の Use Physical Light Units） | Scene3d.LightUnits（Legacy / Physical）を Scene3d.withLightUnits で。場面の長さが m でなければ Scene3d.withUnitsPerMeter（docs/scene3d.md の「光の量の読み方」） |
 | 3D の光の式の変種（点光源の影の有無・光の量の読み方）を選ぶ（shader variant） | LightModel3d.LightVariant（variantOf(scene) で場面から選ぶ・lightingModelFor / pbrModelFor。ゲームは使わない） |
 | 3D のカメラの向きを変えずに写す範囲を上下左右へずらす（レンズシフト・縦の線を平行のまま見下ろす HD-2D） | Camera3d の欄 lensShift（Camera3d.camera(eye, yaw, pitch, fovY) から `{ lensShift = Vec2.v2(0.0, -0.5) \| .. }`・docs/scene3d.md の「縦の線を平行のまま見下ろす」） |
@@ -94,7 +94,7 @@
 | 3D の当たり判定の形（向きのある箱・球・縦のカプセル）を作る・glb のノードから箱を作る・回す扉の箱 | CollisionShape3d（boxOfNode / boxesOfNodes・transformBox・debugMesh。2D は CollisionShape2D） |
 | 動かない 3D の箱をたくさん持ち、足元の近くの箱だけを引く | CollisionWorld3d（build / boxesNear。歩くのは engine_world の CharacterBody3d） |
 | 一人称で見ている物を調べる（クロスヘアの先の物の名前・壁で遮る）・画面の点から 3D のレイを伸ばす | Ray3d.pickNearest（Camera3d.forwardRay / screenPointToRay・的は Ray3d.boxTargetsOf・docs/scene3d.md の「見ている物を調べる」） |
-| Blender で頂点の色にベイクした明るさ（glTF の COLOR_0）で 3D の部屋を描く・PS1 の頂点の色の 2 倍 | Gltf の読み込みが COLOR_0 を読む（線形 → 画面の値で baseColorFactor に掛ける）+ Model3d.withVertexColorScale（docs/scene3d.md の「glb の頂点の色」） |
+| Blender で頂点の色にベイクした明るさ（glTF の COLOR_0）で 3D の部屋を描く・PS1 の頂点の色の 2 倍 | Gltf.loadTexturedUsingOptions の vertexColors = true で COLOR_0 を読む（線形 → 画面の値で baseColorFactor に掛ける・既定は読まない）+ Model3d.scaleVertexColors（docs/scene3d.md の「glb の頂点の色」） |
 | Blender でベイクした光（lightmap と 2 本目の uv）を 3D の部屋に貼る | Scene3d.withLightmap（Gltf の TEXCOORD_1 → Mesh3d.uvs2・docs/lightmap.md） |
 | 3D の絵が場面の絵の上限（256 MB・64 枚）を超える・大きすぎる絵を縮める | Gltf.loadTexturedUsing（limits）・Texture3d.limitSize・project.json の scene3dTextureBudgetMB / scene3dTextureBudgetCount（docs/lightmap.md の「場面の絵の予算」） |
 | 8bit の絵の値の意味（sRGB の曲線か線形か）と変換の式 | Texture3d.ColorSpace・srgbToLinear・linearToSrgb |

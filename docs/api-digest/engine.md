@@ -1,4 +1,4 @@
-<!-- engine v0.105.0 / 生成: 2026-11-21 -->
+<!-- engine v0.105.0 / 生成: 2026-11-22 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine
@@ -643,6 +643,13 @@
 - `pub def loadTexturedPbrUsing(decoder: ImageData.ImageDecoder, limits: TextureLimits, path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO`
 - loadTexturedPbrUsing のバイトの版。
   `pub def fromGlbTexturedPbrUsing(decoder: ImageData.ImageDecoder, limits: TextureLimits, bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO`
+- `pub type alias LoadOptions = { limits = TextureLimits, pbr = Bool, vertexColors = Bool }`
+- 上限なし・metallic・roughness を読まない・COLOR_0 を読まない（loadTexturedUsing と同じ）。欄を書き替えて使う:
+  `pub def defaultLoadOptions(): LoadOptions`
+- path の .glb を、選択肢 options で絵と材質つきで読む（読み方は loadTexturedUsing・欄は LoadOptions）。
+  `pub def loadTexturedUsingOptions(decoder: ImageData.ImageDecoder, options: LoadOptions, path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO`
+- loadTexturedUsingOptions のバイトの版。
+  `pub def fromGlbTexturedUsingOptions(decoder: ImageData.ImageDecoder, options: LoadOptions, bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO`
 
 ## GpuHandle — `engine/src/core/GpuHandle.flix`
 - タイルマップの GPU インスタンスバッファのハンドル（`initTileBuffer` が返す）。
@@ -896,8 +903,7 @@
 - 2 本目の uv（lightmap を読む UV。頂点ごとに u・v の 2 つ・(0, 0) が絵の左上）を付ける。Unity の uv2・Godot の UV2・
   `pub def withUvs2(uvs: Vector[Float64], m: Mesh3d): Result[String, Mesh3d]`
 - `pub def fromObj(objText: String, mtlText: String): Result[String, Mesh3d]`
-- 頂点の色に k を掛けた形（1 を超えてよい。材質は絵 × 頂点の色なので、2 で頂点の色の 0.5 が絵のままの明るさになる）。
-  `pub def withColorScale(k: Float64, m: Mesh3d): Mesh3d`
+- `pub def scaleColors(k: Float64, m: Mesh3d): Mesh3d`
 - 中身の鍵（位置・色・番号の SHA-256 の 16 進。uv つきは uv とタンジェントも）。同じ中身なら同じ字になる。GL はこれで頂点バッファを引く。
   `pub def contentHash(m: Mesh3d): String`
 - `pub def withContentKey(key: String, m: Mesh3d): Mesh3d`
@@ -944,8 +950,8 @@
 - primitive 1 つ。mesh = 形（uv を持つ primitive だけ uv つき。ノードの world の行列は焼き込んである）・
   `pub type alias ModelPart = { mesh = Mesh3d.Mesh3d, material = Option[Scene3d.Material3d], node = Option[Int32], gltfMaterial = Option[GltfMaterial] }`
 - `pub type alias Model3d = { mesh = Mesh3d.Mesh3d, skin = Option[Skin3d.Skin3d], clips = Map[String, AnimationClip3d.AnimationClip3d], parts = List[ModelPart], textures = List[Texture3d.Texture3d], nodes = List[ModelNode] }`
-- 形と全部の parts の頂点の色に k を掛けた物（Mesh3d.withColorScale）。PS1 の GPU と同じく頂点の色の 0.5 を 1 倍として明るくもできる掛け算は k = 2
-  `pub def withVertexColorScale(k: Float64, model: Model3d): Model3d`
+- 形と全部の parts の頂点の色に k を掛けた物（Mesh3d.scaleColors。今の色に掛けるので 2 回呼ぶと k × k 倍・NaN・負・無限の k は 1 として知らせる）。
+  `pub def scaleVertexColors(k: Float64, model: Model3d): Model3d`
 - glTF のノード 1 つ。座標は engine の座標（左手系。Gltf の頭の X の反転を済ませた物）。
   `pub type alias ModelNode = { name = String, parent = Option[Int32], local = Mat4.Mat4, world = Mat4.Mat4, localBounds = Option[Mesh3d.Bounds], parts = List[Int32] }`
 - glTF の材質の alphaMode。Opaque = 不透明・Mask = alphaCutoff で抜く・Blend = 半透明。
@@ -1393,7 +1399,7 @@
 - 全部切った PsxLook（Scene3d.scene の既定）。欄を書き替えて使う: `{ colorDepth = 5 | Scene3d.psxOff() }`。
   `pub def psxOff(): PsxLook`
 - PS1 の GPU に近い値（15 ビットの色・PS1 の表のディザ・1 画素の頂点の揺れ・完全なアフィン）。大きな床と壁は流れが強いので affineTextureMapping を下げる。
-  `pub def psxLook(): PsxLook`
+  `pub def psxPreset(): PsxLook`
 - 場面の PS1 風の描き方を替える（Scene3dCmd の psx）。
   `pub def withPsx(look: PsxLook, scene: Scene3dCmd): Scene3dCmd`
 - `pub enum Output { case Color case Depth({ near = Float64, range = Float64 }) }`

@@ -13,6 +13,7 @@
 pub mod Gltf {
     use Util.Json.Json
     use Util.Json.Json.{JObject, JArray, JNumber, JString}
+    use Gltf.Internal.{rowsOf, gather, flatXyz, component}
 
     type alias Obj = Map[String, Json]
 
@@ -49,7 +50,7 @@ pub mod Gltf {
     /// .glb のバイトから作る。壊れている・読まない物を含む時は Err。parts は primitive ごと（材質 None・gltfMaterial の絵の名前は None）・textures は空。
     /// TEXCOORD_0・TANGENT が読めない（数が頂点の数と違う・NaN か無限）時は、その欄を使わずに読んで 1 行知らせる。
     pub def fromGlb(bytes: Vector[Int8]): Result[String, Model3d.Model3d] =
-        parseAndBuild(false, bytes) |> Result.map(gb -> {
+        parseAndBuild(defaultLoadOptions(), bytes) |> Result.map(gb -> {
             let (glb, built) = gb;
             let infoOnly = (material: Obj) -> { withUv = None, withoutUv = None, info = gltfMaterialOf(noTextureNames(), material), lines = Nil, noUvLines = Nil };
             let (parts, lines) = attachMaterials(built, objectsOf("materials", glb#json) |> Vector.map(infoOnly));
@@ -72,7 +73,7 @@ pub mod Gltf {
     pub def noTextureLimits(): TextureLimits = { baseColor = Texture3d.maxSide(), normal = Texture3d.maxSide() }
 
     /// path の .glb を、絵と材質つきで読む。parts に材質（baseColorTexture → Scene3d.texturedMaterial・normalTexture → 法線マップ・
-    /// emissive → emission・sampler の wrap）、textures に BIN に埋めた画像（decoder で解く）。baseColorFactor × COLOR_0（線形 → 画面の値・Gltf.Internal.colorsOf）は頂点の色に書き込んであり、VertexColor で掛かる。
+    /// emissive → emission・sampler の wrap）、textures に BIN に埋めた画像（decoder で解く）。baseColorFactor は頂点の色に書き込んであり（COLOR_0 は読まない。読むのは loadTexturedUsingOptions の vertexColors）、VertexColor で掛かる。
     /// 絵も emissive も無い材質の primitive は材質 None（頂点の色で描く）。読めない・壊れている時は Err（パスつき）。
     /// emissive（emissiveFactor。emissiveTexture があれば絵 × それ。KHR_materials_emissive_strength は Scene3d.withEmissionIntensity）の付く材質は光る
     /// （glTF の決まりどおり。止めるなら Scene3d.withoutEmission）。emissive の付く材質の spec の名前は "gltf:" で始まり、
@@ -85,7 +86,7 @@ pub mod Gltf {
 
     /// loadTexturedUsing のバイトの版。
     pub def fromGlbTexturedUsing(decoder: ImageData.ImageDecoder, limits: TextureLimits, bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO =
-        fromGlbTexturedBy(Texture3d.decodeUsing(decoder), limits, false, bytes)
+        fromGlbTexturedUsingOptions(decoder, { limits = limits | defaultLoadOptions() }, bytes)
 
     /// loadTexturedUsing に、材質の metallic・roughness も読んで付ける版（Scene3d.withMetallicRoughness。付く条件・既定値・絵の読み方は materialOf の説明）。
     /// metallicRoughnessTexture の画像もデコードする（上限は TextureLimits#baseColor）。引数は loadTexturedUsing と同じ。
@@ -96,14 +97,35 @@ pub mod Gltf {
 
     /// loadTexturedPbrUsing のバイトの版。
     pub def fromGlbTexturedPbrUsing(decoder: ImageData.ImageDecoder, limits: TextureLimits, bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO =
-        fromGlbTexturedBy(Texture3d.decodeUsing(decoder), limits, true, bytes)
+        fromGlbTexturedUsingOptions(decoder, { limits = limits, pbr = true | defaultLoadOptions() }, bytes)
 
-    def fromGlbTexturedBy(decode: Vector[Int8] -> Result[String, Texture3d.Texture3d] \ IO, limits: TextureLimits, pbr: Bool,
+    /// 絵と材質つきの読み込みの選択肢。limits = 材質の絵の大きさの上限（loadTexturedUsing の limits）・
+    /// pbr = 材質の metallic・roughness も読む（loadTexturedPbrUsing と同じ）・
+    /// vertexColors = 頂点の色 COLOR_0 を読み、線形の値 → 画面の値にして baseColorFactor に掛ける（Gltf.Internal.colorsOf。白は 1 のまま）。
+    /// 偽なら COLOR_0 は読まない。
+    // WhyNot: vertexColors を既定で真にしない — Blender の書き出しは頂点の色の層があると COLOR_0 を書くので、
+    //   今まで捨てていた白でない COLOR_0 を持つゲームの glb の色が engine を上げただけで変わる。読みたいゲームが選ぶ。
+    pub type alias LoadOptions = { limits = TextureLimits, pbr = Bool, vertexColors = Bool }
+
+    /// 上限なし・metallic・roughness を読まない・COLOR_0 を読まない（loadTexturedUsing と同じ）。欄を書き替えて使う:
+    /// `{ vertexColors = true | Gltf.defaultLoadOptions() }`。
+    pub def defaultLoadOptions(): LoadOptions = { limits = noTextureLimits(), pbr = false, vertexColors = false }
+
+    /// path の .glb を、選択肢 options で絵と材質つきで読む（読み方は loadTexturedUsing・欄は LoadOptions）。
+    pub def loadTexturedUsingOptions(decoder: ImageData.ImageDecoder, options: LoadOptions, path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO =
+        loadWith(fromGlbTexturedUsingOptions(decoder, options), path)
+
+    /// loadTexturedUsingOptions のバイトの版。
+    pub def fromGlbTexturedUsingOptions(decoder: ImageData.ImageDecoder, options: LoadOptions, bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO =
+        fromGlbTexturedBy(Texture3d.decodeUsing(decoder), options, bytes)
+
+    def fromGlbTexturedBy(decode: Vector[Int8] -> Result[String, Texture3d.Texture3d] \ IO, options: LoadOptions,
                           bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO =
-        match parseAndBuild(pbr, bytes) {
+        let pbr = options#pbr;
+        match parseAndBuild(options, bytes) {
             case Err(e) => Err(e)
             case Ok((glb, built)) =>
-                let used = usedImages(limits, pbr, glb#json);
+                let used = usedImages(options#limits, pbr, glb#json);
                 let images = objectsOf("images", glb#json) |> Vector.mapWithIndex((k, image) -> match Map.get(k, used) {
                     case Some(maxSide) => decodeImage(decode, glb, image) |> (decoded -> (Option.map(Texture3d.limitSize(maxSide), fst(decoded)), snd(decoded)))
                     case None          => (None, Nil)
@@ -122,12 +144,12 @@ pub mod Gltf {
             |> Result.mapErr(e -> "${path}: 読めない（${e}）")
             |> Result.flatMap(bytes -> fromBytes(bytes) |> Result.mapErr(e -> "${path}: ${e}"))
 
-    /// linear = baseColorFactor を glTF の決まりどおり線形の値として読むか（偽なら画面の値として読む。baseColorOf の WhyNot）。
-    def parseAndBuild(linear: Bool, bytes: Vector[Int8]): Result[String, (Glb, Built)] =
+    /// read の pbr = baseColorFactor を線形の値として読む（偽なら画面の値として読む。baseColorOf の WhyNot）・vertexColors = COLOR_0 を読む。limits は読まない。
+    def parseAndBuild(read: LoadOptions, bytes: Vector[Int8]): Result[String, (Glb, Built)] =
         forM (
             glb <- parseGlb(bytes);
             _ <- checkBuffers(glb#json);
-            built <- buildModel(linear, glb)
+            built <- buildModel(read, glb)
         ) yield (glb, built)
 
     /// 材質の番号ごとに 1 回作った物。withUv = TEXCOORD_0 のある primitive に付ける材質・withoutUv = 無い primitive に付ける材質
@@ -758,7 +780,7 @@ pub mod Gltf {
 
     // ── メッシュ ────────────────────────────────────────────
 
-    def buildModel(linear: Bool, glb: Glb): Result[String, Built] =
+    def buildModel(read: LoadOptions, glb: Glb): Result[String, Built] =
         let nodes = objectsOf("nodes", glb#json);
         let parentOf = parentsOfNodes(nodes);
         let meshNodes = Vector.range(0, Vector.length(nodes)) |> Vector.filter(i -> Map.memberOf("mesh", Vector.get(i, nodes)));
@@ -771,7 +793,7 @@ pub mod Gltf {
             };
             forM (
                 skinBuild <- skinR;
-                nested <- Vector.toList(meshNodes) |> Result.traverse(i -> nodeParts(linear, glb, nodes, parentOf, skinBuild, i) |> Result.map(ps -> (i, ps)));
+                nested <- Vector.toList(meshNodes) |> Result.traverse(i -> nodeParts(read, glb, nodes, parentOf, skinBuild, i) |> Result.map(ps -> (i, ps)));
                 parts <- Ok(nested |> List.flatMap(snd));
                 mesh <- meshOfParts(parts, Option.nonEmpty(skinBuild));
                 partMeshes <- parts |> Result.traverse(part -> partMeshOf(part, Option.nonEmpty(skinBuild)));
@@ -863,7 +885,7 @@ pub mod Gltf {
     ///   - skin のあるノード: 変換を無視し（仕様の MUST）、JOINTS_0 / WEIGHTS_0 を読む
     ///   - ジョイントの子孫: バインドの時のジョイントの world 行列 × ジョイントから下の局所の鎖で写し、そのジョイントに重み 1
     ///   - ほか: world 行列を焼き込む（スキンがあれば根のジョイントに重み 1）
-    def nodeParts(linear: Bool, glb: Glb, nodes: Vector[Obj], parentOf: Map[Int32, Int32], skinBuild: Option[SkinBuild], i: Int32): Result[String, List[Part]] =
+    def nodeParts(read: LoadOptions, glb: Glb, nodes: Vector[Obj], parentOf: Map[Int32, Int32], skinBuild: Option[SkinBuild], i: Int32): Result[String, List[Part]] =
         let node = Vector.get(i, nodes);
         let jointOfNode = Option.map(b -> b#jointOfNode, skinBuild) |> Option.getWithDefault(Map.empty());
         let placementR: Result[String, (Mat4.Mat4, Binding)] = match (skinBuild, intOf("skin", node)) {
@@ -885,10 +907,10 @@ pub mod Gltf {
             placement <- placementR;
             meshIndex <- intOf("mesh", node) |> Option.toOk("glTF: nodes[${i}] の mesh が数でない");
             meshObj <- objectAt("meshes", meshIndex, glb#json);
-            parts <- objectsOf("primitives", meshObj) |> Vector.toList |> Result.traverse(prim -> readPrimitive(linear, glb, fst(placement), snd(placement), prim))
+            parts <- objectsOf("primitives", meshObj) |> Vector.toList |> Result.traverse(prim -> readPrimitive(read, glb, fst(placement), snd(placement), prim))
         ) yield parts
 
-    def readPrimitive(linear: Bool, glb: Glb, transform: Mat4.Mat4, binding: Binding, prim: Obj): Result[String, Part] =
+    def readPrimitive(read: LoadOptions, glb: Glb, transform: Mat4.Mat4, binding: Binding, prim: Obj): Result[String, Part] =
         let attributes = objectOf("attributes", prim);
         let mode = Option.getWithDefault(4, intOf("mode", prim));
         forM (
@@ -898,10 +920,10 @@ pub mod Gltf {
             normals <- traverseOpt(intOf("NORMAL", attributes), k -> readAccessorWidth(glb, k, 3, "NORMAL"));
             indices <- traverseOpt(intOf("indices", prim), k -> readAccessorWidth(glb, k, 1, "indices"));
             skin <- readSkinAttributes(glb, attributes, binding, positions#count);
-            color <- baseColorOf(linear, glb, prim)
+            color <- baseColorOf(read#pbr, glb, prim)
         ) yield {
             let count = positions#count;
-            let vertexColors = vertexColorsOf(glb, attributes, count) |> Option.map(a -> (a#width, a#values));
+            let vertexColors = if (read#vertexColors) vertexColorsOf(glb, attributes, count) |> Option.map(a -> (a#width, a#values)) else None;
             let uvs = optionalAttribute(glb, attributes, "TEXCOORD_0", 2, count);
             let uvs2 = optionalAttribute(glb, attributes, "TEXCOORD_1", 2, count);
             let tangents = optionalAttribute(glb, attributes, "TANGENT", 4, count);
@@ -1024,19 +1046,6 @@ pub mod Gltf {
           tangents = Option.map(t -> gather(4, t, corners), part#tangents),
           uvs2 = Option.map(uv -> gather(2, uv, corners), part#uvs2),
           material = part#material }
-
-    /// count 行 × width 列の並び（行 k・列 c の値は cell(k, c)）。
-    // WhyNot: 行ごとの小さな Vector を Vector.flatMap でつながない — 頂点数万の glb で数百 ms かかる。
-    def rowsOf(count: Int32, width: Int32, cell: (Int32, Int32) -> a \ ef): Vector[a] \ ef =
-        Vector.range(0, count * width) |> Vector.map(j -> cell(j / width, Int32.remainder(j, width)))
-
-    /// src（頂点ごとに width 個）から、sources の頂点の順に写した並び。
-    def gather(width: Int32, src: Vector[a], sources: Vector[Int32]): Vector[a] =
-        rowsOf(Vector.length(sources), width, (k, c) -> Vector.get(Vector.get(k, sources) * width + c, src))
-
-    def flatXyz(vs: Vector[Vec3.Vec3]): Vector[Float64] = rowsOf(Vector.length(vs), 3, (k, c) -> component(c, Vector.get(k, vs)))
-
-    def component(c: Int32, v: Vec3.Vec3): Float64 = if (c == 0) v#x else if (c == 1) v#y else v#z
 
     def concatOf(f: Part -> Vector[a], parts: List[Part]): Vector[a] = Vector.flatten(List.toVector(List.map(f, parts)))
 

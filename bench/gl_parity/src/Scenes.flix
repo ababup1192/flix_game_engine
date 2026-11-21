@@ -96,9 +96,9 @@ mod Scenes {
     /// vertexColorTexture3d（Apple Silicon で 32 px ±1）: 頂点の色の坂の補間の丸め。頂点の色を掛け忘れる・2 倍を取り違えると板の面（千 px の桁）が違う。
     pub def toleranceOf(name: String): Option[Int32] = match name {
         case "psxFloor3d"      => Some(800)
-        case "psxBox3d"        => Some(100)
-        case "psxSkin3d"       => Some(150)
-        case "vertexColorTexture3d" => Some(100)
+        case "psxBox3d"        => Some(20)
+        case "psxSkin3d"       => Some(60)
+        case "vertexColorTexture3d" => Some(64)
         case "depthRed"        => Some(300)
         case "afterScene3d"    => Some(200)
         case "materialStripes" => Some(300)
@@ -118,7 +118,7 @@ mod Scenes {
         case "fxaa"            => Some(300)
         case "postStackLook"      => Some(3000)
         case "postStackDepthBand" => Some(800)
-        case "postStackCrt"       => Some(200)
+        case "postStackCrt"       => Some(110)
         case "lightmapBaked3d" => Some(600)
         case "lightmapNormal3d" => Some(400)
         case "spotSoftEdge3d"  => Some(100)
@@ -584,7 +584,7 @@ mod Scenes {
         }
 
     // ── 頂点の色をベイクした絵つきの板（glTF の COLOR_0 → Mesh3d の頂点の色。材質は絵 × 頂点の色）。B 段階 ──
-    // 左の板は頂点ごとに暗い灰・橙・青・明るい灰の色、右の板は同じ色に Mesh3d.withColorScale(2.0)（PS1 の 2 倍の掛け算・1 を超える頂点の色）。
+    // 左の板は頂点ごとに暗い灰・橙・青・明るい灰の色、右の板は同じ色に Mesh3d.scaleColors(2.0)（PS1 の 2 倍の掛け算・1 を超える頂点の色）。
     // 光は白の環境光だけ（ベイクした明るさで見せる場面の形）。頂点の色の補間か 2 倍を取り違えると板の面（数千 px）が丸ごと違う。
     def bakedQuad(x0: Float64, x1: Float64, y0: Float64, y1: Float64, z: Float64): Mesh3d.Mesh3d =
         let positions = Vector#{ x0, y0, z, x0, y1, z, x1, y1, z, x1, y0, z };
@@ -601,7 +601,7 @@ mod Scenes {
         let tex = parityTexture();
         let material = Scene3d.texturedMaterial(Texture3d.name(tex), ShaderDoc.FilterMode.Nearest);
         let left = Scene3d.meshInstance(bakedQuad(-4.6, -0.6, -2.4, 2.4, 10.0), Mat4.identity()) |> Scene3d.withMaterial(material);
-        let right = Scene3d.meshInstance(Mesh3d.withColorScale(2.0, bakedQuad(0.6, 4.6, -2.4, 2.4, 10.0)), Mat4.identity()) |> Scene3d.withMaterial(material);
+        let right = Scene3d.meshInstance(Mesh3d.scaleColors(2.0, bakedQuad(0.6, 4.6, -2.4, 2.4, 10.0)), Mat4.identity()) |> Scene3d.withMaterial(material);
         let scene = { textures = tex :: Nil | flatScene({ x = 240.0, y = 140.0 }, 1, left :: right :: Nil, Nil) };
         { name = "vertexColorTexture3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
             Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
@@ -953,13 +953,16 @@ mod Scenes {
         }
 
     def floorScene(name: String, mesh: Mesh3d.Mesh3d, material: Scene3d.Material3d, tex: Texture3d.Texture3d): Scene =
+        { name = name, via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, floorScene3d(mesh, material, tex)) :: Nil }
+
+    /// 奥へ伸びる床 1 枚の 3D の場面（floorScene の中身）。
+    def floorScene3d(mesh: Mesh3d.Mesh3d, material: Scene3d.Material3d, tex: Texture3d.Texture3d): Scene3d.Scene3dCmd =
         let camera = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.2, fovY = 1.0, near = 1.0, far = 100.0, lensShift = Vec2.zero() };
         let floor = Scene3d.meshInstance(mesh, Mat4.identity()) |> Scene3d.withMaterial(material);
-        let scene = { instances = floor :: Nil, textures = tex :: Nil, zIndex = 1,
-                      environment = { ambient = c8(255, 255, 255), hemisphere = 0.0, toonSteps = 0, fog = None, background = Some(c8(10, 10, 30)) }
-                      | Scene3d.scene(camera, { x = 240.0, y = 140.0 }) };
-        { name = name, via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
-            Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
+        { instances = floor :: Nil, textures = tex :: Nil, zIndex = 1,
+          environment = { ambient = c8(255, 255, 255), hemisphere = 0.0, toonSteps = 0, fog = None, background = Some(c8(10, 10, 30)) }
+          | Scene3d.scene(camera, { x = 240.0, y = 140.0 }) }
 
     /// 絵の r・g・b を f で包んで読む材質（f = 読む座標を変える場）。
     def checkerMaterial(name: String, wrapRead: ShaderDoc.Field -> ShaderDoc.Field, tex: Texture3d.Texture3d): Scene3d.Material3d =
@@ -996,13 +999,10 @@ mod Scenes {
     // psxSkin3d: 骨つきの板（Pose）に頂点の丸めと色の丸め。
     def psxFloor3d(): Scene =
         let tex = parityTexture();
-        let base = floorScene("psxFloor3d", floorMesh(Some(1.0)), Scene3d.texturedMaterial(Texture3d.name(tex), ShaderDoc.FilterMode.Nearest), tex);
-        let camera = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.2, fovY = 1.0, near = 1.0, far = 100.0, lensShift = Vec2.zero() };
-        let floor = Scene3d.meshInstance(floorMesh(Some(1.0)), Mat4.identity()) |> Scene3d.withMaterial(Scene3d.texturedMaterial(Texture3d.name(tex), ShaderDoc.FilterMode.Nearest));
-        let scene = { instances = floor :: Nil, textures = tex :: Nil, zIndex = 1,
-                      environment = { ambient = c8(255, 255, 255), hemisphere = 0.0, toonSteps = 0, fog = None, background = Some(c8(10, 10, 30)) }
-                      | Scene3d.scene(camera, { x = 240.0, y = 140.0 }) } |> Scene3d.withPsx(Scene3d.psxLook());
-        { items = Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil | base }
+        let scene = floorScene3d(floorMesh(Some(1.0)), Scene3d.texturedMaterial(Texture3d.name(tex), ShaderDoc.FilterMode.Nearest), tex)
+            |> Scene3d.withPsx(Scene3d.psxPreset());
+        { name = "psxFloor3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
 
     def psxBox3d(): Scene =
         let tex = parityTexture();
@@ -1014,7 +1014,7 @@ mod Scenes {
         let board = Scene3d.billboard("atlas", { position = { x = 0.0, y = 0.0 }, size = { x = 16.0, y = 16.0 } },
                                       Vec3.v3(0.3, -2.6, 8.0), { x = 1.7, y = 1.7 }) |> Scene3d.unlit;
         let flat = flatScene({ x = 240.0, y = 140.0 }, 1, plate :: Nil, board :: Nil);
-        let look = { affineTextureMapping = 0.5, dither = Scene3d.DitherPattern.Bayer4x4, vertexSnap = 2.0 | Scene3d.psxLook() };
+        let look = { affineTextureMapping = 0.5, dither = Scene3d.DitherPattern.Bayer4x4, vertexSnap = 2.0 | Scene3d.psxPreset() };
         let scene = { textures = tex :: Nil, groups = Scene3d.staticGroup("psxBox", ("box", box) :: Nil) :: Nil, resolution = Scene3d.Resolution.Design,
                       environment = { hemisphere = 0.3, ambient = c8(180, 180, 180) | flat#environment } | flat } |> Scene3d.withPsx(look);
         { name = "psxBox3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
@@ -1027,7 +1027,7 @@ mod Scenes {
             |> Scene3d.withMaterial(stripeMaterial()) |> Scene3d.withPose(skinBendPose(-0.7));
         let scene = { instances = back :: left :: right :: Nil, spotLights = skinBendSpot() :: Nil, zIndex = 1,
                       environment = { ambient = c8(90, 90, 90), hemisphere = 0.0, toonSteps = 0, fog = None, background = Some(c8(10, 10, 30)) }
-                      | Scene3d.scene(flatCamera(), { x = 240.0, y = 140.0 }) } |> Scene3d.withPsx({ affineTextureMapping = 0.0 | Scene3d.psxLook() });
+                      | Scene3d.scene(flatCamera(), { x = 240.0, y = 140.0 }) } |> Scene3d.withPsx({ affineTextureMapping = 0.0 | Scene3d.psxPreset() });
         { name = "psxSkin3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
             Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
 

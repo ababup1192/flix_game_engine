@@ -3,6 +3,12 @@ mod Render3d.Light {
     import fge.gl.GlContext
     use Render3d.{LightData, LightLocs}
 
+    /// 場面の PS1 風の値の uniform（色の段の数 2^bits − 1・ディザの表の番号・ディザの強さ・アフィンの割合）。GL の uPsx と WGSL の R3dLight の psx。
+    pub def psxValuesOf(scene: Scene3d.Scene3dCmd): Array[Float32, Static] \ IO =
+        let psx = scene#psx;
+        Array#{ RenderUtil.f32(Int32.toFloat64(Int32.leftShift(1, Scene3d.Psx.colorDepthOf(psx)) - 1)), RenderUtil.f32(Int32.toFloat64(Scene3d.Psx.patternCode(psx#dither))),
+                RenderUtil.f32(Scene3d.Psx.ditherStrengthOf(psx)), RenderUtil.f32(Scene3d.Psx.affineOf(psx)) } @ Static
+
     /// 光を uniform の並びへ詰める（点光源・スポットは選んだ後の物）。PS1 風の値（psx・vertexSnap）も詰める。psxTarget（描き先の矩形）は 0 のままで、描き手が描き先を決めた所で入れる。光の color・ambient・かすみの色は線形の量へ戻してから詰める
     /// （hemisphere・intensity・range は線形の量のまま）。
     /// environmentLevels = 場面の環境マップの絵の段の数（環境マップが無い場面は 0。Render3d.Material.bindEnvironmentMap の答え）。
@@ -37,10 +43,8 @@ mod Render3d.Light {
         let reflectArray = (c: Color) -> { let a = Array.repeat(Static, 3, 0.0f32); fillVec3(a, 0, colorVec(c)); a };
         let environment = environmentUniforms(scene, environmentLevels);
         let sun = sunUniforms(scene);
-        let psx = scene#psx;
-        { psx = Array#{ RenderUtil.f32(Int32.toFloat64(Int32.leftShift(1, Scene3d.Psx.colorDepthOf(psx)) - 1)), RenderUtil.f32(Int32.toFloat64(Scene3d.Psx.patternCode(psx#dither))),
-                        RenderUtil.f32(Scene3d.Psx.ditherStrengthOf(psx)), RenderUtil.f32(Scene3d.Psx.affineOf(psx)) } @ Static,
-          psxTarget = Array.repeat(Static, 4, 0.0f32), vertexSnap = RenderUtil.f32(Scene3d.Psx.vertexSnapOf(psx)),
+        { psx = psxValuesOf(scene),
+          psxTarget = Array.repeat(Static, 4, 0.0f32), vertexSnap = RenderUtil.f32(Scene3d.Psx.vertexSnapOf(scene#psx)),
           sunDir = sun#direction, sunColor = sun#color, inverseUnitsPerMeterSquared = RenderUtil.f32(inverseUnitsPerMeterSquaredOf(scene)), ambient = ambient, hemisphere = RenderUtil.f32(env#hemisphere), toonSteps = env#toonSteps,
           pointCount = List.length(points), pointPos = pointPos, pointColor = pointColor, pointRange = pointRange,
           spotCount = List.length(spots), spotPos = spot#position, spotDir = spot#direction, spotColor = spot#color,

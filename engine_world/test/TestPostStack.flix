@@ -529,11 +529,15 @@ mod TestPostStack {
         Assert.assertEq(expected = planText(built(Nil, neutral())), planText(built(Nil, neutral() |> PostStack.withCrt(Some(off)))))
 
     @Test
-    def testCrtDrawsThePostPassThenPresentsTheCrtSurface(): Unit \ Assert =
+    def testCrtDrawsThePostPass(): Unit \ Assert =
         let b = built(Nil, neutral() |> PostStack.withCrt(Some(crt())));
-        Assert.assertEq(expected = (PostStack.postName() :: Nil, true),
-                        (b#plan#passes |> List.map(p -> p#name) |> List.filter(n -> n != PostStack.sceneName()),
-                         specOf(b#present) |> Option.exists(sp -> String.startsWith(prefix = "ps_crt:", sp#name))))
+        Assert.assertEq(expected = PostStack.postName() :: Nil,
+                        b#plan#passes |> List.map(p -> p#name) |> List.filter(n -> n != PostStack.sceneName()))
+
+    @Test
+    def testCrtPresentsTheCrtSurface(): Unit \ Assert =
+        let b = built(Nil, neutral() |> PostStack.withCrt(Some(crt())));
+        Assert.assertTrue(specOf(b#present) |> Option.exists(sp -> String.startsWith(prefix = "ps_crt:", sp#name)))
 
     @Test
     def testCrtAfterFxaaReadsTheFxaaPass(): Unit \ Assert =

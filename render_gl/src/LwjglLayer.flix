@@ -100,7 +100,8 @@ pub mod LwjglLayer {
     /// （GL 突き合わせ harness の画面口。swap の後の back buffer は GL 仕様上 undefined
     /// なので、外から読む形にはできない）。
     /// 枚数上限は env の消し忘れ保険 — 実機 run に残ると毎フレームの全画面読み出しと
-    /// PNG 圧縮が挟まり、ゲームが止まったように見えるほど遅くなる。
+    /// PNG 圧縮が挟まり、ゲームが止まったように見えるほど遅くなる。上限は gl-parity の画面口の場面の数より上に置く
+    /// （場面を足して上限を超えると、後ろの場面の絵が落ちずに比べが外れる）。
     def frameShotLimit(): Int32 = 96
 
     def frameShot(dirOpt: Option[String], fbW: Int32, fbH: Int32, taken: Array[Int32, Static]): Unit \ IO =

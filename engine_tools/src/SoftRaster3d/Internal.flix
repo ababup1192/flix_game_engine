@@ -1,4 +1,4 @@
-// SoftRaster3d.Internal — CPU の 3D の描き手の部品。環境マップ（周りの景色のパノラマ）を向きで読む所。SoftRaster3d の中身。
+// SoftRaster3d.Internal — CPU の 3D の描き手の部品。環境マップ（周りの景色のパノラマ）を向きで読む所と、骨で曲げる頂点・頂点の並びの読み書き。SoftRaster3d の中身。
 // ゲームからは呼ばない。
 
 /// 環境マップの読み。式は LightModel3d の頭の説明（向きは LightModel3d.environmentDirection の木から作る SoftRaster3dLight.environmentDirectionAt）。
@@ -127,4 +127,34 @@ pub mod SoftRaster3d.Internal {
     pub def skyColorWith(colors: SkyColors, dir: Vec3.Vec3): (Float64, Float64, Float64) =
         let SkyColors.SkyColors(zr, zg, zb, hr, hg, hb, gr, gg, gb, curve) = colors;
         SoftRaster3dLight.skyAt(dir#x, dir#y, dir#z, zr, zg, zb, hr, hg, hb, gr, gg, gb, curve)
+
+    /// 形 mesh の頂点を、頂点ごとの 4 つのジョイント（joints の番号・weights の重み。頂点 k は [4k, 4k + 4)）で曲げた位置と法線とタンジェント。
+    // WhyNot: 重み 0 の欄を飛ばす — 足しても値が変わらず、多くの頂点は 1〜2 本しか使わない。
+    pub def bendVertices(matrices: Vector[Mat4.Mat4], joints: Vector[Int32], weights: Vector[Float64],
+                         mesh: Mesh3d.Mesh3d): (Vector[Float64], Vector[Float64], Option[Vector[Float64]]) =
+        let blendAt = (move: (Mat4.Mat4, Vec3.Vec3) -> Vec3.Vec3, v: Vec3.Vec3, k: Int32) ->
+            List.range(k * 4, k * 4 + 4) |> List.foldLeft((acc, s) -> {
+                let w = Vector.get(s, weights);
+                if (w == 0.0) acc else Vec3.add(acc, Vec3.mul(move(Vector.get(Vector.get(s, joints), matrices), v), w))
+            }, Vec3.zero());
+        let ps = Mesh3d.positions(mesh);
+        let ns = Mesh3d.normals(mesh);
+        let bent = Vector.range(0, Mesh3d.vertexCount(mesh)) |> Vector.map(k ->
+            (blendAt(Mat4.apply, vec3At(ps, k), k), blendAt(Mat4.applyDir, vec3At(ns, k), k)));
+        let tangents = Mesh3d.tangents(mesh) |> Option.map(ts -> Vector.range(0, Mesh3d.vertexCount(mesh)) |> Vector.flatMap(k -> {
+            let (xyz, w) = vec4At(ts, k);
+            let moved = blendAt(Mat4.applyDir, xyz, k);
+            Vector#{ moved#x, moved#y, moved#z, w }
+        }));
+        (Vector.flatMap(pair -> xyzOf(fst(pair)), bent), Vector.flatMap(pair -> xyzOf(snd(pair)), bent), tangents)
+
+    /// 頂点ごとに 3 つ並んだ v の k 番目の頂点。
+    pub def vec3At(v: Vector[Float64], k: Int32): Vec3.Vec3 =
+        Vec3.v3(Vector.get(k * 3, v), Vector.get(k * 3 + 1, v), Vector.get(k * 3 + 2, v))
+
+    pub def xyzOf(v: Vec3.Vec3): Vector[Float64] = Vector#{ v#x, v#y, v#z }
+
+    /// 頂点ごとに 4 つ並んだ v の k 番目の頂点（xyz と w）。
+    pub def vec4At(v: Vector[Float64], k: Int32): (Vec3.Vec3, Float64) =
+        (Vec3.v3(Vector.get(k * 4, v), Vector.get(k * 4 + 1, v), Vector.get(k * 4 + 2, v)), Vector.get(k * 4 + 3, v))
 }

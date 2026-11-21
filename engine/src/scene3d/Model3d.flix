@@ -17,10 +17,14 @@ pub mod Model3d {
     pub type alias Model3d = { mesh = Mesh3d.Mesh3d, skin = Option[Skin3d.Skin3d], clips = Map[String, AnimationClip3d.AnimationClip3d],
                                parts = List[ModelPart], textures = List[Texture3d.Texture3d], nodes = List[ModelNode] }
 
-    /// 形と全部の parts の頂点の色に k を掛けた物（Mesh3d.withColorScale）。PS1 の GPU と同じく頂点の色の 0.5 を 1 倍として明るくもできる掛け算は k = 2
+    /// 形と全部の parts の頂点の色に k を掛けた物（Mesh3d.scaleColors。今の色に掛けるので 2 回呼ぶと k × k 倍・NaN・負・無限の k は 1 として知らせる）。
+    /// PS1 の GPU と同じく頂点の色の 0.5 を 1 倍として明るくもできる掛け算は k = 2
     /// （Blender で 0.5 より明るくベイクした所が絵より明るくなる）。既定の読み込みは 1 倍。読み込みの時に 1 回呼ぶ。
-    pub def withVertexColorScale(k: Float64, model: Model3d): Model3d =
-        { mesh = Mesh3d.withColorScale(k, model#mesh), parts = model#parts |> List.map(p -> { mesh = Mesh3d.withColorScale(k, p#mesh) | p }) | model }
+    pub def scaleVertexColors(k: Float64, model: Model3d): Model3d =
+        if (k == 1.0) model
+        else if (Float64.isNan(k) or Float64.isInfinite(k) or k < 0.0)
+            Log.fellBackThen("scene3d", "Model3d.scaleVertexColors の k ${k}", "1 倍", "NaN・負・無限は掛けられない", model)
+        else { mesh = Mesh3d.scaleColors(k, model#mesh), parts = model#parts |> List.map(p -> { mesh = Mesh3d.scaleColors(k, p#mesh) | p }) | model }
 
     /// glTF のノード 1 つ。座標は engine の座標（左手系。Gltf の頭の X の反転を済ませた物）。
     /// - name = glTF の name（無ければ ""。glTF は同じ名前を許す）

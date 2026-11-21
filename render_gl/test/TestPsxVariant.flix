@@ -8,7 +8,7 @@ mod Render3d.TestPsxVariant {
 
     def plain(): Scene3d.Scene3dCmd = Scene3d.scene(camera(), Vec2.v2(320.0, 240.0))
 
-    def psxScene(): Scene3d.Scene3dCmd = Scene3d.withPsx(Scene3d.psxLook(), plain())
+    def psxScene(): Scene3d.Scene3dCmd = Scene3d.withPsx(Scene3d.psxPreset(), plain())
 
     def psx(): Render3d.ShaderVariant = { pointShadows = false, physicalUnits = false, psx = true }
 
@@ -45,14 +45,21 @@ mod Render3d.TestPsxVariant {
 
     @Test
     def testPsxUsesLightLayout(): Unit \ Assert =
-        Assert.assertEq(expected = (1, 2), (Render3d.WebGpuRenderer.layoutCodeOf(psx()), Render3d.WebGpuRenderer.layoutCodeOf({ pointShadows = true | psx() })))
+        Assert.assertEq(expected = 1, Render3d.WebGpuRenderer.layoutCodeOf(psx()))
+
+    @Test
+    def testPsxWithPointShadowsUsesShadowLayout(): Unit \ Assert =
+        Assert.assertEq(expected = 2, Render3d.WebGpuRenderer.layoutCodeOf({ pointShadows = true | psx() }))
 
     // ── GLSL ──
 
     @Test
-    def testGlslVertexSnapsOnlyInPsx(): Unit \ Assert =
-        Assert.assertEq(expected = (true, false),
-            (has("gl_Position = r3d_vertexSnap(", Render3dGlsl.litVertexSourceFor(false, psx())), has("r3d_vertexSnap", Render3dGlsl.litVertexSource(false))))
+    def testGlslPsxVertexSnaps(): Unit \ Assert =
+        Assert.assertTrue(has("gl_Position = r3d_vertexSnap(", Render3dGlsl.litVertexSourceFor(false, psx())))
+
+    @Test
+    def testGlslDefaultVertexDoesNotSnap(): Unit \ Assert =
+        Assert.assertFalse(has("r3d_vertexSnap", Render3dGlsl.litVertexSource(false)))
 
     @Test
     def testGlslMaterialVertexWithoutPsxIsUnchanged(): Unit \ Assert =

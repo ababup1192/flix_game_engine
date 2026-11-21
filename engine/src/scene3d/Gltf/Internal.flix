@@ -1,4 +1,4 @@
-// Gltf.Internal — glb の読み込みが使う、ノードの姿勢と左右の反転の計算と、頂点の色（COLOR_0）の読み方。
+// Gltf.Internal — glb の読み込みが使う、ノードの姿勢と左右の反転の計算と、頂点の色（COLOR_0）の読み方と、頂点の並びの組み立て。
 
 /// Gltf の中身。ゲームからは呼ばない。
 pub mod Gltf.Internal {
@@ -70,4 +70,17 @@ pub mod Gltf.Internal {
     pub def vec3At(v: Vector[Float64], k: Int32): Vec3.Vec3 = Vec3.v3(Vector.get(k, v), Vector.get(k + 1, v), Vector.get(k + 2, v))
 
     pub def quatOf(v: Vector[Float64]): Quat.Quat = { x = Vector.get(0, v), y = Vector.get(1, v), z = Vector.get(2, v), w = Vector.get(3, v) }
+
+    /// count 行 × width 列の並び（行 k・列 c の値は cell(k, c)）。
+    // WhyNot: 行ごとの小さな Vector を Vector.flatMap でつながない — 頂点数万の glb で数百 ms かかる。
+    pub def rowsOf(count: Int32, width: Int32, cell: (Int32, Int32) -> a \ ef): Vector[a] \ ef =
+        Vector.range(0, count * width) |> Vector.map(j -> cell(j / width, Int32.remainder(j, width)))
+
+    /// src（頂点ごとに width 個）から、sources の頂点の順に写した並び。
+    pub def gather(width: Int32, src: Vector[a], sources: Vector[Int32]): Vector[a] =
+        rowsOf(Vector.length(sources), width, (k, c) -> Vector.get(Vector.get(k, sources) * width + c, src))
+
+    pub def flatXyz(vs: Vector[Vec3.Vec3]): Vector[Float64] = rowsOf(Vector.length(vs), 3, (k, c) -> component(c, Vector.get(k, vs)))
+
+    pub def component(c: Int32, v: Vec3.Vec3): Float64 = if (c == 0) v#x else if (c == 1) v#y else v#z
 }

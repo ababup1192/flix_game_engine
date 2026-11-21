@@ -509,9 +509,13 @@ pub mod Mesh3d {
         found
 
     /// 頂点の色に k を掛けた形（1 を超えてよい。材質は絵 × 頂点の色なので、2 で頂点の色の 0.5 が絵のままの明るさになる）。
-    /// 中身の鍵も k を足した物にする（withContentKey の鍵の形でも、掛ける前と同じ鍵にならない）。k が 1 なら m のまま。
-    pub def withColorScale(k: Float64, m: Mesh3d): Mesh3d =
+    /// 今の色に掛けるので、2 回呼ぶと k × k 倍。中身の鍵も k を足した物にする（withContentKey の鍵の形でも、掛ける前と同じ鍵にならない）。
+    /// k が 1 なら m のまま。k が NaN・負・無限の時は 1 として m のまま返し、1 行知らせる（読み込みの時に 1 回呼ぶ口）。
+    // WhyNot: 負や NaN の k で bug! にしない — Doc から渡る調整の値で、色が変わらないだけなら遊びは続けられる。
+    pub def scaleColors(k: Float64, m: Mesh3d): Mesh3d =
         if (k == 1.0) m
+        else if (Float64.isNan(k) or Float64.isInfinite(k) or k < 0.0)
+            Log.fellBackThen("scene3d", "Mesh3d.scaleColors の k ${k}", "1 倍", "NaN・負・無限は掛けられない", m)
         else {
             let r = recOf(m);
             let tag = (h: Lazy[String]) -> lazy digestOf("colorScale|${k}|${force h}", Nil, Nil);

@@ -203,7 +203,7 @@ mod Render3d.WebGpuShadows {
         discard buf.putFloat(biasAt, bias).putFloat(biasAt + 4, normalBias);
         discard buf.putFloat(at(Render3d.UniformLayout.LightField.InverseUnitsPerMeterSquared), RenderUtil.f32(Render3d.Light.inverseUnitsPerMeterSquaredOf(scene)));
         discard buf.putFloat(at(Render3d.UniformLayout.LightField.Pad0), 0.0f32);
-        let psx = Render3d.Light.lightDataOf(scene, 0)#psx;
+        let psx = Render3d.Light.psxValuesOf(scene);
         let psxAt = at(Render3d.UniformLayout.LightField.Psx);
         discard buf.putFloat(psxAt, Array.get(0, psx)).putFloat(psxAt + 4, Array.get(1, psx)).putFloat(psxAt + 8, Array.get(2, psx)).putFloat(psxAt + 12, Array.get(3, psx))
 
