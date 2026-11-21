@@ -1,0 +1,15 @@
+# 動画: 1年1組の窓ぎわへ歩き、机の下のおはじきの巾着を見下ろして拾う（目の前へ飛んできて回り、字幕が出る）。
+# 置き場所は items.kind.json の class11_window（表の (34.6, 0, 6.3)）。
+fps 60
+start at x=-34.6 y=0 z=1.4 yaw=0
+mark in_v
+wait 0.3
+hold forward 2.6
+hold lookDown 0.15
+wait 0.4
+tap talk
+expect screen=Pickup
+until screen=Walk max 4
+expect items=ohajiki
+wait 0.6
+mark out_v

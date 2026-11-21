@@ -1,0 +1,8 @@
+# 紹介の動画の場面「toilet」（tools/trailer.py が書いた手順。直すなら tools/trailer.py を直して flows を流し直す）
+fps 60
+start at x=-5.84 y=0 z=-3 yaw=180
+mark in_a
+hold forward 0.8
+hold lookDown 0.6
+wait 0.6
+mark out_a

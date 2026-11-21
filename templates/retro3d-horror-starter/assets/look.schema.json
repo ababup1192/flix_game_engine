@@ -1,0 +1,374 @@
+{
+  "//": "night_school.look.json の形の宣言（Studio の sections 方言）。光の置き方はコード側（SchoolScene）。",
+  "version": 1,
+  "sections": {
+    "ambient": {
+      "kind": "field",
+      "type": "color",
+      "label": "環境光",
+      "order": 1
+    },
+    "fog": {
+      "kind": "record",
+      "label": "距離の霧",
+      "order": 2,
+      "fields": {
+        "color": {
+          "type": "color",
+          "label": "沈む色",
+          "order": 1
+        },
+        "near": {
+          "type": "float",
+          "label": "掛かり始める距離（m）",
+          "order": 2,
+          "min": 0,
+          "max": 30,
+          "default": 2
+        },
+        "far": {
+          "type": "float",
+          "label": "沈み切る距離（m）",
+          "order": 3,
+          "min": 1,
+          "max": 60,
+          "default": 18
+        }
+      }
+    },
+    "moon": {
+      "kind": "record",
+      "label": "窓の月明かり",
+      "order": 3,
+      "fields": {
+        "color": {
+          "type": "color",
+          "label": "色",
+          "order": 1
+        },
+        "intensity": {
+          "type": "float",
+          "label": "強さ（線形）",
+          "order": 2,
+          "min": 0,
+          "max": 5,
+          "default": 0.55
+        },
+        "range": {
+          "type": "float",
+          "label": "届く距離（m）",
+          "order": 3,
+          "min": 0.5,
+          "max": 20,
+          "default": 4.5
+        },
+        "every": {
+          "type": "int",
+          "label": "何個に 1 つ灯すか",
+          "order": 4,
+          "min": 1,
+          "max": 10,
+          "default": 3
+        }
+      }
+    },
+    "exit": {
+      "kind": "record",
+      "label": "非常口の灯り",
+      "order": 4,
+      "fields": {
+        "color": {
+          "type": "color",
+          "label": "色",
+          "order": 1
+        },
+        "intensity": {
+          "type": "float",
+          "label": "強さ（線形）",
+          "order": 2,
+          "min": 0,
+          "max": 5,
+          "default": 0.7
+        },
+        "range": {
+          "type": "float",
+          "label": "届く距離（m）",
+          "order": 3,
+          "min": 0.5,
+          "max": 20,
+          "default": 3.5
+        },
+        "every": {
+          "type": "int",
+          "label": "何個に 1 つ灯すか",
+          "order": 4,
+          "min": 1,
+          "max": 10,
+          "default": 1
+        }
+      }
+    },
+    "exitGlow": {
+      "kind": "field",
+      "type": "float",
+      "label": "非常口のプレートの光る強さ",
+      "order": 5,
+      "min": 0,
+      "max": 10,
+      "default": 2.5
+    },
+    "flashlight": {
+      "kind": "record",
+      "label": "懐中電灯",
+      "order": 6,
+      "fields": {
+        "color": {
+          "type": "color",
+          "label": "色",
+          "order": 1
+        },
+        "intensity": {
+          "type": "float",
+          "label": "強さ（線形）",
+          "order": 2,
+          "min": 0,
+          "max": 6,
+          "default": 1.6
+        },
+        "range": {
+          "type": "float",
+          "label": "届く距離（m）",
+          "order": 3,
+          "min": 1,
+          "max": 30,
+          "default": 11
+        },
+        "fovDeg": {
+          "type": "float",
+          "label": "円錐の角（度）",
+          "order": 4,
+          "min": 10,
+          "max": 120,
+          "default": 46
+        },
+        "innerDeg": {
+          "type": "float",
+          "label": "縁がぼけ始める角（度）",
+          "order": 5,
+          "min": 0,
+          "max": 120,
+          "default": 16
+        },
+        "sway": {
+          "type": "float",
+          "label": "歩く時の揺れ（m）",
+          "order": 6,
+          "min": 0,
+          "max": 0.2,
+          "default": 0.03
+        }
+      }
+    },
+    "fovDeg": {
+      "kind": "field",
+      "type": "float",
+      "label": "縦の画角（度）",
+      "order": 7,
+      "min": 40,
+      "max": 90,
+      "default": 62
+    },
+    "hudText": {
+      "kind": "field",
+      "type": "color",
+      "label": "部屋の名前の字の色",
+      "order": 8
+    },
+    "subtitle": {
+      "kind": "record",
+      "label": "会話の字幕",
+      "order": 9,
+      "fields": {
+        "size": {
+          "type": "float",
+          "label": "字の高さ（design px・窓では 2 倍）",
+          "order": 1,
+          "min": 6,
+          "max": 24,
+          "default": 11
+        },
+        "shadow": {
+          "type": "float",
+          "label": "影の濃さ",
+          "order": 2,
+          "min": 0,
+          "max": 1,
+          "default": 0.85
+        },
+        "outline": {
+          "type": "float",
+          "label": "縁取りの濃さ",
+          "order": 3,
+          "min": 0,
+          "max": 1,
+          "default": 0.7
+        },
+        "band": {
+          "type": "float",
+          "label": "字の幅の帯の濃さ（0 で敷かない）",
+          "order": 4,
+          "min": 0,
+          "max": 1,
+          "default": 0.0
+        },
+        "chroma": {
+          "type": "float",
+          "label": "色のにじみ（赤と青のずれ）",
+          "order": 5,
+          "min": 0,
+          "max": 1,
+          "default": 0.15
+        },
+        "scanline": {
+          "type": "float",
+          "label": "走査線の濃さ",
+          "order": 6,
+          "min": 0,
+          "max": 1,
+          "default": 0.06
+        },
+        "hintSize": {
+          "type": "float",
+          "label": "「話す」の印の大きさ（design px）",
+          "order": 7,
+          "min": 5,
+          "max": 16,
+          "default": 8.0
+        },
+        "hintAlpha": {
+          "type": "float",
+          "label": "「話す」の印の濃さ",
+          "order": 8,
+          "min": 0,
+          "max": 1,
+          "default": 0.9
+        },
+        "hintBox": {
+          "type": "float",
+          "label": "「話す」の印の後ろの箱の濃さ（0 で敷かない）",
+          "order": 9,
+          "min": 0,
+          "max": 1,
+          "default": 0.55
+        },
+        "hintPad": {
+          "type": "float",
+          "label": "「話す」の印の箱の余白（design px）",
+          "order": 10,
+          "min": 0,
+          "max": 10,
+          "default": 3.0
+        },
+        "maxChars": {
+          "type": "float",
+          "label": "字幕の 1 行の字数の上限",
+          "order": 11,
+          "min": 8,
+          "max": 40,
+          "default": 24
+        },
+        "lineGap": {
+          "type": "float",
+          "label": "字幕の 2 行の間（design px）",
+          "order": 12,
+          "min": 0,
+          "max": 12,
+          "default": 4
+        },
+        "bottom": {
+          "type": "float",
+          "label": "字幕の下の余白（design px）",
+          "order": 13,
+          "min": 0,
+          "max": 60,
+          "default": 10
+        }
+      }
+    },
+    "psx": {
+      "kind": "record",
+      "label": "PS1 風の描き方",
+      "order": 10,
+      "fields": {
+        "colorDepth": {
+          "type": "int",
+          "label": "色のビット数（0 で切る・5 で 15 ビット）",
+          "order": 1,
+          "min": 0,
+          "max": 8,
+          "default": 0
+        },
+        "dither": {
+          "type": {
+            "enum": [
+              "psx",
+              "bayer",
+              "off"
+            ]
+          },
+          "label": "ディザの表",
+          "order": 2,
+          "default": "psx"
+        },
+        "ditherStrength": {
+          "type": "float",
+          "label": "ディザの強さ",
+          "order": 3,
+          "min": 0,
+          "max": 2,
+          "default": 1
+        },
+        "vertexSnap": {
+          "type": "float",
+          "label": "頂点の揺れ（格子 design px・0 で切る）",
+          "order": 4,
+          "min": 0,
+          "max": 4,
+          "default": 0
+        },
+        "affine": {
+          "type": "float",
+          "label": "絵の歪み（0〜1）",
+          "order": 5,
+          "min": 0,
+          "max": 1,
+          "default": 0
+        },
+        "compositeBlur": {
+          "type": "float",
+          "label": "テレビの横のにじみ（design px・0 で切る）",
+          "order": 6,
+          "min": 0,
+          "max": 4,
+          "default": 0
+        },
+        "scanlines": {
+          "type": "float",
+          "label": "走査線の濃さ",
+          "order": 7,
+          "min": 0,
+          "max": 1,
+          "default": 0
+        },
+        "chromaBleed": {
+          "type": "float",
+          "label": "色だけの横のにじみ（design px）",
+          "order": 8,
+          "min": 0,
+          "max": 6,
+          "default": 0
+        }
+      }
+    }
+  }
+}

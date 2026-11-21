@@ -1,0 +1,24 @@
+# 紹介の動画の場面「teacher」（tools/trailer.py が書いた手順。直すなら tools/trailer.py を直して flows を流し直す）
+fps 60
+start at x=-27.84 y=0 z=-4.3 yaw=250.6
+tap talk
+wait 0.05
+tap talk
+wait 0.05
+tap talk
+wait 0.05
+tap talk
+wait 0.05
+tap talk
+wait 0.05
+tap talk
+wait 0.05
+tap talk
+wait 0.05
+tap talk
+wait 0.05
+tap talk
+wait 0.05
+mark in_a
+wait 3.8
+mark out_a

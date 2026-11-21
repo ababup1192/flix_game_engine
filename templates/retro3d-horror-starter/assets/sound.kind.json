@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "title": "音の大きさと距離",
+  "note": "足音が主役。ほかの音は足音より小さく置く(足音を 1 とした目安: 空気 0.2・風 0.15・戸 0.3・時計 0.3・紙 0.5)。step〜paper=近くで鳴った時の大きさ(0〜1)。dashStep=走っている間の足音の大きさ(歩く足音 step より大きく)。clockFalloff=壁の時計・doorFalloff=入った戸口(鳴らした所)・windFalloff=窓(配置の表の月明かりの位置)からの距離での聞こえ方: near m までは最大・far m で消える・curve=間の落ち方(1 で真っすぐ・大きいほど近くを離れるとすぐ小さくなる)。左右の振り分けは engine に口が無いので付けていない。",
+  "step": 0.6,
+  "dashStep": 0.85,
+  "ambience": 0.12,
+  "wind": 0.09,
+  "door": 0.18,
+  "clock": 0.18,
+  "paper": 0.3,
+  "clockFalloff": { "near": 1.0, "far": 9.0, "curve": 1.5 },
+  "doorFalloff": { "near": 1.5, "far": 10.0, "curve": 1.5 },
+  "windFalloff": { "near": 2.0, "far": 12.0, "curve": 1.5 }
+}

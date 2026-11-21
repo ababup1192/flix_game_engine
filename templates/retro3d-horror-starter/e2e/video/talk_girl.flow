@@ -1,0 +1,25 @@
+# 動画: 1年1組に後ろの戸口から入り、机の列の間を窓ぎわまで歩いて、窓ぎわに立つ少女の方を向いて話しかけ、台詞を全部送って少し下がる。
+# 少女の置き場所は characters.kind.json（表の (47.6, 7.4)）。1 行の間は文字送り（18 字/秒）と読む間（1 字 0.12 秒 + 1.2 秒）。
+fps 60
+start at x=-39.12 y=0 z=-1.2 yaw=0
+mark in_v
+hold forward 5.2
+hold turnRight 0.62
+wait 0.8
+tap talk
+expect talk=girl
+wait 7.3
+tap talk
+wait 7.0
+tap talk
+wait 7.0
+tap talk
+wait 6.1
+tap talk
+wait 7.0
+tap talk
+expect talk=-
+wait 0.4
+hold back 0.96
+wait 0.6
+mark out_v

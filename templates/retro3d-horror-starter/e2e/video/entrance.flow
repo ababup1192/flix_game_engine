@@ -1,0 +1,10 @@
+# 動画: 昇降口の奥から東の戸口（表の x = 28.2..29.2）を抜けて廊下へ出て、東を向いて歩き出す（約 13 秒）。
+fps 60
+start at x=-22.96 y=0 z=5.25 yaw=180
+mark in_v
+wait 0.8
+hold forward 4.64
+hold turnRight 1.125
+wait 0.5
+hold forward 3.6
+mark out_v

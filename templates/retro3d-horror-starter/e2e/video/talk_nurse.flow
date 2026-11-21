@@ -1,0 +1,25 @@
+# 動画: 1 階の保健室（表の x = 30..40）に西の戸口から入り、保健の先生の方を向いて話しかけ、台詞を全部送って少し下がる。
+# 先生の置き場所は characters.kind.json（表の (32.5, 2.5)）。1 行の間は文字送りと読む間（1 字 0.12 秒 + 1.2 秒）。
+fps 60
+start at x=-25.04 y=0 z=-1.2 yaw=0
+mark in_v
+hold forward 1.76
+hold turnLeft 0.45
+wait 0.8
+tap talk
+expect talk=teacher_woman
+wait 7.5
+tap talk
+wait 7.7
+tap talk
+wait 7.5
+tap talk
+wait 8.0
+tap talk
+wait 7.0
+tap talk
+expect talk=-
+wait 0.4
+hold back 0.96
+wait 0.6
+mark out_v

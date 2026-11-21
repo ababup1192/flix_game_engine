@@ -1,0 +1,130 @@
+{
+  "version": 1,
+  "note": "bin/fge yarn build が assets/talk/night.yarn から書いた木。手で直さない（.yarn を直して build する）",
+  "vocab": "",
+  "files": [
+    "assets/talk/night.yarn"
+  ],
+  "nodes": [
+    {
+      "title": "girl",
+      "file": "assets/talk/night.yarn",
+      "line": 3,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 5,
+          "speaker": "少女",
+          "text": "あのね、ここは1年1組だけど、授業は全部『おしまい』から始まるんだよ。"
+        },
+        {
+          "kind": "line",
+          "line": 6,
+          "speaker": "少女",
+          "text": "あなたのその影、さっき廊下で『影の落とし物』として届けられてたよ。"
+        },
+        {
+          "kind": "line",
+          "line": 7,
+          "speaker": "少女",
+          "text": "窓の外の暗闇をじっと見てるとね、後ろから自分の背中が歩いてくるの。"
+        },
+        {
+          "kind": "line",
+          "line": 8,
+          "speaker": "少女",
+          "text": "ねえ、君はもう帰った人？ それとも、まだ来てない方の人？"
+        },
+        {
+          "kind": "line",
+          "line": 9,
+          "speaker": "少女",
+          "text": "三階の階段はね、上るよりも下りる方がずっと高いところへ行けるんだ。"
+        }
+      ]
+    },
+    {
+      "title": "teacher_man",
+      "file": "assets/talk/night.yarn",
+      "line": 12,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 14,
+          "speaker": "宿直の先生",
+          "text": "こら、こんな時間に何をしている。今は『放課後の真夜中』だぞ。"
+        },
+        {
+          "kind": "line",
+          "line": 15,
+          "speaker": "宿直の先生",
+          "text": "いいかね、忘れ物を探すのは禁止だ。見つけるのも禁止だ。"
+        },
+        {
+          "kind": "line",
+          "line": 16,
+          "speaker": "宿直の先生",
+          "text": "……つまり、最初から持っていないことにしなさい。"
+        },
+        {
+          "kind": "line",
+          "line": 17,
+          "speaker": "宿直の先生",
+          "text": "宿直日誌の記録では、君は一時間前に帰って、三十分後にここへ来る予定だ。"
+        },
+        {
+          "kind": "line",
+          "line": 18,
+          "speaker": "宿直の先生",
+          "text": "三階の空き教室には入るなよ。あそこは今、『月曜日の朝』がぎゅうぎゅうに詰まっている。"
+        },
+        {
+          "kind": "line",
+          "line": 19,
+          "speaker": "宿直の先生",
+          "text": "無断外出の罰として、君の出席番号を『7番』から『7番』に変更しておく！"
+        }
+      ]
+    },
+    {
+      "title": "teacher_woman",
+      "file": "assets/talk/night.yarn",
+      "line": 22,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 24,
+          "speaker": "保健の先生",
+          "text": "あらあら、よく来たわね。ここは保健室。ケガをしていない人のための場所よ。"
+        },
+        {
+          "kind": "line",
+          "line": 25,
+          "speaker": "保健の先生",
+          "text": "だいじょうぶ、痛くないわ。今からあなたの『名前』に絆創膏を貼るだけだから。"
+        },
+        {
+          "kind": "line",
+          "line": 26,
+          "speaker": "保健の先生",
+          "text": "だいじょうぶ、怖くないわ。今からあなたの『昨日』に包帯を巻くだけだから。"
+        },
+        {
+          "kind": "line",
+          "line": 27,
+          "speaker": "保健の先生",
+          "text": "お薬を飲んだら、絶対に目を覚まさないでね。その方が、ずっと元気でいられるから。"
+        },
+        {
+          "kind": "line",
+          "line": 28,
+          "speaker": "保健の先生",
+          "text": "……ほら、体温計が『おしまい』って鳴ったわ。とっても健康な証拠ね。"
+        }
+      ]
+    }
+  ]
+}

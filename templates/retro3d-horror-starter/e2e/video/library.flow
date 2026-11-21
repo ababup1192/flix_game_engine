@@ -1,0 +1,15 @@
+# 動画: 2 階の図書室（表の x = 20..35）に東の戸口から入り、本棚の並ぶ奥（engine の +X）を見て少し歩き、棚を見上げる（約 13 秒）。
+fps 60
+start at x=-26.96 y=3.35 z=-1.2 yaw=0 unlocked=library
+mark in_v
+hold forward 2
+wait 0.4
+hold turnRight 1.125
+wait 1.0
+hold forward 1.6
+hold lookUp 0.4
+wait 1.0
+hold lookDown 0.4
+hold turnLeft 0.8
+wait 1.2
+mark out_v

@@ -1,0 +1,18 @@
+# 紹介の動画の場面「corridor」（tools/trailer.py が書いた手順。直すなら tools/trailer.py を直して flows を流し直す）
+fps 60
+start at x=-7.2 y=0 z=-1.2 yaw=270
+mark in_a
+hold forward 1.92
+hold turnRight 1.125
+hold lookDown 0.2
+wait 1.0
+hold lookUp 0.2
+hold turnLeft 1.125
+hold forward 1.6
+hold turnLeft 1.125
+hold lookDown 0.4
+wait 0.6
+hold lookUp 0.4
+hold turnRight 1.125
+wait 1.0
+mark out_a

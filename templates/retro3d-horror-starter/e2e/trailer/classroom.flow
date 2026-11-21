@@ -1,0 +1,10 @@
+# 紹介の動画の場面「classroom」（tools/trailer.py が書いた手順。直すなら tools/trailer.py を直して flows を流し直す）
+fps 60
+start at x=-39.12 y=0 z=-1.2 yaw=0
+mark in_a
+hold forward 2.4
+hold lookDown 0.5
+wait 0.8
+hold turnRight 0.5
+wait 0.5
+mark out_a

@@ -1,0 +1,15 @@
+# 動画: 1年1組（表の x = 40..50）に後ろの戸口から入り、机の列の間（表の x = 48.9）を奥へ歩いて机を見下ろし、黒板の側を見回す（約 13 秒）。
+fps 60
+start at x=-39.12 y=0 z=-1.2 yaw=0
+mark in_v
+hold forward 2.4
+hold lookDown 0.5
+wait 0.6
+hold lookUp 0.5
+hold forward 2.4
+hold turnRight 1.125
+wait 1.2
+hold turnRight 0.8
+hold lookUp 0.2
+wait 1.0
+mark out_v

@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "title": "操作（キーの割り当て）",
+  "note": "キー割り当て。1 つの操作に複数キーを並べられる(どれを押しても効く)。保存すると即反映。名前は GameEngine.Key の綴り(A〜Z / Up / Down / Left / Right / Space など)。マウスはクリックで視点に取り込み、Esc で放す(割り当ての外)。知らない名前はその 1 個だけ無視され、操作が空になったときはコードの既定(src/KeysDoc.flix)へ落ちる。 dash=押している間は走る(左右どちらの Shift でも。ゲームパッドの LB は LeftShift として届く・スマホの画面では「走る」ボタン)・map=紙のマップ・talk=人物に話しかける・物を拾う・鍵の戸を調べる・会話の文字送り(E は向きを変えるキーに使っているので Space。ゲームパッドの A ボタンは Z キーとして届く)・(ゲームパッドの X ボタンは M キーとして届く)・items=アイテム画面を開く・閉じる(ゲームパッドの Y ボタンは C キーとして届く。閉じるのは Esc・X でも)。",
+  "forward": [
+    "W",
+    "Up"
+  ],
+  "back": [
+    "S",
+    "Down"
+  ],
+  "strafeLeft": [
+    "A"
+  ],
+  "strafeRight": [
+    "D"
+  ],
+  "turnLeft": [
+    "Left",
+    "Q"
+  ],
+  "turnRight": [
+    "Right",
+    "E"
+  ],
+  "lookUp": [
+    "R"
+  ],
+  "lookDown": [
+    "F"
+  ],
+  "dash": [
+    "LeftShift",
+    "RightShift"
+  ],
+  "map": [
+    "M"
+  ],
+  "talk": [
+    "Space",
+    "Enter",
+    "Z"
+  ],
+  "items": [
+    "I",
+    "Tab",
+    "C"
+  ]
+}

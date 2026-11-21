@@ -1,0 +1,23 @@
+# 動画: 理科室の鍵を持って 1 階の特別教室棟の廊下から理科室の北の戸口を調べて開け、実験台の間へ入り、実験台の上の名札を拾う。
+# 名札の置き場所は items.kind.json の science_bench（表の (63.2, 0.9, −5.5)）。
+fps 60
+start at x=-57.2 y=0 z=-1.6 yaw=180 items=science_key
+mark in_v
+hold forward 1.44
+hold turnRight 1.125
+wait 0.4
+tap talk
+expect unlocked=science
+wait 1.0
+hold forward 3.65
+hold turnLeft 1.125
+hold forward 1.1
+hold turnRight 0.75
+hold lookDown 0.3
+wait 0.5
+tap talk
+expect screen=Pickup
+until screen=Walk max 4
+expect items=science_key,name_tag
+wait 0.8
+mark out_v

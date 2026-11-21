@@ -1,0 +1,16 @@
+# 動画: 1 階の女子便所（表の x = 6..10.5・z = −7.6..−3）に入り、奥の個室の並びをのぞいて中を見下ろす（約 12 秒）。
+fps 60
+start at x=-5.84 y=0 z=-1.2 yaw=180
+mark in_v
+hold forward 1.76
+wait 0.5
+hold forward 0.64
+wait 0.5
+hold turnLeft 0.6
+wait 0.8
+hold turnRight 1.2
+hold forward 0.48
+hold lookDown 0.7
+wait 1.5
+hold lookUp 0.7
+mark out_v

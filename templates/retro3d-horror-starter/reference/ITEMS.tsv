@@ -1,0 +1,16 @@
+classroom	dynamic=0	static=0
+corridor	dynamic=0	static=0
+door_locked	dynamic=85	static=0
+entrance	dynamic=0	static=0
+hint	dynamic=10	static=0
+hint_bright	dynamic=10	static=0
+idle_controls	dynamic=47	static=0
+items	dynamic=365	static=0
+map	dynamic=218	static=0
+map2f	dynamic=201	static=0
+pickup_key	dynamic=109	static=0
+quit	dynamic=29	static=0
+stairs	dynamic=0	static=0
+talk_bright	dynamic=266	static=0
+talk_girl	dynamic=306	static=0
+talk_teacher	dynamic=266	static=0

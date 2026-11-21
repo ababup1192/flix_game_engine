@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "title": "校舎にいる人物と話しかけ方",
+  "note": "人物の置き場所と向き・話しかけの決まり。pos=足元(layout.json と同じ glTF の座標・m)・yaw=体の向き(度。layout.json と同じく 0 が glTF の −Z)・model=assets/characters/<model>.glb・speaker=会話の窓に出す名前(.yarn の話し手と同じ字)・node=話す .yarn のノード・gestures=台詞の行ごとに順に回す身振り(glb のアニメの名前。art/codex/characters/build_characters.py の GESTURES)。talkReach=話しかけられる距離(m)・talkAngleDeg=視線の正面から何度以内の人物に話しかけるか・headTurnSec=首を向け切る秒・headMaxDeg=首を回す角の上限・bodyTurnSec=話しかけられて体ごとプレイヤーへ向き直る秒・lingerSec=話し終えてから向いたままでいる秒・returnSec=元の向きへ戻る秒・gestureDelaySec=台詞の行を出してから身振りを始めるまでの秒(最初の行は向き直ってから)・gestureFadeSec=身振りを出し入れする秒・cps=会話の文字送り(1 秒の字数)・talkHint=話しかけられる時に画面の真ん中の下に出す字。台詞の文は assets/talk/night.yarn。",
+  "talkReach": 2.0,
+  "talkAngleDeg": 25.0,
+  "headTurnSec": 0.8,
+  "headMaxDeg": 70.0,
+  "cps": 18.0,
+  "bodyTurnSec": 1.1,
+  "lingerSec": 1.5,
+  "returnSec": 1.8,
+  "gestureDelaySec": 0.6,
+  "gestureFadeSec": 0.3,
+  "talkHint": "Space: 話す",
+  "characters": [
+    {
+      "id": "girl",
+      "model": "girl_student",
+      "speaker": "少女",
+      "node": "girl",
+      "pos": [
+        38.08,
+        0.0,
+        6.48
+      ],
+      "yaw": 0.0,
+      "gestures": [
+        "g_nod",
+        "g_hands_back",
+        "g_tilt",
+        "g_sway",
+        "g_look_down"
+      ]
+    },
+    {
+      "id": "teacher_man",
+      "model": "teacher_man",
+      "speaker": "宿直の先生",
+      "node": "teacher_man",
+      "pos": [
+        29.2,
+        0.0,
+        -4.9
+      ],
+      "yaw": 146.0,
+      "gestures": [
+        "t_nod",
+        "t_point",
+        "t_fold",
+        "t_chin"
+      ]
+    },
+    {
+      "id": "teacher_woman",
+      "model": "teacher_woman",
+      "speaker": "保健の先生",
+      "node": "teacher_woman",
+      "pos": [
+        26.0,
+        0.0,
+        2.19
+      ],
+      "yaw": 25.6,
+      "gestures": [
+        "w_hands_together",
+        "w_tilt",
+        "w_hand_chest",
+        "w_nod",
+        "w_open_hand"
+      ]
+    }
+  ]
+}

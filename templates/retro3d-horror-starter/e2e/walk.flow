@@ -1,0 +1,10 @@
+# 1 階の廊下（表の corridor・z = −3..0）の西の端に立って東（engine の −X）へ歩き、Esc で終了の確認を出して取り消す。確認の窓の間は歩かない。
+start at x=-0.8 y=0 z=-1.2 yaw=270
+expect quit=Playing&floor=1
+hold forward 0.8
+expect x<-1.5
+tap cancel
+expect quit=Asking
+hold forward 0.4
+tap cancel
+expect quit=Playing

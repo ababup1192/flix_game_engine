@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "title": "光と霧（夜の校舎の暗さ）",
+  "note": "暗さの調整。ambient=どこにでも当たる光(部屋の明るさは校舎の頂点の色にベイクしてあるので白の 1 倍で絵×頂点の色をそのまま出す)・fog=目から near で掛かり始め far で color に沈み切る霧(廊下の奥を闇に沈める)・moon=窓の内側の青白い月明かり(every 個に 1 つ灯す)・exit=非常口の緑の灯り・exitGlow=非常口のプレートが自分で光る強さ・flashlight=懐中電灯(intensity 0 で消える・fovDeg=円錐の角・innerDeg=縁がぼけ始める角・sway=歩く時の揺れ m)・fovDeg=縦の画角(度)・hudText=画面の下に出す部屋の名前の色。光の intensity と range は線形の量で効く(docs/scene3d.md)。 subtitle=会話の字幕(size=字の高さ design px・窓では 2 倍／shadow=右下の影の濃さ／outline=縁取りの濃さ／band=字の幅の帯の濃さ・0 で敷かない／chroma=赤と青を 1 窓 px ずらした色のにじみ／scanline=字に掛ける走査線の濃さ／hintSize・hintAlpha=「話す」の印の大きさと濃さ／hintBox=印の後ろの黒い半透明の箱の濃さ・0 で敷かない／hintPad=箱の字の周りの余白 design px)。 subtitle の maxChars=字幕の 1 行の字数の上限(超えたら 2 行に折り返す)・lineGap=2 行の間 design px・bottom=下の行の下の余白 design px。 psx=PS1 風の描き方(colorDepth=色の 1 成分のビット数・0 で切る・5 で 15 ビット／dither=ディザの表 psx・bayer・off／ditherStrength=ディザの強さ／vertexSnap=頂点を丸める格子 design px・0 で切る／affine=床や壁の絵の歪み 0〜1)。",
+  "ambient": "#ffffff",
+  "fog": {
+    "color": "#030302",
+    "near": 5.0,
+    "far": 12.0
+  },
+  "moon": {
+    "color": "#9eb3ff",
+    "intensity": 0.35,
+    "range": 4.5,
+    "every": 3
+  },
+  "exit": {
+    "color": "#33ff73",
+    "intensity": 0.7,
+    "range": 3.5,
+    "every": 1
+  },
+  "exitGlow": 2.5,
+  "flashlight": {
+    "color": "#ffedcc",
+    "intensity": 0.0,
+    "range": 11.0,
+    "fovDeg": 46.0,
+    "innerDeg": 16.0,
+    "sway": 0.03
+  },
+  "fovDeg": 50.0,
+  "hudText": "#dbd6c2",
+  "subtitle": {
+    "size": 11.0,
+    "shadow": 0.85,
+    "outline": 0.7,
+    "band": 0.0,
+    "chroma": 0.15,
+    "scanline": 0.06,
+    "hintSize": 8.0,
+    "hintAlpha": 0.9,
+    "hintBox": 0.55,
+    "hintPad": 3.0,
+    "maxChars": 24.0,
+    "lineGap": 4.0,
+    "bottom": 10.0
+  },
+  "psx": {
+    "colorDepth": 5,
+    "dither": "psx",
+    "ditherStrength": 1.0,
+    "vertexSnap": 1.0,
+    "affine": 0.3,
+    "compositeBlur": 0.75,
+    "scanlines": 0.12,
+    "chromaBleed": 0.6
+  }
+}

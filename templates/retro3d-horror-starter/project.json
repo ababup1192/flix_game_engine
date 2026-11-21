@@ -1,0 +1,274 @@
+{
+  "version": 1,
+  "title": "夜の校舎",
+  "designWidth": 320,
+  "designHeight": 240,
+  "windowWidth": 640,
+  "windowHeight": 480,
+  "windowScale": 2,
+  "clearColor": {
+    "r": 0.02,
+    "g": 0.024,
+    "b": 0.06
+  },
+  "maxDeltaTime": 0.05,
+  "textures": [
+    {
+      "name": "floor_label_1f",
+      "path": "assets/ui/map/floor_label_1f.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "floor_label_2f",
+      "path": "assets/ui/map/floor_label_2f.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "floor_label_3f",
+      "path": "assets/ui/map/floor_label_3f.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "map_paper",
+      "path": "assets/ui/map/map_paper.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "circle_1",
+      "path": "assets/ui/map/circle_1.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "circle_2",
+      "path": "assets/ui/map/circle_2.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "circle_3",
+      "path": "assets/ui/map/circle_3.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "circle_4",
+      "path": "assets/ui/map/circle_4.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "you_are_here",
+      "path": "assets/ui/map/you_are_here.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "pencil_line_h",
+      "path": "assets/ui/map/pencil_line_h.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "pencil_line_v",
+      "path": "assets/ui/map/pencil_line_v.png",
+      "hasAlpha": true
+    }
+  ],
+  "// glyphs": "起動時に焼く字。auto=出た字から順に焼く / used=ソースとアセットにある字を先に焼く / all=フォントの全字",
+  "glyphs": "auto",
+  "fonts": [
+    {
+      "name": "default",
+      "path": "assets/fonts/KaiseiTokumin-Regular.ttf",
+      "fontSize": 48.0
+    }
+  ],
+  "sounds": [
+    {
+      "name": "paper",
+      "path": "assets/sfx/paper.wav",
+      "looping": false
+    },
+    {
+      "name": "amb_quiet",
+      "path": "assets/sfx/amb_quiet.wav",
+      "looping": true
+    },
+    {
+      "name": "clock",
+      "path": "assets/sfx/clock.wav",
+      "looping": true
+    },
+    {
+      "name": "step_0",
+      "path": "assets/sfx/step_0.wav",
+      "looping": false
+    },
+    {
+      "name": "step_1",
+      "path": "assets/sfx/step_1.wav",
+      "looping": false
+    },
+    {
+      "name": "step_2",
+      "path": "assets/sfx/step_2.wav",
+      "looping": false
+    },
+    {
+      "name": "step_3",
+      "path": "assets/sfx/step_3.wav",
+      "looping": false
+    },
+    {
+      "name": "step_4",
+      "path": "assets/sfx/step_4.wav",
+      "looping": false
+    },
+    {
+      "name": "step_5",
+      "path": "assets/sfx/step_5.wav",
+      "looping": false
+    },
+    {
+      "name": "door_classroom",
+      "path": "assets/sfx/door_classroom.wav",
+      "looping": false
+    },
+    {
+      "name": "door_old",
+      "path": "assets/sfx/door_old.wav",
+      "looping": false
+    },
+    {
+      "name": "wind",
+      "path": "assets/sfx/wind.wav",
+      "looping": false
+    },
+    {
+      "name": "door_rattle",
+      "path": "assets/sfx/door_rattle.wav",
+      "looping": false
+    },
+    {
+      "name": "door_unlock",
+      "path": "assets/sfx/door_unlock.wav",
+      "looping": false
+    },
+    {
+      "name": "pickup",
+      "path": "assets/sfx/pickup.wav",
+      "looping": false
+    }
+  ],
+  "editor": {
+    "resources": [
+      {
+        "id": "look",
+        "pattern": "assets/night_school.look.json",
+        "title": "光と霧（夜の校舎の暗さ）",
+        "schema": "assets/look.schema.json",
+        "role": "material"
+      },
+      {
+        "id": "walk",
+        "pattern": "assets/walk.kind.json",
+        "title": "歩きの手触り",
+        "schema": "assets/walk.schema.json",
+        "role": "tuning"
+      },
+      {
+        "id": "sound",
+        "pattern": "assets/sound.kind.json",
+        "title": "音の大きさと距離（足音が主役）",
+        "schema": "assets/sound.schema.json",
+        "role": "tuning"
+      },
+      {
+        "id": "characters",
+        "pattern": "assets/characters.kind.json",
+        "title": "校舎にいる人物と話しかけ方",
+        "schema": "assets/characters.schema.json",
+        "role": "tuning"
+      },
+      {
+        "id": "items",
+        "pattern": "assets/items.kind.json",
+        "title": "拾える物と鍵のかかった部屋",
+        "schema": "assets/items.schema.json",
+        "role": "tuning"
+      },
+      {
+        "id": "keys",
+        "pattern": "assets/player.keys.json",
+        "title": "キー割り当て（どのキーで動かすか）",
+        "schema": "assets/keys.schema.json",
+        "role": "tuning"
+      },
+      {
+        "id": "scenes",
+        "pattern": "assets/*.scenes.json",
+        "title": "場面の説明（ギャラリーに出る題と一言）",
+        "schema": "assets/scenes.schema.json",
+        "role": "tuning"
+      },
+      {
+        "id": "project",
+        "pattern": "project.json",
+        "schema": "project.schema.json",
+        "title": "ゲームの題・画面",
+        "role": "tuning"
+      }
+    ]
+  },
+  "web": {
+    "startPrompt": "タッチして開始",
+    "// deferred": "押してから取る物（取る順）。起動で読むのは 1 階の建物（bundle/floor1）と昇降口のまわりの小物（bundle/entrance）・足音。1 階のほかの小物・人物・空気と戸の音・2〜3 階（bundle/upper）・時計と風と紙の音は届いた物から足す。2〜3 階へ上がる・人物に話す時は、届くまで engine が前の場面で待つ（Controls.loadGate）。",
+    "deferred": [
+      "assets/school/bundle/props_1f.glb",
+      "assets/sfx/amb_quiet.wav",
+      "assets/characters/teacher_woman.glb",
+      "assets/characters/teacher_man.glb",
+      "assets/characters/girl_student.glb",
+      "assets/items/*.glb",
+      "assets/sfx/door_*.wav",
+      "assets/school/bundle/upper.glb",
+      "assets/sfx/clock.wav",
+      "assets/sfx/wind.wav",
+      "assets/sfx/paper.wav",
+      "assets/sfx/pickup.wav"
+    ],
+    "// omit": "束（tools/glb_bundle.py）の元の glb と、台詞の元の .yarn は動く時に読まない。",
+    "omit": [
+      "assets/school/prop_*.glb",
+      "assets/school/school_floor*.glb",
+      "assets/talk/*.yarn"
+    ],
+    "keysDoc": "assets/player.keys.json",
+    "// virtualPad": "左の十字キーで歩き・向き、右のボタン。「走る」は指を置いている間だけ走る（十字キーの上と一緒に押す）。",
+    "virtualPad": {
+      "dpad": {
+        "up": "forward",
+        "down": "back",
+        "left": "turnLeft",
+        "right": "turnRight"
+      },
+      "buttons": [
+        {
+          "label": "調べる",
+          "action": "talk"
+        },
+        {
+          "label": "持ち物",
+          "action": "items"
+        },
+        {
+          "label": "地図",
+          "action": "map"
+        },
+        {
+          "label": "走る",
+          "action": "dash"
+        }
+      ]
+    },
+    "startupBudget": {
+      "seconds": 16,
+      "why": ""
+    }
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "note": "tools/glb_bundle.py の生成物（手で直さない）。key = 束の名前・path = 束の glb・floors = その束の物を置く階・buildings = その束に建物が入っている階（ブラウザ版はその階へ入る前に届くのを待つ）。",
+  "bundles": [
+    {
+      "key": "floor1",
+      "path": "assets/school/bundle/floor1.glb",
+      "floors": [
+        1
+      ],
+      "buildings": [
+        1
+      ]
+    },
+    {
+      "key": "entrance",
+      "path": "assets/school/bundle/entrance.glb",
+      "floors": [
+        1,
+        2,
+        3
+      ],
+      "buildings": []
+    },
+    {
+      "key": "props_1f",
+      "path": "assets/school/bundle/props_1f.glb",
+      "floors": [
+        1,
+        2,
+        3
+      ],
+      "buildings": []
+    },
+    {
+      "key": "upper",
+      "path": "assets/school/bundle/upper.glb",
+      "floors": [
+        2,
+        3
+      ],
+      "buildings": [
+        2,
+        3
+      ]
+    }
+  ]
+}

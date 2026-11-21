@@ -1,0 +1,12 @@
+# 動画: 1 階の廊下を東へ歩きながら首を左右に振る（約 6 秒）。PS1 風の描き方（look.json の psx）の頂点の揺れと床の歪みの見比べ用。
+fps 60
+start at x=-9 y=0 z=-1.5 yaw=270
+mark in_v
+hold forward 1.0
+hold turnRight 0.6
+hold forward 0.8
+hold turnLeft 1.2
+hold forward 0.8
+hold turnRight 0.6
+hold forward 1.0
+mark out_v

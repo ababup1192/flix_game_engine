@@ -1,0 +1,7 @@
+# 紹介の動画の場面「stairs」（tools/trailer.py が書いた手順。直すなら tools/trailer.py を直して flows を流し直す）
+fps 60
+start at x=-19.44 y=0 z=-1.4 yaw=180
+mark in_a
+hold lookUp 0.4
+hold forward 2.0
+mark out_a

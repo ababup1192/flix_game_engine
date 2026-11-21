@@ -1,0 +1,9 @@
+# 紹介の動画の場面「entrance」（tools/trailer.py が書いた手順。直すなら tools/trailer.py を直して flows を流し直す）
+fps 60
+start at x=-22.96 y=0 z=5.25 yaw=180
+mark in_a
+wait 1.2
+hold forward 1.28
+hold turnLeft 0.6
+wait 0.8
+mark out_a

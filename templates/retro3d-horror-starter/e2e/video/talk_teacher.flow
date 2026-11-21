@@ -1,0 +1,27 @@
+# 動画: 1 階の廊下から宿直室（表の x = 33.5..38.5）の戸口を入り、見回り中の先生の方を向いて話しかけ、台詞を全部送って少し下がる。
+# 先生の置き場所は characters.kind.json（表の (36.5, −5.5)）。1 行の間は文字送りと読む間（1 字 0.12 秒 + 1.2 秒）。
+fps 60
+start at x=-27.84 y=0 z=-1.2 yaw=180
+mark in_v
+hold forward 2.08
+hold turnRight 0.88
+wait 0.8
+tap talk
+expect talk=teacher_man
+wait 6.5
+tap talk
+wait 5.9
+tap talk
+wait 5.4
+tap talk
+wait 7.3
+tap talk
+wait 8.6
+tap talk
+wait 7.3
+tap talk
+expect talk=-
+wait 0.4
+hold back 0.96
+wait 0.6
+mark out_v

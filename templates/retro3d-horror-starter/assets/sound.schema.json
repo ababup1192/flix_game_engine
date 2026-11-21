@@ -1,0 +1,162 @@
+{
+  "//": "sound.kind.json の形の宣言（Studio の sections 方言）。距離から音量を出す式はコード（Sounds.gainAt）。",
+  "version": 1,
+  "sections": {
+    "step": {
+      "kind": "field",
+      "type": "float",
+      "label": "足音の大きさ（主役）",
+      "order": 1,
+      "min": 0,
+      "max": 1,
+      "default": 0.6
+    },
+    "dashStep": {
+      "kind": "field",
+      "type": "float",
+      "label": "走っている間の足音の大きさ",
+      "order": 2,
+      "min": 0,
+      "max": 1,
+      "default": 0.85
+    },
+    "ambience": {
+      "kind": "field",
+      "type": "float",
+      "label": "校舎の空気の大きさ",
+      "order": 3,
+      "min": 0,
+      "max": 1,
+      "default": 0.12
+    },
+    "wind": {
+      "kind": "field",
+      "type": "float",
+      "label": "風の大きさ（窓の近くで）",
+      "order": 4,
+      "min": 0,
+      "max": 1,
+      "default": 0.09
+    },
+    "door": {
+      "kind": "field",
+      "type": "float",
+      "label": "戸の大きさ（戸口で）",
+      "order": 5,
+      "min": 0,
+      "max": 1,
+      "default": 0.18
+    },
+    "clock": {
+      "kind": "field",
+      "type": "float",
+      "label": "時計の大きさ（すぐ近くで）",
+      "order": 6,
+      "min": 0,
+      "max": 1,
+      "default": 0.18
+    },
+    "paper": {
+      "kind": "field",
+      "type": "float",
+      "label": "紙のマップの音の大きさ",
+      "order": 7,
+      "min": 0,
+      "max": 1,
+      "default": 0.3
+    },
+    "clockFalloff": {
+      "kind": "record",
+      "label": "壁の時計からの距離",
+      "order": 8,
+      "fields": {
+        "near": {
+          "type": "float",
+          "label": "最大のまま聞こえる距離（m）",
+          "order": 1,
+          "min": 0,
+          "max": 10,
+          "default": 1.0
+        },
+        "far": {
+          "type": "float",
+          "label": "消える距離（m）",
+          "order": 2,
+          "min": 1,
+          "max": 40,
+          "default": 9.0
+        },
+        "curve": {
+          "type": "float",
+          "label": "間の落ち方（1 で真っすぐ・大きいほど近くを離れるとすぐ小さく）",
+          "order": 3,
+          "min": 0.2,
+          "max": 4,
+          "default": 1.5
+        }
+      }
+    },
+    "doorFalloff": {
+      "kind": "record",
+      "label": "鳴らした戸口からの距離",
+      "order": 9,
+      "fields": {
+        "near": {
+          "type": "float",
+          "label": "最大のまま聞こえる距離（m）",
+          "order": 1,
+          "min": 0,
+          "max": 10,
+          "default": 1.5
+        },
+        "far": {
+          "type": "float",
+          "label": "消える距離（m）",
+          "order": 2,
+          "min": 1,
+          "max": 40,
+          "default": 10.0
+        },
+        "curve": {
+          "type": "float",
+          "label": "間の落ち方（1 で真っすぐ・大きいほど近くを離れるとすぐ小さく）",
+          "order": 3,
+          "min": 0.2,
+          "max": 4,
+          "default": 1.5
+        }
+      }
+    },
+    "windFalloff": {
+      "kind": "record",
+      "label": "窓からの距離",
+      "order": 10,
+      "fields": {
+        "near": {
+          "type": "float",
+          "label": "最大のまま聞こえる距離（m）",
+          "order": 1,
+          "min": 0,
+          "max": 10,
+          "default": 2.0
+        },
+        "far": {
+          "type": "float",
+          "label": "消える距離（m）",
+          "order": 2,
+          "min": 1,
+          "max": 40,
+          "default": 12.0
+        },
+        "curve": {
+          "type": "float",
+          "label": "間の落ち方（1 で真っすぐ・大きいほど近くを離れるとすぐ小さく）",
+          "order": 3,
+          "min": 0.2,
+          "max": 4,
+          "default": 1.5
+        }
+      }
+    }
+  }
+}

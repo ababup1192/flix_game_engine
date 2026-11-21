@@ -1,0 +1,14 @@
+# 動画: 2 階の特別教室棟の廊下から音楽室（表の x = 73..81）へ入り、奥の隅のピアノ（表の (80, −4.3)）のすぐ手前まで行って鍵盤を見下ろす（約 13 秒）。
+fps 60
+start at x=-57.2 y=3.35 z=-1.6 yaw=180
+mark in_v
+hold forward 1.44
+hold turnRight 1.125
+wait 0.4
+hold forward 4.32
+hold lookDown 0.5
+wait 1.8
+hold lookUp 0.5
+hold turnLeft 1.2
+wait 0.8
+mark out_v

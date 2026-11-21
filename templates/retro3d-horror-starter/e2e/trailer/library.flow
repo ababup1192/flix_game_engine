@@ -1,0 +1,9 @@
+# 紹介の動画の場面「library」（tools/trailer.py が書いた手順。直すなら tools/trailer.py を直して flows を流し直す）
+fps 60
+start at x=-26.96 y=3.35 z=1.57 yaw=90 unlocked=library
+mark in_a
+wait 0.3
+hold lookUp 0.5
+wait 0.8
+hold forward 1.2
+mark out_a

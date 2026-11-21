@@ -1,0 +1,149 @@
+{
+  "//": "project.json の形の宣言（Studio の sections 方言）。editor.resources（この一覧そのもののレジストリ）はわざと載せない — 目次を編集画面から壊さないため。保存は触った値だけを書き換えるので、載せていないフィールドが消えることはない。",
+  "version": 1,
+  "sections": {
+    "title":         { "kind": "field", "type": "text", "label": "ゲームの題（ウィンドウのタイトルに出る）", "group": "題と画面", "order": 1, "required": true },
+    "designWidth":   { "kind": "field", "type": "int", "label": "絵を描く基準の幅（px。この座標系で全部描く）", "group": "題と画面", "order": 2, "min": 160, "max": 1920, "default": 320 },
+    "designHeight":  { "kind": "field", "type": "int", "label": "絵を描く基準の高さ（px。変えると見える範囲が変わる）", "group": "題と画面", "order": 3, "min": 120, "max": 1080, "default": 240 },
+    "windowWidth":   { "kind": "field", "type": "int", "label": "ウィンドウの幅（px。絵の見え方は変わらない）", "group": "題と画面", "order": 4, "min": 320, "max": 3840, "default": 640 },
+    "windowHeight":  { "kind": "field", "type": "int", "label": "ウィンドウの高さ（px）", "group": "題と画面", "order": 5, "min": 240, "max": 2160, "default": 480 },
+    "windowScale":   { "kind": "field", "type": "int", "label": "ウィンドウの拡大率（等倍 = 1。ドットの粗さが変わる）", "group": "題と画面", "order": 6, "min": 1, "max": 8, "default": 2 },
+
+    "maxDeltaTime":  { "kind": "field", "type": "float", "label": "1 フレームで進める秒の上限（重いときにすり抜けないための天井）", "group": "動きと文字", "order": 10, "min": 0.01, "max": 0.5, "default": 0.05 },
+    "glyphs":        { "kind": "field", "type": "text", "label": "起動時に用意する字（auto=出た字から / used=ソースとアセットの字を先に / all=全字）", "group": "動きと文字", "order": 11, "default": "auto" },
+
+    "clearColor": {
+      "kind": "record",
+      "label": "画面を毎フレーム塗り潰す色（0〜1。絵が全部載る下地）",
+      "order": 20,
+      "fields": {
+        "r": { "type": "float", "label": "赤（0〜1）", "order": 1, "min": 0, "max": 1, "default": 0.137255 },
+        "g": { "type": "float", "label": "緑（0〜1）", "order": 2, "min": 0, "max": 1, "default": 0.156863 },
+        "b": { "type": "float", "label": "青（0〜1）", "order": 3, "min": 0, "max": 1, "default": 0.227451 }
+      }
+    },
+
+    "fonts": {
+      "kind": "list",
+      "label": "フォント（文言を日本語にするならここを差し替える）",
+      "order": 30,
+      "fields": {
+        "name":     { "type": "text",  "label": "コードから呼ぶ名前（default が既定のフォント）", "order": 1, "required": true },
+        "path":     { "type": "text",  "label": "ファイルの場所（assets/ からの相対）", "order": 2, "required": true },
+        "fontSize": { "type": "float", "label": "用意する大きさ（大きいほど拡大に強い・起動は遅い）", "order": 3, "min": 8, "max": 200, "default": 60 }
+      }
+    },
+
+    "textures": {
+      "kind": "list",
+      "label": "読み込む画像（PNG を足したらここに並べる）",
+      "order": 31,
+      "fields": {
+        "name":     { "type": "text", "label": "コードから呼ぶ名前", "order": 1, "required": true },
+        "path":     { "type": "text", "label": "PNG の場所（assets/ からの相対）", "order": 2, "required": true },
+        "hasAlpha": { "type": "bool", "label": "透明を持つ画像か", "order": 3, "default": true }
+      }
+    },
+
+    "sounds": {
+      "kind": "list",
+      "label": "読み込む音（WAV を足したらここに並べる）",
+      "order": 32,
+      "fields": {
+        "name":    { "type": "text", "label": "コードから呼ぶ名前", "order": 1, "required": true },
+        "path":    { "type": "text", "label": "音ファイルの場所（assets/ からの相対）", "order": 2, "required": true },
+        "looping": { "type": "bool", "label": "繰り返し鳴らすか（BGM は true）", "order": 3, "default": false }
+      }
+    },
+
+    "web": {
+      "kind": "record",
+      "label": "ブラウザ版の書き出し（bin/fge export-web だけが読む。デスクトップ版は変わらない）",
+      "order": 40,
+      "fields": {
+        "compress": {
+          "type": { "record": {
+            "audio":             { "type": "bool", "label": "音（wav）を Opus にして小さくする", "order": 1, "default": true },
+            "audioBitrateKbps":  { "type": "int",  "label": "音の強さ（kbps・ステレオの値。モノラルはその半分）", "order": 2, "min": 16, "max": 320, "default": 96 },
+            "uncompressedAudio": { "type": { "list": "text" }, "label": "wav のまま配る音（ゲームの根からの glob。** は何段でも）", "order": 3 },
+            "images":            { "type": "bool", "label": "絵（png）を WebP にして小さくする（写真寄りの絵は劣化あり・ほかは劣化なし）", "order": 4, "default": true },
+            "lossyImages":       { "type": { "list": { "record": {
+              "glob":    { "type": "text", "label": "劣化ありにする絵（ゲームの根からの glob。先に書いた方が勝つ）", "order": 1, "required": true },
+              "quality": { "type": "int",  "label": "WebP の画質（1〜100）", "order": 2, "min": 1, "max": 100, "default": 80 }
+            } } }, "label": "劣化ありの WebP にする絵と画質（写真寄りの png は書かなくても画質 90 で劣化ありになる。ドット絵には使わない）", "order": 5 },
+            "losslessImages":    { "type": { "list": { "record": {
+              "glob": { "type": "text", "label": "劣化なしに留める絵（ゲームの根からの glob。当たる png の無い glob は誤り）", "order": 1, "required": true },
+              "why":  { "type": "text", "label": "劣化なしに留める理由（字のふちが滲む・シェーダーが値として読む など）", "order": 2, "required": true }
+            } } }, "label": "写真寄りでも劣化なしの WebP に留める絵（lossyImages に当たる絵には効かない）", "order": 6 },
+            "fontAtlasScale":    { "type": "float", "label": "字のアトラス（距離場）の細かさの倍率。0.5 で量が約半分・見た目は変わらない。1 で縮めない", "order": 7, "min": 0.5, "max": 1.0, "default": 0.5 },
+            "wasmBrotli":        { "type": "bool", "label": "wasm を brotli にして一緒に配る解き手で戻す（gzip より 4 割ほど小さい。詰めるのは bin/fge）", "order": 8, "default": true }
+          } },
+          "label": "書き出しの時だけ素材を小さくする（書かなければ音は Opus・写真寄りの絵は劣化ありの WebP・ほかの絵は劣化なしの WebP）",
+          "order": 1
+        },
+        "embed": {
+          "type": { "list": "text" },
+          "label": "符号にして wasm へ埋め込む素材（ゲームの根からの glob・シナリオの dialogue.json など）。ばらのファイルとしては配らず、通信や wasm の字からは読めなくなる",
+          "order": 2
+        },
+        "omit": {
+          "type": { "list": "text" },
+          "label": "配らない素材（ゲームの根からの glob）。実行時に読まない元のファイル（.yarn など）を外す",
+          "order": 3
+        },
+        "serviceWorker": {
+          "type": "bool",
+          "label": "2 回目からの起動を Service Worker のキャッシュで速くする（版が上がれば新しい物を取る。false で前に登録した物も外す）",
+          "order": 4,
+          "default": true
+        },
+        "keep": {
+          "type": { "list": "text" },
+          "label": "既定で配らない形（*.schema.json・.blend などの制作の元ファイル）のうち、ゲームが動く時に読むので配る物（ゲームの根からの glob）",
+          "order": 5
+        },
+        "deferred": {
+          "type": { "list": "text" },
+          "label": "押して始めた後に裏で取る素材（ゲームの根からの glob・取る順）。font:<フォントの名前> の行は deferredFonts のフォントをその位置で取る（書かなければ列の頭）。タイトルで使う物は入れない。届く前の絵を描くコマは engine が出さずに待ち、一発の音とループの音は待たない（扱いを替えるのは deferredPolicy）",
+          "order": 6
+        },
+        "deferredFonts": {
+          "type": { "list": "text" },
+          "label": "押して始めた後に取るフォント（fonts[].name）。タイトルで使わないフォントだけ。届くまでは先頭のフォントで出す",
+          "order": 7
+        },
+        "deferredPolicy": {
+          "type": { "list": { "record": {
+            "match":     { "type": "text", "label": "当てる後回しの道（ゲームの根からの glob）か font:<フォントの名前>。1 つの名前に当たる行が複数あれば先の行が勝つ", "order": 1, "required": true },
+            "onMissing": { "type": { "enum": ["wait", "placeholder", "skip"] }, "label": "届く前に使った時（wait = コマを出さずに待つ・placeholder = 絵とフォントを待たずに描かずか先頭のフォントで進む・skip = 音を待たずに鳴らさず進む）。書かなければ種類ごとの既定（絵は wait・フォントは placeholder・一発の音は skip・ループの音は待たない）", "order": 2 },
+            "group":     { "type": "text", "label": "押した時の待ちで一緒に待つ組の名前（同じ組の、まだ届いていない物も待つ）", "order": 3 },
+            "why":       { "type": "text", "label": "絵を placeholder にする理由（絵の placeholder には必須。届くまで描かずに進み、押した後に黒いコマが出るため）", "order": 4 }
+          } } },
+          "label": "後回しの素材を届く前に使った時の扱い（deferred の道ごと）。書かなければ engine の既定のまま",
+          "order": 8
+        },
+        "splash": {
+          "type": { "record": {
+            "afterTap":   { "type": { "enum": ["engine", "none", "custom"] }, "label": "「タッチして開始」を押した後のロゴ（engine = engine のロゴ・none = 出さない・custom = 絵と音を logo と sound に替える）", "order": 1, "default": "engine" },
+            "logo":       { "type": "text", "label": "custom の時のロゴの絵（ゲームの根からの道・後回しでない物）", "order": 2 },
+            "sound":      { "type": "text", "label": "custom の時のジングル（ゲームの根からの道・後回しでない物。無ければ音なし）", "order": 3 },
+            "minSeconds": { "type": "float", "label": "ロゴを出す最短の秒", "order": 4, "min": 0, "max": 3, "default": 1.2 },
+            "maxSeconds": { "type": "float", "label": "ロゴを出す上限の秒（3 秒より長くはできない）", "order": 5, "min": 0, "max": 3, "default": 3.0 },
+            "waitFor":    { "type": { "list": "text" }, "label": "ロゴの間に待つ group（deferredPolicy の group。書かなければ deferredPolicy に最初に出てくる group）", "order": 6 }
+          } },
+          "label": "押した後のロゴ（待つ物が残る時だけ出る・同じ版では 2 回目から出ない）",
+          "order": 9
+        },
+        "startupBudget": {
+          "type": { "record": {
+            "seconds":   { "type": "float", "label": "遊べるまで（開いてすぐ押した人が最初の場面を動かせるまで・4G）の上限の秒。起動の秒に、押した後の待ちのうちロゴで覆えない分を足した数", "order": 1, "min": 1, "max": 120, "default": 16 },
+            "why":       { "type": "text", "label": "16 秒を超える時の理由（必須・bundle.json に写るので公開される）", "order": 2 },
+            "startKeys": { "type": { "list": "text" }, "label": "書き出しの確かめが押した後を測る時にタイトルで押すキー（Enter・Space・Escape・矢印・英字 1 字。書かなければ Enter = タイトルの既定の行を決める）", "order": 3 }
+          } },
+          "label": "ブラウザ版の起動の予算（超えると書き出しと web-check が止まる）",
+          "order": 10
+        }
+      }
+    }
+  }
+}

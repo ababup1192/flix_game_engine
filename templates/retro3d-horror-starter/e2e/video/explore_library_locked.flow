@@ -1,0 +1,13 @@
+# 動画: 2 階の廊下で図書室の東の戸口へ歩み寄り、調べて「鍵がかかっている。」（戸を揺らす音）が出て、廊下の奥へ向き直る所まで。
+fps 60
+start at x=-26.7 y=3.35 z=-2.1 yaw=0
+mark in_v
+wait 0.6
+hold forward 0.4
+wait 0.4
+tap talk
+expect notice=鍵がかかっている。&unlocked=-
+wait 2.2
+hold turnLeft 1.0
+wait 0.6
+mark out_v

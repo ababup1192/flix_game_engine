@@ -1,0 +1,21 @@
+# 動画: 2 階の特別教室棟の廊下から音楽室（開いている）へ入って見回し、ピアノの鍵盤の上の図書室の鍵を拾う（目の前へ飛んできて回り、字幕が出る）。
+# 鍵の置き場所は items.kind.json の music_piano（表の (64.2, 4.13, −3.91)）。拾う演出は flySec + showSec（既定 2.1 秒）。
+fps 60
+start at x=-57.2 y=3.35 z=-1.6 yaw=180
+mark in_v
+hold forward 1.44
+hold turnRight 1.125
+wait 0.4
+hold forward 4.32
+hold turnLeft 0.5
+wait 0.6
+hold turnRight 0.5
+hold lookDown 0.4
+wait 0.8
+expect items=-
+tap talk
+expect screen=Pickup
+until screen=Walk max 4
+expect items=library_key
+wait 0.8
+mark out_v

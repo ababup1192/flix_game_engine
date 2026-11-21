@@ -1,0 +1,14 @@
+# 動画: 1 階の廊下から中央の階段を 2 階まで上る。上る間は少し見上げて、上の階を見ながら上り、2 階の廊下の奥を向いて終わる（約 14 秒）。
+fps 60
+start at x=-19.44 y=0 z=-0.9 yaw=180
+mark in_v
+hold lookUp 0.4
+hold forward 4.0
+hold turnRight 1.125
+hold forward 1.5
+hold turnRight 1.125
+hold forward 3.6
+hold lookDown 0.4
+hold turnLeft 1.125
+wait 0.6
+mark out_v

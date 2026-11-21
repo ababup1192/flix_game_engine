@@ -1,0 +1,150 @@
+{
+  "//": "characters.kind.json の形の宣言（Studio の sections 方言）。誰が何を話すかの文は .yarn。",
+  "version": 1,
+  "sections": {
+    "talkReach": {
+      "kind": "field",
+      "type": "float",
+      "label": "話しかけられる距離（m）",
+      "order": 1,
+      "min": 0.5,
+      "max": 5,
+      "default": 2.0
+    },
+    "talkAngleDeg": {
+      "kind": "field",
+      "type": "float",
+      "label": "視線の正面から何度以内の人物に話しかけるか",
+      "order": 2,
+      "min": 5,
+      "max": 90,
+      "default": 25
+    },
+    "headTurnSec": {
+      "kind": "field",
+      "type": "float",
+      "label": "首を向け切る秒",
+      "order": 3,
+      "min": 0.1,
+      "max": 3,
+      "default": 0.8
+    },
+    "headMaxDeg": {
+      "kind": "field",
+      "type": "float",
+      "label": "首を回す角の上限（度）",
+      "order": 4,
+      "min": 10,
+      "max": 90,
+      "default": 70
+    },
+    "cps": {
+      "kind": "field",
+      "type": "float",
+      "label": "会話の文字送り（1 秒の字数）",
+      "order": 5,
+      "min": 4,
+      "max": 120,
+      "default": 18
+    },
+    "bodyTurnSec": {
+      "kind": "field",
+      "type": "float",
+      "label": "体ごとプレイヤーへ向き直る秒",
+      "order": 6,
+      "min": 0.1,
+      "max": 4,
+      "default": 1.1
+    },
+    "lingerSec": {
+      "kind": "field",
+      "type": "float",
+      "label": "話し終えてから向いたままでいる秒",
+      "order": 7,
+      "min": 0,
+      "max": 10,
+      "default": 1.5
+    },
+    "returnSec": {
+      "kind": "field",
+      "type": "float",
+      "label": "元の向きへ戻る秒",
+      "order": 8,
+      "min": 0.1,
+      "max": 6,
+      "default": 1.8
+    },
+    "gestureDelaySec": {
+      "kind": "field",
+      "type": "float",
+      "label": "台詞の行を出してから身振りを始めるまでの秒",
+      "order": 9,
+      "min": 0,
+      "max": 5,
+      "default": 0.6
+    },
+    "gestureFadeSec": {
+      "kind": "field",
+      "type": "float",
+      "label": "身振りを出し入れする秒",
+      "order": 10,
+      "min": 0.05,
+      "max": 1.5,
+      "default": 0.3
+    },
+    "talkHint": {
+      "kind": "field",
+      "type": "text",
+      "label": "話しかけられる時に出す字",
+      "order": 11,
+      "default": "Space: 話す"
+    },
+    "characters": {
+      "kind": "list",
+      "label": "人物",
+      "order": 12,
+      "fields": {
+        "id": {
+          "type": "text",
+          "label": "番号",
+          "order": 1
+        },
+        "model": {
+          "type": "text",
+          "label": "形（assets/characters/<名前>.glb）",
+          "order": 2
+        },
+        "speaker": {
+          "type": "text",
+          "label": "会話の窓に出す名前",
+          "order": 3
+        },
+        "node": {
+          "type": "text",
+          "label": "話す .yarn のノード",
+          "order": 4
+        },
+        "pos": {
+          "type": "text",
+          "label": "足元（glTF の座標・m。[x, y, z] の 3 つの数）",
+          "order": 5
+        },
+        "yaw": {
+          "type": "float",
+          "label": "体の向き（度・0 が glTF の −Z）",
+          "order": 6,
+          "min": -360,
+          "max": 360,
+          "default": 0
+        },
+        "gestures": {
+          "type": {
+            "list": "text"
+          },
+          "label": "台詞の行ごとに順に回す身振り（glb のアニメの名前の列）",
+          "order": 7
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "title": "拾える物と鍵のかかった部屋",
+  "note": "拾える物（items）・置き場所（pickups。glTF の座標・layout.json と同じ約束）・鍵のかかった部屋（locks。room は layout.json の rooms[].id・key は開ける持ち物の id）。拾える距離と角は characters.kind.json の talkReach・talkAngleDeg と同じ。flySec=置き場所から目の前まで飛ぶ秒・showSec=目の前で回して見せる秒（字幕もこの間）・holdDistance=目の前の距離(m)・holdDrop=目の高さから下げる長さ(m)・bob=目の前で浮き沈みする幅(m)・glowSpeed/glowAmount=床の物がゆっくり明るくなる速さ(1 秒の回数)と揺れ幅・viewDistance=アイテム画面で回す物の距離(m)・spinDegPerSec=回る速さ・curtain=アイテム画面で場面を暗く落とす濃さ・noticeSec=「鍵がかかっている。」などを出す秒・doorOpenSec=戸が開き切るまでの秒。文言の {name} は持ち物の名前に置き換わる。",
+  "items": [
+    {
+      "id": "library_key",
+      "name": "図書室の鍵",
+      "text": "図書室と書かれた札の鍵。\nピアノの上にあった。\n音のしない方へ行くための鍵。",
+      "glb": "prop_item_library_key",
+      "viewScale": 2.2,
+      "viewTiltDeg": 70
+    },
+    {
+      "id": "science_key",
+      "name": "理科室の鍵",
+      "text": "理科室と書かれた白い札の鍵。\n本の間から札が出ていた。\n本は鍵を借りていたらしい。",
+      "glb": "prop_item_science_key",
+      "viewScale": 2.2,
+      "viewTiltDeg": 70
+    },
+    {
+      "id": "name_tag",
+      "name": "名札",
+      "text": "名前のかすれた名札。\n当番表の黒いところと同じで、\n名前だけが先に帰ったらしい。",
+      "glb": "prop_item_name_tag",
+      "viewScale": 3.2,
+      "viewTiltDeg": 75
+    },
+    {
+      "id": "ohajiki",
+      "name": "おはじきの巾着",
+      "text": "一年一組の机の下にあった。\n口から色ガラスがのぞいている。\n帰った数だけ残っているらしい。",
+      "glb": "prop_item_ohajiki",
+      "viewScale": 2.0,
+      "viewTiltDeg": 20
+    }
+  ],
+  "pickups": [
+    {
+      "id": "music_piano",
+      "item": "library_key",
+      "floor": 2,
+      "pos": [
+        64.2,
+        4.13,
+        -3.91
+      ],
+      "yaw": 135
+    },
+    {
+      "id": "library_counter",
+      "item": "science_key",
+      "floor": 2,
+      "pos": [
+        24.7,
+        4.3,
+        1.2
+      ],
+      "yaw": 170
+    },
+    {
+      "id": "science_bench",
+      "item": "name_tag",
+      "floor": 1,
+      "pos": [
+        63.2,
+        0.9,
+        -5.5
+      ],
+      "yaw": 20
+    },
+    {
+      "id": "class11_window",
+      "item": "ohajiki",
+      "floor": 1,
+      "pos": [
+        34.6,
+        0.0,
+        6.3
+      ],
+      "yaw": 60
+    }
+  ],
+  "locks": [
+    {
+      "room": "library",
+      "key": "library_key"
+    },
+    {
+      "room": "science",
+      "key": "science_key"
+    }
+  ],
+  "flySec": 0.5,
+  "showSec": 1.6,
+  "holdDistance": 0.45,
+  "holdDrop": 0.08,
+  "bob": 0.01,
+  "glowSpeed": 0.35,
+  "glowAmount": 0.35,
+  "viewDistance": 0.45,
+  "spinDegPerSec": 40.0,
+  "curtain": 0.7,
+  "noticeSec": 2.0,
+  "doorOpenSec": 0.6,
+  "gotText": "{name}を手に入れた。",
+  "lockedText": "鍵がかかっている。",
+  "openedText": "{name}で開けた。",
+  "pickHint": "Space: 拾う",
+  "doorHint": "Space: 調べる",
+  "listTitle": "持ち物",
+  "emptyText": "何も持っていない。"
+}

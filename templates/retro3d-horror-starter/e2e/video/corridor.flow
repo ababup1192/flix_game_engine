@@ -1,0 +1,18 @@
+# 動画: 1 階の廊下を東へ歩き、掲示板（南の壁・表の x = 12.1）の前で向いて少し見下ろし、手洗い場（北の凹み・表の x = 15..18.5）の流しを見下ろす（約 18 秒）。
+fps 60
+start at x=-7.2 y=0 z=-1.2 yaw=270
+mark in_v
+hold forward 1.92
+hold turnRight 1.125
+hold lookDown 0.2
+wait 1.6
+hold lookUp 0.2
+hold turnLeft 1.125
+hold forward 2.8
+hold turnLeft 1.125
+hold lookDown 0.5
+wait 1.6
+hold lookUp 0.5
+hold turnRight 1.125
+hold forward 2
+mark out_v

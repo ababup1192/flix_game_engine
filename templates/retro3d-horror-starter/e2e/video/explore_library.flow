@@ -1,0 +1,33 @@
+# 動画: 図書室の鍵を持って東の戸口の前に立ち、調べて開け（戸が横へ滑る）、本棚の並ぶ奥を見てから貸出のカウンターの理科室の鍵を拾い、
+# アイテム画面を開いて回る鍵と説明文を見せる（2 本の鍵を順に選ぶ）。鍵の置き場所は items.kind.json の library_counter（表の (24.7, 4.3, 1.2)）。
+fps 60
+start at x=-26.96 y=3.35 z=-1.2 yaw=0 items=library_key
+mark in_v
+wait 0.5
+tap talk
+expect unlocked=library
+wait 1.2
+hold forward 1.38
+hold lookUp 0.3
+wait 0.8
+hold lookDown 0.3
+hold turnRight 1.125
+hold forward 0.8
+hold turnLeft 0.375
+hold lookDown 0.5
+wait 0.5
+tap talk
+expect screen=Pickup
+until screen=Walk max 4
+expect items=library_key,science_key
+hold lookUp 0.5
+wait 0.4
+tap items
+expect screen=Items
+wait 2.6
+tap back
+wait 3.2
+tap items
+expect screen=Walk
+wait 0.6
+mark out_v

@@ -1,0 +1,14 @@
+# 動画: 1 階の理科室（表の x = 73..81）に入り、実験台の間（表の x = 76.9）を北へ実験台の列の先まで歩いて、壁の薬品棚（表の (80.7, −15.3)）の前まで行き、棚を見上げる（約 20 秒）。
+fps 60
+start at x=-57.2 y=0 z=-1.6 yaw=180 unlocked=science
+mark in_v
+hold forward 1.44
+hold turnRight 1.125
+hold forward 3.36
+hold turnLeft 1.125
+hold forward 6.64
+hold turnRight 1.125
+hold forward 1.92
+hold lookUp 0.3
+wait 0.6
+mark out_v

@@ -1,0 +1,12 @@
+# 紹介の動画の場面「vacant」（tools/trailer.py が書いた手順。直すなら tools/trailer.py を直して flows を流し直す）
+fps 60
+start at x=-22.96 y=6.7 z=-1.92 yaw=0
+mark in_a
+wait 0.5
+hold forward 1.04
+hold lookDown 0.1
+wait 2.2
+hold lookUp 0.1
+hold forward 0.44
+wait 3.5
+mark out_a

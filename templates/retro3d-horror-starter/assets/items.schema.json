@@ -1,0 +1,280 @@
+{
+  "//": "items.kind.json の形の宣言（Studio の sections 方言）。",
+  "version": 1,
+  "sections": {
+    "items": {
+      "kind": "list",
+      "label": "拾える物",
+      "order": 1,
+      "fields": {
+        "id": {
+          "type": "text",
+          "label": "番号",
+          "order": 1
+        },
+        "name": {
+          "type": "text",
+          "label": "名前（一覧と字幕）",
+          "order": 2
+        },
+        "text": {
+          "type": "text",
+          "label": "説明文（アイテム画面）",
+          "order": 3
+        },
+        "glb": {
+          "type": "text",
+          "label": "形（assets/items/<名前>.glb）",
+          "order": 4
+        },
+        "viewScale": {
+          "type": "float",
+          "label": "目の前で見せる大きさの倍率",
+          "order": 5,
+          "min": 0.2,
+          "max": 5,
+          "default": 1.0
+        },
+        "viewTiltDeg": {
+          "type": "float",
+          "label": "目の前で手前へ起こす角（度）",
+          "order": 6,
+          "min": -90,
+          "max": 90,
+          "default": 0
+        }
+      }
+    },
+    "pickups": {
+      "kind": "list",
+      "label": "置き場所",
+      "order": 2,
+      "fields": {
+        "id": {
+          "type": "text",
+          "label": "番号",
+          "order": 1
+        },
+        "item": {
+          "type": "text",
+          "label": "置く物（items の番号）",
+          "order": 2
+        },
+        "floor": {
+          "type": "int",
+          "label": "階",
+          "order": 3,
+          "min": 1,
+          "max": 3,
+          "default": 1
+        },
+        "pos": {
+          "type": "text",
+          "label": "置き場所（glTF の座標・m。[x, y, z]）",
+          "order": 4
+        },
+        "yaw": {
+          "type": "float",
+          "label": "向き（度・glTF の +Y まわり）",
+          "order": 5,
+          "min": -360,
+          "max": 360,
+          "default": 0
+        }
+      }
+    },
+    "locks": {
+      "kind": "list",
+      "label": "鍵のかかった部屋",
+      "order": 3,
+      "fields": {
+        "room": {
+          "type": "text",
+          "label": "部屋（layout.json の rooms[].id）",
+          "order": 1
+        },
+        "key": {
+          "type": "text",
+          "label": "開ける鍵（items の番号）",
+          "order": 2
+        }
+      }
+    },
+    "flySec": {
+      "kind": "field",
+      "type": "float",
+      "label": "置き場所から目の前まで飛ぶ秒",
+      "order": 4,
+      "min": 0.1,
+      "max": 3,
+      "default": 0.5,
+      "group": "拾う演出"
+    },
+    "showSec": {
+      "kind": "field",
+      "type": "float",
+      "label": "目の前で回して見せる秒",
+      "order": 5,
+      "min": 0.3,
+      "max": 6,
+      "default": 1.6,
+      "group": "拾う演出"
+    },
+    "holdDistance": {
+      "kind": "field",
+      "type": "float",
+      "label": "目の前の距離（m）",
+      "order": 6,
+      "min": 0.2,
+      "max": 1.5,
+      "default": 0.45,
+      "group": "拾う演出"
+    },
+    "holdDrop": {
+      "kind": "field",
+      "type": "float",
+      "label": "目の高さから下げる長さ（m）",
+      "order": 7,
+      "min": 0,
+      "max": 0.5,
+      "default": 0.08,
+      "group": "拾う演出"
+    },
+    "bob": {
+      "kind": "field",
+      "type": "float",
+      "label": "目の前で浮き沈みする幅（m）",
+      "order": 8,
+      "min": 0,
+      "max": 0.1,
+      "default": 0.01,
+      "group": "拾う演出"
+    },
+    "glowSpeed": {
+      "kind": "field",
+      "type": "float",
+      "label": "床の物が明るくなる・暗くなる速さ（1 秒の回数）",
+      "order": 9,
+      "min": 0,
+      "max": 3,
+      "default": 0.35,
+      "group": "拾う演出"
+    },
+    "glowAmount": {
+      "kind": "field",
+      "type": "float",
+      "label": "床の物の明るさの揺れ幅",
+      "order": 10,
+      "min": 0,
+      "max": 1,
+      "default": 0.35,
+      "group": "拾う演出"
+    },
+    "viewDistance": {
+      "kind": "field",
+      "type": "float",
+      "label": "アイテム画面で回す物の距離（m）",
+      "order": 11,
+      "min": 0.2,
+      "max": 1.5,
+      "default": 0.45,
+      "group": "アイテム画面と戸"
+    },
+    "spinDegPerSec": {
+      "kind": "field",
+      "type": "float",
+      "label": "回る速さ（度/秒）",
+      "order": 12,
+      "min": 0,
+      "max": 360,
+      "default": 40,
+      "group": "アイテム画面と戸"
+    },
+    "curtain": {
+      "kind": "field",
+      "type": "float",
+      "label": "場面を暗く落とす濃さ",
+      "order": 13,
+      "min": 0,
+      "max": 1,
+      "default": 0.7,
+      "group": "アイテム画面と戸"
+    },
+    "noticeSec": {
+      "kind": "field",
+      "type": "float",
+      "label": "「鍵がかかっている。」などを出す秒",
+      "order": 14,
+      "min": 0.5,
+      "max": 8,
+      "default": 2.0,
+      "group": "アイテム画面と戸"
+    },
+    "doorOpenSec": {
+      "kind": "field",
+      "type": "float",
+      "label": "戸が開き切るまでの秒",
+      "order": 15,
+      "min": 0.1,
+      "max": 3,
+      "default": 0.6,
+      "group": "アイテム画面と戸"
+    },
+    "gotText": {
+      "kind": "field",
+      "type": "text",
+      "label": "拾った時（{name} は名前）",
+      "order": 16,
+      "default": "{name}を手に入れた。",
+      "group": "決まり文句"
+    },
+    "lockedText": {
+      "kind": "field",
+      "type": "text",
+      "label": "鍵が無い時",
+      "order": 17,
+      "default": "鍵がかかっている。",
+      "group": "決まり文句"
+    },
+    "openedText": {
+      "kind": "field",
+      "type": "text",
+      "label": "開けた時（{name} は鍵の名前）",
+      "order": 18,
+      "default": "{name}で開けた。",
+      "group": "決まり文句"
+    },
+    "pickHint": {
+      "kind": "field",
+      "type": "text",
+      "label": "拾える物を向いた時の印",
+      "order": 19,
+      "default": "Space: 拾う",
+      "group": "決まり文句"
+    },
+    "doorHint": {
+      "kind": "field",
+      "type": "text",
+      "label": "鍵の戸を向いた時の印",
+      "order": 20,
+      "default": "Space: 調べる",
+      "group": "決まり文句"
+    },
+    "listTitle": {
+      "kind": "field",
+      "type": "text",
+      "label": "アイテム画面の一覧の見出し",
+      "order": 21,
+      "default": "持ち物",
+      "group": "決まり文句"
+    },
+    "emptyText": {
+      "kind": "field",
+      "type": "text",
+      "label": "何も持っていない時",
+      "order": 22,
+      "default": "何も持っていない。",
+      "group": "決まり文句"
+    }
+  }
+}

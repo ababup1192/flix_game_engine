@@ -1,0 +1,24 @@
+# 紹介の動画の場面「girl」（tools/trailer.py が書いた手順。直すなら tools/trailer.py を直して flows を流し直す）
+fps 60
+start at x=-39.12 y=0 z=3.94 yaw=0
+mark in_a
+hold forward 1.12
+hold turnRight 0.62
+wait 0.4
+mark out_a
+tap talk
+wait 0.05
+tap talk
+wait 0.05
+tap talk
+wait 0.05
+tap talk
+wait 0.05
+tap talk
+wait 0.05
+mark in_b
+wait 3.8
+tap talk
+wait 0.05
+wait 3.4
+mark out_b
