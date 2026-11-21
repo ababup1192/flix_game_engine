@@ -1,6 +1,6 @@
 // ブラウザ版の入口（bin/fge export-web だけが組む）。
 // URL の query に scene があれば測る（?scene=room か ?scene=field&n=12000&shapes=16&mats=16&moving=100&alpha=10&shadow=1。結果は頁の上に残す）。
-// 無ければ部屋を描き続けるだけ（?capture=<n> で絵を撮る道）。
+// 無ければ部屋を描き続けるだけ（頁の旗 capture:<n> で絵を撮る道）。
 // WhyNot: 撮る道でも測らない — 診断を付けると撮る絵の道が実機の既定と変わる。
 mod WebMain {
     use fge::{App, Platform, WebFs, WebLayer}

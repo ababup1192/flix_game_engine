@@ -24,7 +24,7 @@ type webDeferredEntry struct {
 	Names     []string `json:"names,omitempty"`
 	OnMissing string   `json:"onMissing,omitempty"`
 	Group     string   `json:"group,omitempty"`
-	// ArrivalSeconds は後回しを取り始めてから 4G（1.6 Mbps・往復 150 ms）で届くまでの見積もりの秒（頁の ?net=4g が使う）。
+	// ArrivalSeconds は後回しを取り始めてから 4G（1.6 Mbps・往復 150 ms）で届くまでの見積もりの秒（頁の ?fge=4g が使う）。
 	ArrivalSeconds float64 `json:"arrivalSeconds,omitempty"`
 }
 

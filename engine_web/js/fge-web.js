@@ -39,12 +39,18 @@ function fgeQueryPairs() {
   return out;
 }
 
-// WhyNot: 普段の起動で見ない — getError は GPU の待ちになり、1 コマが何倍にも延びる。
-function fgeQueryParam(name) { return new URLSearchParams(location.search).get(name); }
+// 頁の旗（?fge= と道具が入れる window.fgeDev。読み手は書き出しが index.html の頭に埋める fge-switches.js・docs/web-export.md の「頁の旗」）。
+var fgeSwitchesRead = fgePageSwitches();
+var fgeSwitches = fgeSwitchesRead.switches;
+fgeSwitchesRead.legacy.forEach(function (l) {
+  console.warn("[fge] ?" + l.from + " は ?fge=" + l.to + " に替わった（次の版で読まなくなる）");
+});
+if (fgeSwitchesRead.unknown.length > 0) console.warn("[fge] ?fge= の知らない語を捨てた: " + fgeSwitchesRead.unknown.join(","));
 
+// WhyNot: 普段の起動で見ない — getError は GPU の待ちになり、1 コマが何倍にも延びる。
 var fgeGlCheck = { calls: 0, errors: 0, seen: Object.create(null), counts: Object.create(null) };
 function fgeCheckedGl(gl) {
-  if (fgeQueryParam("glcheck") !== "1") return gl;
+  if (!fgeSwitches.glcheck) return gl;
   var wrapped = Object.create(null);
   return new Proxy(gl, {
     get: function (target, name) {
@@ -93,7 +99,7 @@ function fgeTexImageArgbLevel(level, w, h, argb, from) {
   fgeGl.texImage2D(fgeGl.TEXTURE_2D, level, fgeGl.RGBA8, w, h, 0, fgeGl.RGBA, fgeGl.UNSIGNED_BYTE, out.subarray(0, n * 4));
 }
 
-var fgeDecodeTimes = fgeQueryParam("loadtime") === "1" ? { count: 0, ms: 0 } : null;
+var fgeDecodeTimes = fgeSwitches.loadtime ? { count: 0, ms: 0 } : null;
 
 var fgeReadFramebuffer = null;
 function fgeReadTextureArgb(texture, w, h, argb) {
@@ -226,7 +232,7 @@ function fgeDecodeImage(bytes, done) {
 
 // ── canvas ──
 var fgeCanvas = null;
-var fgeCaptureFrame = parseInt(fgeQueryParam("capture") || "0", 10) || 0;
+var fgeCaptureFrame = fgeSwitches.capture;
 var fgeCaptureDesign = null;
 var fgeDrawnFrames = 0;
 function fgeFrameDrawn() {
@@ -244,7 +250,7 @@ function fgeFrameDrawn() {
   window.fgeCaptureReady = true;
 }
 
-// WebGPU で描く頁の ?capture=<n>: n コマ目の画素は wasm が中間の texture から読み、ここへ置く（下の行から・fgeFrameDrawn と同じ形）。
+// WebGPU で描く頁の旗 capture:<n>: n コマ目の画素は wasm が中間の texture から読み、ここへ置く（下の行から・fgeFrameDrawn と同じ形）。
 // WhyNot: 中間の texture の alpha をそのまま渡さない — canvas は opaque（WebGL2 の alpha: false と同じ）で、見える絵の alpha はいつも 1。
 function fgePublishCapture(rgba, w, h, renderer) {
   for (var a = 3; a < rgba.length; a += 4) rgba[a] = 255;
@@ -284,12 +290,10 @@ function fgeRunPass(pass, ops, count, end) {
   if (end) pass.end();
 }
 
-// ── 描き手の選び分け（既定は WebGPU・?backend=webgl2 か ?backend=gl で WebGL2）──
+// ── 描き手の選び分け（既定は WebGPU・?fge=webgl2 か ?fge=gl で WebGL2）──
 // WhyNot: navigator.gpu の無い頁で WebGPU を頼まない — wasm は WebGPU を知らないブラウザでも読めるが、頼めば GL へ戻すまでに一手間かかる。
-// WhyNot: 知らない ?backend の値で止めない — 古い頁の ?backend=webgpu も、打ち間違いも、既定の WebGPU で開く。
 var fgeBackendFallbackKey = "fge-backend-fallback";
-var fgeBackendParam = fgeQueryParam("backend");
-var fgeAskedWebGl2 = fgeBackendParam === "webgl2" || fgeBackendParam === "gl";
+var fgeAskedWebGl2 = fgeSwitches.backend === "webgl2";
 var fgeWantWebGpu = !fgeAskedWebGl2 && !!navigator.gpu;
 var fgeWebGpuTaken = false;
 (function () {
@@ -299,7 +303,7 @@ var fgeWebGpuTaken = false;
     if (why) sessionStorage.removeItem(fgeBackendFallbackKey);
   } catch (e) { /* sessionStorage を使えない頁 */ }
   if (why) console.warn("[backend] 前の頁で WebGPU を使えなかった: " + why + " — WebGL2 で開き直した");
-  else if (fgeAskedWebGl2) console.log("[backend] webgl2: ?backend=" + fgeBackendParam + " で選んだ");
+  else if (fgeAskedWebGl2) console.log("[backend] webgl2: 頁の旗（?fge=webgl2）で選んだ");
   else if (!navigator.gpu) console.warn("[backend] WebGPU を使えない: このブラウザには navigator.gpu が無い — WebGL2 で起動する");
 })();
 
@@ -316,9 +320,9 @@ function fgeInitWebGl2() {
 }
 
 // WebGPU を使えなかった時: 理由を console に出して WebGL2 の文脈を取る。canvas が既に webgpu の文脈を持っていれば同じ canvas から WebGL2 は取れないので、
-// ?backend=webgl2 の URL で開き直し（理由は sessionStorage に残して開き直した頁でも出す）、偽を返す。
+// ?fge= に webgl2 を足した URL で開き直し（理由は sessionStorage に残して開き直した頁でも出す）、偽を返す。
 // WhyNot: canvas を作り直して続けない — 入力と大きさの購読を全部付け直すことになる。
-// WhyNot: 開き直す URL から ?backend を外さない — 既定が WebGPU なので、外すと同じ所で落ちて開き直しを繰り返す。
+// WhyNot: 開き直す URL を webgl2 の語なしで作らない — 既定が WebGPU なので、無いと同じ所で落ちて開き直しを繰り返す。
 // WhyNot: 起動の前に全部を判定しない — device と WGSL の pipeline は wasm の main の中で作るまで落ちるか分からない。
 // 準備（webgpu の文脈を取る前）で落ちればその場で WebGL2 を取り、取った後に落ちた時だけ開き直す。
 function fgeFallbackToWebGl2(reason) {
@@ -326,7 +330,7 @@ function fgeFallbackToWebGl2(reason) {
   if (window.fgeWebGpuTaken) {
     try { sessionStorage.setItem(fgeBackendFallbackKey, reason); } catch (e) { /* sessionStorage を使えない頁 */ }
     var url = new URL(location.href);
-    url.searchParams.set("backend", "webgl2");
+    url.search = fgeSearchWithWord(url.search, "webgl2", "backend");
     location.replace(url.toString());
     return false;
   }
@@ -429,12 +433,9 @@ var fgeSwallow = { ArrowUp: 1, ArrowDown: 1, ArrowLeft: 1, ArrowRight: 1, Space:
 // ── 指の端末（パッド・タップ・ジェスチャー）──
 // 束の web の設定（bin/fge export-web が project.json の web から作る。キーは KeyboardEvent.code に解いてある）。
 var fgeWeb = { virtualPad: null, touchGestures: null, orientation: "any" };
-// 主な pointer が指の端末か。?input=touch|mouse で上書きできる（PC で指の並べ方を確かめる時）。
+// 主な pointer が指の端末か。?fge=touch|mouse で上書きできる（PC で指の並べ方を確かめる時）。
 var fgeCoarseQuery = window.matchMedia ? window.matchMedia("(pointer: coarse)") : null;
-var fgeInputOverride = (function () {
-  var m = /[?&]input=(touch|mouse)\b/.exec(location.search);
-  return m ? m[1] : null;
-})();
+var fgeInputOverride = fgeSwitches.input || null;
 function fgeIsCoarse() {
   if (fgeInputOverride) return fgeInputOverride === "touch";
   return !!(fgeCoarseQuery && fgeCoarseQuery.matches);
@@ -449,19 +450,13 @@ var fgeScreenShortSide = (function () {
   var sides = [screen.width, screen.height, innerWidth, innerHeight].filter(function (v) { return v > 0; });
   return sides.length ? Math.min.apply(null, sides) : 1000;
 })();
-var fgeSizeOverride = (function () {
-  var m = /[?&]size=(small|medium|large)\b/.exec(location.search);
-  return m ? m[1] : "";
-})();
+var fgeSizeOverride = fgeSwitches.size;
 
-// 縦の design を選ぶか（WebLayer が起動の時に 1 回だけ聞く）。?orientation=portrait|landscape があればそれ（PC で縦を確かめる時）、
-// 無ければスマホ（区分 Small と同じ: 指の端末で短い辺が 600 CSS px 未満・?size=small）で、今の画面が縦長か。
+// 縦の design を選ぶか（WebLayer が起動の時に 1 回だけ聞く）。?fge=portrait|landscape があればそれ（PC で縦を確かめる時）、
+// 無ければスマホ（区分 Small と同じ: 指の端末で短い辺が 600 CSS px 未満・?fge=small）で、今の画面が縦長か。
 // WhyNot: マウスの端末で窓が縦長なだけでは縦にしない — PC で開発者の道具を横に付けた窓や縦置きのモニタで、横の画面が変わってしまう。
 // WhyNot: タブレットを縦に持った時は縦にしない — 縦の design の下限（9:16）より太い 3:4 の画面で左右に帯が出て、横の design の時と見た目が大きく変わる。
-var fgeOrientationOverride = (function () {
-  var m = /[?&]orientation=(portrait|landscape)\b/.exec(location.search);
-  return m ? m[1] : "";
-})();
+var fgeOrientationOverride = fgeSwitches.orientation;
 function fgeWantsPortrait() {
   if (fgeOrientationOverride) return fgeOrientationOverride === "portrait";
   var phone = fgeSizeOverride ? fgeSizeOverride === "small" : (fgeCoarseAtBoot && fgeScreenShortSide < 600);
@@ -882,10 +877,10 @@ function fgeWireInput() {
   });
 }
 
-// ── 使った素材の記録（?usedAssets=1。書き出しが後回しの候補を出すのに window.fgeUsedAssets を読む）──
+// ── 使った素材の記録（頁の旗 usedAssets。書き出しが後回しの候補を出すのに window.fgeUsedAssets を読む）──
 // 形は go/exportweb_titleassets.go の webUsedAssets。
 // WhyNot: 読んだファイルは early に入れない — 後回しの物を読みに来るのは、届いたかを見てから読む裏の読み込み（BackgroundLoad）で、届く前の読みは「無い」で返るだけ。
-var fgeUsedAssets = fgeQueryParam("usedAssets") === "1" ? { frame: 0, texture: {}, sound: {}, file: {}, early: {} } : null;
+var fgeUsedAssets = fgeSwitches.usedAssets ? { frame: 0, texture: {}, sound: {}, file: {}, early: {} } : null;
 window.fgeUsedAssets = fgeUsedAssets;
 function fgeNoteUsed(kind, joined) {
   if (fgeNet4g && kind !== "file") fgeNoteMissingSkips(kind, joined);
@@ -902,10 +897,10 @@ function fgeNoteUsed(kind, joined) {
   });
 }
 
-// ── ?net=4g: 後回しの 1 本ずつを、書き出しが見積もった 4G で届く秒（bundle.json の arrivalSeconds）まで渡さない ──
-// 秒は押した時から数える（開いてすぐ押した人が一番待つ形）。?capture= の頁は main を呼ぶ時から。
+// ── 頁の旗 net:4g（?fge=4g）: 後回しの 1 本ずつを、書き出しが見積もった 4G で届く秒（bundle.json の arrivalSeconds）まで渡さない ──
+// 秒は押した時から数える（開いてすぐ押した人が一番待つ形）。撮る頁（旗 capture）は main を呼ぶ時から。
 // WhyNot: 頁の fetch を遅らせて回線をまねない — 手元のサーバーは速すぎ、Chrome の回線の絞りは Service Worker の取り物に掛からない。届いたと見せる時刻だけを見積もりに合わせる。
-var fgeNet4g = fgeQueryParam("net") === "4g";
+var fgeNet4g = fgeSwitches.net === "4g";
 var fgeNetClock = { at: -1, waiters: [] };
 function fgeNetStartClock() {
   if (fgeNetClock.at >= 0) return;
@@ -920,7 +915,7 @@ function fgeNetGate(e) {
   });
 }
 // window.fgeMissingWaits: engine の待ちごとに { reason, kind（pressed = 押した所へ戻して待った・stopped = 前の World のまま止まった）, names, firstFrame, frames, seconds }。
-// window.fgeMissingSkips: 届く前に描かずに・鳴らさずに進んだ名前ごとに { name, kind（texture・sound）, why（placeholder・skip・gaveUp）, frame }（?net=4g の頁だけ）。
+// window.fgeMissingSkips: 届く前に描かずに・鳴らさずに進んだ名前ごとに { name, kind（texture・sound）, why（placeholder・skip・gaveUp）, frame }（旗 net:4g の頁だけ）。
 // WhyNot: 待ちの記録を際限なく積まない — 長く遊ぶ頁で、控えの外の待ちを繰り返すと配列が育ち続ける。
 var fgeMissingLimit = 200;
 window.fgeMissingWaits = [];
@@ -1295,7 +1290,7 @@ function fgeAfterTapPending(cfg) {
   return fgeDeferred.entries.filter(function (e) { return e.group !== "" && groups.indexOf(e.group) >= 0 && !fgeAfterTapSettled(e); });
 }
 function fgeAfterTapCodeReady() { return fgeCode.state === "none" || fgeCode.state === "loaded"; }
-// 待つ物がそろうまでの見込みの秒。?net=4g は書き出しの見積もり（押した時から数える）・ふつうは残りのバイトを今までの取る速さで割る。
+// 待つ物がそろうまでの見込みの秒。旗 net:4g は書き出しの見積もり（押した時から数える）・ふつうは残りのバイトを今までの取る速さで割る。
 // WhyNot: 速さを細かく測らない（Service Worker の取り物や取りかけの分も数える）— 外れても速く見積もる側、つまりロゴを出さない側（待たせない側）に倒れる。
 function fgeAfterTapRemainingSeconds(cfg) {
   if (!fgeAfterTapCodeReady()) return Infinity;
@@ -1458,7 +1453,12 @@ function fgeSplashPlacePrompt() {
   el.style.top = y.toFixed(1) + "px";
   el.style.fontSize = size.toFixed(1) + "px";
 }
+// 起動の時刻（performance.now の ms）。書き出しの確かめ（押した後の速さの測り）が読む: readyAt「タッチして開始」が出た・
+// tapAt 押した操作を受けた・tapEventAt その操作が起きた（event.timeStamp）・tapPaintAt 押した後の最初の rAF（波紋が描ける所）・firstFrameAt 最初のコマ。
+// WhyNot: 押した後の最初の rAF を押した処理の頭の時刻で代えない — main は押した処理と同じタスクで走るので、波紋が画面に出るのは main が手を返した後になる。
+window.fgeBootTimes = { readyAt: -1, tapAt: -1, tapEventAt: -1, tapPaintAt: -1, firstFrameAt: -1 };
 function fgeSplashReady() {
+  window.fgeBootTimes.readyAt = performance.now();
   fgeSplash.ready = true;
   fgeProgress("ready", 1, 1);
   fgeShow("fge-start", true);
@@ -1489,7 +1489,7 @@ function fgeSplashTapped(e) {
 }
 function fgeShow(id, on) { var el = document.getElementById(id); if (el) el.style.display = on ? "" : "none"; }
 function fgeWireFpsOverlay() {
-  if (fgeQueryParam("fps") !== "1") return;
+  if (!fgeSwitches.fps) return;
   var el = document.createElement("div");
   el.style.cssText = "position:fixed;left:8px;top:calc(8px + env(safe-area-inset-top,0px));z-index:9999;padding:4px 8px;font:14px/1.3 monospace;color:#fff;background:rgba(0,0,0,.65);pointer-events:none";
   document.body.appendChild(el);
@@ -1536,6 +1536,7 @@ function fgeFramePresented() {
   setTimeout(function () { fgeShow("fge-boot", false); }, 250);
 }
 function fgeStarted() {
+  window.fgeBootTimes.firstFrameAt = performance.now();
   fgeSplash.running = false;
   fgeWireFpsOverlay();
   if (fgeDecodeTimes !== null) console.log("[loadtime] 最初のコマまで " + performance.now().toFixed(0) + " ms");
@@ -1596,7 +1597,7 @@ async function fgeFetchBytes(path, signal) {
 
 // 書き出しが替えた配る道（WebP・Opus・gzip）。素材の表と画像の表には論理の道（project.json の道）で入れる。
 var fgeTranscoded = {};
-// 取ったバイトの和（?loadtime=1 の「押すまでに取った量」。wasm は TeaVM の load が取るので入らない）。
+// 取ったバイトの和（旗 loadtime の「押すまでに取った量」。wasm は TeaVM の load が取るので入らない）。
 var fgeLoadLog = { bytes: 0, count: 0, tapped: false };
 function fgeServedPath(path) { return fgeTranscoded[path] || path; }
 // WhyNot: .gz を名前だけで解かない — 置き先によっては Content-Encoding: gzip を付けて配り、fetch が既に解いた中身が届く。
@@ -2154,6 +2155,7 @@ async function fgeBoot() {
   if (fgeCaptureFrame <= 0) await new Promise(function (resolve) {
     var go = function (e) {
       if (e.type === "pointerup" && e.pointerType === "mouse") return;
+      fgeNoteTapTime(e);
       // iOS の消音スイッチで WebAudio が黙らないように（Safari 17 以降）。
       try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch (e) { /* 無い版 */ }
       fgeAudio.ctx.resume();
@@ -2182,11 +2184,11 @@ async function fgeBoot() {
   fgeWireMouseCapture();
   var teavm = await wasmLoad;
   if (teavm === null) return;
-  if (fgeQueryParam("deferred") === "all") {
+  if (fgeSwitches.deferred === "all") {
     var waitUntil = performance.now() + 60000;
     while (!fgeDeferredAllArrived()) {
       if (performance.now() > waitUntil) {
-        fgeError("&deferred=all: 60 秒待っても届かない後回しの素材がある: " + fgeDeferred.entries.filter(function (e) {
+        fgeError("頁の旗 deferred:all: 60 秒待っても届かない後回しの素材がある: " + fgeDeferred.entries.filter(function (e) {
           return !(e.state === "loaded" || e.state === "downloaded" || (e.state === "failed" && e.permanent));
         }).map(function (e) { return e.path + "（" + e.state + "）"; }).join("・"));
         return;
@@ -2205,13 +2207,13 @@ async function fgeBoot() {
 // ── Service Worker（2 回目からの起動。中身は engine_web/js/fge-sw.js・docs/web-export.md の「起動の始まりと 2 回目からの起動」）──
 // WhyNot: 起動の前に登録しない — 登録と Service Worker の起動が、起動の素材や wasm と回線と CPU を取り合う。
 // WhyNot: 登録や外す処理の例外で起動を止めない — Service Worker が無くても頁は今まで通り動く。sandbox の iframe では navigator.serviceWorker を読むだけで例外になる。
-// WhyNot: ?capture= の頁では登録しない — 描き出しの検査が前の書き出しのキャッシュを持ち越さないように。
+// WhyNot: 撮る頁（旗 capture）では登録しない — 描き出しの検査が前の書き出しのキャッシュを持ち越さないように。
 // WhyNot: updateViaCache を既定にしない — 直した sw.js が置き場の max-age の間届かず、壊れた Service Worker が残る。開くたびに sw.js の確かめが 1 本増える。
 // WhyNot: Service Worker を通らなかった物（workerStart が 0）だけを送らない — ドメインの根の別のゲームの Service Worker を通った物も、自分のキャッシュには無い。
 function fgeServiceWorkerStart(bundle) {
   if (!("serviceWorker" in navigator) || fgeCaptureFrame > 0) return;
   var scope = new URL("./", location.href).href;
-  if (!bundle.serviceWorker || fgeQueryParam("sw") === "0") {
+  if (!bundle.serviceWorker || !fgeSwitches.sw) {
     fgeServiceWorkerRemove(scope);
     return;
   }
@@ -2257,6 +2259,13 @@ function fgeServiceWorkerReport(scope) {
   try {
     new PerformanceObserver(function (l) { post(pick(l.getEntries())); }).observe({ type: "resource" });
   } catch (e) { /* 観られない版は次に開いた時に入る */ }
+}
+
+function fgeNoteTapTime(e) {
+  var t = window.fgeBootTimes;
+  t.tapAt = performance.now();
+  t.tapEventAt = e && e.timeStamp > 0 ? e.timeStamp : t.tapAt;
+  requestAnimationFrame(function () { t.tapPaintAt = performance.now(); });
 }
 
 function fgeNoteTap() {

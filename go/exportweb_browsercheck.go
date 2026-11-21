@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"os"
 	"strconv"
@@ -27,7 +28,7 @@ func webLoadCheckWait() time.Duration {
 	return 90 * time.Second
 }
 
-// checkWebLoads は書き出し先 out を 127.0.0.1 の使い捨てのサーバーで配り、ヘッドレスの Chrome で `?capture=<n>` を開いて、
+// checkWebLoads は書き出し先 out を 127.0.0.1 の使い捨てのサーバーで配り、ヘッドレスの Chrome で頁の旗 capture:<n> の頁を開いて、
 // wasm の compile・instantiate と main の最初の数コマで頁が止まらないかを見る。
 // Chrome が無ければ確かめずに skipped へ理由を返す（err は nil）。
 // WhyNot: TeaVM が穴 0 件で訳し終えた事を合格にしない — JSO の物を Object を受ける所へ渡す形は、TeaVM は通るのに
@@ -37,7 +38,7 @@ func checkWebLoads(out string, frames int, wait time.Duration) (skipped string, 
 	return skipped, err
 }
 
-// checkWebLoadsRecording は checkWebLoads と同じ確かめをし、titleFrames が正なら既定の頁を `?capture=<titleFrames>&usedAssets=1` で開いて、
+// checkWebLoadsRecording は checkWebLoads と同じ確かめをし、titleFrames が正なら既定の頁を旗 capture:<titleFrames>・usedAssets で開いて、
 // その間に使った素材の記録（window.fgeUsedAssets）も返す。頁が記録を持たない（古い engine の fge-web.js）・確かめを飛ばした時の used は nil。
 func checkWebLoadsRecording(out string, frames, titleFrames int, wait time.Duration) (skipped string, used *webUsedAssets, err error) {
 	if _, err := cdp.FindChrome(); err != nil {
@@ -50,18 +51,18 @@ func checkWebLoadsRecording(out string, frames, titleFrames int, wait time.Durat
 	defer closeServer()
 	// WhyNot: 既定の頁（WebGPU）だけを開かない — WebGL2 は WebGPU を使えないブラウザで頼る道で、書き出しの時に通さないと配った先で初めて落ちる。
 	// WhyNot: WebGL2 の頁でも記録しない — 記録は描き手より外（WebLayer）で取るので、同じ物がもう 1 回取れるだけで時間が延びる。
-	for _, query := range []string{"", "&backend=webgl2"} {
-		n, opt := frames, cdp.Options{Wait: wait}
-		if query == "" && titleFrames > 0 {
-			n, query, opt.Eval = max(frames, titleFrames), "&usedAssets=1", "window.fgeUsedAssets || null"
+	for _, backend := range []string{"", "webgl2"} {
+		sw, opt := webPageSwitches{Capture: frames, Backend: backend}, cdp.Options{Wait: wait}
+		if backend == "" && titleFrames > 0 {
+			sw.Capture, sw.UsedAssets, opt.Eval = max(frames, titleFrames), true, "window.fgeUsedAssets || null"
 		}
-		opt.URL = fmt.Sprintf("http://%s/index.html?capture=%d%s", ln.Addr().String(), n, query)
+		opt.URL, opt.InitScript = sw.openURL(fmt.Sprintf("http://%s/index.html", ln.Addr().String()), out)
 		res, err := cdp.Capture(opt)
 		if err != nil {
-			if query != "&backend=webgl2" {
+			if backend == "" {
 				return "", nil, err
 			}
-			return "", nil, fmt.Errorf("?backend=webgl2 の頁: %w", err)
+			return "", nil, fmt.Errorf("WebGL2 の頁: %w", err)
 		}
 		if opt.Eval != "" && len(res.Eval) > 0 && string(res.Eval) != "null" {
 			var u webUsedAssets
@@ -107,22 +108,25 @@ type webMissingReport struct {
 	Skips []webMissingSkip `json:"skips"`
 }
 
-// checkWebMissingTitle は既定の頁を `?capture=<titleFrames>&net=4g` で開き、後回しが 4G の見積もりの秒まで届かない形で
-// タイトルの間に engine が待ったか・描かずに進んだかを返す（頁が記録を持たない古い fge-web.js なら nil）。
-// WhyNot: P3 の記録（usedAssets=1）の頁に net=4g を足さない — 届くのが遅れた分だけ「タイトルで使った」が増え、後回しの候補が変わる。
-func checkWebMissingTitle(out string, titleFrames int, wait time.Duration) (*webMissingReport, error) {
+// checkWebMissingTitle は既定の頁を旗 capture:<titleFrames>・net:4g で開き、後回しが 4G の見積もりの秒まで届かない形で
+// タイトルの間に engine が待ったか・描かずに進んだかを返す（頁が記録を持たない古い fge-web.js なら nil）。cond.CPU で CPU を絞る。
+// WhyNot: P3 の記録（usedAssets）の頁に net:4g を足さない — 届くのが遅れた分だけ「タイトルで使った」が増え、後回しの候補が変わる。
+func checkWebMissingTitle(out string, titleFrames int, wait time.Duration, cond webMeasureConditions) (*webMissingReport, error) {
 	ln, closeServer, err := serveWebCheck(out)
 	if err != nil {
 		return nil, err
 	}
 	defer closeServer()
+	url, initScript := webPageSwitches{Capture: titleFrames, Net: "4g"}.openURL(fmt.Sprintf("http://%s/index.html", ln.Addr().String()), out)
 	res, err := cdp.Capture(cdp.Options{
-		URL:  fmt.Sprintf("http://%s/index.html?capture=%d&net=4g", ln.Addr().String(), titleFrames),
-		Wait: wait,
-		Eval: "window.fgeMissingWaits ? { waits: window.fgeMissingWaits, skips: window.fgeMissingSkips } : null",
+		URL:         url,
+		InitScript:  initScript,
+		CPUThrottle: cond.CPU,
+		Wait:        wait,
+		Eval:        "window.fgeMissingWaits ? { waits: window.fgeMissingWaits, skips: window.fgeMissingSkips } : null",
 	})
 	if err != nil {
-		return nil, fmt.Errorf("?net=4g の頁: %w", err)
+		return nil, fmt.Errorf("?fge=4g の頁: %w", err)
 	}
 	if len(res.Eval) == 0 || string(res.Eval) == "null" {
 		return nil, nil
@@ -134,7 +138,7 @@ func checkWebMissingTitle(out string, titleFrames int, wait time.Duration) (*web
 	return &r, nil
 }
 
-// writeWebMissingTitle は ?net=4g のタイトルの間の待ちと、wait の物を描かずに進んだ所を知らせる（止めない・初めは知らせだけ）。
+// writeWebMissingTitle は ?fge=4g のタイトルの間の待ちと、wait の物を描かずに進んだ所を知らせる（止めない・初めは知らせだけ）。
 func writeWebMissingTitle(w io.Writer, r *webMissingReport, frames int) {
 	if r == nil {
 		return
@@ -143,7 +147,7 @@ func writeWebMissingTitle(w io.Writer, r *webMissingReport, frames int) {
 	for _, wt := range r.Waits {
 		if wt.Kind == "stopped" {
 			stopped++
-			fmt.Fprintf(w, "  知らせ: 4G（?net=4g）のタイトルの %d コマで、届いていない %s を待って前の場面のまま %d コマ止まった（%d コマ目から）— タイトルで使う物は web.deferred から外すか、deferredPolicy で placeholder にする\n",
+			fmt.Fprintf(w, "  知らせ: 4G（?fge=4g）のタイトルの %d コマで、届いていない %s を待って前の場面のまま %d コマ止まった（%d コマ目から）— タイトルで使う物は web.deferred から外すか、deferredPolicy で placeholder にする\n",
 				frames, strings.Join(wt.Names, "・"), wt.Frames, wt.FirstFrame)
 		} else {
 			pressed++
@@ -153,18 +157,18 @@ func writeWebMissingTitle(w io.Writer, r *webMissingReport, frames int) {
 	for _, sk := range r.Skips {
 		if sk.Why == "gaveUp" {
 			gaveUp++
-			fmt.Fprintf(w, "  知らせ: 4G（?net=4g）のタイトルで、待つはずの %s を描かずに進んだ（%d コマ目・%s）\n", sk.Name, sk.Frame, sk.Why)
+			fmt.Fprintf(w, "  知らせ: 4G（?fge=4g）のタイトルで、待つはずの %s を描かずに進んだ（%d コマ目・%s）\n", sk.Name, sk.Frame, sk.Why)
 		}
 	}
-	fmt.Fprintf(w, "  4G（?net=4g）のタイトルの %d コマ: 止まった待ち %d 回・押した時の待ち %d 回・描かずに / 鳴らさずに進んだ名前 %d 個（うち待つはずの物 %d 個）\n",
+	fmt.Fprintf(w, "  4G（?fge=4g）のタイトルの %d コマ: 止まった待ち %d 回・押した時の待ち %d 回・描かずに / 鳴らさずに進んだ名前 %d 個（うち待つはずの物 %d 個）\n",
 		frames, stopped, pressed, len(r.Skips), gaveUp)
 }
 
-// webTitle4gOf は ?net=4g のタイトルの確かめの結果を bundle.json の checks の形にする。
+// webTitle4gOf は ?fge=4g のタイトルの確かめの結果を bundle.json の checks の形にする。
 func webTitle4gOf(r *webMissingReport, err error) (string, string) {
 	switch {
 	case err != nil:
-		return "skipped", "?net=4g の頁が開けなかった"
+		return "skipped", "?fge=4g の頁が開けなかった"
 	case r == nil:
 		return "skipped", "頁が待ちの記録を持たない（古い fge-web.js）"
 	}
@@ -182,7 +186,7 @@ func webTitle4gOf(r *webMissingReport, err error) (string, string) {
 }
 
 // webTitle4gStoppedRed は 4G のタイトルで止まった束の門の赤の 1 行（export-web と web-check で同じ字）。
-const webTitle4gStoppedRed = "4G（?net=4g）のタイトルで、届いていない後回しの物を待って止まった — タイトルで使う物は web.deferred から外す"
+const webTitle4gStoppedRed = "4G（?fge=4g）のタイトルで、届いていない後回しの物を待って止まった — タイトルで使う物は web.deferred から外す"
 
 // webChecksRed は束の書き出しの確かめの結果（bundle.json の checks）から門を赤にする行（export-web と web-check で同じ）。
 func webChecksRed(b *webBundle) []string {
@@ -200,22 +204,31 @@ type webBrowserCheckLog struct {
 	TapMeasured func(m webTapMeasure)
 }
 
-// webBrowserCheckResult は ?net=4g のタイトルの確かめと押した後の測りの結果。Missing は頁を開けなかった時 nil。
+// webBrowserCheckResult は ?fge=4g のタイトルの確かめと押した後の測りの結果。Missing は頁を開けなかった時 nil。
+// Timing は押した後の速さ（回線を絞らない）の表の行。
 type webBrowserCheckResult struct {
 	Checks  webBundleChecks
 	Missing *webMissingReport
 	Tap     *webTapMeasure
+	Timing  []webTapTimingRow
 }
 
-// runWebBrowserChecks は書き出し先 dir の束 b を、?net=4g のタイトルの確かめ（後回しがある時）と押した後の測り（測る後回しがある時）に掛ける。
+// webBrowserCheckOptions は確かめの条件。零の値が書き出しの門の条件。Warm なら押した後の速さに 2 回目の起動（Service Worker が付いた後）も足す。
+type webBrowserCheckOptions struct {
+	Cond webMeasureConditions
+	Warm bool
+}
+
+// runWebBrowserChecks は書き出し先 dir の束 b を、?fge=4g のタイトルの確かめ（後回しがある時）・押した後の速さ・押した後の待ちの測り（測る後回しがある時）に掛ける。
 // Chrome がある前提（呼び手が先に確かめる）。startKeys は押した後の測りでタイトルで押すキー。
-func runWebBrowserChecks(dir string, b *webBundle, startKeys []string, log webBrowserCheckLog) webBrowserCheckResult {
+// 押してから最初のコマまでの秒は、条件が門の条件の時だけ Checks に残す。
+func runWebBrowserChecks(dir string, b *webBundle, startKeys []string, opt webBrowserCheckOptions, log webBrowserCheckLog) webBrowserCheckResult {
 	r := webBrowserCheckResult{Checks: webBundleChecks{Title4g: "ok"}}
 	if len(b.Deferred) > 0 {
 		if log.Step != nil {
-			log.Step("⑨' 4G（?net=4g）のタイトルの %d コマで engine が待つか", webTitleFrames)
+			log.Step("⑨' 4G（?fge=4g）のタイトルの %d コマで engine が待つか", webTitleFrames)
 		}
-		missing, err := checkWebMissingTitle(dir, webTitleFrames, webLoadCheckWait())
+		missing, err := checkWebMissingTitle(dir, webTitleFrames, webLoadCheckWait(), opt.Cond)
 		r.Checks.Title4g, r.Checks.SkippedWhy = webTitle4gOf(missing, err)
 		if err != nil {
 			if log.TitleFailed != nil {
@@ -225,13 +238,21 @@ func runWebBrowserChecks(dir string, b *webBundle, startKeys []string, log webBr
 		}
 		r.Missing = missing
 	}
+	if log.Step != nil {
+		log.Step("⑨'' 押してから最初のコマまでを測る（回線を絞らない・%s）", opt.Cond.label())
+	}
+	r.Timing = measureWebTapTimingRows(dir, opt.Cond, opt.Warm, webLoadCheckWait())
+	if opt.Cond.isGate() && r.Timing[0].Why == "" {
+		v := math.Round(r.Timing[0].Timing.FirstFrameSeconds*100) / 100
+		r.Checks.TapToFirstFrameSeconds = &v
+	}
 	if !webTapNeedsMeasure(b) {
 		return r
 	}
 	if log.Step != nil {
-		log.Step("⑨'' 4G（?net=4g）で開いてすぐ押し、押してから最初の場面が動くまでを測る（タイトルで %s）", strings.Join(startKeys, "・"))
+		log.Step("⑨'' 4G（?fge=4g）で開いて押し、押してから最初の場面が動くまでを測る（%s・タイトルで %s）", opt.Cond.label(), strings.Join(startKeys, "・"))
 	}
-	m, why, err := measureWebTapWait(dir, startKeys, webLastWaitingArrival(b), webLoadCheckWait())
+	m, why, err := measureWebTapWait(dir, startKeys, webLastWaitingArrival(b), webLoadCheckWait(), opt.Cond)
 	switch {
 	case err != nil:
 		// WhyNot: 測れない束で止めない — 古い fge-web.js の書き出しは待ちの記録を持たず、測れないのは束の誤りではない（見積もりと ★）。
@@ -265,7 +286,7 @@ func runExportBrowserChecks(o exportWebOptions, c exportConfig, b *webBundle) (e
 		ewLogf("⑨ ブラウザで wasm を読めるか: --no-browser-check で飛ばした")
 		r.Checks.Title4g, r.Checks.SkippedWhy = "skipped", "--no-browser-check"
 	} else {
-		ewLogf("⑨ ブラウザで wasm を読めるか（ヘッドレスの Chrome で ?capture=%d・タイトルの %d コマに使う素材を記録）", webLoadCheckFrames, webTitleFrames)
+		ewLogf("⑨ ブラウザで wasm を読めるか（ヘッドレスの Chrome で旗 capture:%d・タイトルの %d コマに使う素材を記録）", webLoadCheckFrames, webTitleFrames)
 		skipped, used, err := checkWebLoadsRecording(p.Out, webLoadCheckFrames, webTitleFrames, webLoadCheckWait())
 		r.Used = used
 		if err != nil {
@@ -278,11 +299,12 @@ func runExportBrowserChecks(o exportWebOptions, c exportConfig, b *webBundle) (e
 			ewLogf("知らせ: %s", skipped)
 			r.Checks.Title4g, r.Checks.SkippedWhy = "skipped", "Chrome が見つからない"
 		} else {
-			r.webBrowserCheckResult = runWebBrowserChecks(p.Out, b, c.Budget.startKeys(), webBrowserCheckLog{
+			r.webBrowserCheckResult = runWebBrowserChecks(p.Out, b, c.Budget.startKeys(), webBrowserCheckOptions{}, webBrowserCheckLog{
 				Step:        ewLogf,
 				TitleFailed: func(err error) { ewLogf("知らせ: %v", err) },
 				TapFailed:   func(err error) { ewLogf("知らせ: 押した後を測れなかった: %v", err) },
 			})
+			writeWebTapTimingNotice(r.Timing)
 		}
 	}
 	if r.Tap == nil && r.Checks.TapSkippedWhy == "" && webTapNeedsMeasure(b) {

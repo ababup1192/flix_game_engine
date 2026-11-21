@@ -10,7 +10,7 @@ import (
 	"github.com/ababup1192/flix_game_engine/go/internal/cdp"
 )
 
-// 押した後の測り（⑨''）: 既定の頁を ?net=4g で開き、「タッチして開始」を押してすぐタイトルで決定し、
+// 押した後の測り（⑨''）: 既定の頁を旗 net:4g で開き、「タッチして開始」を押してすぐタイトルで決定し、
 // 押した時の待ちが明けるまでの秒を取る（開いてすぐ押した人の「押してから最初の場面が動くまで」）。
 
 // webTapMeasureLimit を過ぎても待ちが明けなければ、この秒で打ち切って「これ以上」として扱う。
@@ -72,8 +72,52 @@ type webTapProbeResult struct {
 	Placeholders []string `json:"placeholders"`
 }
 
-// measureWebTapWait は書き出し先 out を手元のサーバーで配り、押した後の待ちを測る（Chrome が無ければ skipped に理由）。
-func measureWebTapWait(out string, keys []string, lastArrival float64, wait time.Duration) (m webTapMeasure, skipped string, err error) {
+// webMeasureConditions は押した後の測りの条件。零の値が門の条件（「タッチして開始」が出たらすぐ押す・CPU を絞らない）。
+// WhyNot: 絞った条件の値を門に入れない — 門の判定が測る機械の速さで揺れる。web-check --browser の --cpu・--tap-delay は表に知らせとして出すだけ。
+type webMeasureConditions struct {
+	CPU      float64       // CPU を何倍遅くするか（1 以下は絞らない）
+	TapDelay time.Duration // 「タッチして開始」が出てから押すまでの間
+}
+
+// label は表の条件の欄の字。
+func (c webMeasureConditions) label() string {
+	tap := "すぐ押す"
+	if c.TapDelay > 0 {
+		tap = fmt.Sprintf("%.1f 秒置いて押す", c.TapDelay.Seconds())
+	}
+	cpu := "CPU 1 倍"
+	if c.CPU > 1 {
+		cpu = fmt.Sprintf("CPU %g 倍", c.CPU)
+	}
+	return tap + "・" + cpu
+}
+
+func (c webMeasureConditions) isGate() bool {
+	return c.CPU <= 1 && c.TapDelay <= 0
+}
+
+// openReadyPage は Chrome を起こし、initScript（頁の旗）を入れて url を開いて「タッチして開始」が出るまで待ち、cond の間を置く。
+func openReadyPage(url, initScript string, cond webMeasureConditions, wait time.Duration) (*cdp.Page, error) {
+	page, err := cdp.OpenPage(cdp.PageOptions{InitScript: initScript, CPUThrottle: cond.CPU})
+	if err != nil {
+		return nil, err
+	}
+	if err := page.Navigate(url); err != nil {
+		page.Close()
+		return nil, err
+	}
+	if err := page.WaitFor(webSplashReadyProbe, wait); err != nil {
+		page.Close()
+		return nil, fmt.Errorf("「タッチして開始」が出ない: %v", err)
+	}
+	time.Sleep(cond.TapDelay)
+	return page, nil
+}
+
+const webSplashReadyProbe = `typeof fgeSplash !== "undefined" && fgeSplash.ready === true && typeof fgeNetClock !== "undefined"`
+
+// measureWebTapWait は書き出し先 out を手元のサーバーで配り、押した後の待ちを測る（Chrome が無ければ skipped に理由）。cond は押す前の間と CPU の絞り。
+func measureWebTapWait(out string, keys []string, lastArrival float64, wait time.Duration, cond webMeasureConditions) (m webTapMeasure, skipped string, err error) {
 	if _, err := cdp.FindChrome(); err != nil {
 		return m, "Chrome が見つからない", nil
 	}
@@ -82,17 +126,12 @@ func measureWebTapWait(out string, keys []string, lastArrival float64, wait time
 		return m, "", err
 	}
 	defer closeServer()
-	page, err := cdp.OpenPage(cdp.PageOptions{})
+	url, initScript := webPageSwitches{Net: "4g"}.openURL(fmt.Sprintf("http://%s/index.html", ln.Addr().String()), out)
+	page, err := openReadyPage(url, initScript, cond, wait)
 	if err != nil {
 		return m, "", err
 	}
 	defer page.Close()
-	if err := page.Navigate(fmt.Sprintf("http://%s/index.html?net=4g", ln.Addr().String())); err != nil {
-		return m, "", err
-	}
-	if err := page.WaitFor(`typeof fgeSplash !== "undefined" && fgeSplash.ready === true && typeof fgeNetClock !== "undefined"`, wait); err != nil {
-		return m, "", fmt.Errorf("「タッチして開始」が出ない: %v", err)
-	}
 	if err := page.PressKey("Enter", 0); err != nil {
 		return m, "", err
 	}

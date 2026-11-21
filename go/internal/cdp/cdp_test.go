@@ -128,6 +128,25 @@ func TestCaptureStopsOnPageError(t *testing.T) {
 	}
 }
 
+func TestCaptureRunsInitScriptBeforePage(t *testing.T) {
+	if testing.Short() {
+		t.Skip("-short")
+	}
+	if _, err := FindChrome(); err != nil {
+		t.Skip(err)
+	}
+	_, err := Capture(Options{URL: "data:text/html,<script>window.fgeCaptureError='dev=' + (window.fgeDev && window.fgeDev.capture)</script>",
+		InitScript: "window.fgeDev = { capture: 6 };", Wait: 10 * time.Second})
+	if err == nil || !strings.Contains(err.Error(), "dev=6") {
+		t.Fatalf("頁の script が流れる前に InitScript の値があるはず: %v", err)
+	}
+}
+
+func TestCPUThrottleOptionIsAccepted(t *testing.T) {
+	p := keyPage(t, PageOptions{CPUThrottle: 4})
+	scriptPage(t, p)
+}
+
 // 本物の Chrome で testdata/webgl2_known.html を撮る。Chrome が無い機械と -short では飛ばす。
 func TestCaptureKnownWebGL2Picture(t *testing.T) {
 	if testing.Short() {

@@ -21,6 +21,8 @@ type PageOptions struct {
 	Touch bool
 	// InitScript は頁のどの script よりも先に、頁を開くたびに流す（console を拾う仕掛けなど）。
 	InitScript string
+	// CPUThrottle は CPU を何倍遅くするか（Emulation.setCPUThrottlingRate。1 以下は絞らない）。遅いスマホの姿を手元で見る時。
+	CPUThrottle float64
 }
 
 // Page は自分が起こした Chrome の 1 頁。使い終えたら Close。
@@ -97,6 +99,11 @@ func (p *Page) setup(opt PageOptions) error {
 	}
 	if opt.InitScript != "" {
 		if _, err := p.c.call("Page.addScriptToEvaluateOnNewDocument", map[string]any{"source": opt.InitScript}, pageStep); err != nil {
+			return err
+		}
+	}
+	if opt.CPUThrottle > 1 {
+		if _, err := p.c.call("Emulation.setCPUThrottlingRate", map[string]any{"rate": opt.CPUThrottle}, pageStep); err != nil {
 			return err
 		}
 	}

@@ -96,14 +96,14 @@ project.json の `web`（`keysDoc`・`virtualPad: { dpad: true, buttons: [{label
 - View は `ctx#display#sizeClass == Display.SizeClass.Small`（`ViewCtx#display` に画面の大きさ・`designScale`・最後の pointer も）
 - 当たりを取る系は同じ並べ方を `frame#sizeClass` から引く（World の結果を区分で変えない）
 - 大きさは Doc に出す（手本 sound-novel-starter の `novel.small.json`・`Layout.Fit`）
-- PC から確かめるのは、描き出しの ctx を `{ display = { sizeClass = Display.SizeClass.Small | ctx#display } | ctx }` にするか、ブラウザ版の頁を `?size=small&input=touch` で開く
+- PC から確かめるのは、描き出しの ctx を `{ display = { sizeClass = Display.SizeClass.Small | ctx#display } | ctx }` にするか、ブラウザ版の頁を `?fge=small,touch` で開く
 
 ## 縦の画面で起動する（`web.portraitDesign`）
 
 project.json の `web.portraitDesign: { "width": 540, "minHeight": 960 }` で、スマホ（区分 Small）を縦に持ってブラウザで開いた時だけ、幅を固定・高さは描き先の比から決めた縦の design で起動する（`orientation` は `any`）。
 
 - View は `ViewCtx#display#orientation`（起動の時の design の向き）と `ViewCtx#visible#size`、当たりは `Display.orientationOf(frame#viewport)` と `frame#viewport` から同じ並べ方を引く
-- 確かめ方: PC では頁の `?orientation=portrait`、デスクトップは `FLIX_GE_PORTRAIT=1`、画面なしの描き出しは `Display.phonePortrait(view, design)` と `ProjectLoader.portraitConfigOf`（手本 sound-novel-starter の `portrait-<場面>`）
+- 確かめ方: PC では頁の `?fge=portrait`、デスクトップは `FLIX_GE_PORTRAIT=1`、画面なしの描き出しは `Display.phonePortrait(view, design)` と `ProjectLoader.portraitConfigOf`（手本 sound-novel-starter の `portrait-<場面>`）
 
 ### 窓の余り（レターボックス・ピラーボックス）を背景で塗る
 
@@ -201,7 +201,7 @@ design の大きさの画面に描くつもりの絵（ぼかした背景だけ�
 ```
 
 - 起動の秒: 上の「起動まで」の行
-- 押してから動くまで: 書き出しの確かめ ⑨'' が、既定の頁を `?net=4g` で開いて「タッチして開始」を押し、すぐタイトルで `startKeys`（既定 Enter）を押して、押した時の待ちが明けるまでを測る（開始を押してから数える）。
+- 押してから動くまで: 書き出しの確かめ ⑨'' が、既定の頁を旗 `net:4g`（`?fge=4g` と同じ）で開いて「タッチして開始」を押し、すぐタイトルで `startKeys`（既定 Enter）を押して、押した時の待ちが明けるまでを測る（開始を押してから数える）。
   門に入れるのは、測った値と、押した後のロゴが待つ group の最後が届く見積もり（group が無ければ 0 秒）の大きい方（4G のまねの届く秒は決まっていて、同じ束を 3 回測って同じ秒だった）。測れなかった時（Chrome が無い・`--no-browser-check`・古い頁・上限まで待ってもコマが進まない・headless が遅くタイトルで押せたのが待つ後回しの届いた後だった）は見積もりだけで決め、★ で知らせる（赤にはしない）。group を付けていても、group が空か group の外に待つ後回しがあって測っていなければ ★
 - ロゴが覆う秒: 押した後のロゴが出る時だけ、`maxSeconds`（上限 3 秒）。頁がロゴを出すのは `web.splash` の group を待ち、その group の届く見積もりが `minSeconds`（既定 1.2 秒）以上の時だけ（group の無いゲーム・`afterTap: "none"` は 0）
 - すぐ要る物を後回しへ回しても、ロゴで覆えない分は起動から押した後へ移るだけで数字は減らない
@@ -213,7 +213,7 @@ design の大きさの画面に描くつもりの絵（ぼかした背景だけ�
 - `seconds` は既定 16（1〜120）。16 を超えるなら `why` が要り、書き出しと web-check のたびに `★ 予算 N 秒` で出る。**`why` は bundle.json に写るので公開される**
 - `startKeys` は ⑨'' がタイトルで押すキー（`Enter`・`Space`・`Escape`・矢印・英字 1 字。1 つずつ数コマ空けて押す）。タイトルの既定の行が「はじめから」でないゲームは書く（合わないと「待ちの記録が無い」と出て測れない）
 - 後回しの絵を `deferredPolicy` で `onMissing: "placeholder"` にする行は `why` が要る（届くまで描かずに進み、押した後に黒いコマが出るため）
-- ⑨'（`?net=4g` のタイトルの 120 コマ）で、タイトルが届いていない後回しの物を待って止まったら、それも止める（タイトルで使う物は後回しにしない）
+- ⑨'（旗 `net:4g` のタイトルの 120 コマ）で、タイトルが届いていない後回しの物を待って止まったら、それも止める（タイトルで使う物は後回しにしない）
 
 止まった時は、門の理由と「次に打つ手」（4G の秒が減る順に 3 つまで: 押した後の待ち・後回しの候補・`wasmBrotli: false` の時はそれを外す）が出て、**書き出し先は消える**（手で写す道へ赤の書き出しを残さない）。
 
@@ -253,7 +253,7 @@ bin/fge web-check <書き出したフォルダ>
 
 ### 後回しの候補を出す（`--apply-deferred`）
 
-書き出しの最後のブラウザの確かめ（⑨）は、既定の頁を `?capture=120&usedAssets=1` で開き、タイトルの 120 コマ（2 秒・入力は送らない）の間に
+書き出しの最後のブラウザの確かめ（⑨）は、既定の頁を旗 `capture:120`・`usedAssets`（`window.fgeDev`）で開き、タイトルの 120 コマ（2 秒・入力は送らない）の間に
 ゲームが使った素材を記録する。記録するのは engine_web で、描いた絵の名前（スプライト・タイルマップ・面が読む絵・Scene3d の材質とビルボードの絵・
 フォントの字は `font_<名前>`）・鳴らした音の名前・読んだファイルの道。起動で取る素材のうち、その間に使わなかった物が後回しの候補になり、
 書き出しの終わりの表の後ろに、大きい順・project.json に貼れる形で出る。
@@ -274,11 +274,11 @@ bin/fge web-check <書き出したフォルダ>
 - 後回しの絵と音を届く前に描こうとした・鳴らそうとした時は `知らせ: 後回しの … を、タイトルの 120 コマの間に届く前に使おうとした` の 1 行（読んだファイルは数えない。裏の読み込みは届いたかを見てから読む。後回しのフォントは届くまで先頭のフォントで描くので、これも数えない）
 - 記録の全部（名前・道 → 初めて使ったコマ）は作業フォルダの `title-assets.json`
 
-**4G の届き方でタイトルを回す（`?net=4g`）**: ⑨ の続きで、後回しのあるゲームは既定の頁を `?capture=120&net=4g` でもう 1 回開く。
+**4G の届き方でタイトルを回す（`?fge=4g`）**: ⑨ の続きで、後回しのあるゲームは既定の頁を旗 `capture:120`・`net:4g` でもう 1 回開く。
 頁は後回しの 1 本ずつを、書き出しが `bundle.json` に書いた `arrivalSeconds`（4G で届く見積もりの秒・押した時から数える）まで渡さない。
 タイトルの間に engine が前の場面のまま止まって待った所（`window.fgeMissingWaits` の `stopped`）と、待つはずの物を描かずに進んだ所
 （`window.fgeMissingSkips` の `gaveUp`）を `知らせ:` で出し、表の後ろに 1 行の数を出す。止まった・諦めた所があれば門が赤になる（上の「起動の予算」）。結果は bundle.json の `checks.title4g` に残る。
-手で開く時も `?net=4g` を付ければ同じ届き方になる（開いてすぐ押した形）。届く秒は書き出しの時の列の順で決めた物で、engine が待って列の頭へ回した物も早く届かない（待ちは本物より長めに出る・悲観側）。`window.fgeMissingWaits` は旗が無くても積む。
+手で開く時も `?fge=4g` を付ければ同じ届き方になる（開いてすぐ押した形）。届く秒は書き出しの時の列の順で決めた物で、engine が待って列の頭へ回した物も早く届かない（待ちは本物より長めに出る・悲観側）。`window.fgeMissingWaits` は旗が無くても積む。
 
 **確かめ方**: 候補には、タイトルで押した時だけ使う物（カーソル・決定の音）と、タイトルの直後の場面で使う物も出る。後回しにした物は届くまで黒い・鳴らない。
 外してから貼るか、ゲームが `LoadProgress` の `downloads#missing()` で待つ（[startup.md](startup.md) の「ブラウザで素材を後から取る」）。
@@ -312,7 +312,7 @@ bin/fge web-check <書き出したフォルダ>
 3. gh-pages の worktree: その枝の worktree があれば使い、無ければ `<ゲーム>/build/gh-pages` に作る（枝が無ければ何も無い枝として作る）。
    未コミットの変更がある worktree には置かない。`.nojekyll` を置く（Jekyll は `_` で始まるファイルを配らない）
 4. コミット: `pages: <DEST> に <ゲーム> の書き出しを置く（ゲーム <commit>・engine <版>）`。中身が前と同じならコミットしない
-5. 開けるかの確かめ: 置いた頁を `<DEST>/index.html?capture=3&deferred=all` の道でヘッドレスの Chrome に開かせる（サブフォルダの道で素材を取れない形を止める）。飛ばすなら `NO_BROWSER_CHECK=1`
+5. 開けるかの確かめ: 置いた頁を `<DEST>/index.html` の道で `web-capture --dev capture:3,deferred:all` に開かせる（サブフォルダの道で素材を取れない形を止める）。飛ばすなら `NO_BROWSER_CHECK=1`
 6. 最後に出る物: 手元で配るコマンド（`bin/py3 -m http.server 8000 --bind 0.0.0.0 --directory <worktree>`）と PC・スマホで開く URL・`git -C <worktree> push origin gh-pages`・公開後の URL
 
 - 枝や worktree を替えるのは `BRANCH=`・`PAGES_WT=`。gh-pages の根の `index.html`（頁の一覧）は手で直す
@@ -367,7 +367,7 @@ GitHub Pages は全部のファイルに `max-age=600` を付けるので、Serv
   - 外す `sw.js` を置いた直後の 1 回目の頁は、まだ前の Service Worker が出す（更新の確かめがその頁と並んで走るため）。素のネットになるのはその次に開いた時から。前の物が頁を壊していた時は、もう 1 回開けば抜けられる
 - 壊れた時に抜け出す口: 頁の URL に `?sw=0` を付けて開くと、その頁は全部をキャッシュを使わずにネットから取り、Service Worker が登録を外してキャッシュを消す。登録とキャッシュを外して作り直させる口で、`?sw=0` を付けずに開けば登録し直す。登録に失敗した時は Service Worker 無しで今まで通り動く
 - sandbox の iframe（opaque origin）のように Service Worker を読めない頁でも、Service Worker 無しで今まで通り動く
-- `?capture=<n>` の頁は登録しない（描き出しの検査に前の書き出しを持ち越さない）
+- 撮る頁（旗 `capture`）は登録しない（描き出しの検査に前の書き出しを持ち越さない）
 - セーブ（localStorage）は Service Worker のキャッシュと別の所にあり、消しても残る
 - 手元で `127.0.0.1:8000/` の根に別のゲームを配り直すと、前のゲームの Service Worker（scope が `/`）が前の `index.html` を 1 回出してから読み直す（version.txt が違うため）。気になる時は `?sw=0` で開く
 - 書き出した後のフォルダの中身を替えない（替えるなら書き出し直す）。`sums.json` と合わない物はキャッシュに入らず、その物だけ 2 回目からも毎回ネットから取る
@@ -380,22 +380,33 @@ GitHub Pages は全部のファイルに `max-age=600` を付けるので、Serv
 ### 頁の旗（どのゲームの書き出しでも同じに使える）
 
 `bin/fge export-web` の頁（`engine_web/js/fge-web.js`）が読む物。テンプレート（rpg-starter・sound-novel-starter）でも bench でも同じに使える。
+旗は URL の 1 つの鍵 `?fge=` にコンマで並べる（`?fge=fps,webgl2`）。読み手は `engine_web/js/fge-switches.js`（書き出しが index.html の頭と `sw.js` に埋める）。
 
-| 旗 | 出る物 |
-|---|---|
-| `?fps=1` | 左上に fps・CPU の ms（中央値）・描き手（`webgpu` / `webgl2`） |
-| `?backend=webgl2` | WebGPU を使わず WebGL2 で描く（既定は WebGPU。取れなければ WebGL2 に落ちるので、`?fps=1` の描き手の欄で確かめる） |
-| `?glcheck=1` | GL の呼び出しごとに `getError` を見て console に出す（WebGL2 の時） |
-| `?loadtime=1` | 絵の解読の時間と、最初のコマまでの ms を console に出す |
-| `?capture=<n>` | dt を 1/60 に固定し、n コマ目を撮る合図を出す（[web-capture.md](web-capture.md)） |
-| `?net=4g` | 後回しの 1 本ずつを `bundle.json` の `arrivalSeconds`（4G・1.6 Mbps・往復 150 ms での見積もり・押した時から数える）まで渡さない。`window.fgeMissingSkips` も積む（上の節） |
-| `&deferred=all` | 後回しの素材が全部届いてから main を呼ぶ（`?capture=` で画素を比べる頁に付ける。engine の待ちで撮るコマがずれない・[startup.md](startup.md)） |
-| `?sw=0` | Service Worker の登録を外し、そのキャッシュを消す（「起動の始まりと 2 回目からの起動」） |
-| `?size=small&input=touch`・`?orientation=portrait` | スマホの区分・指の入力・縦の design で開く（上の節） |
+- 語は `名前` か `名前:値`。値が決まった語の旗は値だけを書けばよい（`webgl2`・`4g`・`small`・`touch`・`portrait`）
+- 大文字と小文字は区別しない。同じ旗が 2 回あれば後の語。知らない語は console に 1 行出して捨てる（止めない）
+- `fge` はクエリのどこに置いてもよい（`?talk=Lair&line=46&fge=fps`）
+- 道具（書き出しの確かめ・`web-capture --dev`）は URL を使わず、頁より先に `window.fgeDev = { capture: 6, … }` を入れる（欄は下の表の左の名前。[web-capture.md](web-capture.md)）。
+  同じ旗は `window.fgeDev` → `?fge=` → 前の鍵の順で、最初に値を持つ所を使う。`backend` だけはどこか 1 つでも `webgl2` なら WebGL2
 
-`WebLayer.devTools()` で起こすゲームは、`App.DevTools.pageQueryKeys`（`input` `size` `orientation` `glcheck` `loadtime` `capture` `fps`）に無い鍵をクエリの最初に置くと Start の名前として読む（知らない名前なら先頭の始まりで開いて console.error に 1 行）。
-表の `backend`・`net`・`deferred`・`sw`（と書き出しの確かめが使う `usedAssets`）は今はその一覧に無いので、Start の名前と一緒に使う時は Start の鍵を最初に置く（それでも引数には混ざる）。
-ゲームの側の旗を足す時は、Start の名前と重ねない。
+| 旗（`window.fgeDev` の欄） | `?fge=` の語 | 出る物 |
+|---|---|---|
+| `fps` | `fps` | 左上に fps・CPU の ms（中央値）・描き手（`webgpu` / `webgl2`） |
+| `backend` | `webgl2`（`gl`・`backend:webgl2` も同じ。`webgpu` は既定） | WebGPU を使わず WebGL2 で描く（既定は WebGPU。取れなければ WebGL2 に落ちるので、`fps` の描き手の欄で確かめる）。WebGPU で落ちた頁は `?fge=` に `webgl2` を足して開き直す |
+| `net` | `4g` | 後回しの 1 本ずつを `bundle.json` の `arrivalSeconds`（4G・1.6 Mbps・往復 150 ms での見積もり・押した時から数える）まで渡さない。`window.fgeMissingSkips` も積む（上の節） |
+| `input`・`size`・`orientation` | `touch` / `mouse`・`small` / `medium` / `large`・`portrait` / `landscape` | スマホの区分・指の入力・縦の design で開く（上の節。例 `?fge=small,touch,portrait`） |
+| `sw` | `nosw`（`sw:0`） | Service Worker の登録を外し、そのキャッシュを消す。**遊ぶ人に伝える字は前と同じ `?sw=0`**（壊れた前の版の `sw.js` が読める字。ずっと読む） |
+| `glcheck` | `glcheck` | GL の呼び出しごとに `getError` を見て console に出す（WebGL2 の時） |
+| `loadtime` | `loadtime` | 絵の解読の時間と、最初のコマまでの ms を console に出す |
+| `capture` | `capture:<n>` | dt を 1/60 に固定し、n コマ目を撮る合図を出す（道具の旗。[web-capture.md](web-capture.md)） |
+| `deferred` | `deferred:all` | 後回しの素材が全部届いてから main を呼ぶ（画素を比べる撮る頁に足す。engine の待ちで撮るコマがずれない・[startup.md](startup.md)） |
+| `usedAssets` | `usedassets` | 使った素材を `window.fgeUsedAssets` に記録する（書き出しの確かめ ⑨ が後回しの候補に使う） |
+| `webgpuFail` | `webgpufail:prepare` / `webgpufail:canvas` | WebGPU の準備で落ちる道・canvas の描き先を作った後に落ちる道を起こす（WebGL2 へ落ちる道を手で確かめる時） |
+
+`WebLayer.devTools()` で起こすゲームは、クエリの最初の鍵を Start の名前・全部の鍵と値を引数にする（知らない名前なら先頭の始まりで開いて console.error に 1 行）。
+頁が読む鍵 `fge` と `sw`（`App.DevTools.pageQueryKeys`）は外すので、Start と旗の順を気にしなくてよい。ゲームの Start の名前に `fge` と `sw` は使えない。
+
+前の鍵（`?fps=1`・`?backend=webgl2`・`?net=4g`・`?size=small`・`?capture=6` など 12 個）はこの版のあいだ今まで通り効き、console に
+`[fge] ?fps=1 は ?fge=fps に替わった（次の版で読まなくなる）` を出す（Start にも混ざらない・`App.DevTools.legacyPageQueryKeys`）。次の版で読まなくなり、Start の名前として扱われる。
 
 ### ゲームごとの旗（engine の物ではない）
 
@@ -411,5 +422,5 @@ GitHub Pages は全部のファイルに `max-age=600` を付けるので、Serv
 - **前と後は同じ場所・同じ向き・同じ旗で比べる**: 町の広場と路地のように描く物の量が違う所どうしを並べると、ブラウザとデスクトップの差に見えてしまう。
   開始の場所を URL か Start の名前で決めて、同じ所から測る（デスクトップとの比べも同じ場所で）
 - **ヘッドレスの Chrome で数を取る**のは `make bench-web BENCH=<名前>`（bench の頁だけ）。スマホの数の代わりにはならない
-- **スマホは人に URL を開いてもらうしかない**: 同じ Wi-Fi で `http://<この機械の IP>:8000/<道>/?fps=1`（上の `make web-pages-stage` の最後の行）か、公開した URL を渡して、
+- **スマホは人に URL を開いてもらうしかない**: 同じ Wi-Fi で `http://<この機械の IP>:8000/<道>/?fge=fps`（上の `make web-pages-stage` の最後の行）か、公開した URL を渡して、
   左上の fps と CPU の ms を読んでもらう（何秒か置いてからの値）。機種と OS の版も聞く

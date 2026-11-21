@@ -5,11 +5,12 @@ PNG に書く道具。gl_parity の web 版（WebGL2 の絵と SoftRaster の絵
 Node と Playwright は使わない（Go の bin/fge の中で WebSocket から CDP を話す・`go/internal/cdp`）。
 
 ```
-bin/fge web-capture <URL> <出力.png> [--wait <秒>] [--size WxH] [--dir <書き出したフォルダ>]
+bin/fge web-capture <URL> <出力.png> [--wait <秒>] [--size WxH] [--dir <書き出したフォルダ>] [--dev <語,語…>]
 ```
 
 - `--wait` は頁の合図を待つ上限（既定 30 秒）。`--size` は頁の viewport（既定 800x600・deviceScaleFactor は常に 1）。
-- `--dir` はそのフォルダを 127.0.0.1 の使い捨ての口で配り、`<URL>` を頁の道とクエリ（例 `index.html?capture=6`）として読む（静的なサーバーを起こさずに済む）。
+- `--dir` はそのフォルダを 127.0.0.1 の使い捨ての口で配り、`<URL>` を頁の道とクエリ（例 `index.html`）として読む（静的なサーバーを起こさずに済む）。
+- `--dev` は頁の旗（下の「頁の旗」）を頁のどの script より先に `window.fgeDev` で入れる（例 `--dev capture:6,deferred:all,webgl2`）。知らない語は exit 2（頁は知らない語を捨てるが、道具の打ち間違いはその場で止める）。
 - Chrome は `FGE_CHROME` → `/Applications/Google Chrome.app` など決まった場所 → PATH の `google-chrome` / `chromium` の順に探す。
   見つからなければ探した場所を全部並べて exit 1。
 - 起こすのは `--headless=new --remote-debugging-port=0` と使い捨ての `--user-data-dir` の Chrome。止めるのは自分が起こした
@@ -57,47 +58,64 @@ requestAnimationFrame(() => {
   `visibilityState` が `hidden` で rAF が回らないため（Chrome 156・macOS で確かめた）。頁の側で visibility を見て止める
   作りでも撮れる。
 
-## 書き出した頁のコマを撮る（?capture=<n>）
+## 書き出した頁のコマを撮る（頁の旗 capture:<n>）
 
-`bin/fge export-web` の頁は URL の `?capture=<n>` で上の約束を守る。canvas を design の大きさにし、dt を 1/60 に固定し、
+`bin/fge export-web` の頁は頁の旗 `capture:<n>`（`web-capture --dev capture:<n>`・自前の CDP の道具は頁より先に `window.fgeDev = { capture: <n> }`）で上の約束を守る。canvas を design の大きさにし、dt を 1/60 に固定し、
 「押して始める」を飛ばし、n コマ目を描き終えた所（`presentFrame` の頭・`Browser.frameDrawn`）で読む。
 デスクトップの `FLIX_GE_HIDDEN=1 FLIX_GE_FRAME_SHOT=<フォルダ> FLIX_GE_FIXED_DT=1/60`（`bin/gl-capture.sh`）の `frame-<n>.png` と同じコマになる。
 
 ```
 bin/gl-capture.sh <控え> bench/scene3d:
 bin/fge export-web bench/scene3d --out <出力>            # 静的なサーバーで配る
-bin/fge web-capture "http://127.0.0.1:<port>/index.html?capture=6" <出力.png> --size 640x360 --wait 60
+bin/fge web-capture "http://127.0.0.1:<port>/index.html" <出力.png> --dev capture:6 --size 640x360 --wait 60
 ```
 
 頁の既定の描き手は WebGPU（navigator.gpu）で、n コマ目の中間の texture を
 同じ形（`origin: "bottom-left"`・canvas は opaque なので alpha は 1）で置く。`renderer` は `webgpu: <adapter>`。WebGPU を使えない頁
 （`navigator.gpu` が無い・device が取れない）は理由を console に出して WebGL2 で描くので、`renderer` を見て WebGPU で撮れたかを確かめる。
-同じ `?` に `backend=webgl2`（`backend=gl` も同じ）を足すと WebGL2 で描く（`renderer` は WebGL2 の名前）。WebGL2 の絵と比べる時はこちら。
-V1 の門は `make webgpu-v1-check-web`（`?backend=webgl2`・既定・WebGPU の無い頁を撮って比べる）。
+`--dev` に `webgl2` を足すと WebGL2 で描く（`renderer` は WebGL2 の名前）。WebGL2 の絵と比べる時はこちら。
+V1 の門は `make webgpu-v1-check-web`（`webgl2`・既定・WebGPU の無い頁を撮って比べる）。
 
 ```
-bin/fge web-capture "index.html?capture=6&backend=webgl2" <WebGL2 の絵.png> --dir <書き出したフォルダ> --size 640x600 --wait 90
-bin/fge web-capture "index.html?capture=6" <WebGPU の絵.png> --dir <書き出したフォルダ> --size 640x600 --wait 90
+bin/fge web-capture index.html <WebGL2 の絵.png> --dir <書き出したフォルダ> --dev capture:6,webgl2 --size 640x600 --wait 90
+bin/fge web-capture index.html <WebGPU の絵.png> --dir <書き出したフォルダ> --dev capture:6 --size 640x600 --wait 90
 bin/fge pixel-diff <WebGL2 の絵.png> <WebGPU の絵.png> --tolerance bench/webgpu_v1/tolerance.tsv --name <場面>
 ```
 
 この頁は、止まった時（`fgeError`）に画面の字と同じ物を `fgeCaptureError` へ置く。道具は待ち切らず、その字で exit 1 になる。
 
-同じ `?` に `glcheck=1`（GL の呼び出しごとに `getError` を見て、組ごとに 1 回 console へ言う・`fgeGlCheck` に回数）と
-`loadtime=1`（絵の解読を 1 枚ごとに `console.time`・枚数と合計を `fgeDecodeTimes` へ）を足せる。Mip の時間はデスクトップの F3 と hitch の 3D の区間 `mip` で読む（ブラウザの頁には出ない）。
+同じ `--dev` に `glcheck`（GL の呼び出しごとに `getError` を見て、組ごとに 1 回 console へ言う・`fgeGlCheck` に回数）と
+`loadtime`（絵の解読を 1 枚ごとに `console.time`・枚数と合計を `fgeDecodeTimes` へ）を足せる。Mip の時間はデスクトップの F3 と hitch の 3D の区間 `mip` で読む（ブラウザの頁には出ない）。
 実測の結果は [backend-parity.md](backend-parity.md) の「ブラウザ（WebGL2）とデスクトップの絵」。
 
 ## 書き出しの門（ブラウザで wasm を読めるか）
 
 `bin/fge export-web` は頁を書いた後の最後の段（⑨）で、書き出し先を 127.0.0.1 の使い捨てのサーバーで配り、ヘッドレスの Chrome で
-次の頁を順に開く（頁ごとに Chrome を起こし直す）。
+次の頁を順に開く（頁ごとに Chrome を起こし直す）。どの頁も URL にクエリを付けず、頁の旗（下の「頁の旗」）を `window.fgeDev` で入れる。
 
 | 段 | 開く頁 | 見る物 | 外れた時 |
 |---|---|---|---|
-| ⑨ | `index.html?capture=120&usedAssets=1`（既定の WebGPU の頁） | 120 コマ目まで撮れるか・タイトルの 120 コマに使った素材の記録（後回しの候補の元） | `fgeCaptureError`（wasm の compile・instantiate・`main` の例外）で exit 1 |
-| ⑨ | `index.html?capture=3&backend=webgl2` | WebGL2 の頁でも 3 コマ目まで撮れるか（WebGPU を使えないブラウザが頼る道） | 同上 |
-| ⑨' | `index.html?capture=120&net=4g`（後回しがある時だけ） | 4G の届き方でタイトルが後回しの物を待って止まらないか | 止まれば門が赤（[web-export.md](web-export.md) の「起動の予算」）。頁が開けない時は知らせだけ |
-| ⑨'' | `index.html?net=4g`（engine が待ちうる後回しか group がある時だけ） | 「タッチして開始」とタイトルの `startKeys` を押し、押した時の待ちが明けるまでの秒 | 測れなければ知らせだけ（門は見積もりで決める） |
+| ⑨ | `index.html`・`{capture: 120, usedAssets: true}`（既定の WebGPU の頁） | 120 コマ目まで撮れるか・タイトルの 120 コマに使った素材の記録（後回しの候補の元） | `fgeCaptureError`（wasm の compile・instantiate・`main` の例外）で exit 1 |
+| ⑨ | `index.html`・`{capture: 3, backend: "webgl2"}` | WebGL2 の頁でも 3 コマ目まで撮れるか（WebGPU を使えないブラウザが頼る道） | 同上 |
+| ⑨' | `index.html`・`{capture: 120, net: "4g"}`（後回しがある時だけ） | 4G の届き方でタイトルが後回しの物を待って止まらないか | 止まれば門が赤（[web-export.md](web-export.md) の「起動の予算」）。頁が開けない時は知らせだけ |
+| ⑨'' | `index.html`・`{net: "4g"}`（engine が待ちうる後回しか group がある時だけ） | 「タッチして開始」とタイトルの `startKeys` を押し、押した時の待ちが明けるまでの秒 | 測れなければ知らせだけ（門は見積もりで決める） |
+| ⑨''（速さ） | `index.html`・`{}`（いつも・回線を絞らない） | 「タッチして開始」が出たらすぐ押し、押してから最初のコマまでの秒（`bundle.json` の `checks.tapToFirstFrameSeconds`）と押してから波紋が描けるまでの ms | 知らせだけ（門に入れない） |
+
+`bin/fge web-check <書き出したフォルダ> --browser` は ⑨' と ⑨'' を流し直し、押した後の速さを表で出す（すぐ押す・CPU 1 倍の 1 回目と、
+Service Worker が付いた後の 2 回目の起動）。`--cpu 4`（CPU を 4 倍遅くする・`Emulation.setCPUThrottlingRate`）と `--tap-delay 1.5`
+（「タッチして開始」が出てから 1.5 秒置いて押す）を付けると、その条件の ⑨'・⑨''・速さをもう 1 回流して表と知らせに足す。
+門（`checks.tapWaitSeconds` と赤）はいつも「すぐ押す・CPU 1 倍」の値だけで決める（門の判定が測る機械の速さで揺れない）。
+頁の側の時刻は `window.fgeBootTimes`（`readyAt`・`tapAt`・`tapEventAt`・`tapPaintAt`・`firstFrameAt`。performance.now の ms）。
+
+## 頁の旗（道具が入れる window.fgeDev）
+
+書き出した頁は、頁の旗を URL の `?fge=<語>,…`（人が打つ物）と、頁のどの script より先に置かれた `window.fgeDev`（道具が入れる物）から読む。
+欄と語の一覧は [web-export.md](web-export.md) の「頁の旗」。道具は URL に旗を付けない（`WebLayer.devTools()` のゲームはクエリを Start に読む）。
+
+- `bin/fge web-capture --dev <語,…>`: 語は `?fge=` と同じ（`capture:6`・`deferred:all`・`webgl2`・`usedassets`・`4g`・`webgpufail:canvas`…）
+- 自前の CDP の道具: `Page.addScriptToEvaluateOnNewDocument` で `window.fgeDev = Object.assign(window.fgeDev || {}, { capture: 6, backend: "webgl2" });` を入れてから開く。
+  欄は `fps` `backend` `net` `sw` `input` `orientation` `size` `glcheck` `loadtime` `capture` `deferred` `usedAssets` `webgpuFail`（値は JSON の真偽・数・字）
+- Go の道具の中では `webPageSwitches`（go/exportweb_switches.go）の `initScript()`。字の決まりの答えは `testdata/web-switches.cases.json`（頁の読み手と Go の `--dev` の読み手が同じ表で確かめられる）
 
 ⑨ で止まった時は書き出し先を消さずに残す。⑨'' は押してから 40 秒で打ち切り、待ちが明けた後も 10 秒は途中の待ちを見るので、後回しの多いゲームではここが一番長い。
 Chrome は後回しの無いゲームで 2 回、ある時は 3〜4 回起こすので、書き出しはその分延びる。

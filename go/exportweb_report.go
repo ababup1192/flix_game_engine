@@ -80,7 +80,7 @@ func writeTitleAssets(out, errOut *strings.Builder, o exportWebOptions, p export
 	return 0
 }
 
-// writeWebMissingTitleTo は ?net=4g のタイトルの間の記録を書き出しの表の後へ書く。
+// writeWebMissingTitleTo は ?fge=4g のタイトルの間の記録を書き出しの表の後へ書く。
 func writeWebMissingTitleTo(out *strings.Builder, r *webMissingReport) {
 	w := bufio.NewWriter(out)
 	writeWebMissingTitle(w, r, webTitleFrames)

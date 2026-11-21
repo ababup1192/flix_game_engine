@@ -239,7 +239,7 @@ func sealBundle(t *testing.T, out string, b webBundle) {
 
 func mustWebCheck(t *testing.T, dir string) webCheckResult {
 	t.Helper()
-	r, err := runWebCheck(dir, false)
+	r, err := runWebCheck(dir, false, webMeasureConditions{})
 	if err != nil {
 		t.Fatal(err)
 	}
