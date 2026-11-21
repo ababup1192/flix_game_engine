@@ -2,15 +2,9 @@ package main
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math"
-	"os"
-	"path/filepath"
-	"sort"
 	"strings"
 )
 
@@ -134,13 +128,36 @@ type webGate struct {
 
 func (g webGate) green() bool { return len(g.Red) == 0 }
 
+// exportVerdict は門の判定を受けた手元の書き出しの扱い。
+type exportVerdict int
+
+const (
+	exportPublish   exportVerdict = iota // 緑
+	exportDraft                          // 赤で --draft: draft のマーカーを付けて残す
+	exportStop                           // 赤で web.startupBudget を書いたゲーム: 書き出し先を消して止める
+	exportMigrating                      // 赤で web.startupBudget を書いていないゲーム: 移行の間は止めずに ★ で知らせる
+)
+
+// exportVerdictOf は門が赤か（red）・--draft か・予算を書いたかから書き出しの扱いを決める。
+func exportVerdictOf(red, draft bool, budget webStartupBudget) exportVerdict {
+	switch {
+	case !red:
+		return exportPublish
+	case draft:
+		return exportDraft
+	case budget.Declared:
+		return exportStop
+	}
+	return exportMigrating
+}
+
 func round1(v float64) float64 { return math.Round(v*10) / 10 }
 
-// webGateOf は書き出し先 dir の束 b から門を計算する（export-web と web-check で同じ物）。
+// webGateOf は書き出し先の大きさの表 sizes と束 b から門を計算する（export-web と web-check で同じ物）。
 // budget は書き出しなら project.json の物・web-check なら bundle.json の物。
-func webGateOf(dir string, b *webBundle, budget webStartupBudget) webGate {
+func webGateOf(sizes *webSizeTable, b *webBundle, budget webStartupBudget) webGate {
 	g := webGate{Budget: budget}
-	est := webStartupEstimateOf(dir, b)
+	est := webStartupEstimateOf(sizes, b)
 	g.Startup = est.Seconds
 	var waitFor []string
 	var after *webAfterTap
@@ -148,7 +165,7 @@ func webGateOf(dir string, b *webBundle, budget webStartupBudget) webGate {
 		after = b.Splash.AfterTap
 		waitFor = after.WaitFor
 	}
-	t := webTapWaitOf(dir, b, waitFor)
+	t := webTapWaitOf(sizes, b, waitFor)
 	// WhyNot: group の無いゲームで、最初に届く待つ物の秒を足さない — 最初の場面が後回しの物を使わなければ待ちは 0 で（よその子は押した後 8 秒の映像）、
 	// 足すと待たないゲームまで止まる。分からない分は押した後の測り（⑨''）で埋める。
 	if len(t.Group) > 0 {
@@ -239,8 +256,8 @@ func (g webGate) advise(b *webBundle, t webTapWait, est webStartupEstimate) []st
 		out = append(out, fmt.Sprintf("押した後の待ち %.1f 秒（ロゴで覆えない分 %.1f 秒）→ %s", g.TapWait, over, hint))
 	}
 	if b.WasmBrotli == "" {
-		br := int64(float64(est.Boot.WasmWire) * 0.6)
-		out = append(out, fmt.Sprintf("brotli が無い（wasm を gzip の大きさで配る）→ 入れると wasm が 約 -%.1f 秒（wasmBrotli: false は逃げ道にならない）", webSecondsFor(est.Boot.WasmWire-br)))
+		br := int64(float64(est.Boot.WasmWire) * webBrotliToGzipRatio)
+		out = append(out, fmt.Sprintf("wasm を gzip の大きさで配っている → web.compress の wasmBrotli: false を外すと wasm が 約 -%.1f 秒", webSecondsFor(est.Boot.WasmWire-br)))
 	}
 	return out
 }
@@ -269,198 +286,4 @@ func webPlaceholderImages(b *webBundle) int {
 		}
 	}
 	return n
-}
-
-// webSumsReport は束のファイルと sums.json の照らし合わせ。
-type webSumsReport struct {
-	Mismatch     []string // 中身が合わない
-	MissingUsed  []string // 載っているのに無い・頁が取る物
-	MissingSpare []string // 載っているのに無い・頁が取らない控え（Opus の代わりの元の wav など）
-	VersionBad   bool
-	NoSums       bool
-}
-
-// checkWebSums は dir の sums.json と中身・version.txt を照らす。
-func checkWebSums(dir string, b *webBundle) webSumsReport {
-	var r webSumsReport
-	raw, err := os.ReadFile(filepath.Join(dir, webSumsFile))
-	if err != nil {
-		r.NoSums = true
-		return r
-	}
-	sums := map[string]string{}
-	if json.Unmarshal(raw, &sums) != nil {
-		r.NoSums = true
-		return r
-	}
-	h := sha256.Sum256(raw)
-	if v, err := os.ReadFile(filepath.Join(dir, "version.txt")); err == nil && strings.TrimSpace(string(v)) != hex.EncodeToString(h[:])[:12] {
-		r.VersionBad = true
-	}
-	used := webServedPaths(b)
-	keys := make([]string, 0, len(sums))
-	for k := range sums {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, rel := range keys {
-		data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(rel)))
-		if err != nil {
-			if used[rel] {
-				r.MissingUsed = append(r.MissingUsed, rel)
-			} else {
-				r.MissingSpare = append(r.MissingSpare, rel)
-			}
-			continue
-		}
-		got := sha256.Sum256(data)
-		if hex.EncodeToString(got[:]) != sums[rel] {
-			r.Mismatch = append(r.Mismatch, rel)
-		}
-	}
-	return r
-}
-
-// webServedPaths は頁が取る物の道（書き出し先から・/ 区切り）。
-func webServedPaths(b *webBundle) map[string]bool {
-	used := map[string]bool{"bundle.json": true, "fge-web.js": true, "wasm-gc-runtime.js": true}
-	if b.WasmBrotli != "" {
-		used[b.WasmBrotli] = true
-		used[webBrotliDecoderFile] = true
-	} else {
-		used["classes.wasm"] = true
-	}
-	for _, rel := range b.copyList() {
-		used["assets/"+b.served(rel)] = true
-	}
-	return used
-}
-
-// webCheckResult は web-check の 1 束の結果。
-type webCheckResult struct {
-	Dir   string
-	Gate  webGate
-	Sums  webSumsReport
-	Leaks int
-}
-
-// loadWebBundle は dir の bundle.json を読む。
-func loadWebBundle(dir string) (webBundle, error) {
-	var b webBundle
-	raw, err := os.ReadFile(filepath.Join(dir, "bundle.json"))
-	if err != nil {
-		return b, err
-	}
-	if err := json.Unmarshal(raw, &b); err != nil {
-		return b, fmt.Errorf("%s/bundle.json を読めない: %v", dir, err)
-	}
-	return b, nil
-}
-
-// runWebCheck は書き出し済みの束 dir を、束のファイルだけから計算し直して門に掛ける。
-func runWebCheck(dir string, browser bool) (webCheckResult, error) {
-	res := webCheckResult{Dir: dir}
-	b, err := loadWebBundle(dir)
-	if err != nil {
-		return res, err
-	}
-	if browser {
-		if err := rerunWebBrowserChecks(dir, &b); err != nil {
-			return res, err
-		}
-	}
-	budget := defaultWebStartupBudget()
-	if b.StartupBudget != nil {
-		budget = *b.StartupBudget
-		budget.Declared = true
-	}
-	g := webGateOf(dir, &b, budget)
-	g.BudgetDefault = b.StartupBudget == nil
-	if err := budget.validate("bundle.json の startupBudget"); err != nil {
-		g.Red = append(g.Red, strings.SplitN(err.Error(), "\n", 2)[0])
-	}
-	if b.Draft {
-		g.Red = append(g.Red, "draft の書き出し（"+strings.Join(b.DraftReasons, "・")+"）— --draft を付けずに書き出し直す")
-	}
-	switch {
-	case b.Checks == nil:
-		g.Notes = append(g.Notes, "★ 4G のタイトルの確かめの記録が無い（0.105.0 までの書き出し）— web-check --browser で流す")
-	case b.Checks.Title4g == "stopped":
-		g.Red = append(g.Red, "4G（?net=4g）のタイトルで、届いていない後回しの物を待って止まった — タイトルで使う物は web.deferred から外す")
-	case b.Checks.Title4g == "skipped":
-		g.Notes = append(g.Notes, "★ 4G のタイトルの確かめを飛ばした書き出し（"+b.Checks.SkippedWhy+"）— web-check --browser で流す")
-	}
-	res.Sums = checkWebSums(dir, &b)
-	s := res.Sums
-	if s.NoSums {
-		g.Red = append(g.Red, "sums.json が無い（bin/fge export-web の書き出しでない・古い書き出し）— 書き出し直す")
-	}
-	if s.VersionBad {
-		g.Red = append(g.Red, "version.txt が sums.json と合わない — 書き出した後に束を替えた。書き出し直す")
-	}
-	if n := len(s.Mismatch); n > 0 {
-		g.Red = append(g.Red, fmt.Sprintf("書き出した後に中身が替わったファイル %d 本（%s）— 書き出し直す（Service Worker もキャッシュしない）", n, headList(s.Mismatch, 3)))
-	}
-	if n := len(s.MissingUsed); n > 0 {
-		g.Red = append(g.Red, fmt.Sprintf("頁が取るのに無いファイル %d 本（%s）", n, headList(s.MissingUsed, 3)))
-	}
-	if n := len(s.MissingSpare); n > 0 {
-		g.Notes = append(g.Notes, fmt.Sprintf("頁が取らない控え %d 本が無い（%s・消しても動く）", n, headList(s.MissingSpare, 2)))
-	}
-	finder := newWebLeakFinder(os.Getenv("HOME"), os.Getenv("USERPROFILE"))
-	for _, name := range []string{"classes.wasm", webWasmNamesFile} {
-		if data, err := os.ReadFile(filepath.Join(dir, name)); err == nil {
-			res.Leaks += len(finder.find(data))
-		}
-	}
-	if res.Leaks > 0 {
-		g.Red = append(g.Red, fmt.Sprintf("作業フォルダかホームのパスの形が wasm に %d 件 — bin/fge export-web で書き出し直す", res.Leaks))
-	}
-	res.Gate = g
-	return res, nil
-}
-
-func headList(list []string, n int) string {
-	if len(list) <= n {
-		return strings.Join(list, "・")
-	}
-	return strings.Join(list[:n], "・") + fmt.Sprintf(" ほか %d 本", len(list)-n)
-}
-
-// writeWebCheck は web-check の結果を書く（緑なら 1 行と ★）。
-func writeWebCheck(w io.Writer, r webCheckResult) {
-	g := r.Gate
-	verdict := "通す"
-	if !g.green() {
-		verdict = "止める"
-	}
-	fmt.Fprintf(w, "web-check: %s — %s・パス %d 件・食い違い %d 件（%s）\n", r.Dir, g.line(), r.Leaks,
-		len(r.Sums.Mismatch)+len(r.Sums.MissingUsed), verdict)
-	if g.BudgetDefault {
-		fmt.Fprintf(w, "  予算は bundle.json に無いので既定の %.0f 秒\n", webStartupTargetSeconds)
-	}
-	for _, red := range g.Red {
-		fmt.Fprintf(w, "  止めた: %s\n", red)
-	}
-	for _, n := range g.Notes {
-		fmt.Fprintf(w, "  %s\n", n)
-	}
-	if !g.green() && g.Playable > g.Budget.Seconds {
-		writeWebGateAdvice(w, g.Advice, "bin/fge export-web <ゲーム> の終わりの「後回しの候補」を見る")
-	}
-}
-
-// writeWebGateAdvice は次に打つ手を 3 つまでと、予算の書き方・--draft を書く。
-func writeWebGateAdvice(w io.Writer, advice []string, more string) {
-	fmt.Fprintln(w, "  次に打つ手（4G の秒が減る順）")
-	for i, a := range advice {
-		if i == 3 {
-			break
-		}
-		fmt.Fprintf(w, "    %d. %s\n", i+1, a)
-	}
-	if more != "" {
-		fmt.Fprintf(w, "    ・%s\n", more)
-	}
-	fmt.Fprintf(w, "  どうしても超えるなら project.json の web.startupBudget に { \"seconds\": <秒>, \"why\": \"<理由>\" }（%.0f 秒を超えると毎回 ★・why は公開される）\n", webStartupTargetSeconds)
 }

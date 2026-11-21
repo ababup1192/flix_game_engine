@@ -6,14 +6,14 @@ mod Scene3dRenderer {
     /// 画面のコマを描き終えたら endFrame を 1 回。
     /// prepare の引数 = (画面のコマの世代, 2D の絵の登録を名前で引く関数, 描き終えた後に戻す描き先, 積んだ順の場面)。
     /// endFrame の引数 = 世代。takeCounts = 前に呼んでからの 3D の数を返して 0 に戻す。
-    /// readsTexture(name, scenes) = 場面のどれかのビルボードが name の絵を貼るか（材質の Tex は数えない。Pass が自分の前のコマの写しを読むかを決める）。
+    /// readsTexture(isName, scenes) = 場面のどれかのビルボードが、名前が isName に当たる絵を貼るか（材質の Tex は数えない。Pass が自分の前のコマの写しを読むかを決める）。
     /// preload の引数 = (世代, 2D の絵の登録を名前で引く関数, 先に上げる物の宣言)。その場で上げる（前と同じ key なら何もしない）。コマの描き始めの前に呼ぶ。
     /// 置き場と世代を持つので、1 つの値は 1 つの RenderPaint にだけ渡す（Render3d.makeRenderer を RenderPaint ごとに呼ぶ）。
     pub type alias Renderer = {
         prepare = (Int64, String -> Option[RegisteredTexture] \ IO, Dest, List[Scene3d.RenderCmd]) -> Prepared \ IO,
         endFrame = Int64 -> Unit \ IO,
         takeCounts = Unit -> FrameDiagnostics.Scene3dCounts \ IO,
-        readsTexture = (String, List[Scene3d.RenderCmd]) -> Bool,
+        readsTexture = (String -> Bool, List[Scene3d.RenderCmd]) -> Bool,
         preload = (Int64, String -> Option[RegisteredTexture] \ IO, Scene3d.PreloadCmd) -> Unit \ IO
     }
 

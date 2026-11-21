@@ -65,7 +65,11 @@ pub mod WebLayer {
         let config = loadBootConfigOrBug(rootDir);
         let makeRenderer = (gl, cfg) -> Render3d.makeRenderer(gl, cfg, Render3d.DrawMode.Instanced);
         let g = () -> recordSceneTextures(() -> recordDrawnTextures(f));
-        if (Browser.backendRequest() == "webgpu") withWebGpuOrGl(makeRenderer, Render3d.WebGpuRenderer.makeScenes, config, g)
+        let makeScenes = (gpu, pasteLayout, imageLayout) ->
+            Render3d.WebGpuRenderer.makeScenesWithPlatformImages(
+                { has = (key, width, height) -> BrowserWebGpu.hasPlatformImage(key, width, height),
+                  copy = (key, texture) -> BrowserWebGpu.copyPlatformImage(gpu, key, texture) }, gpu, pasteLayout, imageLayout);
+        if (Browser.backendRequest() == "webgpu") withWebGpuOrGl(makeRenderer, makeScenes, config, g)
         else withWeb(makeRenderer, config, g)
 
     /// 頁が ?usedAssets=1 か ?net=4g で開かれていれば、2D で描いた絵の名前（スプライト・タイルマップ・面が読む絵）を初めて出たコマで

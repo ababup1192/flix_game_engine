@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -75,15 +74,13 @@ func checkWebLoadsRecording(out string, frames, titleFrames int, wait time.Durat
 	return "", used, nil
 }
 
-// serveWebCheck は書き出し先 out を 127.0.0.1 の使い捨てのサーバーで配る。
+// serveWebCheck は書き出し先 out を確かめのために配る。
 func serveWebCheck(out string) (net.Listener, func(), error) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, closeServer, err := serveLocalDir(out)
 	if err != nil {
 		return nil, nil, fmt.Errorf("確かめ用のサーバーを開けない: %v", err)
 	}
-	srv := &http.Server{Handler: http.FileServer(http.Dir(out)), ReadHeaderTimeout: 10 * time.Second}
-	go srv.Serve(ln)
-	return ln, func() { srv.Close() }, nil
+	return ln, closeServer, nil
 }
 
 // webMissingWait は頁の window.fgeMissingWaits の 1 本（engine_web の fge-web.js が engine の待ちごとに積む）。
@@ -161,4 +158,138 @@ func writeWebMissingTitle(w io.Writer, r *webMissingReport, frames int) {
 	}
 	fmt.Fprintf(w, "  4G（?net=4g）のタイトルの %d コマ: 止まった待ち %d 回・押した時の待ち %d 回・描かずに / 鳴らさずに進んだ名前 %d 個（うち待つはずの物 %d 個）\n",
 		frames, stopped, pressed, len(r.Skips), gaveUp)
+}
+
+// webTitle4gOf は ?net=4g のタイトルの確かめの結果を bundle.json の checks の形にする。
+func webTitle4gOf(r *webMissingReport, err error) (string, string) {
+	switch {
+	case err != nil:
+		return "skipped", "?net=4g の頁が開けなかった"
+	case r == nil:
+		return "skipped", "頁が待ちの記録を持たない（古い fge-web.js）"
+	}
+	for _, wt := range r.Waits {
+		if wt.Kind == "stopped" {
+			return "stopped", ""
+		}
+	}
+	for _, sk := range r.Skips {
+		if sk.Why == "gaveUp" {
+			return "stopped", ""
+		}
+	}
+	return "ok", ""
+}
+
+// webTitle4gStoppedRed は 4G のタイトルで止まった束の門の赤の 1 行（export-web と web-check で同じ字）。
+const webTitle4gStoppedRed = "4G（?net=4g）のタイトルで、届いていない後回しの物を待って止まった — タイトルで使う物は web.deferred から外す"
+
+// webChecksRed は束の書き出しの確かめの結果（bundle.json の checks）から門を赤にする行（export-web と web-check で同じ）。
+func webChecksRed(b *webBundle) []string {
+	if b.Checks != nil && b.Checks.Title4g == "stopped" {
+		return []string{webTitle4gStoppedRed}
+	}
+	return nil
+}
+
+// webBrowserCheckLog は確かめの途中の様子の出し方。nil の欄は黙る。
+type webBrowserCheckLog struct {
+	Step        func(format string, a ...any)
+	TitleFailed func(err error)
+	TapFailed   func(err error)
+	TapMeasured func(m webTapMeasure)
+}
+
+// webBrowserCheckResult は ?net=4g のタイトルの確かめと押した後の測りの結果。Missing は頁を開けなかった時 nil。
+type webBrowserCheckResult struct {
+	Checks  webBundleChecks
+	Missing *webMissingReport
+	Tap     *webTapMeasure
+}
+
+// runWebBrowserChecks は書き出し先 dir の束 b を、?net=4g のタイトルの確かめ（後回しがある時）と押した後の測り（測る後回しがある時）に掛ける。
+// Chrome がある前提（呼び手が先に確かめる）。startKeys は押した後の測りでタイトルで押すキー。
+func runWebBrowserChecks(dir string, b *webBundle, startKeys []string, log webBrowserCheckLog) webBrowserCheckResult {
+	r := webBrowserCheckResult{Checks: webBundleChecks{Title4g: "ok"}}
+	if len(b.Deferred) > 0 {
+		if log.Step != nil {
+			log.Step("⑨' 4G（?net=4g）のタイトルの %d コマで engine が待つか", webTitleFrames)
+		}
+		missing, err := checkWebMissingTitle(dir, webTitleFrames, webLoadCheckWait())
+		r.Checks.Title4g, r.Checks.SkippedWhy = webTitle4gOf(missing, err)
+		if err != nil {
+			if log.TitleFailed != nil {
+				log.TitleFailed(err)
+			}
+			missing = nil
+		}
+		r.Missing = missing
+	}
+	if !webTapNeedsMeasure(b) {
+		return r
+	}
+	if log.Step != nil {
+		log.Step("⑨'' 4G（?net=4g）で開いてすぐ押し、押してから最初の場面が動くまでを測る（タイトルで %s）", strings.Join(startKeys, "・"))
+	}
+	m, why, err := measureWebTapWait(dir, startKeys, webLastWaitingArrival(b), webLoadCheckWait())
+	switch {
+	case err != nil:
+		// WhyNot: 測れない束で止めない — 古い fge-web.js の書き出しは待ちの記録を持たず、測れないのは束の誤りではない（見積もりと ★）。
+		r.Checks.TapSkippedWhy = "測れなかった: " + err.Error()
+		if log.TapFailed != nil {
+			log.TapFailed(err)
+		}
+	case why != "":
+		r.Checks.TapSkippedWhy = why
+	default:
+		r.Tap = &m
+		r.Checks.TapWaitSeconds, r.Checks.TapNoRecord = m.tapSeconds(), m.NoRecord
+		if log.TapMeasured != nil {
+			log.TapMeasured(m)
+		}
+	}
+	return r
+}
+
+// exportBrowserChecks は書き出しの最後のブラウザの確かめの結果と、タイトルの間に使った素材の記録（取れなければ nil）。
+type exportBrowserChecks struct {
+	webBrowserCheckResult
+	Used *webUsedAssets
+}
+
+// runExportBrowserChecks は書き出した頁をヘッドレスの Chrome で開いて wasm を読めるかを見て、4G のタイトルの確かめと押した後の測りに掛ける。
+func runExportBrowserChecks(o exportWebOptions, c exportConfig, b *webBundle) (exportBrowserChecks, *exportFailure) {
+	p := c.Paths
+	r := exportBrowserChecks{webBrowserCheckResult: webBrowserCheckResult{Checks: webBundleChecks{Title4g: "ok"}}}
+	if o.NoBrowserCheck {
+		ewLogf("⑨ ブラウザで wasm を読めるか: --no-browser-check で飛ばした")
+		r.Checks.Title4g, r.Checks.SkippedWhy = "skipped", "--no-browser-check"
+	} else {
+		ewLogf("⑨ ブラウザで wasm を読めるか（ヘッドレスの Chrome で ?capture=%d・タイトルの %d コマに使う素材を記録）", webLoadCheckFrames, webTitleFrames)
+		skipped, used, err := checkWebLoadsRecording(p.Out, webLoadCheckFrames, webTitleFrames, webLoadCheckWait())
+		r.Used = used
+		if err != nil {
+			return r, exportFailf(1, "fge export-web: 書き出した頁をブラウザで開くと止まる: %v\n"+
+				"  書き出し先 %s は残してある（配ると真っ白になる）。\n"+
+				"  次: CompileError なら TeaVM は通るのにブラウザが wasm を読めない形（JSO の物を Object を受ける所へ渡す等。JSO は fge.web の Java の類に包んで渡す）。"+
+				"それ以外は頁を開いて開発者の道具の console を読む\n", err, p.Out)
+		}
+		if skipped != "" {
+			ewLogf("知らせ: %s", skipped)
+			r.Checks.Title4g, r.Checks.SkippedWhy = "skipped", "Chrome が見つからない"
+		} else {
+			r.webBrowserCheckResult = runWebBrowserChecks(p.Out, b, c.Budget.startKeys(), webBrowserCheckLog{
+				Step:        ewLogf,
+				TitleFailed: func(err error) { ewLogf("知らせ: %v", err) },
+				TapFailed:   func(err error) { ewLogf("知らせ: 押した後を測れなかった: %v", err) },
+			})
+		}
+	}
+	if r.Tap == nil && r.Checks.TapSkippedWhy == "" && webTapNeedsMeasure(b) {
+		r.Checks.TapSkippedWhy = "Chrome が見つからない"
+		if o.NoBrowserCheck {
+			r.Checks.TapSkippedWhy = "--no-browser-check"
+		}
+	}
+	return r, nil
 }

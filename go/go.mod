@@ -4,6 +4,7 @@ go 1.26.5
 
 require (
 	github.com/ababup1192/flixlint/go v0.0.0-20261118130033-a9f938ce3ce1
+	github.com/andybalholm/brotli v1.3.0
 	go.starlark.net v0.0.0-20261016124120-4811d7e34ea3
 )
 

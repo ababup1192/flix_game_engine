@@ -12,6 +12,13 @@ mod App.DevTools.TestBrowser {
         Assert.assertEq(expected = Some(("talk", Map#{"talk" => "Lair", "line" => "46"})), start)
 
     @Test
+    def testLoaderKeysAreLeftOut(): Unit \ Assert =
+        let start = App.DevTools.startOfQuery(
+            ("backend", "webgl2") :: ("talk", "Lair") :: ("net", "4g") :: ("deferred", "0") ::
+            ("sw", "0") :: ("usedAssets", "1") :: ("webgpuFail", "prepare") :: Nil);
+        Assert.assertEq(expected = Some(("talk", Map#{"talk" => "Lair"})), start)
+
+    @Test
     def testEmptyQueryHasNoStart(): Unit \ Assert =
         Assert.assertEq(expected = None, App.DevTools.startOfQuery(Nil))
 

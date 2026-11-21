@@ -118,6 +118,13 @@ pub mod Render3d.WebGpuRenderer {
     pub def makeScenes(gpu: WebGpu, pasteLayout: BindGroupLayout, imageLayout: BindGroupLayout): Scenes \ IO =
         scenesOf(create(gpu, pasteLayout, imageLayout))
 
+    /// makeScenes の、機種の側に持つ絵（Texture3d.Source.PlatformImage）を copy で GPU へ写す版（ブラウザの頁）。
+    pub def makeScenesWithPlatformImages(images: WebGpuMaterials.PlatformImages, gpu: WebGpu, pasteLayout: BindGroupLayout, imageLayout: BindGroupLayout): Scenes \ IO =
+        let r = create(gpu, pasteLayout, imageLayout);
+        let RendererData.RendererData(s) = r;
+        WebGpuMaterials.setPlatformImages(images, s#materials);
+        scenesOf(r)
+
     /// r を Scenes に包む。
     pub def scenesOf(r: Renderer): Scenes =
         { prepare = (host, dest, cmds) -> prepare(r, host, dest, cmds), preload = (host, cmd) -> preload(r, host, cmd),
@@ -327,9 +334,9 @@ pub mod Render3d.WebGpuRenderer {
         s#atlasLayout.release();
         s#sceneLayout.release()
 
-    /// 場面のどれかのビルボードが name の絵を貼るか（GL の Render3d.readsTexture と同じ。2D の描き手が Pass の history の要否を決める）。
+    /// 場面のどれかのビルボードが、名前が isName に当たる絵を貼るか（GL の Render3d.readsTexture と同じ。2D の描き手が Pass の history の要否を決める）。
     // WhyNot: WebGpuPaint から Render3d.readsTexture を直に呼ばない — 親の Render3d は pub でない mod で、Render3d の子孫でない WebGpuPaint からは届かない（この mod の頭）。
-    pub def readsTexture(name: String, scenes: List[Scene3d.RenderCmd]): Bool = Render3d.readsTexture(name, scenes)
+    pub def readsTexture(isName: String -> Bool, scenes: List[Scene3d.RenderCmd]): Bool = Render3d.readsTexture(isName, scenes)
 
     /// 2D の描き手が encoder を submit した後に呼ぶ（1 体ごとの値の buffer と場面の値を頭から書き直せる）。
     pub def afterSubmit(r: Renderer): Unit \ IO =

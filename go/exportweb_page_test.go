@@ -1,14 +1,18 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/andybalholm/brotli"
 )
 
 const stampTestHTML = "<head>\n<title>t</title>\n</head>\n<body>\n" + `<script src="wasm-gc-runtime.js"></script>` + "\n" + `<script src="fge-web.js"></script>` + "\n</body>"
@@ -245,5 +249,24 @@ func TestStampedScriptsParse(t *testing.T) {
 			t.Fatal(err)
 		}
 		checkJsSyntax(t, p)
+	}
+}
+
+func TestBrotliBytesDecodeBackToInput(t *testing.T) {
+	data := bytes.Repeat([]byte("(module (func $main))"), 5000)
+	br, err := brotliBytes(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := io.ReadAll(brotli.NewReader(bytes.NewReader(br)))
+	if err != nil || !bytes.Equal(got, data) {
+		t.Errorf("詰めた物を戻すと元に戻るはず: err=%v len=%d", err, len(got))
+	}
+}
+
+func TestBrotliBytesShrinksRepeatedData(t *testing.T) {
+	data := bytes.Repeat([]byte("abcdefgh"), 10000)
+	if br, err := brotliBytes(data); err != nil || len(br) >= len(data)/10 {
+		t.Errorf("繰り返しの多い物は 1 割より小さくなるはず: err=%v %d", err, len(br))
 	}
 }

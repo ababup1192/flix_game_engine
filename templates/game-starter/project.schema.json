@@ -76,7 +76,7 @@
               "why":  { "type": "text", "label": "劣化なしに留める理由（字のふちが滲む・シェーダーが値として読む など）", "order": 2, "required": true }
             } } }, "label": "写真寄りでも劣化なしの WebP に留める絵（lossyImages に当たる絵には効かない）", "order": 6 },
             "fontAtlasScale":    { "type": "float", "label": "字のアトラス（距離場）の細かさの倍率。0.5 で量が約半分・見た目は変わらない。1 で縮めない", "order": 7, "min": 0.5, "max": 1.0, "default": 0.5 },
-            "wasmBrotli":        { "type": "bool", "label": "wasm を brotli にして一緒に配る解き手で戻す（gzip より 4 割ほど小さい。brotli の道具が要る）", "order": 8, "default": true }
+            "wasmBrotli":        { "type": "bool", "label": "wasm を brotli にして一緒に配る解き手で戻す（gzip より 4 割ほど小さい。詰めるのは bin/fge）", "order": 8, "default": true }
           } },
           "label": "書き出しの時だけ素材を小さくする（書かなければ音は Opus・写真寄りの絵は劣化ありの WebP・ほかの絵は劣化なしの WebP）",
           "order": 1

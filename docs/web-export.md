@@ -13,6 +13,29 @@
 - 書き出しの最後にヘッドレスの Chrome で頁を開き、wasm の compile と最初の数コマで止まれば exit 1（TeaVM は通るのに真っ白になる形を止める）。
   JSO を `Object` を受ける所へ渡さず Java の類に包む。Chrome が無ければ知らせて飛ばす。飛ばすなら `--no-browser-check`（門の中身は [web-capture.md](web-capture.md) の「書き出しの門」）
 
+### 旗と環境変数
+
+全部の一覧は `bin/fge export-web --help`。この頁のほかの節で扱わない物:
+
+| 旗 | 何をする |
+|---|---|
+| `--out <dir>` | 書き出し先（既定 `<ゲーム>/build/web`） |
+| `--id <名前>` | bundle.json の `id`（既定はゲームのフォルダの名前）。Service Worker のキャッシュの名前にも入る |
+| `--work <dir>` | 作業フォルダ（既定 `<ゲーム>/build/web-export`）。中の `project/` にゲームを写して組む。`--reuse` の指紋（`export.inputs`）と `title-assets.json` もここに残る |
+| `--keep-work` | 終わった後も作業フォルダの `project/`（と途中の jar・`wasm/`）を消さずに残す。TeaVM や型検査で止まった所を作業フォルダの中で読み直す時に付ける |
+| `--reuse` | 書き出しの中身を決める物（写すゲームの全部・engine の束と jar・この `bin/fge`・変換の道具・`--id`・`--draft`・`--no-browser-check`）の指紋が前と同じで、書き出し先も前のままなら組まずに使い回す。使い回す時も門（web-check と同じ計算）は掛け直す。`--check`・`--apply-deferred` の時は使い回さない（`make tape` の `TAPE_WEB_REUSE=1` はこれ） |
+| `--engine <dir>` | engine の根（既定は `bin/fge` の置き場から引く） |
+| `--font-atlas-dir <dir>` | `<dir>/<フォントの名前>.fontatlas` を使う（無ければ font-bake で作る） |
+
+| 環境変数 | 何をする |
+|---|---|
+| `FLIX_GE_TEAVM_XMX` | TeaVM を走らせる JVM のメモリの上限（`-Xmx` の値・既定 `6g`）。メモリの小さい機械で TeaVM がメモリ不足で止まった時に替える（止まった時の「次:」の行に今の値が出る） |
+| `FLIX_GE_TEAVM_DIR` | TeaVM の jar のフォルダ。中の `*.jar` を全部使い、Maven Central へ取りに行かない（照合もしないので、中身は自分で確かめる）。無い時は利用者のキャッシュ（macOS は `~/Library/Caches/flix_game_engine/teavm/<版>/`）へ取って SHA-256 を照合する。ネットに出られない機械では、照合済みのキャッシュのフォルダを渡す |
+| `FGE_CHROME`・`FLIX_GE_WEB_CHECK_WAIT` | 最後の確かめに使う Chrome・頁を待つ秒（既定 90）。[web-capture.md](web-capture.md) |
+| `JAVA`・`FLIX_JAR` | 使う java と flix.jar |
+
+終わりの番号は 0 書き出せた・1 組み立てか TeaVM か素材かブラウザでの読み込みか門で止まった・2 呼び方の誤りか下ごしらえ（engine_full_web の束など）が無い。
+
 ### 作業フォルダとホームのパスを wasm に残さない
 
 Flix はゲームの .flix の位置（`bug!`・match の網羅漏れ・`???` で出す位置）を、書き出しの作業フォルダの絶対パスのまま定数に残す。
@@ -98,9 +121,9 @@ design の大きさの画面に描くつもりの絵（ぼかした背景だけ�
 - 強さは project.json の `web.compress`: `audioBitrateKbps`・`uncompressedAudio: [glob]`・`lossyImages: [{glob, quality}]`・`losslessImages: [{glob, why}]`・`fontAtlasScale`・`wasmBrotli`・`audio` / `images` を false で止める
 - 道具は ffmpeg（libopus）と cwebp・dwebp。無ければ圧縮せずに書き出して大きさの表に 1 行
 - アトラスの距離場は既定で辺を 1/2 に縮める（`fontAtlasScale: 0.5`・量は約半分・スマホの画面で見分けがつかない）。1 で縮めない。0.5 より下は込んだ漢字の縁が欠けるので受け付けない
-- wasm は brotli（最も強い 11）にした `classes.wasm.br` と解き手 `brotli-decode.js`（google/brotli・MIT）を一緒に配り、頁が自分で戻す（gzip より 4 割ほど小さい・置き場が gzip しか配らなくても効く）。解けない時は `classes.wasm` を取る。道具は brotli。止めるのは `wasmBrotli: false`
-  - brotli は PATH → engine の devbox → Homebrew と nix の profile の bin → nix の store（`/nix/store/*-brotli-<版>/bin/brotli` の版の新しい物）の順に探す。Finder から開いた Studio のように PATH が細くても、手で PATH を足さずに見つかる。
-  - どこにも無い時は gzip のまま配り、`★ wasm を brotli にできず …4G（1.6 Mbps）で起動が約 N 秒遅くなる` を書き出しの途中と終わりの両方に出す（止めない）。
+- wasm は brotli（最も強い 11）にした `classes.wasm.br` と解き手 `brotli-decode.js`（google/brotli・MIT）を一緒に配り、頁が自分で戻す（gzip より 4 割ほど小さい・置き場が gzip しか配らなくても効く）。解けない時は `classes.wasm` を取る。止めるのは `wasmBrotli: false`
+  - 詰めるのは bin/fge 自身（pure Go の brotli・ウィンドウは brotli の CLI の既定と同じ大きさ）。brotli の道具は要らず、Finder から開いた Studio のように PATH が細い機械でも同じ `classes.wasm.br` ができる。
+  - `wasmBrotli: false` の時は gzip の大きさで秒に入り、門の次に打つ手に「wasmBrotli: false を外すと wasm が約 N 秒減る」が出る。
 - wasm の名前の区画（関数名・素の量の 2〜3 割）は `classes.names` へ抜いて配る。頁は止まった時だけそれを取り、stack の `wasm-function[番号]` に名前を付けて console へ出す
 
 ### 写真寄りの絵は既定で lossy（`losslessImages`）
@@ -132,7 +155,7 @@ design の大きさの画面に描くつもりの絵（ぼかした背景だけ�
 - `losslessImages` に当たった写真寄りの絵は枚数・量・4G の秒を、シェーダーが読む絵で外した物は名前を出す
 - `lossyImages` の glob が消しても配る絵の変わらない物（画質 90 で写真寄りの png だけに当たる・当たる絵が全部前の glob に取られている）なら「消しても配る絵が変わらない」と知らせる（消さなくてもよい）
 - 1 つの `losslessImages` の glob が png の 6 割以上に当たる時（png が 5 枚以上）は知らせる。全部を lossless にして既定を外す形になっている
-- 1 枚ずつの色数・不透明の割合・大きさは書き出しのログ（`[export-web]   既定で lossy …`）。書き出しの report のファイルはまだ無い（起動の秒の予算の門と一緒に入る）
+- 1 枚ずつの色数・不透明の割合・大きさは書き出しのログ（`[export-web]   既定で lossy …`）。別の report のファイルは書かない（門と確かめの結果は bundle.json の `checks`）
 - 前の書き出し（同じ `--out` の `bundle.json`）で lossless だった絵（WebP が VP8L の物と、png のまま配った物）を lossy に替えた時だけ、`★ 前の書き出しでは lossless だった絵 N 枚を既定で lossy にした` を 1 回出す。前の書き出しが無い `--out` では出ない
 
 **見比べ**: `bin/fge web-image-diff <ゲーム> [--out <png>] [--limit 12] [--explicit]` が、同じ判定で詰めた絵の元・lossy・差（8 倍に強めた、α を掛けた色の差）を 1 枚ずつ横に並べた PNG を書く（色数の少ない順・真ん中の 320 画素四方を 1:1 で切り出す）。`--explicit` は `lossyImages` で明示した絵も並べる。画素の差の門（reference の SHA256SUMS・gl-capture）はデスクトップの描き出しを見ていて、ブラウザの書き出しの絵を見ない。判定の誤りは人がこれで見るまで気づかない。
@@ -192,7 +215,7 @@ design の大きさの画面に描くつもりの絵（ぼかした背景だけ�
 - 後回しの絵を `deferredPolicy` で `onMissing: "placeholder"` にする行は `why` が要る（届くまで描かずに進み、押した後に黒いコマが出るため）
 - ⑨'（`?net=4g` のタイトルの 120 コマ）で、タイトルが届いていない後回しの物を待って止まったら、それも止める（タイトルで使う物は後回しにしない）
 
-止まった時は、門の理由と「次に打つ手」（4G の秒が減る順に 3 つまで: 押した後の待ち・後回しの候補・brotli）が出て、**書き出し先は消える**（手で写す道へ赤の書き出しを残さない）。
+止まった時は、門の理由と「次に打つ手」（4G の秒が減る順に 3 つまで: 押した後の待ち・後回しの候補・`wasmBrotli: false` の時はそれを外す）が出て、**書き出し先は消える**（手で写す道へ赤の書き出しを残さない）。
 
 | 旗 | 赤の時 |
 |---|---|
@@ -289,7 +312,7 @@ bin/fge web-check <書き出したフォルダ>
 3. gh-pages の worktree: その枝の worktree があれば使い、無ければ `<ゲーム>/build/gh-pages` に作る（枝が無ければ何も無い枝として作る）。
    未コミットの変更がある worktree には置かない。`.nojekyll` を置く（Jekyll は `_` で始まるファイルを配らない）
 4. コミット: `pages: <DEST> に <ゲーム> の書き出しを置く（ゲーム <commit>・engine <版>）`。中身が前と同じならコミットしない
-5. 開けるかの確かめ: 置いた頁を `<DEST>/index.html?capture=3` の道でヘッドレスの Chrome に開かせる（サブフォルダの道で素材を取れない形を止める）。飛ばすなら `NO_BROWSER_CHECK=1`
+5. 開けるかの確かめ: 置いた頁を `<DEST>/index.html?capture=3&deferred=all` の道でヘッドレスの Chrome に開かせる（サブフォルダの道で素材を取れない形を止める）。飛ばすなら `NO_BROWSER_CHECK=1`
 6. 最後に出る物: 手元で配るコマンド（`bin/py3 -m http.server 8000 --bind 0.0.0.0 --directory <worktree>`）と PC・スマホで開く URL・`git -C <worktree> push origin gh-pages`・公開後の URL
 
 - 枝や worktree を替えるのは `BRANCH=`・`PAGES_WT=`。gh-pages の根の `index.html`（頁の一覧）は手で直す
@@ -305,7 +328,7 @@ bin/fge web-check <書き出したフォルダ>
 頁の物は全部 `?v=<版>` の付いた URL で取る。書き出しは 1 本ずつのファイルの sha256 の表 `sums.json` を置き、版はその `sums.json` の sha256 の頭 12 字（`version.txt` にも書く）。`index.html` は置き場のキャッシュで古い物が出ることがあるので、
 頁の起動役は `version.txt` をキャッシュを使わずに取り、その版で `fge-web.js` などを読む（取れない・3 秒で返らない時は書き出した時の版）。
 
-`index.html` の head の起動役は、起動の最初に要る物（`bundle.json`・`classes.wasm.br` と `brotli-decode.js`（brotli が無ければ `classes.wasm`）・2 本の js）の
+`index.html` の head の起動役は、起動の最初に要る物（`bundle.json`・`classes.wasm.br` と `brotli-decode.js`（`wasmBrotli: false` なら `classes.wasm`）・2 本の js）の
 `<link rel=preload>` をその版で出す。いつ出すか:
 
 | 頁 | preload を出す時 |
@@ -370,7 +393,8 @@ GitHub Pages は全部のファイルに `max-age=600` を付けるので、Serv
 | `?sw=0` | Service Worker の登録を外し、そのキャッシュを消す（「起動の始まりと 2 回目からの起動」） |
 | `?size=small&input=touch`・`?orientation=portrait` | スマホの区分・指の入力・縦の design で開く（上の節） |
 
-`WebLayer.devTools()` で起こすゲームは、ここに無い鍵をクエリの最初に置くと Start の名前として読む（知らない名前なら先頭の始まりで開いて console.error に 1 行）。
+`WebLayer.devTools()` で起こすゲームは、`App.DevTools.pageQueryKeys`（`input` `size` `orientation` `glcheck` `loadtime` `capture` `fps`）に無い鍵をクエリの最初に置くと Start の名前として読む（知らない名前なら先頭の始まりで開いて console.error に 1 行）。
+表の `backend`・`net`・`deferred`・`sw`（と書き出しの確かめが使う `usedAssets`）は今はその一覧に無いので、Start の名前と一緒に使う時は Start の鍵を最初に置く（それでも引数には混ざる）。
 ゲームの側の旗を足す時は、Start の名前と重ねない。
 
 ### ゲームごとの旗（engine の物ではない）

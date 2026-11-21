@@ -134,7 +134,7 @@ func TestWebDeferredEntriesUseServedSizeAndNames(t *testing.T) {
 	b.Transcoded = map[string]string{"assets/bgm/sea.wav": "assets/bgm/sea.wav.opus", "assets/bg/sea.png": "assets/bg/sea.png.webp"}
 	writeServed(t, out, "assets/bgm/sea.wav.opus", 300)
 	writeServed(t, out, "assets/bg/sea.png.webp", 200)
-	got := webDeferredEntries(out, &b, []string{"assets/bgm/sea.wav", "assets/bg/sea.png"}, map[string][]string{"assets/bg/sea.png": {"bg_sea"}})
+	got := webDeferredEntries(newWebSizeTable(out), &b, []string{"assets/bgm/sea.wav", "assets/bg/sea.png"}, map[string][]string{"assets/bg/sea.png": {"bg_sea"}})
 	want := []webDeferredEntry{{Path: "assets/bgm/sea.wav", Bytes: 300, Names: []string{"bgm_sea"}}, {Path: "assets/bg/sea.png", Bytes: 200, Names: []string{"bg_sea"}}}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("配る大きさと名前は %+v のはず: %+v", want, got)
@@ -150,7 +150,7 @@ func TestWebStartupSizeSplitsStartAndDeferred(t *testing.T) {
 	writeServed(t, out, "assets/bg/sea.png", 40)
 	writeServed(t, out, "assets/bgm/sea.wav", 80)
 	b.Deferred = []webDeferredEntry{{Path: "assets/bgm/sea.wav", Bytes: 80}}
-	got := webStartupSizeOf(out, &b)
+	got := webStartupSizeOf(newWebSizeTable(out), &b)
 	want := webStartupSize{StartCount: 3, StartBytes: 70, DeferredCount: 1, DeferredBytes: 80}
 	if got != want {
 		t.Errorf("起動と後回しの数と大きさは %+v のはず: %+v", want, got)
@@ -180,7 +180,7 @@ func TestWebDeferredEntriesListEverySoundNameOfOnePath(t *testing.T) {
 	out := t.TempDir()
 	b := webBundle{Sounds: []webSound{{Name: "bgm_sea", Path: "assets/bgm/sea.wav", Looping: true}, {Name: "se_wave", Path: "assets/bgm/sea.wav"}}}
 	writeServed(t, out, "assets/bgm/sea.wav", 80)
-	got := webDeferredEntries(out, &b, []string{"assets/bgm/sea.wav"}, map[string][]string{})
+	got := webDeferredEntries(newWebSizeTable(out), &b, []string{"assets/bgm/sea.wav"}, map[string][]string{})
 	want := []webDeferredEntry{{Path: "assets/bgm/sea.wav", Bytes: 80, Names: []string{"bgm_sea", "se_wave"}}}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("同じ道の音は 1 本の後回しに全部の名前を持つはず %+v: %+v", want, got)
@@ -198,21 +198,21 @@ func startupFixture(t *testing.T) (string, webBundle) {
 
 func TestWebStartupEstimateCountsOnlyStartAssets(t *testing.T) {
 	out, b := startupFixture(t)
-	if got := webStartupEstimateOf(out, &b).Boot.AssetsWire; got != 200000 {
+	if got := webStartupEstimateOf(newWebSizeTable(out), &b).Boot.AssetsWire; got != 200000 {
 		t.Errorf("起動の素材は 200000 のはず: %d", got)
 	}
 }
 
 func TestWebStartupEstimateSecondsAddPreludeToBandwidthTime(t *testing.T) {
 	out, b := startupFixture(t)
-	if got := webStartupEstimateOf(out, &b).Seconds; got != webStartupPreludeSeconds+1.0 {
+	if got := webStartupEstimateOf(newWebSizeTable(out), &b).Seconds; got != webStartupPreludeSeconds+1.0 {
 		t.Errorf("200 KB は 1.6 Mbps で 1 秒・前置きを足して %.1f 秒のはず: %.3f", webStartupPreludeSeconds+1.0, got)
 	}
 }
 
 func TestWebStartupEstimateDeferredArrivesAfterStartup(t *testing.T) {
 	out, b := startupFixture(t)
-	s := webStartupEstimateOf(out, &b)
+	s := webStartupEstimateOf(newWebSizeTable(out), &b)
 	if got := s.Deferred[0].Seconds; math.Abs(got-(s.Seconds+2.0+webDeferredRoundTripSeconds)) > 1e-9 {
 		t.Errorf("後回しの 400 KB は起動の 2 秒と往復の分の後に届くはず: %.3f（起動 %.3f）", got, s.Seconds)
 	}
@@ -220,7 +220,7 @@ func TestWebStartupEstimateDeferredArrivesAfterStartup(t *testing.T) {
 
 func TestSetWebArrivalSecondsCountsFromDeferredStart(t *testing.T) {
 	out, b := startupFixture(t)
-	setWebArrivalSeconds(out, &b)
+	setWebArrivalSeconds(newWebSizeTable(out), &b)
 	if got := b.Deferred[0].ArrivalSeconds; got != 2.075 {
 		t.Errorf("arrivalSeconds は取り始めから 2 秒と往復の分のはず: %v", got)
 	}
@@ -240,21 +240,21 @@ func tapWaitFixture(t *testing.T, entries ...webDeferredEntry) (string, webBundl
 func TestTapWaitWithGroupUsesLastOfGroup(t *testing.T) {
 	out, b := tapWaitFixture(t, webDeferredEntry{Path: "assets/a.webp", Group: "start"}, webDeferredEntry{Path: "assets/b.webp", Group: "start"},
 		webDeferredEntry{Path: "assets/se.ogg"})
-	if got := webTapWaitOf(out, &b, []string{"start"}).Seconds; math.Abs(got-2*(1+webDeferredRoundTripSeconds)) > 1e-9 {
+	if got := webTapWaitOf(newWebSizeTable(out), &b, []string{"start"}).Seconds; math.Abs(got-2*(1+webDeferredRoundTripSeconds)) > 1e-9 {
 		t.Errorf("group の 2 本目が届く秒のはず: %v", got)
 	}
 }
 
 func TestTapWaitWithoutGroupStartsAtFirstWaitingImage(t *testing.T) {
 	out, b := tapWaitFixture(t, webDeferredEntry{Path: "assets/se.ogg"}, webDeferredEntry{Path: "assets/a.webp"})
-	if got := webTapWaitOf(out, &b, nil).FirstPath; got != "assets/a.webp" {
+	if got := webTapWaitOf(newWebSizeTable(out), &b, nil).FirstPath; got != "assets/a.webp" {
 		t.Errorf("鳴らさず進む音を飛ばし、最初の絵が待つ物のはず: %q", got)
 	}
 }
 
 func TestTapWaitSkipsPlaceholderImages(t *testing.T) {
 	out, b := tapWaitFixture(t, webDeferredEntry{Path: "assets/a.webp", OnMissing: "placeholder"})
-	if got := webTapWaitOf(out, &b, nil).Count; got != 0 {
+	if got := webTapWaitOf(newWebSizeTable(out), &b, nil).Count; got != 0 {
 		t.Errorf("placeholder の絵は待たないはず: %d 本", got)
 	}
 }
@@ -279,7 +279,7 @@ func TestWebStartupBytesUseBrotliWasmAndDecoder(t *testing.T) {
 		t.Fatal(err)
 	}
 	b.WasmBrotli = webWasmBrotliFile
-	got := webStartupBytesOf(out, &b)
+	got := webStartupBytesOf(newWebSizeTable(out), &b)
 	if got.Wasm != 3000 || got.WasmWire <= 3000 || got.WasmWire > 3100 {
 		t.Errorf("wasm は br の 3000 と、解き手の gzip を足した回線の量のはず: %+v", got)
 	}
@@ -521,7 +521,7 @@ func fontAfterGroupFixture(t *testing.T, raw string) (string, webBundle) {
 		t.Fatal(err)
 	}
 	pol := mustDeferredPolicy(t, `{"deferredPolicy": [{"match": "assets/*.webp", "group": "start"}]}`)
-	b.Deferred, _, err = applyWebDeferredPolicy(webDeferredEntries(out, &b, plan.Paths, nil), pol, &b)
+	b.Deferred, _, err = applyWebDeferredPolicy(webDeferredEntries(newWebSizeTable(out), &b, plan.Paths, nil), pol, &b)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -530,21 +530,21 @@ func fontAfterGroupFixture(t *testing.T, raw string) (string, webBundle) {
 
 func TestTapWaitShrinksWhenFontLineIsAfterTheGroup(t *testing.T) {
 	out, b := fontAfterGroupFixture(t, `{"deferred": ["assets/*.webp", "font:round"]}`)
-	if got := webTapWaitOf(out, &b, []string{"start"}).Seconds; math.Abs(got-(1+webDeferredRoundTripSeconds)) > 1e-9 {
+	if got := webTapWaitOf(newWebSizeTable(out), &b, []string{"start"}).Seconds; math.Abs(got-(1+webDeferredRoundTripSeconds)) > 1e-9 {
 		t.Errorf("フォントを group の後ろへ回せば group の絵 1 本の秒のはず: %v", got)
 	}
 }
 
 func TestTapWaitCountsHeadFontBeforeTheGroup(t *testing.T) {
 	out, b := fontAfterGroupFixture(t, `{"deferred": ["assets/*.webp"]}`)
-	if got := webTapWaitOf(out, &b, []string{"start"}).Seconds; got < 3+1 {
+	if got := webTapWaitOf(newWebSizeTable(out), &b, []string{"start"}).Seconds; got < 3+1 {
 		t.Errorf("頭のフォント（600 KB = 3 秒）の後に group の絵が届くはず: %v", got)
 	}
 }
 
 func TestArrivalSecondsFollowFontLineOrder(t *testing.T) {
 	out, b := fontAfterGroupFixture(t, `{"deferred": ["assets/*.webp", "font:round"]}`)
-	setWebArrivalSeconds(out, &b)
+	setWebArrivalSeconds(newWebSizeTable(out), &b)
 	if b.Deferred[1].Path != "font-atlas/round.fontatlas" || b.Deferred[1].ArrivalSeconds <= b.Deferred[0].ArrivalSeconds {
 		t.Errorf("arrivalSeconds は font: の行の位置で積むはず: %+v", b.Deferred)
 	}
