@@ -139,6 +139,7 @@ pub mod Rect {
             style = if (styled) Some(boxStyleOf(r)) else None,
             clip = None,
             blend = DrawCmd.BlendMode.Normal,
-            mask = Nil
+            mask = Nil,
+            squashY = 1.0
         })
 }

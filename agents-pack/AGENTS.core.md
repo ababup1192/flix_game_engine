@@ -26,6 +26,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 必ず手前に出す（確認の窓・ポーズ） | `ZStack.topLayer(層, 木)`・層は `SortingLayer` の enum |
 | 足元の y で重なり順を決める（y ソート・見下ろしで人が木の裏に回る） | `ZStack.zIndex(Depth.orderAt(足元のy), leaf(人))` |
 | 画面ごと動かす・縮める・薄める | `ZStack.mapItems(Render.scaledAllAround(..))` |
+| sprite-stacking（輪切りを回して重ねる）でカメラを上下に傾ける・回した絵を平行四辺形につぶす | `Render.squashedY(k, Render.turned(t, 絵))`（回した後で中心を軸に縦を k 倍・1.0 = そのまま。`Render.scaled` の縦で代わりにしない — 回す前に掛かるので長方形のまま） |
 | 閉じるボタンで「終了しますか？」・ゲームから終了 | `App.withCloseRequest` + `App.quitWhen` |
 | 設定の画面でウィンドウ ⇄ 全画面をその場で切り替える | `App.withFullscreen`（World から宣言・系で `setFullscreen` を呼ばない） |
 | パッドの Start でメニュー・ポーズを開く・パッドの機種（Steam か）で案内の絵を替える | Start は `Key.Menu`（`Enter` ではない）・Select は `Key.Backspace`・機種は `frame#padKind`（engine の `docs/gamepad.md`） |

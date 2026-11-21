@@ -74,7 +74,7 @@ mod V1Scenes {
             alpha = 1.0, scale = { x = spec#sx, y = spec#sx }, rotation = 0.0, centered = true,
             flipH = spec#fH, flipV = spec#fV,
             regionRect = Some({ position = spec#srcPos, size = spec#srcSize }),
-            zIndex = 1, blend = DrawCmd.BlendMode.Normal, maskPolys = Nil })
+            zIndex = 1, blend = DrawCmd.BlendMode.Normal, maskPolys = Nil, squashY = 1.0 })
 
     def full(): Vec2.Vec2 = { x = 16.0, y = 16.0 }
 
@@ -166,7 +166,7 @@ mod V1Scenes {
     def generatedSprite(name: String, sx: Float64): Render.Item =
         Render.Item.Sprite({ texture = name, tint = { r = 1.0, g = 1.0, b = 1.0 }, alpha = 1.0, scale = { x = sx, y = sx },
             rotation = 0.0, centered = false, flipH = false, flipV = false, regionRect = None,
-            zIndex = 3, blend = DrawCmd.BlendMode.Normal, maskPolys = Nil })
+            zIndex = 3, blend = DrawCmd.BlendMode.Normal, maskPolys = Nil, squashY = 1.0 })
 
     /// 同じコマで 2 回上げる（2 回目は大きさが同じなので書き替え）。半透明の画素も持つ。
     def generated(): Scene =
@@ -318,7 +318,7 @@ mod V1Scenes {
     def historyOf(name: String, x: Float64, y: Float64, alpha: Float64, z: Int32): Render.PlacedItem =
         at(x, y, Render.Item.Sprite({ texture = RenderTarget.historyName(name), tint = { r = 1.0, g = 1.0, b = 1.0 }, alpha = alpha,
             scale = { x = 1.0, y = 1.0 }, rotation = 0.0, centered = false, flipH = false, flipV = false, regionRect = None,
-            zIndex = z, blend = DrawCmd.BlendMode.Normal, maskPolys = Nil }))
+            zIndex = z, blend = DrawCmd.BlendMode.Normal, maskPolys = Nil, squashY = 1.0 }))
 
     /// Pass（か history）name の左上 160 × 90 を、本編の (x, y) を左上にして等倍で貼る（blitRegion の at は貼る先の中心）。
     def pasteQuarter(name: String, x: Float64, y: Float64, z: Int32): Render.PlacedItem =
@@ -542,7 +542,7 @@ mod V1Scenes {
 
     def maskedSprite(spec: { tint = Color, rotation = Float64, flipH = Bool, blend = DrawCmd.BlendMode, z = Int32, mask = List[List[Vec2.Vec2]] }): Render.Item =
         Render.Item.Sprite({ texture = "atlas", tint = spec#tint, alpha = 1.0, scale = { x = 4.0, y = 4.0 }, rotation = spec#rotation,
-            centered = false, flipH = spec#flipH, flipV = false, regionRect = None, zIndex = spec#z, blend = spec#blend, maskPolys = spec#mask })
+            centered = false, flipH = spec#flipH, flipV = false, regionRect = None, zIndex = spec#z, blend = spec#blend, maskPolys = spec#mask, squashY = 1.0 })
 
     def plainMask(tint: Color, z: Int32, mask: List[List[Vec2.Vec2]]): Render.Item =
         maskedSprite({ tint = tint, rotation = 0.0, flipH = false, blend = DrawCmd.BlendMode.Normal, z = z, mask = mask })

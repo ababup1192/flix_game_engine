@@ -8,7 +8,7 @@ mod TestHeadlessRenderSilhouette {
           texture = "", position = { x = 0.0, y = 0.0 }, scale = { x = 8.0, y = 8.0 },
           rotation = 0.0, color = { r = 1.0, g = 0.0, b = 0.0 }, alpha = 0.5,
           centered = false, uvOffset = { x = 0.0, y = 0.0 }, uvScale = { x = 1.0, y = 1.0 },
-          zIndex = z, style = None, clip = None, blend = DrawCmd.BlendMode.Add, mask = Nil })
+          zIndex = z, style = None, clip = None, blend = DrawCmd.BlendMode.Add, mask = Nil, squashY = 1.0 })
 
     /// z に置いた最小の多角形。grad（頂点色）はシルエット化で外れるべき情報。
     def polygonAt(z: Int32): GameEngine.PolygonRenderCmd =

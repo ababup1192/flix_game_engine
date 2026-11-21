@@ -100,8 +100,17 @@ pub mod SoftRaster.Internal.Blend {
                 case Some(st) => DrawCmd.borderWidthOf(st) / 2.0
                 case None     => 0.0
             };
-            let quad = turnedBounds(d#rotation, { position = topLeft, size = size });
+            let quad = squashedBounds(d#squashY, turnedBounds(d#rotation, { position = topLeft, size = size }));
             clampAabb(design, d#clip, Rect2.grow(borderPad, quad))
+        }
+
+    /// 回した後で縦につぶした四角を覆う矩形（中心はそのまま・縦の半径だけ |k| 倍）。
+    def squashedBounds(k: Float64, r: Rect2.Rect2): Rect2.Rect2 =
+        if (k == 1.0) r
+        else {
+            let cy = r#position#y + r#size#y / 2.0;
+            let h = Float64.abs(r#size#y * k);
+            { position = { x = r#position#x, y = cy - h / 2.0 }, size = { x = r#size#x, y = h } }
         }
 
     /// 傾けた四角を覆う矩形（中心はそのまま・半径だけ広がる）。傾けた物の外形を

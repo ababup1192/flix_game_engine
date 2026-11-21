@@ -347,8 +347,10 @@ pub mod Annotate {
                        case None       => Vec2.zero()
                    };
         let size = { x = base#x * Float64.abs(d#scale#x), y = base#y * Float64.abs(d#scale#y) };
-        let topLeft = if (d#centered) Vec2.sub(d#position, Vec2.div(size, 2.0)) else d#position;
-        let aabb = { position = topLeft, size = size };
+        let unsquashedTopLeft = if (d#centered) Vec2.sub(d#position, Vec2.div(size, 2.0)) else d#position;
+        let h = Float64.abs(size#y * d#squashY);
+        let topLeft = { x = unsquashedTopLeft#x, y = unsquashedTopLeft#y + (size#y - h) / 2.0 };
+        let aabb = { position = topLeft, size = { x = size#x, y = h } };
         // clip 矩形の外は描かれない — 外形も clip 矩形と交差させる(itemAabb の Clipped と同じ理由)。
         match d#clip {
             case None    => aabb

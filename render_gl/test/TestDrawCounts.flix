@@ -15,7 +15,7 @@ mod TestDrawCounts {
           texture = spec#texture, position = { x = 0.0, y = 0.0 }, scale = { x = 1.0, y = 1.0 },
           rotation = 0.0, color = { r = 1.0, g = 1.0, b = 1.0 }, alpha = 1.0,
           centered = false, uvOffset = { x = 0.0, y = 0.0 }, uvScale = { x = 1.0, y = 1.0 },
-          zIndex = spec#z, style = None, clip = None, blend = spec#blend, mask = spec#mask })
+          zIndex = spec#z, style = None, clip = None, blend = spec#blend, mask = spec#mask, squashY = 1.0 })
 
     def added(texture: String, z: Int32): DrawCmd.Drawable =
         spriteWith({ texture = texture, z = z, blend = DrawCmd.BlendMode.Add, mask = Nil })

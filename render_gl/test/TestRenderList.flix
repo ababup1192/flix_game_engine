@@ -21,7 +21,7 @@ mod RenderFrame.TestRenderList {
           texture = spec#texture, position = { x = spec#x, y = 2.0 }, scale = { x = 1.0, y = 1.0 },
           rotation = 0.0, color = { r = 1.0, g = 0.5, b = 0.25 }, alpha = 1.0,
           centered = false, uvOffset = { x = 0.0, y = 0.0 }, uvScale = { x = 1.0, y = 1.0 },
-          zIndex = 0, style = None, clip = spec#clip, blend = spec#blend, mask = Nil })
+          zIndex = 0, style = None, clip = spec#clip, blend = spec#blend, mask = Nil, squashY = 1.0 })
 
     /// 絵 texture（"" は絵の無い箱）を x に置いたスプライト。
     def sprite(texture: String, x: Float64): DrawCmd.Drawable =
@@ -376,4 +376,28 @@ mod RenderFrame.TestRenderList {
     @Test
     def testBelowOneBecomesOne(): Unit \ Assert =
         Assert.assertEq(expected = 1, drawSamplesOf(0, 1 :: 4 :: Nil))
+
+    // ── squashY（回した後の縦のつぶし） ──
+
+    def quarterTurn(): Float64 = 1.5707963267948966
+
+    /// 左上 (0, 2)・8×8 のクアッドを 1/4 回して縦を半分につぶした物。
+    def squashedQuarterTurn(): DrawCmd.Drawable =
+        DrawCmd.withSquashY(0.5, DrawCmd.withPositionAndRotation({ x = 0.0, y = 2.0 }, quarterTurn(), sprite("a", 0.0)))
+
+    /// 左上の角は、中心 (4, 6) のまわりで回すと (8, 2)・縦を中心から半分にすると (8, 4) へ行く。
+    @Test
+    def testSquashYMovesTurnedCornerHalfwayToCenter(): Unit \ {Assert, IO} =
+        let floats = writtenAlone(0.0, 8.0, squashedQuarterTurn(), true);
+        Assert.assertEq(expected = Some(8.0f32) :: Some(4.0f32) :: Nil,
+                        List.nth(4, floats) :: List.nth(5, floats) :: Nil)
+
+    /// 型抜きの頂点 (0, 0) は、つぶしたクアッドの左上の角と同じ点へ写る。
+    @Test
+    def testSquashYMovesMaskWithQuad(): Unit \ {Assert, IO} =
+        let floats = writtenAlone(0.0, 8.0, squashedQuarterTurn(), true);
+        let corner = RenderFrame.maskToScreen(quarterTurn(), 0.5, 0.0, 2.0, 8.0, 8.0, (({ x = 0.0, y = 0.0 }: Vec2.Vec2) :: Nil) :: Nil)
+            |> List.flatten |> List.map(v -> (RenderUtil.f32(v#x), RenderUtil.f32(v#y)));
+        Assert.assertEq(expected = List.nth(4, floats) |> Option.flatMap(x -> List.nth(5, floats) |> Option.map(y -> (x, y))) |> Option.toList,
+                        corner)
 }

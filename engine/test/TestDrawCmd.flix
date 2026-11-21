@@ -20,7 +20,8 @@ mod TestDrawCmd {
           style = Some(DrawCmd.withCornerRadius(11.0, DrawCmd.defaultStyle(baseColor()))),
           clip = Some({ position = { x = 12.0, y = 13.0 }, size = { x = 14.0, y = 15.0 } }),
           blend = DrawCmd.BlendMode.Add,
-          mask = (({ x = 16.0, y = 17.0 }: Vec2.Vec2) :: Nil) :: Nil }
+          mask = (({ x = 16.0, y = 17.0 }: Vec2.Vec2) :: Nil) :: Nil,
+          squashY = 1.0 }
 
     def base(): DrawCmd.Drawable = DrawCmd.make(baseSpec())
 
@@ -72,6 +73,18 @@ mod TestDrawCmd {
             DrawCmd.BlendMode.Add,
             (({ x = 16.0, y = 17.0 }: Vec2.Vec2) :: Nil) :: Nil);
         Assert.assertEq(expected = baseFlat(), flat(d))
+
+    // make(spec) は squashY を運ぶ（toSpec との往復でも落ちない）。
+    @Test
+    def testMakeCarriesSquashY(): Unit \ Assert =
+        let d = DrawCmd.make(DrawCmd.toSpec(DrawCmd.make({ squashY = 0.5 | baseSpec() })));
+        Assert.assertEq(expected = 0.5, DrawCmd.squashYOf(d))
+
+    // withSquashY は squashY だけ変わり、他の 14 欄は不変。
+    @Test
+    def testWithSquashYChangesOnlySquashY(): Unit \ Assert =
+        let d = DrawCmd.withSquashY(0.25, base());
+        Assert.assertEq(expected = (baseFlat(), 0.25), (flat(d), DrawCmd.squashYOf(d)))
 
     // withClip は clip だけ変わり、他の 13 欄は不変。
     @Test

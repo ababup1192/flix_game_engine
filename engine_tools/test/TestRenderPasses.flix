@@ -43,7 +43,7 @@ mod TestRenderPasses {
           texture = texture, position = { x = 0.0, y = 0.0 }, scale = { x = 1.0, y = 1.0 },
           rotation = 0.0, color = { r = 1.0, g = 1.0, b = 1.0 }, alpha = 1.0,
           centered = false, uvOffset = { x = 0.0, y = 0.0 }, uvScale = { x = 1.0, y = 1.0 },
-          zIndex = 0, style = None, clip = None, blend = DrawCmd.BlendMode.Normal, mask = Nil })
+          zIndex = 0, style = None, clip = None, blend = DrawCmd.BlendMode.Normal, mask = Nil, squashY = 1.0 })
 
     // clear Clear は GL の glClear と同じ — ターゲットの全画素がその色（不透明）になる。
     @Test
@@ -53,6 +53,16 @@ mod TestRenderPasses {
                 emptyPass(RenderTarget.LoadOp.Clear({ r = 1.0, g = 0.0, b = 0.0 })), None);
         Assert.assertEq(expected = (255, 255, 0, 0) :: (255, 255, 0, 0) :: Nil,
             channels(img.getRGB(0i32, 0i32)) :: channels(img.getRGB(3i32, 3i32)) :: Nil)
+
+    // 4×4 の赤い箱（左上 (0,0)）を squashY 0.5 でつぶすと、中心 y=2 のまわりで縦が半分になり
+    // y=1〜3 だけ塗られる — 一番上の行は背景の黒のまま・y=1 の行は赤。
+    @Test
+    def testSquashYShrinksBoxAroundCenter(): Unit \ {Assert, IO} =
+        let box = DrawCmd.make({ scale = { x = 4.0, y = 4.0 }, color = { r = 1.0, g = 0.0, b = 0.0 }, squashY = 0.5 | DrawCmd.toSpec(drawable("")) });
+        let img: BufferedImage =
+            renderArgb(cfg(1), { drawables = box :: Nil | emptyPass(RenderTarget.LoadOp.Clear({ r = 0.0, g = 0.0, b = 0.0 })) }, None);
+        Assert.assertEq(expected = (255, 0, 0, 0) :: (255, 255, 0, 0) :: Nil,
+            channels(img.getRGB(2i32, 0i32)) :: channels(img.getRGB(2i32, 1i32)) :: Nil)
 
     // clear Keep は前フレームのターゲットの中身が残ったまま始まる（残像が作れる）。
     @Test
@@ -221,7 +231,7 @@ mod TestRenderPasses {
           texture = "", position = { x = 2.0, y = 0.0 }, scale = { x = 2.0, y = 4.0 },
           rotation = 0.0, color = { r = 1.0, g = 1.0, b = 1.0 }, alpha = 1.0,
           centered = false, uvOffset = { x = 0.0, y = 0.0 }, uvScale = { x = 1.0, y = 1.0 },
-          zIndex = 0, style = None, clip = None, blend = DrawCmd.BlendMode.Normal, mask = Nil })
+          zIndex = 0, style = None, clip = None, blend = DrawCmd.BlendMode.Normal, mask = Nil, squashY = 1.0 })
 
     def halfPass(): HeadlessRender.PassSpec =
         { drawables = whiteBoxRight() :: Nil, target = { scale = 0.5 | RenderTarget.defaultDescriptor() } | emptyPass(RenderTarget.LoadOp.Clear({ r = 0.0, g = 0.0, b = 0.0 })) }

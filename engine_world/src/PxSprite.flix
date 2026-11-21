@@ -59,7 +59,7 @@ pub mod PxSprite {
                       rotation = 0.0, centered = false,
                       flipH = flipX, flipV = false,
                       regionRect = Some(rect), zIndex = z,
-                      blend = DrawCmd.BlendMode.Normal, maskPolys = Nil }) } :: Nil
+                      blend = DrawCmd.BlendMode.Normal, maskPolys = Nil, squashY = 1.0 }) } :: Nil
             }
             case _ => Nil
         }

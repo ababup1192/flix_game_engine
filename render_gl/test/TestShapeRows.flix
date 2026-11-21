@@ -24,7 +24,7 @@ mod RenderFrame.TestShapeRows {
         Merged.MSprite(DrawCmd.make({
           texture = "", position = v(0.0, 0.0), scale = v(4.0, 4.0), rotation = 0.0, color = { r = 1.0, g = 1.0, b = 1.0 }, alpha = 1.0,
           centered = false, uvOffset = v(0.0, 0.0), uvScale = v(1.0, 1.0), zIndex = 0, style = None, clip = None,
-          blend = DrawCmd.BlendMode.Normal, mask = Nil }))
+          blend = DrawCmd.BlendMode.Normal, mask = Nil, squashY = 1.0 }))
 
     /// 絵 "tiles"（番号 9）・buffer 33・12 枚の層。
     def tile(): Merged =

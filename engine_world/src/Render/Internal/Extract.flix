@@ -33,7 +33,7 @@ pub mod Render.Internal.Extract {
         match placed#item {
             case Render.Item.Sprite(s) if Option.isEmpty(s#regionRect) =>
                 MutList.push(spriteDrawable(s#texture, s#tint, s#alpha, s#scale, s#rotation, s#centered, s#flipH, s#flipV,
-                                            None, s#zIndex, s#blend, s#maskPolys, placed#at), ds);
+                                            None, s#zIndex, s#blend, s#maskPolys, s#squashY, placed#at), ds);
                 true
             case Render.Item.Box(b) =>
                 MutList.push(boxDrawable(b#size, b#color, b#alpha, b#rotation, b#style, b#zIndex, b#blend, placed#at), ds);
@@ -103,12 +103,12 @@ pub mod Render.Internal.Extract {
             case Render.Item.Sprite(s) if Option.isEmpty(s#regionRect) => Render.toDrawables(item, pos)
             case Render.Item.Sprite(s) =>
                 let (uvOff, uvScl) = regionUv(s#regionRect, textureInfoOf(s#texture));
-                DrawCmd.fromParts(
+                squashedOrSame(s#squashY, DrawCmd.fromParts(
                    s#texture, pos,
                    {x = s#scale#x * flipSign(s#flipH), y = s#scale#y * flipSign(s#flipV)},
                    radiansOf(s#rotation), s#tint, s#alpha, s#centered,
                    uvOff, uvScl, s#zIndex, None,
-                   None, s#blend, s#maskPolys) :: Nil
+                   None, s#blend, s#maskPolys)) :: Nil
             // テクスチャ 1 枚を読むだけの面は、代表色の中間の灰より元の絵の方が近い（GL も ShaderEval も使わない命令だけの経路）。
             // 色の計算（灰色化・明るさ）は落とす — 場を画素ごとに評価するのは GL か ShaderEval の仕事。
             case Render.Item.Shader(s) => match textureReadOf(s#spec, s#t) {
@@ -233,11 +233,11 @@ pub mod Render.Internal.Extract {
     pub def spriteDrawable(texture: String, tint: Color, alpha: Float64, scale: Vec2.Vec2,
                        rotation: Float64, centered: Bool, flipH: Bool, flipV: Bool,
                        regionRect: Option[Rect2.Rect2], zIndex: Int32, blend: DrawCmd.BlendMode,
-                       maskPolys: List[List[Vec2.Vec2]], pos: Vec2.Vec2): GameEngine.Drawable =
+                       maskPolys: List[List[Vec2.Vec2]], squashY: Float64, pos: Vec2.Vec2): GameEngine.Drawable =
         match regionRect {
             case Some(_) => bug!("Render: region atlas not supported yet (pass regionRect=None)")
             case None    =>
-                DrawCmd.fromParts(
+                squashedOrSame(squashY, DrawCmd.fromParts(
                   texture,
                   pos,
                   {x = scale#x * flipSign(flipH), y = scale#y * flipSign(flipV)},
@@ -251,8 +251,13 @@ pub mod Render.Internal.Extract {
                   None,
                   None,
                   blend,
-                  maskPolys)
+                  maskPolys))
         }
+
+    /// squashY が 1.0 でない時だけ Drawable に載せる。
+    // WhyNot: 1.0 でも withSquashY を通さない — つぶさない絵（ほぼ全部）が 1 個ごとに Drawable をもう 1 個作る。
+    pub def squashedOrSame(squashY: Float64, d: GameEngine.Drawable): GameEngine.Drawable =
+        if (squashY == 1.0) d else DrawCmd.withSquashY(squashY, d)
 
     def flipSign(b: Bool): Float64 = if (b) -1.0 else 1.0
 
@@ -284,7 +289,7 @@ pub mod Render.Internal.Extract {
         let DrawCmd.Drawable.Drawable(_tex, px, py, sx, sy, _rot,
                                       _cr, _cg, _cb, _a, _cen,
                                       _uox, _uoy, _usx, _usy, _z,
-                                      _style, _clip, _blend, _mask) = d;
+                                      _style, _clip, _blend, _mask, _sq) = d;
         let size = { x = sx * textureSize, y = sy * textureSize };
         let half = Vec2.div(size, 2.0);
         let moved = Render.rotAbout(t, pivot, Vec2.add({x = px, y = py}, half));

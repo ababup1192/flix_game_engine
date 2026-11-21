@@ -448,7 +448,7 @@ pub mod DrawHash {
         let DrawCmd.Drawable.Drawable(tex, px, py, sx, sy, rot,
                                       cr, cg, cb, a, cen,
                                       uox, uoy, usx, usy, z,
-                                      style, clip, blend, mask) = d;
+                                      style, clip, blend, mask, sq) = d;
         putStr(out, tex);
         (px :: py :: sx :: sy :: rot :: cr :: cg :: cb :: a :: uox :: uoy :: usx :: usy :: Nil)
             |> List.forEach(putF(out));
@@ -457,7 +457,9 @@ pub mod DrawHash {
         putStyle(out, style);
         putClip(out, clip);
         putBlend(out, blend);
-        putPaths(out, mask)
+        putPaths(out, mask);
+        // WhyNot: 1.0 の時も書かない — 書くと squashY を使わない場面の鍵まで全部変わり、前の版の記録と比べられなくなる。
+        if (sq != 1.0) { putStr(out, "squashY"); putF(out, sq) } else ()
 
     def putStyle(out: DataOutputStream, style: Option[DrawCmd.BoxStyle]): Unit \ IO = match style {
         case None => out.writeByte(0i32)

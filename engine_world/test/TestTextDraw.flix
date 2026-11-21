@@ -89,7 +89,7 @@ mod TestTextDraw {
         let visible = { glyphs = Map.map(g -> { glyphW = 1.0, glyphH = 1.0 | g }, atlas()#glyphs) | atlas() };
         let drawn = Render.Internal.Extract.textDrawables(text, visible, 1.0, { r = 1.0, g = 1.0, b = 1.0 },
                                                           1.0, 0.0, 0, Some(35.0), { x = 0.0, y = 0.0 });
-        let rows = drawn |> List.map(d -> { let DrawCmd.Drawable.Drawable(_, _, py, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) = d; py })
+        let rows = drawn |> List.map(d -> { let DrawCmd.Drawable.Drawable(_, _, py, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) = d; py })
                          |> List.toSet |> Set.size;
         Assert.assertEq(expected = Int32.toFloat64(rows), TextDraw.wrappedSize(text, atlas(), 1.0, 35.0)#y)
 }

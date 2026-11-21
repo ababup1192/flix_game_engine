@@ -20,7 +20,7 @@ mod TestCameraScale {
             style = None,
             clip = None,
             blend = DrawCmd.BlendMode.Normal,
-            mask = (({ x = 1.0, y = 2.0 }: Vec2.Vec2) :: Nil) :: Nil });
+            mask = (({ x = 1.0, y = 2.0 }: Vec2.Vec2) :: Nil) :: Nil, squashY = 1.0 });
         let transform: Projection.ViewTransform =
             { offset = { x = 0.0, y = 0.0 }, scale = { x = 2.0, y = 3.0 } };
         let got = Render.applyCameraScale(transform, d :: Nil)

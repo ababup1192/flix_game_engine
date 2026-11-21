@@ -20,7 +20,7 @@ pub mod SoftRaster.Internal.Sprite {
     pub def drawDrawable(g: Graphics2D, sf: Float64,
                      textures: Map[String, BufferedImage], fctx: FontTable, d: DrawCmd.DrawableSpec,
                      warnLog: TexWarnLog): Unit \ IO =
-        withRotation(g, sf, d#rotation, quadCenter(textures, fctx, d), () ->
+        withRotation(g, sf, d#rotation, d#squashY, quadCenter(textures, fctx, d), () ->
             if (String.isEmpty(d#texture))
                 withMask(g, sf, d#position, d#scale, d#mask, () -> drawBox(g, sf, d))
             else if (String.startsWith({prefix = "font_"}, d#texture))
@@ -69,13 +69,24 @@ pub mod SoftRaster.Internal.Sprite {
             g.setClip(saved)
         }
 
-    /// 傾き（ラジアン）を掛けてから描き、終わったら座標系を戻す。回す軸は四角の中心で、
-    /// render_gl/Frame の model 行列（pos + size/2 まわり）と同じ点にしてある — ここがズレると
-    /// 描き出した絵と実機の絵が食い違う。
+    /// 傾き（ラジアン）と、その後の縦のつぶし（squashY）を掛けてから描き、終わったら座標系を戻す。
+    /// 回す軸・つぶす軸は四角の中心で、render_gl/Frame の model 行列（pos + size/2 まわり）と
+    /// 同じ点にしてある — ここがズレると描き出した絵と実機の絵が食い違う。
     /// 切り抜き矩形（clip）は device 空間で保たれるので、傾けても切り抜きは画面に平行なまま（Render の決まりどおり）。
-    def withRotation(g: Graphics2D, sf: Float64, rot: Float64, center: Vec2.Vec2,
+    def withRotation(g: Graphics2D, sf: Float64, rot: Float64, squashY: Float64, center: Vec2.Vec2,
                      draw: Unit -> Unit \ ef): Unit \ IO + ef =
-        if (rot == 0.0) draw()
+        if (squashY != 1.0) {
+            let saved = g.getTransform();
+            // WhyNot: 回してからつぶす順を逆にしない — Java2D は後から足した変換ほど先に点へ掛かるので、
+            //   scale を rotate より前に足すと「回した後でつぶす」になる。
+            g.translate(center#x * sf, center#y * sf);
+            g.scale(1.0, squashY);
+            g.rotate(rot);
+            g.translate(-center#x * sf, -center#y * sf);
+            draw();
+            g.setTransform(saved)
+        }
+        else if (rot == 0.0) draw()
         else {
             let saved = g.getTransform();
             g.rotate(rot, center#x * sf, center#y * sf);

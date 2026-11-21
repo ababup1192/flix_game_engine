@@ -31,7 +31,7 @@ mod TestSoftRasterMask {
               rotation = 0.0, color = { r = 1.0, g = 1.0, b = 1.0 }, alpha = 1.0,
               centered = false, uvOffset = { x = 0.0, y = 0.0 }, uvScale = { x = 1.0, y = 1.0 },
               zIndex = 0, style = None, clip = None, blend = DrawCmd.BlendMode.Normal,
-              mask = mask });
+              mask = mask, squashY = 1.0 });
         let req: SoftRaster.RasterReq =
             { drawables = d :: Nil, polygons = Nil,
               design = { x = 8.0, y = 8.0 }, scale = 1,

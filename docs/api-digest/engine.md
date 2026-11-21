@@ -1,4 +1,4 @@
-<!-- engine v0.105.0 / 生成: 2026-11-20 -->
+<!-- engine v0.105.0 / 生成: 2026-11-21 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine
@@ -388,11 +388,11 @@
 - clip 矩形（design px・スクリーン空間）を出力ピクセルの整数矩形 (x0, y0, x1, y1) へ写す
   `pub def clipPixels(scale: {scaleX = Float64, scaleY = Float64}, clip: Rect2.Rect2): (Int32, Int32, Int32, Int32)`
 - スプライト 1 つ分の描画命令（zIndex 順にソートして描画される）。
-  `pub enum Drawable { case Drawable( String, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Bool, Float64, Float64, Float64, Float64, Int32, Option[BoxStyle], Option[Rect2.Rect2], BlendMode, List[List[Vec2.Vec2]] ) }`
+  `pub enum Drawable { case Drawable( String, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Bool, Float64, Float64, Float64, Float64, Int32, Option[BoxStyle], Option[Rect2.Rect2], BlendMode, List[List[Vec2.Vec2]], Float64 ) }`
 - `pub def eq(a: Drawable, b: Drawable): Bool`
 - `pub def toString(d: Drawable): String`
 - Drawable の全フィールドを名前で持つレコード（`make` の入力・`toSpec` の出力）。
-  `pub type alias DrawableSpec = { texture = String, position = Vec2.Vec2, scale = Vec2.Vec2, rotation = Float64, color = Color, alpha = Float64, centered = Bool, uvOffset = Vec2.Vec2, uvScale = Vec2.Vec2, zIndex = Int32, style = Option[BoxStyle], clip = Option[Rect2.Rect2], blend = BlendMode, mask = List[List[Vec2.Vec2]] }`
+  `pub type alias DrawableSpec = { texture = String, position = Vec2.Vec2, scale = Vec2.Vec2, rotation = Float64, color = Color, alpha = Float64, centered = Bool, uvOffset = Vec2.Vec2, uvScale = Vec2.Vec2, zIndex = Int32, style = Option[BoxStyle], clip = Option[Rect2.Rect2], blend = BlendMode, mask = List[List[Vec2.Vec2]], squashY = Float64 }`
 - 名前付きで安全に組む入口（テスト・部分上書き・めったに呼ばれない構築用）。
   `pub def make(spec: DrawableSpec): Drawable`
 - 毎フレーム大量に通る変換用の入口。`make` の spec レコードを作らないのは、
@@ -410,6 +410,7 @@
 - `pub def clipOf(d: Drawable): Option[Rect2.Rect2]`
 - `pub def blendOf(d: Drawable): BlendMode`
 - `pub def maskOf(d: Drawable): List[List[Vec2.Vec2]]`
+- `pub def squashYOf(d: Drawable): Float64`
 - clip 矩形を差し替える。
   `pub def withClip(clip: Option[Rect2.Rect2], d: Drawable): Drawable`
 - alpha を差し替える（字を薄める Render.fade の Text 用）。
@@ -422,6 +423,8 @@
   `pub def withScaleAndMask(scale: Vec2.Vec2, mask: List[List[Vec2.Vec2]], d: Drawable): Drawable`
 - position と rotation を一緒に差し替える（グリフを文字列の置き場所のまわりに回す用）。
   `pub def withPositionAndRotation(position: Vec2.Vec2, rotation: Float64, d: Drawable): Drawable`
+- squashY（回した後の縦のつぶし率）を差し替える。
+  `pub def withSquashY(squashY: Float64, d: Drawable): Drawable`
 - uvOffset と uvScale を一緒に差し替える（レンダーターゲットの上下反転用）。
   `pub def withUv(uvOffset: Vec2.Vec2, uvScale: Vec2.Vec2, d: Drawable): Drawable`
 - タイルマップ 1 タイル分のインスタンスデータ。tilemap loader が組み立て、

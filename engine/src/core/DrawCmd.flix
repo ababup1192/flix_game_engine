@@ -218,6 +218,10 @@ pub mod DrawCmd {
     /// クアッドと同じ変換が掛かる — 形を 1 回定義すれば回転は rotation に任せられる。
     /// エッジは GL のステンシルも Java2D の clip も AA なしのハードエッジ（docs/backend-parity.md）。
     /// グリフ（font_ テクスチャ）には効かない。
+    /// `squashY` は回した後で四角の中心を軸に画面の縦方向へ掛ける率（1.0 = つぶさない）。
+    /// rotation と組むと四角が平行四辺形になる（sprite-stacking でカメラを上下に傾ける用）。
+    /// mask は回す前のローカル座標なので、つぶしはクアッドと一緒に mask にも掛かる。
+    /// WhyNot: scale の y に畳まない — scale は回す前に掛かるので、回した四角は長方形のまま縦に伸び縮みしない。
     /// payload は Vec2 / Color を x, y / r, g, b のフィールドへ展開してフラットに持つ — 入れ子のオブジェクトを
     /// フィールドごとに持つ形にしないのは、毎フレーム数千個作る値では確保量が大きすぎるため。
     /// 構築の入口は 2 つ: `make`（名前付きで安全 — テスト・部分上書き・めったに呼ばれない構築）と
@@ -228,7 +232,7 @@ pub mod DrawCmd {
     ///   let Drawable.Drawable(tex, px, py, sx, sy, rot,
     ///                         cr, cg, cb, a, cen,
     ///                         uox, uoy, usx, usy, z,
-    ///                         style, clip, blend, mask) = d;
+    ///                         style, clip, blend, mask, sq) = d;
     pub enum Drawable {
         case Drawable(
             String,                // texture
@@ -244,7 +248,8 @@ pub mod DrawCmd {
             Option[BoxStyle],      // style
             Option[Rect2.Rect2],   // clip
             BlendMode,             // blend
-            List[List[Vec2.Vec2]]  // mask
+            List[List[Vec2.Vec2]], // mask
+            Float64                // squashY
         )
     }
 
@@ -255,21 +260,22 @@ pub mod DrawCmd {
 
     instance ToString[Drawable] {
         pub def toString(d: Drawable): String =
-            let (tex, (px, py, sx, sy, rot), (cr, cg, cb, a, cen), (uox, uoy, usx, usy, z), (style, clip, blend, mask)) = drawableKey(d);
+            let (tex, (px, py, sx, sy, rot), (cr, cg, cb, a, cen), (uox, uoy, usx, usy, z), (style, clip, blend, mask), sq) = drawableKey(d);
             "Drawable(${tex}, at=(${px}, ${py}), scale=(${sx}, ${sy}), rotation=${rot}, color=(${cr}, ${cg}, ${cb}), alpha=${a}, " +
-            "centered=${cen}, uv=(${uox}, ${uoy}) size (${usx}, ${usy}), z=${z}, style=${style}, clip=${clip}, blend=${blend}, mask=${mask})"
+            "centered=${cen}, uv=(${uox}, ${uoy}) size (${usx}, ${usy}), z=${z}, style=${style}, clip=${clip}, blend=${blend}, mask=${mask}, squashY=${sq})"
     }
 
     def drawableKey(d: Drawable): (String, (Float64, Float64, Float64, Float64, Float64), (Float64, Float64, Float64, Float64, Bool),
                                    (Float64, Float64, Float64, Float64, Int32),
-                                   (Option[BoxStyle], Option[(Float64, Float64, Float64, Float64)], BlendMode, List[List[(Float64, Float64)]])) =
+                                   (Option[BoxStyle], Option[(Float64, Float64, Float64, Float64)], BlendMode, List[List[(Float64, Float64)]]),
+                                   Float64) =
         let Drawable.Drawable(tex, px, py, sx, sy, rot,
                               cr, cg, cb, a, cen,
                               uox, uoy, usx, usy, z,
-                              style, clip, blend, mask) = d;
+                              style, clip, blend, mask, sq) = d;
         (tex, (px, py, sx, sy, rot), (cr, cg, cb, a, cen), (uox, uoy, usx, usy, z),
          (style, Option.map(r -> (r#position#x, r#position#y, r#size#x, r#size#y), clip), blend,
-          List.map(List.map(v -> (v#x, v#y)), mask)))
+          List.map(List.map(v -> (v#x, v#y)), mask)), sq)
 
     /// Drawable の全フィールドを名前で持つレコード（`make` の入力・`toSpec` の出力）。
     pub type alias DrawableSpec = {
@@ -286,7 +292,8 @@ pub mod DrawCmd {
         style = Option[BoxStyle],
         clip = Option[Rect2.Rect2],
         blend = BlendMode,
-        mask = List[List[Vec2.Vec2]]
+        mask = List[List[Vec2.Vec2]],
+        squashY = Float64
     }
 
     /// 名前付きで安全に組む入口（テスト・部分上書き・めったに呼ばれない構築用）。
@@ -306,13 +313,16 @@ pub mod DrawCmd {
             spec#style,
             spec#clip,
             spec#blend,
-            spec#mask)
+            spec#mask,
+            spec#squashY)
 
     /// 毎フレーム大量に通る変換用の入口。`make` の spec レコードを作らないのは、
     /// 構築 1 回ごとに入れ物のレコード一式を確保することになり、enum へ平置きした
     /// 節約がそこで消えるため。Vec2 / Color は値のまま受けて中で x, y / r, g, b に展開する —
     /// 引数の型が互いに違うので、並びの取り違えがコンパイルを通るのは
     /// (position, scale) と (uvOffset, uvScale) の 2 ペアだけ。
+    /// squashY は 1.0 で組む（つぶすのは withSquashY）。
+    /// WhyNot: squashY を引数に足さない — 呼び手の大半は 1.0 で、隣の Float64 と取り違えてもコンパイルが通る並びが増える。
     pub def fromParts(texture: String, position: Vec2.Vec2, scale: Vec2.Vec2,
                       rotation: Float64, color: Color, alpha: Float64, centered: Bool,
                       uvOffset: Vec2.Vec2, uvScale: Vec2.Vec2, zIndex: Int32,
@@ -332,7 +342,8 @@ pub mod DrawCmd {
             style,
             clip,
             blend,
-            mask)
+            mask,
+            1.0)
 
     /// 全フィールドを名前付きレコードへ展開する（部分更新と、めったに呼ばれない経路の
     /// 読み出し用）。毎フレーム大量に通る経路ではレコードを作り直すぶん高くつくので、
@@ -341,7 +352,7 @@ pub mod DrawCmd {
         let Drawable.Drawable(tex, px, py, sx, sy, rot,
                               cr, cg, cb, a, cen,
                               uox, uoy, usx, usy, z,
-                              style, clip, blend, mask) = d;
+                              style, clip, blend, mask, sq) = d;
         { texture = tex,
           position = {x = px, y = py},
           scale = {x = sx, y = sy},
@@ -355,7 +366,8 @@ pub mod DrawCmd {
           style = style,
           clip = clip,
           blend = blend,
-          mask = mask }
+          mask = mask,
+          squashY = sq }
 
     // ── 読み用アクセサ ──────────────────────────────────────────
     // Vec2 / Color を返す物は呼ぶたびにレコードを 1 個作る。毎フレーム大量に通る経路では
@@ -363,58 +375,63 @@ pub mod DrawCmd {
 
     pub def textureOf(d: Drawable): String =
         let Drawable.Drawable(tex, _px, _py, _sx, _sy, _rot, _cr, _cg, _cb, _a, _cen,
-                              _uox, _uoy, _usx, _usy, _z, _style, _clip, _blend, _mask) = d;
+                              _uox, _uoy, _usx, _usy, _z, _style, _clip, _blend, _mask, _sq) = d;
         tex
 
     pub def positionOf(d: Drawable): Vec2.Vec2 =
         let Drawable.Drawable(_tex, px, py, _sx, _sy, _rot, _cr, _cg, _cb, _a, _cen,
-                              _uox, _uoy, _usx, _usy, _z, _style, _clip, _blend, _mask) = d;
+                              _uox, _uoy, _usx, _usy, _z, _style, _clip, _blend, _mask, _sq) = d;
         {x = px, y = py}
 
     pub def scaleOf(d: Drawable): Vec2.Vec2 =
         let Drawable.Drawable(_tex, _px, _py, sx, sy, _rot, _cr, _cg, _cb, _a, _cen,
-                              _uox, _uoy, _usx, _usy, _z, _style, _clip, _blend, _mask) = d;
+                              _uox, _uoy, _usx, _usy, _z, _style, _clip, _blend, _mask, _sq) = d;
         {x = sx, y = sy}
 
     pub def rotationOf(d: Drawable): Float64 =
         let Drawable.Drawable(_tex, _px, _py, _sx, _sy, rot, _cr, _cg, _cb, _a, _cen,
-                              _uox, _uoy, _usx, _usy, _z, _style, _clip, _blend, _mask) = d;
+                              _uox, _uoy, _usx, _usy, _z, _style, _clip, _blend, _mask, _sq) = d;
         rot
 
     pub def colorOf(d: Drawable): Color =
         let Drawable.Drawable(_tex, _px, _py, _sx, _sy, _rot, cr, cg, cb, _a, _cen,
-                              _uox, _uoy, _usx, _usy, _z, _style, _clip, _blend, _mask) = d;
+                              _uox, _uoy, _usx, _usy, _z, _style, _clip, _blend, _mask, _sq) = d;
         {r = cr, g = cg, b = cb}
 
     pub def alphaOf(d: Drawable): Float64 =
         let Drawable.Drawable(_tex, _px, _py, _sx, _sy, _rot, _cr, _cg, _cb, a, _cen,
-                              _uox, _uoy, _usx, _usy, _z, _style, _clip, _blend, _mask) = d;
+                              _uox, _uoy, _usx, _usy, _z, _style, _clip, _blend, _mask, _sq) = d;
         a
 
     pub def zIndexOf(d: Drawable): Int32 =
         let Drawable.Drawable(_tex, _px, _py, _sx, _sy, _rot, _cr, _cg, _cb, _a, _cen,
-                              _uox, _uoy, _usx, _usy, z, _style, _clip, _blend, _mask) = d;
+                              _uox, _uoy, _usx, _usy, z, _style, _clip, _blend, _mask, _sq) = d;
         z
 
     pub def styleOf(d: Drawable): Option[BoxStyle] =
         let Drawable.Drawable(_tex, _px, _py, _sx, _sy, _rot, _cr, _cg, _cb, _a, _cen,
-                              _uox, _uoy, _usx, _usy, _z, style, _clip, _blend, _mask) = d;
+                              _uox, _uoy, _usx, _usy, _z, style, _clip, _blend, _mask, _sq) = d;
         style
 
     pub def clipOf(d: Drawable): Option[Rect2.Rect2] =
         let Drawable.Drawable(_tex, _px, _py, _sx, _sy, _rot, _cr, _cg, _cb, _a, _cen,
-                              _uox, _uoy, _usx, _usy, _z, _style, clip, _blend, _mask) = d;
+                              _uox, _uoy, _usx, _usy, _z, _style, clip, _blend, _mask, _sq) = d;
         clip
 
     pub def blendOf(d: Drawable): BlendMode =
         let Drawable.Drawable(_tex, _px, _py, _sx, _sy, _rot, _cr, _cg, _cb, _a, _cen,
-                              _uox, _uoy, _usx, _usy, _z, _style, _clip, blend, _mask) = d;
+                              _uox, _uoy, _usx, _usy, _z, _style, _clip, blend, _mask, _sq) = d;
         blend
 
     pub def maskOf(d: Drawable): List[List[Vec2.Vec2]] =
         let Drawable.Drawable(_tex, _px, _py, _sx, _sy, _rot, _cr, _cg, _cb, _a, _cen,
-                              _uox, _uoy, _usx, _usy, _z, _style, _clip, _blend, mask) = d;
+                              _uox, _uoy, _usx, _usy, _z, _style, _clip, _blend, mask, _sq) = d;
         mask
+
+    pub def squashYOf(d: Drawable): Float64 =
+        let Drawable.Drawable(_tex, _px, _py, _sx, _sy, _rot, _cr, _cg, _cb, _a, _cen,
+                              _uox, _uoy, _usx, _usy, _z, _style, _clip, _blend, _mask, sq) = d;
+        sq
 
     // ── 部分更新（元を変えず新しい Drawable を返す）─────────────────
     // 実装は match で全フィールドを受けて enum を直接組み直す。`toSpec` + レコード更新 +
@@ -427,77 +444,88 @@ pub mod DrawCmd {
         let Drawable.Drawable(tex, px, py, sx, sy, rot,
                               cr, cg, cb, a, cen,
                               uox, uoy, usx, usy, z,
-                              style, _clip, blend, mask) = d;
+                              style, _clip, blend, mask, sq) = d;
         Drawable.Drawable(tex, px, py, sx, sy, rot,
                           cr, cg, cb, a, cen,
                           uox, uoy, usx, usy, z,
-                          style, clip, blend, mask)
+                          style, clip, blend, mask, sq)
 
     /// alpha を差し替える（字を薄める Render.fade の Text 用）。
     pub def withAlpha(alpha: Float64, d: Drawable): Drawable =
         let Drawable.Drawable(tex, px, py, sx, sy, rot,
                               cr, cg, cb, _a, cen,
                               uox, uoy, usx, usy, z,
-                              style, clip, blend, mask) = d;
+                              style, clip, blend, mask, sq) = d;
         Drawable.Drawable(tex, px, py, sx, sy, rot,
                           cr, cg, cb, alpha, cen,
                           uox, uoy, usx, usy, z,
-                          style, clip, blend, mask)
+                          style, clip, blend, mask, sq)
 
     /// color と zIndex を差し替える（テキストの文字色・重なり順の上書き用）。
     pub def withTintAndZIndex(color: Color, zIndex: Int32, d: Drawable): Drawable =
         let Drawable.Drawable(tex, px, py, sx, sy, rot,
                               _cr, _cg, _cb, a, cen,
                               uox, uoy, usx, usy, _z,
-                              style, clip, blend, mask) = d;
+                              style, clip, blend, mask, sq) = d;
         Drawable.Drawable(tex, px, py, sx, sy, rot,
                           color#r, color#g, color#b, a, cen,
                           uox, uoy, usx, usy, zIndex,
-                          style, clip, blend, mask)
+                          style, clip, blend, mask, sq)
 
     /// scale を差し替える。
     pub def withScale(scale: Vec2.Vec2, d: Drawable): Drawable =
         let Drawable.Drawable(tex, px, py, _sx, _sy, rot,
                               cr, cg, cb, a, cen,
                               uox, uoy, usx, usy, z,
-                              style, clip, blend, mask) = d;
+                              style, clip, blend, mask, sq) = d;
         Drawable.Drawable(tex, px, py, scale#x, scale#y, rot,
                           cr, cg, cb, a, cen,
                           uox, uoy, usx, usy, z,
-                          style, clip, blend, mask)
+                          style, clip, blend, mask, sq)
 
     /// scale と mask を一緒に差し替える（カメラの zoom は型抜きの形にも掛ける必要がある）。
     pub def withScaleAndMask(scale: Vec2.Vec2, mask: List[List[Vec2.Vec2]], d: Drawable): Drawable =
         let Drawable.Drawable(tex, px, py, _sx, _sy, rot,
                               cr, cg, cb, a, cen,
                               uox, uoy, usx, usy, z,
-                              style, clip, blend, _mask) = d;
+                              style, clip, blend, _mask, sq) = d;
         Drawable.Drawable(tex, px, py, scale#x, scale#y, rot,
                           cr, cg, cb, a, cen,
                           uox, uoy, usx, usy, z,
-                          style, clip, blend, mask)
+                          style, clip, blend, mask, sq)
 
     /// position と rotation を一緒に差し替える（グリフを文字列の置き場所のまわりに回す用）。
     pub def withPositionAndRotation(position: Vec2.Vec2, rotation: Float64, d: Drawable): Drawable =
         let Drawable.Drawable(tex, _px, _py, sx, sy, _rot,
                               cr, cg, cb, a, cen,
                               uox, uoy, usx, usy, z,
-                              style, clip, blend, mask) = d;
+                              style, clip, blend, mask, sq) = d;
         Drawable.Drawable(tex, position#x, position#y, sx, sy, rotation,
                           cr, cg, cb, a, cen,
                           uox, uoy, usx, usy, z,
-                          style, clip, blend, mask)
+                          style, clip, blend, mask, sq)
+
+    /// squashY（回した後の縦のつぶし率）を差し替える。
+    pub def withSquashY(squashY: Float64, d: Drawable): Drawable =
+        let Drawable.Drawable(tex, px, py, sx, sy, rot,
+                              cr, cg, cb, a, cen,
+                              uox, uoy, usx, usy, z,
+                              style, clip, blend, mask, _sq) = d;
+        Drawable.Drawable(tex, px, py, sx, sy, rot,
+                          cr, cg, cb, a, cen,
+                          uox, uoy, usx, usy, z,
+                          style, clip, blend, mask, squashY)
 
     /// uvOffset と uvScale を一緒に差し替える（レンダーターゲットの上下反転用）。
     pub def withUv(uvOffset: Vec2.Vec2, uvScale: Vec2.Vec2, d: Drawable): Drawable =
         let Drawable.Drawable(tex, px, py, sx, sy, rot,
                               cr, cg, cb, a, cen,
                               _uox, _uoy, _usx, _usy, z,
-                              style, clip, blend, mask) = d;
+                              style, clip, blend, mask, sq) = d;
         Drawable.Drawable(tex, px, py, sx, sy, rot,
                           cr, cg, cb, a, cen,
                           uvOffset#x, uvOffset#y, uvScale#x, uvScale#y, z,
-                          style, clip, blend, mask)
+                          style, clip, blend, mask, sq)
 
     /// タイルマップ 1 タイル分のインスタンスデータ。tilemap loader が組み立て、
     /// バックエンドの `initTileBuffer` が GPU へアップロードする素材。

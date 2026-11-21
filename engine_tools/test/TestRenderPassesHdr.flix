@@ -70,13 +70,13 @@ mod TestRenderPassesHdr {
         DrawCmd.make({
           texture = "", position = at, scale = size, rotation = 0.0, color = c, alpha = 1.0,
           centered = false, uvOffset = { x = 0.0, y = 0.0 }, uvScale = { x = 1.0, y = 1.0 },
-          zIndex = 0, style = None, clip = None, blend = blend, mask = Nil })
+          zIndex = 0, style = None, clip = None, blend = blend, mask = Nil, squashY = 1.0 })
 
     def sprite(texture: String, at: Vec2.Vec2, scale: Float64): GameEngine.Drawable =
         DrawCmd.make({
           texture = texture, position = at, scale = { x = scale, y = scale }, rotation = 0.0, color = gray(1.0), alpha = 1.0,
           centered = false, uvOffset = { x = 0.0, y = 0.0 }, uvScale = { x = 1.0, y = 1.0 },
-          zIndex = 1, style = None, clip = None, blend = DrawCmd.BlendMode.Normal, mask = Nil })
+          zIndex = 1, style = None, clip = None, blend = DrawCmd.BlendMode.Normal, mask = Nil, squashY = 1.0 })
 
     // ════════════════════════════════════════════════════════
     // 1 を超える値が残る

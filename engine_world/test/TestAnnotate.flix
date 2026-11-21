@@ -152,7 +152,7 @@ mod TestAnnotate {
             texture = "ball", tint = { r = 1.0, g = 1.0, b = 1.0 }, alpha = 1.0,
             scale = { x = 2.0, y = 2.0 }, rotation = 0.0, centered = true,
             flipH = false, flipV = false, regionRect = None, zIndex = 0,
-            blend = DrawCmd.BlendMode.Normal, maskPolys = Nil });
+            blend = DrawCmd.BlendMode.Normal, maskPolys = Nil, squashY = 1.0 });
         let sizeOf = _ -> Some({ id = GpuHandle.wrapTextureId(0), width = 10.0, height = 20.0 });
         let aabb = Annotate.itemAabb(sizeOf, { at = { x = 100.0, y = 100.0 }, item = sprite });
         Assert.assertEq(expected = (90.0, 80.0, 20.0, 40.0), rectTuple(aabb))
@@ -287,7 +287,7 @@ mod TestAnnotate {
                          scale = { x = 2.0, y = 2.0 }, rotation = 0.0, color = white,
                          alpha = 1.0, centered = true, uvOffset = { x = 0.0, y = 0.0 },
                          uvScale = { x = 1.0, y = 1.0 }, zIndex = 5, style = None, clip = None,
-                         blend = DrawCmd.BlendMode.Normal, mask = Nil });
+                         blend = DrawCmd.BlendMode.Normal, mask = Nil, squashY = 1.0 });
         let sizeOf = _ -> Some({ id = GpuHandle.wrapTextureId(0), width = 10.0, height = 20.0 });
         let rect = { position = { x = 95.0, y = 95.0 }, size = { x = 10.0, y = 10.0 } };
         match Annotate.hitsFromDrawables(sizeOf, rect, drawable :: Nil) {

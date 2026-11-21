@@ -91,7 +91,8 @@ pub mod Splash {
               style    = None,
               clip     = None,
               blend    = DrawCmd.BlendMode.Normal,
-              mask     = Nil }) :: Nil
+              mask     = Nil,
+              squashY  = 1.0 }) :: Nil
         }
 
     /// 進み具合のゲージ。本数が分かっていれば左から溜まり、分からなければバーが流れる。
@@ -136,7 +137,8 @@ pub mod Splash {
           style    = Some(DrawCmd.defaultStyle(color)),
           clip     = None,
           blend    = DrawCmd.BlendMode.Normal,
-          mask     = Nil })
+          mask     = Nil,
+          squashY  = 1.0 })
 
     // ── 寸法と色 ──────────────────────────────────────────────
 

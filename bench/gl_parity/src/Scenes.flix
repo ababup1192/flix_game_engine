@@ -206,7 +206,7 @@ mod Scenes {
             alpha = 1.0, scale = { x = spec#sx, y = spec#sy }, rotation = 0.0, centered = true,
             flipH = spec#fH, flipV = spec#fV,
             regionRect = Some({ position = spec#srcPos, size = spec#srcSize }),
-            zIndex = spec#z, blend = DrawCmd.BlendMode.Normal, maskPolys = Nil })
+            zIndex = spec#z, blend = DrawCmd.BlendMode.Normal, maskPolys = Nil, squashY = 1.0 })
 
     def fullAtlas(sx: Float64, fH: Bool, fV: Bool, z: Int32): Render.Item =
         atlasSprite({ srcPos = { x = 0.0, y = 0.0 }, srcSize = { x = 16.0, y = 16.0 },

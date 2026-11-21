@@ -154,13 +154,14 @@ mod TestClip {
     def sheetInfo(name: String): Option[GameEngine.TextureInfo] =
         if (name == "sheet") Some({ id = GpuHandle.wrapTextureId(1), width = 64.0, height = 32.0 }) else None
 
-    /// 欄を全部、既定でない値にした Sprite（反転 2 つ・傾き・左上原点・拡大・型抜き・色・濃さ・Add）。
+    /// 欄を全部、既定でない値にした Sprite（反転 2 つ・傾き・左上原点・拡大・型抜き・色・濃さ・Add・縦のつぶし）。
     def busySprite(texture: String, regionRect: Option[Rect2.Rect2]): Render.Item =
         Render.Item.Sprite({ texture = texture, tint = { r = 0.25, g = 0.5, b = 0.75 }, alpha = 0.5,
                              scale = { x = 2.0, y = 3.0 }, rotation = 0.125, centered = false,
                              flipH = true, flipV = true, regionRect = regionRect, zIndex = 9,
                              blend = DrawCmd.BlendMode.Add,
-                             maskPolys = ({ x = 0.0, y = 0.0 } :: { x = 4.0, y = 0.0 } :: { x = 0.0, y = 4.0 } :: Nil) :: Nil })
+                             maskPolys = ({ x = 0.0, y = 0.0 } :: { x = 4.0, y = 0.0 } :: { x = 0.0, y = 4.0 } :: Nil) :: Nil,
+                             squashY = 0.5 })
 
     /// 角丸の style を付けて傾けた Box。
     def busyBox(): Render.Item =

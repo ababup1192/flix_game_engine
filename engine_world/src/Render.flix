@@ -21,10 +21,11 @@ pub mod Render {
         /// maskPolys は多角形の型抜き（空 = 抜かない。masked で付ける）。頂点は表示クアッドの
         /// ローカル座標（design px・原点 = クアッドの左上・回転前）— rotation・反転は
         /// クアッドと同じ変換が掛かるので、形は 1 回定義すれば回転は rotation に任せられる。
+        /// squashY は回した後で中心を軸に画面の縦へ掛ける率（1.0 = つぶさない。squashedY で付ける）。
         case Sprite({ texture = String, tint = Color, alpha = Float64,
                       scale = Vec2.Vec2, rotation = Float64, centered = Bool,
                       flipH = Bool, flipV = Bool, regionRect = Option[Rect2.Rect2], zIndex = Int32,
-                      blend = DrawCmd.BlendMode, maskPolys = List[List[Vec2.Vec2]] })
+                      blend = DrawCmd.BlendMode, maskPolys = List[List[Vec2.Vec2]], squashY = Float64 })
         /// wrapWidth = Some(w) で、w (design px) を超える字を次の行へ折り返す。None は折らない。
         /// alpha は字の濃さ 0..1（fade / fadeAll が書く。1.0 = 不透明）。
         case Text({ text = String, fontAtlas = FontAtlas, fontSize = Float64, tint = Color,
@@ -75,7 +76,7 @@ pub mod Render {
         Item.Sprite({ texture = texture, tint = white(), alpha = 1.0,
                             scale = {x = 1.0, y = 1.0}, rotation = 0.0, centered = true,
                             flipH = false, flipV = false, regionRect = None, zIndex = zIndex,
-                            blend = DrawCmd.BlendMode.Normal, maskPolys = Nil })
+                            blend = DrawCmd.BlendMode.Normal, maskPolys = Nil, squashY = 1.0 })
 
     /// 反転付きスプライト。同型の Bool 2 つは取り違えやすいので名前で渡す。
     pub def spriteFlipped(texture: String, zIndex: Int32,
@@ -83,7 +84,7 @@ pub mod Render {
         Item.Sprite({ texture = texture, tint = white(), alpha = 1.0,
                             scale = {x = 1.0, y = 1.0}, rotation = 0.0, centered = true,
                             flipH = flip#flipH, flipV = flip#flipV, regionRect = None, zIndex = zIndex,
-                            blend = DrawCmd.BlendMode.Normal, maskPolys = Nil })
+                            blend = DrawCmd.BlendMode.Normal, maskPolys = Nil, squashY = 1.0 })
 
     pub def text(content: String, fontAtlas: FontAtlas, fontSize: Float64, zIndex: Int32): Item =
         Item.Text({ text = content, fontAtlas = fontAtlas, fontSize = fontSize, tint = white(),
@@ -520,6 +521,16 @@ pub mod Render {
             case other          => other
         }, item)
 
+    /// 絵を回した後で、中心を軸に画面の縦方向へ k 倍につぶす（Sprite にだけ効く。1.0 = つぶさない）。
+    /// rotation と組むと四角が平行四辺形になる — sprite-stacking（輪切りを回して重ねる）で
+    /// カメラを上下に傾ける口。型抜き（masked）の形も絵と一緒につぶれる。
+    /// WhyNot: scaled で縦を縮めて代わりにしない — scale は回す前に掛かるので、回した絵は長方形のまま。
+    pub def squashedY(k: Float64, item: Item): Item =
+        onLeaf(leaf -> match leaf {
+            case Item.Sprite(s) => Item.Sprite({ squashY = k | s })
+            case other          => other
+        }, item)
+
     /// 飾りの無い箱（角丸・枠線・縞・市松・回転がどれも無い単色）を、同じ形の多角形へ直す。
     /// 静的レイヤー（1 度だけ GPU に生成する層）は多角形だけを生成の対象にするので、箱で組んだ絵を
     /// そこへ載せたいときの入口。飾りのある箱・箱以外はそのまま返す（生成されずに動的側へ残る）。
@@ -743,7 +754,7 @@ pub mod Render {
               scale = { x = spec#size#x / spec#design#x, y = spec#size#y / spec#design#y },
               rotation = 0.0, centered = true, flipH = false, flipV = false,
               regionRect = Some(spec#src), zIndex = spec#z,
-              blend = DrawCmd.BlendMode.Normal, maskPolys = Nil }) }
+              blend = DrawCmd.BlendMode.Normal, maskPolys = Nil, squashY = 1.0 }) }
 
     /// Pass 1 枚を描き出し側の宣言（engine_tools の HeadlessRender.PassSpec と同形のレコード）へ
     /// 詰め替える。Shader 面は surfaces に分け（ShaderEval が画素ごとに描く）、3D の場面は scenes に分け、残りを drawables にする。
@@ -1101,7 +1112,7 @@ pub mod Render {
             let DrawCmd.Drawable.Drawable(_tex, _px, _py, sx, sy, _rot,
                                           _cr, _cg, _cb, _a, _cen,
                                           _uox, _uoy, _usx, _usy, _z,
-                                          _style, _clip, _blend, mask) = d;
+                                          _style, _clip, _blend, mask, _sq) = d;
             let zoomed: Vec2.Vec2 = {x = sx * transform#scale#x, y = sy * transform#scale#y};
             if (List.isEmpty(mask))
                 DrawCmd.withScale(zoomed, d)
@@ -1118,7 +1129,7 @@ pub mod Render {
             case Item.Sprite(s) =>
                 Render.Internal.Extract.spriteDrawable(s#texture, s#tint, s#alpha, s#scale, s#rotation,
                                s#centered, s#flipH, s#flipV, s#regionRect, s#zIndex, s#blend,
-                               s#maskPolys, pos) :: Nil
+                               s#maskPolys, s#squashY, pos) :: Nil
             case Item.Text(t) =>
                 Render.Internal.Extract.textDrawables(t#text, t#fontAtlas, t#fontSize, t#tint, t#alpha, t#rotation, t#zIndex, t#wrapWidth, pos)
             case Item.Box(b) =>

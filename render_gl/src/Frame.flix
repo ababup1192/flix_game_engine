@@ -52,7 +52,7 @@ mod RenderFrame {
             style = None,
             clip = None,
             blend = DrawCmd.BlendMode.Normal,
-            mask = Nil
+            mask = Nil, squashY = 1.0
         })
 
     /// デザイン解像度のアスペクト比を維持しつつ、フレームバッファに収まる最大矩形を計算。
@@ -355,16 +355,16 @@ mod RenderFrame {
         let DrawCmd.Drawable.Drawable(_tex, _px, _py, _sx, _sy, rot,
                                       cr, cg, cb, a, _cen,
                                       uox, uoy, usx, usy, _z,
-                                      style, _clip, _blend, _mask) = drawable;
+                                      style, _clip, _blend, _mask, sq) = drawable;
         let c = RenderUtil.cosF(rot);
         let s = RenderUtil.sinF(rot);
         let tx = posX + sizeX / 2.0 - c * sizeX / 2.0 + s * sizeY / 2.0;
-        let ty = posY + sizeY / 2.0 - s * sizeX / 2.0 - c * sizeY / 2.0;
+        let ty = posY + sizeY / 2.0 - sq * s * sizeX / 2.0 - sq * c * sizeY / 2.0;
         let base = slot * instanceFloats();
         discard data.put(base + 0, f32(c * sizeX));
-        discard data.put(base + 1, f32(s * sizeX));
+        discard data.put(base + 1, f32(sq * s * sizeX));
         discard data.put(base + 2, f32(-1.0 * s * sizeY));
-        discard data.put(base + 3, f32(c * sizeY));
+        discard data.put(base + 3, f32(sq * c * sizeY));
         discard data.put(base + 4, f32(tx));
         discard data.put(base + 5, f32(ty));
         discard data.put(base + 6, f32(uox));
@@ -686,7 +686,7 @@ mod RenderFrame {
         let DrawCmd.Drawable.Drawable(tex, _px, _py, _sx, _sy, _rot,
                                       _cr, _cg, _cb, _a, _cen,
                                       uox, uoy, usx, usy, _z,
-                                      _style, _clip, _blend, _mask) = drawable;
+                                      _style, _clip, _blend, _mask, _sq) = drawable;
         if (Set.memberOf(tex, upsideDownTargets))
             DrawCmd.withUv({ x = uox, y = 1.0 - uoy },
                            { x = usx, y = 0.0 - usy }, drawable)
@@ -711,7 +711,7 @@ mod RenderFrame {
         let DrawCmd.Drawable.Drawable(tex, px, py, sx, sy, _rot,
                                       _cr, _cg, _cb, _a, cen,
                                       _uox, _uoy, _usx, _usy, _z,
-                                      _style, _clip, _blend, _mask) = drawable;
+                                      _style, _clip, _blend, _mask, _sq) = drawable;
         if (String.isEmpty(tex)) {
             pushSpriteItem(st, list, scaleX, scaleY, 0,
                            px, py, sx, sy, drawable, false, false)
@@ -744,7 +744,7 @@ mod RenderFrame {
         let DrawCmd.Drawable.Drawable(tex, px, py, sx, sy, _rot,
                                       _cr, _cg, _cb, _a, cen,
                                       _uox, _uoy, _usx, _usy, _z,
-                                      _style, _clip, _blend, _mask) = drawable;
+                                      _style, _clip, _blend, _mask, _sq) = drawable;
         if (String.isEmpty(tex)) {
             pushMaskedItem(st, list, scaleX, scaleY, 0, px, py, sx, sy, drawable, false, false)
         } else {
@@ -772,7 +772,7 @@ mod RenderFrame {
         let DrawCmd.Drawable.Drawable(_tex, _px, _py, _sx, _sy, rot,
                                       _cr, _cg, _cb, _a, _cen,
                                       _uox, _uoy, _usx, _usy, _z,
-                                      _style, clip, blend, mask) = drawable;
+                                      _style, clip, blend, mask, sq) = drawable;
         let (clipFlag, x0, y0, x1, y1) = match clip {
             case None    => (0, 0, 0, 0, 0)
             case Some(r) =>
@@ -783,7 +783,7 @@ mod RenderFrame {
         let instanceAt = nextInstanceOf(list);
         writeInstAt(list#instances, instanceAt, posX, posY, sizeX, sizeY, drawable, useTex, sdf);
         let maskFirst = nextVertexOf(list);
-        let written = RenderSprite.writeMaskVerts(list#vertices, maskFirst, maskToScreen(rot, posX, posY, sizeX, sizeY, mask));
+        let written = RenderSprite.writeMaskVerts(list#vertices, maskFirst, maskToScreen(rot, sq, posX, posY, sizeX, sizeY, mask));
         let maskCount = if (written < 3) 0 else written;
         let ref = if (maskCount == 0) 0 else nextMaskRef(Array.get(maskRefSlot(), st));
         if (ref > 0) {
@@ -805,10 +805,10 @@ mod RenderFrame {
     def maskVertsOf(mask: List[List[Vec2.Vec2]]): Int32 = 3 * List.foldLeft((acc, poly) -> acc + List.length(poly), 0, mask)
 
     /// mask 頂点（表示クアッドのローカル design px・原点 = 左上・回転前）を、writeInstAt と
-    /// 同じ model 変換（回転中心 = クアッド中心）でスクリーン px へ写す。頂点を size の
+    /// 同じ model 変換（回転とつぶしの中心 = クアッド中心）でスクリーン px へ写す。頂点を size の
     /// 符号で掛け直すのは、反転（負の scale）がクアッドと同じ向きに mask にも掛かるため。
     /// クアッドが退化（辺長ほぼ 0）なら空を返す（絵も出ないので抜く形も要らない）。
-    def maskToScreen(rot: Float64, posX: Float64, posY: Float64,
+    def maskToScreen(rot: Float64, sq: Float64, posX: Float64, posY: Float64,
                      sizeX: Float64, sizeY: Float64,
                      mask: List[List[Vec2.Vec2]]): List[List[Vec2.Vec2]] =
         let aw = Float64.abs(sizeX);
@@ -818,11 +818,11 @@ mod RenderFrame {
             let c = RenderUtil.cosF(rot);
             let s = RenderUtil.sinF(rot);
             let tx = posX + sizeX / 2.0 - c * sizeX / 2.0 + s * sizeY / 2.0;
-            let ty = posY + sizeY / 2.0 - s * sizeX / 2.0 - c * sizeY / 2.0;
+            let ty = posY + sizeY / 2.0 - sq * s * sizeX / 2.0 - sq * c * sizeY / 2.0;
             mask |> List.map(poly -> poly |> List.map(v -> {
                 let vx = v#x / aw * sizeX;
                 let vy = v#y / ah * sizeY;
-                ({ x = c * vx - s * vy + tx, y = s * vx + c * vy + ty }: Vec2.Vec2)
+                ({ x = c * vx - s * vy + tx, y = sq * s * vx + sq * c * vy + ty }: Vec2.Vec2)
             }))
         }
 

@@ -46,5 +46,5 @@ pub mod TileScene {
                   regionRect = Some({ position = { x = tile#srcX, y = tile#srcY },
                                       size = { x = ts, y = ts } }),
                   zIndex = spec#zIndex,
-                  blend = DrawCmd.BlendMode.Normal, maskPolys = Nil }) })
+                  blend = DrawCmd.BlendMode.Normal, maskPolys = Nil, squashY = 1.0 }) })
 }

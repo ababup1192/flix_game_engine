@@ -220,7 +220,7 @@ pub mod UiExtract {
             scale = { x = dst#x / info#width, y = dst#y / info#height },
             rotation = 0.0, centered = false, flipH = false, flipV = false,
             regionRect = Some(src), zIndex = box#zIndex, blend = DrawCmd.BlendMode.Normal,
-            maskPolys = Nil })
+            maskPolys = Nil, squashY = 1.0 })
 
     /// text の Item。atlasOf で font 名から FontAtlas を引き、wrap 宣言を実際の折り返し幅へ
     /// 解き、fit なら矩形の縦に収まる fontSize まで縮めてから組む。
@@ -273,7 +273,7 @@ pub mod UiExtract {
                                   scale = regionAdjustedScale(sprite, regionOpt, textureInfoOf), rotation = 0.0, centered = false,
                                   flipH = sprite#flipH, flipV = sprite#flipV,
                                   regionRect = regionOpt, zIndex = sprite#zIndex,
-                                  blend = DrawCmd.BlendMode.Normal, maskPolys = Nil})
+                                  blend = DrawCmd.BlendMode.Normal, maskPolys = Nil, squashY = 1.0})
 
     /// region 使用時の描画 scale 補正。レンダラは quad を「テクスチャ全体サイズ × scale」で張るため、
     /// region（セル）描画では scale に regionSize/texSize を掛けて quad をセルサイズ × scale にする
