@@ -75,6 +75,7 @@ Flix はゲームの .flix の位置（`bug!`・match の網羅漏れ・`???` �
 
 project.json の `web`（`keysDoc`・`virtualPad: { dpad: true, buttons: [{label, action}] }`・`touchGestures: { longPress, swipeLeft, swipeRight, swipeUp, swipeDown }`・`orientation`）を
 `bin/fge export-web` が解く（操作の名前はキーの Doc の名前・手本 rpg-starter と sound-novel-starter）。スティックは [startup.md](startup.md) の「ブラウザ版の画面のスティック」。
+スティックとボタンの大きさと置き場所をゲームの HUD の絵にそろえる（`size`・`anchor`・`offset`・`visible`）のも同じ節。
 
 ゲームの側はキーとクリックのまま。canvas の指は次のように読み替わる:
 

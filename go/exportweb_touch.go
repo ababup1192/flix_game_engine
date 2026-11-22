@@ -51,24 +51,161 @@ func checkPortraitDesign(p *exportPortraitDesign, orientation string) error {
 
 type exportVirtualPad struct {
 	Dpad json.RawMessage `json:"dpad"`
-	// Stick は左のゾーンに十字キーの代わりに出す画面のスティック（倒した向きと強さを frame#leftStick へ渡す・キーは押さない）。
-	Stick   bool `json:"stick"`
+	// Stick は画面のスティック（倒した向きと強さを frame#leftStick へ渡す・キーは押さない）。true か、置き場所を書いた {…}。
+	Stick   json.RawMessage `json:"stick"`
 	Buttons []struct {
 		Label  string `json:"label"`
 		Action string `json:"action"`
+		exportPadPlace
 	} `json:"buttons"`
+}
+
+// exportPadPlace はスティックとボタンの置き場所（design px）。anchor を書いた物だけがゲームの画面の上に重なる。
+type exportPadPlace struct {
+	Size   *float64 `json:"size"`
+	Anchor string   `json:"anchor"`
+	Offset *struct {
+		X *float64 `json:"x"`
+		Y *float64 `json:"y"`
+	} `json:"offset"`
+	Visible *bool `json:"visible"`
 }
 
 // bundle.json に書く形。キーは KeyboardEvent.code に解いてある（頁の JS は code だけを扱う）。
 type webVirtualPad struct {
-	Dpad    map[string]string `json:"dpad,omitempty"`
-	Stick   bool              `json:"stick,omitempty"`
-	Buttons []webPadButton    `json:"buttons"`
+	Dpad       map[string]string `json:"dpad,omitempty"`
+	Stick      bool              `json:"stick,omitempty"`
+	StickPlace *webPadPlace      `json:"stickPlace,omitempty"`
+	Buttons    []webPadButton    `json:"buttons"`
 }
 
 type webPadButton struct {
-	Label string `json:"label"`
-	Code  string `json:"code"`
+	Label string       `json:"label"`
+	Code  string       `json:"code"`
+	Place *webPadPlace `json:"place,omitempty"`
+}
+
+// webPadPlace は丸の中心を anchor の角から内へ (x, y) 離した所に置く。値は design px（頁が canvas の拡大に掛ける）。
+type webPadPlace struct {
+	Anchor  string  `json:"anchor"`
+	X       float64 `json:"x"`
+	Y       float64 `json:"y"`
+	Size    float64 `json:"size"`
+	Visible bool    `json:"visible"`
+}
+
+var webPadAnchors = map[string]bool{"TopLeft": true, "TopRight": true, "BottomLeft": true, "BottomRight": true}
+
+// padPlaceOf は置き場所の欄を読む。anchor も size も offset も visible も無ければ nil（今までのゾーンに並べる）。
+func padPlaceOf(field string, p exportPadPlace) (*webPadPlace, error) {
+	if p.Anchor == "" && p.Size == nil && p.Offset == nil && p.Visible == nil {
+		return nil, nil
+	}
+	shape := fmt.Sprintf("\n  次: %s に { \"size\": 204, \"anchor\": \"BottomLeft\", \"offset\": { \"x\": 132, \"y\": 138 } } の 3 つをそろえて書く（値は design px・offset は角から丸の中心まで）", field)
+	if !webPadAnchors[p.Anchor] {
+		return nil, fmt.Errorf("project.json の %s.anchor が %q。%s（anchor は TopLeft・TopRight・BottomLeft・BottomRight のどれか）", field, p.Anchor, shape)
+	}
+	if p.Size == nil || *p.Size <= 0 {
+		return nil, fmt.Errorf("project.json の %s.size（丸の直径）が無いか 0 以下。%s", field, shape)
+	}
+	if p.Offset == nil || p.Offset.X == nil || p.Offset.Y == nil || *p.Offset.X < 0 || *p.Offset.Y < 0 {
+		return nil, fmt.Errorf("project.json の %s.offset の x と y は 0 以上の数。%s", field, shape)
+	}
+	visible := p.Visible == nil || *p.Visible
+	return &webPadPlace{Anchor: p.Anchor, X: *p.Offset.X, Y: *p.Offset.Y, Size: *p.Size, Visible: visible}, nil
+}
+
+func (pad *webVirtualPad) isPlaced() bool {
+	if pad.StickPlace != nil {
+		return true
+	}
+	for _, b := range pad.Buttons {
+		if b.Place != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// webStickOf は stick の欄を読む。false か無し = 出さない・true = 左のゾーン・{…} = 置き場所を書いたスティック。
+func webStickOf(raw json.RawMessage) (bool, *webPadPlace, error) {
+	if len(raw) == 0 || string(raw) == "null" || string(raw) == "false" {
+		return false, nil, nil
+	}
+	if string(raw) == "true" {
+		return true, nil, nil
+	}
+	var p exportPadPlace
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return false, nil, fmt.Errorf("project.json の web.virtualPad.stick を読めない: %v\n  次: true か { \"size\": …, \"anchor\": …, \"offset\": {…} } にする", err)
+	}
+	place, err := padPlaceOf("web.virtualPad.stick", p)
+	if err != nil {
+		return false, nil, err
+	}
+	if place == nil {
+		return false, nil, fmt.Errorf("project.json の web.virtualPad.stick が空の {}。\n  次: true にするか、size・anchor・offset を書く")
+	}
+	return true, place, nil
+}
+
+// checkPadPlaces は置き場所を書いた物と書かない物が混ざっていないかを見る。
+// WhyNot: 混ぜてよいことにしない — 置き場所の無い物は canvas を縮めた横のゾーンに出し、置き場所の有る物は canvas の上に重ねるので、
+// 両方を出すと canvas の大きさが決まらない。
+func checkPadPlaces(pad *webVirtualPad, portrait bool) error {
+	placed, loose := 0, 0
+	count := func(p *webPadPlace) {
+		if p != nil {
+			placed++
+		} else {
+			loose++
+		}
+	}
+	if pad.Stick {
+		count(pad.StickPlace)
+	}
+	for _, b := range pad.Buttons {
+		count(b.Place)
+	}
+	if placed == 0 {
+		return nil
+	}
+	if loose > 0 || pad.Dpad != nil {
+		return fmt.Errorf("project.json の web.virtualPad に、置き場所（anchor）を書いた物と書かない物（dpad を含む）が混ざっている。\n  次: stick と buttons の全部に size・anchor・offset を書くか、全部から消す（dpad は置き場所を持てない）")
+	}
+	if portrait {
+		return fmt.Errorf("project.json の web.virtualPad の置き場所（anchor）と web.portraitDesign が一緒にある（縦の design では HUD の位置が変わる）。\n  次: どちらかを消す")
+	}
+	return nil
+}
+
+// checkPadPlacesFit は置き場所を書いた丸が design の中に収まるかを見る（design は project.json の上の欄なので web 欄を解いた後に見る）。
+func checkPadPlacesFit(pad *webVirtualPad, designW, designH int) error {
+	if pad == nil || !pad.isPlaced() {
+		return nil
+	}
+	if designW <= 0 || designH <= 0 {
+		return fmt.Errorf("project.json の web.virtualPad の置き場所（anchor）は design px なので designWidth と designHeight が要る。\n  次: project.json に designWidth・designHeight を書く")
+	}
+	fits := func(field string, p *webPadPlace) error {
+		r := p.Size / 2
+		if p.X < r || p.Y < r || p.X+r > float64(designW) || p.Y+r > float64(designH) {
+			return fmt.Errorf("project.json の %s の丸（直径 %g・角から中心まで %g, %g）が design %d×%d の外へはみ出す。\n  次: offset の x と y を直径の半分以上、design の幅と高さから半分を引いた値以下にする",
+				field, p.Size, p.X, p.Y, designW, designH)
+		}
+		return nil
+	}
+	if pad.StickPlace != nil {
+		if err := fits("web.virtualPad.stick", pad.StickPlace); err != nil {
+			return err
+		}
+	}
+	for i, b := range pad.Buttons {
+		if err := fits(fmt.Sprintf("web.virtualPad.buttons[%d]", i), b.Place); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type webDesign struct {
@@ -178,12 +315,16 @@ func resolveWebTouch(game string, raw json.RawMessage) (webTouch, error) {
 			s.KeysDoc, action, keys)
 	}
 	if s.VirtualPad != nil {
-		pad := &webVirtualPad{Buttons: []webPadButton{}, Stick: s.VirtualPad.Stick}
+		stick, stickPlace, err := webStickOf(s.VirtualPad.Stick)
+		if err != nil {
+			return t, err
+		}
+		pad := &webVirtualPad{Buttons: []webPadButton{}, Stick: stick, StickPlace: stickPlace}
 		dpad, err := webDpadActions(s.VirtualPad.Dpad)
 		if err != nil {
 			return t, err
 		}
-		if dpad != nil && s.VirtualPad.Stick {
+		if dpad != nil && stick {
 			return t, fmt.Errorf("project.json の web.virtualPad に dpad と stick が両方ある（どちらも左のゾーンに出す）。\n  次: 斜めや強さで動かすなら stick: true だけ、上下左右のキーで動かすなら dpad だけにする")
 		}
 		if dpad != nil {
@@ -200,11 +341,19 @@ func resolveWebTouch(game string, raw json.RawMessage) (webTouch, error) {
 			return t, fmt.Errorf("project.json の web.virtualPad.buttons が %d 個。\n  次: 4 個までにする（指で押し分けられる数）", len(s.VirtualPad.Buttons))
 		}
 		for i, b := range s.VirtualPad.Buttons {
-			code, err := codeOf(fmt.Sprintf("web.virtualPad.buttons[%d]", i), b.Action)
+			field := fmt.Sprintf("web.virtualPad.buttons[%d]", i)
+			place, err := padPlaceOf(field, b.exportPadPlace)
 			if err != nil {
 				return t, err
 			}
-			pad.Buttons = append(pad.Buttons, webPadButton{Label: b.Label, Code: code})
+			code, err := codeOf(field, b.Action)
+			if err != nil {
+				return t, err
+			}
+			pad.Buttons = append(pad.Buttons, webPadButton{Label: b.Label, Code: code, Place: place})
+		}
+		if err := checkPadPlaces(pad, s.PortraitDesign != nil); err != nil {
+			return t, err
 		}
 		t.VirtualPad = pad
 	}

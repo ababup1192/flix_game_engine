@@ -93,6 +93,13 @@
   .fge-stick-knob { position: absolute; left: 50%; top: 50%; width: 60px; height: 60px; margin: -30px 0 0 -30px; border-radius: 50%;
                     background: rgba(255, 255, 255, .16); border: 2px solid rgba(255, 255, 255, .3); box-sizing: border-box; }
   .fge-stick.on .fge-stick-knob { background: rgba(255, 255, 255, .45); }
+  /* 置き場所を書いたスティックとボタン（canvas の上に重ねる 1 枚ずつ。位置と大きさは fge-web.js の fgePlacePad が design px から決める）。 */
+  .fge-pad-place { position: fixed; touch-action: none; }
+  /* WhyNot: align-self を残さない — 位置を決めた箱にも効き、上下の inset の間へ伸びずに下端へ寄って潰れる。 */
+  .fge-pad-place > .fge-stick, .fge-pad-place > .fge-pad-button { position: absolute; width: auto; height: auto; margin: 0; align-self: auto; }
+  .fge-pad-place .fge-stick-knob { left: 28%; top: 28%; width: 44%; height: 44%; margin: 0; }
+  /* visible: false — ゲームの HUD の絵をそのまま使い、指を受ける当たりだけを残す。 */
+  .fge-pad-ghost > * { visibility: hidden; }
 
   /* ── 縦の design で起動した時（WebLayer が縦を選んだ時だけ付く class）── */
   /* 縦の design は頁の上端と下端まで字とボタンを置くので、切り欠きとホームバーの内側に描く。横の design の縦持ちは帯の中央なので付けない。 */
@@ -104,7 +111,7 @@
 
   @media (orientation: portrait) {
     body.fge-pad-on { --fge-game-h: min(calc(100vw / var(--fge-aspect)), calc(100dvh - var(--fge-pad-min))); }
-    body.fge-pad-on #fge-canvas { height: var(--fge-game-h); }
+    body.fge-pad-on:not(.fge-pad-overlay) #fge-canvas { height: var(--fge-game-h); }
     body.fge-pad-on .fge-pad-zone { top: var(--fge-game-h); bottom: 0; width: 50vw;
                                     padding-bottom: env(safe-area-inset-bottom); }
     .fge-pad-left { left: 0; justify-content: flex-start; padding-left: max(var(--fge-edge), env(safe-area-inset-left)); }
@@ -112,7 +119,7 @@
   }
   @media (orientation: landscape) {
     body.fge-pad-on { --fge-game-w: min(calc(100dvh * var(--fge-aspect)), calc(100vw - 2 * var(--fge-side-min))); }
-    body.fge-pad-on #fge-canvas { left: calc((100vw - var(--fge-game-w)) / 2); width: var(--fge-game-w); }
+    body.fge-pad-on:not(.fge-pad-overlay) #fge-canvas { left: calc((100vw - var(--fge-game-w)) / 2); width: var(--fge-game-w); }
     body.fge-pad-on .fge-pad-zone { top: 0; bottom: 0; width: calc((100vw - var(--fge-game-w)) / 2);
                                     padding-top: 40px; padding-bottom: max(var(--fge-edge), env(safe-area-inset-bottom)); }
     .fge-pad-left { left: 0; justify-content: center; padding-left: max(var(--fge-edge), env(safe-area-inset-left)); }

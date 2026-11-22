@@ -246,6 +246,97 @@ func TestResolveWebTouchRejectsBadPortraitDesign(t *testing.T) {
 	}
 }
 
+func TestResolveWebTouchWithoutPlaceKeepsBundleBytes(t *testing.T) {
+	game := writeTouchGame(t, touchKeys)
+	raw := json.RawMessage(`{"keysDoc": "assets/game.keys.json", "virtualPad": {"stick": true, "buttons": [{"label": "A", "action": "confirm"}]}}`)
+	got, err := resolveWebTouch(game, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, _ := json.Marshal(got.VirtualPad)
+	if string(out) != `{"stick":true,"buttons":[{"label":"A","code":"KeyZ"}]}` {
+		t.Errorf("置き場所を書かなければ束のパッドは前と同じ形のはず: %s", out)
+	}
+}
+
+const placedPad = `{"keysDoc": "assets/game.keys.json", "virtualPad": {
+  "stick": {"size": 204, "anchor": "BottomLeft", "offset": {"x": 132, "y": 138}, "visible": false},
+  "buttons": [{"label": "つかう", "action": "confirm", "size": 156, "anchor": "BottomRight", "offset": {"x": 108, "y": 138}}]}}`
+
+func TestResolveWebTouchReadsStickPlace(t *testing.T) {
+	got, err := resolveWebTouch(writeTouchGame(t, touchKeys), json.RawMessage(placedPad))
+	want := webPadPlace{Anchor: "BottomLeft", X: 132, Y: 138, Size: 204, Visible: false}
+	if err != nil || !got.VirtualPad.Stick || got.VirtualPad.StickPlace == nil || *got.VirtualPad.StickPlace != want {
+		t.Errorf("スティックの置き場所は書いたとおりのはず: %+v %v", got.VirtualPad, err)
+	}
+}
+
+func TestResolveWebTouchButtonPlaceIsVisibleByDefault(t *testing.T) {
+	got, err := resolveWebTouch(writeTouchGame(t, touchKeys), json.RawMessage(placedPad))
+	want := webPadPlace{Anchor: "BottomRight", X: 108, Y: 138, Size: 156, Visible: true}
+	if err != nil || got.VirtualPad.Buttons[0].Place == nil || *got.VirtualPad.Buttons[0].Place != want {
+		t.Errorf("visible を書かないボタンは見える置き場所のはず: %+v %v", got.VirtualPad, err)
+	}
+}
+
+func TestResolveWebTouchRejectsBadPlace(t *testing.T) {
+	game := writeTouchGame(t, touchKeys)
+	cases := map[string]string{
+		"anchor の名前":  `{"stick": {"size": 100, "anchor": "Bottom", "offset": {"x": 60, "y": 60}}}`,
+		"size が 0":    `{"stick": {"size": 0, "anchor": "BottomLeft", "offset": {"x": 60, "y": 60}}}`,
+		"offset が無い":  `{"stick": {"size": 100, "anchor": "BottomLeft"}}`,
+		"offset が負":   `{"stick": {"size": 100, "anchor": "BottomLeft", "offset": {"x": -1, "y": 60}}}`,
+		"空の {}":       `{"stick": {}}`,
+		"visible だけ":  `{"stick": {"visible": false}}`,
+		"置き場所の有無が混ざる": `{"stick": {"size": 100, "anchor": "BottomLeft", "offset": {"x": 60, "y": 60}}, "buttons": [{"label": "A", "action": "confirm"}]}`,
+		"dpad と置き場所":  `{"dpad": true, "buttons": [{"label": "A", "action": "confirm", "size": 100, "anchor": "BottomRight", "offset": {"x": 60, "y": 60}}]}`,
+	}
+	for name, pad := range cases {
+		raw := json.RawMessage(`{"keysDoc": "assets/game.keys.json", "virtualPad": ` + pad + `}`)
+		if _, err := resolveWebTouch(game, raw); err == nil {
+			t.Errorf("%s は誤りのはず", name)
+		}
+	}
+}
+
+func TestResolveWebTouchRejectsPlaceWithPortraitDesign(t *testing.T) {
+	raw := json.RawMessage(`{"portraitDesign": {"width": 540, "minHeight": 960},
+	  "virtualPad": {"stick": {"size": 100, "anchor": "BottomLeft", "offset": {"x": 60, "y": 60}}}}`)
+	if _, err := resolveWebTouch(t.TempDir(), raw); err == nil {
+		t.Error("置き場所は横の design の px なので portraitDesign と一緒は誤りのはず")
+	}
+}
+
+func TestCheckPadPlacesFitRejectsCircleOutsideDesign(t *testing.T) {
+	got, err := resolveWebTouch(writeTouchGame(t, touchKeys), json.RawMessage(placedPad))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := checkPadPlacesFit(got.VirtualPad, 1560, 239); err == nil {
+		t.Error("高さ 239 の design に中心 138・半径 102 の丸は収まらないはず")
+	}
+}
+
+func TestCheckPadPlacesFitAcceptsCircleInsideDesign(t *testing.T) {
+	got, err := resolveWebTouch(writeTouchGame(t, touchKeys), json.RawMessage(placedPad))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := checkPadPlacesFit(got.VirtualPad, 1560, 720); err != nil {
+		t.Errorf("1560×720 の design に収まる丸は通るはず: %v", err)
+	}
+}
+
+func TestCheckPadPlacesFitNeedsDesign(t *testing.T) {
+	got, err := resolveWebTouch(writeTouchGame(t, touchKeys), json.RawMessage(placedPad))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := checkPadPlacesFit(got.VirtualPad, 0, 0); err == nil {
+		t.Error("design の無い project の置き場所は誤りのはず")
+	}
+}
+
 func mapsEqual(a, b map[string]string) bool {
 	if len(a) != len(b) {
 		return false

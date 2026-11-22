@@ -512,7 +512,7 @@ function fgeUsePortraitDesign(aspect) {
 }
 
 fgePointer.touch = fgeCoarseAtBoot;
-var fgePad = { fingers: new Map(), targets: [], dpad: null, stick: null };
+var fgePad = { fingers: new Map(), targets: [], dpad: null, stick: null, placed: [] };
 function fgePadSync() {
   var held = Object.create(null);
   fgePad.fingers.forEach(function (f) { if (f.code) held[f.code] = true; });
@@ -551,8 +551,9 @@ function fgeStickBegin(f, x, y) {
   f.restX = r.left + r.width / 2;
   f.restY = r.top + r.height / 2;
   f.radius = Math.max(1, r.width * 0.4);
-  f.cx = x;
-  f.cy = y;
+  // WhyNot: 置き場所を書いたスティックを指の所へ動かさない — ゲームの HUD が同じ所に台の絵を描いていて、台だけがずれて見える。
+  f.cx = fgePad.stick.fixed ? f.restX : x;
+  f.cy = fgePad.stick.fixed ? f.restY : y;
   f.x = x;
   f.y = y;
 }
@@ -617,8 +618,46 @@ function fgePadAim(f, x, y) {
   }
 }
 
+function fgeMakeStick(fixed) {
+  var base = document.createElement("div");
+  base.className = "fge-stick";
+  var knob = document.createElement("div");
+  knob.className = "fge-stick-knob";
+  base.appendChild(knob);
+  fgePad.stick = { el: base, knob: knob, fixed: fixed };
+  return base;
+}
+function fgeMakePadButton(b, i) {
+  var el = document.createElement("div");
+  el.className = "fge-pad-button fge-pad-button-" + i;
+  el.textContent = b.label;
+  fgePad.targets.push({ el: el, code: b.code, dir: null });
+  return el;
+}
+// 置き場所を書いた物は、それぞれが指を受ける 1 枚（丸より fgePlaceSlop だけ広い）として canvas の上に重ねる。
+var fgePlaceSlop = 12;
+function fgePlaceZone(pad, child, place) {
+  var zone = document.createElement("div");
+  zone.className = "fge-pad-place" + (place.visible ? "" : " fge-pad-ghost");
+  child.style.inset = fgePlaceSlop + "px";
+  zone.appendChild(child);
+  pad.appendChild(zone);
+  fgePad.placed.push({ zone: zone, place: place });
+  return zone;
+}
 function fgeBuildPad(cfg) {
   var pad = document.getElementById("fge-pad");
+  var placed = !!cfg.stickPlace || (cfg.buttons || []).some(function (b) { return !!b.place; });
+  if (placed) {
+    // bin/fge export-web が「全部に置き場所」か「どれにも無い」かを確かめてある。
+    var zones = [];
+    if (cfg.stick) zones.push({ el: fgePlaceZone(pad, fgeMakeStick(true), cfg.stickPlace), stick: true });
+    (cfg.buttons || []).forEach(function (b, i) {
+      zones.push({ el: fgePlaceZone(pad, fgeMakePadButton(b, i), b.place), stick: false });
+    });
+    zones.forEach(function (z) { fgePadListen(z.el, z.stick); });
+    return;
+  }
   var left = document.createElement("div");
   left.className = "fge-pad-zone fge-pad-left";
   var right = document.createElement("div");
@@ -636,50 +675,56 @@ function fgeBuildPad(cfg) {
     });
     left.appendChild(dpad);
   }
-  if (cfg.stick) {
-    var base = document.createElement("div");
-    base.className = "fge-stick";
-    var knob = document.createElement("div");
-    knob.className = "fge-stick-knob";
-    base.appendChild(knob);
-    fgePad.stick = { el: base, knob: knob };
-    left.appendChild(base);
-  }
+  if (cfg.stick) left.appendChild(fgeMakeStick(false));
   var buttons = document.createElement("div");
   buttons.className = "fge-pad-buttons";
-  (cfg.buttons || []).forEach(function (b, i) {
-    var el = document.createElement("div");
-    el.className = "fge-pad-button fge-pad-button-" + i;
-    el.textContent = b.label;
-    buttons.appendChild(el);
-    fgePad.targets.push({ el: el, code: b.code, dir: null });
-  });
+  (cfg.buttons || []).forEach(function (b, i) { buttons.appendChild(fgeMakePadButton(b, i)); });
   right.appendChild(buttons);
   pad.appendChild(left);
   pad.appendChild(right);
-  [left, right].forEach(function (zone) {
-    zone.addEventListener("pointerdown", function (e) {
-      e.preventDefault();
-      fgeNotePointer(e);
-      // WhyNot: 暗黙の capture を当てにしない — マウスで確かめる時は capture されず、指を滑らせた後の move が帯の外へ逃げる。
-      try { zone.setPointerCapture(e.pointerId); } catch (err) { /* 押し終えた指 */ }
-      var f = { kind: fgeInDpad(e.clientX, e.clientY) ? "dpad" : "button", dir: null, code: null };
-      // WhyNot: 2 本目の指でスティックを掴み直さない — 1 本目の向きが途中で別の指の向きへ跳ぶ。2 本目はゾーンの中のボタンを探すだけ。
-      if (zone === left && fgePad.stick && !fgeStickFinger()) fgeStickBegin(f, e.clientX, e.clientY);
-      fgePadAim(f, e.clientX, e.clientY);
-      fgePad.fingers.set(e.pointerId, f);
-      fgePadSync();
-    });
-    zone.addEventListener("pointermove", function (e) {
-      var f = fgePad.fingers.get(e.pointerId);
-      if (!f) return;
-      fgePadAim(f, e.clientX, e.clientY);
-      fgePadSync();
-    });
-    var lift = function (e) { if (fgePad.fingers.delete(e.pointerId)) fgePadSync(); };
-    zone.addEventListener("pointerup", lift);
-    zone.addEventListener("pointercancel", lift);
-    zone.addEventListener("lostpointercapture", lift);
+  fgePadListen(left, true);
+  fgePadListen(right, false);
+}
+// stickZone: このゾーンで最初に置いた指がスティックを掴む。
+function fgePadListen(zone, stickZone) {
+  zone.addEventListener("pointerdown", function (e) {
+    e.preventDefault();
+    fgeNotePointer(e);
+    // WhyNot: 暗黙の capture を当てにしない — マウスで確かめる時は capture されず、指を滑らせた後の move が帯の外へ逃げる。
+    try { zone.setPointerCapture(e.pointerId); } catch (err) { /* 押し終えた指 */ }
+    var f = { kind: fgeInDpad(e.clientX, e.clientY) ? "dpad" : "button", dir: null, code: null };
+    // WhyNot: 2 本目の指でスティックを掴み直さない — 1 本目の向きが途中で別の指の向きへ跳ぶ。2 本目はゾーンの中のボタンを探すだけ。
+    if (stickZone && fgePad.stick && !fgeStickFinger()) fgeStickBegin(f, e.clientX, e.clientY);
+    fgePadAim(f, e.clientX, e.clientY);
+    fgePad.fingers.set(e.pointerId, f);
+    fgePadSync();
+  });
+  zone.addEventListener("pointermove", function (e) {
+    var f = fgePad.fingers.get(e.pointerId);
+    if (!f) return;
+    fgePadAim(f, e.clientX, e.clientY);
+    fgePadSync();
+  });
+  var lift = function (e) { if (fgePad.fingers.delete(e.pointerId)) fgePadSync(); };
+  zone.addEventListener("pointerup", lift);
+  zone.addEventListener("pointercancel", lift);
+  zone.addEventListener("lostpointercapture", lift);
+}
+// 置き場所（design px・角から丸の中心まで）を CSS px へ。design は canvas の中に縦横比を保って真ん中に収まる（描き手の余りの黒と同じ）。
+function fgePlacePad() {
+  if (!fgePad.placed.length || !fgeCaptureDesign) return;
+  var r = fgeCanvas.getBoundingClientRect();
+  var d = fgeCaptureDesign;
+  var k = Math.min(r.width / d.w, r.height / d.h);
+  var ox = r.left + (r.width - d.w * k) / 2, oy = r.top + (r.height - d.h * k) / 2;
+  fgePad.placed.forEach(function (p) {
+    var pl = p.place;
+    var cx = pl.anchor === "TopRight" || pl.anchor === "BottomRight" ? d.w - pl.x : pl.x;
+    var cy = pl.anchor === "BottomLeft" || pl.anchor === "BottomRight" ? d.h - pl.y : pl.y;
+    var half = pl.size * k / 2 + fgePlaceSlop;
+    p.zone.style.left = (ox + cx * k - half) + "px";
+    p.zone.style.top = (oy + cy * k - half) + "px";
+    p.zone.style.width = p.zone.style.height = (half * 2) + "px";
   });
 }
 
@@ -692,12 +737,14 @@ function fgeApplyLayout() {
   if (body.classList.contains("fge-pad-on") !== padOn) fgePadReleaseAll();
   body.classList.toggle("fge-touch", coarse);
   body.classList.toggle("fge-pad-on", padOn);
+  body.classList.toggle("fge-pad-overlay", padOn && fgePad.placed.length > 0);
   body.classList.toggle("fge-want-landscape", fgeWeb.orientation === "landscape");
   body.classList.toggle("fge-want-portrait", fgeWeb.orientation === "portrait");
   // WhyNot: orientationchange を待たない — 発火の時にはまだ前の向きの大きさのままの端末がある。大きさの変化（resize）で見る。
   var orientation = innerWidth >= innerHeight ? "landscape" : "portrait";
   if (fgeLastOrientation !== null && orientation !== fgeLastOrientation) fgePadReleaseAll();
   fgeLastOrientation = orientation;
+  if (padOn) fgePlacePad();
 }
 
 // canvas の上の指: 離した時にタップ（その位置のクリック）・縦のドラッグはホイール・横に払うとスワイプ・長押し。
