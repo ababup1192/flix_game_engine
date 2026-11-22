@@ -123,6 +123,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | スマホ（指の小さい画面）の時だけ字とボタンを大きくする・並べ方を替える | View は `ctx#display#sizeClass == Display.SizeClass.Small`・当たりは `frame#sizeClass`・大きさは Doc に出す（PC では頁を `?fge=small,touch`・engine の `docs/web-export.md` の「スマホの時だけ字とボタンを大きくする」） |
 | ブラウザ版をスマホで遊べるようにする（十字キーとボタン・タップ・長押し・払う・向き） | project.json の `web`（`keysDoc`・`virtualPad`・`touchGestures`・`orientation`）。ゲームの側はキーとクリックのまま（指の読み替えは engine の `docs/web-export.md` の「スマホで遊べるようにする」） |
 | ブラウザ版のスマホで、画面にスティックを出してキャラを 360 度歩かせる（倒した向きと強さ） | project.json の `web.virtualPad: { stick: true }`（値はパッドと同じ `frame#leftStick`・canvas の指から自前で作らない・engine の `docs/startup.md` の「ブラウザ版の画面のスティック」） |
+| ブラウザ版のスマホの画面のスティックとボタンを、ゲームの HUD が描いた絵の大きさと位置にそろえる（絵はゲーム・当たりだけ） | `web.virtualPad.stick` を `{ size, anchor, offset: {x, y}, visible: false }` にし、`buttons[]` の 1 個ずつにも同じ欄（design px・offset は角から丸の中心まで・全部に書くか全部から消す・engine の `docs/startup.md` の「スティックとボタンの大きさと置き場所」）。頁の JS や CSS を書き足さない |
 | ブラウザ版の指の長押しを、キーボードの Esc（戻るのキー）と取り違えずに読む（押した所のボタンの名前を出す・ほかの所は隠す） | キーの Doc に長押しだけの操作を足し `web.touchGestures.longPress` に（戻るのキーにしない・engine の `docs/web-export.md` の「長押しを Esc（戻るのキー）と取り違えない」） |
 | スマホを縦に持った時に縦長の画面で起動する（縦の並べ方を足す） | project.json の `web.portraitDesign`・View は `ViewCtx#display#orientation`・当たりは `Display.orientationOf(frame#viewport)`（確かめ方は engine の `docs/web-export.md` の「縦の画面で起動する」） |
 | ブラウザ版の書き出しを小さくする（絵・音・字のアトラス） | `bin/fge export-web` が WebP・Opus に替える。強さは project.json の `web.compress`（engine の `docs/web-export.md` の「書き出しを小さくする」） |

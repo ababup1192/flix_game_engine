@@ -190,6 +190,40 @@ project.json の `"web": { "virtualPad": { "stick": true, "buttons": [...] } }` 
 - 左のゾーンで 2 本目に置いた指は、スティックを掴み直さない。向きを替えた時・タブが裏に回った時は、十字キーと同じく指を全部離す。
 - PC で確かめる時は頁を `?fge=touch` で開き、左のゾーンをマウスで押して動かす。
 
+### スティックとボタンの大きさと置き場所（ゲームの HUD の絵にそろえる）
+
+ゲームの HUD がスティックとボタンの絵を自分で描いている時は、`stick` を `true` の代わりに `{…}` にし、`buttons[]` の 1 個ずつにも
+同じ欄を書くと、横のゾーンへ並べる代わりにゲームの画面（canvas）の上の指定の所へ重ねる。
+
+```json
+"web": {
+  "keysDoc": "assets/player.keys.json",
+  "virtualPad": {
+    "stick": { "size": 204, "anchor": "BottomLeft", "offset": { "x": 132, "y": 138 }, "visible": false },
+    "buttons": [
+      { "label": "つかう", "action": "use", "size": 156, "anchor": "BottomRight", "offset": { "x": 108, "y": 138 }, "visible": false },
+      { "label": "もちもの", "action": "bag", "size": 114, "anchor": "BottomRight", "offset": { "x": 276, "y": 84 }, "visible": false }
+    ]
+  }
+}
+```
+
+| 欄 | 意味 |
+|---|---|
+| `size` | 丸の直径（design px） |
+| `anchor` | 基準の角。`TopLeft`・`TopRight`・`BottomLeft`・`BottomRight` |
+| `offset` | 角から丸の**中心**までの距離（design px・`x` と `y` は内へ向かって正）。HUD の絵の中心と同じ値を書けばそろう |
+| `visible` | 省略は `true`。`false` は絵を出さず、指を受ける当たりだけを置く（ゲームの HUD の絵をそのまま使う） |
+
+- 値はどれも design px。頁は design を canvas に縦横比を保って真ん中に収めた時の拡大（描き手の余りの黒と同じ）を掛けて CSS px にするので、
+  端末の大きさが変わっても HUD の絵と重なったまま。当たりは丸より 12 CSS px 広い。
+- 置き場所を書いたスティックは、指を置いた所へ台が動かない（台の中心は書いた所のまま。倒した量は直径の 0.4 倍で長さ 1）。
+- 置き場所を書いた時は、canvas を縮めて横のゾーンを空けない（画面いっぱいのまま、その上に重ねる）。
+- `stick` と `buttons` の**全部に書くか、全部から消すか**のどちらか（混ぜると書き出しで止まる）。`dpad`・`web.portraitDesign` とは一緒に書けない。
+  `size`・`anchor`・`offset` の 3 つはそろえて書く。丸が design の外へはみ出す値も書き出しで止まる。
+- 欄を書かなければ、今までどおり左右のゾーンに並ぶ（束も頁の動きも変わらない）。
+- HUD の絵のボタンにゲームの側の当たり（クリック）も置いているなら、そのままでよい。指は重ねた当たりが受けてキーを押し、canvas には届かない（二重に押されない）。
+
 ## ブラウザ版の指の操作（`web.touchGestures`）
 
 project.json の `"web": { "keysDoc": "assets/<名前>.keys.json", "touchGestures": { "swipeUp": "advance" } }` の値はキーの Doc の操作の名前。

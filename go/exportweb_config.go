@@ -152,6 +152,9 @@ func loadExportConfig(o exportWebOptions) (exportConfig, *exportFailure) {
 	if c.Touch, err = resolveWebTouch(p.Game, proj.Web); err != nil {
 		return c, exportFail(1, err)
 	}
+	if err = checkPadPlacesFit(c.Touch.VirtualPad, proj.DesignWidth, proj.DesignHeight); err != nil {
+		return c, exportFail(1, err)
+	}
 	if c.Compress, err = resolveWebCompress(proj.Web); err != nil {
 		return c, exportFail(1, err)
 	}
