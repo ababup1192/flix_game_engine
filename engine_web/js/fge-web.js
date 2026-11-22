@@ -444,6 +444,7 @@ function fgeBeginFrame() {
   if (fgeUsedAssets !== null) fgeUsedAssets.frame++;
   fgeFrameLatch = fgeLatch;
   fgeLatch = Object.create(null);
+  fgeTouchClickNext();
   fgePointer.frameLatch = fgePointer.latch;
   fgePointer.latch = [false, false, false];
 }
@@ -752,38 +753,106 @@ function fgeApplyLayout() {
 // 横のドラッグの間は、マウスの左ボタンを押したまま動かすのと同じに見せる（横と決まった所で押し始め、位置は指に付いて動く。離すと押しも離れる）。
 // スライダーを指で動かせるように。
 // 長押しは、動かさずに fgeLongPressMs 以上置いてから離した時に出す（離した時のタップの代わり）。
-// 主な指（isPrimary）だけを追う。
+// 動かさずに置いている間（ホイール・払い・長押しに決まる前）は、置いた所で左ボタンを押している状態にする（押した拍は離した時のまま）。
+// 長押しのボタンで続けて何かをする形を指でも効かせる。置いている指が 2 本ならカーソルは後に置いた指の所。
+// ジェスチャーを追うのは canvas に最初に置いた指 1 本。追っている間に置いた別の指は、タップ（大きく動かさずに離す）だけをクリックにする。
+// WhyNot: isPrimary で選ばない — パッド（virtualPad）に置いた指が主な指になり、パッドを持ったまま押した canvas の指が全部捨てられる。
+// WhyNot: 2 本目の指のドラッグ・払い・長押しを追わない — マウスの位置と左ボタンは 1 つしか無く、2 本のドラッグは 1 つのカーソルに混ざる。
 var fgeTouchSlop = 16;
 var fgeWheelStep = 40;
 var fgeSwipeMin = 60;
 var fgeLongPressMs = 650;
 var fgeEdgeMargin = 24;
 var fgeGesture = null;
+var fgeExtraTaps = new Map();
+var fgeTouchOrder = 0;
+var fgeTouchHolding = false;
+// 指の今の状態から、左ボタンの押している状態とカーソルを作り直す。
+function fgeTouchSyncHold() {
+  if (fgeGesture && fgeGesture.mode === "swipe") { fgeTouchHolding = false; return; }
+  var best = null;
+  if (fgeGesture && fgeGesture.mode === "tap" && !fgeGesture.held) best = fgeGesture;
+  fgeExtraTaps.forEach(function (t) { if (!t.moved && (best === null || t.order > best.order)) best = t; });
+  if (best !== null) {
+    fgePointer.x = best.px;
+    fgePointer.y = best.py;
+    fgePointer.buttons[0] = true;
+    fgeTouchHolding = true;
+  } else if (fgeTouchHolding) {
+    // WhyNot: 指が押していない時に落とさない — マウスも付いた端末で、押したままのマウスの左ボタンが離れる。
+    fgePointer.buttons[0] = false;
+    fgeTouchHolding = false;
+  }
+}
+// 同じコマに来た 2 つ目からのタップ。1 コマに 1 つずつ出す（frame#cursor と frame#mouseClicked は 1 つしか無い）。
+var fgeTapQueue = [];
+function fgeTouchClick(x, y) {
+  if (fgePointer.latch[0] || fgeTapQueue.length > 0) { fgeTapQueue.push({ x: x, y: y }); return; }
+  fgePointer.x = x;
+  fgePointer.y = y;
+  fgePointer.latch[0] = true;
+}
+function fgeTouchClickNext() {
+  if (fgePointer.latch[0]) return;
+  // クリックを出したコマの後は、置いたままの指の所へカーソルを戻す。
+  if (fgeTapQueue.length === 0) { if (fgeTouchHolding) fgeTouchSyncHold(); return; }
+  var t = fgeTapQueue.shift();
+  fgePointer.x = t.x;
+  fgePointer.y = t.y;
+  fgePointer.latch[0] = true;
+}
+function fgeDropGesture(g) {
+  if (g.timer) clearTimeout(g.timer);
+  if (g.mode === "swipe") fgePointer.buttons[0] = false;
+  if (fgeGesture === g) fgeGesture = null;
+}
+// 離した合図（pointerup・pointercancel）の来なかった指を捨てる。
+function fgeTouchForget() {
+  if (fgeGesture) fgeDropGesture(fgeGesture);
+  fgeExtraTaps.clear();
+  fgeTapQueue = [];
+  fgeTouchSyncHold();
+}
 function fgeGestureKey(name) {
   var g = fgeWeb.touchGestures;
   return g && g[name] ? g[name] : null;
 }
 function fgeTapKey(code) { fgeLatch[code] = true; }
 function fgeGestureDown(e, canvasXY) {
-  if (!e.isPrimary) return;
-  if (fgeGesture && fgeGesture.timer) clearTimeout(fgeGesture.timer);
+  // 主な指が置かれた時は、前の指が全部離れている。
+  if (e.isPrimary) fgeTouchForget();
+  if (fgeGesture) {
+    // WhyNot: 横のドラッグ中に置いた指を受けない — 左ボタンを押したままのカーソルが 2 本目の指の所へ跳び、ドラッグしている物がそこへ飛ぶ。
+    if (fgeGesture.mode === "swipe") return;
+    fgeExtraTaps.set(e.pointerId, { x0: e.clientX, y0: e.clientY, px: canvasXY.x, py: canvasXY.y, moved: false, order: ++fgeTouchOrder });
+    fgeTouchSyncHold();
+    return;
+  }
   var g = { id: e.pointerId, x0: e.clientX, y0: e.clientY, lastY: e.clientY, px: canvasXY.x, py: canvasXY.y,
-            mode: "tap", wheelRest: 0, wheelSign: 0, timer: 0, held: false };
+            mode: "tap", wheelRest: 0, wheelSign: 0, timer: 0, held: false, order: ++fgeTouchOrder };
   if (fgeGestureKey("longPress")) {
     g.timer = setTimeout(function () {
       // WhyNot: 置いている間に出さない — スライダーのつまみに指を置いて少し止めてから動かすと、戻るが出て画面が閉じる。
-      if (fgeGesture === g && g.mode === "tap") g.held = true;
+      if (fgeGesture === g && g.mode === "tap") { g.held = true; fgeTouchSyncHold(); }
     }, fgeLongPressMs);
   }
   fgeGesture = g;
+  fgeTouchSyncHold();
 }
 function fgeGestureMove(e, canvasXY) {
+  var t = fgeExtraTaps.get(e.pointerId);
+  if (t) {
+    var tx = e.clientX - t.x0, ty = e.clientY - t.y0;
+    if (!t.moved && tx * tx + ty * ty > fgeTouchSlop * fgeTouchSlop) { t.moved = true; fgeTouchSyncHold(); }
+    return;
+  }
   var g = fgeGesture;
   if (!g || g.id !== e.pointerId) return;
   var dx = e.clientX - g.x0, dy = e.clientY - g.y0;
   if (g.mode === "tap" && dx * dx + dy * dy > fgeTouchSlop * fgeTouchSlop) {
     g.mode = Math.abs(dy) > Math.abs(dx) ? "scroll" : "swipe";
     if (g.timer) { clearTimeout(g.timer); g.timer = 0; }
+    fgeTouchSyncHold();
   }
   if (g.mode === "swipe") {
     // WhyNot: 押した拍（latch）を立てない — 横に払っただけで、払い始めの所のボタンが押される。
@@ -804,18 +873,23 @@ function fgeGestureMove(e, canvasXY) {
   g.lastY = e.clientY;
 }
 function fgeGestureUp(e) {
+  var t = fgeExtraTaps.get(e.pointerId);
+  if (t) {
+    fgeExtraTaps.delete(e.pointerId);
+    fgeTouchSyncHold();
+    // WhyNot: 横のドラッグ中はクリックにしない — 左ボタンを押したままのカーソルが 2 本目の指の所へ跳び、ドラッグしている物がそこへ飛ぶ。
+    if (!t.moved && !(fgeGesture && fgeGesture.mode === "swipe")) fgeTouchClick(t.px, t.py);
+    return;
+  }
   var g = fgeGesture;
   if (!g || g.id !== e.pointerId) return;
-  fgeGesture = null;
-  if (g.timer) clearTimeout(g.timer);
-  if (g.mode === "swipe") fgePointer.buttons[0] = false;
+  fgeDropGesture(g);
+  fgeTouchSyncHold();
   if (g.mode === "tap" && g.held) {
     fgeTapKey(fgeGestureKey("longPress"));
   } else if (g.mode === "tap") {
     // WhyNot: 離した所で押さない — 指を離す時のずれで隣のボタンを押す。押した時の位置に戻してから押す。
-    fgePointer.x = g.px;
-    fgePointer.y = g.py;
-    fgePointer.latch[0] = true;
+    fgeTouchClick(g.px, g.py);
   } else if (g.mode === "swipe") {
     var dx = e.clientX - g.x0, dy = e.clientY - g.y0;
     // WhyNot: 画面の端から始まった払いをスワイプにしない — Android・iOS の「戻る」のジェスチャーと同じ指の動きで、両方が起きる。
@@ -835,11 +909,20 @@ function fgeGestureUp(e) {
   }
 }
 function fgeGestureCancel(e) {
-  var g = fgeGesture;
-  if (!g || g.id !== e.pointerId) return;
-  if (g.timer) clearTimeout(g.timer);
-  if (g.mode === "swipe") fgePointer.buttons[0] = false;
-  fgeGesture = null;
+  if (fgeExtraTaps.delete(e.pointerId)) { fgeTouchSyncHold(); return; }
+  if (fgeGesture && fgeGesture.id === e.pointerId) { fgeDropGesture(fgeGesture); fgeTouchSyncHold(); }
+}
+// iOS の WebKit は pointerup・pointercancel を落とすことがある。touch の event の今触れている指に canvas の指が 1 本も無ければ、残った追い先を捨てる。
+// WhyNot: すぐ捨てない — touchend が pointerup より先に来る端末で、離したタップが消える。
+function fgeTouchPrune(e) {
+  for (var i = 0; i < e.touches.length; i++) if (e.touches[i].target === fgeCanvas) return;
+  if (!fgeGesture && fgeExtraTaps.size === 0) return;
+  var g = fgeGesture, ids = Array.from(fgeExtraTaps.keys());
+  setTimeout(function () {
+    if (g && fgeGesture === g) fgeDropGesture(g);
+    ids.forEach(function (id) { fgeExtraTaps.delete(id); });
+    fgeTouchSyncHold();
+  }, 100);
 }
 
 function fgeNotePointer(e) { fgePointer.touch = e.pointerType === "touch"; }
@@ -888,10 +971,10 @@ function fgeWireInput() {
     fgeAudio.wake();
   });
   window.addEventListener("keyup", function (e) { fgeKeys[e.code] = false; });
-  window.addEventListener("blur", function () { fgeReleaseAll(); fgePadReleaseAll(); });
+  window.addEventListener("blur", function () { fgeReleaseAll(); fgePadReleaseAll(); fgeTouchForget(); });
   window.addEventListener("focus", fgeReleaseAll);
   document.addEventListener("visibilitychange", function () {
-    if (document.hidden) { fgeReleaseAll(); fgePadReleaseAll(); }
+    if (document.hidden) { fgeReleaseAll(); fgePadReleaseAll(); fgeTouchForget(); }
     fgeAudio.onVisibility();
   });
   var scale = function () {
@@ -920,7 +1003,9 @@ function fgeWireInput() {
     fgeNotePointer(e);
     if (e.pointerType === "touch") {
       // WhyNot: 指は押した時にクリックにしない — 縦に払う（バックログ）・長押しと見分けられない。離した時に決める。
-      if (e.isPrimary) fgeGestureDown(e, place(e));
+      // WhyNot: 暗黙の capture を当てにしない — iOS の WebKit は capture の外の move を届けない。
+      try { fgeCanvas.setPointerCapture(e.pointerId); } catch (err) { /* 押し終えた指 */ }
+      fgeGestureDown(e, toCanvas(e));
       return;
     }
     place(e);
@@ -934,6 +1019,8 @@ function fgeWireInput() {
     if (e.button >= 0 && e.button < 3) fgePointer.buttons[e.button] = false;
   });
   window.addEventListener("pointercancel", function (e) { if (e.pointerType === "touch") fgeGestureCancel(e); });
+  window.addEventListener("touchend", fgeTouchPrune, { passive: true });
+  window.addEventListener("touchcancel", fgeTouchPrune, { passive: true });
   fgeCanvas.addEventListener("wheel", function (e) {
     e.preventDefault();
     var unit = e.deltaMode === 1 ? 1 : e.deltaMode === 2 ? 3 : 1 / 100;
@@ -1400,6 +1487,7 @@ function fgeAfterTapEnd() {
   if (fgeAfterTap.off) fgeAfterTap.off();
   fgeLatch = Object.create(null);
   fgePointer.latch = [false, false, false];
+  fgeTapQueue = [];
   fgeAfterTapMarkSeen();
   fgeSplash.drawn = "";
   fgeSplashDraw();
