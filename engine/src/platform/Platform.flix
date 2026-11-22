@@ -93,12 +93,12 @@ pub mod Platform {
     pub eff Draw2d {
         /// zIndex 混合で sprites・tileMaps・polygons を 1 フレーム描画する（積んだ面と 3D の場面も z の位置で合流させる）。
         /// 画面へは出さない（出すのは Window.presentFrame）。レンダーターゲットが開いていればそこへ描く。
-        /// staticLayer は「1 度だけ GPU へ生成して使い回す静的多角形」の依頼（無ければ None）。
-        /// エンジンがキーでキャッシュし、動的な polygons と同じ z 安定ソート列にレンジを混ぜて
-        /// 描くので重なり順は壊れない。ゲームは GL ハンドルを触らずキーと中身を宣言するだけ。
+        /// staticLayers は「1 度だけ GPU へ生成して使い回す静的多角形」の依頼の並び（無ければ Nil）。
+        /// エンジンが id ごとにキーでキャッシュし、動的な polygons と同じ z 安定ソート列にレンジを混ぜて
+        /// 描くので重なり順は壊れない。ゲームは GL ハンドルを触らず id とキーと中身を宣言するだけ。
         def renderCommands(sprites: List[GameEngine.Drawable], tileMaps: List[GameEngine.TileMapRenderCmd],
                            polygons: List[GameEngine.PolygonRenderCmd],
-                           staticLayer: Option[GameEngine.StaticLayerCmd]): Unit
+                           staticLayers: List[GameEngine.StaticLayerCmd]): Unit
         /// 宣言シェーダーの面 1 枚を、次の renderCommands の列へ積む。
         def drawSurface(cmd: DrawCmd.SurfaceRenderCmd): Unit
         /// 次の画面への renderCommands で、design の外の余り（レターボックス・ピラーボックス）を、texture（Pass の名前。design の大きさに描いた絵）を

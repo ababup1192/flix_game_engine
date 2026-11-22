@@ -132,42 +132,62 @@ pub mod App.Internal.Paint {
         }
 
     /// 静的レイヤーを通常の動的アイテムとして描くための PlacedItem 列（F8 のズーム・パン中と、注釈の書き出し）。
-    /// build（ワールド座標）に主 view と同じ camera（resolvedCamera → composeScene）を掛けて、
+    /// 全部の層の items（ワールド座標・並びの順に繋ぐ）に主 view と同じ camera（resolvedCamera → composeScene）を掛けて、
     /// 動的な絵と重なり順・位置を揃える。静的レイヤーが無ければ空。
     pub def staticPausedItems(app: App[w, ef], design: Vec2.Vec2, world: w): List[Render.PlacedItem] \ ef =
         let r = App.rec(app);
-        match r#staticLayer {
+        match r#staticLayers {
             case None    => Nil
-            case Some(sl) =>
+            case Some(f) =>
                 let (center, z) = resolvedCamera(r, world, design);
-                App.composeScene(center, z, design, { world = (sl#build)(world), hud = Nil })
+                let items = f(world) |> List.flatMap(spec -> (spec#items)());
+                App.composeScene(center, z, design, { world = items, hud = Nil })
         }
 
-    /// 静的レイヤー（withStaticLayer）を、この World の camera から解決した描画依頼にする。
-    /// key と polys（build → Render.draw の多角形チャンネル）はエンジンがキャッシュに使い、
+    /// 静的レイヤー（withStaticLayers）を、この World の camera から解決した描画依頼の並びにする。
+    /// id・key と polys（items → Render.draw の多角形チャンネル）はエンジンがキャッシュに使い、
     /// viewOffset/viewScale/halfDesign は動的な絵と同じ camera 値（resolvedCamera）から出すので、
     /// 静的な絵と動的な絵の視点は 1px もずれない。カメラ無しなら恒等（world 座標そのまま）。
-    /// polys は build（純粋）だけを包むので、キャッシュヒット時に呼ばれても副作用は無い。
-    def staticLayerCmd(app: App[w, ef], design: Vec2.Vec2, world: w): Option[GameEngine.StaticLayerCmd] \ ef =
+    /// polys は items（純粋）だけを包むので、キャッシュヒット時に呼ばれても副作用は無い。
+    /// 同じ id が 2 度あれば warnOnce で知らせる。
+    // WhyNot: renderFrame へインライン展開させない — renderFrame を run で包むテストの閉包が JVM の 1 メソッドの上限（64KB）を超える。
+    @DontInline
+    def staticLayerCmds(app: App[w, ef], warnOnce: String -> Unit, design: Vec2.Vec2, world: w): List[GameEngine.StaticLayerCmd] \ ef =
         let r = App.rec(app);
-        match r#staticLayer {
-            case None    => None
-            case Some(sl) =>
+        match r#staticLayers {
+            case None    => Nil
+            case Some(f) =>
+                let specs = noteDuplicateStaticIds(warnOnce, f(world));
                 let (center, z) = resolvedCamera(r, world, design);
                 let (viewOffset, viewScale, halfDesign) = match center {
                     case Some(c) => (c, { x = z, y = z }, Vec2.div(design, 2.0))
                     case None    => (Vec2.zero(), { x = 1.0, y = 1.0 }, Vec2.zero())
                 };
-                let key = (sl#key)(world);
-                let build = sl#build;
-                Some({ key = key,
-                       // 箱で組んだ絵（ドット絵の走りなど）も生成できるよう、飾りの無い箱は
-                       // 多角形へ直してから渡す — 静的層が生成するのは多角形チャンネルだけ。
-                       polys = () -> {
-                           let (_, polys) = Render.draw(Render.boxesAsPolys(build(world)));
-                           polys },
-                       viewOffset = viewOffset, viewScale = viewScale, halfDesign = halfDesign })
+                specs |> List.map(spec -> {
+                    let items = spec#items;
+                    { id = spec#id, key = spec#key,
+                      // 箱で組んだ絵（ドット絵の走りなど）も生成できるよう、飾りの無い箱は
+                      // 多角形へ直してから渡す — 静的層が生成するのは多角形チャンネルだけ。
+                      polys = () -> {
+                          let (_, polys) = Render.draw(Render.boxesAsPolys(items()));
+                          polys },
+                      viewOffset = viewOffset, viewScale = viewScale, halfDesign = halfDesign }
+                })
         }
+
+    /// 同じ id の静的層が 2 度並んでいれば知らせてから specs を返す（描き手は 2 つ目を別の層として持つ）。
+    // WhyNot: Set.forEach で知らせない — warnOnce は純粋な型なので、値を捨てる呼び出しは Flix が消す。
+    //   1 件ずつ warnOnce の値を match で受けて specs へ繋ぐ（SortingLayer.warned と同じ）。
+    def noteDuplicateStaticIds(warnOnce: String -> Unit, specs: List[App.StaticLayerSpec]): List[App.StaticLayerSpec] =
+        let (_, dups) = List.foldLeft((acc, spec) -> {
+            let (seen, found) = acc;
+            if (Set.memberOf(spec#id, seen)) (seen, Set.insert(spec#id, found))
+            else (Set.insert(spec#id, seen), found)
+        }, (Set.empty(), Set.empty()), specs);
+        Set.foldLeft((kept, id) ->
+            match warnOnce("[render] withStaticLayers の id \"${id}\" が 2 度並んでいる — 2 つ目からは別の層として持つので、並びの順がずれると作り直しになる。区画ごとに違う id を付ける") {
+                case () => kept
+            }, specs, dups)
 
     /// タイル層の GPU 生成結果の持ち回し。ループが引数で持ち回す。
     /// gen は「Doc の読み直し（watchFile / reloadOn）が起きた回数」= タイル層の世代。
@@ -307,11 +327,11 @@ pub mod App.Internal.Paint {
     /// （drawScene3d）→ 残りの 2D（drawWith → renderCommands）。面と場面は 2D の列から外して二重に描かない。
     /// 重なり順は描き手が (zIndex, 種類, 追加順) で合流させて決める（docs/z-bands.md）。
     /// warnOnce = 同じ z の並びと Param の渡し忘れの知らせ（黙らせるなら `_ -> ()`）。
-    /// tiles と staticLayer は画面のコマの物（Pass の中は Nil と None）。
+    /// tiles と staticLayers は画面のコマの物（Pass の中は Nil）。
     // WhyNot: 面も場面も無いコマで withoutShaders / withoutScenes3d を通さない — filter が全件を作り直す。
     //   drawShaders・drawScenes3d と同じ unwrapClip で見るので、命令が空 = 外す物も無い。
     pub def submitGpuItems(warnOnce: String -> Unit \ ef, items: List[Render.PlacedItem],
-                           tiles: List[GameEngine.TileMapRenderCmd], staticLayer: Option[GameEngine.StaticLayerCmd]):
+                           tiles: List[GameEngine.TileMapRenderCmd], staticLayers: List[GameEngine.StaticLayerCmd]):
             Unit \ (ef + Platform.Rendering) =
         let sceneCmds = Render.drawScenes3d(items);
         let shaderCmds = noteSurfaceZ(warnOnce, items, sceneCmds,
@@ -323,7 +343,7 @@ pub mod App.Internal.Paint {
         // drawWith(getTextureInfo): regionRect 付き Sprite（PxSprite.drawQuad のアトラス 1 クアッド等）の UV を
         // registry の寸法で解決する。regionRect 無しの絵は draw と同一の Drawable になる。
         let (sprites, polygons) = Render.drawWith(name -> Platform.GpuResources.getTextureInfo(name), itemsToDraw);
-        Platform.Draw2d.renderCommands(sprites, tiles, polygons, staticLayer)
+        Platform.Draw2d.renderCommands(sprites, tiles, polygons, staticLayers)
 
     /// 面か 3D の場面のある画面で、面か場面の後ろに同じ z の描き物を並べた z・面と場面を同じ z に並べた z と、
     /// 値の渡されていない Param を知らせてから shaderCmds を返す（面も場面も無ければ見ない）。
@@ -458,7 +478,7 @@ pub mod App.Internal.Paint {
                 };
                 // 面と 3D の場面は別チャンネル（Platform.Draw2d.drawSurface・Platform.Draw3d.drawScene3d）へ積み、残りの 2D と一緒に描き手が z で合流させる。
                 let (tileCmds, nextCache) = if (retained) tileLayerCmds(app, design, world, frame#tiles, cacheSeen) else (Nil, cacheSeen);
-                submitGpuItems(warnOnce, items, tileCmds, if (retained) staticLayerCmd(app, design, world) else None);
+                submitGpuItems(warnOnce, items, tileCmds, if (retained) staticLayerCmds(app, warnOnce, design, world) else Nil);
                 // 数えるのは itemsForGlyphs（本編 + レンダーターゲットの中）— headless の
                 // 検査と同じ量にそろえる。タイル層・静的層は GPU 側で 1 層 1 draw call に
                 // なるので、ここには最初から乗っていない（= 正しく静的化した絵は安いまま）。
@@ -493,7 +513,7 @@ pub mod App.Internal.Paint {
             let (tw, th) = RenderTarget.texelSizeOf(design, pixelScale, descriptor);
             RenderTarget.Target.beginTarget({ name = p#name, width = tw, height = th, format = descriptor#format, clear = p#clear,
                                               samples = RenderTarget.samplesOf(descriptor) });
-            submitGpuItems(warnOnce, p#items, Nil, None);
+            submitGpuItems(warnOnce, p#items, Nil, Nil);
             RenderTarget.Target.endTarget()
         }, plan#passes)
 
@@ -515,7 +535,7 @@ pub mod App.Internal.Paint {
         RenderTarget.Target.beginTarget({ name = letterboxTarget(), width = size(design#x / 4.0), height = size(design#y / 4.0),
                                           format = RenderTarget.Format.Rgba8Unorm, clear = RenderTarget.LoadOp.Clear({ r = 0.0, g = 0.0, b = 0.0 }),
                                           samples = 1 });
-        submitGpuItems(warnOnce, items, Nil, None);
+        submitGpuItems(warnOnce, items, Nil, Nil);
         RenderTarget.Target.endTarget();
         Platform.Draw2d.fillLetterbox(letterboxTarget())
 

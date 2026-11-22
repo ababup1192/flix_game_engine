@@ -35,7 +35,7 @@ mod V1Main {
     @DontInline
     def submitMain(sc: V1Scenes.Scene): Unit \ Platform.Rendering =
         let items = sc#items();
-        App.Internal.Paint.submitGpuItems(_ -> (), items, sc#tiles(), sc#staticLayer)
+        App.Internal.Paint.submitGpuItems(_ -> (), items, sc#tiles(), sc#staticLayers)
 
     // ── GL ──
 

@@ -595,10 +595,21 @@ GL・WebGPU・CPU の描き手は、カメラの視錐台の外の置いた物�
 | 内側のループで List を引く・レコードの欄を読む | ループの前に `Vector` へ 1 回写す | レコードの欄は読むたびに名前で探す |
 | 規則と描くのが直列で 60 fps を割る | `App.withPipelinedRendering` | §11 の「規則と描くのを重ねる」 |
 | 3D で動かない物（建物・木・家具）が数千〜1 万個あって毎コマ重い | 読み込みで 1 回 `Scene3d.staticGroup` を作って Resources に持ち、毎コマ `groups` に載せる | 毎コマ `staticGroup` を呼ばない。動かす物・色を変える物は `withoutItems` で外して `instances` へ。スマホのブラウザで 12,000 個が 1.6 fps → 60 fps（[scene3d.md](scene3d.md) の「動かない物をまとめる」） |
+| 2D の動かない絵（影・壁・地形の多角形）の一部だけが変わるたびにコマが止まる（置き物を壊す・掘る） | `App.withStaticLayers(w -> 区画ごとの { id, key, items = () -> .. })` | 下の「静的層を区画に分ける」。地図全体を 1 つの `withStaticLayer` に入れて key を変えると、多角形を全部 GPU へ上げ直す（約 8,000 個で 1 コマ 43 ms） |
 | 3D のビルボード（木・人・草）が多くて draw call が数百 | 同じ絵の板を続けて `billboards` に並べる（描き手が 1 回の instanced draw にまとめる） | 来た順は描き手が崩さない（重なりの前後が来た順で決まるため）。効き目は `drawCalls` の `billboard`（[scene3d.md](scene3d.md) の「ビルボードの draw の数」） |
 | 3D で初めて出る物のコマだけ跳ねる（mipmap 作り・材質のプログラムの組み立て） | `App.withPreload3d({ textures = .., variants = .. \| App.preload3d(key, instances) })` | 視錐台の外へ置いて毎コマ描かせない。点光源の影と Physical の場面は `variants` に `Scene3d.preloadVariantOf(場面)`（変種のプログラムも先に組む）。骨つきの物は姿勢を付けたまま渡す。`tex3d:` の絵は `textures` に渡す。上げるのは起動と読み直しのコマで、そのコマは長くなる。`key` に時刻を混ぜると毎コマ組み直す（300 コマの内に 30 回変わると知らせる） |
 
 ブラウザ（PC の Chrome・スマホ）で測る時の旗と比べ方は [web-export.md](web-export.md) の「ブラウザで重さを測る」。
+
+### 静的層を区画に分ける
+
+`App.withStaticLayers` の層は id ごとに GPU バッファを 1 本持ち、key が前のコマと違う層だけを作り直す。前のコマにあって今のコマに無い id のバッファは捨てる。
+
+- **区画の大きさ**: 16〜32 マス角を目安にする。小さすぎると層の数だけ毎コマ宣言と key の比較が増え、draw call も層ごとに切れる。大きすぎると 1 つ壊した時の上げ直しが大きい。1 区画の多角形が数百個に収まる大きさにする。
+- **key**: World に区画ごとの世代番号（`Map[(Int32, Int32), Int32]` など）を持ち、その区画を変えた系で 1 つ上げる。key は `"${世代}"` 程度にして、宣言のたびに区画の中身から作らない（毎コマ呼ばれる）。
+- **items**: サンク（`() -> ..`）。作り直す時だけ呼ばれる。区画をまたぐ影・壁は、その物の足元のマスの区画に入れる（両方に入れると二重に描く）。
+- **重なり順**: 並びの順が同じ z の中の前後になる（前の層が奥）。区画どうしで同じ z の多角形が重ならないなら、並びの順は絵に効かない。
+- **headless**: 描き出しはゲームが静的な items を自分で描く。区画に分けたら `List.flatMap(s -> (s#items)(), specs)` を描いて `HeadlessRender.noteStaticItems` に渡す。
 
 `bin/fge quadratic` は perf-near-scan として、回すラムダの本体とそこから呼ぶ同じファイルの def の中の `List.filter` / `exists` / `find` を知らせる（止めない。回す物の大きさは字から分からない）。
 小さいと決まった列は `quadratic.local.json` の `exempt` へ理由つきで載せると黙る。

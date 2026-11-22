@@ -66,7 +66,7 @@ mod TestPreload3d {
             discard App.Internal.Paint.renderFrame(app, _ -> (), None, design(), Display.desktop(design()), 0,
                                                    App.Internal.Paint.plainLook(Nil), cache, None, false)
         } with handler Platform.Draw2d {
-            def renderCommands(_sprites, _tileMaps, _polygons, _staticLayer, k) = { Ref.put("render" :: Ref.get(log), log); k(()) }
+            def renderCommands(_sprites, _tileMaps, _polygons, _staticLayers, k) = { Ref.put("render" :: Ref.get(log), log); k(()) }
             def drawSurface(_cmd, k) = k(())
             def fillLetterbox(_texture, k) = k(())
         } with handler Platform.Draw3d {

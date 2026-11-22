@@ -37,10 +37,10 @@ mod RenderPaintHandlers {
     pub def handleDraw2d(gl: GlContext, paint: RenderPaint.Paint, framebufferSize: Unit -> (Int32, Int32) \ fx,
                          onScreen: (Int64, Int64) -> Unit \ fx, f: Unit -> a \ ef): a \ (ef - Platform.Draw2d) + fx + IO =
         run f() with handler Platform.Draw2d {
-            def renderCommands(sprites, tileMaps, polygons, staticLayer, k) = {
+            def renderCommands(sprites, tileMaps, polygons, staticLayers, k) = {
                 let (fbW, fbH) = framebufferSize();
                 let paintFrom = System.nanoTime();
-                let toScreen = RenderPaint.submitFrame(gl, paint, fbW, fbH, sprites, tileMaps, polygons, staticLayer);
+                let toScreen = RenderPaint.submitFrame(gl, paint, fbW, fbH, sprites, tileMaps, polygons, staticLayers);
                 let paintTo = System.nanoTime();
                 RenderPaint.noteFrame(paint, paintTo - paintFrom, 0i64,
                     () -> List.length(sprites) + List.length(polygons) + List.length(tileMaps));

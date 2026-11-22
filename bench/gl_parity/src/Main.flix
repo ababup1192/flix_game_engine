@@ -43,13 +43,13 @@ mod ParityMain {
                 RenderTarget.Target.beginTarget({ name = "parityShot", width = Scenes.designWi(), height = Scenes.designHi(),
                                                   format = RenderTarget.Format.Rgba8Unorm, clear = RenderTarget.LoadOp.Clear(black()), samples = 1 });
                 let (ds, ps) = toDraw(texInfoOf, sc#items);
-                Platform.Draw2d.renderCommands(ds, Nil, ps, None);
+                Platform.Draw2d.renderCommands(ds, Nil, ps, Nil);
                 GlReadback.readBoundPng(Scenes.designWi(), Scenes.designHi(), "debug/gl/${sc#name}.png");
                 RenderTarget.Target.endTarget()
             case Scenes.ShotVia.ViaScreen =>
                 // 画面の絵は swap 後に読めないため、FLIX_GE_FRAME_SHOT（presentFrame の swap 直前のフック）が
                 // debug/gl/frame-<n>.png へ落とす。名前への対応は renameFrames が引き受ける。
-                App.Internal.Paint.submitGpuItems(_ -> (), sc#items, Nil, None);
+                App.Internal.Paint.submitGpuItems(_ -> (), sc#items, Nil, Nil);
                 Platform.Window.presentFrame()
         }
 

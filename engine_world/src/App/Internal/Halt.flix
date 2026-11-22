@@ -134,7 +134,7 @@ pub mod App.Internal.Halt {
         // saveAnnotation は直前に塗ったコマを撮るので、等倍・重ね物無しのコマを先に塗る。
         let saved = match emitted {
             case Some(rect) =>
-                Platform.Draw2d.renderCommands(channels#drawables, channels#tileMaps, channels#polygons, None);
+                Platform.Draw2d.renderCommands(channels#drawables, channels#tileMaps, channels#polygons, Nil);
                 saveAnnotation(buildAnnotationRequest(ctx#design, rect, ctx#shownFrame, dump, hitList))
             case None => None
         };
@@ -181,10 +181,10 @@ pub mod App.Internal.Halt {
                                                            anno#scrub, ctx#historyLen)
                           else Nil;
         let (fixedSprites, fixedPolygons) = Render.draw(List.append(toastPlaced, scrubPlaced));
-        // debugView のゲームは静的レイヤー（withStaticLayer）を持たないので、retained の静的依頼は無し（None）。
+        // debugView のゲームは静的レイヤー（withStaticLayers）を持たないので、retained の静的依頼は無し（Nil）。
         Platform.Draw2d.renderCommands(
             List.append(Annotate.applyInspect(view, List.append(channels#drawables, overlaySprites)), fixedSprites),
             Annotate.applyInspectTiles(view, channels#tileMaps),
             List.append(Annotate.applyInspectPoly(view, List.append(channels#polygons, overlayPolygons)), fixedPolygons),
-            None)
+            Nil)
 }

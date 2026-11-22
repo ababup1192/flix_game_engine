@@ -17,7 +17,7 @@ mod GpuOffscreen.TestGpuOffscreenDawn {
             case Ok(SessionData.WebGpu(w)) =>
                 let session = SessionData.WebGpu(w);
                 let red = Rect.toDrawable(Rect.make({ x = 8.0, y = 8.0 }, Color.rgb(1.0, 0.0, 0.0)), Vec2.zero());
-                GpuOffscreen.handle(session, () -> Platform.Draw2d.renderCommands(red :: Nil, Nil, Nil, None));
+                GpuOffscreen.handle(session, () -> Platform.Draw2d.renderCommands(red :: Nil, Nil, Nil, Nil));
                 let image = GpuOffscreen.readImage(session);
                 let read = (image.getRGB(4, 4), image.getRGB(24, 4), GpuOffscreen.sizeOf(session));
                 GpuOffscreen.close(session);

@@ -29,21 +29,42 @@ mod TestShapeBuffers {
 
     def tilesOf(n: Int32): List[RenderType.TileInstance] = List.range(0, n) |> List.map(i -> tileAt(Int32.toFloat64(i)))
 
-    /// 四角（三角形 2 枚 = 6 頂点）1 つの static layer の依頼。
-    def layer(key: String): DrawCmd.StaticLayerCmd =
-        { key = key,
-          polys = () -> ({ vertices = { x = 0.0, y = 0.0 } :: { x = 4.0, y = 0.0 } :: { x = 4.0, y = 4.0 } :: { x = 0.0, y = 4.0 } :: Nil,
-                           color = { r = 1.0, g = 1.0, b = 1.0 }, alpha = 1.0, zIndex = 0, clip = None, blend = DrawCmd.BlendMode.Normal,
-                           grad = None, triangles = None }: DrawCmd.PolygonRenderCmd) :: Nil,
+    /// 左上 x・z の四角（三角形 2 枚 = 6 頂点）。
+    def squareAt(x: Float64, z: Int32): DrawCmd.PolygonRenderCmd =
+        { vertices = { x = x, y = 0.0 } :: { x = x + 4.0, y = 0.0 } :: { x = x + 4.0, y = 4.0 } :: { x = x, y = 4.0 } :: Nil,
+          color = { r = 1.0, g = 1.0, b = 1.0 }, alpha = 1.0, zIndex = z, clip = None, blend = DrawCmd.BlendMode.Normal,
+          grad = None, triangles = None }
+
+    /// id・key の static layer の依頼（中身は polys）。
+    def layerOf(id: String, key: String, polys: List[DrawCmd.PolygonRenderCmd]): DrawCmd.StaticLayerCmd =
+        { id = id, key = key, polys = () -> polys,
           viewOffset = { x = 0.0, y = 0.0 }, viewScale = { x = 1.0, y = 1.0 }, halfDesign = { x = 0.0, y = 0.0 } }
 
-    /// 依頼の鍵 keys を順に解いた時の控え（古い順）。
-    def staticCallsOf(keys: List[String]): List[String] \ IO =
+    /// 四角 1 つの、id "" の static layer の依頼。
+    def layer(key: String): DrawCmd.StaticLayerCmd = layerOf("", key, squareAt(0.0, 0) :: Nil)
+
+    /// 四角 1 つの、id の static layer の依頼。
+    def chunk(id: String, key: String): DrawCmd.StaticLayerCmd = layerOf(id, key, squareAt(0.0, 0) :: Nil)
+
+    /// 依頼の並びを 1 コマずつ順に解いた時の控え（古い順）。
+    def framesCallsOf(frames: List[List[DrawCmd.StaticLayerCmd]]): List[String] \ IO =
         let log = Ref.fresh(Static, Nil);
         let alloc = recordingStatic(log);
-        let cell = Array#{(None: Option[RenderStatic.Entry])} @ Static;
-        List.forEach(key -> discard RenderStatic.resolve(alloc, cell, layer(key)), keys);
+        let cache = RenderStatic.freshCache();
+        List.forEach(layers -> discard RenderStatic.resolve(alloc, cache, layers), frames);
         List.reverse(Ref.get(log))
+
+    /// 依頼の鍵 keys を 1 コマに 1 つずつ順に解いた時の控え（古い順）。
+    def staticCallsOf(keys: List[String]): List[String] \ IO =
+        framesCallsOf(keys |> List.map(key -> layer(key) :: Nil))
+
+    /// 範囲を z の安定な並べ替え（RenderFrame.mergedByZ と同じ: 同じ z は並びの順）に掛け、(z・頂点の数) を、
+    /// 同じ z の続きを 1 つに足して並べる（buffer の切れ目を見ない描く順）。
+    def drawOrderOf(ranges: List[RenderStatic.Range]): List[(Int32, Int32)] =
+        Sort.sortStableBy(r -> r#zIndex, ranges) |> List.foldLeft((acc, r) -> match acc {
+            case (z, n) :: rest if z == r#zIndex => (z, n + r#count) :: rest
+            case _ => (r#zIndex, r#count) :: acc
+        }, Nil) |> List.reverse
 
     // ── タイルの層 ──
 
@@ -114,8 +135,7 @@ mod TestShapeBuffers {
     /// 範囲は作った buffer の番号を持つ。
     @Test
     def testRangesCarryBufferNumber(): Unit \ {Assert, IO} =
-        let cell = Array#{(None: Option[RenderStatic.Entry])} @ Static;
-        let ranges = RenderStatic.resolve(recordingStatic(Ref.fresh(Static, Nil)), cell, layer("a"));
+        let ranges = RenderStatic.resolve(recordingStatic(Ref.fresh(Static, Nil)), RenderStatic.freshCache(), layer("a") :: Nil);
         Assert.assertEq(expected = (101, 0, 6) :: Nil, ranges |> List.map(r -> (r#buffer, r#first, r#count)))
 
     /// release は作った buffer を捨て、次の resolve は作り直す。
@@ -123,9 +143,53 @@ mod TestShapeBuffers {
     def testReleaseDestroysAndForgets(): Unit \ {Assert, IO} =
         let log = Ref.fresh(Static, Nil);
         let alloc = recordingStatic(log);
-        let cell = Array#{(None: Option[RenderStatic.Entry])} @ Static;
-        discard RenderStatic.resolve(alloc, cell, layer("a"));
-        RenderStatic.release(alloc, cell);
-        discard RenderStatic.resolve(alloc, cell, layer("a"));
+        let cache = RenderStatic.freshCache();
+        discard RenderStatic.resolve(alloc, cache, layer("a") :: Nil);
+        RenderStatic.release(alloc, cache);
+        discard RenderStatic.resolve(alloc, cache, layer("a") :: Nil);
         Assert.assertEq(expected = "create 6" :: "destroy 101" :: "create 6" :: Nil, List.reverse(Ref.get(log)))
+
+    /// 区画 2 つのうち b の鍵だけ替えると、b の buffer（102）だけを捨てて作り直す。
+    @Test
+    def testKeyChangeRebuildsOnlyThatChunk(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = "create 6" :: "create 6" :: "destroy 102" :: "create 6" :: Nil,
+                        framesCallsOf((chunk("a", "1") :: chunk("b", "1") :: Nil) ::
+                                      (chunk("a", "1") :: chunk("b", "2") :: Nil) :: Nil))
+
+    /// 鍵が替わらなければ、並びの順が入れ替わっても作り直さない。
+    @Test
+    def testReorderedChunksAreReused(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = "create 6" :: "create 6" :: Nil,
+                        framesCallsOf((chunk("a", "1") :: chunk("b", "1") :: Nil) ::
+                                      (chunk("b", "1") :: chunk("a", "1") :: Nil) :: Nil))
+
+    /// 前のコマにあって今のコマに無い id（a = 101）の buffer は捨てる。
+    @Test
+    def testMissingIdIsDestroyed(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = "create 6" :: "create 6" :: "destroy 101" :: Nil,
+                        framesCallsOf((chunk("a", "1") :: chunk("b", "1") :: Nil) ::
+                                      (chunk("b", "1") :: Nil) :: Nil))
+
+    /// 空の並び（Pass の中のコマ）は何も捨てず、次のコマも使い回す。
+    @Test
+    def testEmptyFrameKeepsCache(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = "create 6" :: Nil,
+                        framesCallsOf((chunk("a", "1") :: Nil) :: Nil :: (chunk("a", "1") :: Nil) :: Nil))
+
+    /// 同じ id が 2 度並んでも、鍵が替わらない間は毎コマ作り直さない。
+    @Test
+    def testDuplicateIdIsNotRebuiltEveryFrame(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = "create 6" :: "create 6" :: Nil,
+                        framesCallsOf((chunk("a", "1") :: chunk("a", "2") :: Nil) ::
+                                      (chunk("a", "1") :: chunk("a", "2") :: Nil) :: Nil))
+
+    /// 中身を区画 2 つに分けても、描く順（z ごとの頂点の数）は 1 層に全部を入れた時と同じ。
+    @Test
+    def testChunksDrawInSameOrderAsOneLayer(): Unit \ {Assert, IO} =
+        let a = squareAt(0.0, 2) :: squareAt(8.0, 1) :: Nil;
+        let b = squareAt(16.0, 1) :: squareAt(24.0, 3) :: Nil;
+        let alloc = recordingStatic(Ref.fresh(Static, Nil));
+        let one = RenderStatic.resolve(alloc, RenderStatic.freshCache(), layerOf("", "k", List.append(a, b)) :: Nil);
+        let two = RenderStatic.resolve(alloc, RenderStatic.freshCache(), layerOf("a", "k", a) :: layerOf("b", "k", b) :: Nil);
+        Assert.assertEq(expected = drawOrderOf(one), drawOrderOf(two))
 }

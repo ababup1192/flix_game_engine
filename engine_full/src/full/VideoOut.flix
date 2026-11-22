@@ -473,7 +473,7 @@ pub mod VideoOut {
         let plan = planOf(passesOf, fonts, world);
         GpuOffscreen.handle(session, () -> {
             if (List.isEmpty(plan#passes)) () else discard App.Internal.Paint.drawPassPlan(warn, video#soft#design, Set.empty(), plan);
-            App.Internal.Paint.submitGpuItems(_ -> (), items, Nil, None)
+            App.Internal.Paint.submitGpuItems(_ -> (), items, Nil, Nil)
         })
 
     // ── GPU ──
@@ -580,7 +580,7 @@ pub mod VideoOut {
         let (plan, items) = build(3);
         GlOffscreen.handle(session, () -> {
             let next = if (List.isEmpty(plan#passes)) known else App.Internal.Paint.drawPassPlan(warn, video#soft#design, known, plan);
-            App.Internal.Paint.submitGpuItems(_ -> (), items, Nil, None);
+            App.Internal.Paint.submitGpuItems(_ -> (), items, Nil, Nil);
             next
         })
 
