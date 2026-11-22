@@ -126,7 +126,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             tiles = TileTable.Table,
             tileBuffers = Ref[Map[Int32, (Buffer, Int32)], Static],
             staticBuffers = Ref[Map[Int32, (Buffer, Int32)], Static],
-            staticCell = Array[Option[RenderStatic.Entry], Static],
+            staticCache = RenderStatic.Cache,
             nextBuffer = Array[Int32, Static],
             // 中間の texture と、その画素の大きさ（幅・高さ）。
             frameTexture = Array[Texture, Static],
@@ -210,7 +210,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             // 面の値も読むので uniform の buffer としても bind する。
             values = freshStream(gpu, "fge values", Int32.bitwiseOr(vertexUsage(), BufferUsage.UNIFORM), 4096 * 4),
             tiles = TileTable.fresh(), tileBuffers = Ref.fresh(Static, Map.empty()), staticBuffers = Ref.fresh(Static, Map.empty()),
-            staticCell = Array#{(None: Option[RenderStatic.Entry])} @ Static, nextBuffer = Array#{1} @ Static,
+            staticCache = RenderStatic.freshCache(), nextBuffer = Array#{1} @ Static,
             frameTexture = Array#{createFrameTexture(gpu, cfg#width, cfg#height)} @ Static,
             frameSize = Array#{cfg#width, cfg#height} @ Static,
             encoder = Array#{(None: Option[CommandEncoder])} @ Static,
@@ -413,7 +413,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         Map.forEach((_, pipeline) -> pipeline.release(), Ref.get(p#copyPipelines));
         Ref.put(Map.empty(), p#copyPipelines);
         Array.get(0, p#frameTexture).destroy();
-        RenderStatic.release(webGpuStaticAllocator(paint), p#staticCell);
+        RenderStatic.release(webGpuStaticAllocator(paint), p#staticCache);
         Map.forEach((_, b) -> fst(b).destroy(), Ref.get(p#tileBuffers));
         Map.forEach((_, b) -> fst(b).destroy(), Ref.get(p#staticBuffers));
         Ref.put(Map.empty(), p#staticBuffers);
@@ -625,10 +625,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         let format = RenderList.targetFormatOf(pass) |> Option.getWithDefault(RenderTarget.Format.Rgba8Unorm);
         let samples = pass#samples;
         let pipes = p#pipes;
-        let staticRanges = match frame#staticLayer {
-            case None    => Nil
-            case Some(l) => RenderStatic.resolve(webGpuStaticAllocator(paint), p#staticCell, l)
-        };
+        let staticRanges = RenderStatic.resolve(webGpuStaticAllocator(paint), p#staticCache, frame#staticLayers);
         let surfaces = p#surfaces;
         let textureOf = id -> Map.get(id, Ref.get(p#slots)) |> Option.map(slot -> slot#texture);
         let scenes = Scenes.prepare(paint, stencilKey, (format, samples), pass, frame#scenes);
@@ -752,18 +749,18 @@ pub mod RenderPaint.Internal.WebGpuPaint {
 
     /// Draw2d.renderCommands の中身。Pass が開いていればそこへ描いて false。開いていなければ中間の texture へ描き、控えを置いて true。
     def submitFrame(paint: Paint, sprites: List[RenderType.Drawable], tileMaps: List[RenderType.TileMapRenderCmd],
-                    polygons: List[RenderType.PolygonCmd], staticLayer: Option[GameEngine.StaticLayerCmd]): Bool \ IO =
+                    polygons: List[RenderType.PolygonCmd], staticLayers: List[GameEngine.StaticLayerCmd]): Bool \ IO =
         let PaintData.PaintData(p) = paint;
         let scenes = List.reverse(Array.get(0, p#pendingScenes));
         Array.put(Nil, 0, p#pendingScenes);
         let surfaces = List.reverse(Array.get(0, p#pendingSurfaces));
         Array.put(Nil, 0, p#pendingSurfaces);
-        let frame = { sprites = sprites, tileMaps = tileMaps, polygons = polygons, staticLayer = staticLayer, surfaces = surfaces, scenes = scenes,
+        let frame = { sprites = sprites, tileMaps = tileMaps, polygons = polygons, staticLayers = staticLayers, surfaces = surfaces, scenes = scenes,
                       letterbox = None };
         match TargetTable.activeSpec(p#targets) {
             case Some(spec) =>
                 // タイルの層と static layer は画面のコマの物（GL の RenderPaint.paintTarget と同じく Pass には乗せない）。
-                paintTarget(paint, spec, { tileMaps = Nil, staticLayer = None | frame });
+                paintTarget(paint, spec, { tileMaps = Nil, staticLayers = Nil | frame });
                 false
             case None =>
                 let screenFrame = { letterbox = Array.get(0, p#pendingLetterbox) | frame };
@@ -1103,9 +1100,9 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     pub def handleDraw2d(paint: Paint, onScreen: (Int64, Int64, Unit -> FrameDiagnostics.Draw2dCounts \ IO) -> Unit \ fx,
                          f: Unit -> a \ ef): a \ (ef - Platform.Draw2d) + fx + IO =
         run f() with handler Platform.Draw2d {
-            def renderCommands(sprites, tileMaps, polygons, staticLayer, k) = {
+            def renderCommands(sprites, tileMaps, polygons, staticLayers, k) = {
                 let paintFrom = System.nanoTime();
-                let toScreen = submitFrame(paint, sprites, tileMaps, polygons, staticLayer);
+                let toScreen = submitFrame(paint, sprites, tileMaps, polygons, staticLayers);
                 let paintTo = System.nanoTime();
                 noteDiagnostics(paint, d -> { submitNs = d#submitNs + (paintTo - paintFrom),
                                               drawItems = d#drawItems + List.length(sprites) | d });

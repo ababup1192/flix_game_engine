@@ -21,7 +21,7 @@ mod RenderPaint {
         sprites = List[GameEngine.Drawable],
         tileMaps = List[GameEngine.TileMapRenderCmd],
         polygons = List[GameEngine.PolygonRenderCmd],
-        staticLayer = Option[GameEngine.StaticLayerCmd],
+        staticLayers = List[GameEngine.StaticLayerCmd],
         surfaces = List[DrawCmd.SurfaceRenderCmd],
         scenes = List[Scene3d.RenderCmd],
         // design の外（レターボックス・ピラーボックス）へ広げて塗る絵の名前（Platform.Draw2d.fillLetterbox。無ければ余りは黒）。
@@ -76,7 +76,7 @@ mod RenderPaint {
         // ensureTexture が上げた名前 → 最後の key（同じ key の上げ直しを弾く）。
         textureKeyRef = Ref[Map[String, String], Static],
         // 静的多角形バッファのキャッシュ（RenderStatic.resolve）。
-        staticCacheCell = Array[Option[RenderStatic.Entry], Static],
+        staticCache = RenderStatic.Cache,
         // static layer の VAO → VBO（捨てる時に両方 delete する）。
         staticVbos = Ref[Map[Int32, Int32], Static],
         // 最後に画面へ塗ったコマの命令（リサイズの描き直し・LRU の pin・注釈のスクショ）。
@@ -105,7 +105,7 @@ mod RenderPaint {
 
     /// 空のコマ。
     pub def emptyFrame(): Frame =
-        { sprites = Nil, tileMaps = Nil, polygons = Nil, staticLayer = None, surfaces = Nil, scenes = Nil, letterbox = None }
+        { sprites = Nil, tileMaps = Nil, polygons = Nil, staticLayers = Nil, surfaces = Nil, scenes = Nil, letterbox = None }
 
     /// GL の資源を作り、空の登録簿で塗りのコアを始める。GL の文脈が今の糸に付いていること。
     /// design = 描く座標の寸（ゲームの designWidth × designHeight）、clearColor = design の中の地の色、
@@ -180,7 +180,7 @@ mod RenderPaint {
         let missingTextureRef: Ref[Set[String], Static] = Ref.fresh(Static, Set.empty());
 
         // キー一致で使い回し・不一致で古い VBO を free して作り直す（RenderStatic.resolve）。
-        let staticCacheCell = Array#{(None: Option[RenderStatic.Entry])} @ Static;
+        let staticCache = RenderStatic.freshCache();
 
         // 面の行 1 つの面を GL へ描く閉包。program の uniform location を逆引きして、行の values（rect・time・alpha・params）と reads の絵を差す。
         // stencil と数えは GlRows.drawSurfaceRow が受け持つので、ここは 1 枚の描画だけに徹する。
@@ -250,21 +250,18 @@ mod RenderPaint {
           targets = targets, targetEntries = Ref.fresh(Static, Map.empty()),
           targetWarnedRef = Ref.fresh(Static, Set.empty()), keepHistory = true,
           registryRef = registryRef, textureKeyRef = textureKeyRef,
-          staticCacheCell = staticCacheCell, staticVbos = Ref.fresh(Static, Map.empty()), lastFrameHolder = Array#{emptyFrame()} @ Static,
+          staticCache = staticCache, staticVbos = Ref.fresh(Static, Map.empty()), lastFrameHolder = Array#{emptyFrame()} @ Static,
           diagnosticsRef = Ref.fresh(Static, None), shaderLifeHolder = Array#{0, 0} @ Static,
           retiredProgramsRef = Ref.fresh(Static, Set.empty()), gpuTimer = cfg#gpuTimer }
 
     // ── 1 コマ塗る ──
 
     /// 画面への 1 フレームを、今 bind されているフレームバッファ（fbW × fbH）へ塗る。静的レイヤーはここで
-    /// resolve（キャッシュ照合・必要なら作り直し）し、レンジ列を FrameArgs に載せる。None なら Nil。
+    /// resolve（id ごとのキャッシュ照合・必要なら作り直し）し、レンジ列を FrameArgs に載せる。並びが空なら Nil。
     /// 控え（lastFrame）も世代も進めない — リサイズの描き直しと注釈のスクショも同じ物を通る。
     pub def paintFrame(gl: GlContext, paint: Paint, fbW: Int32, fbH: Int32, frame: Frame): Unit \ IO =
         ensureRadialBuiltins(gl, paint, frame#sprites, frame#surfaces, frame#scenes, frame#letterbox);
-        let staticRanges = match frame#staticLayer {
-            case None    => Nil
-            case Some(l) => RenderStatic.resolve(glStaticAllocator(gl, paint), paint#staticCacheCell, l)
-        };
+        let staticRanges = RenderStatic.resolve(glStaticAllocator(gl, paint), paint#staticCache, frame#staticLayers);
         // WhyNot: 画面に標本の数を問わない — 窓は GLFW_SAMPLES を頼まずに作る（窓の MSAA は 2D の縁も変える）。
         let prepared = prepareScenes(paint, { framebuffer = paint#screenFramebuffer, format = RenderTarget.Format.Rgba8Unorm, samples = 1 }, frame#scenes);
         let args = {
@@ -378,7 +375,7 @@ mod RenderPaint {
     pub def submitFrame(gl: GlContext, paint: Paint, fbW: Int32, fbH: Int32,
                         sprites: List[GameEngine.Drawable], tileMaps: List[GameEngine.TileMapRenderCmd],
                         polygons: List[GameEngine.PolygonRenderCmd],
-                        staticLayer: Option[GameEngine.StaticLayerCmd]): Bool \ IO =
+                        staticLayers: List[GameEngine.StaticLayerCmd]): Bool \ IO =
         match TargetTable.activeSpec(paint#targets) {
             case Some(target) =>
                 // ターゲットが開いている間の描画は画面でなくそこに着く。swap も
@@ -397,7 +394,7 @@ mod RenderPaint {
                 let letterbox = Array.get(0, paint#pendingLetterboxHolder);
                 Array.put(None, 0, paint#pendingLetterboxHolder);
                 let frame = { sprites = sprites, tileMaps = tileMaps, polygons = polygons,
-                              staticLayer = staticLayer, surfaces = surfaces, scenes = takeScenes(paint), letterbox = letterbox };
+                              staticLayers = staticLayers, surfaces = surfaces, scenes = takeScenes(paint), letterbox = letterbox };
                 Array.put(frame, 0, paint#lastFrameHolder);
                 // 進めるのはここ 1 箇所だけ。上のレンダーターゲットへの分岐でも進めると、
                 // Pass を N 枚描くゲームでは絵 1 枚あたり N+1 回進み、「現世代 = いま描いて

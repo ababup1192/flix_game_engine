@@ -659,14 +659,15 @@ pub mod DrawCmd {
     /// ゲームは GL ハンドルも無効化ロジックも持たない — キーの組み立てだけが責務。
     pub type alias StaticKey = String
 
-    /// 1 フレームぶんの静的レイヤー描画依頼。`renderCommands` の第 4 チャンネルに載せる。
-    /// key が変わったときだけ polys を評価して GPU へ生成し直す（同じキーの間は頂点の作り直し・
-    /// アップロードが毎フレームから消える）ので、polys は「作り方」を包んだ純粋関数で渡す
+    /// 1 フレームぶんの静的レイヤー 1 つの描画依頼。`renderCommands` の第 4 チャンネルに id ごとに並べて載せる。
+    /// GPU バッファは id ごとに 1 本で、その id の key が変わったときだけ polys を評価して生成し直す
+    /// （同じキーの間は頂点の作り直し・アップロードが毎フレームから消える。前のコマにあって今のコマに無い id のバッファは捨てる）。
+    /// 並びの順が同じ z の中の重なり順になる（前の層が奥）。polys は「作り方」を包んだ純粋関数で渡す
     /// — 副作用を持たせないことで renderCommands の op を効果多相にせずに済む。
     /// viewOffset / viewScale / halfDesign はカメラの平行移動・ズームを頂点シェーダの uniform
     /// で当てる値（カメラ無しなら世界座標そのままになる値を渡す）。
-    /// SoftRaster は GPU バッファを持たないので polys を毎回描くだけ（キャッシュを見ない）。
     pub type alias StaticLayerCmd = {
+        id         = String,
         key        = StaticKey,
         polys      = Unit -> List[PolygonRenderCmd],
         viewOffset = Vec2.Vec2,

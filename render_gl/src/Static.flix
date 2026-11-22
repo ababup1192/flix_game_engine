@@ -1,8 +1,9 @@
 // RenderStatic — 「1 度だけ GPU に生成して使い回す静的多角形」をエンジン内部でキャッシュする。
-// テクスチャを名前で 1 度だけ GPU に上げて使い回すのと同じ隠蔽: ゲームはキャッシュキー
+// テクスチャを名前で 1 度だけ GPU に上げて使い回すのと同じ隠蔽: ゲームは層ごとに id とキャッシュキー
 // （フロア id・テーマ・世代番号などを 1 文字列にまとめた物）と中身の作り方を宣言するだけで、
-// GL ハンドルも無効化ロジックも持たない。キーが前回と同じなら生成した buffer を使い回し、
-// 変わったら古い buffer を捨てて作り直す。使い回すか・いつ捨てるかはここだけで決め、
+// GL ハンドルも無効化ロジックも持たない。id ごとに buffer を 1 本持ち、キーが前回と同じなら使い回し、
+// 変わったらその id の古い buffer だけを捨てて作り直す。前のコマにあって今のコマに無い id の buffer は捨てる。
+// 使い回すか・いつ捨てるかはここだけで決め、
 // backend は頂点の buffer を作る・捨てる 2 つ（StaticAllocator）だけを渡す（GL と WebGPU が同じ決まりで動く）。
 // 注意: 実際の三角形化とアップロードは resolve が行い、毎フレームの描画は範囲だけを
 //   RenderFrame へ渡す（頂点は運ばない）。
@@ -38,37 +39,77 @@ mod RenderStatic {
         metas = List[DrawCmd.StaticPolyMeta]
     }
 
-    /// 静的レイヤー依頼を解決して、この 1 フレームで描くレンジ列を返す。
-    /// キャッシュ（cell に入った Option[Entry]）のキーが依頼のキーと一致すれば作り直さず、
-    /// 一致しなければ古い buffer を捨ててから polys を評価・三角形化・アップロードし、
-    /// キャッシュを差し替える。cell の更新はこの関数が行う（呼び側は cell を渡すだけ）。
-    /// 戻り値の Range 列は依頼の viewOffset/viewScale を各レンジに載せた物。
-    pub def resolve(alloc: StaticAllocator, cell: Array[Option[Entry], Static], layer: DrawCmd.StaticLayerCmd): List[Range] \ IO =
-        let entry = ensureBaked(alloc, cell, layer);
-        let buffer = entry#buffer;
-        entry#metas |> List.map(m -> {
-            buffer = buffer, first = m#first, count = m#count,
-            blend = m#blend, clip = m#clip, zIndex = m#zIndex,
-            viewOffset = layer#viewOffset, viewScale = layer#viewScale,
-            halfDesign = layer#halfDesign
+    /// 層の id → その層の Entry。
+    pub type alias Cache = Ref[Map[String, Entry], Static]
+
+    /// 空のキャッシュ。
+    pub def freshCache(): Cache \ IO = Ref.fresh(Static, Map.empty())
+
+    /// 静的レイヤー依頼の並びを解決して、この 1 フレームで描くレンジ列を返す（並びの順に繋ぐ）。
+    /// 依頼に無い id の buffer を先に捨て、次に依頼ごとに、その id の Entry のキーが一致すれば作り直さず、
+    /// 一致しなければ古い buffer を捨ててから polys を評価・三角形化・アップロードして差し替える。
+    /// cache の更新はこの関数が行う（呼び側は cache を渡すだけ）。
+    /// 戻り値の Range 列は依頼の viewOffset/viewScale を各レンジに載せた物。空の並びは何も捨てずに Nil を返す。
+    // WhyNot: 空の並びで全部を捨てない — Pass の中のコマも静的層を持たない並び（Nil）で通るので、
+    //   捨てると画面のコマで毎回作り直しになる。静的層をやめたゲームの buffer は次に並びが来た時に捨てる。
+    pub def resolve(alloc: StaticAllocator, cache: Cache, layers: List[DrawCmd.StaticLayerCmd]): List[Range] \ IO =
+        if (List.isEmpty(layers)) Nil else resolveNonEmpty(alloc, cache, layers)
+
+    def resolveNonEmpty(alloc: StaticAllocator, cache: Cache, layers: List[DrawCmd.StaticLayerCmd]): List[Range] \ IO =
+        let named = cacheIds(layers);
+        let live = List.foldLeft((s, p) -> Set.insert(fst(p), s), Set.empty(), named);
+        evictMissing(alloc, cache, live);
+        named |> List.flatMap(p -> {
+            let (cacheId, layer) = p;
+            let entry = ensureBaked(alloc, cache, cacheId, layer);
+            let buffer = entry#buffer;
+            entry#metas |> List.map(m -> {
+                buffer = buffer, first = m#first, count = m#count,
+                blend = m#blend, clip = m#clip, zIndex = m#zIndex,
+                viewOffset = layer#viewOffset, viewScale = layer#viewScale,
+                halfDesign = layer#halfDesign
+            })
         })
 
-    /// キャッシュがキー一致ならそのまま、違えば作り直して返す（cell を更新する副作用つき）。
-    def ensureBaked(alloc: StaticAllocator, cell: Array[Option[Entry], Static], layer: DrawCmd.StaticLayerCmd): Entry \ IO =
-        match Array.get(0, cell) {
+    /// 依頼ごとのキャッシュの名前。同じ id の 2 つ目からは出た順の番号を付ける。
+    // WhyNot: 重なった id を 1 つの枠にまとめない — 2 つの依頼が同じ枠を取り合うと、キーが違うたびに
+    //   互いの buffer を捨てて毎コマ作り直す。番号を付ければ並びが同じ間は使い回せる。
+    def cacheIds(layers: List[DrawCmd.StaticLayerCmd]): List[(String, DrawCmd.StaticLayerCmd)] =
+        let (_, rev) = List.foldLeft((acc, layer) -> {
+            let (seen, out) = acc;
+            let n = Map.getWithDefault(layer#id, 0, seen);
+            let cacheId = if (n == 0) layer#id else "${layer#id}\u0000${Int32.toString(n)}";
+            (Map.insert(layer#id, n + 1, seen), (cacheId, layer) :: out)
+        }, (Map.empty(), Nil), layers);
+        List.reverse(rev)
+
+    /// live に無い id の buffer を捨てて表から消す。
+    def evictMissing(alloc: StaticAllocator, cache: Cache, live: Set[String]): Unit \ IO =
+        let all = Ref.get(cache);
+        let kept = Map.filterWithKey((id, _) -> Set.memberOf(id, live), all);
+        let gone = Map.filterWithKey((id, _) -> not Set.memberOf(id, live), all);
+        if (Map.isEmpty(gone)) ()
+        else {
+            Map.forEach((_, e) -> (alloc#destroy)(e#buffer), gone);
+            Ref.put(kept, cache)
+        }
+
+    /// その id のキャッシュがキー一致ならそのまま、違えば作り直して返す（cache を更新する副作用つき）。
+    def ensureBaked(alloc: StaticAllocator, cache: Cache, cacheId: String, layer: DrawCmd.StaticLayerCmd): Entry \ IO =
+        match Map.get(cacheId, Ref.get(cache)) {
             case Some(e) if e#key == layer#key => e
             case old =>
                 // 古い世代があれば必ず捨てる（フロア往復で buffer が増え続けないように）。
                 Option.forEach(e -> (alloc#destroy)(e#buffer), old);
                 let fresh = bake(alloc, layer#key, layer#polys());
-                Array.put(Some(fresh), 0, cell);
+                Ref.put(Map.insert(cacheId, fresh, Ref.get(cache)), cache);
                 fresh
         }
 
-    /// キャッシュを空にする（あれば buffer を捨てる）。
-    pub def release(alloc: StaticAllocator, cell: Array[Option[Entry], Static]): Unit \ IO =
-        Option.forEach(e -> (alloc#destroy)(e#buffer), Array.get(0, cell));
-        Array.put(None, 0, cell)
+    /// キャッシュを空にする（あれば buffer を全部捨てる）。
+    pub def release(alloc: StaticAllocator, cache: Cache): Unit \ IO =
+        Map.forEach((_, e) -> (alloc#destroy)(e#buffer), Ref.get(cache));
+        Ref.put(Map.empty(), cache)
 
     /// 多角形列を z 昇順に並べ、blend / 切り抜き clip 矩形ごとにまとめて三角形化し、1 本の buffer へ
     /// 連続配置する。レンジ目次（z / blend / clip ごとの開始頂点・頂点数）も同時に作る。

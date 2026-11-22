@@ -445,8 +445,8 @@
   `pub def gradTriangles(p: PolygonRenderCmd): List[(GradVertex, GradVertex, GradVertex)]`
 - 静的多角形バッファのキャッシュキー。ゲームは「静的な中身を決める全入力」
   `pub type alias StaticKey = String`
-- 1 フレームぶんの静的レイヤー描画依頼。`renderCommands` の第 4 チャンネルに載せる。
-  `pub type alias StaticLayerCmd = { key = StaticKey, polys = Unit -> List[PolygonRenderCmd], viewOffset = Vec2.Vec2, viewScale = Vec2.Vec2, halfDesign = Vec2.Vec2 }`
+- 1 フレームぶんの静的レイヤー 1 つの描画依頼。`renderCommands` の第 4 チャンネルに id ごとに並べて載せる。
+  `pub type alias StaticLayerCmd = { id = String, key = StaticKey, polys = Unit -> List[PolygonRenderCmd], viewOffset = Vec2.Vec2, viewScale = Vec2.Vec2, halfDesign = Vec2.Vec2 }`
 - エンジン内部でキャッシュした 1 レンジの目次（バックエンドだけが使う）。
   `pub type alias StaticPolyMeta = { first = Int32, count = Int32, blend = BlendMode, clip = Option[Rect2.Rect2], zIndex = Int32 }`
 
@@ -1058,7 +1058,7 @@
 - 2D の描き物の列を出す口。
   `pub eff Draw2d`
 - zIndex 混合で sprites・tileMaps・polygons を 1 フレーム描画する（積んだ面と 3D の場面も z の位置で合流させる）。
-  `pub eff Draw2d { def renderCommands(sprites: List[GameEngine.Drawable], tileMaps: List[GameEngine.TileMapRenderCmd], polygons: List[GameEngine.PolygonRenderCmd], staticLayer: Option[GameEngine.StaticLayerCmd]): Unit }`
+  `pub eff Draw2d { def renderCommands(sprites: List[GameEngine.Drawable], tileMaps: List[GameEngine.TileMapRenderCmd], polygons: List[GameEngine.PolygonRenderCmd], staticLayers: List[GameEngine.StaticLayerCmd]): Unit }`
 - 宣言シェーダーの面 1 枚を、次の renderCommands の列へ積む。
   `pub eff Draw2d { def drawSurface(cmd: DrawCmd.SurfaceRenderCmd): Unit }`
 - 次の画面への renderCommands で、design の外の余り（レターボックス・ピラーボックス）を、texture（Pass の名前。design の大きさに描いた絵）を

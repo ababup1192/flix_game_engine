@@ -132,7 +132,7 @@ mod TestPassPlan {
         RenderTarget.runNoop(() -> run {
             App.Internal.Paint.drawPassPlan(_ -> (), { x = 8.0, y = 8.0 }, known, plan)
         } with handler Platform.Draw2d {
-            def renderCommands(_sprites, _tileMaps, _polygons, _staticLayer, k) = k(())
+            def renderCommands(_sprites, _tileMaps, _polygons, _staticLayers, k) = k(())
             def drawSurface(_cmd, k) = k(())
             def fillLetterbox(_texture, k) = k(())
         } with handler Platform.Draw3d {

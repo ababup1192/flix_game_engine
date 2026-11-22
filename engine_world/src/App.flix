@@ -202,14 +202,9 @@ pub mod App {
         worldDump = Option[(Rect2.Rect2, w) -> String \ ef],
         // 注釈チケットの README 冒頭に載せる「その瞬間の文脈」（場面・台本の行・z の層の名前）。
         annotationContext = Option[w -> Annotate.Table \ ef],
-        // 「1 度だけ GPU に生成して使い回す静的な絵」の宣言（無ければ None）。key = 静的な中身を
-        // 決める全入力を 1 文字列にまとめたキャッシュキー（フロア id・テーマ・作り直しの世代など。
-        // これが変わるとエンジンが古い VBO を捨てて作り直す）、build = ワールド座標の静的 PlacedItem を
-        // 組む純粋関数（camera はエンジンが uniform で当てるので触らない。多角形だけが生成の対象になり、
-        // それ以外の item は無視される）。GL ハンドルも無効化ロジックもゲームは持たない。
-        // 純粋関数に限るのは renderCommands の op を効果多相にしないため（静的な絵は World の
+        // 「1 度だけ GPU に生成して使い回す静的な絵」の層の宣言（無ければ None・層ごとの欄は StaticLayerSpec）。純粋関数に限るのは renderCommands の op を効果多相にしないため（静的な絵は World の
         // 純粋な投影から作れる）。
-        staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }],
+        staticLayers = Option[w -> List[StaticLayerSpec]],
         // withPreload3d の宣言。
         preload3d = Option[Preload3d[w]],
         // 「1 度だけ GPU に生成して 1 draw call で敷くタイルの層」の宣言（無ければ None）。
@@ -300,7 +295,7 @@ pub mod App {
           parallaxLayers = Nil,
           hudView = None,
           letterboxView = None,
-          staticLayer = None,
+          staticLayers = None,
           preload3d = None,
           tileLayers = None,
           spriteAtlases = _ -> Nil,
@@ -434,18 +429,22 @@ pub mod App {
     pub def withSpriteAtlases(f: w -> List[AtlasUpload], app: App[w, ef]): App[w, ef] =
         App.App({ spriteAtlases = f | rec(app) })
 
-    /// 「1 度だけ GPU に生成して使い回す静的な絵」を宣言する。key は静的な中身を決める全入力を
-    /// 1 文字列にまとめたキャッシュキー（フロア id・テーマ・作り直しの世代番号など） — これが
-    /// 変わったときだけエンジンが古い VBO を捨てて作り直す（テクスチャを名前で 1 度上げるのと同じ
-    /// 隠蔽で、ゲームは GL ハンドルを持たない）。build はワールド座標の静的 PlacedItem を組む
-    /// 純粋関数（camera はエンジンが uniform で当てるので触らない）。多角形（Poly）だけが生成の対象になり、
-    /// それ以外の item は無視される。松明の炎・水面の粒・影・プレイヤーのように毎フレーム変わる
-    /// 物は必ず withView 側（動的）に残すこと — 「本当に不変な物だけ」を静的層に入れる。
-    /// view = None のゲームでは効かない（App が描画しないため）。
-    pub def withStaticLayer(key: w -> GameEngine.StaticKey,
-                            build: w -> List[Render.PlacedItem],
-                            app: App[w, ef]): App[w, ef] =
-        App.App({ staticLayer = Some({ key = key, build = build }) | rec(app) })
+    /// 「1 度だけ GPU に生成して使い回す静的な絵」を 1 層で宣言する（id が "" の withStaticLayers と同じ）。key は静的な中身を決める全入力を
+    /// 1 文字列にまとめたキャッシュキー（フロア id・テーマ・作り直しの世代番号など）で、変わったときだけエンジンが作り直す。
+    /// build はワールド座標の静的 PlacedItem を組む純粋関数（camera はエンジンが uniform で当てる）。多角形（Poly と飾りの無い箱）だけが生成の対象。
+    /// 毎フレーム変わる物（炎・パーティクル・プレイヤー）は withView 側に残す。地図の一部だけが変わるゲームは withStaticLayers で区画に分ける。
+    pub def withStaticLayer(key: w -> GameEngine.StaticKey, build: w -> List[Render.PlacedItem], app: App[w, ef]): App[w, ef] =
+        withStaticLayers(world -> { id = "", key = key(world), items = () -> build(world) } :: Nil, app)
+
+    /// 静的層 1 つの宣言。id = 層の名前（区画の座標など・GPU バッファは id ごとに 1 本）・key = その層の中身を決める入力のキャッシュキー・
+    /// items = ワールド座標の静的 PlacedItem を組むサンク（作り直しの時だけ呼ぶ）。
+    pub type alias StaticLayerSpec = { id = String, key = GameEngine.StaticKey, items = Unit -> List[Render.PlacedItem] }
+
+    /// 静的な絵を id の付いた層の並びで宣言する。key が前のコマと違う層だけを作り直し、前のコマにあって今のコマに無い id のバッファは捨てる。
+    /// f は毎フレーム呼ばれるので key は World に持った区画ごとの世代番号などから安く作る。並びの順が同じ z の中の重なり順（前の層が奥）。
+    /// 同じ id を 2 度並べると知らせ、2 つ目からは別の層として持つ。withStaticLayer と両方を呼ぶと後の方だけが残る。区画の大きさは docs/performance.md。
+    pub def withStaticLayers(f: w -> List[StaticLayerSpec], app: App[w, ef]): App[w, ef] =
+        App.App({ staticLayers = Some(f) | rec(app) })
 
     /// 遊びの途中で初めて出る物（形・絵・材質のプログラム）を GPU へ先に上げる宣言。初めて出るコマに mipmap 作りとプログラムの組み立てが乗って
     /// コマが跳ねるのを、起動（と読み直し）の 1 コマへまとめる。key は毎コマ読み、中身を決める全入力を 1 文字列にまとめた物。

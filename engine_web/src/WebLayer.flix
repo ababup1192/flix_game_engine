@@ -78,12 +78,12 @@ pub mod WebLayer {
         let recording = Browser.isRecordingUsedAssets();
         let seen = Ref.fresh(Static, Set.empty());
         run f() with handler Platform.Draw2d {
-            def renderCommands(sprites, tileMaps, polygons, staticLayer, k) = {
+            def renderCommands(sprites, tileMaps, polygons, staticLayers, k) = {
                 if (recording) {
                     noteNewTextures(seen, List.map(DrawCmd.textureOf, sprites));
                     noteNewTextures(seen, List.map(t -> t#textureName, tileMaps))
                 } else ();
-                Platform.Draw2d.renderCommands(sprites, tileMaps, polygons, staticLayer);
+                Platform.Draw2d.renderCommands(sprites, tileMaps, polygons, staticLayers);
                 k(())
             }
             def drawSurface(cmd, k) = {

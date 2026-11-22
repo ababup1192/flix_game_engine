@@ -362,7 +362,7 @@ mod V2Main {
 
     def drawFrame(c: Case): Unit \ Platform.Rendering + Platform.Window + RenderTarget.Target =
         drawPasses(c);
-        App.Internal.Paint.submitGpuItems(_ -> (), c#items, Nil, None);
+        App.Internal.Paint.submitGpuItems(_ -> (), c#items, Nil, Nil);
         Platform.Window.presentFrame()
 
     def drawPasses(c: Case): Unit \ Platform.Rendering + RenderTarget.Target =

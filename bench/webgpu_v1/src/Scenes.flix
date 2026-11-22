@@ -5,14 +5,14 @@
 mod V1Scenes {
 
     /// 1 場面。passes = 本編より先に描く Pass・items = 本編の描き物（生成の絵を上げる物は、ここで ensureTexture を呼ぶ）。
-    /// tiles = 本編のタイルの層（ここで initTileBuffer を呼ぶ）・staticLayer = 本編の static layer。
+    /// tiles = 本編のタイルの層（ここで initTileBuffer を呼ぶ）・staticLayers = 本編の static layer の並び。
     /// submits = 描いたコマの submit の数の期待（None = 見ない）。
     /// warmup = 比べるコマの前に描くコマ（コマごとに Pass と描き先の作り方を替える。本編は同じ物）。比べるのは最後のコマだけ。
     pub type alias Scene = {
         name = String,
         warmup = List[Step],
         tiles = Unit -> List[GameEngine.TileMapRenderCmd] \ Platform.GpuResources,
-        staticLayer = Option[GameEngine.StaticLayerCmd],
+        staticLayers = List[GameEngine.StaticLayerCmd],
         passes = List[Render.Pass],
         // Pass の名前 → 描き先の作り方（無い名前は既定の作り方）。
         targets = Map[String, RenderTarget.Descriptor],
@@ -29,7 +29,7 @@ mod V1Scenes {
 
     pub def all(): List[Scene] =
         boxes() :: spriteNearest() :: veil() :: radial() :: text() :: passPaste() :: passHalf() :: generated() :: passThenGenerated() ::
-        polygons() :: polygonPass() :: tiles() :: staticLayer() :: polygonFlood() ::
+        polygons() :: polygonPass() :: tiles() :: staticLayer() :: staticChunks() :: polygonFlood() ::
         historyFade() :: historyLate() :: historyKeep() :: msaaPass() :: msaaTwo() :: msaaOff() :: msaaKeep() :: msaaToggle() ::
         maskBasic() :: maskNested() :: maskPass() :: maskMsaa() :: maskOverflow() :: sceneBetween() ::
         surfaceFill() :: surfaceBetween() :: surfaceTexture() :: surfaceMask() :: surfacePass() :: surfaceMsaa() ::
@@ -49,7 +49,7 @@ mod V1Scenes {
     // ── 箱（塗り・並び順・blend の式・軸に沿った縞・市松）──
 
     def boxes(): Scene =
-        { name = "boxes", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
+        { name = "boxes", warmup = Nil, tiles = noTiles(), staticLayers = Nil, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
             at(8.0, 8.0, RawDraw.box({ x = 16.0, y = 16.0 }, c8(255, 64, 64), 10)) ::
             at(40.0, 30.0, RawDraw.box({ x = 80.0, y = 60.0 }, c8(40, 80, 200), 1)) ::
             at(80.0, 60.0, RawDraw.box({ x = 80.0, y = 60.0 }, c8(40, 180, 90), 2)) ::
@@ -81,7 +81,7 @@ mod V1Scenes {
     def origin(): Vec2.Vec2 = { x = 0.0, y = 0.0 }
 
     def spriteNearest(): Scene =
-        { name = "spriteNearest", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
+        { name = "spriteNearest", warmup = Nil, tiles = noTiles(), staticLayers = Nil, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
             at(40.0, 40.0, atlasSprite("atlas", { srcPos = origin(), srcSize = full(), sx = 1.0, fH = false, fV = false })) ::
             at(80.0, 40.0, atlasSprite("atlas", { srcPos = origin(), srcSize = { x = 8.0, y = 8.0 }, sx = 2.0, fH = false, fV = false })) ::
             at(120.0, 40.0, atlasSprite("atlas", { srcPos = { x = 8.0, y = 0.0 }, srcSize = { x = 8.0, y = 8.0 }, sx = 3.0, fH = false, fV = false })) ::
@@ -96,7 +96,7 @@ mod V1Scenes {
     // ── 半透明の幕（α 0.5）──
 
     def veil(): Scene =
-        { name = "veil", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
+        { name = "veil", warmup = Nil, tiles = noTiles(), staticLayers = Nil, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
             at(20.0, 20.0, RawDraw.box({ x = 120.0, y = 80.0 }, c8(200, 120, 60), 1)) ::
             at(160.0, 40.0, RawDraw.box({ x = 100.0, y = 100.0 }, c8(40, 160, 220), 1)) ::
             at(60.0, 110.0, atlasSprite("atlas", { srcPos = origin(), srcSize = full(), sx = 4.0, fH = false, fV = false })) ::
@@ -106,7 +106,7 @@ mod V1Scenes {
     // ── 組み込みの放射の絵（Render.lightAt の Add・darkAt の Multiply）──
 
     def radial(): Scene =
-        { name = "radial", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
+        { name = "radial", warmup = Nil, tiles = noTiles(), staticLayers = Nil, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
             at(192.0, 0.0, RawDraw.box({ x = 128.0, y = 180.0 }, c8(255, 255, 255), 2)) ::
             Render.darkAt({ at = { x = 256.0, y = 128.0 }, radius = 128.0, strength = 1.0, z = 3 }) ::
             Render.lightAt({ at = { x = 128.0, y = 128.0 }, radius = 128.0, color = c8(255, 255, 255), strength = 1.0, z = 4 }) ::
@@ -116,7 +116,7 @@ mod V1Scenes {
     // ── 字（ゲームのフォントの距離場・組み込みの字のビットマップ・切り抜き）──
 
     def text(): Scene =
-        { name = "text", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = () -> {
+        { name = "text", warmup = Nil, tiles = noTiles(), staticLayers = Nil, passes = Nil, targets = Map.empty(), submits = Some(1), items = () -> {
             let ui = Platform.GpuResources.getFontAtlas("ui");
             let boot = Platform.GpuResources.getFontAtlas(BootFont.name());
             at(0.0, 0.0, RawDraw.box({ x = designW(), y = designH() }, c8(24, 28, 40), 0)) ::
@@ -145,12 +145,12 @@ mod V1Scenes {
                             at = { x = 160.0, y = 90.0 }, size = { x = 160.0, y = 90.0 }, z = 2 })
 
     def passPaste(): Scene =
-        { name = "passPaste", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = p3() :: Nil, targets = Map.empty(), submits = Some(1), items = still(
+        { name = "passPaste", warmup = Nil, tiles = noTiles(), staticLayers = Nil, passes = p3() :: Nil, targets = Map.empty(), submits = Some(1), items = still(
             at(4.0, 4.0, RawDraw.box({ x = 60.0, y = 30.0 }, c8(90, 90, 90), 1)) :: pastedP3() :: Nil) }
 
     /// 同じ Pass を Rgba16Float の描き先で（pipeline はその Pass で初めて作る）。8 bit で割り切れる色なので読む値は Rgba8 と同じ。
     def passHalf(): Scene =
-        { name = "passHalf", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = p3() :: Nil, targets = Map#{"p3" => RenderTarget.withHdr(RenderTarget.defaultDescriptor())},
+        { name = "passHalf", warmup = Nil, tiles = noTiles(), staticLayers = Nil, passes = p3() :: Nil, targets = Map#{"p3" => RenderTarget.withHdr(RenderTarget.defaultDescriptor())},
           submits = Some(1), items = still(pastedP3() :: Nil) }
 
 
@@ -170,7 +170,7 @@ mod V1Scenes {
 
     /// 同じコマで 2 回上げる（2 回目は大きさが同じなので書き替え）。半透明の画素も持つ。
     def generated(): Scene =
-        { name = "generated", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = () -> {
+        { name = "generated", warmup = Nil, tiles = noTiles(), staticLayers = Nil, passes = Nil, targets = Map.empty(), submits = Some(1), items = () -> {
             Platform.GpuResources.ensureTexture("gen", "first", 8, 8, checkerArgb(8, argb(255, 255, 64, 64), argb(128, 32, 32, 128)));
             Platform.GpuResources.ensureTexture("gen", "second", 8, 8, checkerArgb(8, argb(255, 64, 255, 64), argb(128, 255, 255, 255)));
             at(0.0, 0.0, RawDraw.box({ x = designW(), y = designH() }, c8(60, 60, 60), 0)) ::
@@ -184,7 +184,7 @@ mod V1Scenes {
     def passThenGenerated(): Scene =
         let pg: Render.Pass = { name = "pg", clear = RenderTarget.LoadOp.Clear(c8(30, 30, 30)), items =
             at(10.0, 10.0, generatedSprite("gen", 8.0)) :: Nil };
-        { name = "passThenGenerated", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = pg :: Nil, targets = Map.empty(), submits = Some(2), items = () -> {
+        { name = "passThenGenerated", warmup = Nil, tiles = noTiles(), staticLayers = Nil, passes = pg :: Nil, targets = Map.empty(), submits = Some(2), items = () -> {
             Platform.GpuResources.ensureTexture("gen", "third", 8, 8, checkerArgb(8, argb(255, 64, 128, 255), argb(255, 255, 208, 64)));
             Render.blitRegion({ name = "pg", design = { x = designW(), y = designH() },
                                 src = { position = { x = 0.0, y = 0.0 }, size = { x = 160.0, y = 90.0 } },
@@ -221,13 +221,13 @@ mod V1Scenes {
         Nil
 
     def polygons(): Scene =
-        { name = "polygons", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1),
+        { name = "polygons", warmup = Nil, tiles = noTiles(), staticLayers = Nil, passes = Nil, targets = Map.empty(), submits = Some(1),
           items = still(polygonItems()) }
 
     /// 多角形を Pass に描いて本編へ貼る（Pass の描き先へも多角形の行が流れる）。
     def polygonPass(): Scene =
         let pp: Render.Pass = { name = "pp", clear = RenderTarget.LoadOp.Clear(c8(16, 24, 40)), items = polygonItems() };
-        { name = "polygonPass", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = pp :: Nil, targets = Map.empty(), submits = Some(1), items = still(
+        { name = "polygonPass", warmup = Nil, tiles = noTiles(), staticLayers = Nil, passes = pp :: Nil, targets = Map.empty(), submits = Some(1), items = still(
             Render.blitRegion({ name = "pp", design = { x = designW(), y = designH() },
                                 src = { position = v(0.0, 0.0), size = v(160.0, 90.0) },
                                 at = v(80.0, 45.0), size = v(160.0, 90.0), z = 2 }) :: Nil) }
@@ -245,7 +245,7 @@ mod V1Scenes {
     /// 本編はその後ろに入らないので submit してから頭から送る（submit は本編の前の 1 回と、コマの終わりの 1 回）。
     def polygonFlood(): Scene =
         let pf: Render.Pass = { name = "pf", clear = RenderTarget.LoadOp.Clear(c8(16, 24, 40)), items = ngonGrid(1) };
-        { name = "polygonFlood", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = pf :: Nil, targets = Map.empty(), submits = Some(2), items = still(
+        { name = "polygonFlood", warmup = Nil, tiles = noTiles(), staticLayers = Nil, passes = pf :: Nil, targets = Map.empty(), submits = Some(2), items = still(
             List.append(ngonGrid(1),
                 Render.blitRegion({ name = "pf", design = { x = designW(), y = designH() },
                                     src = { position = v(0.0, 0.0), size = v(160.0, 90.0) },
@@ -272,7 +272,7 @@ mod V1Scenes {
           tileVaoId = fst(handle), tileCount = snd(handle) }
 
     def tiles(): Scene =
-        { name = "tiles", warmup = Nil, passes = Nil, targets = Map.empty(), submits = Some(1), staticLayer = None,
+        { name = "tiles", warmup = Nil, passes = Nil, targets = Map.empty(), submits = Some(1), staticLayers = Nil,
           tiles = () -> {
               let ground = Platform.GpuResources.initTileBuffer(tileGrid(12, 6));
               let small = Platform.GpuResources.initTileBuffer(tileGrid(3, 2));
@@ -299,14 +299,27 @@ mod V1Scenes {
         { clip = Some({ position = v(150.0, 120.0), size = v(40.0, 30.0) }) | solid(v(-20.0, -10.0) :: v(30.0, -10.0) :: v(30.0, 30.0) :: Nil, c8(60, 160, 220), 3) } ::
         Nil
 
+    /// id・key の static layer 1 つ（中身は polys・カメラは staticLayer の場面と同じ）。
+    def staticLayerOf(id: String, key: String, polys: List[DrawCmd.PolygonRenderCmd]): GameEngine.StaticLayerCmd =
+        { id = id, key = key, polys = () -> polys,
+          viewOffset = v(20.0, 10.0), viewScale = v(1.5, 1.5), halfDesign = v(designW() / 2.0, designH() / 2.0) }
+
+    /// static layer の場面の本編（下地と、z 2 の箱 1 つ）。
+    def staticBackdrop(): Unit -> List[Render.PlacedItem] \ Platform.GpuResources =
+        still(
+            at(0.0, 0.0, RawDraw.box({ x = designW(), y = designH() }, c8(24, 24, 24), 0)) ::
+            at(150.0, 90.0, RawDraw.box({ x = 40.0, y = 40.0 }, c8(200, 60, 200), 2)) ::
+            Nil)
+
     def staticLayer(): Scene =
         { name = "staticLayer", warmup = Nil, passes = Nil, targets = Map.empty(), submits = Some(1), tiles = noTiles(),
-          staticLayer = Some({ key = "v1-static", polys = () -> staticPolys(),
-                               viewOffset = v(20.0, 10.0), viewScale = v(1.5, 1.5), halfDesign = v(designW() / 2.0, designH() / 2.0) }),
-          items = still(
-              at(0.0, 0.0, RawDraw.box({ x = designW(), y = designH() }, c8(24, 24, 24), 0)) ::
-              at(150.0, 90.0, RawDraw.box({ x = 40.0, y = 40.0 }, c8(200, 60, 200), 2)) ::
-              Nil) }
+          staticLayers = staticLayerOf("", "v1-static", staticPolys()) :: Nil, items = staticBackdrop() }
+
+    /// staticLayer と同じ多角形を 2 つの層に分けた場面（絵は staticLayer と同じになるはず）。
+    def staticChunks(): Scene =
+        { name = "staticChunks", warmup = Nil, passes = Nil, targets = Map.empty(), submits = Some(1), tiles = noTiles(),
+          staticLayers = staticLayerOf("a", "v1-a", List.take(2, staticPolys())) :: staticLayerOf("b", "v1-b", List.drop(2, staticPolys())) :: Nil,
+          items = staticBackdrop() }
 
     // ── Pass の history（前のコマの描き先の絵）と MSAA ──
     // history の場面はコマを続けて描き、窓と同じく前のコマの絵を写す（GL は GlOffscreen.withHistoryKept）。
@@ -335,7 +348,7 @@ mod V1Scenes {
         let pass = (color, x) -> ({ name = "hfade", clear = RenderTarget.LoadOp.Clear(c8(0, 0, 0)),
                                     items = historyOf("hfade", 0.0, 0.0, 0.5, 1) :: boxAt(x, 20.0, color, 2) :: Nil }: Render.Pass);
         { name = "historyFade", warmup = step(pass(c8(240, 40, 40), 10.0) :: Nil) :: step(pass(c8(40, 240, 40), 50.0) :: Nil) :: Nil,
-          tiles = noTiles(), staticLayer = None, passes = pass(c8(40, 40, 240), 90.0) :: Nil, targets = Map.empty(), submits = Some(1),
+          tiles = noTiles(), staticLayers = Nil, passes = pass(c8(40, 40, 240), 90.0) :: Nil, targets = Map.empty(), submits = Some(1),
           items = still(pasteQuarter("hfade", 0.0, 0.0, 1) :: pasteQuarter(RenderTarget.historyName("hfade"), 160.0, 0.0, 1) :: Nil) }
 
     /// 1 コマ目は history を読まず（history はまだ無い）、2 コマ目で初めて読む: 作った history へ 1 コマ目の絵を写してから描く。
@@ -344,7 +357,7 @@ mod V1Scenes {
                                    items = boxAt(10.0, 10.0, c8(240, 200, 40), 1) :: Nil };
         let second: Render.Pass = { name = "hlate", clear = RenderTarget.LoadOp.Clear(c8(20, 40, 60)),
                                     items = historyOf("hlate", 40.0, 30.0, 1.0, 1) :: boxAt(100.0, 10.0, c8(40, 200, 240), 2) :: Nil };
-        { name = "historyLate", warmup = step(first :: Nil) :: Nil, tiles = noTiles(), staticLayer = None, passes = second :: Nil,
+        { name = "historyLate", warmup = step(first :: Nil) :: Nil, tiles = noTiles(), staticLayers = Nil, passes = second :: Nil,
           targets = Map.empty(), submits = Some(1),
           items = still(pasteQuarter("hlate", 0.0, 0.0, 1) :: pasteQuarter(RenderTarget.historyName("hlate"), 160.0, 90.0, 1) :: Nil) }
 
@@ -353,7 +366,7 @@ mod V1Scenes {
         let pass = (color, y) -> ({ name = "hkeep", clear = RenderTarget.LoadOp.Keep,
                                     items = historyOf("hkeep", 40.0, 0.0, 1.0, 1) :: boxAt(0.0, y, color, 2) :: Nil }: Render.Pass);
         { name = "historyKeep", warmup = step(pass(c8(240, 40, 40), 0.0) :: Nil) :: step(pass(c8(40, 240, 40), 30.0) :: Nil) :: Nil,
-          tiles = noTiles(), staticLayer = None, passes = pass(c8(40, 40, 240), 60.0) :: Nil, targets = Map.empty(), submits = Some(1),
+          tiles = noTiles(), staticLayers = Nil, passes = pass(c8(40, 40, 240), 60.0) :: Nil, targets = Map.empty(), submits = Some(1),
           items = still(pasteQuarter("hkeep", 0.0, 0.0, 1) :: Nil) }
 
     // MSAA の場面は、縁を軸に沿った端数の位置に置く（縁の画素は標本の数ぶんの段の濃さ）。端数は画素の中心（0.5）と標本の位置（1/8 の奇数倍）を避ける
@@ -376,7 +389,7 @@ mod V1Scenes {
 
     def msaaPassWith(name: String, samples: Int32): Scene =
         let pass: Render.Pass = { name = name, clear = RenderTarget.LoadOp.Clear(c8(16, 24, 40)), items = msaaItems() };
-        { name = name, warmup = Nil, tiles = noTiles(), staticLayer = None, passes = pass :: Nil, targets = targetsWith(name, samples), submits = Some(1),
+        { name = name, warmup = Nil, tiles = noTiles(), staticLayers = Nil, passes = pass :: Nil, targets = targetsWith(name, samples), submits = Some(1),
           items = still(pasteQuarter(name, 0.0, 0.0, 1) :: Nil) }
 
     /// 端数の縁を標本 4 の Pass へ描いて本編へ貼る（縁の画素は標本の平均）。
@@ -396,7 +409,7 @@ mod V1Scenes {
         { name = "msaaKeep",
           warmup = { passes = pass(fractionalItems(0.0, c8(240, 200, 40))) :: Nil, targets = targets } ::
                    { passes = pass(historyOf("mkeep", 0.0, 45.0, 0.5, 1) :: fractionalItems(50.0, c8(40, 200, 240))) :: Nil, targets = targets } :: Nil,
-          tiles = noTiles(), staticLayer = None, passes = pass(historyOf("mkeep", 0.0, 45.0, 0.5, 1) :: fractionalItems(100.0, c8(240, 80, 200))) :: Nil,
+          tiles = noTiles(), staticLayers = Nil, passes = pass(historyOf("mkeep", 0.0, 45.0, 0.5, 1) :: fractionalItems(100.0, c8(240, 80, 200))) :: Nil,
           targets = targets, submits = Some(1), items = still(pasteQuarter("mkeep", 0.0, 0.0, 1) :: pasteQuarter(RenderTarget.historyName("mkeep"), 160.0, 0.0, 1) :: Nil) }
 
     /// 同じ名前の描き先の標本を 4 → 1 → 4 と替える（替わるたびに作り直し、中身と history は捨てる）。LoadOp.Keep と history の読みを混ぜる。
@@ -405,7 +418,7 @@ mod V1Scenes {
         { name = "msaaToggle",
           warmup = { passes = pass(fractionalItems(0.0, c8(240, 200, 40))) :: Nil, targets = targetsWith("mtog", 4) } ::
                    { passes = pass(historyOf("mtog", 0.0, 45.0, 1.0, 1) :: fractionalItems(50.0, c8(40, 200, 240))) :: Nil, targets = Map.empty() } :: Nil,
-          tiles = noTiles(), staticLayer = None, passes = pass(historyOf("mtog", 0.0, 45.0, 1.0, 1) :: fractionalItems(100.0, c8(240, 80, 200))) :: Nil,
+          tiles = noTiles(), staticLayers = Nil, passes = pass(historyOf("mtog", 0.0, 45.0, 1.0, 1) :: fractionalItems(100.0, c8(240, 80, 200))) :: Nil,
           targets = targetsWith("mtog", 4), submits = Some(1),
           items = still(pasteQuarter("mtog", 0.0, 0.0, 1) :: pasteQuarter(RenderTarget.historyName("mtog"), 160.0, 90.0, 1) :: Nil) }
 
@@ -414,7 +427,7 @@ mod V1Scenes {
     /// 場面の行の後の箱と市松の絵が、場面の前と同じ状態（blend・scissor・viewport）で描かれる事も見る。WebGPU は場面を描かずに知らせる。
     def sceneBetween(): Scene =
         let camera: Camera3d.Camera3d = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 1.0, far = 100.0, lensShift = Vec2.zero() };
-        { name = "sceneBetween", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
+        { name = "sceneBetween", warmup = Nil, tiles = noTiles(), staticLayers = Nil, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
             at(20.0, 20.0, RawDraw.box({ x = 120.0, y = 80.0 }, c8(40, 80, 200), 1)) ::
             Render.scene3d(v(60.0, 40.0), { zIndex = 2 | Scene3d.scene(camera, v(160.0, 100.0)) }) ::
             at(100.0, 60.0, RawDraw.box({ x = 120.0, y = 80.0 }, c8(40, 80, 200), 3)) ::
@@ -424,7 +437,7 @@ mod V1Scenes {
     /// WebGPU がまだ描かない物だけの場面（3D の場面）。GL とは比べない。
     pub def unsupported(): Scene =
         let camera: Camera3d.Camera3d = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 1.0, far = 100.0, lensShift = Vec2.zero() };
-        { name = "unsupported", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = None, items = still(
+        { name = "unsupported", warmup = Nil, tiles = noTiles(), staticLayers = Nil, passes = Nil, targets = Map.empty(), submits = None, items = still(
             Render.scene3d(v(120.0, 60.0), { zIndex = 2 | Scene3d.scene(camera, v(100.0, 50.0)) }) ::
             Nil) }
 
@@ -465,7 +478,7 @@ mod V1Scenes {
 
     /// 単色・箱との重なり順・uv・params・time・Add・Multiply・α 0.5。
     def surfaceFill(): Scene =
-        { name = "surfaceFill", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
+        { name = "surfaceFill", warmup = Nil, tiles = noTiles(), staticLayers = Nil, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
             at(0.0, 0.0, RawDraw.box(designSize(), c8(24, 28, 40), 0)) ::
             surfaceAt(solidSpec("v1_red", c8(220, 60, 60)), rectAt(10.0, 10.0, 60.0, 40.0), 1) ::
             at(40.0, 30.0, RawDraw.box(v(40.0, 30.0), c8(60, 200, 120), 2)) ::
@@ -481,7 +494,7 @@ mod V1Scenes {
 
     /// 同じ色・同じ blend の 2 つの箱の間に面が 1 枚（2 つの箱の run が切れる理由は面だけ。期待は Main.expectedDraws）。
     def surfaceBetween(): Scene =
-        { name = "surfaceBetween", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
+        { name = "surfaceBetween", warmup = Nil, tiles = noTiles(), staticLayers = Nil, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
             at(20.0, 20.0, RawDraw.box(v(120.0, 80.0), c8(40, 80, 200), 1)) ::
             surfaceAt(solidSpec("v1_between", c8(240, 200, 40)), rectAt(60.0, 40.0, 60.0, 40.0), 2) ::
             at(100.0, 60.0, RawDraw.box(v(120.0, 80.0), c8(40, 80, 200), 3)) ::
@@ -489,7 +502,7 @@ mod V1Scenes {
 
     /// 絵の読み: アトラスを Nearest と Linear で・Pass（GL では上下逆に格納される描き先）を Nearest で・無い名前（不透明な黒）。
     def surfaceTexture(): Scene =
-        { name = "surfaceTexture", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = p3() :: Nil, targets = Map.empty(), submits = Some(1), items = still(
+        { name = "surfaceTexture", warmup = Nil, tiles = noTiles(), staticLayers = Nil, passes = p3() :: Nil, targets = Map.empty(), submits = Some(1), items = still(
             at(0.0, 0.0, RawDraw.box(designSize(), c8(60, 60, 60), 0)) ::
             surfaceAt(readSpec("v1_read_nearest", "atlas", ShaderDoc.FilterMode.Nearest), rectAt(10.0, 10.0, 64.0, 64.0), 1) ::
             surfaceAt(readSpec("v1_read_linear", "atlas", ShaderDoc.FilterMode.Linear), rectAt(90.0, 10.0, 64.0, 64.0), 1) ::
@@ -501,7 +514,7 @@ mod V1Scenes {
     /// 2 つの矩形の mask で絵を読む面。
     def surfaceMask(): Scene =
         let tri = (x, y) -> (v(x + 2.0, y + 2.0) :: v(x + 62.0, y + 6.0) :: v(x + 10.0, y + 58.0) :: Nil) :: Nil;
-        { name = "surfaceMask", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
+        { name = "surfaceMask", warmup = Nil, tiles = noTiles(), staticLayers = Nil, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
             at(0.0, 0.0, RawDraw.box(designSize(), c8(24, 28, 40), 0)) ::
             at(8.0, 8.0, plainMask(white(), 1, triangleMask())) ::
             Render.shaderFillMasked(solidSpec("v1_mask_green", c8(60, 200, 120)), rectAt(80.0, 8.0, 64.0, 64.0), tri(80.0, 8.0), 0.0, 1) ::
@@ -522,7 +535,7 @@ mod V1Scenes {
             Render.shaderFillMasked(solidSpec("v1_pass_mask", c8(240, 200, 40)), rectAt(10.0, 50.0, 140.0, 35.0),
                                     rectMask(20.0, 55.0, 30.0, 20.0) :: rectMask(100.0, 60.0, 40.0, 20.0) :: Nil, 0.0, 1) ::
             Nil };
-        { name = "surfacePass", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = ps :: Nil, targets = Map.empty(), submits = Some(1), items = still(
+        { name = "surfacePass", warmup = Nil, tiles = noTiles(), staticLayers = Nil, passes = ps :: Nil, targets = Map.empty(), submits = Some(1), items = still(
             pasteQuarter("ps", 0.0, 0.0, 1) ::
             surfaceAt(solidSpec("v1_pass_main", c8(40, 160, 220)), rectAt(200.0, 100.0, 80.0, 50.0), 2) ::
             Nil) }
@@ -534,7 +547,7 @@ mod V1Scenes {
             Render.shaderFillMasked(solidSpec("v1_msaa_mask", c8(40, 200, 240)), rectAt(50.0, 0.0, 100.0, 80.0),
                                     rectMask(60.3, 5.2, 40.4, 30.6) :: rectMask(102.7, 40.3, 20.2, 30.4) :: Nil, 0.0, 1) ::
             Nil };
-        { name = "surfaceMsaa", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = pm :: Nil, targets = targetsWith("psmsaa", 4), submits = Some(1),
+        { name = "surfaceMsaa", warmup = Nil, tiles = noTiles(), staticLayers = Nil, passes = pm :: Nil, targets = targetsWith("psmsaa", 4), submits = Some(1),
           items = still(pasteQuarter("psmsaa", 0.0, 0.0, 1) :: Nil) }
 
     // ── mask つきスプライト（stencil の比べる値を 1 ずつ進める・RenderList.nextMaskRef）──
@@ -556,7 +569,7 @@ mod V1Scenes {
 
     /// 三角形・凹の矢印・回転・左右の反転・Add・切り抜き・三角形にならない mask（そのまま描く）。
     def maskBasic(): Scene =
-        { name = "maskBasic", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
+        { name = "maskBasic", warmup = Nil, tiles = noTiles(), staticLayers = Nil, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
             at(0.0, 0.0, RawDraw.box(designSize(), c8(24, 28, 40), 0)) ::
             at(8.0, 8.0, plainMask(white(), 1, triangleMask())) ::
             at(80.0, 8.0, plainMask(c8(128, 255, 128), 1, arrow() :: Nil)) ::
@@ -573,7 +586,7 @@ mod V1Scenes {
     def maskNested(): Scene =
         let square = rectMask(4.0, 4.0, 56.0, 56.0);
         let inner = v(16.0, 16.0) :: v(48.0, 16.0) :: v(16.0, 48.0) :: Nil;
-        { name = "maskNested", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
+        { name = "maskNested", warmup = Nil, tiles = noTiles(), staticLayers = Nil, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
             at(0.0, 0.0, RawDraw.box(designSize(), c8(24, 28, 40), 0)) ::
             at(8.0, 8.0, plainMask(c8(255, 128, 128), 1, square :: inner :: Nil)) ::
             at(80.0, 8.0, plainMask(c8(128, 128, 255), 1, square :: Nil)) ::
@@ -593,7 +606,7 @@ mod V1Scenes {
             at(60.0, 20.0, plainMask(c8(255, 160, 80), 2, arrow() :: Nil)) ::
             at(100.0, 10.0, atlasSprite("atlas", { srcPos = origin(), srcSize = full(), sx = 2.0, fH = false, fV = false })) ::
             Nil };
-        { name = "maskPass", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = pm :: Nil, targets = Map.empty(), submits = Some(1), items = still(
+        { name = "maskPass", warmup = Nil, tiles = noTiles(), staticLayers = Nil, passes = pm :: Nil, targets = Map.empty(), submits = Some(1), items = still(
             pasteQuarter("pm", 0.0, 0.0, 1) ::
             at(200.0, 100.0, plainMask(c8(128, 255, 128), 2, triangleMask())) ::
             Nil) }
@@ -604,13 +617,13 @@ mod V1Scenes {
             at(8.0, 8.0, plainMask(white(), 1, rectMask(3.3, 5.2, 40.4, 30.6) :: Nil)) ::
             at(60.0, 12.0, plainMask(c8(255, 160, 80), 2, rectMask(2.7, 1.3, 20.2, 50.4) :: rectMask(20.3, 30.2, 30.4, 10.6) :: Nil)) ::
             Nil };
-        { name = "maskMsaa", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = pm :: Nil, targets = targetsWith("pmsaa", 4), submits = Some(1),
+        { name = "maskMsaa", warmup = Nil, tiles = noTiles(), staticLayers = Nil, passes = pm :: Nil, targets = targetsWith("pmsaa", 4), submits = Some(1),
           items = still(pasteQuarter("pmsaa", 0.0, 0.0, 1) :: Nil) }
 
     /// 1 つの pass に mask つきを 300 個（比べる値の上限 255 を超える）。どれも同じ 64 × 64 の場所に置き、mask は 20 × 15 のセルの 1 つずつ（セルごとに色を替える）。
     /// 256 個目（値 1 に戻る）の前に stencil を 0 に戻さないと、1 個目の mask のセルにも 256 個目の色が出る。
     def maskOverflow(): Scene =
-        { name = "maskOverflow", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
+        { name = "maskOverflow", warmup = Nil, tiles = noTiles(), staticLayers = Nil, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
             at(0.0, 0.0, RawDraw.box(designSize(), c8(24, 28, 40), 0)) :: overflowMasks(300)) }
 
     /// (40, 40) の 64 × 64 に重ねた mask つき n 体（mask は 20 × 15 のセルの i 番目・セルごとに色を替える）。
@@ -627,7 +640,7 @@ mod V1Scenes {
     /// mask つきスプライト 255 体（比べる値を使い切る）の後に、同じ 64 × 64 を塗る mask つきの面（値 1 に戻る）と、その後の mask つきスプライト（値 2）。
     /// 面の mask は 1 体目のセルを含まない右下の矩形。面の前に stencil を 0 に戻さないと、1 体目のセル（値 1 のまま）にも面の色が出る。期待は Main.expectedDraws。
     def surfaceAfterOverflow(): Scene =
-        { name = "surfaceAfterOverflow", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
+        { name = "surfaceAfterOverflow", warmup = Nil, tiles = noTiles(), staticLayers = Nil, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
             at(0.0, 0.0, RawDraw.box(designSize(), c8(24, 28, 40), 0)) ::
             List.append(overflowMasks(255),
                 Render.shaderFillMasked(solidSpec("v1_overflow", c8(240, 240, 240)), rectAt(40.0, 40.0, 64.0, 64.0),
@@ -642,6 +655,6 @@ mod V1Scenes {
                                                                                  rectAt(0.0, 0.0, designW(), designH()), 1)) ::
                                             boxAt(x, 20.0, color, 2) :: Nil }: Render.Pass);
         { name = "surfaceHistory", warmup = step(pass(c8(240, 40, 40), 10.0) :: Nil) :: step(pass(c8(40, 240, 40), 50.0) :: Nil) :: Nil,
-          tiles = noTiles(), staticLayer = None, passes = pass(c8(40, 40, 240), 90.0) :: Nil, targets = Map.empty(), submits = Some(1),
+          tiles = noTiles(), staticLayers = Nil, passes = pass(c8(40, 40, 240), 90.0) :: Nil, targets = Map.empty(), submits = Some(1),
           items = still(pasteQuarter("shist", 0.0, 0.0, 1) :: Nil) }
 }

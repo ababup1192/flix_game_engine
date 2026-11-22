@@ -31,7 +31,7 @@ mod TestLetterboxView {
             def endTarget(k) = k(())
             def pixelScale(k) = k(1.0)
         } with handler Platform.Draw2d {
-            def renderCommands(_sprites, _tileMaps, _polygons, _staticLayer, k) = { note("render"); k(()) }
+            def renderCommands(_sprites, _tileMaps, _polygons, _staticLayers, k) = { note("render"); k(()) }
             def drawSurface(_cmd, k) = k(())
             def fillLetterbox(texture, k) = { note("letterbox:${texture}"); k(()) }
         } with handler Platform.Draw3d {

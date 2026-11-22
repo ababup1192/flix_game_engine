@@ -258,7 +258,7 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
         let polledAt = Array#{0i64} @ Static;
         // 起動画面: 描いたコマは控えに残るので、読み込み中にウィンドウの大きさを変えても描き直せる。
         let drawSplash = (ds: List[GameEngine.Drawable]) -> {
-            WebGpuPaint.handleDraw2d(paint, (_, _, _) -> (), () -> Platform.Draw2d.renderCommands(ds, Nil, Nil, None));
+            WebGpuPaint.handleDraw2d(paint, (_, _, _) -> (), () -> Platform.Draw2d.renderCommands(ds, Nil, Nil, Nil));
             discard showOnScreen(present);
             GLFW.glfwPollEvents();
             Array.put(System.nanoTime(), 0, polledAt)

@@ -37,7 +37,7 @@ mod ShaderCacheSoak {
         List.range(0, rounds()) |> List.forEach(i -> {
             let prog = Platform.GpuResources.buildProgram(specAt(i));
             Platform.Draw2d.drawSurface(surfaceCmd(prog));
-            Platform.Draw2d.renderCommands(Nil, Nil, Nil, None);
+            Platform.Draw2d.renderCommands(Nil, Nil, Nil, Nil);
             Platform.Window.presentFrame()
         })
 
