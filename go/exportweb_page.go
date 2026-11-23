@@ -37,7 +37,8 @@ func webPreloads(b webBundle) []webPreload {
 // （ゲームの側からは変えられない）、古い index.html が残ると古い ?v= を通して前の版を丸ごと読む。
 // 起動役が version.txt をキャッシュを使わずに確かめる。
 // switchesJS は頁の旗の読み手（engine_web/js/fge-switches.js の中身。前の engine で無ければ空）で、頭の起動役の前に埋める。
-func stampWebIndex(html, hash string, preload []webPreload, switchesJS string) (string, error) {
+// appHead は題と manifest とアイコンの行（webAppHead）で、head の閉じの前に置く。
+func stampWebIndex(html, hash string, preload []webPreload, switchesJS, appHead string) (string, error) {
 	seen := map[string]bool{}
 	first := -1
 	for _, loc := range webScriptTagRe.FindAllStringSubmatchIndex(html, -1) {
@@ -56,7 +57,7 @@ func stampWebIndex(html, hash string, preload []webPreload, switchesJS string) (
 		return "", fmt.Errorf("script の行より前に </head> が無い。次: index.html の head を閉じる")
 	}
 	rest := webScriptTagRe.ReplaceAllString(html[first:], "")
-	return html[:head] + webSwitchesScript(switchesJS) + webHeadScript(hash, preload) + html[head:first] + webBootScript + strings.TrimLeft(rest, "\n"), nil
+	return html[:head] + appHead + webSwitchesScript(switchesJS) + webHeadScript(hash, preload) + html[head:first] + webBootScript + strings.TrimLeft(rest, "\n"), nil
 }
 
 // webSwitchesSource は頁の旗の読み手の置き場の名前（engine_web/js の中）。
@@ -279,7 +280,7 @@ func writeWebPage(p exportWebPaths, b webBundle, wasm, teavmCore string) (string
 	return writeWebPageMeta(p, b, teavmCore)
 }
 
-// writeWebPageMeta は wasm を置いた後の頁の物（bundle.json・js・sw.js・sums.json・index.html・version.txt）を書き、版を返す。
+// writeWebPageMeta は wasm を置いた後の頁の物（bundle.json・js・sw.js・manifest とアイコン・sums.json・index.html・version.txt）を書き、版を返す。
 // 確かめの結果を bundle.json に足した後にも呼ぶ（wasm と .br は作り直さない）。
 func writeWebPageMeta(p exportWebPaths, b webBundle, teavmCore string) (string, error) {
 	boot := webStartupBytesOf(newWebSizeTable(p.Out), &b)
@@ -304,6 +305,9 @@ func writeWebPageMeta(p exportWebPaths, b webBundle, teavmCore string) (string, 
 	if err := writeWebServiceWorker(filepath.Dir(p.WebJS), p.Out, b.ID, b.ServiceWorker); err != nil {
 		return "", err
 	}
+	if err := writeWebApp(p, b); err != nil {
+		return "", err
+	}
 	hash, err := writeWebSums(p.Out)
 	if err != nil {
 		return "", err
@@ -316,7 +320,7 @@ func writeWebPageMeta(p exportWebPaths, b webBundle, teavmCore string) (string, 
 	if err != nil {
 		return "", err
 	}
-	html, err := stampWebIndex(string(index), hash, webPreloads(b), switches)
+	html, err := stampWebIndex(withWebTitle(string(index), b.Title), hash, webPreloads(b), switches, webAppHead(b.Title, hash))
 	if err != nil {
 		return "", fmt.Errorf("%s: %v", p.IndexHTML, err)
 	}

@@ -19,7 +19,7 @@ const stampTestHTML = "<head>\n<title>t</title>\n</head>\n<body>\n" + `<script s
 
 func stampForTest(t *testing.T, preload []webPreload) string {
 	t.Helper()
-	got, err := stampWebIndex(stampTestHTML, "abc123", preload, "")
+	got, err := stampWebIndex(stampTestHTML, "abc123", preload, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestStampWebIndexListsPreloadsWithTheirAs(t *testing.T) {
 }
 
 func TestStampWebIndexPutsSwitchesReaderBeforeHeadScript(t *testing.T) {
-	got, err := stampWebIndex(stampTestHTML, "abc123", nil, "function fgePageSwitches() {}\n")
+	got, err := stampWebIndex(stampTestHTML, "abc123", nil, "function fgePageSwitches() {}\n", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,14 +108,14 @@ func TestWriteWebServiceWorkerPutsSwitchesReaderFirst(t *testing.T) {
 }
 
 func TestStampWebIndexFailsWhenScriptMissing(t *testing.T) {
-	if _, err := stampWebIndex("<head></head>"+`<script src="fge-web.js"></script>`, "abc", nil, ""); err == nil {
+	if _, err := stampWebIndex("<head></head>"+`<script src="fge-web.js"></script>`, "abc", nil, "", ""); err == nil {
 		t.Error("wasm-gc-runtime.js の script が無ければ誤りのはず")
 	}
 }
 
 func TestStampWebIndexFailsWithoutHeadClose(t *testing.T) {
 	html := `<script src="wasm-gc-runtime.js"></script>` + `<script src="fge-web.js"></script>`
-	if _, err := stampWebIndex(html, "abc", nil, ""); err == nil {
+	if _, err := stampWebIndex(html, "abc", nil, "", ""); err == nil {
 		t.Error("</head> が無ければ誤りのはず")
 	}
 }

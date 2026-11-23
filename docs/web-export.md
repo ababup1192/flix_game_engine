@@ -121,6 +121,24 @@ design の大きさの画面に描くつもりの絵（ぼかした背景だけ�
 - 余りの無いコマ・画面なしの描き出し・テストでは呼ばれない
 - 手本は sound-novel-starter の View の letterbox
 
+## ホーム画面に追加して全画面で開く（manifest・`web.appIcon`）
+
+ゲームの側で直す所は無い。書き出しが次の物を置くので、iPhone / iPad / Android でブラウザの「ホーム画面に追加」から開くと、アドレスバーの無いアプリとして開く。
+
+| 物 | 中身 |
+|---|---|
+| `manifest.webmanifest` | `name`・`short_name` は project.json の `title`。`display: "standalone"`・`display_override: ["fullscreen", "standalone"]`・`orientation` は `web.orientation`（無ければ `any`）・`start_url` と `scope` と `id` は `./`（GitHub Pages の `/<repo>/play/` の下でも動く） |
+| `apple-touch-icon.png`（180px）・`icon-192.png`・`icon-512.png` | 元は project.json の `web.appIcon`（ゲームの根からの PNG の道・正方形で 512px 以上が良い）。無ければ engine のロゴ（起動の画面と同じ物）を余白付きで置く。下地は起動の画面の色で塗り、透明は残さない |
+| `index.html` の head | `<title>` を題に替え、`apple-mobile-web-app-title`・`<link rel="manifest">`・`<link rel="apple-touch-icon">`（どちらも `?v=<版>`）を足す。`apple-mobile-web-app-capable`・`mobile-web-app-capable`・`apple-mobile-web-app-status-bar-style: black`・`theme-color` は `engine_web/js/index.html` に書いてある |
+
+- display: iOS の Safari が Web アプリとして開くのは `standalone`。全画面（ステータスバーも消す）を知る Android の Chrome は `display_override` の `fullscreen` を先に使う。iPhone の横持ちは OS がステータスバーを出さないので、どちらでも画面いっぱいになる
+- ステータスバーは `black`（ステータスバーの下から頁が始まる）。`black-translucent` にすると縦持ちの頁がステータスバーの下まで伸び、パッドの時の canvas（`top: 0`）の上が隠れる。左右の切り欠きは今まで通り `env(safe-area-inset-*)` で避ける
+- `orientation` で向きを決めるのは Android だけ。iOS は manifest の向きを読まず、今まで通り頁の「画面を横にしてください」の案内が出る
+- manifest とアイコンは `sums.json` に載り、版の付いた URL の物は Service Worker がキャッシュから返す（manifest の中のアイコンの道は版無し。取るのはホーム画面に追加する時だけ）
+- セーブ（localStorage）: iOS はホーム画面から開いた頁の保存の所が Safari と別。Safari で遊んだセーブはホーム画面のアイコンからは見えない（その逆も）。Android の Chrome は同じ所を使う
+- 音の鳴り始め・指の操作・Service Worker はホーム画面から開いても同じ（最初の 1 回押すのも同じ）
+- 確かめ方: PC の Chrome の開発者ツールの Application → Manifest で、名前・アイコン・display が読めているか見る
+
 ## 書き出しを小さくする（`web.compress`）
 
 `bin/fge export-web` は書き出し先の中だけで、png → WebP（写真寄りの絵は劣化あり・ほかは劣化なし）・wav → Opus・アトラス → 画素だけ劣化なしの WebP（戻してバイト一致を確かめた時だけ・ほかは gzip）に替える（assets/ とデスクトップは変わらない）。
