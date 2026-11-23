@@ -79,7 +79,7 @@ claude                         # AGENTS.md・skills・hooks は fge new が置�
    macOS の make は 3.81（GNU make の古い版）で、通しの確かめもこの make で行う（engine の CI は devbox の gnumake なので、ずれに気づけない）。
 4. **作る**: `make -C <engine> new-game GAME=<今のフォルダ>/<名前> NAME=<名前> TEMPLATE=<名> TITLE=<題> JAVA=<JDK の java>`。
    配った engine は `IS_BUNDLE` になり、engine の作業ツリーの検査（engine-full-fresh）を飛ばす（Makefile:1540-1543）。
-5. **local.mk に書き足す**: new-game が書く `ENGINE ?= <engine>` の下に `export JAVA := <JDK の java>`。
+5. **local.mk を書く**: new-game が書く `ENGINE ?= <engine の絶対パス>` を下の形に置き換え、`export JAVA := <JDK の java>` を書き足す。
    macOS と Linux では、ゲームの make は `$(ENGINE)/bin/flix` を呼び（mk/game.mk:55）、bin/flix は環境の `JAVA` を最初に見る
    （bin/java-resolve.sh:42）。WhyNot `JAVA =`（export 無し）: mk/game.mk の `JAVA ?= java` は Windows の時だけの行で（:41-42）、
    make の変数のままでは bin/flix に届かない。
@@ -90,6 +90,8 @@ claude                         # AGENTS.md・skills・hooks は fge new が置�
 - 名前の決まり（英小文字はじまり）は new-game がそのまま検査する。全体の fge は検査を写さない。
 - テンプレートを選ぶ: `--template` が無ければ、`<engine>/templates/` の一覧を番号つきで出して選ばせる（端末でない時は game-starter）。
 - `make new-game` の最後の案内の「Studio で開く」は消す（Studio は凍結）。
+- **local.mk の ENGINE は flix.toml の版から決める**（`ENGINE ?= $(HOME)/.flix_ge/engines/<flix.toml の版>/engine`・plans/dashboard.md 14.1）。
+  固定のパスを書くと、版上げの後に古い engine を読み続ける（7 節のスパイク）。JAVA も engine の jdk.json から同じように決める。
 - 配った engine（git の作業ツリーでも go/ を持つ形でもない）で new-game を流すと、`fatal: not a git repository` と `cd: can't cd to go` が
   出る（スパイクで確かめた・止まりはしない）。初めての人を不安にさせるので、IS_BUNDLE の時は出さない。
 
@@ -121,6 +123,20 @@ claude                         # AGENTS.md・skills・hooks は fge new が置�
 | macOS の make 3.81・PATH の flix を先に拾う・全体の fge の見分け | 2.4 の 3・5・2.3 |
 | （スパイク）Adoptium の API はネットワークで止まりうる | Zulu に替えたので使わない。Azul も止まる所では、jdk.json の取り先を差し替えられるようにする（`FGE_JDK_URL`） |
 | （スパイク）配った engine の new-game が雑音を出す | 2.4 の末尾 |
+
+## 7. スパイクの記録（2026-11-23・Linux のコンテナ）
+
+Release の zip を手で開いた engine（fetchengine は 6 節のとおり止まるので手で開いた）と、JDK 25.0.3（Zulu の代わりに同じ版の Temurin。
+この環境は Azul にも Adoptium の API にも届かなかった）で流した。
+
+| 確かめたこと | 結果 |
+|---|---|
+| v0.108.0 の zip を取って SHA256SUMS で照合 | 通った（10 秒） |
+| 配った engine（IS_BUNDLE）で `make new-game … JAVA=<JDK>` | **通った**（2 分 41 秒。check → test → render-all まで）。`JAVA=` は子の make に届いた |
+| LWJGL の natives | 作るたびに Maven Central から取った（2.2 で zip に入れる裏付け） |
+| 雑音 | `fatal: not a git repository`・`cd: can't cd to go`・ログの日本語が `??????`（ロケールが無い時）。止まりはしない |
+| v0.107.0 で作ったゲームを v0.108.0 の engine で `make upgrade-game` | **通った**（31 秒・check 緑）。skills・AGENTS.md・agent-eval・bin/fge-go・flix.toml・packages.lock が新しい版になった |
+| 版上げの後の local.mk | **ENGINE は 0.107 のまま**。`make status` が「pack 古い（AGENTS.md は 0.108・engine は 0.107）→ engine 側で make sync-agents を再実行」と出し、その通りにすると skills が 0.107 に**戻る**。plans/dashboard.md 14.1 の「ENGINE を flix.toml の版から決める」が要る裏付け |
 
 ## 5. 決めていないこと
 
