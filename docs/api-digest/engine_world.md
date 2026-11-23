@@ -2390,19 +2390,22 @@
 ## SaveFormat — `engine_world/src/SaveFormat.flix`
 - 版 `fromVersion` の中身を版 `fromVersion + 1` の形へ書き換える。
   `pub type alias SaveMigration = { fromVersion = Int32, migrate = Json -> Result[String, Json] }`
-- セーブ形式。`make` で作り `withMigration` / `withUnwrappedVersion` で足す。
+- セーブ形式。`make` で作り `withMigration` / `withUnwrappedVersion` / `withGameVersion` で足す。
   `pub type alias Format = FormatData`
 - 名前 `name`・今の版 `version` のセーブ形式。書き換えはまだ無い。版は 1 から（1 より小さければ 1 にして 1 行言う）。
   `pub def make(name: String, version: Int32): Format`
 - `pub def withMigration(fromVersion: Int32, migrate: Json -> Result[String, Json], format: Format): Format`
 - 包みの無い古いセーブ（中身の JSON だけ）を何版として読むかを決める関数を渡す。
   `pub def withUnwrappedVersion(versionOf: Json -> Int32, format: Format): Format`
+- `pub def withGameVersion(gameVersion: String, format: Format): Format`
+- `withGameVersion` で渡したゲームの版。渡していなければ None。
+  `pub def getGameVersion(format: Format): Option[String]`
 - 形式の名前。
   `pub def getName(format: Format): String`
 - 今の版（書く時に付ける版）。
   `pub def getVersion(format: Format): Int32`
-- 中身 `data` を今の版の包み `{"format", "version", "data"}` に入れる。
-  `pub def wrap(data: Json, format: Format): Json`
+- `pub def wrap(data: Json, format: Format): Json`
+- `pub def writtenByOf(json: Json): Option[String]`
 - 読んだ JSON の版。包みも読み方も無い・名前の違う包みは None。
   `pub def versionOf(json: Json, format: Format): Option[Int32]`
 - 読んだ JSON を今の版の中身へ書き換えて返す。今より新しい版・書き換えの抜け・書き換えの失敗は Err。

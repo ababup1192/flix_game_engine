@@ -90,12 +90,42 @@ def testEveryReleasedSaveStillLoads(): Unit \ {Assert, Fs.DirList, Fs.FileRead} 
 { "quests": { "mine_boss": "reported" }, "flags": ["met_smith", "boss_down"] }
 ```
 
+## 書いたゲームの版を包みに残す（writtenBy）
+
+包みの `version` はセーブの**形**の番号で、遊ぶ人が見るゲームの版（1.4.0 など）ではない。
+どの版のゲームが書いたセーブかを残すには `withGameVersion` を足す。包みに `"writtenBy"` が入る。
+
+```flix
+def gameVersion(): String = "1.4.0"            // 出すたびに上げる（形が変わらない更新でも上げる）
+
+def saveFormat(): SaveFormat.Format =
+    SaveFormat.make("rune", 3)
+        |> SaveFormat.withMigration(1, renameHpToLife)
+        |> SaveFormat.withMigration(2, addItems)
+        |> SaveFormat.withGameVersion(gameVersion())
+```
+
+書く物は `{"format": "rune", "version": 3, "writtenBy": "1.4.0", "data": {…}}`。読む側:
+
+- `SaveFormat.writtenByOf(json)` — 読んだ字の JSON から `Some("1.4.0")`。`writtenBy` の無い古い包み・包みの無いセーブは `None`
+- 未来の版を断る `Err` の文面に「・1.6.0 で書いた」が入る（`load` / `decode` と、上書きを断る `save`）
+- 不具合の報告にセーブを添えてもらえば、どの版で書いたか分かる。見本（決まり 4）を置く時も出どころが字で残る
+
+**`writtenBy` で読み方を分けない。** 形の違いは包みの `version` と書き換えが持つ。ゲームの版で分けると、
+形の変わらない更新ごとに分岐が増え、`writtenBy` の無い古いセーブを読めない道ができる。
+`writtenBy` は**最後に書いた**版で、上書きのたびに今の版になる（初めて書いた版は残らない）。
+
+版の字はゲームが持つ。engine は project.json も git も読まない。ブラウザ版の束には project.json と assets/ の下しか入らず
+（flix.toml・git は無い）、git の短い sha は書き出し（`index.html` の `?v=` は中身の指紋で sha ではない）・配布物
+（`fge dist` はファイル名にだけ使う）・`make run` のどれもゲームのコードへ渡していないため。
+字をエディタで触りたいなら、ゲームの Doc に置いて読んで渡してよい。
+
 ## SaveFormat と Persistence・SaveManager
 
 | 道具 | 持つ事 |
 |---|---|
 | `Saveable`（Persistence） | 値 ⇄ JSON の変換（型ごとの `toJson` / `fromJson`） |
-| `SaveFormat` | 包み（形式の名前・版）・書き換え・控え・未来の版の判断・見本のテスト |
+| `SaveFormat` | 包み（形式の名前・版・書いたゲームの版）・書き換え・控え・未来の版の判断・見本のテスト |
 | `SaveManager` | `saves/slot{N}.json` の道の決まりだけ（`SaveManager.slotPath`） |
 
 `Saveable` の型なら `SaveFormat.saveValue(SaveManager.slotPath(1), value, format)` /

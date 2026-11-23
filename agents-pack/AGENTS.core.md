@@ -158,6 +158,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 音の長さ（秒）をゲームで使う（効果音が鳴り終わるまで次へ進まない） | `GameEngine.Audio.audioSeconds(name)`（描く元を組む所からも呼べる・ブラウザ版では音が Fs の表に無いので WAV を `Fs.FileRead.readBytes` で読む形は必ず失敗する・engine の `docs/audio.md` の「音の長さをゲームのコードで使う」） |
 | 効果音・曲を作る・直す（音割れも検査） | 台本 `*.snd.star` か `*.sndsrc.json` を `bin/fge snd build` |
 | セーブの形を変える・古い版のセーブを今の形で読む・上書き前に控えを残す | `SaveFormat.make` + `withMigration`（版 n → n+1）→ `SaveFormat.load` / `save`（未来の版は上書きしない・欄を足すだけなら既定値で読む） |
+| どの版のゲームが書いたセーブかを残す（不具合の報告・未来の版を断る文面に「1.6.0 で書いた」） | `SaveFormat.withGameVersion("1.4.0")` → 包みに `writtenBy`・読むのは `SaveFormat.writtenByOf(json)`（形の番号 `make` の版とは別・読み方を分ける材料にしない・engine の `docs/save-compat.md`） |
 | 出した版のセーブが新しい版でも読めるかをテストで確かめる | `test/save-samples/*.json` + `SaveFormat.checkSamples(フォルダ, 読み関数, 形式)` が `Nil`（決まりの全文は engine の `docs/save-compat.md`） |
 | 会話を人が書く・台詞と選択肢を順に出す・会話の中で数えて分ける | `*.yarn`（`<<declare>>` `<<set>>` `<<if>>` `{$x}` `visited`）を `bin/fge yarn build` → `Yarn.loadOr` + `YarnRunner.start` / `step`・値は `YarnRunner.valueOf` / `startWith` / `YarnStorage`・選べない選択肢は `DialogueOption` の `available` |
 | 会話の話し手・変数の表示名・最初のノード・描き出しの場面のノードを Doc に置き、台本の名前と build で照らす（名前を足すのに Flix を走らせない） | vocab.json の版 2 の `from`・`bin/fge yarn check <Doc>`（engine の `docs/novel.md` の「名前を Doc に置いて build で照らす」） |
