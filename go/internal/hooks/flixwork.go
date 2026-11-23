@@ -18,12 +18,16 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/explainerror"
 )
+
+// hostOS は走っている OS（テストが Windows を作るために差し替える）。
+var hostOS = runtime.GOOS
 
 // RunFlixWork は差し戻しが要るかを見る。返すのは 0 か 2 だけ。
 func RunFlixWork(errOut io.Writer, root string, in io.Reader) int {
@@ -32,6 +36,11 @@ func RunFlixWork(errOut io.Writer, root string, in io.Reader) int {
 	// WhyNot: 直前の Stop hook のブロックで継続ターンに入っているときに引くのは、
 	// 直せない種類の赤（他セッションが編集中等）で永久に止まれなくなるため。
 	if payload.Bool("stop_hook_active") {
+		return 0
+	}
+	// WhyNot: Windows で検査しないのは、check の常駐（flixlint）が Windows でまだ起きず（plans/windows.md 5 節の #4）、
+	// 毎回の区切りで落ちて作業を止めるため。#4 が済んだらこの分岐を外す。
+	if hostOS == "windows" {
 		return 0
 	}
 	r, err := LoadRules(root)

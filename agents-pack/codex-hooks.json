@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "make -s status",
+            "command": "bin/fge status",
             "timeout": 30
           },
           {

@@ -16,8 +16,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 
+	"github.com/ababup1192/flix_game_engine/go/internal/cmdhint"
 	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
 	"github.com/ababup1192/flix_game_engine/go/internal/status"
 )
@@ -38,6 +40,8 @@ type Options struct {
 	Lints map[string]Lint
 	// Images は「過去から追跡されている絵」の検査 (終了コードだけを見る)。
 	Images func(root string) int
+	// Fge は project.json の precommit を流す bin/fge の実体。空なら今走っている実行ファイル。
+	Fge string
 }
 
 type runner struct {
@@ -173,8 +177,9 @@ func (r *runner) gate(staged []string) (int, error) {
 		for _, m := range drift {
 			fmt.Fprintf(r.parent, "  %s\n", m)
 		}
-		fmt.Fprint(r.parent, "  意図しない差なら、コミットせずに止めて報告する（差の中身を見るのは、ゲームなら make compare BASE=HEAD・engine の作業場なら make diff DIR=templates/<名前>）。\n"+
-			"  意図した差なら make reference-update（テンプレは make -C templates/<名前> reference-update）で reference/SHA256SUMS.txt を直し、同じコミットに入れる。\n")
+		fmt.Fprintf(r.parent, "  意図しない差なら、コミットせずに止めて報告する（差の中身を見るのは、ゲームなら %s・engine の作業場なら make diff DIR=templates/<名前>）。\n"+
+			"  意図した差なら %s（テンプレは make -C templates/<名前> reference-update）で reference/SHA256SUMS.txt を直し、同じコミットに入れる。\n",
+			cmdhint.Command("compare", "BASE=HEAD"), cmdhint.Command("reference-update"))
 	}
 
 	for _, c := range r.rules.Checks {
@@ -196,20 +201,16 @@ func (r *runner) gate(staged []string) (int, error) {
 		}
 	}
 
-	if len(selectPaths(staged, r.rules.DocsSync.When)) > 0 && r.hasDocsSyncTarget() {
-		if r.runMake("-s", r.rules.DocsSync.Target) != 0 {
-			failed = true
-		}
+	if len(selectPaths(staged, r.rules.DocsSync.When)) > 0 && r.runDocsSync() != 0 {
+		failed = true
 	}
 
-	if t := r.rules.LocalGate.Target; t != "" && len(staged) > 0 && r.hasTarget(t) {
-		code, err := r.runLocalGate(t, staged)
-		if err != nil {
-			return 2, err
-		}
-		if code != 0 {
-			failed = true
-		}
+	code, err := r.runLocal(staged)
+	if err != nil {
+		return 2, err
+	}
+	if code != 0 {
+		failed = true
 	}
 
 	if failed {
@@ -292,22 +293,92 @@ func (r *runner) checkStagedImages(staged []string) []string {
 	return problems
 }
 
-// hasDocsSyncTarget は make に配線検査のターゲットが在るか。
-// 無い・make 自体が無いなら 1 行知らせてスキップ (fail-open)。
-func (r *runner) hasDocsSyncTarget() bool {
-	cmd := exec.Command("make", "-q", r.rules.DocsSync.Target)
+// runDocsSync は make の配線検査を流して終了コードを返す。ターゲットが無ければ 1 行知らせて 0。
+// make が無くて Makefile にターゲットが書いてあるときは、1 行出して 1（止める）。
+func (r *runner) runDocsSync() int {
+	t := r.rules.DocsSync.Target
+	if !lookMake() {
+		if makefileDefines(r.root, t) {
+			r.sayMakeMissing(t)
+			return 1
+		}
+		fmt.Fprintln(r.parent, r.rules.FailOpen.TargetMissing)
+		return 0
+	}
+	cmd := exec.Command("make", "-q", t)
 	cmd.Dir = r.root
 	_ = cmd.Run()
 	if cmd.ProcessState == nil {
-		// make 自体を起こせなかった。
-		fmt.Fprintln(r.parent, r.rules.FailOpen.MakeMissing)
-		return false
+		r.sayMakeMissing(t)
+		return 1
 	}
 	if cmd.ProcessState.ExitCode() == r.rules.FailOpen.TargetMissingExitCode {
 		fmt.Fprintln(r.parent, r.rules.FailOpen.TargetMissing)
+		return 0
+	}
+	return r.runMake("-s", t)
+}
+
+func (r *runner) sayMakeMissing(target string) {
+	fmt.Fprintln(r.parent, strings.ReplaceAll(r.rules.FailOpen.MakeMissing, "{target}", target))
+}
+
+// lookMake は make を起こせるか（テストが make の無い機械を作るために差し替える）。
+var lookMake = func() bool {
+	_, err := exec.LookPath("make")
+	return err == nil
+}
+
+// makefileTargetRe は Makefile の行頭のターゲットの宣言（`name:` か `name: 前提…`）。
+var makefileTargetRe = regexp.MustCompile(`^([A-Za-z0-9_.%/-]+(?:\s+[A-Za-z0-9_.%/-]+)*)\s*::?(?:[^=]|$)`)
+
+// makefileDefines は根の Makefile がターゲット target を書いているか。
+// WhyNot: include した先（mk/game.mk など）まで追わないのは、make が無い機械でそれを解けないためで、
+// engine の mk/game.mk はゲーム固有のターゲット（precommit-local）も配線検査も持たない。
+func makefileDefines(root, target string) bool {
+	data, err := os.ReadFile(filepath.Join(root, "Makefile"))
+	if err != nil {
 		return false
 	}
-	return true
+	for _, line := range strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n") {
+		m := makefileTargetRe.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		for _, name := range strings.Fields(m[1]) {
+			if name == target {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// runLocal はゲーム固有の pre-commit の検査を流す。project.json に precommit があればそれを
+// bin/fge で、無ければ今までどおり Makefile のターゲット（localGate.target）を make で。
+func (r *runner) runLocal(staged []string) (int, error) {
+	project, err := readProjectGates(r.root)
+	if err != nil {
+		return 0, err
+	}
+	if project.Precommit != nil {
+		return r.runProjectSteps(project, staged)
+	}
+	t := r.rules.LocalGate.Target
+	if t == "" {
+		return 0, nil
+	}
+	if !lookMake() {
+		if makefileDefines(r.root, t) {
+			r.sayMakeMissing(t)
+			return 1, nil
+		}
+		return 0, nil
+	}
+	if !r.hasTarget(t) {
+		return 0, nil
+	}
+	return r.runLocalGate(t, staged)
 }
 
 // hasTarget はゲームの Makefile に口が在るか（無ければ黙って飛ばす。固有の口は無いのが普通）。
@@ -340,19 +411,29 @@ func (r *runner) hasTarget(target string) bool {
 // WhyNot: ファイル名を make の変数へ直に並べないのは、make が $(...) を展開し、
 // 名前の中の " がレシピの引用を壊すため。一時ファイルなら名前は make を通らない。
 func (r *runner) runLocalGate(target string, staged []string) (int, error) {
-	f, err := os.CreateTemp("", "fge-staged-*.txt")
+	name, err := writeStagedFile(staged)
 	if err != nil {
 		return 0, err
 	}
-	defer os.Remove(f.Name())
+	defer os.Remove(name)
+	return r.runMake("-s", target, "STAGED_FILE="+name), nil
+}
+
+// writeStagedFile はステージしたパスを 1 行 1 つで一時ファイルに書き、そのパスを返す。
+func writeStagedFile(staged []string) (string, error) {
+	f, err := os.CreateTemp("", "fge-staged-*.txt")
+	if err != nil {
+		return "", err
+	}
 	_, werr := f.WriteString(strings.Join(staged, "\n") + "\n")
 	if cerr := f.Close(); werr == nil {
 		werr = cerr
 	}
 	if werr != nil {
-		return 0, werr
+		os.Remove(f.Name())
+		return "", werr
 	}
-	return r.runMake("-s", target, "STAGED_FILE="+f.Name()), nil
+	return f.Name(), nil
 }
 
 // runMake は出力をそのまま見せて終了コードを返す。
@@ -385,7 +466,7 @@ func (r *runner) checkUseEngineToml(staged []string) string {
 		return ""
 	}
 	return fmt.Sprintf("[pre-commit] flix.toml のエンジンの版 v%s は use-engine が一時的に書いた物です（元は v%s）。\n"+
-		"  bin/fge use-engine --restore で戻してからコミットする（版を上げるなら make engine-upgrade）", set, orig)
+		"  bin/fge use-engine --restore で戻してからコミットする（版を上げるなら %s）", set, orig, cmdhint.Command("engine-upgrade"))
 }
 
 func containsPath(paths []string, want string) bool {
