@@ -159,8 +159,8 @@
 |---|---|---|
 | 0 | 始め方（plans/onboarding.md） | 空の HOME で install.sh → `fge new` → `make run` が macOS と Linux で通る |
 | 1 | 前面の `bin/fge dashboard`・post / inbox / resolve・Inbox と Tape のタブ・proposal の頁の「送る」・固定の「はじめに」カード 1 枚（15 節）・`make dashboard`・status の 1 行・早見表 2 行 + お題 1 本・Studio の凍結の直し（7 節） | game-starter から産んだゲームの worktree で AI が post → 人が main のダッシュボードで選んで返す → AI が inbox で拾う、が会話のコピペ無しで通る |
-| 2 | Capabilities（早見表を読む）・Games・Images・Tickets のタブ・post を Pages へ載せる（10 節の 3）・`fge upgrade`（14 節・`--fix` 無し） | 起動中のゲームを頁から止めて撮れる・clone 無しで版を上げられる |
-| 3 | ワークスペース（13 節）・状態から選ぶカード（15.2）・Desktop のボタン・`fge upgrade --fix` | 1 つの URL から全部のゲームへ行ける |
+| 2 | **版上げのお知らせのカードと、clone 無しの `make engine-upgrade`（14 節）**・Capabilities（早見表を読む）・Games・Images・Tickets のタブ・post を Pages へ載せる（10 節の 3） | Inbox のカードから Claude を開くだけで、版上げ → 直す → post → 人が取り込む、が通る |
+| 3 | ワークスペース（13 節）・状態から選ぶカード（15.2）・Desktop のボタン | 1 つの URL から全部のゲームへ行ける |
 | 4 | 絵の上を囲むメモ・Tape の注釈を reply へ・頁から make のターゲットを流す（要るか未定） | フェーズ 3 の後に決める |
 
 ## 10. 決めたこと・決めていないこと
@@ -235,14 +235,42 @@ http://127.0.0.1:8790/_api/…      ワークスペースの API
 - engine のリポを `fge add` すると、`templates/*` が子として並ぶ。templates には `bin/fge` が無いので、engine の `bin/fge` を使って中継する。
 - テンプレートから作る画面は `fge new` を呼ぶだけ（Studio の Genesis のような写しを持たない。テンプレートの一覧は engine の zip の templates/ を読む）。
 
-## 14. engine の版上げ（`fge upgrade`・フェーズ 2）
+## 14. engine の版上げ（フェーズ 2）
+
+### 14.0 人から見た流れ（2026-11-23 の作者の判断）
+
+**人は版上げのコマンドを打たない。** Inbox に「新しい版があります」のカードが出て、ボタンで Claude を開くと、下書きの指示で
+Claude がコマンドを打ち、版の注意書き（docs/migrations）をもとに直し、結果を post で返す。人は post を見て返事をするだけ。
+
+```
+Inbox の先頭  ┌ engine 0.109.0 が出ています（いまは 0.108.0）
+              │ 変わる所: 当たりそうな非互換 3 件・手当ての要約（docs/migrations/0.109.0.md の頭）
+              └ [Claude Code で開く] [コピー]
+                    ↓ 下書き: 「engine を最新版に上げて。make engine-upgrade を流し、UPDATE_PLAN.md と docs/migrations の注意に沿って直し、
+                    ↓          check と test を緑にして、変わった絵と直した所を dashboard post で見せて」
+Claude        make engine-upgrade → （赤なら）UPDATE_PLAN.md を読んで直す → check・test → render-all → dashboard post
+                    ↓
+Inbox         「engine 0.109.0 に上げました」の post（直した所・リファレンスとの画素の差・上げた枝）→ 人が「取り込む / 直して」を返す
+                    ↓
+Claude        inbox で返事を拾う → 取り込む（人の返事が「取り込む」の時だけ）か、直してもう一度 post
+```
+
+- **お知らせのカードはファイルの post ではなく、ダッシュボードがその場で作る。** 状態（新しい版があるか）から作る物で、AI の post と違い返事を持たない。
+  上げ終わると消える。作者は `fge`（AI の名前の代わり）。
+- **AI が打つのは今ある `make engine-upgrade`。** 早見表（AGENTS.core.md）が「status の engine 版ズレを見たらこれ」と既に配っている名前を変えない。
+  中身を 14.1 の形（clone 無しで新しい版を取る）に替える。
+- `make status` にも同じ 1 行（「engine 0.109.0 が出ています → make engine-upgrade」）を出す。ダッシュボードを開かずに Claude を使っている時も気づける。
+- カードの下書きは 15 節の deep link と同じ作り（送るのは人が Enter を押した時）。
+
+### 14.1 コマンドの中身（AI が打つ）
+
 
 今ある物: `upgrade-game`（版の書き換え・fpkg の差し替え・check・非互換があれば終了コード 3）、`update-plan`（そのゲームで当たる非互換だけの
 指示書 UPDATE_PLAN.md）、`docs/migrations/<版>.md`（手書きの手当て）と `<版>.auto.md`（リリースで作る型の差と追随例）。
 足りないのは「engine の clone 無しで上げるコマンド」と「AI に直させて人が確かめる往復」。
 
 ```
-fge upgrade            # 全体の fge。作業ツリーがきれいか確かめる → 新しい版があるか見る → engine の zip を ~/.flix_ge/engines/<版>/ に取る
+make engine-upgrade    # 中身は fge upgrade。作業ツリーがきれいか確かめる → 新しい版があるか見る → engine の zip を ~/.flix_ge/engines/<版>/ に取る
                        # → 枝 engine-upgrade/<版> を切る
                        # → その版の engine で upgrade-game → 非互換が無ければ check・test を流して終わり
                        # → 非互換があれば UPDATE_PLAN.md を書き、ダッシュボードに post（当たる所の数・指示書・AI へ渡す文）
@@ -261,7 +289,7 @@ fge upgrade            # 全体の fge。作業ツリーがきれいか確かめ
   `fge new` が書く local.mk は `ENGINE ?= $(HOME)/.flix_ge/engines/$(shell <flix.toml の flix_game_engine の版を読む 1 行>)/engine` にする。
   枝を替えても worktree でも、その時の flix.toml の版の engine を指す。上の「local.mk の ENGINE（と JAVA）を書き換える」はこれで要らなくなる
   （JAVA は engine の jdk.json から同じように決める）。clone した engine を使う人（`make new-game` で作った人）は今までどおり絶対パス。
-- **`--fix`（AI に直させる）はフェーズ 3。** 手動の往復（post → 人が AI に頼む → AI が直す）が回ってから。プロセスを起こす決まりは 15.1 にまとめる。
+- **AI を非対話で起こす `--fix` は作らない。** 14.0 のとおり、人がカードから対話の Claude を開く。料金・権限・時間切れを決める要が無く、人が途中を見られる。
   WhyNot fge が自分で直す: update-plan の WhyNot と同じ（読み違えた時に知らせずに壊す）。直すのは AI、fge は材料と確かめの場を渡す。
 - engine 側の仕事: リリースのたびに `<版>.md`（手書きの手当て）を書く今の決まりを続ける。AI が直せなかった所は post に残るので、次の版の手当てに足す。
 
@@ -277,9 +305,8 @@ fge upgrade            # 全体の fge。作業ツリーがきれいか確かめ
 | **コマンドをコピー** | `cd <dir> && claude -n <ゲーム名> "<指示>"`（Codex なら `codex "<指示>"`） | 打てばそのまま送られる | 1 |
 | **Claude Desktop で開く** | サーバーが `claude --desktop` をゲームのフォルダで起動する（docs: desktop の「Coming from the CLI?」）。Desktop の Code タブをローカルのフォルダとプロンプトで開くリンクは公式に無い | 渡せないので、カードの「コピー」で貼ってもらう | 3 |
 
-- **プロセスを起こす決まり（14 節の `--fix` と共通）:** サーバーがプロセスを起こすのは、人が頁のボタンを押した時か CLI を打った時だけ。
-  対話の claude は人の端末で動かす（deep link）。非対話で起こすのは `--fix` だけで、その時は `--permission-mode` と時間の上限を
-  コマンドの引数で人が選ぶ（既定は付けない＝確認を求める）。
+- **プロセスを起こす決まり:** サーバーがプロセスを起こすのは、人が頁のボタンを押した時だけ（フェーズ 3 の Desktop）。
+  claude はいつも人の端末で対話で動かす（deep link）。ダッシュボードも fge も claude を非対話で起こさない。
 - deep link は、その機械で 1 回でも対話で何か送った後でないと開けない（ハンドラの登録がその時）。頁は開けたかを知れないので、
   リンクの横にいつも「開かない時: 一度 `claude` を起動して何か送る」と 1 行出し、コピーも並べる。
 - `q` は 5,000 字まで・`cwd` は絶対パスだけ。
@@ -296,7 +323,6 @@ fge upgrade            # 全体の fge。作業ツリーがきれいか確かめ
 |---|---|---|
 | 作ったばかり（AGENTS.local.md の画風の節が仮置きのまま） | 画風を決める | 「このゲームの画風を決めたい。/style-interview で質問して」 |
 | Inbox に返事がある | 返事を受けて直す | 「bin/fge dashboard inbox の返事を読んで直し、直した絵を dashboard post で見せて」 |
-| engine の新しい版がある | 版を上げる | 「fge upgrade の UPDATE_PLAN.md に沿って直し、check と test を緑にして」 |
 | F8 のチケットがある | チケットを直す | 「debug/annotations の新しいチケットを読んで直して」 |
 
 - 指示の文は engine から配る `agents-pack/starters.json`（sync-agents がゲームへ写す）に置き、ゲームの engine の版にそろえる。
