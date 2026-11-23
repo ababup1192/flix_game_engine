@@ -228,3 +228,46 @@ claude                  # AGENTS.md・skills・hooks は fge new が置いてあ
 | （第 2 版）proposal の bar と今の picks | 5 節で Page() と send・picks |
 | （第 3 版）stop の POST が Origin の決まりで弾かれる | 6 節で「Origin が無いか自分」に |
 | （第 3 版）show-prefix の基準・strays と共有する範囲・bash からの呼び方 | 3.1 で flix.toml のあるフォルダから取る・共有は main の作業ツリーまで・4 節で status --quiet |
+
+## 13. ワークスペース（案・2026-11-23 の作者の提案から）
+
+ダッシュボードを 1 台に 1 つだけ立て、`/` をワークスペース、`/<ゲーム名>/` を各ゲームにする。
+
+```
+http://127.0.0.1:8790/            ワークスペース: ゲームの一覧・テンプレートから作る・engine の版と更新
+http://127.0.0.1:8790/mygame/     ゲーム: Inbox・Tape・Games…（5 節）
+http://127.0.0.1:8790/_api/…      API（ゲーム名に使えない名前は `_` で始まる物）
+```
+
+- **ゲームの一覧はフォルダの親子ではなく一覧のファイルで持つ。** `~/.flix_ge/workspace.json` に `{name, dir}` を並べる。
+  `fge new` は既定で `~/flix-games/<名前>` に作って一覧に足す。既にあるゲームは `fge add <dir>` で足す。
+  WhyNot 1 つの親フォルダの下に置かせる: 既にある git のリポを動かさせることになる。
+- engine のリポも `fge add` すれば、`templates/*` が子として並ぶ（10 節の 2 はこれで済む）。
+- **2 つの fge を分ける。** `~/.flix_ge/bin/fge`（install.sh で入れる・ワークスペース・ダッシュボード・新規作成・版上げ）と、
+  各ゲームの `bin/fge`（そのゲームの engine の版にそろった道具・render や lint）。ダッシュボードはゲームの操作を
+  そのゲームの `bin/fge` に任せるので、ゲームごとに engine の版が違っても食い違わない。
+  WhyNot 1 つの fge で全部: ゲームごとに engine の版が違う。古い版のゲームを新しい道具で触ると、Studio と同じ食い違いが戻る。
+- サーバーは 1 台に 1 つになるので、server.json は `~/.flix_ge/dashboard/server.json`。posts はゲームごと（3.1 のまま）。
+- テンプレートから作る画面は `fge new` を呼ぶだけ（Studio の Genesis のような写しを持たない。テンプレートの一覧は engine の zip の templates/ を読む）。
+
+## 14. engine の版上げ（`fge upgrade`）（案）
+
+今ある物: `upgrade-game`（版の書き換え・fpkg の差し替え・check・非互換があれば終了コード 3）、`update-plan`（そのゲームで当たる非互換だけの
+指示書 UPDATE_PLAN.md）、`docs/migrations/<版>.md`（手書きの手当て）と `<版>.auto.md`（リリースで作る型の差と追随例）。
+足りないのは「engine の clone 無しで上げるコマンド」と「AI に直させて人が確かめる往復」。
+
+```
+fge upgrade            # 新しい版があるか見る → engine の zip を ~/.flix_ge/engines/<版>/ に取る → 枝 engine-upgrade/<版> を切る
+                       # → upgrade-game → 非互換が無ければ check・test を流して終わり
+                       # → 非互換があれば UPDATE_PLAN.md を書き、ダッシュボードに post（当たる所の数・指示書・AI へ渡す文）
+fge upgrade --fix      # 上の後、AI に直させる（下）
+```
+
+- **AI に直させる: `--fix` は PATH にある `claude`（無ければ `codex`）を非対話で 1 回起こし、UPDATE_PLAN.md を渡す。** 指示は
+  「check と test が緑になるまで直す → render-all → リファレンスとの画素の差を post する」。人はダッシュボードで差と直した所を見て、
+  良ければ枝を取り込む（取り込みは人がする）。
+  WhyNot 既定で AI を起こす: 料金と権限が掛かる。人が `--fix` を打つか、ダッシュボードの「AI に直させる」を押した時だけ。
+  WhyNot fge が自分で直す: update-plan の WhyNot と同じ（読み違えた時に知らせずに壊す）。直すのは AI、fge は材料と確かめの場を渡す。
+- 版は 1 つずつ上げる（0.104 → 0.105 → …）。1 版ごとに指示書が短く、どの版で壊れたかが分かる。`--to <版>` で飛ばすこともできる。
+- engine の版は `~/.flix_ge/engines/` に並べて置き、ゲームの flix.toml が指す版を使う（古い版のゲームも動いたまま）。
+- engine 側の仕事: リリースのたびに `<版>.md`（手書きの手当て）を書く今の決まりを続ける。AI が直せなかった所は post に残るので、次の版の手当てに足す。
