@@ -114,3 +114,21 @@ func TestReferenceCheckWithFgeRendersFirst(t *testing.T) {
 		t.Errorf("%v", got.calls)
 	}
 }
+
+func TestCheckRunsTheGamesOwnFgeGoWhenItHasTheCommands(t *testing.T) {
+	game := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(game, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	own := filepath.Join(game, "bin", "fge-go")
+	if err := os.WriteFile(own, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r, got := fakeRunner(t, []string{"test", "render"}, false)
+	r.List = func(exe string) []string { return []string{"test", "render"} }
+	var ran []string
+	r.Run = func(c *exec.Cmd) error { ran = append(ran, c.Path); return nil }
+	if err := r.Check(game); err != nil || len(ran) != 1 || ran[0] != own {
+		t.Errorf("err=%v ran=%v calls=%v", err, ran, got.calls)
+	}
+}

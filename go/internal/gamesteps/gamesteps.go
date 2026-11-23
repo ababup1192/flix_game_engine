@@ -29,6 +29,7 @@ type Runner struct {
 
 	fgeChecked bool
 	fgeHas     bool
+	gameHas    map[string]bool
 }
 
 // New は本物の exec・PATH を使う Runner。
@@ -102,16 +103,50 @@ func (r *Runner) HasReferenceCheck(game string) bool {
 
 // ReferenceCheck は全部描き出してから、リファレンス画像と比べる。
 func (r *Runner) ReferenceCheck(game string) error {
-	if !r.UsesFge() {
+	exe := gameExe(game)
+	if !(exe != "" && r.gameUsesFge(exe)) && !r.UsesFge() {
 		return r.runMake(game, "reference-check")
 	}
 	if err := r.RenderAll(game); err != nil {
 		return err
 	}
-	return r.runFge(game, "reference", "check")
+	return r.step(game, []string{"reference", "check"}, "reference-check")
+}
+
+// gameExe はゲームの中の bin/fge-go（Windows は fge-go.exe）。無ければ空。
+//
+// WhyNot: いつも自分（os.Executable()）で流さない — 全体の fge（~/.flix_ge/bin/fge）の隣には規約のファイル（bin/lint-rules）が無く、
+// check がすぐ止まる。ゲームの bin/fge-go はそのゲームの engine の版にそろっていて、規約のファイルもゲームの中にある。
+func gameExe(game string) string {
+	for _, name := range []string{"fge-go", "fge-go.exe"} {
+		p := filepath.Join(game, "bin", name)
+		if st, err := os.Stat(p); err == nil && !st.IsDir() {
+			return p
+		}
+	}
+	return ""
+}
+
+// gameUsesFge はゲームの bin/fge-go が check・test・render を持つか。
+func (r *Runner) gameUsesFge(exe string) bool {
+	if r.gameHas == nil {
+		r.gameHas = map[string]bool{}
+	}
+	if has, ok := r.gameHas[exe]; ok {
+		return has
+	}
+	names := map[string]bool{}
+	for _, n := range r.List(exe) {
+		names[n] = true
+	}
+	r.gameHas[exe] = names["test"] && names["render"]
+	return r.gameHas[exe]
 }
 
 func (r *Runner) step(game string, fgeArgs []string, makeTarget string) error {
+	if exe := gameExe(game); exe != "" && r.gameUsesFge(exe) {
+		return r.runExe(exe, game, fgeArgs...)
+	}
 	if r.UsesFge() {
 		return r.runFge(game, fgeArgs...)
 	}
@@ -122,7 +157,11 @@ func (r *Runner) step(game string, fgeArgs []string, makeTarget string) error {
 }
 
 func (r *Runner) runFge(game string, args ...string) error {
-	c := exec.Command(r.Exe, args...)
+	return r.runExe(r.Exe, game, args...)
+}
+
+func (r *Runner) runExe(exe, game string, args ...string) error {
+	c := exec.Command(exe, args...)
 	c.Dir = game
 	c.Env = append(os.Environ(), "ENGINE="+r.Engine)
 	c.Stdout, c.Stderr = r.Out, r.Err
