@@ -3,6 +3,7 @@ package status
 import (
 	"fmt"
 
+	"github.com/ababup1192/flix_game_engine/go/internal/cmdhint"
 	"github.com/ababup1192/flix_game_engine/go/internal/rendercache"
 	"github.com/ababup1192/flix_game_engine/go/internal/worktreegc"
 )
@@ -24,10 +25,10 @@ func sectionDisk(c *ctx, out *[]string) {
 		cache, ok := worktreegc.ReadCache(common)
 		switch {
 		case ok && cache.Removable > 0:
-			*out = append(*out, fmt.Sprintf("worktree %d 本。%s の make worktree-gc で消せた物 %d 本・約 %s → make worktree-gc（一覧）・APPLY=1（消す）",
-				n, cache.Time.Format("01-02"), cache.Removable, worktreegc.HumanBytes(cache.Bytes)))
+			*out = append(*out, fmt.Sprintf("worktree %d 本。%s の worktree-gc で消せた物 %d 本・約 %s → %s（一覧）・APPLY=1（消す）",
+				n, cache.Time.Format("01-02"), cache.Removable, worktreegc.HumanBytes(cache.Bytes), cmdhint.Command("worktree-gc")))
 		case n > worktreeWarnCount:
-			*out = append(*out, fmt.Sprintf("worktree %d 本 → make worktree-gc（取り込み済みで変更の無い物を一覧に）", n))
+			*out = append(*out, fmt.Sprintf("worktree %d 本 → %s（取り込み済みで変更の無い物を一覧に）", n, cmdhint.Command("worktree-gc")))
 		}
 	}
 	dir := rendercache.Dir()

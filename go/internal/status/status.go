@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/agenteval"
+	"github.com/ababup1192/flix_game_engine/go/internal/cmdhint"
 	"github.com/ababup1192/flix_game_engine/go/internal/fgehome"
 	"github.com/ababup1192/flix_game_engine/go/internal/fpkgstore"
 	"github.com/ababup1192/flix_game_engine/go/internal/mvncache"
@@ -136,7 +137,7 @@ func sectionGit(c *ctx, out *[]string) {
 	}
 	// コミット時のゲートは clone ごとに配線が要る。読むだけの status は知らせるだけ。
 	if c.isDir("bin/githooks") && c.git("config", "core.hooksPath") != "bin/githooks" {
-		*out = append(*out, "  未配線: pre-commit ゲートが効いていません → make hooks")
+		*out = append(*out, "  未配線: pre-commit ゲートが効いていません → "+cmdhint.Command("hooks"))
 	}
 }
 
@@ -150,7 +151,7 @@ func sectionTests(c *ctx, out *[]string) {
 		}
 	}
 	if len(logs) == 0 {
-		*out = append(*out, "テスト   記録なし (make test / make test-<名前> を一度も通していない)")
+		*out = append(*out, "テスト   記録なし ("+cmdhint.Command("test")+" / "+cmdhint.Command("test-<名前>")+" を一度も通していない)")
 		return
 	}
 	*out = append(*out, "テスト   (最終実行の記録から。回し直してはいない)")
@@ -300,8 +301,8 @@ func sectionReference(c *ctx, out *[]string) {
 				extra = fmt.Sprintf(" 他%d", len(bad)-c.rules.ReferenceBadShown)
 			}
 			*out = append(*out, fmt.Sprintf(
-				"reference NG %s: %s%s (意図した変更なら make reference-update で更新)",
-				pair.name, strings.Join(shown, " "), extra))
+				"reference NG %s: %s%s (意図した変更なら %s で更新)",
+				pair.name, strings.Join(shown, " "), extra, cmdhint.Command("reference-update")))
 			continue
 		}
 		oks = append(oks, fmt.Sprintf("%s(%d枚)", pair.name, ok))
@@ -431,7 +432,7 @@ func sectionPack(c *ctx, out *[]string) {
 	if cur != "" && cur != m[1] {
 		*out = append(*out, fmt.Sprintf(
 			"pack     古い (この AGENTS.md は engine v%s / いまの engine は v%s)。"+
-				"engine 側で make sync-agents GAME=\"%s\" を再実行", m[1], cur, c.root))
+				"engine 側で %s を再実行", m[1], cur, cmdhint.Command("sync-agents", `GAME="`+c.root+`"`)))
 	}
 }
 
@@ -466,14 +467,14 @@ func sectionEngineDrift(c *ctx, out *[]string) {
 	}
 	if latest, ok := fgehome.ReadLatest(); ok && fgehome.IsBundle(engine) && engineVersionLess(m[1], latest.Version) {
 		*out = append(*out, fmt.Sprintf(
-			"engine   engine %s が出ています → make engine-upgrade TO=%s", latest.Version, latest.Version))
+			"engine   engine %s が出ています → %s", latest.Version, cmdhint.Command("engine-upgrade", "TO="+latest.Version)))
 	}
 	cur := ReadEngineVersion(engine)
 	if cur != "" && cur != m[1] {
 		*out = append(*out, fmt.Sprintf(
 			"engine   バージョンズレ (このゲームは v%s / いまの engine は v%s)。"+
-				"make api や docs は v%s の物なので、無い API を引く恐れ → make engine-upgrade で追随",
-			m[1], cur, cur))
+				"%s や docs は v%s の物なので、無い API を引く恐れ → %s で追随",
+			m[1], cur, cmdhint.Command("api"), cur, cmdhint.Command("engine-upgrade")))
 	}
 }
 
@@ -554,7 +555,7 @@ func sectionBuilds(c *ctx, out *[]string) {
 		return
 	}
 	*out = append(*out, fmt.Sprintf("build     %d プロジェクトにコンパイル成果物が溜まっている "+
-		"(複製と glob が遅くなる。消しても再生成される) → make clean-game-builds", heavy))
+		"(複製と glob が遅くなる。消しても再生成される) → %s", heavy, cmdhint.Command("clean-game-builds")))
 }
 
 // sectionMvnCache は共有の置き場を向いていない lib/cache を 1 行で知らせる（直すのは人。status は何も変えない）。
@@ -593,8 +594,8 @@ func sectionMvnCache(c *ctx, out *[]string) {
 	if len(off) > 1 {
 		more = " ほか"
 	}
-	*out = append(*out, fmt.Sprintf("mvn      共有の置き場を向いていない lib/cache が %d 個（%s%s）→ make mvn-cache-share",
-		len(off), off[0], more))
+	*out = append(*out, fmt.Sprintf("mvn      共有の置き場を向いていない lib/cache が %d 個（%s%s）→ %s",
+		len(off), off[0], more, cmdhint.Command("mvn-cache-share")))
 }
 
 // sectionFpkgStore は engine の束が置き場（build/fpkg-store）の形になっていない所を 1 行で知らせる（直すのは人。status は何も変えない）。
@@ -633,8 +634,8 @@ func fpkgStoreEngineLine(c *ctx, out *[]string) {
 	if len(old) > 1 {
 		more = " ほか"
 	}
-	*out = append(*out, fmt.Sprintf("fpkg     engine の束を置き場（build/fpkg-store）でなく直に指す lib が %d 個（%s%s）→ make sync-engine-full",
-		len(old), old[0], more))
+	*out = append(*out, fmt.Sprintf("fpkg     engine の束を置き場（build/fpkg-store）でなく直に指す lib が %d 個（%s%s）→ %s",
+		len(old), old[0], more, cmdhint.Command("sync-engine-full")))
 }
 
 func fpkgStoreGameLine(c *ctx, out *[]string) {
@@ -667,7 +668,7 @@ func fpkgStoreGameLine(c *ctx, out *[]string) {
 	if len(why) == 0 {
 		return
 	}
-	*out = append(*out, "engine   "+strings.Join(why, "・")+" → make engine-upgrade（版が同じでも中身で入れ替える）")
+	*out = append(*out, "engine   "+strings.Join(why, "・")+" → "+cmdhint.Command("engine-upgrade")+"（版が同じでも中身で入れ替える）")
 }
 
 // sectionAgentEval は版ごとの agent-eval の記録（make agent-eval-release が書く）の最新を 1 行。

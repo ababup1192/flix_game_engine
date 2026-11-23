@@ -286,11 +286,19 @@ func fileExists(p string) bool {
 	return err == nil && !st.IsDir()
 }
 
-// runRefactor は project で bin/fge refactor <args> を流した出力。late は時間切れ（出力は空）。
+// refactorBin は project で refactor を流す fge の実体（テストが偽の bin/fge へ差し替える）。
+var refactorBin = func(project string) (string, error) { return os.Executable() }
+
+// runRefactor は project で fge refactor <args> を流した出力。late は時間切れ（出力は空）。
+// WhyNot: project の bin/fge を起こさないのは、あれが sh の起動役で、Windows では sh なしに起こせないため。
 func runRefactor(project string, limit time.Duration, args ...string) (answer string, late bool) {
+	self, err := refactorBin(project)
+	if err != nil {
+		return "", false
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), limit)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, filepath.Join(project, "bin", "fge"), append([]string{"refactor"}, args...)...)
+	cmd := exec.CommandContext(ctx, self, append([]string{"refactor"}, args...)...)
 	cmd.Dir = project
 	// WhyNot: 時間切れで止めるのは bin/fge だけで、その子（索引を作る flixlint）は出力の管を持ったまま走り続ける。
 	// 管が閉じるのを待たないよう、待つ長さを切る。

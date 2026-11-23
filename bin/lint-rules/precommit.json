@@ -169,6 +169,14 @@
               "Makefile",
               "project.json"
             ]
+          },
+          {
+            "prefixes": [
+              "go/"
+            ],
+            "suffixes": [
+              ".go"
+            ]
           }
         ]
       }
@@ -444,7 +452,7 @@
     "target": "precommit-local"
   },
   "failOpen": {
-    "makeMissing": "[pre-commit] make が見つからないので配線検査 (check-docs-sync) は飛ばします",
+    "makeMissing": "[pre-commit] make が見つからないので Makefile の {target} を流せません。止めます（make を入れるか、ゲームなら project.json の precommit へ移すと make なしで流れます）",
     "targetMissing": "[pre-commit] make check-docs-sync が無いので配線検査は飛ばします",
     "targetMissingExitCode": 2
   },
