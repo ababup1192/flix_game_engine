@@ -14,6 +14,20 @@ func TestMouseButtonSetAcceptsNone(t *testing.T) {
 	}
 }
 
+func TestSaveLoadPassesWhenTheGameDeclaresRoundTrip(t *testing.T) {
+	c := &checker{vocab: Vocab{SaveLoad: true}}
+	if _, why := c.line(0, []string{"saveload"}); why != "" {
+		t.Fatalf("saveload should pass: %s", why)
+	}
+}
+
+func TestSaveLoadIsRejectedWithoutRoundTrip(t *testing.T) {
+	c := &checker{vocab: Vocab{}}
+	if _, why := c.line(0, []string{"saveload"}); why == "" {
+		t.Fatal("saveload without saveRoundTrip in the flow table should be rejected")
+	}
+}
+
 func TestMouseButtonSetRejectsUnknownName(t *testing.T) {
 	if why := mouseButtonSet("right,back"); why == "" {
 		t.Fatal("back should be rejected")

@@ -13,6 +13,7 @@
 //   expect phase=GameOver           ここで立っていなければ失敗（フレームは使わない）
 //   mark cleared                    ここのフレームに名前を付ける（動画の切り出しの印）
 //   run open_menu.flow              別の flow をここに入れる（同じフォルダ・8 段まで）
+//   saveload                        ここでセーブ → 読み直した World で続ける（表の saveRoundTrip。make flow が読み直さない流れと問いの値・最後のセーブを比べる）
 //
 // ゲームが出す表（App.withFlow）:
 //   roles   = 役の名前 → キーの表（InputMap.Table[String]。表の先頭のキーを押す）
@@ -21,6 +22,7 @@
 //   ready   = 入力を受けられるか（Ready・Busy(理由)）。宣言すると tap・hold の前に自動で待つ（ready off で止まる）
 //   replies = 返事の通し番号（押して離した後に進まなければ、押した行の番号つきで失敗。ready off で止まる）
 //   options = ヘッダの設定の名前と値の候補（値はこの実行器では使わず、動画を撮るゲームが読む）
+//   saveRoundTrip = セーブを書く関数と、その字から読み直す関数（saveload の行が使う。make flow が読み直さない流れと比べる）
 //
 // 読む順: 表（Table）→ 手順（Script・Step）→ play（Outcome か Failure）。読み手は Flow.Parse、headless の入口は Flow.Cli。
 pub mod Flow {
@@ -65,12 +67,17 @@ pub mod Flow {
         drives = List[DriveRow[w]],
         ready = Option[w -> Ready],
         replies = Option[w -> Int64],
-        options = List[(String, List[String])]
+        options = List[(String, List[String])],
+        saveRoundTrip = Option[SaveRoundTrip[w]]
     }
+
+    /// セーブの書き出しと読み直し（docs/flow.md の「セーブの読み直しの門」）: save = 今の World を書くセーブの字（書かない場面は None）・
+    /// load = その字から読み直した World（続きから始めた所。今の World は Doc と描く元を引くために渡す）。実機と同じ書き方・読み方を渡す。
+    pub type alias SaveRoundTrip[w] = { save = w -> Option[String], load = (String, w) -> Result[String, w] }
 
     /// 何も宣言しない表（{ probes = … | Flow.emptyTable() } で要る欄だけ書く）。
     pub def emptyTable(): Table[w] =
-        { roles = _ -> Nil, probes = Nil, drives = Nil, ready = None, replies = None, options = Nil }
+        { roles = _ -> Nil, probes = Nil, drives = Nil, ready = None, replies = None, options = Nil, saveRoundTrip = None }
 
     /// ゲームの役の enum の表（InputMap.Table[a]）を、名前の表にする。
     pub def rolesOf(name: a -> String, table: InputMap.Table[a]): InputMap.Table[String] =
@@ -94,13 +101,14 @@ pub mod Flow {
         keys = List[String],
         ready = Bool,
         replies = Bool,
-        fingerprint = Bool
+        fingerprint = Bool,
+        saveLoad = Bool
     }
 
     /// 手の語（閉じた一覧）。記録が書く語（reload・request・close・rewind）も同じ文法で読める。
     pub def verbs(): List[String] =
         "start" :: "tap" :: "hold" :: "release" :: "wait" :: "until" :: "drive" :: "expect" :: "mark" :: "run" ::
-        "reload" :: "request" :: "close" :: "rewind" :: Nil
+        "saveload" :: "reload" :: "request" :: "close" :: "rewind" :: Nil
 
     /// エンジンが持つ設定の語（ゲームの設定は Table#options）。
     pub def settings(): List[String] = "fps" :: "ready" :: Nil
@@ -125,7 +133,8 @@ pub mod Flow {
           keys = GameEngine.allKeys() |> List.map(key -> "${key}"),
           ready = Option.nonEmpty(table#ready),
           replies = Option.nonEmpty(table#replies),
-          fingerprint = Option.nonEmpty(r#fingerprint) }
+          fingerprint = Option.nonEmpty(r#fingerprint),
+          saveLoad = Option.nonEmpty(table#saveRoundTrip) }
 
     def kindOf(probe: Probe[w]): Kind = match probe {
         case Probe.Num(_)  => Kind.Num
@@ -156,7 +165,8 @@ pub mod Flow {
         "  \"keys\": ${list(vocab#keys)},\n" +
         "  \"ready\": ${vocab#ready},\n" +
         "  \"replies\": ${vocab#replies},\n" +
-        "  \"fingerprint\": ${vocab#fingerprint}\n" +
+        "  \"fingerprint\": ${vocab#fingerprint},\n" +
+        "  \"saveLoad\": ${vocab#saveLoad}\n" +
         "}\n"
 
     def escape(text: String): String =
@@ -253,6 +263,7 @@ pub mod Flow {
         case Request(String, Map[String, String], Map[String, File]) // onRequest のパスとクエリ
         case Close                                      // 窓の閉じるボタン（withCloseRequest）
         case Rewind(Int32)                              // F8 の巻き戻しから再開した（N フレーム前の World へ）
+        case SaveLoad(Bool)                             // セーブ → 読み直し。false = 読み直さない側の流れ（フレームは同じに使い、World は替えない）
     }
 
     /// 手 1 つと、その書いてある所（失敗の知らせに載せる）。
@@ -356,6 +367,7 @@ pub mod Flow {
             case Step.Reload(_, _)        => true
             case Step.Request(_, _, _)    => true
             case Step.Close               => true
+            case Step.SaveLoad(_)         => true
             case _                        => false
         };
         match c#awaiting {
@@ -426,12 +438,30 @@ pub mod Flow {
                 }
                 case None    => Ok(c)
             }
+            case Step.SaveLoad(false) => Ok(c)
+            case Step.SaveLoad(true) => match r#flow#saveRoundTrip {
+                case None       => Err({ cursor = c, at = line, why = "saveload: 表（App.withFlow）に saveRoundTrip が無い", seen = "" })
+                case Some(trip) => match saveLoaded(trip, c#world) {
+                    case Err(why)    => Err({ cursor = c, at = line, why = "saveload: ${why}", seen = "" })
+                    // 持ち越し（state）と手（hand）は替えない —— 読み直さない側の流れと同じ入力と刻みで残りを流して比べる。
+                    case Ok(loaded)  => Ok({ world = loaded, history = loaded :: Nil | c })
+                }
+            }
             case Step.Rewind(back) =>
                 match List.nth(back, c#history) {
                     case Some(world) => Ok({ world = world, history = List.drop(back, c#history) | c })
                     case None => Err({ cursor = c, at = line, why = "rewind ${Int32.toString(back)}: そこまでの履歴が無い", seen = "" })
                 }
         }
+
+    /// 今の World をセーブの字にし、その字から読み直した World。読み直した World をもう一度書いた字が元と違えば Err（違うキーを言う）。
+    def saveLoaded(trip: SaveRoundTrip[w], world: w): Result[String, w] =
+        forM (
+            text   <- (trip#save)(world) |> Option.toOk("この場面ではセーブを書かない（save が None）");
+            loaded <- (trip#load)(text, world) |> Result.mapErr(why -> "読めない（${why}）");
+            again  <- (trip#save)(loaded) |> Option.toOk("読み直した World がセーブを書かない（save が None）");
+            _      <- if (again == text) Ok(()) else Err("読み直してすぐ書いたセーブが元と違う: ${Flow.SaveLoad.diffText(text, again)}")
+        ) yield loaded
 
     /// tap（span = None）と hold（span = Some(長さか release まで)）。ready on なら入力を受けられるまで待ち（10 秒まで）、
     /// 押してから離したフレームの後までに返事の番号が進んだかを見る（離したフレームは次の手が進める。

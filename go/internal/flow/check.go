@@ -35,6 +35,7 @@ type Vocab struct {
 	Ready       bool     `json:"ready"`
 	Replies     bool     `json:"replies"`
 	Fingerprint bool     `json:"fingerprint"`
+	SaveLoad    bool     `json:"saveLoad"`
 }
 
 // LoadVocab は vocab.json を読む。
@@ -240,6 +241,11 @@ func (c *checker) line(depth int, w []string) (bool, string) {
 		return true, argsAndFiles(w[2:])
 	case verb == "close" && n == 1:
 		return true, ""
+	case verb == "saveload" && n == 1:
+		if v.SaveLoad {
+			return true, ""
+		}
+		return true, "saveload はゲームの flow の表（App.withFlow）に saveRoundTrip が無い"
 	case verb == "rewind" && n == 2:
 		if k, err := strconv.Atoi(w[1]); err != nil || k < 0 {
 			return true, "rewind は 'rewind <フレーム数>'"

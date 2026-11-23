@@ -132,6 +132,9 @@ pub mod Flow.Parse {
                     queryOf(Map.getWithDefault("q", "", values)) |> Result.map(params -> Some(Step.Request(path, params, files)))
                 })
             case "close" :: Nil => Ok(Some(Step.Close))
+            case "saveload" :: Nil =>
+                if (vocab#saveLoad) Ok(Some(Step.SaveLoad(true)))
+                else Err("saveload はゲームの flow の表（App.withFlow）に saveRoundTrip が無い")
             case "rewind" :: count :: Nil => match Int32.fromString(count) {
                 case Some(n) if n >= 0 => Ok(Some(Step.Rewind(n)))
                 case _ => Err("rewind は 'rewind <フレーム数>'")

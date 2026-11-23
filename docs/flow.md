@@ -81,9 +81,10 @@ expect lines>=4                ここで立っていなければ失敗（フレ�
 drive reader until scene=end max 120   名前付きの操作に任せて問いが立つまで
 mark cleared                   ここのフレームに名前を付ける（動画の切り出しの印）
 run open_menu.flow             別の flow の手をここへ入れる（同じフォルダ・8 段まで）
+saveload                       ここでセーブ → 読み直した World で続ける（表の saveRoundTrip。make flow が読み直さない流れと比べる）
 ```
 
-手の語は閉じた一覧（`start tap hold release wait until expect drive mark run` と設定の `fps ready`、記録が書く `reload request close rewind`）。
+手の語は閉じた一覧（`start tap hold release wait until expect drive mark run saveload` と設定の `fps ready`、記録が書く `reload request close rewind`）。`saveload` は「セーブの読み直しの門」の節。
 問いは `名前`（真偽）・`!問い`・`問い&問い`・`名前=文字`・`名前<数`（`< <= = >= > !=`）・`fp=指紋`。
 
 **ゲームが出す表（`App.withFlow`）:**
@@ -187,6 +188,55 @@ rewind 30                                    F8 の巻き戻しから再開し�
 今はやらない事: game-starter（src に make new-game が埋める字が残り、その場で組めない）と、リポジトリの外のゲーム（night_apartment など。
 その版の engine に追随した後に `make determinism TARGETS="<フォルダ>:<台本>"` で流す）は既定の対象に入れない。再生の最後の World を CPU で描いた絵の hash は控えない
 （View は World から純粋に作るので、World 全体の要約が同じなら絵も同じ）。並列の度合いを変えた再生の行は `Par` が入った後に足す。
+
+### セーブの読み直しの門（saveload・Flow.Table の saveRoundTrip）
+
+「途中でセーブして読み直しても、その後が変わらない」ことを flow で確かめる。止めたいのは 2 種類の不具合:
+書く時に値を何も知らせずに落とす（耕しただけの空の畑がセーブに出ない）と、自分で書いたキーを読む時に知らない物と見なす
+（チュートリアルを済ませたフラグが読めず、読み直すとまた出る）。ゲームに欄の一覧は書かせない。
+
+ゲームが足すのは flow の表（`App.withFlow`）の欄 1 つだけ。書く関数は実機の `addOutput` と同じ物、読む関数は「起動して続きから始める」のと同じ物を渡す:
+
+```flix
+{ roles = …, probes = …,
+  saveRoundTrip = Some({ save = Resources.read((r, w) -> World.saveOf(r, w) |> Option.map(Saves.toText)),
+                         load = (text, h) -> Saves.fromText(text) |> Result.map(s -> resumed(s, h)) })
+  | Flow.emptyTable() }
+```
+
+`resumed` はゲームが持つ「読んだセーブから続きの World を作る」関数（手本は Doc の束のセーブを差し替えて `World.initial` を通す 3 行）。
+表に置くのは、使うのが flow だけだから（実機の起動は読まない）。
+
+flow には読み直す所に `saveload` の 1 行を書く。`make flow` はその flow を 2 本流す:
+
+1. 読み直さない流れ（`saveload` の行はフレームを使わず World も替えない）
+2. 読み直した流れ（`saveload` の行で `save` → `load` した World に差し替え、残りを同じ入力で流す）
+
+赤になるのは次のどれか（上から順に言う）:
+
+| 何を見るか | 拾う物 | FAIL の行 |
+|---|---|---|
+| 読み直してすぐ書いたセーブが元と同じか（`saveload` の行で） | 読む時に落とし、書く時にも World から作り直すキー | `file:行: saveload で読み直した流れが止まった` |
+| 読み直した流れの `expect`・`until` | 読み直した後に遊びが変わり、手順の確かめが外れた | `file:行: saveload で読み直した流れが止まった` |
+| 問いの値（`App.withFlow` の probes と指紋）を毎フレーム並べる | 読み直した直後から遊びに影響する値が分かれた（最初に分かれたフレームと問い） | `問いの値が分かれた` |
+| 最後のセーブの字 | その後の遊びで違いがセーブまで届いた（違うキーの道） | `最後のセーブが違う` |
+
+**決めたこと:**
+- World 全体（`expect world=`）は比べない。読み直すと 0 に戻るアニメの時計・カメラ・読んだセーブの写しなど、セーブに出ない欄が必ず違う。
+  比べるのはゲームが flow のために選んだ問いと、セーブの字だけ。
+- 問いを比べるのは、読んだ値を遊びがまだ使っていなくても拾うため。最後のセーブだけだと、知らないキーを残して書き戻すゲーム
+  （`SaveStore.replaceOwned` の形）では落としたフラグもセーブに残り、読み直した後にそれを使う手順が無いと緑になる（スパイクで確かめた）。
+- `saveload` の行は返事の確かめ（`settleBefore`）の上では World を差し替える行と同じに扱う。読み直さない流れでも同じフレームを挟むので、2 本のフレームはずれない。
+- 持ち越し（固定刻み）と押しているキーは読み直しで替えない。替えると読み直さない流れと入力がずれる。
+
+**弱み**: 一時的な状態（開いているウィンドウ・会話の途中・向き・アニメの途中）はセーブに出ないので、その最中に `saveload` を書くと、
+読み直した流れはウィンドウが閉じた所から始まり、手順の確かめか問いが外れる（スパイクで、作業台のウィンドウを開いたまま読み直すと `expect tutorial=` で止まった）。
+`saveload` はウィンドウを閉じ、会話も無い、動き出す前の所に書く（実機でもセーブはそういう所で書く）。向き（セーブに無い）は直後に歩いて決め直す。
+
+確かめた数（スパイク: ゲーム「幻想郷リビルド」の不具合入りのコミットの写しに 2 本の flow を足した）:
+空の畑を書く時に落とす不具合 = 耕した直後に `saveload` → 次のフレームで `plots: 2.0 → 0.0`（植える手順まで書けば `expect planted=2` でも止まり、最後のセーブも `cell.….crop` が違う）。
+チュートリアルのフラグを読む時に知らない物と見なす不具合 = 作業台のステップを済ませて `saveload` → 次のフレームで `tutorial: "" → "benchUse"`（最後のセーブは同じで、問いだけが拾う）。
+2 つを直した写しでは 2 本とも緑（植える手順を除いた形も緑）。1 本の flow を 2 回流すので、時間は 2 倍。
 
 ### ギャラリーの 1 枚から実機で開く（App.withShots・SHOT）
 
