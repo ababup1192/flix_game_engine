@@ -90,6 +90,8 @@ claude                         # AGENTS.md・skills・hooks は fge new が置�
 - 名前の決まり（英小文字はじまり）は new-game がそのまま検査する。全体の fge は検査を写さない。
 - テンプレートを選ぶ: `--template` が無ければ、`<engine>/templates/` の一覧を番号つきで出して選ばせる（端末でない時は game-starter）。
 - `make new-game` の最後の案内の「Studio で開く」は消す（Studio は凍結）。
+- 最後の案内と agents-pack/AGENTS.core.md の頭に 1 行: 「配られた skills・rules・AGENTS.md の共通部は版上げで上書きされる。
+  ゲーム用に変えたい時は AGENTS.local.md に書くか、別の名前のスキルを足す」（今は AGENTS.local.md の行だけがあり、スキルの上書きは書かれていない）。
 - **local.mk の ENGINE は flix.toml の版から決める**（`ENGINE ?= $(HOME)/.flix_ge/engines/<flix.toml の版>/engine`・plans/dashboard.md 14.1）。
   固定のパスを書くと、版上げの後に古い engine を読み続ける（7 節のスパイク）。JAVA も engine の jdk.json から同じように決める。
 - 配った engine（git の作業ツリーでも go/ を持つ形でもない）で new-game を流すと、`fatal: not a git repository` と `cd: can't cd to go` が
