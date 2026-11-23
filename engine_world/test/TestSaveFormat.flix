@@ -73,7 +73,7 @@ mod TestSaveFormat {
 
     def futureText(): String = "{\"format\": \"demo\", \"version\": 9, \"data\": {}}"
 
-    def futureTextWrittenBy(): String = "{\"format\": \"demo\", \"version\": 9, \"writtenBy\": \"1.6.0\", \"data\": {}}"
+    def futureTextGameVersion(): String = "{\"format\": \"demo\", \"version\": 9, \"gameVersion\": \"1.6.0\", \"data\": {}}"
 
     /// demoFormat にゲームの版 1.4.0 を足した物。
     def demoFormatAt140(): SaveFormat.Format = demoFormat() |> SaveFormat.withGameVersion("1.4.0")
@@ -169,40 +169,90 @@ mod TestSaveFormat {
         Assert.assertEq(expected = 1, SaveFormat.checkSamples("test/assets/no-such-samples", readDemo, demoFormat()) |> List.length)
 
     @Test
-    def testWrapWithGameVersionLeavesWrittenBy(): Unit \ Assert =
-        Assert.assertEq(expected = Some("1.4.0"), SaveFormat.writtenByOf(SaveFormat.wrap(lifeData(5), demoFormatAt140())))
+    def testWrapWithGameVersionLeavesGameVersion(): Unit \ Assert =
+        Assert.assertEq(expected = Some("1.4.0"), SaveFormat.gameVersionOf(SaveFormat.wrap(lifeData(5), demoFormatAt140())))
 
     @Test
-    def testWrapWithoutGameVersionLeavesNoWrittenBy(): Unit \ Assert =
-        Assert.assertEq(expected = None, SaveFormat.writtenByOf(SaveFormat.wrap(lifeData(5), demoFormat())))
+    def testWrapWithoutGameVersionLeavesNoGameVersion(): Unit \ Assert =
+        Assert.assertEq(expected = None, SaveFormat.gameVersionOf(SaveFormat.wrap(lifeData(5), demoFormat())))
 
     @Test
-    def testWrittenByOfEnvelopeWithoutWrittenByIsNone(): Unit \ Assert =
-        Assert.assertEq(expected = None, SaveFormat.writtenByOf(parsed(futureText())))
+    def testGameVersionOfEnvelopeWithoutGameVersionIsNone(): Unit \ Assert =
+        Assert.assertEq(expected = None, SaveFormat.gameVersionOf(parsed(futureText())))
 
     @Test
-    def testWrittenByOfUnwrappedSaveIsNone(): Unit \ Assert =
-        Assert.assertEq(expected = None, SaveFormat.writtenByOf(parsed("{\"version\": 1, \"writtenBy\": \"1.0.0\", \"hp\": 10}")))
+    def testGameVersionOfUnwrappedSaveIsNone(): Unit \ Assert =
+        Assert.assertEq(expected = None, SaveFormat.gameVersionOf(parsed("{\"version\": 1, \"gameVersion\": \"1.0.0\", \"hp\": 10}")))
 
     @Test
     def testWithGameVersionTrimsSpaces(): Unit \ Assert =
         Assert.assertEq(expected = Some("1.4.0"), SaveFormat.getGameVersion(demoFormat() |> SaveFormat.withGameVersion(" 1.4.0 ")))
 
     @Test
-    def testDecodeReadsEnvelopeWithWrittenByWithoutGameVersion(): Unit \ Assert =
+    def testDecodeReadsGameVersionEnvelopeInFormatWithoutGameVersion(): Unit \ Assert =
         Assert.assertEq(expected = Ok(lifeData(5)), SaveFormat.decode(SaveFormat.wrap(lifeData(5), demoFormatAt140()), demoFormat()))
 
     @Test
-    def testDecodeOfFutureVersionNamesWrittenBy(): Unit \ Assert =
-        Assert.assertEq(expected = Err("今より新しい版のセーブ（9 版・1.6.0 で書いた・このゲームは 3 版まで）"), SaveFormat.decodeText(futureTextWrittenBy(), demoFormat()))
+    def testDecodeOfFutureVersionNamesGameVersion(): Unit \ Assert =
+        Assert.assertEq(expected = Err("今より新しい版のセーブ（9 版・1.6.0 で書いた・このゲームは 3 版まで）"), SaveFormat.decodeText(futureTextGameVersion(), demoFormat()))
 
     @Test
-    def testSaveOverFutureVersionNamesWrittenBy(): Unit \ Assert =
-        let (result, _) = onDisk(Map#{ "saves/a.json" => futureTextWrittenBy() }, () -> SaveFormat.save("saves/a.json", lifeData(6), demoFormat()));
+    def testSaveOverFutureVersionNamesGameVersion(): Unit \ Assert =
+        let (result, _) = onDisk(Map#{ "saves/a.json" => futureTextGameVersion() }, () -> SaveFormat.save("saves/a.json", lifeData(6), demoFormat()));
         Assert.assertEq(expected = Err("saves/a.json は今より新しい版（9 版・1.6.0 で書いた）なので上書きしない"), result)
 
     @Test
-    def testSaveWritesWrittenBy(): Unit \ Assert =
+    def testSaveWritesGameVersion(): Unit \ Assert =
         let (_, disk) = onDisk(Map.empty(), () -> SaveFormat.save("saves/a.json", lifeData(6), demoFormatAt140()));
-        Assert.assertEq(expected = Some("1.4.0"), Map.get("saves/a.json", disk) |> Option.flatMap(written -> SaveFormat.writtenByOf(parsed(written))))
+        Assert.assertEq(expected = Some("1.4.0"), Map.get("saves/a.json", disk) |> Option.flatMap(written -> SaveFormat.gameVersionOf(parsed(written))))
+
+    @Test
+    def testGameVersionSurvivesLaterBuilders(): Unit \ Assert =
+        let format = SaveFormat.make("demo", 3)
+            |> SaveFormat.withGameVersion("1.4.0")
+            |> SaveFormat.withMigration(1, renameHpToLife)
+            |> SaveFormat.withMigration(2, addItems)
+            |> SaveFormat.withUnwrappedVersion(_ -> 1);
+        Assert.assertEq(expected = Some("1.4.0"), SaveFormat.getGameVersion(format))
+
+    @Test
+    def testGameVersionOfNonStringIsNone(): Unit \ Assert =
+        Assert.assertEq(expected = None, SaveFormat.gameVersionOf(parsed("{\"format\": \"demo\", \"version\": 3, \"gameVersion\": 140, \"data\": {}}")))
+
+    @Test
+    def testGameVersionOfDoesNotCheckFormatName(): Unit \ Assert =
+        let other = SaveFormat.make("other", 1) |> SaveFormat.withGameVersion("2.0.0");
+        Assert.assertEq(expected = Some("2.0.0"), SaveFormat.gameVersionOf(SaveFormat.wrap(lifeData(5), other)))
+
+    @Test
+    def testTrimGameVersionOfBlankIsNone(): Unit \ Assert =
+        Assert.assertEq(expected = None, SaveFormat.trimGameVersion("  "))
+
+    @Test
+    def testSaveOverOlderVersionWithGameVersionKeepsBackup(): Unit \ Assert =
+        let (_, disk) = onDisk(Map#{ "saves/a.json" => v1Text() }, () -> SaveFormat.save("saves/a.json", lifeData(10), demoFormatAt140()));
+        Assert.assertEq(expected = Some(v1Text()), Map.get(SaveFormat.backupPath("saves/a.json", 1), disk))
+
+    @Test
+    def testSaveOverOlderVersionWritesNewGameVersion(): Unit \ Assert =
+        let (_, disk) = onDisk(Map#{ "saves/a.json" => v1Text() }, () -> SaveFormat.save("saves/a.json", lifeData(10), demoFormatAt140()));
+        Assert.assertEq(expected = Some("1.4.0"), Map.get("saves/a.json", disk) |> Option.flatMap(written -> SaveFormat.gameVersionOf(parsed(written))))
+
+    @Test
+    def testSaveValueWritesGameVersion(): Unit \ Assert =
+        let (_, disk) = onDisk(Map.empty(), () -> SaveFormat.saveValue("saves/a.json", DemoLife.DemoLife(7), demoFormatAt140()));
+        Assert.assertEq(expected = Some("1.4.0"), Map.get("saves/a.json", disk) |> Option.flatMap(written -> SaveFormat.gameVersionOf(parsed(written))))
+}
+
+/// saveValue の道を通すための、life だけを持つ値。
+enum DemoLife {
+    case DemoLife(Int32)
+}
+
+instance Saveable[DemoLife] {
+    pub def toJson(value: DemoLife): Util.Json.Json = match value {
+        case DemoLife.DemoLife(life) => Util.Json.Json.JObject(Map#{ "life" => Util.Json.Json.JNumber(JsonCodec.intToBd(life)), "items" => Util.Json.Json.JArray(Vector#{}) })
+    }
+    pub def fromJson(element: Util.Json.Json): Option[DemoLife] =
+        JsonCodec.expectObject(element) |> Option.flatMap(obj -> Map.get("life", obj)) |> Option.flatMap(JsonCodec.expectInt) |> Option.map(DemoLife.DemoLife)
 }

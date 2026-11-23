@@ -90,10 +90,11 @@ def testEveryReleasedSaveStillLoads(): Unit \ {Assert, Fs.DirList, Fs.FileRead} 
 { "quests": { "mine_boss": "reported" }, "flags": ["met_smith", "boss_down"] }
 ```
 
-## 書いたゲームの版を包みに残す（writtenBy）
+## 書いたゲームの版を包みに残す（gameVersion）
 
 包みの `version` はセーブの**形**の番号で、遊ぶ人が見るゲームの版（1.4.0 など）ではない。
-どの版のゲームが書いたセーブかを残すには `withGameVersion` を足す。包みに `"writtenBy"` が入る。
+どの版のゲームが書いたセーブかを残すには `withGameVersion` を足す。包みに `"gameVersion"` が入る
+（Minecraft の level.dat の `Version.Name`・Unity の `Application.version` と同じ物）。
 
 ```flix
 def gameVersion(): String = "1.4.0"            // 出すたびに上げる（形が変わらない更新でも上げる）
@@ -105,20 +106,58 @@ def saveFormat(): SaveFormat.Format =
         |> SaveFormat.withGameVersion(gameVersion())
 ```
 
-書く物は `{"format": "rune", "version": 3, "writtenBy": "1.4.0", "data": {…}}`。読む側:
+書く物は `{"format": "rune", "version": 3, "gameVersion": "1.4.0", "data": {…}}`。読む側:
 
-- `SaveFormat.writtenByOf(json)` — 読んだ字の JSON から `Some("1.4.0")`。`writtenBy` の無い古い包み・包みの無いセーブは `None`
+- `SaveFormat.gameVersionOf(json)` — 読んだ字の JSON から `Some("1.4.0")`。`gameVersion` の無い古い包み・包みの無いセーブ・字でない値は `None`。
+  形式の名前は照らさない
 - 未来の版を断る `Err` の文面に「・1.6.0 で書いた」が入る（`load` / `decode` と、上書きを断る `save`）
 - 不具合の報告にセーブを添えてもらえば、どの版で書いたか分かる。見本（決まり 4）を置く時も出どころが字で残る
 
-**`writtenBy` で読み方を分けない。** 形の違いは包みの `version` と書き換えが持つ。ゲームの版で分けると、
-形の変わらない更新ごとに分岐が増え、`writtenBy` の無い古いセーブを読めない道ができる。
-`writtenBy` は**最後に書いた**版で、上書きのたびに今の版になる（初めて書いた版は残らない）。
+**`gameVersion` で読み方を分けない。** 形の違いは包みの `version` と書き換えが持つ。ゲームの版で分けると、
+形の変わらない更新ごとに分岐が増え、`gameVersion` の無い古いセーブを読めない道ができる。
+`gameVersion` は**最後に書いた**版で、上書きのたびに今の版になる（初めて書いた版は残らない）。
 
-版の字はゲームが持つ。engine は project.json も git も読まない。ブラウザ版の束には project.json と assets/ の下しか入らず
-（flix.toml・git は無い）、git の短い sha は書き出し（`index.html` の `?v=` は中身の指紋で sha ではない）・配布物
-（`fge dist` はファイル名にだけ使う）・`make run` のどれもゲームのコードへ渡していないため。
-字をエディタで触りたいなら、ゲームの Doc に置いて読んで渡してよい。
+engine は project.json も git も読まない（ブラウザの束には flix.toml も git も無い）。
+字はゲームが持ち、下の flix.toml と照らすテストで古くならないようにする。
+
+### 上げ忘れを止めるテスト
+
+版を出す時は flix.toml の `[package]` の `version` を上げる。セーブの字がそれとずれたら、デスクトップのテストで止める
+（テストはゲームの根で走るので flix.toml を `Fs.FileRead` で読める）。
+project.json の `"version"` は project.json というファイル自身の形の番号なので、ゲームの版には使わない。
+
+```flix
+@Test
+def testSaveGameVersionMatchesFlixToml(): Unit \ {Assert, Fs.FileRead} =
+    Assert.assertEq(expected = flixTomlVersion(), SaveFormat.getGameVersion(Saves.format()))
+
+/// flix.toml の [package] の version の字。
+def flixTomlVersion(): Option[String] \ Fs.FileRead =
+    Fs.FileRead.readLines("flix.toml") |> Result.toOption |> Option.flatMap(List.findMap(line ->
+        match String.splitOn({substr = "="}, line) {
+            case key :: value :: Nil if String.trim(key) == "version" =>
+                Some(String.trim(value) |> String.stripPrefix({substr = "\""}) |> Option.flatMap(String.stripSuffix({substr = "\""})) |> Option.getWithDefault(String.trim(value)))
+            case _ => None
+        }))
+```
+
+## アップデートで何をしたか → ゲーム側がすること
+
+| アップデートでしたこと | ゲーム側がすること | 道具 |
+|---|---|---|
+| 版を出した（形は不変） | ゲームの版の字を上げる | `withGameVersion`（flix.toml と照らすテスト） |
+| 欄を足した | 無い時の既定値で読む・形の版は上げない | `JsonCodec.*Or`（決まり 2） |
+| Doc に物を足した | 何もしない（id で持てば新しい物として出る）・頼み事など順に意味がある物は末尾へ | 決まり 1・7 |
+| Doc から物を消した | 何もしない（知らないキーは遊びに出さず書き戻す） | ゲーム側のキーと値の置き場 |
+| 欄の名前・入れ物の形を変えた | 形の版を上げ n→n+1 の書き換えを足す（Doc を見ない・知らないキーと `applied.*` の印を残す） | `withMigration`・`checkSamples` |
+| 古いセーブの遊びの状態に一度だけ手を入れる | 名前付きの手順を列の末尾に足す（版で分けない・名前を変えない・消さない・最初の失敗で止まる） | 名前付きの手順（今はゲーム側で試し中。2 つ目の使い手が出たら engine へ） |
+| 新しい版のセーブを古いゲームで開いた | 何もしない（Err で断り上書きしない） | 決まり 6・Err の文面の版 |
+
+境目の決まり:
+
+- 書き換え（migration）は形だけを変え Doc を見ない（JSON → JSON）。手順（upgrade step）は今の形の上で Doc を見てよい。
+  流れる順は 書き換え → 中間形 → 手順 → 遊びの状態。
+- `gameVersion` は診断用で判断に使わない。版で分けたくなったら名前付きの手順を足す。
 
 ## SaveFormat と Persistence・SaveManager
 
