@@ -457,7 +457,7 @@
     "targetMissingExitCode": 2
   },
   "referenceDrift": {
-    "note": "描き出した絵がリファレンスと違うのに、そのままコミットするのを止める（go/internal/precommit/refdrift.go）。affects はゲーム（テンプレート）の根からの相対で当てる、絵を変えうるファイル。engineSources は engine の作業場で全部のテンプレートの絵を変えうるファイル。見るのは前のコミットより後に描き出した gallery だけで、reference/SHA256SUMS.txt を同じコミットに入れていれば（make reference-update = 意図した差のマーカー）通す。",
+    "note": "描き出した絵がリファレンスと違うのに、そのままコミットするのを止める（go/internal/precommit/refdrift.go）。affects はゲーム（テンプレート）の根からの相対で当てる、絵を変えうるファイル。engineSources は engine の作業場で全部のテンプレートの絵を変えうるファイル。見るのは前のコミットより後に描き出した gallery だけで、reference/SHA256SUMS.txt を同じコミットに入れていれば（bin/fge reference update = 意図した差のマーカー）通す。",
     "affects": {
       "anyOf": [{"suffixes": [".flix", ".json", ".png", ".wav", ".ttf", ".otf"]}],
       "exceptPrefixes": ["gallery/", "reference/", "debug/", "docs/", "agent-eval/", "build/", "lib/", "notes/"]

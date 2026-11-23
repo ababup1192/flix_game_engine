@@ -47,7 +47,7 @@ func API(out io.Writer, engine, q string) int {
 		}
 	}
 	if len(hits) == 0 {
-		fmt.Fprintf(out, "[api] '%s' に当たりなし。make module Q=<やりたいこと> で別名を探す\n", q)
+		fmt.Fprintf(out, "[api] '%s' に当たりなし。bin/fge module <やりたいこと> で別名を探す\n", q)
 		return 0
 	}
 	writeLines(out, hits)

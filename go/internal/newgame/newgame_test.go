@@ -132,6 +132,21 @@ func TestRunPassesTheRequestToScaffold(t *testing.T) {
 	}
 }
 
+func TestWindowsNextStepsUseBinFge(t *testing.T) {
+	r := &fakeRun{}
+	d := fakeDeps(t, makeEngine(t), r)
+	d.GOOS = "windows"
+
+	var out, errOut strings.Builder
+	if code := Run(&out, &errOut, []string{"tidepool"}, false, d); code != 0 {
+		t.Fatalf("code=%d %s", code, errOut.String())
+	}
+	got := out.String()
+	if !strings.Contains(got, "bin/fge run") || !strings.Contains(got, "bin/fge debug") || strings.Contains(got, "make ") {
+		t.Errorf("案内:\n%s", got)
+	}
+}
+
 func TestRunAddsTheGameToTheWorkspace(t *testing.T) {
 	r := &fakeRun{}
 	d := fakeDeps(t, makeEngine(t), r)

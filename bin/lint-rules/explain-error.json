@@ -71,7 +71,7 @@
     },
     {
       "key": "Undefined name",
-      "tip": "名前の打ち間違いか、モジュール名の付け忘れ (Module.name)。engine の docs/api-digest.md (make api Q=名前) で正しい名を引く"
+      "tip": "名前の打ち間違いか、モジュール名の付け忘れ (Module.name)。engine の docs/api-digest.md (bin/fge api 名前) で正しい名を引く"
     },
     {
       "key": "Unexpected token",

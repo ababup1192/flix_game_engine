@@ -63,6 +63,12 @@ func Command(task string, args ...string) string {
 	return buildFor(runtime.GOOS, hasMake(), task, args...)
 }
 
+// CommandFor は Command の OS を外から渡す形（fge new のように、作る先の OS を注文で受ける所のため）。
+// make の有無はこの機械の PATH で見る。
+func CommandFor(goos, task string, args ...string) string {
+	return buildFor(goos, hasMake(), task, args...)
+}
+
 // buildFor は OS と make の有無を外から渡して打つ形を作る（テストが OS を差し替えるため）。
 func buildFor(goos string, makeAvailable bool, task string, args ...string) string {
 	tail := ""

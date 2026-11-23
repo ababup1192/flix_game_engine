@@ -241,7 +241,7 @@ func heavyRunner(stage refactor.Stage, desc, dir string, cmd []string, log strin
 	})
 }
 
-// heavyVerify は書き換えの後の確かめ（make check・make test など）を heavy の枠で流し、出力を全部 log へ書く
+// heavyVerify は書き換えの後の確かめ（bin/fge check・bin/fge test など）を heavy の枠で流し、出力を全部 log へ書く
 // （最初の誤りを拾うため。枠の長短は heavy が名前で決める）。
 func heavyVerify(cmd, dir, log string) int {
 	fmt.Fprintf(os.Stderr, "[refactor] 確かめ: %s（出力は %s）\n", cmd, log)
@@ -250,8 +250,9 @@ func heavyVerify(cmd, dir, log string) int {
 		fmt.Fprintf(os.Stderr, "[refactor] 確かめのコマンド %q を読めない: %v\n", cmd, err)
 		return 2
 	}
-	if strings.Join(argv, " ") == "make check" {
-		// make check は checkd の server の道で、索引と同じ常駐に頼む（heavy の枠を取らず、heavy が入れる CHECKD=0 も避ける）。
+	argv = resolveVerifyArgv(argv, isEngineRepo(dir), hasMakeOnPath())
+	if isCheckVerify(argv) {
+		// check は checkd の server の道で、索引と同じ常駐に頼む（heavy の枠を取らず、heavy が入れる CHECKD=0 も避ける）。
 		return runDirect(dir, argv, log, []string{"CHECKD=1", "CHECKD_BACKEND=server"})
 	}
 	f, err := os.Create(log)
@@ -263,6 +264,38 @@ func heavyVerify(cmd, dir, log string) int {
 	return heavy.Hold(cmd, dir, heavy.Options{Output: f}, func(run heavy.Runner) int {
 		return run(dir, argv...)
 	})
+}
+
+// resolveVerifyArgv は verify の bin/fge を、いま走っている fge-go そのものに替える。
+// WhyNot: "bin/fge" のまま exec しない — Windows では bin/fge が sh の 1 行で、PowerShell からは起こせない（隣の fge.cmd を探す道も PATHEXT 頼み）。
+// WhyNot: engine の根で make があれば bin/fge check・test を make check・test で流す — engine の根の make check・test は
+// 全パッケージの確かめで、bin/fge check・test はゲームの 1 パッケージの確かめ。配る既定を bin/fge にしても engine の確かめを細らせない。
+func resolveVerifyArgv(argv []string, engineRepo, makeAvailable bool) []string {
+	if len(argv) < 2 || (argv[0] != "bin/fge" && argv[0] != `bin\fge`) {
+		return argv
+	}
+	if engineRepo && makeAvailable && len(argv) == 2 && (argv[1] == "check" || argv[1] == "test") {
+		return []string{"make", argv[1]}
+	}
+	if self, err := os.Executable(); err == nil {
+		return append([]string{self}, argv[1:]...)
+	}
+	return argv
+}
+
+// isCheckVerify は verify が型検査だけの 1 行か（make check・bin/fge check を fge-go に替えた物）。
+func isCheckVerify(argv []string) bool {
+	return len(argv) == 2 && argv[1] == "check" && (argv[0] == "make" || argv[0] == "bin/fge" || argv[0] == `bin\fge` || isSelf(argv[0]))
+}
+
+func isSelf(path string) bool {
+	self, err := os.Executable()
+	return err == nil && path == self
+}
+
+func hasMakeOnPath() bool {
+	_, err := exec.LookPath("make")
+	return err == nil
 }
 
 // splitCommandLine は refactor.json の verify の 1 行を、空白で区切った語の並びにする（'…' と "…" の中の空白は区切らない）。

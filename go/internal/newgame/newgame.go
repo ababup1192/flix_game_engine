@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ababup1192/flix_game_engine/go/internal/cmdhint"
 	"github.com/ababup1192/flix_game_engine/go/internal/fgehome"
 	"github.com/ababup1192/flix_game_engine/go/internal/fgeinstall"
 	"github.com/ababup1192/flix_game_engine/go/internal/gamesteps"
@@ -267,11 +268,8 @@ func Run(out, errOut *strings.Builder, args []string, asJSON bool, d Deps) int {
 	fmt.Fprintf(out, "[fge new] %s を作りました（engine %s・テンプレート %s）\n", res.Dir, res.Engine, res.Template)
 	fmt.Fprintln(out, "次にやること:")
 	fmt.Fprintf(out, "  fge open %s            このゲームのフォルダで Claude Code を開く\n", res.Name)
-	if d.GOOS == "windows" {
-		fmt.Fprintf(out, "  cd %s && bin/fge run   動かしてみる\n", res.Name)
-	} else {
-		fmt.Fprintf(out, "  cd %s && make run      動かしてみる（make debug で描き出しの確かめ）\n", res.Name)
-	}
+	fmt.Fprintf(out, "  cd %s && %s   動かしてみる（%s で描き出しの確かめ）\n",
+		res.Name, cmdhint.CommandFor(d.GOOS, "run"), cmdhint.CommandFor(d.GOOS, "debug"))
 	fmt.Fprintln(out, "配られた skills・rules・AGENTS.md の共通部は版上げで上書きされます。ゲーム用に変えたい時は AGENTS.local.md に書くか、別の名前のスキルを足してください。")
 	return exitDone
 }

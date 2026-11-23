@@ -25,6 +25,9 @@ func lookupArgs(rest []string) (engine, q string) {
 			i++
 		case strings.HasPrefix(rest[i], "--engine="):
 			engine = strings.TrimPrefix(rest[i], "--engine=")
+		case strings.HasPrefix(rest[i], "Q="):
+			// WhyNot: Q= を問いの字に含めない — make の形（make api Q=…）をそのまま bin/fge に打っても同じ物を引く。
+			words = append(words, strings.TrimPrefix(rest[i], "Q="))
 		default:
 			words = append(words, rest[i])
 		}

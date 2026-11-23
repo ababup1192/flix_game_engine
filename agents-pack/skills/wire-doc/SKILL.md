@@ -25,4 +25,4 @@ description: "まだコードに繋がっていない Doc(JSON) を loader（def
    - 1 フィールド上書き → その値だけ変わる
    - rows があるなら、rows の長さに追随する
    期待値は Doc の既定値（コード側の defaults）から導き、数値リテラルを貼らない。
-5. `make check` → `make test` で確認して報告する。
+5. `bin/fge check` → `bin/fge test`（macOS と Linux では make check → make test でもよい）で確認して報告する。

@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ababup1192/flix_game_engine/go/internal/cmdhint"
 	"github.com/ababup1192/flix_game_engine/go/internal/mvncache"
 	"github.com/ababup1192/flix_game_engine/go/internal/syncagents"
 )
@@ -310,10 +311,7 @@ func Create(r Request, d Deps) error {
 }
 
 func printNext(r Request, d Deps) {
-	run, refUpdate := "make run", "make reference-update"
-	if r.GOOS == "windows" {
-		run, refUpdate = "bin/fge run", "bin/fge reference update"
-	}
+	run, refUpdate := cmdhint.CommandFor(r.GOOS, "run"), cmdhint.CommandFor(r.GOOS, "reference-update")
 	d.printf("\n")
 	d.printf("新しいゲームが産まれました: %s\n", r.Game)
 	d.printf("  次にやること:\n")

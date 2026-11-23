@@ -28,3 +28,9 @@ func TestBuildFor(t *testing.T) {
 		})
 	}
 }
+
+func TestCommandForWindowsIgnoresMake(t *testing.T) {
+	if got := CommandFor("windows", "reference-update"); got != "bin/fge reference update" {
+		t.Errorf("got %q", got)
+	}
+}

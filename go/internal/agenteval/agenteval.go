@@ -106,7 +106,7 @@ func points(hit, penalty, want int) int {
 //
 // WhyNot: Agent を外すのは、サブエージェントの読み物は親の記録に出ず、
 // 読んだファイル数とトークンが数えられなくなるため。
-var allowedTools = "Read,Grep,Glob,Skill,Bash(make api:*),Bash(make src:*),Bash(make help),Bash(grep:*),Bash(rg:*),Bash(ls:*),Bash(head:*),Bash(tail:*),Bash(sed -n:*),Bash(find:*),Bash(cat:*),Bash(wc:*)"
+var allowedTools = "Read,Grep,Glob,Skill,Bash(make api:*),Bash(make src:*),Bash(make module:*),Bash(make help),Bash(bin/fge api:*),Bash(bin/fge src:*),Bash(bin/fge module:*),Bash(grep:*),Bash(rg:*),Bash(ls:*),Bash(head:*),Bash(tail:*),Bash(sed -n:*),Bash(find:*),Bash(cat:*),Bash(wc:*)"
 var disallowedTools = "Edit,Write,NotebookEdit,Agent"
 
 // Run はサブコマンドの入口。

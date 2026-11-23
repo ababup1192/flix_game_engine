@@ -83,7 +83,7 @@
     {
       "src": "docs/api-digest.md",
       "dest": "docs/api-digest.md",
-      "why": "ゲームの make api / status / スキルの参照先"
+      "why": "ゲームの bin/fge api / status / スキルの参照先"
     },
     {
       "src": "docs/module-index.md",
@@ -92,7 +92,7 @@
     {
       "src": "docs/modules/*.md",
       "dest": "docs/modules",
-      "why": "make module Q= が引く分野ごとの逆引き (docs/module-index.md は目次だけ)"
+      "why": "bin/fge module が引く分野ごとの逆引き (docs/module-index.md は目次だけ)"
     },
     {
       "src": "mk/*.awk",

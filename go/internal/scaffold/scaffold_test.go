@@ -362,8 +362,9 @@ func TestWindowsNextStepsUseBinFge(t *testing.T) {
 	if err := w.create(t, "windows"); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(w.out.String(), "bin/fge run") || strings.Contains(w.out.String(), "make run") {
-		t.Errorf("案内:\n%s", w.out.String())
+	got := w.out.String()
+	if !strings.Contains(got, "bin/fge run") || !strings.Contains(got, "bin/fge reference update") || strings.Contains(got, "make ") {
+		t.Errorf("案内:\n%s", got)
 	}
 }
 

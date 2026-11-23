@@ -18,13 +18,12 @@
     {"src": "agents-pack/agent-eval", "dst": "agent-eval"}
   ],
   "followLatest": {
-    "note": "版によらないスキル（plans/onboarding.md 12 節）。skills はゲームの engine の版によらず、fge が手元の最新の engine の物で写し直す（.claude/skills と .agents/skills。写した版はゲームの .agents-pack.json の followLatest）。sync-agents は書いてある版より古い engine からは写さない。commands はこれらのスキルに書いてよいコマンド（make <名前> と bin/fge <名前>）で、followLatest を持つ最も古い版から今までの全部の版にある物だけを載せる。足したり名前を替えたりしたコマンドは古い版のゲームに無いので、ここへ載せず版に依るスキルに書く（make check-docs-sync ONLY=follow-latest が見る）。",
+    "note": "版によらないスキル（plans/onboarding.md 12 節）。skills はゲームの engine の版によらず、fge が手元の最新の engine の物で写し直す（.claude/skills と .agents/skills。写した版はゲームの .agents-pack.json の followLatest）。sync-agents は書いてある版より古い engine からは写さない。commands はこれらのスキルに書いてよいコマンド（make <名前> と bin/fge <名前>）で、followLatest を持つ最も古い版から今までの全部の版にある物だけを載せる。足したり名前を替えたりしたコマンドは古い版のゲームに無いので、ここへ載せず版に依るスキルに書く（make check-docs-sync ONLY=follow-latest が見る）。bin/fge status・module・render は followLatest と同じ版から入るので、followLatest を持つ全部の版にある（Windows でも打てる形。make gallery-sounds は bin/fge にまだ無いので make のまま）。",
     "skills": ["style-interview", "pixel-art", "critique-code", "atelier-draft", "critique-render"],
     "commands": [
-      "make status",
-      "make module",
-      "make render",
-      "make render-all",
+      "bin/fge status",
+      "bin/fge module",
+      "bin/fge render",
       "make gallery-sounds",
       "bin/fge refactor",
       "bin/fge px",

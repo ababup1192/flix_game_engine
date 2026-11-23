@@ -270,7 +270,7 @@
         "render"
       ],
       "pattern": "(?:^|[^x]|(?:^|[^t])x|(?:^|[^c])tx|\\wctx)#diagnostics\\b",
-      "hint": "Frame#diagnostics（前のフレームを描いた時間）を系で読んで World へ写さない。遊んだ記録に残らないので、再生（make flow・make determinism）と食い違う。F3 の行は View か HUD で ctx#diagnostics から描く（FrameDiagnostics.summaryLines）。表示するかどうかの切り替えだけを World に置く。ViewCtx の引数の名前は ctx にし、Frame を ctx と名付けない（ほかの名前の #diagnostics は止まる）（engine の docs/migrations/0.84.1.md）"
+      "hint": "Frame#diagnostics（前のフレームを描いた時間）を系で読んで World へ写さない。遊んだ記録に残らないので、再生（bin/fge flow・engine の make determinism）と食い違う。F3 の行は View か HUD で ctx#diagnostics から描く（FrameDiagnostics.summaryLines）。表示するかどうかの切り替えだけを World に置く。ViewCtx の引数の名前は ctx にし、Frame を ctx と名付けない（ほかの名前の #diagnostics は止まる）（engine の docs/migrations/0.84.1.md）"
     },
     {
       "id": "game-unchecked-pure",
@@ -375,7 +375,7 @@
       "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "render_gl/", "engine_web/", "bench/", "src/engine/", "src/engine_world/", "src/engine_tools/", "src/render_gl/", "src/engine_web/", "lib/", "build/"],
       "skipDirs": ["build", "lib"],
       "pattern": "\\b(?:App|Render|RenderFrame|RenderPaint|LwjglLayer|WebLayer|SoftRaster|BackgroundLoad|PostStack)\\.Internal\\b",
-      "hint": "App.Internal・Render.Internal・RenderFrame.Internal・RenderPaint.Internal・LwjglLayer.Internal・WebLayer.Internal・SoftRaster.Internal・BackgroundLoad.Internal・PostStack.Internal は engine のそのモジュールの中身でゲームからは呼ばない（版を上げると名前も形も黙って変わる）。ゲームが使う関数は親のモジュールにある（App.launch・App.trace・App.traceFrame・App.frameOf・App.composeScene・App.withBackgroundLoad など。make api Q=App.）。足りない関数があれば engine に足すよう相談する"
+      "hint": "App.Internal・Render.Internal・RenderFrame.Internal・RenderPaint.Internal・LwjglLayer.Internal・WebLayer.Internal・SoftRaster.Internal・BackgroundLoad.Internal・PostStack.Internal は engine のそのモジュールの中身でゲームからは呼ばない（版を上げると名前も形も黙って変わる）。ゲームが使う関数は親のモジュールにある（App.launch・App.trace・App.traceFrame・App.frameOf・App.composeScene・App.withBackgroundLoad など。bin/fge api App.）。足りない関数があれば engine に足すよう相談する"
     },
     {
       "id": "dev-request-outside-main",
