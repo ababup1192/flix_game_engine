@@ -1071,7 +1071,7 @@ release-guard: ### | 公開の前の安全策（未コミット・壊れた flix
 STUDIO_CANDIDATES := $(abspath $(CURDIR)/../flix_ge_studio) $(HOME)/Desktop/flix_ge_studio
 STUDIO ?= $(or $(patsubst %/Makefile,%,$(firstword $(wildcard $(addsuffix /Makefile,$(STUDIO_CANDIDATES))))),$(firstword $(STUDIO_CANDIDATES)))
 .PHONY: studio-parity
-studio-parity: ### [STUDIO=<パス>|none] | Studio の check-agents-parity をこの engine で流す（release-verify の門）
+studio-parity: ### [STUDIO=<パス>|none] | Studio の check-agents-parity をこの engine で流す（Studio は凍結中なので release-verify の門から外してある）
 	@if [ "$(STUDIO)" = "none" ]; then echo "[release] STUDIO=none: Studio との AGENTS の突き合わせを飛ばしました"; exit 0; fi; \
 	 test -f "$(STUDIO)/Makefile" || { echo "[release] Studio の clone が見つかりません ($(STUDIO)・探した所: $(STUDIO_CANDIDATES))。STUDIO=<パス> で指定するか、無い環境なら STUDIO=none"; exit 1; }; \
 	 git -C "$(STUDIO)" fetch -q origin main \
@@ -1081,7 +1081,8 @@ studio-parity: ### [STUDIO=<パス>|none] | Studio の check-agents-parity を�
 	 env -u JOBS -u ALL -u TEST -u SUITE -u ONLY $(MAKE) --no-print-directory -C "$(STUDIO)" MAKEOVERRIDES= check-agents-parity ENGINE="$(CURDIR)" \
 	   || { echo "[release] sync-agents の出力が Studio の server/src/NewGame.flix とずれています。Studio 側も同じ変更を入れて main へ push してから公開してください"; exit 1; }
 # gl-parity も全量ゲートの一員 — GL と SoftRaster の絵の退行はテストに出ないため。
-RELEASE_GATES := release-guard studio-parity sync $(RELEASE_TEST) gl-parity
+# WhyNot: studio-parity を門に入れない — Studio は凍結中（plans/dashboard.md の 7 節）。凍結を解いたら戻す。
+RELEASE_GATES := release-guard sync $(RELEASE_TEST) gl-parity
 .PHONY: release
 release: release-verify ### [JOBS=1] | release-verify と同じ
 
@@ -1621,7 +1622,7 @@ engine-full-fresh: ### | engine_full.fpkg が古くないか（古ければ作�
 	[ -z "$$why" ] || { echo "error: sync-engine-full の後も束が古いままです:"; echo "$$why" | sed 's/^/  /'; exit 1; }
 
 .PHONY: new-game
-new-game: engine-full-fresh ## GAME=/abs/path NAME=<名前> [TITLE=] [W=] [H=] [TEMPLATE=] | 新しいゲームを 1 コマンドで産む（check → test → render-all まで通す）
+new-game: engine-full-fresh ## GAME=/abs/path NAME=<名前> [TITLE=] [W=] [H=] [TEMPLATE=] [PACK_NOTE=0] | 新しいゲームを 1 コマンドで産む（check → test → render-all まで通す）
 	@if [ -z "$(GAME)" ]; then echo "error: GAME を指定してください (make new-game GAME=/abs/path NAME=mygame TITLE=題名 W=240 H=320)"; exit 1; fi
 	@case "$(GAME)" in /*) : ;; *) echo "error: GAME は絶対パスで指定してください: $(GAME)"; exit 1;; esac
 	@if [ -e "$(GAME)" ]; then echo "error: 生成先が既に存在します: $(GAME)"; exit 1; fi
@@ -1692,8 +1693,9 @@ new-game: engine-full-fresh ## GAME=/abs/path NAME=<名前> [TITLE=] [W=] [H=] [
 	echo "  次にやること:"; \
 	echo "    cd $(GAME) && make run              … ウィンドウを開いて遊ぶ（矢印キーで移動）"; \
 	echo "    make reference-update                 … いまの絵をリファレンス画像(基準)にする"; \
+	: WhyNot: PACK_NOTE=0 の時に上書きの 1 行を出さない — fge new が同じ 1 行を最後に出すので、2 回並ぶ; \
 	if [ -n "$(IS_BUNDLE)" ]; then \
-	  echo "  配られた skills・rules・AGENTS.md の共通部は版上げで上書きされる。ゲーム用に変えたい時は AGENTS.local.md に書くか、別の名前のスキルを足す。"; \
+	  if [ "$(PACK_NOTE)" != "0" ]; then echo "  配られた skills・rules・AGENTS.md の共通部は版上げで上書きされる。ゲーム用に変えたい時は AGENTS.local.md に書くか、別の名前のスキルを足す。"; fi; \
 	else \
 	  echo "    Studio で $(GAME) を開く            … 色や数値をフォームから調整する"; \
 	fi; \

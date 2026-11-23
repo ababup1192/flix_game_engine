@@ -124,7 +124,7 @@ func TestRunPassesTheNewGameArgumentsToMake(t *testing.T) {
 	if code := Run(&out, &errOut, []string{"tide-pool", "--template", "rpg-starter", "--title", "潮"}, false, d); code != 0 {
 		t.Fatalf("code=%d %s", code, errOut.String())
 	}
-	want := []string{"-C", engine, "new-game", "GAME=" + filepath.Join(cwd, "tide-pool"), "NAME=tide_pool", "TEMPLATE=rpg-starter", "TITLE=潮"}
+	want := []string{"-C", engine, "new-game", "GAME=" + filepath.Join(cwd, "tide-pool"), "NAME=tide_pool", "TEMPLATE=rpg-starter", "PACK_NOTE=0", "TITLE=潮"}
 	if strings.Join(r.makeArgs, "|") != strings.Join(want, "|") {
 		t.Fatalf("got %v", r.makeArgs)
 	}
@@ -215,5 +215,79 @@ func TestRunRefusesAFolderNameWithASlash(t *testing.T) {
 	var out, errOut strings.Builder
 	if code := Run(&out, &errOut, []string{"a/b"}, false, d); code == 0 {
 		t.Fatal("/ 入りの名前を受けた")
+	}
+}
+
+func TestRunRemovesTheHalfMadeFolderWhenMakeStops(t *testing.T) {
+	r := &fakeRun{}
+	d := fakeDeps(t, makeEngine(t), r)
+	cwd, _ := d.Getwd()
+	dir := filepath.Join(cwd, "tidepool")
+	d.RunMake = func(args []string) error {
+		os.MkdirAll(filepath.Join(dir, "assets"), 0o755)
+		return errors.New("exit status 2")
+	}
+
+	var out, errOut strings.Builder
+	Run(&out, &errOut, []string{"tidepool"}, false, d)
+	if _, err := os.Lstat(dir); !os.IsNotExist(err) {
+		t.Fatalf("作りかけが残った: %v", err)
+	}
+}
+
+func TestRunSaysItRemovedTheHalfMadeFolder(t *testing.T) {
+	r := &fakeRun{}
+	d := fakeDeps(t, makeEngine(t), r)
+	cwd, _ := d.Getwd()
+	d.RunMake = func(args []string) error {
+		os.MkdirAll(filepath.Join(cwd, "tidepool"), 0o755)
+		return errors.New("exit status 2")
+	}
+
+	var out, errOut strings.Builder
+	Run(&out, &errOut, []string{"tidepool"}, false, d)
+	if got := d.Progress.(*strings.Builder).String(); !strings.Contains(got, "作りかけの "+filepath.Join(cwd, "tidepool")+" を消しました") {
+		t.Fatalf("消したと出ていない: %s", got)
+	}
+}
+
+func TestRunKeepsAFolderThatWasThereBefore(t *testing.T) {
+	r := &fakeRun{}
+	d := fakeDeps(t, makeEngine(t), r)
+	cwd, _ := d.Getwd()
+	keep := filepath.Join(cwd, "tidepool", "mine.txt")
+	os.MkdirAll(filepath.Dir(keep), 0o755)
+	os.WriteFile(keep, []byte("x"), 0o644)
+	d.RunMake = func(args []string) error { return errors.New("exit status 2") }
+
+	var out, errOut strings.Builder
+	Run(&out, &errOut, []string{"tidepool"}, false, d)
+	if _, err := os.Stat(keep); err != nil {
+		t.Fatalf("前からあったフォルダを消した: %v", err)
+	}
+}
+
+func TestRunKeepsTheGameWhenMakeSucceeds(t *testing.T) {
+	r := &fakeRun{}
+	d := fakeDeps(t, makeEngine(t), r)
+	cwd, _ := d.Getwd()
+	dir := filepath.Join(cwd, "tidepool")
+	d.RunMake = func(args []string) error { return os.MkdirAll(dir, 0o755) }
+
+	var out, errOut strings.Builder
+	Run(&out, &errOut, []string{"tidepool"}, false, d)
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("できたゲームを消した: %v", err)
+	}
+}
+
+func TestRunTellsNewGameNotToPrintThePackNote(t *testing.T) {
+	r := &fakeRun{}
+	d := fakeDeps(t, makeEngine(t), r)
+
+	var out, errOut strings.Builder
+	Run(&out, &errOut, []string{"tidepool"}, false, d)
+	if !strings.Contains(strings.Join(r.makeArgs, " "), "PACK_NOTE=0") {
+		t.Fatalf("got %v", r.makeArgs)
 	}
 }

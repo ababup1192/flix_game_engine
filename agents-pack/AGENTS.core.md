@@ -1,6 +1,7 @@
 # エージェント共通指針（エンジン公式・全ゲーム共有）
 
 エンジンの agents-pack から配られる共通部。ゲーム固有の方針は同じフォルダの `AGENTS.local.md` に書く。
+配られた skills・rules・AGENTS.md の共通部は版上げで上書きされる。ゲーム用に変えたい時は AGENTS.local.md に書くか、別の名前のスキルを足す。
 lint・フック・make の口で止まる決まりはここに書かない（止まった所で hint が代わりの道具を示す）。
 
 ## .flix の名前を探す（grep の前に・最初の 1 手から）
@@ -117,6 +118,8 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 起動の読み込みが数秒かかる・起動画面でカーソルが応答なしのくるくるになる | `LoadProgress.mapWithProgress` / `parMapWithProgress` で区切る・並列の仕事で絵を解くなら頭で `LoadProgress.imageDecoder()` を受けて渡す（`Texture3d.decodeUsing`）・テストの入口は `HeadlessLoad.handle` か `LoadProgress.runNoop`・main は `App.loadAndLaunch`（engine の `docs/startup.md` の「読み込みを区切る」） |
 | 開発の道具（リモートデバッグ・flow の記録・ゲームの名簿・ヒッチの見張り・Doc の保存検知・F8 の注釈）を持たずに走らせる（ブラウザ版の入口など） | `App.launchWithDevTools(App.DevTools.none(), app)`（`App.debugFromEnv()` は呼ばず `withDebug` は値で・`App.launch` / `loadAndLaunch` はデスクトップの道具 `App.DevTools.desktop(env)` のまま）・`App.onRenderRequest` / `onShotRequest` は `Game.app` でなく `Main` で繋ぐ（lint `dev-request-outside-main`） |
 | ゲームをブラウザ（PC の Chrome など）で遊べる形に書き出す | ゲームに `web/WebMain.flix`（rpg-starter の物が写経元）を置き `bin/fge export-web <ゲーム>`（出力 `build/web`・型検査だけは `--check`・engine の作業場では先に `make sync-engine-full-web`・engine の `docs/web-export.md` の「書き出す」） |
+| engine の新しい版に上げる（「engine を最新に上げて」） | `make engine-upgrade TO=<版>`（配った engine の時。engine と JDK を取ってから上げる。版は `make status` の engine の行に出る） |
+| `make status` に「engine <版> が出ています」「engine <版> が手元にありません」 | 前者は新しい版がある → `make engine-upgrade TO=<版>`・後者は flix.toml の版の engine が無い → `fge engines install <版>` |
 | engine を作り直した後、版の番号が同じままゲームの engine の束（lib の fpkg と packages.lock の sha）を新しくする | `make engine-upgrade`（中身のハッシュが違えば入れ替える。lib の fpkg や packages.lock を手で替えない・束の置き場は engine の `docs/web-export.md` の「engine の作業場で書き出す時」） |
 | Studio の「engine を更新」が `exec format error`・「この機械で走りません」で止まる | 0.102.1 より前の Release の zip は検査の中身（fge-go）を CI の linux 向けの 1 つしか持たない。0.102.1 以降を選ぶ（zip が 5 種を持ち、`fge fetch-engine` が機械に合う物を選ぶ・engine の `docs/migrations/0.102.1.md`）。fge-go を手で別の機械向けに差し替えない |
 | ブラウザ版を URL から決まった場面・台本の行で開く（`?talk=Lair&line=46` のようなリンク・テープの「ここから遊ぶ」） | `web/WebMain.flix` で `App.launchWithDevTools(WebLayer.devTools(), app)`（クエリの最初の鍵が Start の名前。頁の旗は `?fge=fps` のように `fge` の 1 つの鍵に並べるので Start と順を気にせず一緒に付けられる（`?talk=Lair&fge=fps`）・engine の `docs/web-export.md` の「URL から決まった場面・台本の行で開く」） |

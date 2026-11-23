@@ -179,7 +179,7 @@ func TestEngineWorldSrcSkipsOtherLayers(t *testing.T) {
 // T3 で手で流す門（外のリポ・基準の版）は理由つきで別の欄に出る。
 func TestEngineWorldSrcHoldsExternalGates(t *testing.T) {
 	p := plan(t, env, Options{}, files("engine_world/src/Timeline.flix")...)
-	eq(t, ids(p.Hold), []string{"baseline-check", "check-external", "studio-parity"})
+	eq(t, ids(p.Hold), []string{"baseline-check", "check-external"})
 }
 
 // T4 render_gl の WGSL を持つ src は、render_gl のテストと下流（T3 の engine_world を render_gl に替えた形）。
@@ -364,10 +364,10 @@ func TestStaleFpkgAddsSync(t *testing.T) {
 	}
 }
 
-// --gui の時は画面を開く門も流す並びに入る。
+// --gui の時は画面を開く門も流す並びに入り、流さない門が残らない。
 func TestGUIOptionRunsGUIGates(t *testing.T) {
 	p := plan(t, env, Options{GUI: true}, files("templates/sound-novel-starter/src/Main.flix")...)
-	if !has(runIDs(p), "determinism", "gl-capture-check") || len(p.NotRun(true)) != 1 {
+	if !has(runIDs(p), "determinism", "gl-capture-check") || len(p.NotRun(true)) != 0 {
 		t.Errorf("run %v notRun %v", runIDs(p), p.NotRun(true))
 	}
 }
