@@ -2,7 +2,7 @@
 // flow の書き方は engine の engine_world/src/Flow.flix 冒頭。名前の一覧は流すたびに e2e/vocab.json へ書き出す。
 //   make flow FLOW=e2e/village_walk.flow   画面なしで最後まで流す
 mod E2e {
-    use fge::{App, Flow, Resources, YarnRunner}
+    use fge::{App, Emit, Flow, Resources, YarnRunner}
 
     /// make flow（bin/fge flow run|check）が流す入口。
     pub def play(): Unit \ IO = App.Headless.exitWith(playJob(App.Headless.requestFromProcess()))
@@ -55,8 +55,19 @@ mod E2e {
               { name = "saved", doc = "セーブを書いた回数（saveRev。宿に泊まると 1 進む）", read = Flow.Probe.Num(onWorld(w -> Int32.toFloat64(w#saveRev))) } :: Nil,
           drives =
               { name = "battle", doc = "戦いを先へ送る: 伝言とコマンドの間は 0.2 秒ごとに決定（コマンドは たたかう・的は先頭の敵）。戦いでなければ待つ",
-                act = (waited, h) -> battleDrive(waited, Resources.read((_, w) -> w, h)) } :: Nil
+                act = (waited, h) -> battleDrive(waited, Resources.read((_, w) -> w, h)) } :: Nil,
+          // saveload: 書くのは実機の addOutput と同じ字・読むのはタイトルで「つづきから」を選んだのと同じ道。saved（セーブの回数）はセーブに書かない。
+          saveRoundTrip = Some({ save = onWorld(w -> w#save |> Option.map(Saves.toText)), load = continueFrom, unsaved = "saved" :: Nil })
           | Flow.emptyTable() }
+
+    /// セーブの字から、タイトルで「つづきから」を選んで暗転が晴れた所（fresh = 起動したての World。取るのは描く元だけ）。
+    /// WhyNot: 暗転の途中を返さない — 読み直さない流れには暗転のフレームが無く、ここから後のフレームが全部ずれる。
+    def continueFrom(text: String, fresh: Resources.With[Res.Res, World.World]): Result[String, Resources.With[Res.Res, World.World]] =
+        let res = Resources.read((r, _) -> r, fresh);
+        Saves.fromText(res#items, res#maps, text) |> Result.map(save -> {
+            let (entered, _) = Emit.collect(() -> WorldTitle.confirm(res, World.TitleItem.Continue, World.initial(Some(save))));
+            Resources.of(res, World.mapField(r -> { transition = None | r }, entered))
+        })
 
     def battleDrive(waited: Float64, w: World.World): Flow.DriveAct =
         match InputLayer.layerOf(w) {

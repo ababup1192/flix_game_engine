@@ -90,6 +90,18 @@ def testEveryReleasedSaveStillLoads(): Unit \ {Assert, Fs.DirList, Fs.FileRead} 
 { "quests": { "mine_boss": "reported" }, "flags": ["met_smith", "boss_down"] }
 ```
 
+## 8. 書いて読み直しても遊びが変わらないことを flow で確かめる（saveload）
+
+決まり 1〜7 は古いセーブを新しい版で読む話。同じ版の中でも、書く時に値を何も知らせずに落とす・自分で書いたキーを読む時に
+知らない物と見なす、の 2 つは見本のテスト（決まり 4）では見つからない（見本は書いた物をそのまま読むだけ）。
+flow の表（`App.withFlow`）に `saveRoundTrip = Some({ save, load, unsaved })` を置き、e2e の flow の落ち着いた所に `saveload` を 1 行書くと、`make flow` が
+読み直した流れと読み直さない流れを並べ、問いの値と最後のセーブの字が同じかを見る。欄の一覧は書かない。
+書き方・赤になる場合・弱み（ウィンドウを開いたまま読み直さない）は [flow.md](flow.md) の「セーブの読み直しの門」。
+
+- `save` は実機の `addOutput` が書く字と同じ物、`load` は起動して「つづきから」を選んだ時と同じ World を作る物にする
+  （別の道で作ると、門が見るのは実機と違う読み方になる）。`load` には起動したての World が来る。そこから取るのは Doc と描く元だけ
+- 遊びに影響する値は flow の問い（`App.withFlow` の probes）に出しておく。読んだ値を手順がまだ使っていなくても、問いが分かれた所で止まる
+
 ## 書いたゲームの版を包みに残す（gameVersion）
 
 包みの `version` はセーブの**形**の番号で、遊ぶ人が見るゲームの版（1.4.0 など）ではない。
@@ -146,18 +158,6 @@ def packageVersionOf(toml: String): Option[String] =
         |> Option.flatMap(line -> String.splitOn(substr = "\"", line) |> List.drop(1) |> List.head)
         |> Option.filter(v -> not String.isEmpty(v))
 ```
-
-## 8. 書いて読み直しても遊びが変わらないことを flow で確かめる（saveload）
-
-決まり 1〜7 は古いセーブを新しい版で読む話。同じ版の中でも、書く時に値を何も知らせずに落とす・自分で書いたキーを読む時に
-知らない物と見なす、の 2 つは見本のテスト（決まり 4）では見つからない（見本は書いた物をそのまま読むだけ）。
-flow の表（`App.withFlow`）に `saveRoundTrip = Some({ save, load })` を置き、e2e の flow の落ち着いた所に `saveload` を 1 行書くと、`make flow` が
-読み直した流れと読み直さない流れを並べ、問いの値と最後のセーブの字が同じかを見る。欄の一覧は書かない。
-書き方・赤になる場合・弱み（ウィンドウを開いたまま読み直さない）は [flow.md](flow.md) の「セーブの読み直しの門」。
-
-- `save` は実機の `addOutput` が書く字と同じ物、`load` は起動して「つづきから」を選んだ時と同じ World を作る物にする
-  （別の道で作ると、門が見るのは実機と違う読み方になる）
-- 遊びに影響する値は flow の問い（`App.withFlow` の probes）に出しておく。読んだ値を手順がまだ使っていなくても、問いが分かれた所で止まる
 
 ## アップデートで何をしたか → ゲーム側がすること
 

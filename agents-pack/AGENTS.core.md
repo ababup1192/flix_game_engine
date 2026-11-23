@@ -107,7 +107,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 画面なしで描く物を作る・Item を描く命令にする所を自分で呼びたい（`SoftRaster` や `Render` の中の関数） | 親のモジュールの関数（`SoftRaster.renderToImage`・`Render.toDrawables`・`Render.softSceneOf` など。`make api Q=Render.`）。`<モジュール>.Internal.*`（`Render.Internal`・`SoftRaster.Internal`）は中身で、ゲームの src と test に書くと lint-forbid の app-internal が止める。足りなければ engine に足すよう相談する |
 | e2e・動画の手順を書いて画面なしで流す（失敗は行番号つき） | `e2e/<名前>.flow` + `App.withFlow`・`bin/fge flow check`・`make flow` |
 | `run` で入れる部品の flow を単独でも流す（親の `fps`・`ready` が抜けて別の速さ・待ち方になる） | 部品にも親と同じ設定の行を書く。食い違いは `bin/fge flow check` が「run で入れる親と設定が違う」で止める。離した時に受ける押し方（点のタップ）も `ready off` は要らない（返事は離したフレームの後に確かめる） |
-| 途中でセーブして読み直しても後の遊びが変わらないか確かめる（書く時に値を落とす・自分で書いたキーを読めない、を欄の一覧なしで止める） | flow の表（`App.withFlow`）に `saveRoundTrip = Some({ save, load })`（実機と同じ書く関数・「つづきから」と同じ読み方）+ flow の落ち着いた所に `saveload` の 1 行 → `make flow` が読み直さない流れと問いの値・最後のセーブを比べる（ウィンドウを開いたまま読み直さない・engine の `docs/flow.md` の「セーブの読み直しの門」） |
+| 途中でセーブして読み直しても後の遊びが変わらないか確かめる（書く時に値を落とす・自分で書いたキーを読めない、を欄の一覧なしで止める） | flow の表（`App.withFlow`）に `saveRoundTrip = Some({ save, load, unsaved })`（実機と同じ書く関数・「つづきから」と同じ読み方・load の 2 つ目は起動したての World）+ flow の落ち着いた所に `saveload` の 1 行 → `make flow` が読み直さない流れと問いの値・最後のセーブを比べる（ウィンドウを開いたまま読み直さない・engine の `docs/flow.md` の「セーブの読み直しの門」） |
 | 好きな場面から起動・テスト・遊んだ通りに再生 | `App.withStarts`（`START=`・`startOrBug`）・記録は `make flow` で再生 |
 | ギャラリーの 1 枚の World から実機で開く・実機の記録が再生と同じか | `App.withShots`（`<ゲーム>/src/Shots.flix`）+ `SHOT=<場面> make run`・engine で `make determinism`（台本 `FLIX_GE_INPUT_SCRIPT`） |
 | 記録の再生が起動した時刻などの外の値で `expect world=` に止まる | `App.withWorldSummaryMask`（その欄だけ決まった値へ） |

@@ -245,7 +245,7 @@ func (c *checker) line(depth int, w []string) (bool, string) {
 		if v.SaveLoad {
 			return true, ""
 		}
-		return true, "saveload はゲームの flow の表（App.withFlow）に saveRoundTrip が無い"
+		return true, "saveload はゲームの flow の表（App.withFlow）に saveRoundTrip が無い（宣言済みなら make flow-vocab）"
 	case verb == "rewind" && n == 2:
 		if k, err := strconv.Atoi(w[1]); err != nil || k < 0 {
 			return true, "rewind は 'rewind <フレーム数>'"

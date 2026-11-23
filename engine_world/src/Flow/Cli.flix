@@ -45,10 +45,10 @@ pub mod Flow.Cli {
         }
 
     /// saveload の行がある flow: 読み直さない流れと読み直した流れを両方流し、どちらも通って最後のセーブが同じなら 0。
-    def reportSaveLoad(app: App.App[w, ef], path: String, script: Flow.Script,
+    pub def reportSaveLoad(app: App.App[w, ef], path: String, script: Flow.Script,
                        plain: Result[Flow.Failure[w], Flow.Outcome[w]], reloaded: Result[Flow.Failure[w], Flow.Outcome[w]]): Int32 \ ef + IO =
         if (report(app, path, plain, script#fps) != 0) 1
-        else match Flow.SaveLoad.judge(app, path, plain, reloaded) {
+        else match Flow.SaveLoad.compareRuns(app, path, plain, reloaded) {
             case Ok(note) =>
                 println("ok saveload: ${note}");
                 0

@@ -1,0 +1,39 @@
+# セーブの読み直し: 宿屋に泊まってセーブを書き、宿の前へ出た所でセーブ → 読み直し（saveload）、村を歩く。
+# make flow は読み直さない流れも流し、問いの値と最後のセーブが同じかを比べる（engine の docs/flow.md の「セーブの読み直しの門」）。
+# 宿の前（3, 4）は「つづきから」で立つ所と同じなので、読み直した流れと読み直さない流れが同じ所から歩き出す。
+start field map=village x=3 y=4 facing=up gold=100 quest=accepted party=luka,mina hp=1
+hold up
+until map=inn max 3
+release up
+until layer=Walking max 2
+# 帳場の前（7, 5）で宿の人に話し、はいで泊まる。
+hold up
+until y=5 max 3
+release up
+wait 0.3
+tap confirm
+expect talk=Innkeeper
+tap confirm                  # 問いを出し切る
+tap confirm                  # はい / いいえ を出す
+expect choice
+tap confirm                  # はい
+until saved=1 max 3
+until layer=Talk max 3       # 暗転が晴れて会話の続き
+tap confirm
+tap confirm
+tap confirm
+tap confirm                  # ウィンドウを閉じる
+expect layer=Walking
+# 宿を出て、宿の前に立つ。
+hold down
+until map=village max 4
+release down
+until layer=Walking max 2
+expect x=3&y=4&facing=Down
+saveload
+# 読み直した所から村を右へ歩く。
+hold right
+until x=6 max 3
+release right
+wait 0.5
+expect map=village&x=6&y=4&hp=28&gold=94&party=luka,mina

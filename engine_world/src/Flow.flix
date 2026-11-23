@@ -13,7 +13,7 @@
 //   expect phase=GameOver           ここで立っていなければ失敗（フレームは使わない）
 //   mark cleared                    ここのフレームに名前を付ける（動画の切り出しの印）
 //   run open_menu.flow              別の flow をここに入れる（同じフォルダ・8 段まで）
-//   saveload                        ここでセーブ → 読み直した World で続ける（表の saveRoundTrip。make flow が読み直さない流れと問いの値・最後のセーブを比べる）
+//   saveload                        セーブ → 読み直し（docs/flow.md の「セーブの読み直しの門」）
 //
 // ゲームが出す表（App.withFlow）:
 //   roles   = 役の名前 → キーの表（InputMap.Table[String]。表の先頭のキーを押す）
@@ -22,7 +22,7 @@
 //   ready   = 入力を受けられるか（Ready・Busy(理由)）。宣言すると tap・hold の前に自動で待つ（ready off で止まる）
 //   replies = 返事の通し番号（押して離した後に進まなければ、押した行の番号つきで失敗。ready off で止まる）
 //   options = ヘッダの設定の名前と値の候補（値はこの実行器では使わず、動画を撮るゲームが読む）
-//   saveRoundTrip = セーブを書く関数と、その字から読み直す関数（saveload の行が使う。make flow が読み直さない流れと比べる）
+//   saveRoundTrip = セーブを書く関数と読む関数（saveload の行が使う）
 //
 // 読む順: 表（Table）→ 手順（Script・Step）→ play（Outcome か Failure）。読み手は Flow.Parse、headless の入口は Flow.Cli。
 pub mod Flow {
@@ -71,9 +71,18 @@ pub mod Flow {
         saveRoundTrip = Option[SaveRoundTrip[w]]
     }
 
-    /// セーブの書き出しと読み直し（docs/flow.md の「セーブの読み直しの門」）: save = 今の World を書くセーブの字（書かない場面は None）・
-    /// load = その字から読み直した World（続きから始めた所。今の World は Doc と描く元を引くために渡す）。実機と同じ書き方・読み方を渡す。
-    pub type alias SaveRoundTrip[w] = { save = w -> Option[String], load = (String, w) -> Result[String, w] }
+    /// セーブの書き出しと読み直し（docs/flow.md の「セーブの読み直しの門」）。実機と同じ書き方・読み方を渡す。
+    /// save = 今の World を書くセーブの字（書かない場面は None）。
+    /// load = その字と起動したての World（App.freshWorld）から、続きから始めて動けるようになった所の World。
+    ///        起動したての World から取るのは Doc と描く元だけ（遊びの値は字から読む）。
+    /// unsaved = わざとセーブに書かない値の問いの名前（読み直すと変わるので比べない。セーブの回数・遊んだ時間など）。
+    pub type alias SaveRoundTrip[w] = { save = w -> Option[String], load = (String, w) -> Result[String, w], unsaved = List[String] }
+
+    /// saveload の行の扱い: Reload = 読み直す（make flow の 2 本目）・Skip = World を替えない（make flow の 1 本目と、ほかの流し手）。
+    pub enum SaveLoadPass with Eq {
+        case Reload
+        case Skip
+    }
 
     /// 何も宣言しない表（{ probes = … | Flow.emptyTable() } で要る欄だけ書く）。
     pub def emptyTable(): Table[w] =
@@ -263,7 +272,7 @@ pub mod Flow {
         case Request(String, Map[String, String], Map[String, File]) // onRequest のパスとクエリ
         case Close                                      // 窓の閉じるボタン（withCloseRequest）
         case Rewind(Int32)                              // F8 の巻き戻しから再開した（N フレーム前の World へ）
-        case SaveLoad(Bool)                             // セーブ → 読み直し。false = 読み直さない側の流れ（フレームは同じに使い、World は替えない）
+        case SaveLoad                                   // セーブ → 読み直し（読み直すかは playWith の SaveLoadPass）
     }
 
     /// 手 1 つと、その書いてある所（失敗の知らせに載せる）。
@@ -323,12 +332,19 @@ pub mod Flow {
 
     /// 手順を流す。start = 最初の手が start でない時に使う World と持ち越し（/step は走っている World、
     /// ファイルの flow は先頭の始まり）。tap・hold は ready on なら入力を受けられるまで待ち、返事を確かめる。
+    /// saveload の行は World を替えない（読み直して比べるのは make flow の Flow.SaveLoad だけ）。
     pub def play(app: App.App[w, ef], setup: Setup, script: Script,
                  start: { world = w, state = App.StepState }): Result[Failure[w], Outcome[w]] \ ef + Fs.FileRead =
+        playWith(app, setup, script, start, SaveLoadPass.Skip)
+
+    /// play と同じ。pass = Reload なら saveload の行でセーブ → 読み直した World へ差し替える。
+    pub def playWith(app: App.App[w, ef], setup: Setup, script: Script,
+                     start: { world = w, state = App.StepState }, pass: SaveLoadPass): Result[Failure[w], Outcome[w]] \ ef + Fs.FileRead =
         // ready off だけが「書いたフレームでそのまま押し、確かめない」。待つのは ready を、確かめるのは replies を宣言したゲームだけ。
         let readyOn = script#ready |> Option.getWithDefault(true);
         let dt = roundToNanos(if (script#fps > 0.0) 1.0 / script#fps else 1.0 / 60.0);
-        let ctx = { app = app, setup = setup, dt = dt, readyOn = readyOn };
+        let fresh = if (pass == SaveLoadPass.Reload) Some(App.freshWorld(app, setup#design)) else None;
+        let ctx = { app = app, setup = setup, dt = dt, readyOn = readyOn, fresh = fresh };
         let begin = { world = start#world, state = start#state, hand = freshHand(), frames = Nil, count = 0,
                       marks = Map.empty(), starts = Nil, history = start#world :: Nil, awaiting = None,
                       served = Map.empty() };
@@ -351,7 +367,8 @@ pub mod Flow {
                                     seen = seenOf(ctx, stop#seen, stop#cursor#world), upTo = finish(stop#cursor) })
         }
 
-    type alias Ctx[w: Type, ef: Eff] = { app = App.App[w, ef], setup = Setup, dt = Float64, readyOn = Bool }
+    /// fresh = 読み直す流れの起動したての World（load に渡す）。None なら saveload の行で読み直さない。
+    type alias Ctx[w: Type, ef: Eff] = { app = App.App[w, ef], setup = Setup, dt = Float64, readyOn = Bool, fresh = Option[w] }
 
     /// 前の押し方の返事を、この行が押す・World を差し替える前に確かめる（それ以外の行はそのまま）。
     /// 押したフレームで返事が無く、固定刻みで持ち越した押した瞬間も残っていない押し方だけが対象で、まだ押していれば失敗、離すだけなら離すフレームを 1 つ進めて確かめる。
@@ -367,7 +384,7 @@ pub mod Flow {
             case Step.Reload(_, _)        => true
             case Step.Request(_, _, _)    => true
             case Step.Close               => true
-            case Step.SaveLoad(_)         => true
+            case Step.SaveLoad            => true
             case _                        => false
         };
         match c#awaiting {
@@ -438,15 +455,7 @@ pub mod Flow {
                 }
                 case None    => Ok(c)
             }
-            case Step.SaveLoad(false) => Ok(c)
-            case Step.SaveLoad(true) => match r#flow#saveRoundTrip {
-                case None       => Err({ cursor = c, at = line, why = "saveload: 表（App.withFlow）に saveRoundTrip が無い", seen = "" })
-                case Some(trip) => match saveLoaded(trip, c#world) {
-                    case Err(why)    => Err({ cursor = c, at = line, why = "saveload: ${why}", seen = "" })
-                    // 持ち越し（state）と手（hand）は替えない —— 読み直さない側の流れと同じ入力と刻みで残りを流して比べる。
-                    case Ok(loaded)  => Ok({ world = loaded, history = loaded :: Nil | c })
-                }
-            }
+            case Step.SaveLoad => saveLoadLine(ctx, line, c)
             case Step.Rewind(back) =>
                 match List.nth(back, c#history) {
                     case Some(world) => Ok({ world = world, history = List.drop(back, c#history) | c })
@@ -454,11 +463,27 @@ pub mod Flow {
                 }
         }
 
-    /// 今の World をセーブの字にし、その字から読み直した World。読み直した World をもう一度書いた字が元と違えば Err（違うキーを言う）。
-    def saveLoaded(trip: SaveRoundTrip[w], world: w): Result[String, w] =
+    /// saveload の行。押しっぱなしの物があれば止める。ctx#fresh が Some（読み直す流れ）なら roundTrip の World へ差し替える。
+    /// 返事待ちと履歴は読み直すかによらず切る（2 本の流れで同じに扱う。rewind は saveload より前へ戻れない）。
+    // WhyNot: 返事待ちを持ち越さない — 読み直した World の返事の番号は前の World の続きでなく、次の押し方で偽の赤になる（start と同じ）。
+    // WhyNot: 持ち越し（state）は替えない — 替えると読み直さない流れと刻みがずれる。
+    def saveLoadLine(ctx: Ctx[w, ef], line: Line, c: PlayState[w]): Result[Stop[w], PlayState[w]] =
+        let cut = (world: w) -> { world = world, history = world :: Nil, awaiting = None | c };
+        let stop = why -> { cursor = c, at = line, why = "saveload: ${why}", seen = "" };
+        let held = not Set.isEmpty(c#hand#held) or c#hand#button;
+        let trip = App.rec(ctx#app)#flow#saveRoundTrip;
+        if (held) Err(stop("押しっぱなしの物がある（release してから書く）"))
+        else match (ctx#fresh, trip) {
+            case (None, _)               => Ok(cut(c#world))
+            case (Some(_), None)         => Err(stop("表（App.withFlow）に saveRoundTrip が無い"))
+            case (Some(fresh), Some(rt)) => roundTrip(rt, c#world, fresh) |> Result.map(cut) |> Result.mapErr(stop)
+        }
+
+    /// 今の World をセーブの字にし、その字と起動したての World から読み直した World。読み直した World をもう一度書いた字が元と違えば Err（違うキーを言う）。
+    def roundTrip(trip: SaveRoundTrip[w], world: w, fresh: w): Result[String, w] =
         forM (
             text   <- (trip#save)(world) |> Option.toOk("この場面ではセーブを書かない（save が None）");
-            loaded <- (trip#load)(text, world) |> Result.mapErr(why -> "読めない（${why}）");
+            loaded <- (trip#load)(text, fresh) |> Result.mapErr(why -> "読めない（${why}）");
             again  <- (trip#save)(loaded) |> Option.toOk("読み直した World がセーブを書かない（save が None）");
             _      <- if (again == text) Ok(()) else Err("読み直してすぐ書いたセーブが元と違う: ${Flow.SaveLoad.diffText(text, again)}")
         ) yield loaded
