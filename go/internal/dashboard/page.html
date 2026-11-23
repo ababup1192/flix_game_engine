@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Flix_GE dashboard</title>
+<style>
+:root{color-scheme:dark;--bg:#0e1118;--panel:#151a25;--panel2:#1b2230;--line:#262c3a;--ink:#eef1f6;--mute:#9aa3b5;--acc:#4cc3fa;--acc2:#a58cf0;--ok:#3fd39a;--hot:#f0506e;--grad:linear-gradient(90deg,#38bdf8,#3b6cf6);--mono:ui-monospace,"SF Mono",Menlo,Consolas,"JetBrains Mono",monospace}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.65 system-ui,-apple-system,"Hiragino Sans","Noto Sans JP","Yu Gothic UI",sans-serif;overflow-x:clip}
+code,.mono{font-family:var(--mono);font-size:.92em}
+a{color:var(--acc)}
+.top{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px max(4vw,16px);background:rgba(14,17,24,.92);backdrop-filter:blur(6px);border-bottom:3px solid transparent;border-image:linear-gradient(90deg,#38bdf8,#3b6cf6,#8b6fd6) 1}
+.logo{font:800 18px var(--mono);letter-spacing:-.02em;white-space:nowrap;text-decoration:none;color:var(--ink)}
+.logo b{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.crumb{font:500 13px var(--mono);color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.crumb a{text-decoration:none}
+.top .ver{margin-left:auto;font:500 12px var(--mono);color:var(--mute);white-space:nowrap}
+main{max-width:1180px;margin:0 auto;padding:clamp(18px,3vw,36px) max(4vw,16px) 64px;display:grid;gap:clamp(18px,2.4vw,28px)}
+h1{font:800 clamp(24px,3.2vw,34px)/1.15 var(--mono);letter-spacing:-.02em;margin:0}
+h1 span{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+h2{font:800 clamp(19px,2.2vw,23px)/1.2 var(--mono);letter-spacing:-.01em;margin:0 0 4px}
+.lede{color:var(--mute);margin:4px 0 0;max-width:72ch}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:clamp(16px,2.4vw,26px)}
+.panel.hero{background:radial-gradient(120% 140% at 100% 0%,rgba(139,111,214,.18),transparent 55%),radial-gradient(90% 120% at 0% 100%,rgba(56,189,248,.12),transparent 60%),var(--panel)}
+.notice{display:flex;gap:12px;align-items:center;flex-wrap:wrap;border:1px solid #3b6cf6;background:rgba(59,108,246,.12);border-radius:12px;padding:10px 14px}
+.notice b{font-weight:700}
+.field{display:grid;gap:6px;margin:18px 0 6px;max-width:420px}
+.field label{font-size:13px;color:var(--mute)}
+input[type=text]{font:600 17px var(--mono);background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:9px 12px;width:100%}
+input[type=text]:focus-visible,.tpl:focus-visible,.btn:focus-visible,a.btn:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.warn{font-size:13px;color:var(--hot);min-height:1.4em}
+.sub{font-size:13px;color:var(--mute);margin:14px 0 8px}
+.tpls{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,200px),1fr));gap:12px}
+.tpl{display:flex;flex-direction:column;background:var(--bg);border:2px solid var(--line);border-radius:12px;padding:0;overflow:hidden;cursor:pointer;text-align:left;color:var(--ink);font:inherit;transition:border-color .15s,transform .15s}
+.tpl:hover{border-color:#3a4256;transform:translateY(-1px)}
+.tpl[aria-pressed=true]{border-color:var(--acc);box-shadow:0 0 0 3px rgba(76,195,250,.22)}
+.tpl .pic{aspect-ratio:16/10;background:#0a0d13 center/contain no-repeat;border-bottom:1px solid var(--line);display:grid;place-items:center;color:var(--mute);font:600 12px var(--mono)}
+.tpl .body{padding:9px 11px 11px;display:grid;gap:2px}
+.tpl b{font-size:14px;line-height:1.35}
+.tpl .name{font:500 11px var(--mono);color:var(--acc2)}
+.tpl .sum{font-size:12px;line-height:1.5;color:var(--mute);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.draft{margin:18px 0 0;display:grid;gap:8px}
+.draft q{display:block;quotes:none;background:var(--bg);border:1px dashed #3a4256;border-radius:10px;padding:10px 12px;font-size:14px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:.35em;min-height:42px;padding:0 16px;border-radius:10px;border:0;background:var(--grad);color:#fff;font:700 14px system-ui,sans-serif;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn.ghost{background:none;border:1px solid #3a4256;color:var(--ink);font-weight:600}
+.btn.small{min-height:34px;padding:0 11px;font-size:13px}
+.btn[aria-disabled=true]{opacity:.45;pointer-events:none}
+.hint{font-size:12.5px;color:var(--mute);margin:4px 0 0}
+.toast{font-size:13px;color:var(--ok)}
+.toast:empty{display:none}
+.games{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:12px;margin-top:12px}
+.game{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:grid;gap:8px;align-content:start}
+.game h3{margin:0;font:800 17px var(--mono);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.game h3 a{color:var(--ink);text-decoration:none}
+.chip{display:inline-block;padding:1px 9px;border:1px solid #3a4256;border-radius:99px;font:500 11.5px var(--mono);color:var(--mute);white-space:nowrap}
+.chip.acc{border-color:rgba(165,140,240,.6);color:var(--acc2)}
+.chip.hot{border-color:var(--hot);color:var(--hot)}
+.dir{font:12px var(--mono);color:var(--mute);overflow-wrap:anywhere}
+.empty{color:var(--mute);font-size:14px;border:1px dashed var(--line);border-radius:12px;padding:16px;margin-top:12px}
+.log{background:#0a0d13;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:12px/1.55 var(--mono);color:#c4cbd8;max-height:260px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;margin-top:10px}
+.bar{height:6px;border-radius:99px;background:var(--line);overflow:hidden;margin-top:12px}
+.bar i{display:block;height:100%;width:40%;background:linear-gradient(90deg,#38bdf8,#3b6cf6,#8b6fd6);border-radius:99px}
+@media(prefers-reduced-motion:no-preference){.bar i{animation:slide 1.4s ease-in-out infinite}}
+@keyframes slide{0%{transform:translateX(-100%)}100%{transform:translateX(250%)}}
+.foot{font-size:12px;color:var(--mute);text-align:center}
+[hidden]{display:none!important}
+@media(max-width:600px){.top .ver{display:none}.btn{flex:1 1 auto}.tpls{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.tpl .sum{display:none}.tpl .body{padding:7px 9px 9px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="logo" href="/"><b>Flix_GE</b> dashboard</a>
+  <span class="crumb" id="crumb"></span>
+  <span class="ver" id="ver"></span>
+</header>
+<main id="main" aria-live="polite"></main>
+<script>
+(() => {
+  const $ = (s) => document.querySelector(s);
+  const h = (tag, attrs, ...kids) => {
+    const el = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (v === undefined || v === null || v === false) continue;
+      if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+      else if (k === 'class') el.className = v;
+      else el.setAttribute(k, v === true ? '' : v);
+    }
+    for (const kid of kids.flat()) if (kid !== null && kid !== undefined && kid !== false) el.append(kid);
+    return el;
+  };
+  const MAX_Q = 5000;
+  const shellQuote = (s) => s !== '' && /^[A-Za-z0-9\/._~-]+$/.test(s) ? s : "'" + s.replace(/'/g, "'\\''") + "'";
+  const deepLink = (dir, q) => 'claude-cli://open?cwd=' + encodeURIComponent(dir) + (q ? '&q=' + encodeURIComponent(q.slice(0, MAX_Q)) : '');
+  const claudeLine = (dir, q) => 'cd ' + shellQuote(dir) + ' && claude' + (q ? ' ' + shellQuote(q) : '');
+  const folderOk = (s) => /^[A-Za-z][A-Za-z0-9_-]*$/.test(s);
+  const draftFor = (name, tpl) => `${name} という名前で、${tpl} から新しいゲームを作って。できたら make run で動くか確かめて、次にやることを教えて`;
+  const GAME_PROMPT = 'このゲームで何ができるか教えて。make status を見て、次にやることを 3 つ挙げて';
+
+  const copy = async (text, toast) => {
+    try { await navigator.clipboard.writeText(text); }
+    catch (_) {
+      const ta = h('textarea', {style: 'position:fixed;opacity:0'}); ta.value = text; document.body.append(ta); ta.select();
+      document.execCommand('copy'); ta.remove();
+    }
+    if (toast) { toast.textContent = 'コピーしました: ' + text; }
+  };
+
+  const path = decodeURIComponent(location.pathname);
+  const gameName = path === '/' ? '' : path.replace(/^\/|\/$/g, '');
+  const ui = {name: localStorage.getItem('fge.newName') || 'tidepool', tpl: localStorage.getItem('fge.newTemplate') || ''};
+  let last = null;
+
+  const openHint = () => h('p', {class: 'hint'},
+    '開かない時: 一度 ', h('code', {}, 'claude'), ' を起動して何か送ると、このボタンで開けるようになります。',
+    'Claude Code が無い時は ', h('a', {href: 'https://code.claude.com/docs', target: '_blank', rel: 'noopener noreferrer'}, 'code.claude.com'), ' の手順で入れます。');
+
+  const notice = (st) => !st.newer ? null : h('div', {class: 'notice'},
+    h('span', {}, h('b', {}, `engine ${st.latest} が出ています`), `（手元の最新は ${st.newest}）`),
+    h('button', {class: 'btn ghost small', onclick: (e) => copy(`fge engines install ${st.latest}`, e.target.closest('.notice').querySelector('.toast'))}, h('code', {}, `fge engines install ${st.latest}`), ' をコピー'),
+    h('span', {class: 'toast'}));
+
+  const installPanel = (st) => {
+    const ins = st.install;
+    if (st.newest && !ins.running && !ins.error) return null;
+    const head = ins.running ? 'engine を取っています（初回は約 300 MB・数分）'
+      : ins.error ? 'engine を取れませんでした' : '手元に engine がありません';
+    return h('section', {class: 'panel'},
+      h('h2', {}, head),
+      ins.running ? h('div', {class: 'bar'}, h('i')) : null,
+      ins.error ? h('p', {class: 'warn'}, ins.error) : null,
+      !ins.running ? h('div', {class: 'row', style: 'margin-top:10px'},
+        h('button', {class: 'btn', onclick: startInstall}, ins.error ? 'もう一度取る' : '最新の engine を取る'),
+        h('span', {class: 'hint'}, '端末なら ', h('code', {}, 'fge engines install latest'))) : null,
+      ins.log.length ? h('div', {class: 'log'}, ins.log.join('\n')) : null);
+  };
+
+  const startInstall = async () => {
+    await fetch('/_api/engines/install', {method: 'POST'});
+    refresh();
+  };
+
+  const gameCard = (g, big) => {
+    const toast = h('span', {class: 'toast'});
+    const run = 'cd ' + shellQuote(g.dir) + ' && make run';
+    return h('article', {class: 'game'},
+      h('h3', {}, big ? g.name : h('a', {href: '/' + encodeURIComponent(g.name) + '/'}, g.name),
+        g.engineVersion ? h('span', {class: 'chip acc'}, 'engine ' + g.engineVersion) : null,
+        !g.exists ? h('span', {class: 'chip hot'}, 'フォルダがありません') : null),
+      h('div', {class: 'dir'}, g.dir),
+      h('div', {class: 'row'},
+        h('a', {class: 'btn small', href: deepLink(g.dir, GAME_PROMPT), 'aria-disabled': g.exists ? null : 'true'}, 'Claude Code で開く'),
+        h('button', {class: 'btn ghost small', onclick: () => copy(run, toast)}, h('code', {}, 'make run'), ' をコピー')),
+      toast);
+  };
+
+  const createPanel = (st) => {
+    const toast = h('span', {class: 'toast'});
+    const warn = h('div', {class: 'warn'});
+    const q = h('q');
+    const open = h('a', {class: 'btn'}, 'Claude Code で開く');
+    const copyBtn = h('button', {class: 'btn ghost'}, 'コピー');
+    if (!st.templates.some((t) => t.name === ui.tpl)) {
+      ui.tpl = (st.templates.find((t) => t.name === 'rpg-starter') || st.templates[0] || {}).name || '';
+    }
+    const update = () => {
+      const ok = folderOk(ui.name) && ui.tpl !== '';
+      warn.textContent = ui.name === '' ? '名前を入れてください'
+        : !folderOk(ui.name) ? '名前は英字ではじめ、英数字と - と _ だけにしてください' : '';
+      const draft = draftFor(ui.name || '〇〇', ui.tpl || '〇〇');
+      q.textContent = draft;
+      open.href = deepLink(st.workspaceDir, draft);
+      open.setAttribute('aria-disabled', ok ? 'false' : 'true');
+      copyBtn.onclick = () => copy(claudeLine(st.workspaceDir, draft), toast);
+      copyBtn.disabled = !ok;
+      for (const b of tplGrid.querySelectorAll('.tpl')) b.setAttribute('aria-pressed', String(b.dataset.name === ui.tpl));
+      localStorage.setItem('fge.newName', ui.name);
+      localStorage.setItem('fge.newTemplate', ui.tpl);
+    };
+    const tplGrid = h('div', {class: 'tpls', role: 'group', 'aria-label': 'テンプレート'},
+      st.templates.map((t) => h('button', {class: 'tpl', 'data-name': t.name, 'aria-pressed': 'false', onclick: () => { ui.tpl = t.name; update(); }},
+        h('div', {class: 'pic', style: t.imageUrl ? `background-image:url("${t.imageUrl}")` : null}, t.imageUrl ? null : '絵なし'),
+        h('div', {class: 'body'}, h('b', {}, t.title || t.name), h('span', {class: 'name'}, t.name), t.summary ? h('span', {class: 'sum'}, t.summary) : null))));
+    const input = h('input', {type: 'text', id: 'new-name', value: ui.name, autocomplete: 'off', spellcheck: 'false',
+      oninput: (e) => { ui.name = e.target.value.trim(); update(); }});
+    const panel = h('section', {class: 'panel hero'},
+      h('h1', {}, h('span', {}, '新しいゲーム'), 'を作ってみよう'),
+      h('p', {class: 'lede'}, '名前とテンプレートを選んで [Claude Code で開く] を押すと、ワークスペースのフォルダで Claude Code が開き、下の文が入力欄に入ります。Enter を押すと作り始めます。'),
+      h('div', {class: 'field'}, h('label', {for: 'new-name'}, 'ゲームの名前（フォルダ名）'), input, warn),
+      h('div', {class: 'sub'}, 'テンプレート'),
+      st.templates.length ? tplGrid : h('div', {class: 'empty'}, 'engine を取ると、テンプレートが並びます'),
+      h('div', {class: 'draft'},
+        h('div', {class: 'sub', style: 'margin:0'}, 'Claude Code に渡す文（下書き・ワークスペース ', h('code', {}, st.workspaceDir), ' で開きます）'),
+        q,
+        h('div', {class: 'row'}, open, copyBtn, toast),
+        openHint()));
+    update();
+    return panel;
+  };
+
+  const gamesPanel = (st) => h('section', {class: 'panel'},
+    h('h2', {}, 'ゲームの一覧'),
+    h('p', {class: 'lede'}, 'Claude Code が作ったゲームはここに並びます。続きの作業はゲームのフォルダで開いた Claude Code に頼みます。'),
+    st.games.length ? h('div', {class: 'games'}, st.games.map((g) => gameCard(g, false)))
+      : h('div', {class: 'empty'}, 'まだありません。上のカードから作ってみましょう。'));
+
+  const renderWorkspace = (st) => [notice(st), installPanel(st), createPanel(st), gamesPanel(st)];
+
+  const renderGame = (st) => {
+    const g = st.games.find((x) => x.name === gameName);
+    if (!g) return [h('section', {class: 'panel'}, h('h2', {}, `${gameName} は一覧にありません`), h('a', {href: '/'}, 'ワークスペースへ戻る'))];
+    return [
+      h('section', {class: 'panel hero'},
+        h('h1', {}, h('span', {}, g.name)),
+        h('p', {class: 'lede'}, 'このゲームの頁（Inbox・Tape など）はこれから足します。今は Claude Code を開くか、手元で動かしてください。'),
+        h('div', {class: 'games'}, gameCard(g, true)),
+        h('div', {class: 'draft'}, h('div', {class: 'sub', style: 'margin:0'}, 'Claude Code に渡す文（下書き）'), h('q', {}, GAME_PROMPT), openHint()))];
+  };
+
+  const render = (st) => {
+    const key = JSON.stringify(st);
+    if (key === last) return;
+    const focusedName = document.activeElement && document.activeElement.id === 'new-name';
+    last = key;
+    $('#crumb').replaceChildren(gameName ? h('span', {}, h('a', {href: '/'}, 'workspace'), ' / ' + gameName) : 'workspace');
+    $('#ver').textContent = st.newest ? 'engine ' + st.newest : '';
+    if (focusedName) return;
+    $('#main').replaceChildren(...(gameName ? renderGame(st) : renderWorkspace(st)).filter(Boolean),
+      h('p', {class: 'foot'}, 'fge: ', h('code', {}, st.fgePath)));
+  };
+
+  let timer = 0;
+  const refresh = async () => {
+    clearTimeout(timer);
+    let st = null;
+    try {
+      const res = await fetch('/_api/state', {cache: 'no-store'});
+      if (res.ok) st = await res.json();
+    } catch (_) {}
+    if (st) render(st);
+    else $('#main').replaceChildren(h('section', {class: 'panel'}, h('h2', {}, 'サーバーに届きません'), h('p', {class: 'lede'}, 'fge dashboard を打ち直してください。')));
+    timer = setTimeout(refresh, st && st.install.running ? 1500 : 8000);
+  };
+  refresh();
+})();
+</script>
+</body>
+</html>
