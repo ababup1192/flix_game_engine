@@ -1,7 +1,7 @@
 # Windows 対応（準備のフェーズ）
 
-状態: 設計 第 3 版（相談中）。実装は未着手。plans/onboarding.md（始め方）を macOS と Linux で通した後に、同じ始め方を Windows に載せるための準備。
-レビューは 80 点以上でクリティカルな指摘が無ければ実装に入る（作者の判断）。第 1 版 66 点・第 2 版 76 点。答えは 10 節。
+状態: 設計 第 3 版。**レビュー 84 点・クリティカル無しで実装に入る**（2026-11-23）。onboarding の macOS と Linux の通しの後に始める。plans/onboarding.md（始め方）を macOS と Linux で通した後に、同じ始め方を Windows に載せるための準備。
+レビューは 80 点以上でクリティカルな指摘が無ければ実装に入る（作者の判断）。第 1 版 66 点・第 2 版 76 点・第 3 版 84 点。答えは 10 節。
 
 ## 0. 決まっていること
 
@@ -167,6 +167,10 @@ project.json（ゲームの根・今もある）に宣言を足す。凍結し�
 | headless-run:249 の `ln -sfn "$PWD/lib" "$proj/lib"` | MSYS の既定の `ln -s` は丸写しを作る。flix が依存を落とすのは写しの方になり、2 回目は写しの中に `lib/lib` を作り、指紋も毎回ずれる（mvn-cache-share.sh:46-47 は同じ理由で MSYS を外している） | MSYS の時だけ `cmd //c mklink /J`（ジャンクション。管理者の権限なしで張れる）。張れなければ毎回コンパイルする道へ移り、その旨を 1 行出す |
 | headless-run:258-259 の `mv "$jar.tmp.$$" "$jar"` | Windows では、`run` のウィンドウや常駐の JVM が開いている jar を差し替えられない（ゲームを開いたまま render する、いつもの流れで止まる） | jar の名前に指紋を入れ、別の名前で置く（`headless-<指紋>.jar`）。今の名前は指紋の入った jar を指す小さなファイルにする。古い jar は開かれていなければ次の作り置きの時に消す |
 | headless-run:544・bin/flix の最後の `exec` | MSYS の bash はネイティブの java を本当の exec でなく子のプロセスで起こす。時間切れや Ctrl+C で bash だけが落ち、java が残って jar を開いたままになる | #6 で Go が bash を起こす時は、Windows では Job Object（KILL_ON_JOB_CLOSE）に入れる。Go が止まれば木ごと止まる。#13 の `run --seconds` も同じ仕組みで作る |
+
+- **指紋の入った jar の名前は Windows だけ**（第 3 版のレビュー）。`build/headless/headless.jar` を名前で直に読む所（go/internal/dist・jarshare・resident・
+  mk/game.mk:216・mk/tape.mk・凍結した Studio の SharedJar）があるので、macOS と Linux は今の mv のまま。Windows では、それらの読み手が通る
+  「今の名前が指す先を読む」1 関数を Go に置き、mk の 2 か所は Windows では範囲の外（#14）なので触らない。
 
 実装しながら決める物（第 2 版のレビュー）:
 - bin/flix の `FLIX_PRINT_JAR=1` は Git Bash では `/c/...` の形で返り、checkd が java の `-cp` に渡すと java.exe が読めない（resident.go:282）。bin/flix の側で MSYS の時に `cygpath -m` を通す。
