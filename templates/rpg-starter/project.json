@@ -224,6 +224,15 @@
       "looping": false
     }
   ],
+  "// shots": "render の場面の名前（source of truth は Shots.names。ここは bin/fge render の使い方に出す写し）。場面を足したら Shots.names と一緒にここも足す",
+  "shots": ["title", "village", "quest", "join", "world", "cave", "dungeon1", "dungeon2", "dungeon3", "battle", "magic", "item", "equip", "boss", "clear", "ending"],
+  "// tasks": "ゲーム固有の作業（bin/fge task <名前> [K=V…]・Makefile に別名があれば make <名前> も）。entry はヘッドレスの入口・cmd はコマンドの並び・env は K=V の既定",
+  "tasks": {
+    "bot": {"entry": "BotRun.play", "about": "自動の通しプレイ（タイトルからエンディングまで）→ debug/bot.md。詰んだら 1（BOT_RUNS=本数・BOT_SEED=1 本目の種）", "env": {"BOT_RUNS": "5", "BOT_SEED": "0"}},
+    "balance": {"entry": "BalanceSim.play", "about": "つり合いのシミュレーション（戦いだけ）→ debug/balance.md。知らせるだけで終了コードはいつも 0（BALANCE_SEEDS=1 組の種の数）", "env": {"BALANCE_SEEDS": "500"}}
+  },
+  "// precommit": "pre-commit で流す物の名前（tasks の名前か engine の検査の名前）",
+  "precommit": ["lint-flixlint"],
   "editor": {
     "resources": [
       {

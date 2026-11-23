@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ababup1192/flix_game_engine/go/internal/headlessjar"
 	"github.com/ababup1192/flix_game_engine/go/internal/resident"
 )
 
@@ -166,7 +167,7 @@ func Publish(cache, key string, in Inputs, root string) error {
 		touch(filepath.Join(final, usedName))
 		return nil
 	}
-	return storeEntry(cache, key, in, filepath.Join(headlessDir(root), jarName))
+	return storeEntry(cache, key, in, headlessjar.Path(root))
 }
 
 // storeEntry は jarPath の jar を、鍵の 1 本として置き場へ置く（Publish と段 2 から落とした物が使う）。もう同じ鍵があれば何もしない。

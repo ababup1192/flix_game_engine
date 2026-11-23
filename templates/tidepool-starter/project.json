@@ -79,6 +79,19 @@
       "looping": true
     }
   ],
+  "// shots": "render の場面の名前（source of truth は Shots.names。ここは bin/fge render の使い方に出す写し）。場面を足したら Shots.names と一緒にここも足す",
+  "shots": ["title", "play", "flood", "dam", "clear", "washed", "ending", "quit"],
+  "// prebuild": "bin/fge の run・render の前に、deps のどれかが out より新しければ entry を流して作り直す物",
+  "prebuild": [
+    {"out": "assets/tidepool.palette.json", "deps": ["assets/tidepool.theme.json", "assets/tidepool.sprite.json", "src/Palette.flix", "src/ThemeDoc.flix"], "entry": "Palette.write"}
+  ],
+  "// tasks": "ゲーム固有の作業（bin/fge task <名前> [K=V…]・Makefile に別名があれば make <名前> も）。entry はヘッドレスの入口・cmd はコマンドの並び・env は K=V の既定",
+  "tasks": {
+    "palette": {"entry": "Palette.write", "about": "Studio が読む色の写し（assets/tidepool.palette.json）を無条件に作り直す（入力が新しい時は render の前に prebuild が作り直す）"},
+    "solve": {"entry": "Solve.main", "about": "面を解いて最少手数・解き方・面の指紋を assets/tidepool.levels.json に書く（深さは SOLVE_DEPTH）", "env": {"SOLVE_DEPTH": "40"}}
+  },
+  "// precommit": "pre-commit で流す物の名前（tasks の名前か engine の検査の名前）",
+  "precommit": ["lint-flixlint"],
   "editor": {
     "resources": [
       {

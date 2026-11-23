@@ -89,14 +89,6 @@ func isFile(path string) bool {
 	return err == nil && info.Mode().IsRegular()
 }
 
-func isExec(path string) bool {
-	info, err := os.Stat(path)
-	if err != nil || !info.Mode().IsRegular() {
-		return false
-	}
-	return info.Mode().Perm()&0o111 != 0
-}
-
 func seconds(v float64) time.Duration {
 	return time.Duration(v * float64(time.Second))
 }

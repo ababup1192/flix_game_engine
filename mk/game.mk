@@ -40,9 +40,6 @@ endif
 # WhyNot: Windows で lib/cache を張らない — symlink は開発者モードでないと張れない。今まで通り lib/cache に取る。
 ifeq ($(OS),Windows_NT)
 JAVA   ?= java
-# checkd は flix.jar の場所を bash ラッパー (bin/flix) から引くので、Windows の JAVA+flix.jar 経路では
-# 引けない。checkd が教わるまで Windows では素の check を使う。
-CHECKD := 0
 # -Xss64m: View の式が深く入れ子になると、既定のスタックでは型検査が StackOverflow で落ちる。
 # WhyNot: --sun-misc-unsafe-memory-access を付けない — ここの java は Studio が同梱する JRE 21 のことがあり、
 # 21 はこの旗を知らず起動しない（版を見て付けるのは bash の bin/flix と headless-run だけ）。
@@ -93,16 +90,18 @@ include $(subst $(fge_space),\$(fge_space),$(ENGINE))/mk/common.mk
 # SHOT=<場面> を付けると、ギャラリーの 1 枚（gallery/<場面>.png）と同じ World から DEBUG の起動で開き、F8 で止めた状態でウィンドウが出る
 # （START=shot:<場面>。場面の名前は make render の SHOTS と同じ・App.withShots）。F8 で動き出す。
 # WhyNot: kill でゲームの pid だけを止めない — headless-run が java を子として起こすので、子が残る。プロセスの組ごと止める。
-SHOT_ENV = $(if $(SHOT),START="shot:$(SHOT)" DEBUG=1)
+# run・debug・render・render-all・check・test・flow の中身は bin/fge（Go）が持ち、ここは別名（Windows は make 無しで bin/fge を打つ）。
+# FGE_RUN は、ゲームに配った bin/fge がこれらを持たない古い物なら engine の bin/fge を使う。ENGINE はこの make と同じ engine を渡す。
+FGE_RUN = fge=bin/fge; "$$fge" --list 2>/dev/null | grep -qx headless || fge="$(ENGINE)/bin/fge"; ENGINE="$(ENGINE)" "$$fge"
 run: ## [SHOT=<場面>] [RUN_SECONDS=N] | ゲームを起動する（SHOT はギャラリーの 1 枚と同じ World から F8 で止めた状態で開く）
 ifeq ($(RUN_SECONDS),)
-	$(SHOT_ENV) $(PLAY_RUN)
+	@$(FGE_RUN) run $(if $(SHOT),SHOT="$(SHOT)")
 else
-	@$(SHOT_ENV) perl -e '$$t = shift; $$p = fork; if (!$$p) { setpgrp(0, 0); exec @ARGV } $$timed = 0; $$SIG{ALRM} = sub { $$timed = 1; kill "TERM", -$$p; sleep 2; kill "KILL", -$$p }; alarm $$t; waitpid($$p, 0); exit($$timed ? 0 : $$? >> 8)' $(RUN_SECONDS) sh -c '$(PLAY_RUN)'
+	@perl -e '$$t = shift; $$p = fork; if (!$$p) { setpgrp(0, 0); exec @ARGV } $$timed = 0; $$SIG{ALRM} = sub { $$timed = 1; kill "TERM", -$$p; sleep 2; kill "KILL", -$$p }; alarm $$t; waitpid($$p, 0); exit($$timed ? 0 : $$? >> 8)' $(RUN_SECONDS) sh -c '$(FGE_RUN) run $(if $(SHOT),SHOT="$(SHOT)")'
 endif
 
 debug: ## | 保存即反映（watchFile）と F8 を有効にして起動する
-	DEBUG=true $(PLAY_RUN)
+	@$(FGE_RUN) debug
 
 # check の全文は .test-logs/check.log に落とし、画面には要約だけ出す:
 # 成功 = 1 行、失敗 = 最初のエラー全文 + 残りの file:line 一覧 + 処方箋 1 行
@@ -110,19 +109,7 @@ debug: ## | 保存即反映（watchFile）と F8 を有効にして起動する
 # check は bin/fge checkd が flixlint の常駐（lint・refactor の索引と同じ）に頼み、答えの版をディスクと比べて使う。
 # CHECKD=0 make check で素の check。
 check: ## [CHECKD=0] [QUIET=0] | 型検査だけ（一番速い確認。常駐が居れば 2 回目からサブ秒）
-	@mkdir -p .test-logs
-	@$(FGE_PICK); \
-	if [ "$(CHECKD)" != "0" ] && [ -x "$$fge" ]; then \
-		"$$fge" checkd . > .test-logs/check.log 2>&1; code=$$?; \
-	else \
-		$(FLIX) check > .test-logs/check.log 2>&1; code=$$?; \
-	fi; \
-	if [ "$(QUIET)" = "0" ] || [ ! -x "$$fge" ]; then \
-		cat .test-logs/check.log; \
-	else \
-		"$$fge" explain-error --status $$code --log .test-logs/check.log < .test-logs/check.log; \
-	fi; \
-	exit $$code
+	@$(FGE_RUN) check $(if $(CHECKD),CHECKD="$(CHECKD)") $(if $(QUIET),QUIET="$(QUIET)")
 
 # 出力は .test-logs/test.log に落とし、緑なら末尾 5 行だけ見せる。
 # make status が「最後にいつ・緑か赤か」をこの記録から読む。
@@ -131,15 +118,7 @@ check: ## [CHECKD=0] [QUIET=0] | 型検査だけ（一番速い確認。常駐�
 # 初期化が check と lint の常駐を巻き込む。常駐で組んで別の JVM で流す形も測ったが縮まず、コード生成でヒープが
 # 常駐の線を超えた（flixlint の docs/design/checkd-freshness.md の C-T の記録）。
 test: ## | テストを headless で流す（記録は .test-logs/）
-	@mkdir -p .test-logs; rm -f .test-logs/test.fail
-	@export JAVA_TOOL_OPTIONS="-Djava.awt.headless=true"; \
-	if [ -x "$(ENGINE)/bin/with-sample-tests" ]; then "$(ENGINE)/bin/with-sample-tests" . $(FLIX) test > .test-logs/test.log 2>&1; \
-	else $(FLIX) test > .test-logs/test.log 2>&1; fi; \
-	if [ $$? = 0 ]; then \
-		tail -5 .test-logs/test.log; \
-	else \
-		touch .test-logs/test.fail; tail -40 .test-logs/test.log; exit 1; \
-	fi
+	@$(FGE_RUN) test
 
 build: ### | パッケージをビルドする
 	$(FLIX) build
@@ -208,10 +187,13 @@ endif
 
 ##@ 描き出し
 # 色票を持つゲームでは、入力が変わっていれば先に作り直してから描く。
+# パレットなどの作り置きは、project.json の prebuild なら bin/fge が先に作り直す（PALETTE は project.json に移す前のゲームの分）。
 render-all: $(PALETTE) ## | 全部 gallery/ へ描き出す（決定的）
-	$(HEADLESS_RUN) SceneRender.all; rc=$$?; $(RESIDENT_STOP); exit $$rc
+	@$(FGE_RUN) render --all
 
 # 1 枚だけ debug/<場面>.png へ描き出す（gallery/ は render-all だけが書く）。
+# SHOTS を決めていないゲームは project.json の shots を読む（help の一覧と使い方に出す）。
+SHOTS ?= $(shell fge=bin/fge; "$$fge" --list 2>/dev/null | grep -qx headless || fge="$(ENGINE)/bin/fge"; "$$fge" render --list 2>/dev/null)
 render: ## SHOT=<場面> | 1 枚だけ debug/<場面>.png へ描き出す（場面の名前は一覧の最後）
 	@if [ -z "$(SHOT)" ]; then \
 		echo "usage: make render SHOT=<場面>   1 枚だけ debug/<場面>.png へ描き出す"; \
@@ -221,7 +203,7 @@ render: ## SHOT=<場面> | 1 枚だけ debug/<場面>.png へ描き出す（場�
 		$(if $(RENDER_NOTE),echo "  $(RENDER_NOTE)";) \
 		exit 1; \
 	fi
-	SHOT="$(SHOT)" $(HEADLESS_RUN) SceneRender.one
+	@$(FGE_RUN) render SHOT="$(SHOT)"
 
 # 音を目視できる 1 枚にする (debug/sounds.png と、BGM の WAV があれば debug/music.png)。
 # 1 音 1 段で、波形とスペクトログラムに名前・長さ・サンプルレート・ピーク振幅が付く。
@@ -375,7 +357,7 @@ check-docs-sync: ### | 規約の配線ずれの軽い検査（CLAUDE.md・AGENTS
 # 語彙 e2e/vocab.json は毎回書き直す（bin/fge flow check が JVM なしで読む）。
 flow: ## FLOW=e2e/<名前>.flow | flow を画面なしで最後まで流す（失敗は行番号つき。読むだけなら bin/fge flow check）
 	@[ -n "$(FLOW)" ] || { echo "使い方: make flow FLOW=e2e/<名前>.flow（読むだけなら bin/fge flow check）"; exit 2; }
-	FLOW="$(FLOW)" FLOW_MODE=run $(HEADLESS_RUN) E2e.play
+	@$(FGE_RUN) flow run "$(FLOW)"
 
 flow-vocab: ### | flow の語彙 e2e/vocab.json を書き直す（bin/fge flow check が読む）
 	$(HEADLESS_RUN) E2e.vocab

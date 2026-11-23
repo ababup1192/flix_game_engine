@@ -13,8 +13,8 @@
 FGE_VERSION := $(shell sed -n 's/^"github:ababup1192\/flix_game_engine"[^}]*version *= *"\([0-9.]*\)".*/\1/p' flix.toml)
 ENGINE ?= $(if $(and $(wildcard ../../mk/game.mk),$(wildcard ../../templates)),../..,$(or $(FGE_HOME),$(HOME)/.flix_ge)/engines/$(FGE_VERSION))
 
-# 描き出せる場面の名前（source of truth は Shots.names。ここは使い方に出す写し）。
-SHOTS := title nvl adv choice eaves studio invite ending still log load settings credits
+# 描き出せる場面の名前（render の使い方に出す写し）と、パレットの作り置き・ゲーム固有の作業は project.json の
+# shots・prebuild・tasks に書く（bin/fge が読むので Windows でも同じ。make <作業> は bin/fge task <作業> の別名）。
 
 # ENGINE の場所が違うと include ごと落ち、make は「そんなファイルは無い」としか言わない。
 # 先に自前で見て、直し方の 1 行を出してから止める（この検査が無いと make status も塞がる）。
@@ -50,7 +50,7 @@ showcase-video:
 # 元の絵を縮めて縁を埋めるのは python3 art/cast/prepare.py <元の絵の置き場>（Pillow が要る）。
 .PHONY: lint-cast
 lint-cast:
-	$(PYTHON3) art/cast/lint.py
+	@$(FGE_RUN) task lint-cast
 
 lint: lint-cast
 

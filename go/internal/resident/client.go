@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ababup1192/flix_game_engine/go/internal/headlessjar"
 	"github.com/ababup1192/flix_game_engine/go/internal/hooks"
 )
 
@@ -457,7 +458,8 @@ func (c *client) spawn(java string) (int, error) {
 	if java == "" {
 		java = "java"
 	}
-	if _, err := os.Stat(filepath.Join(c.root, "build", "headless", "headless.jar")); err != nil {
+	jar := headlessjar.Path(c.root)
+	if _, err := os.Stat(jar); err != nil {
 		return 0, errors.New("build/headless/headless.jar が無い")
 	}
 	outPath := filepath.Join(c.root, spawnOut)
@@ -465,7 +467,7 @@ func (c *client) spawn(java string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	cmd := exec.Command(java, JavaArgs(c.env["HEADLESS_JAVA_OPTS"], c.cfg.HeapCapMB(c.env))...)
+	cmd := exec.Command(java, JavaArgs(c.env["HEADLESS_JAVA_OPTS"], c.cfg.HeapCapMB(c.env), jar)...)
 	cmd.Dir = c.root
 	cmd.Env = SpawnEnv(c.env, c.cfg.ResidentEntry(c.env), c.env["HEADLESS_ENTRIES"])
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, f, f

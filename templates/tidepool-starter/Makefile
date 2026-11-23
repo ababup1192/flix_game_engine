@@ -1,7 +1,7 @@
 # ゲーム開発の入口。
 #   make        … ゲームを起動する（ウィンドウが開く）
 #   make help   … 共通の口の一覧（run / test / check / 描き出し / status …）
-#   make palette … Studio 用の色の写し(assets/tidepool.palette.json)を無条件に作り直す
+#   bin/fge task palette … Studio 用の色の写し(assets/tidepool.palette.json)を無条件に作り直す
 #   make solve   … 面を解いて最少手数・解き方・面の指紋を assets/tidepool.levels.json に書く（深さは SOLVE_DEPTH）
 #   make video   … 遊ぶ所を音つきの動画にする = debug/video/tidepool.mp4（題名 → 面 1・3・5 → 全面クリア。VIDEO_FPS=30 か 60）
 #
@@ -15,16 +15,8 @@
 FGE_VERSION := $(shell sed -n 's/^"github:ababup1192\/flix_game_engine"[^}]*version *= *"\([0-9.]*\)".*/\1/p' flix.toml)
 ENGINE ?= $(if $(and $(wildcard ../../mk/game.mk),$(wildcard ../../templates)),../..,$(or $(FGE_HOME),$(HOME)/.flix_ge)/engines/$(FGE_VERSION))
 
-# Studio 用の色の写し。入力（テーマ・sprite の Doc と、色を解く側のコード）が
-# 写しより新しいときだけ作り直す。flix run は 1 回ごとにパッケージ全体をコンパイルし直すので、
-# render のたびに無条件で走らせると、絵を描くのと同じだけのコンパイル時間を二重に払う。
-# 入力の洗い出しに漏れがあったときは `make palette` で無条件に作り直す。
-PALETTE      := assets/tidepool.palette.json
-PALETTE_DEPS := assets/tidepool.theme.json assets/tidepool.sprite.json \
-                src/Palette.flix src/ThemeDoc.flix
-# 描き出せる場面の名前（source of truth は Shots.names。ここは使い方に出す写し）。
-# 場面を足したら Shots.names と一緒にここも足す。
-SHOTS := title play flood dam clear washed ending quit
+# 描き出せる場面の名前（render の使い方に出す写し）と、パレットの作り置き・ゲーム固有の作業は project.json の
+# shots・prebuild・tasks に書く（bin/fge が読むので Windows でも同じ。make <作業> は bin/fge task <作業> の別名）。
 
 # ENGINE の場所が違うと include ごと落ち、make は「そんなファイルは無い」としか言わない。
 # 先に自前で見て、直し方の 1 行を出してから止める（この検査が無いと make status も塞がる）。
@@ -46,11 +38,10 @@ include $(subst $(space),\$(space),$(ENGINE))/mk/game.mk
 
 .PHONY: solve video
 
-# 面ごとに、深さ SOLVE_DEPTH までの幅優先で最少手数と手の列を探し、levels の Doc に par・solution・solvedHash を書く。
+# 面ごとに、深さ SOLVE_DEPTH（既定は project.json の tasks.solve）までの幅優先で最少手数と手の列を探し、levels の Doc に par・solution・solvedHash を書く。
 # 重いのでテストの道から外してある（テストは solvedHash が今の面の中身と同じかだけを見る）。
-SOLVE_DEPTH ?= 40
 solve:
-	SOLVE_DEPTH=$(SOLVE_DEPTH) $(HEADLESS_RUN) Solve.main
+	@$(FGE_RUN) task solve
 
 # コミットで .flix か lint/ を触ったら、lint/rules.flix の決まり（依存の向き・View が World を受けない・テストの形）も見る。
 # flixlint を取れない時（オフラインの初回など）は止めずに知らせる（make lint-flixlint で後から流せる）。

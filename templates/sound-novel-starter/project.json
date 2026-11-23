@@ -105,6 +105,14 @@
       "looping": false
     }
   ],
+  "// shots": "render の場面の名前（source of truth は Shots.names。ここは bin/fge render の使い方に出す写し）。場面を足したら Shots.names と一緒にここも足す",
+  "shots": ["title", "nvl", "adv", "choice", "eaves", "studio", "invite", "ending", "still", "log", "load", "settings", "credits"],
+  "// tasks": "ゲーム固有の作業（bin/fge task <名前> [K=V…]・Makefile に別名があれば make <名前> も）。entry はヘッドレスの入口・cmd はコマンドの並び・env は K=V の既定",
+  "tasks": {
+    "lint-cast": {"cmd": ["python3", "art/cast/lint.py"], "about": "立ち絵と小物（assets/novel.cast.json）の絵の登録と縦横の比を見る（読むだけ・標準の python3 で足りる）"}
+  },
+  "// lint": "make lint に足す作業の名前（中身は tasks）",
+  "lint": ["lint-cast"],
   "editor": {
     "resources": [
       {

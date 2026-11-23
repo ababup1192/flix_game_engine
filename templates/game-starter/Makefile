@@ -1,7 +1,7 @@
 # ゲーム開発の入口。
 #   make        … ゲームを起動する（ウィンドウが開く）
 #   make help   … 共通の口の一覧（run / test / check / 描き出し / status …）
-#   make palette … Studio 用の色の写し(assets/__NAME__.palette.json)を無条件に作り直す
+#   bin/fge task palette … Studio 用の色の写し(assets/__NAME__.palette.json)を無条件に作り直す
 #   make atelier-preview … atelier/ の候補と assets/ の現行を debug/atelier/ に描き出す
 #
 # engine の場所は次の順で決まる（Go の道具の ResolveEngineDir と同じ決まり）:
@@ -14,16 +14,8 @@
 FGE_VERSION := $(shell sed -n 's/^"github:ababup1192\/flix_game_engine"[^}]*version *= *"\([0-9.]*\)".*/\1/p' flix.toml)
 ENGINE ?= $(if $(and $(wildcard ../../mk/game.mk),$(wildcard ../../templates)),../..,$(or $(FGE_HOME),$(HOME)/.flix_ge)/engines/$(FGE_VERSION))
 
-# Studio 用の色の写し。入力（テーマ・sprite の Doc と、色を解く側のコード）が
-# 写しより新しいときだけ作り直す。flix run は 1 回ごとにパッケージ全体をコンパイルし直すので、
-# render のたびに無条件で走らせると、絵を描くのと同じだけのコンパイル時間を二重に払う。
-# 入力の洗い出しに漏れがあったときは `make palette` で無条件に作り直す。
-PALETTE      := assets/__NAME__.palette.json
-PALETTE_DEPS := assets/__NAME__.theme.json assets/__NAME__.sprite.json \
-                src/Palette.flix src/ThemeDoc.flix
-# 描き出せる場面の名前（source of truth は Shots.names。ここは使い方に出す写し）。
-# 場面を足したら Shots.names と一緒にここも足す。
-SHOTS := main quit
+# 描き出せる場面の名前（render の使い方に出す写し）と、パレットの作り置き・ゲーム固有の作業は project.json の
+# shots・prebuild・tasks に書く（bin/fge が読むので Windows でも同じ。make <作業> は bin/fge task <作業> の別名）。
 
 # ENGINE の場所が違うと include ごと落ち、make は「そんなファイルは無い」としか言わない。
 # 先に自前で見て、直し方の 1 行を出してから止める（この検査が無いと make status も塞がる）。
@@ -44,9 +36,8 @@ space := $(subst ,, )
 include $(subst $(space),\$(space),$(ENGINE))/mk/game.mk
 
 .PHONY: atelier-preview
-
 atelier-preview:
-	JAVA_TOOL_OPTIONS="-Djava.awt.headless=true" $(FLIX) run --entrypoint SceneRender.atelier
+	@$(FGE_RUN) task atelier-preview
 
 # コミットで .flix か lint/ を触ったら、lint/rules.flix の決まり（依存の向き・View が World を受けない・テストの形）も見る。
 # flixlint を取れない時（オフラインの初回など）は止めずに知らせる（make lint-flixlint で後から流せる）。

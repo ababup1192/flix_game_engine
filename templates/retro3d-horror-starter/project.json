@@ -155,6 +155,16 @@
       "looping": false
     }
   ],
+  "// shots": "render の場面の名前（source of truth は Shots.names。ここは bin/fge render の使い方に出す写し）。場面を足したら Shots.names と一緒にここも足す",
+  "shots": ["entrance", "corridor", "classroom", "stairs", "map", "map2f", "talk_girl", "talk_teacher", "talk_bright", "hint", "hint_bright", "idle_controls", "quit", "door_locked", "pickup_key", "items"],
+  "// tasks": "ゲーム固有の作業（bin/fge task <名前> [K=V…]・Makefile に別名があれば make <名前> も）。entry はヘッドレスの入口・cmd はコマンドの並び・env は K=V の既定",
+  "tasks": {
+    "sfx": {"entry": "SfxRender.write", "about": "効果音を全部合成して assets/sfx/ へ書く（足音・戸・時計・空気・風・拾う・紙）"},
+    "bundles": {"cmd": ["python3", "tools/glb_bundle.py"], "about": "校舎の glb を、絵を重ねて持たない束 assets/school/bundle/*.glb へまとめる（元の glb か layout.json を替えたら流す）"},
+    "bundles-check": {"cmd": ["python3", "tools/glb_bundle.py", "--check"], "about": "束 assets/school/bundle/*.glb が元の glb と layout.json から作った物と同じかを見る"}
+  },
+  "// precommit": "pre-commit で流す物の名前（tasks の名前か engine の検査の名前）",
+  "precommit": ["lint-flixlint"],
   "editor": {
     "resources": [
       {

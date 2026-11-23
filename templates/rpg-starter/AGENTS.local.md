@@ -89,7 +89,7 @@ case を足して `make check` を流すと、触る所をコンパイラが並�
 
 | やりたいこと | 触る所 |
 |---|---|
-| 敵を足す | `assets/rpg.foes.json` に 1 行、技は `rpg.foe_moves.json`、組はマップの `encounter` に足す（数は `make balance` の ⚠ を見て Doc で直す） |
+| 敵を足す | `assets/rpg.foes.json` に 1 行、技は `rpg.foe_moves.json`、組はマップの `encounter` に足す（数は `bin/fge task balance`（macOS と Linux は `make balance` も） の ⚠ を見て Doc で直す） |
 | 色違いの敵を足す | `assets/rpg.recolors.json` に 1 行足し、敵の行の `recolor` に書く |
 | 敵の技（act）を足す | `FoeMovesDoc.Act` の case と `actOf` / `actNames` に足し、`BattleActs.foeTurn` と `foe_moves.schema.json` を埋める |
 | 戦いのコマンドを足す | `World.BattleCommand` の case を足し、`make check` が並べる所（`WorldBattle.isCommandOpen` / `confirmCommand`・`ViewBattle.battleCommandTextOf`）と `Battle.Plan` を埋める |
@@ -101,7 +101,7 @@ case を足して `make check` を流すと、触る所をコンパイラが並�
 | 戦いで使える道具 | `rpg.items.json` の use の行に `heal` / `mpHeal`（仲間 1 人）か `burn`（敵 1 体）。どれも無い use の物は戦いの一覧で灰色（`Battle.isBattleItem`） |
 | 戦いのコマンドのページを足す | `World.CommandPage` の case を足し、`make check` が並べる所（`WorldBattle.pageLengthOf` / `withCursor` / `cursorOf` / `parentOf` / `confirm`・`ViewBattle.sideOf`・`BotBattle.wantedRowOf`・`E2e.commandPageOf`）を埋める |
 | 戦いの間の仲間とふくろ | `Battle.Rec` の `party` と `bag` が正（World へは `WorldBattle.leave` が勝ち・逃げ・全滅のどれでも書き戻す） |
-| ボス（逃げられない固定の戦い・HP で技を替える） | マップの `objects` に `guard`（`sprite` は敵の絵。大きい絵は下端の中央をマスに合わせて上と左右に重なる）と会話の `<<fight 敵 勝ちのノード>>`、敵の行に `noFlee` と `phase2At`（割合）、技は `rpg.foe_moves.json` の `phase` 2 の行（HP が切った手番の後のターンから。`BattleActs.foeActsOf`）。勝ちのノードで `<<open id>>`・`<<quest defeat>>`・`<<warp>>`（手本 `Boss` / `BossWon`。数は `make balance` のボスの区間 `BalanceSim.bossAt`） |
+| ボス（逃げられない固定の戦い・HP で技を替える） | マップの `objects` に `guard`（`sprite` は敵の絵。大きい絵は下端の中央をマスに合わせて上と左右に重なる）と会話の `<<fight 敵 勝ちのノード>>`、敵の行に `noFlee` と `phase2At`（割合）、技は `rpg.foe_moves.json` の `phase` 2 の行（HP が切った手番の後のターンから。`BattleActs.foeActsOf`）。勝ちのノードで `<<open id>>`・`<<quest defeat>>`・`<<warp>>`（手本 `Boss` / `BossWon`。数は `bin/fge task balance` のボスの区間 `BalanceSim.bossAt`） |
 | 勝った後の経験値・レベルアップ | 式は `Battle.resolveVictory`（全滅の 1 枚は `Battle.wipedBeat`）。表と伸びは `rpg.party.json` の `exp` と `hpUp…agiUp` |
 
 ### 入力・Doc・乱数
@@ -129,10 +129,10 @@ case を足して `make check` を流すと、触る所をコンパイラが並�
 | 仕掛けの途中から始める | Starts の field に `flags=`（旗）・`opened=`（立つマップの開けた物・点けた水晶）・`rocks=id:x:y`（動かした岩）・`light=`（たいまつの残り） |
 | e2e を足す | `e2e/<名前>.flow` を書いて `make flow FLOW=e2e/<名前>.flow`（戦いの問いは `foes`・`mp`（仲間の MP の合計）・`page`（コマンドのページ）。手本 `e2e/battle_magic.flow`） |
 | 描き出す場面を足す | `Shots.names` / `Shots.worldOf` と Makefile の `SHOTS` に足す（場面を進めるのは `Drive.play` でキーを流す）。足した場面は実機でも `START=shot:<場面>` で開ける（`Shots.all` を `Game` が `App.withShots` で繋ぐ） |
-| テストプレイ（bot・つり合い） | `make bot`（`Bot.goalOf` の表）・`make balance`（`BalanceSim.sectionTable`。区間のふくろも書く）。道筋の表は `Bot`・道の計算は `BotRoute`・戦いの方針は `BotBattle.battlePlans` の 1 か所（BalanceSim も同じ物を回す。ボスの行の見比べは `BotBattle.attackOnlyPlans`）。依存は Bot → BotRoute・BotBattle の一方通行。流れを変えたら `Bot.goalOf` も直す。最終の数は `docs/balance.md` に写す（debug/ は git に入らない）。岩の部屋は押す手を `Bot.rockPlanOf` に、トロッコとレバーは歩いて着けない時に `BotRoute.detourOf` が自分で選ぶ。1 周の人の目安はレポートの「人の目安」（歩き + 戦い × 33 秒 + ウィンドウ × 3 秒） |
+| テストプレイ（bot・つり合い） | `bin/fge task bot`（macOS と Linux は `make bot` も）（`Bot.goalOf` の表）・`bin/fge task balance`（`BalanceSim.sectionTable`。区間のふくろも書く）。道筋の表は `Bot`・道の計算は `BotRoute`・戦いの方針は `BotBattle.battlePlans` の 1 か所（BalanceSim も同じ物を回す。ボスの行の見比べは `BotBattle.attackOnlyPlans`）。依存は Bot → BotRoute・BotBattle の一方通行。流れを変えたら `Bot.goalOf` も直す。最終の数は `docs/balance.md` に写す（debug/ は git に入らない）。岩の部屋は押す手を `Bot.rockPlanOf` に、トロッコとレバーは歩いて着けない時に `BotRoute.detourOf` が自分で選ぶ。1 周の人の目安はレポートの「人の目安」（歩き + 戦い × 33 秒 + ウィンドウ × 3 秒） |
 | 描き出しの場面の作り方 | どの場面も `Shots.worldOf` で Starts から組んで決まった手（`Drive.play`・`confirmTimes`・`playSeconds`）を進めた World を、実機と同じ `View.frame` / `hud` で描く（直に組んだ絵の場面は無い） |
 | 紹介の動画（`make video`） | 手は `e2e/video.flow`（区間ごとに `start` で始め直し、撮るのは `mark in_<名前>` から `mark out_<名前>` の間だけ）。区間を足す・替えるのはこの flow だけ（`make flow FLOW=e2e/video.flow` で手が通るかを先に見る）。描くのは `VideoRender`（`SceneRender.worldItems` と同じ絵）・出力は `debug/video/rune.mp4` |
-| 通しの手を流し直す | `make bot` の 1 本目が `debug/bot/playthrough.flow` を書く（区間の頭ごとに `mark` と `expect`）。`make flow FLOW=debug/bot/playthrough.flow` でタイトルからエンディングまで同じ指紋で流れる（bot の 1 フレームはナノ秒に丸めた 1/60 秒 = `BotRun.dt`） |
+| 通しの手を流し直す | `bin/fge task bot` の 1 本目が `debug/bot/playthrough.flow` を書く（区間の頭ごとに `mark` と `expect`）。`bin/fge flow run debug/bot/playthrough.flow`（`make flow FLOW=…` も） でタイトルからエンディングまで同じ指紋で流れる（bot の 1 フレームはナノ秒に丸めた 1/60 秒 = `BotRun.dt`） |
 | 古い書き方を止める | 1 行の正規表現は `bin/lint-rules/forbid.local.json`、型と呼び出しの向きは `lint/rules.flix`（`make lint-flixlint`） |
 
 ## この画面の画風
