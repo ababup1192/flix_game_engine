@@ -21,15 +21,26 @@ pub mod Flow.SaveLoad {
 
     /// 2 本の結果を比べる: 両方通り、問いの値が毎フレーム同じで、フレームの数と最後のセーブが同じなら Ok(1 行の知らせ)、違えば Err(出す行の列)。
     /// path は FAIL の行に載せる flow の名前。読み直した流れが止まった時も、そこまでに問いが分かれていればその行を足す。
+    /// unsaved に probes に無い名前があれば、流した結果を見る前に止める。
     pub def compareRuns(app: App.App[w, ef], path: String,
                         plain: Result[Flow.Failure[w], Flow.Outcome[w]], reloaded: Result[Flow.Failure[w], Flow.Outcome[w]]): Result[List[String], String] =
-        match (plain, reloaded) {
-            case (Err(failure), _) =>
+        let unknown = unknownUnsaved(app);
+        match (plain, reloaded, App.rec(app)#flow#saveRoundTrip) {
+            case (_, _, None) => Err("FAIL ${path}: saveload の行があるが flow の表（App.withFlow）に saveRoundTrip が無い" :: Nil)
+            case _ if not List.isEmpty(unknown) =>
+                Err("FAIL ${path}: saveRoundTrip の unsaved に問い（probes）に無い名前がある: ${String.intercalate("・", unknown)}（問いの名前を変えたら unsaved も直す）" :: Nil)
+            case (Err(failure), _, _) =>
                 Err("FAIL ${failure#at#file}:${Int32.toString(failure#at#number)}: 読み直さない流れが止まった: ${failure#why}" :: Nil)
-            case (Ok(a), Err(failure)) =>
+            case (Ok(a), Err(failure), _) =>
                 Err(stoppedLines(failure) ::: probeLines(path, firstProbeDiff(app, a, failure#upTo)))
-            case (Ok(a), Ok(b)) => sameRuns(app, path, a, b)
+            case (Ok(a), Ok(b), Some(trip)) => sameRuns(app, trip, path, a, b)
         }
+
+    /// unsaved に挙げたのに probes に無い名前（挙げた順）。
+    pub def unknownUnsaved(app: App.App[w, ef]): List[String] =
+        let flow = App.rec(app)#flow;
+        let names = flow#probes |> List.map(row -> row#name) |> List.toSet;
+        flow#saveRoundTrip |> Option.map(rt -> rt#unsaved) |> Option.getWithDefault(Nil) |> List.filter(name -> not Set.memberOf(name, names))
 
     def stoppedLines(failure: Flow.Failure[w]): List[String] =
         ("FAIL ${failure#at#file}:${Int32.toString(failure#at#number)}: saveload で読み直した流れが止まった: ${failure#why}") ::
@@ -41,17 +52,28 @@ pub mod Flow.SaveLoad {
               |> Option.getWithDefault(Nil)
 
     /// 両方通った 2 本: 問いの値・フレームの数・最後のセーブ。
-    def sameRuns(app: App.App[w, ef], path: String, a: Flow.Outcome[w], b: Flow.Outcome[w]): Result[List[String], String] =
+    def sameRuns(app: App.App[w, ef], trip: Flow.SaveRoundTrip[w], path: String, a: Flow.Outcome[w], b: Flow.Outcome[w]): Result[List[String], String] =
         let (n, m) = (List.length(a#frames), List.length(b#frames));
         let countLines = if (n == m) Nil else
             ("FAIL ${path}: saveload で読み直した流れと読み直さない流れで、フレームの数が違う: ${Int32.toString(n)} → ${Int32.toString(m)}") :: Nil;
-        let last = compareLast(App.rec(app)#flow#saveRoundTrip, a#last, b#last);
+        let last = compareLast(trip, a#last, b#last);
         let saveLines = match last {
             case Ok(_)     => Nil
             case Err(diff) => ("FAIL ${path}: saveload で読み直した流れと読み直さない流れで、最後のセーブが違う") :: "    ${diff}" :: Nil
         };
         let lines = probeLines(path, firstProbeDiff(app, a, b)) ::: countLines ::: saveLines;
-        if (List.isEmpty(lines)) Ok("読み直した流れも通り、問いの値が毎フレーム同じで、${Result.getWithDefault("", last)}") else Err(lines)
+        let note = "読み直した流れも通り、問いの値が毎フレーム同じで、${Result.getWithDefault("", last)}" + unsavedNote(app, trip, a, b);
+        if (List.isEmpty(lines)) Ok(note) else Err(lines)
+
+    /// unsaved として比べなかった問いと、2 本で分かれたか（最初に分かれた値）。挙げていなければ空。
+    def unsavedNote(app: App.App[w, ef], trip: Flow.SaveRoundTrip[w], a: Flow.Outcome[w], b: Flow.Outcome[w]): String =
+        let pairs = List.zip(Flow.worldsOf(a), Flow.worldsOf(b));
+        let splitOf = name -> pairs |> List.map(match (x, y) -> (Flow.valueOf(app, name, x), Flow.valueOf(app, name, y)))
+            |> List.find(match (x, y) -> x != y)
+            |> Option.map(match (x, y) -> "分かれた: ${showValue(x)} → ${showValue(y)}")
+            |> Option.getWithDefault("分かれなかった");
+        let rows = trip#unsaved |> List.map(name -> "${name}（${splitOf(name)}）");
+        if (List.isEmpty(rows)) "" else "。unsaved として比べなかった問い: " + String.intercalate("・", rows)
 
     /// 2 本の流れを同じフレームどうしで並べ、問い（unsaved に挙げた物を除く probes）の値が最初に分かれたフレームと、分かれた問い。
     /// WhyNot: World 全体（WorldHash）を比べない — 読み直しで 0 に戻るアニメの時計やカメラ、読んだセーブの写しのような
@@ -82,9 +104,8 @@ pub mod Flow.SaveLoad {
     }
 
     /// 2 本の流れの最後の World のセーブを比べる。同じなら Ok(そのセーブの字の長さの説明)、違えば Err(違うキー)。
-    pub def compareLast(trip: Option[Flow.SaveRoundTrip[w]], plain: w, reloaded: w): Result[String, String] =
-        let saveOf = world -> trip |> Option.flatMap(rt -> (rt#save)(world));
-        match (saveOf(plain), saveOf(reloaded)) {
+    pub def compareLast(trip: Flow.SaveRoundTrip[w], plain: w, reloaded: w): Result[String, String] =
+        match ((trip#save)(plain), (trip#save)(reloaded)) {
             case (None, None)       => Ok("どちらもセーブを書かない場面で終わった")
             case (Some(a), Some(b)) => if (a == b) Ok("最後のセーブが同じ（${Int32.toString(String.length(a))} 字）") else Err(diffText(a, b))
             case (Some(_), None)    => Err("読み直した流れの最後はセーブを書かない場面（読み直さない流れは書く）")

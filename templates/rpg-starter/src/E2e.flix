@@ -56,7 +56,7 @@ mod E2e {
           drives =
               { name = "battle", doc = "戦いを先へ送る: 伝言とコマンドの間は 0.2 秒ごとに決定（コマンドは たたかう・的は先頭の敵）。戦いでなければ待つ",
                 act = (waited, h) -> battleDrive(waited, Resources.read((_, w) -> w, h)) } :: Nil,
-          // saveload: 書くのは実機の addOutput と同じ字・読むのはタイトルで「つづきから」を選んだのと同じ道。saved（セーブの回数）はセーブに書かない。
+          // WhyNot: saved（セーブの回数）を比べない — セーブに書かない値で、読み直すと 0 に戻る。
           saveRoundTrip = Some({ save = onWorld(w -> w#save |> Option.map(Saves.toText)), load = continueFrom, unsaved = "saved" :: Nil })
           | Flow.emptyTable() }
 

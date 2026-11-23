@@ -148,6 +148,15 @@ mod TestFlowSaveLoad {
         Assert.assertTrue(Result.isOk(judged({ probes = "n" :: "spin" :: Nil, unsaved = "spin" :: Nil | setupOf(loadFaithful) }, markOnce())))
 
     @Test
+    def testUnsavedNameMissingFromProbesStops(): Unit \ {Assert, Fs.FileRead} =
+        Assert.assertTrue(anyContains("unsaved に問い（probes）に無い名前がある: spin", failLines(judged({ unsaved = "spin" :: Nil | setupOf(loadFaithful) }, markOnce()))))
+
+    @Test
+    def testOkLineNamesTheUnsavedProbeAndItsSplit(): Unit \ {Assert, Fs.FileRead} =
+        let note = judged({ probes = "n" :: "spin" :: Nil, unsaved = "spin" :: Nil | setupOf(loadFaithful) }, markOnce()) |> Result.getWithDefault("");
+        Assert.assertTrue(String.contains(substr = "unsaved として比べなかった問い: spin（分かれた: ", note))
+
+    @Test
     def testProbeOfAnUnsavedValueSplitsWhenNotListed(): Unit \ {Assert, Fs.FileRead} =
         Assert.assertTrue(List.memberOf(probeSplit(), failLines(judged({ probes = "n" :: "spin" :: Nil | setupOf(loadFaithful) }, markOnce()))))
 
@@ -179,7 +188,7 @@ mod TestFlowSaveLoad {
 
     @Test
     def testCompareLastSaysWhichRunStoppedWriting(): Unit \ Assert =
-        let trip = Some({ save = (w: Game) -> if (w#n > 0) saveText(w) else None, load = loadFaithful, unsaved = Nil });
+        let trip = { save = (w: Game) -> if (w#n > 0) saveText(w) else None, load = loadFaithful, unsaved = Nil };
         Assert.assertEq(expected = Err("読み直した流れの最後はセーブを書かない場面（読み直さない流れは書く）"),
                         Flow.SaveLoad.compareLast(trip, { n = 1 | start() }, start()))
 

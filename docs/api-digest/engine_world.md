@@ -1378,8 +1378,10 @@
   `pub def playBoth(app: App.App[w, ef], setup: Flow.Setup, script: Flow.Script, start: { world = w, state = App.StepState }): { plain = Result[Flow.Failure[w], Flow.Outcome[w]], reloaded = Result[Flow.Failure[w], Flow.Outcome[w]] } \ ef + Fs.FileRead`
 - 2 本の結果を比べる: 両方通り、問いの値が毎フレーム同じで、フレームの数と最後のセーブが同じなら Ok(1 行の知らせ)、違えば Err(出す行の列)。
   `pub def compareRuns(app: App.App[w, ef], path: String, plain: Result[Flow.Failure[w], Flow.Outcome[w]], reloaded: Result[Flow.Failure[w], Flow.Outcome[w]]): Result[List[String], String]`
+- unsaved に挙げたのに probes に無い名前（挙げた順）。
+  `pub def unknownUnsaved(app: App.App[w, ef]): List[String]`
 - 2 本の流れの最後の World のセーブを比べる。同じなら Ok(そのセーブの字の長さの説明)、違えば Err(違うキー)。
-  `pub def compareLast(trip: Option[Flow.SaveRoundTrip[w]], plain: w, reloaded: w): Result[String, String]`
+  `pub def compareLast(trip: Flow.SaveRoundTrip[w], plain: w, reloaded: w): Result[String, String]`
 - 2 つのセーブの字の違うキー（object を "." でつないだ道。先頭の 8 個と残りの数）。JSON でなければ字の長さだけ言う。
   `pub def diffText(before: String, after: String): String`
 
