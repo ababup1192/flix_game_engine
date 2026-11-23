@@ -85,13 +85,13 @@
 ```
 
 - サーバーは tmp に書いてから rename で差し替える。返事を出し直したら、前の reply.json を `replies/<at>.json` へ移してから書く。
-- 絵の上を囲むメモ（座標つきの注釈）はフェーズ 3（9 節）。
+- 絵の上を囲むメモ（座標つきの注釈）はフェーズ 4（9 節）。
 
 ## 4. CLI（AI と人が打つ）
 
 | コマンド | すること |
 |---|---|
-| `bin/fge dashboard` | **前面で**立てる（人が別の端末で打つ・Ctrl-C で止める）。URL を出し、ブラウザで開く。ポートは 8790、塞がっていれば空いた番号 |
+| `fge dashboard`（どこで打っても同じ） | **前面で**ワークスペースのサーバーを 1 つ立てる（人が別の端末で打つ・Ctrl-C で止める）。既に 8790 で立っていれば立てず、ブラウザだけ開く。ゲームのフォルダで打った時は、そのゲームを一覧に足して `/<ゲーム名>/` を開く（2026-11-23 の作者の判断） |
 | `bin/fge dashboard post <post.json>` | 素材ごと posts へ写し、id と URL（`…/#post-<id>`）を出す。サーバーは要らない（ファイルを書くだけ） |
 | `bin/fge dashboard inbox [--json] [--all]` | reply.json があり resolved が無い post を、返事の中身ごと出す。既定は origin の worktree が今の物に合う post だけ（並んで動く AI が他の担当の返事を拾わない）。`--all` で全部。何も書き換えない |
 | `bin/fge dashboard resolve <id>` | resolved を置く。WhyNot `close`: `bin/fge tickets close` と同じ語で別の物を指すことになる |
@@ -158,15 +158,15 @@
 | フェーズ | 中身 | 終わりの基準 |
 |---|---|---|
 | 0 | 始め方（plans/onboarding.md）。**ワークスペースの頁（`/`）のうち、ゲームの一覧と「新しいゲームを作ってみよう」のカードだけ**を含む | 空の HOME で install.sh → `fge dashboard` → カードから開いた Claude がゲームを作る → `make run` が macOS と Linux で通る |
-| 1 | 前面の `bin/fge dashboard`・post / inbox / resolve・Inbox と Tape のタブ・proposal の頁の「送る」・固定の「はじめに」カード 1 枚（15 節）・`make dashboard`・status の 1 行・早見表 2 行 + お題 1 本・Studio の凍結の直し（7 節） | game-starter から産んだゲームの worktree で AI が post → 人が main のダッシュボードで選んで返す → AI が inbox で拾う、が会話のコピペ無しで通る |
+| 1 | ゲームの頁と、ワークスペースのサーバーからの中継（13 節。フェーズ 3 から移した）・post / inbox / resolve・Inbox と Tape のタブ・proposal の頁の「送る」・固定の「はじめに」カード 1 枚（15 節）・`make dashboard`・status の 1 行・早見表 2 行 + お題 1 本・Studio の凍結の直し（7 節） | game-starter から産んだゲームの worktree で AI が post → 人が main のダッシュボードで選んで返す → AI が inbox で拾う、が会話のコピペ無しで通る |
 | 2 | **版上げのお知らせのカードと、clone 無しの `make engine-upgrade`（14 節）**・Capabilities（早見表を読む）・Games・Images・Tickets のタブ・post を Pages へ載せる（10 節の 3） | Inbox のカードから Claude を開くだけで、版上げ → 直す → post → 人が取り込む、が通る |
-| 3 | ワークスペースからゲームの頁への中継（13 節）・状態から選ぶカード（15.2）・Desktop のボタン | 1 つの URL から全部のゲームへ行ける |
+| 3 | 状態から選ぶカード（15.2）・Desktop のボタン | 1 つの URL から全部のゲームへ行ける |
 | 4 | 絵の上を囲むメモ・Tape の注釈を reply へ・頁から make のターゲットを流す（要るか未定） | フェーズ 3 の後に決める |
 
 ## 10. 決めたこと・決めていないこと
 
 1. **ポートは 8790 に固定（決定 2026-11-23）。** 塞がっている時だけ空いた番号を使い、URL を出す。
-2. engine のリポの根で立てるか: **フェーズ 1・2 では立てない。** フェーズ 3 のワークスペース（13 節）で engine のリポを `fge add` すれば済む。
+2. engine のリポの根で立てるか: **立てない。** ワークスペース（13 節）で engine のリポを `fge add` すれば済む。
 3. **post を GitHub Pages へ載せる道を足す（決定 2026-11-23）。** `bin/fge dashboard publish <id>` が post の頁（proposal の静的な index.html と素材）を
    tape publish と同じ置き場・同じ作り（go/internal/tape/publish.go の dry run 既定・`--yes`・`--wait`・95 MB を超える動画を縮める）で置く。
    公開した頁は「コピー」だけの静的な頁（返事は Pages から手元へ届かない）。フェーズ 2。
@@ -213,7 +213,9 @@
 
 plans/onboarding.md へ移した。
 
-## 13. ワークスペース（`/` の頁はフェーズ 0・ゲームの頁への中継はフェーズ 3・2026-11-23 の作者の提案から）
+## 13. ワークスペース（`/` の頁はフェーズ 0・ゲームの頁への中継はフェーズ 1・2026-11-23 の作者の提案から）
+
+**ダッシュボードのサーバーは 1 台に 1 つ。** `fge dashboard` はどこで打ってもワークスペースのサーバー（8790）を使う。ゲームの頁を別のサーバーとして人に立てさせない（2026-11-23 の作者の判断）。
 
 `/` の頁（ゲームの一覧・新しいゲームを作るカード）は plans/onboarding.md 2.6 で先に作る。ここは中継の決まり。
 
