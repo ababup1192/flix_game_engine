@@ -11,7 +11,7 @@
 // (`render: SHOTS = title`) は止めない。どちらも engine のレシピをそのまま使うため。
 //
 // game.mk の探し方: 根に mk/game.mk があればそれ (engine のリポ。templates/*/Makefile を見る)、
-// 無ければ環境変数 ENGINE → local.mk → Makefile の ENGINE (status.FindEngineDir。doc-shape と同じ道具)。見つからなければ
+// 無ければ status.FindEngineDir の決まり (ENGINE → local.mk → engine の中のテンプレート → 置き場の engines/<版>。doc-shape と同じ道具)。見つからなければ
 // 何も止めない (fail-open。1 行知らせる)。
 //
 // WhyNot: 隣に mk/game.mk がある Makefile (engine 自身の Makefile) を見ないのは、

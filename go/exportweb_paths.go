@@ -144,7 +144,7 @@ func isWithin(parent, child string) string {
 }
 
 // exportWebJava は java の呼び方（javacmd.Resolve: JAVA → PATH の動く java → engine の devbox の jdk → main の checkout の物）。
-func exportWebJava(engine string) string {
+func exportWebJava(engine string) (string, error) {
 	return javacmd.Resolve(engine)
 }
 

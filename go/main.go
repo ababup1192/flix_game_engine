@@ -156,7 +156,7 @@ func printVersion() int {
 	root := repoRoot()
 	version := status.ReadEngineVersion(root)
 	if version == "" {
-		if engine := status.ReadEngineDir(root); engine != "" {
+		if engine, _ := status.ResolveEngineDir(root); engine != "" {
 			version = status.ReadEngineVersion(engine)
 		}
 	}

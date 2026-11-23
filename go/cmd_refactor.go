@@ -141,11 +141,13 @@ func localNamesFlixlint(root string) bool {
 	return strings.TrimSpace(c.Flixlint) != ""
 }
 
-// useEngineJava は、PATH の java が動かない時に engine の devbox の jdk を PATH の先頭へ足す（checkd の javaCmd と同じ順）。
+// useEngineJava は、配った engine の時はいつも、ほかは PATH の java が動かない時に、engine の java の bin を PATH の先頭へ足す
+// （checkd の javaCmd と同じ決め方）。
 // WhyNot: flixlint へ java のパスを渡す口は無く、flixlint は PATH の java で常駐を起こす。macOS の /usr/bin/java は
 // jdk の無い入口なので、engine の外（ゲーム・templates/*）で流すと索引を作れずに止まっていた。
+// WhyNot: 配った engine で PATH の java が動くからと足さずに済ませない — mk/jdk.mk の JDK と違う java で索引と check が動く。
 func useEngineJava(engine string) {
-	if javacmd.PathWorks() {
+	if !javacmd.IsBundle(engine) && javacmd.PathWorks() {
 		return
 	}
 	if path, ok := pathWithEngineJava(os.Getenv("PATH"), engine); ok {
@@ -153,7 +155,7 @@ func useEngineJava(engine string) {
 	}
 }
 
-// engineDirOf は root から engine の置き場（mk/game.mk のある所）を引く。生成したゲームでは local.mk・Makefile の ENGINE を辿る。
+// engineDirOf は root から engine の置き場（mk/game.mk のある所）を引く。生成したゲームでは status.ResolveEngineDir の決まりで辿る。
 // WhyNot: repoRoot のままにしない — 生成したゲームでは bin/fge-go がゲームの bin に写されていて、repoRoot はゲームの根になる。
 func engineDirOf(root string) string {
 	if dir, _ := status.FindEngineDir(root, "mk/game.mk"); dir != "" {
@@ -162,9 +164,13 @@ func engineDirOf(root string) string {
 	return root
 }
 
-// pathWithEngineJava は devbox の java がある時だけ（javacmd.DevboxBin）、その bin を先頭に足した PATH を返す。
+// pathWithEngineJava は engine の java の bin（配った engine は置き場の JDK・javacmd.BundleBin、ほかは devbox の物・
+// javacmd.DevboxBin）がある時だけ、それを先頭に足した PATH を返す。
 func pathWithEngineJava(path, engine string) (string, bool) {
-	bin := javacmd.DevboxBin(engine)
+	bin, ok := javacmd.BundleBin(engine)
+	if !ok {
+		bin = javacmd.DevboxBin(engine)
+	}
 	if bin == "" {
 		return path, false
 	}

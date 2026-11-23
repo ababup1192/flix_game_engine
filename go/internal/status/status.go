@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/agenteval"
+	"github.com/ababup1192/flix_game_engine/go/internal/fgehome"
 	"github.com/ababup1192/flix_game_engine/go/internal/fpkgstore"
 	"github.com/ababup1192/flix_game_engine/go/internal/mvncache"
 	"github.com/ababup1192/flix_game_engine/go/internal/renderbudget"
@@ -317,7 +318,7 @@ func sectionBudget(c *ctx, out *[]string) {
 	if !c.isDir("gallery") {
 		return
 	}
-	engine := ReadEngineDir(c.root)
+	engine := gameEngineDir(c.root)
 	if engine == "" {
 		return
 	}
@@ -422,7 +423,7 @@ func sectionPack(c *ctx, out *[]string) {
 	if m == nil {
 		return
 	}
-	engine := ReadEngineDir(c.root)
+	engine := gameEngineDir(c.root)
 	if engine == "" {
 		return
 	}
@@ -454,9 +455,18 @@ func sectionEngineDrift(c *ctx, out *[]string) {
 			"engine   use-engine で flix.toml を v%s に向けています（元は v%s・commit は pre-commit が止める）"+
 				" → 終わったら bin/fge use-engine --restore", set, orig))
 	}
-	engine := ReadEngineDir(c.root)
+	engine := gameEngineDir(c.root)
 	if engine == "" {
 		return
+	}
+	if engine == fgehome.EngineDir(m[1]) && !isRegularFile(filepath.Join(engine, "mk", "game.mk")) {
+		*out = append(*out, fmt.Sprintf(
+			"engine   engine %s が手元にありません → fge engines install %s", m[1], m[1]))
+		return
+	}
+	if latest, ok := fgehome.ReadLatest(); ok && fgehome.IsBundle(engine) && engineVersionLess(m[1], latest.Version) {
+		*out = append(*out, fmt.Sprintf(
+			"engine   engine %s が出ています → make engine-upgrade TO=%s", latest.Version, latest.Version))
 	}
 	cur := ReadEngineVersion(engine)
 	if cur != "" && cur != m[1] {
@@ -465,6 +475,34 @@ func sectionEngineDrift(c *ctx, out *[]string) {
 				"make api や docs は v%s の物なので、無い API を引く恐れ → make engine-upgrade で追随",
 			m[1], cur, cur))
 	}
+}
+
+// gameEngineDir はゲームの engine の根（ResolveEngineDir）。根自身が engine なら空（ゲームの行を出さない）。
+func gameEngineDir(root string) string {
+	dir, self := ResolveEngineDir(root)
+	if self {
+		return ""
+	}
+	return dir
+}
+
+// engineVersionLess は "0.108.9" < "0.108.10" のように数の並びで比べる（数でない所は字の順）。
+func engineVersionLess(a, b string) bool {
+	as, bs := strings.Split(a, "."), strings.Split(b, ".")
+	for i := 0; i < len(as) && i < len(bs); i++ {
+		x, errX := strconv.Atoi(as[i])
+		y, errY := strconv.Atoi(bs[i])
+		if errX != nil || errY != nil {
+			if as[i] != bs[i] {
+				return as[i] < bs[i]
+			}
+			continue
+		}
+		if x != y {
+			return x < y
+		}
+	}
+	return len(as) < len(bs)
 }
 
 // countCapped は path 配下のファイル数。上限に達したら歩くのをやめる。
@@ -614,7 +652,7 @@ func fpkgStoreGameLine(c *ctx, out *[]string) {
 		return
 	}
 	var why []string
-	if engine := ReadEngineDir(c.root); engine != "" && ReadEngineVersion(engine) == v {
+	if engine := gameEngineDir(c.root); engine != "" && ReadEngineVersion(engine) == v {
 		if entry, ok := fpkgstore.Current(engine, fpkgstore.EngineFull); ok {
 			if want, err := fpkgstore.Sha256File(filepath.Join(entry, "package.fpkg")); err == nil && want != have {
 				why = append(why, "同じ v"+v+" のまま engine の束が新しくなっている")

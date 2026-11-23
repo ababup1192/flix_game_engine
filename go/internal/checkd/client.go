@@ -3,21 +3,17 @@ package checkd
 // クライアント側 — 常駐を探し、話し、駄目なら素の CLI に落ちる。
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/hooks"
 	"github.com/ababup1192/flix_game_engine/go/internal/mvncache"
+	"github.com/ababup1192/flix_game_engine/go/internal/status"
 )
-
-// enginePat は local.mk の「ENGINE := /path/to/engine」の行。
-var enginePat = regexp.MustCompile(`^\s*ENGINE\s*[?:]*=\s*(.+?)\s*$`)
 
 // flixBin はこのパッケージが使う flix コンパイラの呼び口を返す。
 //
@@ -31,19 +27,8 @@ func flixBin(root, pkg string) string {
 		return cand
 	}
 	// 配った先 (ゲームの bin/) に flix は居ないので、engine の場所を
-	// 環境変数 ENGINE → local.mk から引く (game Makefile と同じ解決順)。
-	engine := os.Getenv("ENGINE")
-	if engine == "" {
-		if f, err := os.Open(filepath.Join(pkg, "local.mk")); err == nil {
-			sc := bufio.NewScanner(f)
-			for sc.Scan() {
-				if m := enginePat.FindStringSubmatch(sc.Text()); m != nil {
-					engine = m[1]
-				}
-			}
-			f.Close()
-		}
-	}
+	// game Makefile の ENGINE の既定と同じ決まり (status.ResolveEngineDir) で引く。
+	engine, _ := status.ResolveEngineDir(pkg)
 	if engine != "" {
 		if cand := filepath.Join(engine, "bin", "flix"); isExec(cand) {
 			return cand

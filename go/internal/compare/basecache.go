@@ -115,8 +115,13 @@ var envRefRe = regexp.MustCompile(envRefPattern)
 const envRefPattern = `\$[({]([A-Z][A-Z0-9_]*)[)}:-]|getenv\("([A-Z][A-Z0-9_]*)"|envOr\("([A-Z][A-Z0-9_]*)"`
 
 // javaCmd は描き出しが使う java（javacmd.Resolve。bin/headless-run も同じ bin/java-resolve.sh の順で決める）。
+// WhyNot: 見つからない時に止めない — ここは控えの鍵を作るだけで、描き出し（bin/headless-run）がその誤りを出す。
 func javaCmd(engineDir string) string {
-	return javacmd.Resolve(engineDir)
+	java, err := javacmd.Resolve(engineDir)
+	if err != nil {
+		return ""
+	}
+	return java
 }
 
 // engineToolsSum は描き出しの手順を持つエンジンの道具（mk・headless-run・fge-go）の中身の SHA-256。

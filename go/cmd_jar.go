@@ -284,7 +284,11 @@ func toolPath(tool string) (string, error) {
 	if tool != "java" {
 		return exec.LookPath(tool)
 	}
-	return exec.LookPath(javacmd.Resolve(engineDirOf(repoRoot())))
+	java, err := javacmd.Resolve(engineDirOf(repoRoot()))
+	if err != nil {
+		return "", err
+	}
+	return exec.LookPath(java)
 }
 
 // launchdPath は作り手の PATH。今 git・gh・java がいるフォルダと、OS の決まったフォルダだけを並べる。
