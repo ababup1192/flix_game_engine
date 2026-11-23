@@ -171,11 +171,33 @@
 | 3 | 絵の上を囲むメモ（reply.json に `notes`）。手元で開いた Tape の頁の注釈を reply へ送る | Tape の注釈が inbox に来る |
 | 4（未定） | 頁から make のターゲットを流す（ログを流して見せる） | 要るか、フェーズ 3 の後に決める |
 
-## 10. 決めていないこと（相談）
+## 10. 決めたこと・決めていないこと
 
-1. 既定のポート 8790 を固定でよいか（ブックマークできる。Studio は 8787）。
-2. engine のリポの根でもダッシュボードを立てるか（テンプレート横断の gallery・門の結果）。フェーズ 1 ではゲームの根だけ。
-3. チームで同じ post を見たくなった時は、tape publish の置き場（GitHub Pages）へ載せる道を足すか。
+1. **ポートは 8790 に固定（決定 2026-11-23）。** 塞がっている時だけ空いた番号を使い、URL を出す。
+2. engine のリポの根で立てるか: **フェーズ 1 では立てない。** engine の作者だけが使う物（テンプレートをまたいだ gallery・門の結果）で、ゲームを作る人には要らない。要るようになったら決める。
+3. **post を GitHub Pages へ載せる道を足す（決定 2026-11-23）。** `bin/fge dashboard publish <id>` が post の頁（proposal の静的な index.html と素材）を
+   tape publish と同じ置き場・同じ作り（go/internal/tape/publish.go の dry run 既定・`--yes`・`--wait`・95 MB を超える動画を縮める）で置く。
+   公開した頁は「コピー」だけの静的な頁（返事は Pages から手元へ届かない）。フェーズ 2 に入れる。
+
+## 12. 始め方（別の計画で詰める・案）
+
+ゲームを作る人が最初の 1 回に打つ物。今は devbox・engine の clone・`make sync`・`make go-build`・`make new-game` と前提が多い。
+
+```
+curl -fsSL https://ababup1192.github.io/flix_game_engine/install.sh | sh   # macOS・Linux
+irm https://ababup1192.github.io/flix_game_engine/install.ps1 | iex        # Windows
+fge new mygame          # テンプレートを選ぶ。初回だけ engine の zip と JDK を ~/.flix_ge/ に取る
+cd mygame && fge dashboard   # ブラウザが開く。「はじめに」に Claude へ最初に打つ文のコピー
+claude                  # AGENTS.md・skills・hooks は fge new が置いてある
+```
+
+- install.sh は OS と CPU に合う `fge`（今の fge-go の 5 種）を 1 本落とし、SHA256 を照合して `~/.flix_ge/bin` に置くだけ。
+  Release に `fge-<os>-<arch>` を足す（今は engine の zip の中にしか無い）。
+- JDK は `fge` が Adoptium の API から取る（uv が Python を、rustup が Rust を取るのと同じ形）。engine は fetch-engine（go/internal/fetchengine）で取る。
+- WhyNot npm（`npx create-…`）: Node は engine のどこにも要らない。入れる物を 1 つ増やすだけ。Homebrew と winget は利用者が増えてから足す。
+- 残る前提: ゲームの make（mk/game.mk）は make と bash を要る。macOS・Linux は揃っているが、Windows は揃わない。
+  よく使う物（run・debug・render・test）を `fge run` などの Go のサブコマンドにして make を要らなくするのは別の計画で決める。
+- devbox は engine を直す人のための物として残す。
 
 ## 11. レビュー（第 1 版・64 点）への答え
 
