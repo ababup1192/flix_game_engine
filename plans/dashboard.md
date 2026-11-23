@@ -1,6 +1,7 @@
 # ダッシュボード（engine 起点・ブラウザ）
 
-状態: 設計 第 3 版（相談中）。実装は未着手。レビューは第 1 版 64 点・第 2 版 78 点・第 3 版 84 点（残りの 2 点は直した）。指摘への答えは 11 節。
+状態: 設計 第 4 版（相談中）。実装は未着手。**始め方（plans/onboarding.md）の後に作る。**
+レビュー: 第 1 版 64 点・第 2 版 78 点・第 3 版 84 点・12〜15 節を足した版 68 点。指摘への答えは 11 節。
 
 ## 0. 決まっていること（作者の判断）
 
@@ -20,8 +21,10 @@
 
 ## 2. 方針
 
-1. **Go で書き、`bin/fge dashboard` として配る。** ゲームの `bin/fge` は engine の `fge-go` の写しを呼ぶだけなので、
+1. **Go で書き、各ゲームの `bin/fge dashboard` として配る。** ゲームの `bin/fge` は engine の `fge-go` の写しを呼ぶだけなので、
    ゲームの engine の版とダッシュボードの版が自動でそろう（`make engine-upgrade` で一緒に上がる）。
+   全体の fge（plans/onboarding.md・`~/.flix_ge/bin/fge`）はゲームの頁を描かない。13 節のワークスペースでも、各ゲームの頁は
+   そのゲームの `bin/fge dashboard` が描き、全体の fge は中継するだけ。
    - WhyNot Flix で書かない: 起動に JVM と型検査の待ちが要る。HTML の頁を作る道具（tape・proposal・compare）は既に Go にある。
 2. **今ある出力を読むだけにする（写さない）。** 新しく足す置き場は posts（3 節）の 1 つだけ。
 3. **AI は CLI で書き、人はブラウザで読んで返す。** AI ごとの専用のエンドポイントは作らない（Claude も Codex もシェルが打てれば同じ）。
@@ -34,7 +37,6 @@
 
 ```
 <main の作業ツリー>/debug/dashboard/
-  server.json              立っているサーバーの {pid, port, root, version}（4 節）
   posts/<id>/
     post.json              AI が書く（3.2）
     *.png *.mp4 …          post.json が指す素材（CLI が写す）
@@ -85,30 +87,22 @@
 - サーバーは tmp に書いてから rename で差し替える。返事を出し直したら、前の reply.json を `replies/<at>.json` へ移してから書く。
 - 絵の上を囲むメモ（座標つきの注釈）はフェーズ 3（9 節）。
 
-## 4. CLI（AI が打つ）
+## 4. CLI（AI と人が打つ）
 
 | コマンド | すること |
 |---|---|
-| `bin/fge dashboard start` | 裏で立て、URL を 1 行出してすぐ返る（4.1）。既に立っていて `GET /api/whoami` の root と version が同じなら URL だけ出す。version が違えば（engine-upgrade の後）立て直す |
-| `bin/fge dashboard stop` / `status` | `POST /api/shutdown` で止める（pid へ直に kill しない。pid は別のプロセスに使い回されることがある）・立っているかを出す |
-| `bin/fge dashboard post <post.json>` | 素材ごと posts へ写し、id と URL（`…/#post-<id>`）を出す |
-| `bin/fge dashboard post --shots <png…> --title <題>` | post.json を書かずに、描き出した絵を並べるだけの post を作る |
+| `bin/fge dashboard` | **前面で**立てる（人が別の端末で打つ・Ctrl-C で止める）。URL を出し、ブラウザで開く。ポートは 8790、塞がっていれば空いた番号 |
+| `bin/fge dashboard post <post.json>` | 素材ごと posts へ写し、id と URL（`…/#post-<id>`）を出す。サーバーは要らない（ファイルを書くだけ） |
 | `bin/fge dashboard inbox [--json] [--all]` | reply.json があり resolved が無い post を、返事の中身ごと出す。既定は origin の worktree が今の物に合う post だけ（並んで動く AI が他の担当の返事を拾わない）。`--all` で全部。何も書き換えない |
 | `bin/fge dashboard resolve <id>` | resolved を置く。WhyNot `close`: `bin/fge tickets close` と同じ語で別の物を指すことになる |
 
+- **AI が打つ post・inbox・resolve はファイルを読み書きするだけで、サーバーを要らない。** サーバーは人がブラウザで見る時だけ。
+  WhyNot 裏で立てる: 裏で立てると、pid とポートの書き置き・立っているかの問い合わせ・engine を上げた後の立て直し・
+  取り残しの片付け（strays.sh の改修）が全部要る。前面なら端末を閉じれば終わる。
 - 出力は os.Stdout へ直に書く（`main.go` の Handler は文字列を溜めてから出す作りで、居座るサーバーには合わない。proposal と同じ扱い）。
-- `make dashboard`（start してブラウザで開く）を game.mk に足し、`make help` の先頭のグループに載せる。
+- `make dashboard`（`bin/fge dashboard` を呼ぶだけ）を game.mk に足し、`make help` の先頭のグループに載せる。
 - `make status` に 1 行: 「ダッシュボードに返事 N 件 → bin/fge dashboard inbox」（N が 0 なら出さない）。
-- `make strays`: 裏で立てたサーバーは「ppid 1 の fge-go で根の下にいる物」に当たり、今のままだと拾われる。strays.sh は server.json の pid を
-  **除く物**として読み（whoami が答えるなら正規のサーバー）、拾うのは server.json があるのに whoami が答えない時だけにする。
-  strays.sh（bash）からは `bin/fge dashboard status --root <根> --quiet`（立っていれば終了コード 0・pid を 1 行）を呼ぶ。curl は使わない。
-
-### 4.1 裏で立てる作り
-
-- 親は `os.Executable()` を `dashboard serve`（隠しサブコマンド）として起こし、`hooks.Detach`（go/internal/hooks/detach_*.go。Unix は
-  Setsid・Windows は CREATE_NEW_PROCESS_GROUP）で切り離す。stdin は nil、stdout と stderr は `debug/dashboard/server.log`。
-- 子は Listen してからポートを決める（8790 が塞がっていれば port 0）。server.json `{pid, port, root, version}` は tmp に書いてから rename。
-- 親は whoami が答えるまで約 5 秒待つ。来なければ server.log の末尾を出して終了コード 1。
+- engine の `templates/*` には `bin/fge` が無い。テンプレートでは `../../bin/fge dashboard`（AGENTS.md の refactor の節と同じ）。
 
 ## 5. 画面（1 枚の頁・タブ）
 
@@ -125,7 +119,7 @@
   `send bool` と `picks map` を足す。send の時は (1) 頁の下のバー（今は選べる節がある時だけ出る・proposal.go:588-614）を常に出し、自由文の欄と
   「送る」を置く、(2) 今の reply.json の picks を入れて、選んだ状態で開く。WhyNot picks を decision へ入れて出す: decision は「採用」の
   表示と「消すつまみ」を出す別の意味の欄。静的な index.html（`fge proposal build`）は今のまま「コピー」だけ。
-- 一覧の更新は 3 秒ごとの `GET /api/index`（posts と tape の更新時刻だけを返す。変わった時だけ取り直す）。
+- 一覧の更新は 3 秒ごとの `GET /_api/index`（posts と tape の更新時刻だけを返す。変わった時だけ取り直す）。
   WhyNot websocket: 1 人が手元で見る頁で、問い合わせで足りる。標準ライブラリだけで済む。
 - **ゲームへは問い合わせない。** `view=shot` は主のスレッドで場面を組んで塗り、最大 60 秒待つ（RemoteDebug.flix:616-624）。
   定期的に叩くとゲームが詰まるので、ボタンを押した時だけ。返るのは PNG のパスなので、ダッシュボードはそのゲームの dir の下のパスだけを出す。
@@ -142,168 +136,164 @@
 - ファイルを出すのは決まった置き場の下だけ。`..` と、symlink を辿った先が置き場の外になる物を断る。
 - RemoteDebug への中継は games.json にある port だけ。
 
+## 6. 安全
+
+- `127.0.0.1` だけで待つ。
+- 全部の要求で `Host` が `127.0.0.1:<port>` か `localhost:<port>` であることを見る（DNS rebinding で GET を読まれるのを防ぐ）。
+- POST は `Origin` が自分の時だけ受ける（POST はブラウザの頁からしか来ない。CLI はファイルを書くのでサーバーへ POST しない）。
+- ファイルを出すのは決まった置き場の下だけ。`..` と、symlink を辿った先が置き場の外になる物を断る。
+- API のパスはどれも `/_api/` で始める（13 節でゲーム名の `/<名前>/` とぶつからない）。
+
 ## 7. Studio の凍結で engine 側が直す所
 
 | 所 | 直し方 |
 |---|---|
-| gates.json の `studio-parity`（release の門・今は hold）と、テンプレート 7 つの gates にある `studio-parity` | どちらも外し、凍結中と note に書く |
+| gates.json の `studio-parity`（release の門・今は hold）・テンプレート 7 つの gates の `studio-parity`・Makefile の `RELEASE_GATES`（:1082） | 3 か所とも外し、凍結中と note に書く。**sync-agents の出力を変える前に外す**（外す前にリリースすると Studio との食い違いで止まる・Makefile:1079-1080） |
 | /add-template の手順 6・7（Studio への登録・swap-jar） | 「Studio は凍結中。飛ばす」と書く |
-| `make new-game` の最後の案内の「Studio で開く」 | `make dashboard` に替える |
-| README 冒頭の Studio の紹介 | ダッシュボードの紹介に替え、Studio は凍結中と 1 行 |
+| `make new-game` の最後の案内の「Studio で開く」 | 消す（plans/onboarding.md の 2.4 の 6）。ダッシュボードができたら `make dashboard` を足す |
+| README 冒頭の Studio の紹介 | 始め方（install.sh）に替え、Studio は凍結中と 1 行 |
 | `reference/title.png` を git に入れる例外 | **替えない**。凍結を解いた時に要る。1 ファイルずつで重くない |
 | スキーマの sections の書き方を Studio に合わせる決まり（doc-conventions.md） | **替えない**。Doc の書き方として既に定着している |
 | `~/.flix_ge_studio/games.json` の場所 | **替えない**。今の Studio の .app と bin/fge talk goto とダッシュボードが同じ所を読む |
-| agents-pack/manifest.json のキー名を替えない約束 | そのまま（凍結を解く時のため） |
+| agents-pack/manifest.json のキー名を替えない約束・今の `SHA256SUMS.txt` の形 | そのまま（今の Studio の .app の self-update が読む） |
 
 ## 8. AI 側の配線（AGENTS.md の決まり）
 
 - agents-pack/AGENTS.core.md の早見表に 2 行: 「人に絵・動画・案を見せて選んでもらう → `bin/fge dashboard post`」「人の返事を拾う → `bin/fge dashboard inbox`」。
   proposal の行は「静的な頁を作って渡すとき」に絞る。
 - agents-pack/agent-eval/engine.json にお題を 1 本（「描き出した 3 枚を人に見せて選んでもらって」で `dashboard post` を選ぶか）。
-- engine のリポだけで打つ物は無い（ゲームで打つ）。
 
 ## 9. フェーズ
 
 | フェーズ | 中身 | 終わりの基準 |
 |---|---|---|
-| 1 | start / stop / status / post / inbox / resolve、Inbox と Tape のタブ、proposal の頁の「送る」、`make dashboard`、status の 1 行、strays、早見表 2 行 + お題 1 本、Studio の凍結の直し（7 節） | game-starter から産んだゲームの worktree で AI が post → 人が main のダッシュボードで選んで返す → AI が inbox で拾う、が会話のコピペ無しで通る |
-| 2 | Games・Images・Tickets・Capabilities のタブ | 起動中のゲームを頁から止めて撮れる |
-| 3 | 絵の上を囲むメモ（reply.json に `notes`）。手元で開いた Tape の頁の注釈を reply へ送る | Tape の注釈が inbox に来る |
-| 4（未定） | 頁から make のターゲットを流す（ログを流して見せる） | 要るか、フェーズ 3 の後に決める |
+| 0 | 始め方（plans/onboarding.md） | 空の HOME で install.sh → `fge new` → `make run` が macOS と Linux で通る |
+| 1 | 前面の `bin/fge dashboard`・post / inbox / resolve・Inbox と Tape のタブ・proposal の頁の「送る」・固定の「はじめに」カード 1 枚（15 節）・`make dashboard`・status の 1 行・早見表 2 行 + お題 1 本・Studio の凍結の直し（7 節） | game-starter から産んだゲームの worktree で AI が post → 人が main のダッシュボードで選んで返す → AI が inbox で拾う、が会話のコピペ無しで通る |
+| 2 | Capabilities（早見表を読む）・Games・Images・Tickets のタブ・post を Pages へ載せる（10 節の 3）・`fge upgrade`（14 節・`--fix` 無し） | 起動中のゲームを頁から止めて撮れる・clone 無しで版を上げられる |
+| 3 | ワークスペース（13 節）・状態から選ぶカード（15.2）・Desktop のボタン・`fge upgrade --fix` | 1 つの URL から全部のゲームへ行ける |
+| 4 | 絵の上を囲むメモ・Tape の注釈を reply へ・頁から make のターゲットを流す（要るか未定） | フェーズ 3 の後に決める |
 
 ## 10. 決めたこと・決めていないこと
 
 1. **ポートは 8790 に固定（決定 2026-11-23）。** 塞がっている時だけ空いた番号を使い、URL を出す。
-2. engine のリポの根で立てるか: **フェーズ 1 では立てない。** engine の作者だけが使う物（テンプレートをまたいだ gallery・門の結果）で、ゲームを作る人には要らない。要るようになったら決める。
+2. engine のリポの根で立てるか: **立てない。** 13 節のワークスペースで engine のリポを `fge add` すれば済む。
 3. **post を GitHub Pages へ載せる道を足す（決定 2026-11-23）。** `bin/fge dashboard publish <id>` が post の頁（proposal の静的な index.html と素材）を
    tape publish と同じ置き場・同じ作り（go/internal/tape/publish.go の dry run 既定・`--yes`・`--wait`・95 MB を超える動画を縮める）で置く。
-   公開した頁は「コピー」だけの静的な頁（返事は Pages から手元へ届かない）。フェーズ 2 に入れる。
+   公開した頁は「コピー」だけの静的な頁（返事は Pages から手元へ届かない）。フェーズ 2。
+4. **最初は小さく（決定 2026-11-23）。** 始め方を先に作り、ダッシュボードのフェーズ 1 は 9 節の範囲に絞る。
 
-## 12. 始め方（別の計画で詰める・案）
-
-ゲームを作る人が最初の 1 回に打つ物。今は devbox・engine の clone・`make sync`・`make go-build`・`make new-game` と前提が多い。
-
-```
-curl -fsSL https://ababup1192.github.io/flix_game_engine/install.sh | sh   # macOS・Linux
-irm https://ababup1192.github.io/flix_game_engine/install.ps1 | iex        # Windows
-fge new mygame          # テンプレートを選ぶ。初回だけ engine の zip と JDK を ~/.flix_ge/ に取る
-cd mygame && fge dashboard   # ブラウザが開く。「はじめに」に Claude へ最初に打つ文のコピー
-claude                  # AGENTS.md・skills・hooks は fge new が置いてある
-```
-
-- install.sh は OS と CPU に合う `fge`（今の fge-go の 5 種）を 1 本落とし、SHA256 を照合して `~/.flix_ge/bin` に置くだけ。
-  Release に `fge-<os>-<arch>` を足す（今は engine の zip の中にしか無い）。
-- JDK は `fge` が Adoptium の API から取る（uv が Python を、rustup が Rust を取るのと同じ形）。engine は fetch-engine（go/internal/fetchengine）で取る。
-- WhyNot npm（`npx create-…`）: Node は engine のどこにも要らない。入れる物を 1 つ増やすだけ。Homebrew と winget は利用者が増えてから足す。
-- 残る前提: ゲームの make（mk/game.mk）は make と bash を要る。macOS・Linux は揃っているが、Windows は揃わない。
-  よく使う物（run・debug・render・test）を `fge run` などの Go のサブコマンドにして make を要らなくするのは別の計画で決める。
-- devbox は engine を直す人のための物として残す。
-
-## 11. レビュー（第 1 版・64 点）への答え
+## 11. レビューへの答え
 
 | 指摘 | 答え |
 |---|---|
 | worktree の post が見えない | 3.1 で main の作業ツリーの 1 か所に置く |
-| サーバーが手前で止まる | 4 節の start / stop / status・whoami・strays。出力は stdout へ直に |
 | 今の画面は `/render` で取れない・問い合わせでゲームが詰まる | 5 節で `view=shot` を押した時だけ。撮れないゲームの表示も決めた |
 | proposal の頁に返す方法が無い | 5 節で proposal.go に切り替え（send）を足す |
 | 素材のパス・id の衝突 | 3.2 |
 | DNS rebinding | 6 節で Host を見る |
-| Studio の凍結の表が足りない | 7 節にテンプレートの gates・title.png・sections・games.json を足した |
 | reference-check の結果が保存されていない | Images タブはフェーズ 2 へ移し、差は出さず PNG と compare だけにした |
 | status・kind・seen は要らない | 消した（2 節の 4・3.2） |
 | inbox にチケットとヒッチを混ぜない | 混ぜない（make status に既に出る） |
 | features.json は要らない | 消した。Capabilities は AGENTS.md の早見表を読む |
 | games.json の読み手が既にある | go/internal/talk を使う |
-| フェーズ 1 が多すぎる | 囲むメモ・Images・Tickets・Capabilities を後へ回した |
 | `close` が tickets とぶつかる | `resolve` にした |
-| jargon の語 | 消した |
-| （第 2 版）git-common-dir の親は bare・submodule・templates/x で誤る | 3.1 で worktree list の先頭 + show-prefix、strays.sh と同じ関数に |
-| （第 2 版）Tape だけ worktree をまたがない | 3.1 で全部の worktree の debug/tape を読む |
-| （第 2 版）inbox が他の worktree の返事を拾う | 4 節で既定を今の worktree に、`--all` で全部 |
-| （第 2 版）strays が正規のサーバーを拾う・pid で kill は危ない | 4 節で server.json を除く物として読む・stop は /api/shutdown |
-| （第 2 版）engine-upgrade の後に古いサーバーが残る | start が version を比べて立て直す |
-| （第 2 版）start の作り | 4.1（serve・hooks.Detach・server.log・whoami を待つ） |
-| （第 2 版）reply のファイル名の `:` | 3.1 で at の形を替えた |
-| （第 2 版）proposal の bar と今の picks | 5 節で Page() と send・picks |
-| （第 3 版）stop の POST が Origin の決まりで弾かれる | 6 節で「Origin が無いか自分」に |
-| （第 3 版）show-prefix の基準・strays と共有する範囲・bash からの呼び方 | 3.1 で flix.toml のあるフォルダから取る・共有は main の作業ツリーまで・4 節で status --quiet |
+| bare・submodule・templates/x で置き場の根を誤る | 3.1 で worktree list の先頭 + flix.toml のあるフォルダの prefix |
+| Tape だけ worktree をまたがない・inbox が他の worktree の返事を拾う | 3.1・4 節 |
+| reply のファイル名の `:`・proposal の bar と今の picks | 3.1・5 節 |
+| 裏で立てる作り・strays・pid の kill・engine を上げた後の古いサーバー・stop が Origin で弾かれる | **前面で立てる形にして、まとめて要らなくした**（4 節） |
+| （12〜15 節）全体の fge がダッシュボードを持つと 2 節 1 の「版が自動でそろう」が崩れる | 2 節 1・13 節で、各ゲームの頁はそのゲームの `bin/fge dashboard` が描き、全体の fge は中継だけにした |
+| server.json の置き場が 2 つ・`make dashboard` と全体のサーバーがぶつかる | server.json を無くした（4 節）。ワークスペースはフェーズ 3 で、全体の fge は 8790、子のゲームは空いた番号（13 節） |
+| API のパスが `/api` と `/_api` でそろっていない | `/_api` にそろえた（6 節） |
+| templates/* に bin/fge が無い | 4 節で `../../bin/fge`・13 節も同じ |
+| `fge upgrade` が local.mk を書き換えない・版ズレの検知・赤の間の道具が古い | 14 節に足した |
+| JDK を取ると絵が崩れる・Windows の new-game | plans/onboarding.md の 2.4（版を固定し local.mk の JAVA で渡す）・Windows は対象外 |
+| 14 と 15.1 でプロセスを起こす方針が食い違う | 15.1 に 1 つにまとめた |
+| RELEASE_GATES の漏れ | 7 節 |
+| フェーズ 1 が膨らんだ | 9 節で絞った |
+| 始め方を先に | 9 節のフェーズ 0・10 節の 4 |
 
-## 13. ワークスペース（案・2026-11-23 の作者の提案から）
+## 12. 始め方
 
-ダッシュボードを 1 台に 1 つだけ立て、`/` をワークスペース、`/<ゲーム名>/` を各ゲームにする。
+plans/onboarding.md へ移した。
+
+## 13. ワークスペース（フェーズ 3・2026-11-23 の作者の提案から）
+
+全体の fge（`~/.flix_ge/bin/fge dashboard`）を 1 台に 1 つ前面で立て、`/` をワークスペース、`/<ゲーム名>/` を各ゲームにする。
 
 ```
 http://127.0.0.1:8790/            ワークスペース: ゲームの一覧・テンプレートから作る・engine の版と更新
-http://127.0.0.1:8790/mygame/     ゲーム: Inbox・Tape・Games…（5 節）
-http://127.0.0.1:8790/_api/…      API（ゲーム名に使えない名前は `_` で始まる物）
+http://127.0.0.1:8790/mygame/     ゲーム: そのゲームの bin/fge dashboard が描く頁を中継する
+http://127.0.0.1:8790/_api/…      ワークスペースの API
 ```
 
+- **各ゲームの頁は中継する。** `/<ゲーム名>/` を初めて開いた時、全体の fge がそのゲームの `bin/fge dashboard --port 0 --no-open --base /<ゲーム名>/` を
+  子のプロセスとして起こし、そのポートへ中継する（Go の httputil.ReverseProxy）。全体の fge を Ctrl-C で止めると子も止まる。
+  WhyNot 全体の fge が頁を描く: ゲームごとに engine の版が違う。版の違うゲームの post や tape を新しい道具 1 本で読むと、Studio の追従の失敗が戻る。
+- ダッシュボードより前の版のゲーム（`bin/fge dashboard` を持たない）は一覧に「版を上げると開ける」と出し、中継しない。
 - **ゲームの一覧はフォルダの親子ではなく一覧のファイルで持つ。** `~/.flix_ge/workspace.json` に `{name, dir}` を並べる。
-  `fge new` は既定で `~/flix-games/<名前>` に作って一覧に足す。既にあるゲームは `fge add <dir>` で足す。
+  `fge new` は作ったゲームを一覧に足す。既にあるゲームは `fge add <dir>` で足す。
   WhyNot 1 つの親フォルダの下に置かせる: 既にある git のリポを動かさせることになる。
-- engine のリポも `fge add` すれば、`templates/*` が子として並ぶ（10 節の 2 はこれで済む）。
-- **2 つの fge を分ける。** `~/.flix_ge/bin/fge`（install.sh で入れる・ワークスペース・ダッシュボード・新規作成・版上げ）と、
-  各ゲームの `bin/fge`（そのゲームの engine の版にそろった道具・render や lint）。ダッシュボードはゲームの操作を
-  そのゲームの `bin/fge` に任せるので、ゲームごとに engine の版が違っても食い違わない。
-  WhyNot 1 つの fge で全部: ゲームごとに engine の版が違う。古い版のゲームを新しい道具で触ると、Studio と同じ食い違いが戻る。
-- サーバーは 1 台に 1 つになるので、server.json は `~/.flix_ge/dashboard/server.json`。posts はゲームごと（3.1 のまま）。
+- engine のリポを `fge add` すると、`templates/*` が子として並ぶ。templates には `bin/fge` が無いので、engine の `bin/fge` を使って中継する。
 - テンプレートから作る画面は `fge new` を呼ぶだけ（Studio の Genesis のような写しを持たない。テンプレートの一覧は engine の zip の templates/ を読む）。
 
-## 14. engine の版上げ（`fge upgrade`）（案）
+## 14. engine の版上げ（`fge upgrade`・フェーズ 2）
 
 今ある物: `upgrade-game`（版の書き換え・fpkg の差し替え・check・非互換があれば終了コード 3）、`update-plan`（そのゲームで当たる非互換だけの
 指示書 UPDATE_PLAN.md）、`docs/migrations/<版>.md`（手書きの手当て）と `<版>.auto.md`（リリースで作る型の差と追随例）。
 足りないのは「engine の clone 無しで上げるコマンド」と「AI に直させて人が確かめる往復」。
 
 ```
-fge upgrade            # 新しい版があるか見る → engine の zip を ~/.flix_ge/engines/<版>/ に取る → 枝 engine-upgrade/<版> を切る
-                       # → upgrade-game → 非互換が無ければ check・test を流して終わり
+fge upgrade            # 全体の fge。作業ツリーがきれいか確かめる → 新しい版があるか見る → engine の zip を ~/.flix_ge/engines/<版>/ に取る
+                       # → 枝 engine-upgrade/<版> を切る → ゲームの local.mk の ENGINE（と JAVA）を新しい版へ書き換える
+                       # → その版の engine で upgrade-game → 非互換が無ければ check・test を流して終わり
                        # → 非互換があれば UPDATE_PLAN.md を書き、ダッシュボードに post（当たる所の数・指示書・AI へ渡す文）
-fge upgrade --fix      # 上の後、AI に直させる（下）
 ```
 
-- **AI に直させる: `--fix` は PATH にある `claude`（無ければ `codex`）を非対話で 1 回起こし、UPDATE_PLAN.md を渡す。** 指示は
-  「check と test が緑になるまで直す → render-all → リファレンスとの画素の差を post する」。人はダッシュボードで差と直した所を見て、
-  良ければ枝を取り込む（取り込みは人がする）。
-  WhyNot 既定で AI を起こす: 料金と権限が掛かる。人が `--fix` を打つか、ダッシュボードの「AI に直させる」を押した時だけ。
-  WhyNot fge が自分で直す: update-plan の WhyNot と同じ（読み違えた時に知らせずに壊す）。直すのは AI、fge は材料と確かめの場を渡す。
+- **赤の間も道具を新しい版にそろえる。** upgrade-game は check が緑になるまで sync-agents を走らせない（upgradegame.go:246-251）ので、
+  AI は古い AGENTS.md・skills・bin/fge のまま新しい API を直すことになる。`fge upgrade` は終了コード 3 の時に sync-agents だけ流す
+  （巻き戻しの範囲は upgrade-game の 4 ファイルのまま。sync-agents は枝ごと捨てれば戻る）。
+- **版ズレの検知を移す。** 今の status の「engine 版ズレ」は ENGINE の Makefile の VERSION と比べている（go/internal/status/engine.go:81）。
+  ENGINE が版ごとのフォルダを指す形では出なくなるので、`~/.flix_ge/engines/` の最新（無ければ Release の最新）と比べる形に替える。
+  Release の問い合わせは 1 日 1 回まで（結果を `~/.flix_ge/latest.json` に置く。認証なしの GitHub API は 1 時間 60 回まで）。
 - 版は 1 つずつ上げる（0.104 → 0.105 → …）。1 版ごとに指示書が短く、どの版で壊れたかが分かる。`--to <版>` で飛ばすこともできる。
-- engine の版は `~/.flix_ge/engines/` に並べて置き、ゲームの flix.toml が指す版を使う（古い版のゲームも動いたまま）。
+- engine の版は `~/.flix_ge/engines/` に並べて置き、ゲームの local.mk が指す版を使う（古い版のゲームも動いたまま）。
+- **`--fix`（AI に直させる）はフェーズ 3。** 手動の往復（post → 人が AI に頼む → AI が直す）が回ってから。プロセスを起こす決まりは 15.1 にまとめる。
+  WhyNot fge が自分で直す: update-plan の WhyNot と同じ（読み違えた時に知らせずに壊す）。直すのは AI、fge は材料と確かめの場を渡す。
 - engine 側の仕事: リリースのたびに `<版>.md`（手書きの手当て）を書く今の決まりを続ける。AI が直せなかった所は post に残るので、次の版の手当てに足す。
 
-## 15. Claude を開くボタンと、最初の指示の誘導（案）
+## 15. Claude を開くボタンと、最初の指示の誘導
 
-各ゲームの頁（`/<ゲーム名>/`）の上に「次にやること」のカードを並べ、カードごとに Claude を開くボタンを置く。
+各ゲームの頁の上にカードを置き、カードごとに Claude を開くボタンを置く。**フェーズ 1 は固定の「はじめに」カード 1 枚だけ**（状態から選ぶのはフェーズ 3）。
 
 ### 15.1 開き方（公式に書かれた方法だけを使う・2026-11-23 に code.claude.com で確認）
 
-| ボタン | 中身 | 指示 |
-|---|---|---|
-| **Claude Code（端末）で開く**（既定） | ただのリンク `claude-cli://open?cwd=<ゲームの絶対パス>&q=<指示>`（docs: deep-links）。新しい端末でそのフォルダの `claude` が起動する | 入力欄に入る。送るのは人が Enter を押した時 |
-| **Claude Desktop で開く** | サーバーが `claude --desktop` をゲームのフォルダで起動する（`POST /_api/open-desktop`・docs: desktop の「Coming from the CLI?」）。Desktop の Code タブをローカルのフォルダとプロンプトで開くリンクは公式に無い | 渡せないので、カードの「コピー」で貼ってもらう |
-| **コマンドをコピー** | `cd <dir> && claude -n <ゲーム名> "<指示>"`（Codex なら `codex "<指示>"`） | 打てばそのまま送られる |
+| ボタン | 中身 | 指示 | フェーズ |
+|---|---|---|---|
+| **Claude Code（端末）で開く**（既定） | ただのリンク `claude-cli://open?cwd=<ゲームの絶対パス>&q=<指示>`（docs: deep-links）。新しい端末でそのフォルダの `claude` が起動する | 入力欄に入る。送るのは人が Enter を押した時 | 1 |
+| **コマンドをコピー** | `cd <dir> && claude -n <ゲーム名> "<指示>"`（Codex なら `codex "<指示>"`） | 打てばそのまま送られる | 1 |
+| **Claude Desktop で開く** | サーバーが `claude --desktop` をゲームのフォルダで起動する（docs: desktop の「Coming from the CLI?」）。Desktop の Code タブをローカルのフォルダとプロンプトで開くリンクは公式に無い | 渡せないので、カードの「コピー」で貼ってもらう | 3 |
 
+- **プロセスを起こす決まり（14 節の `--fix` と共通）:** サーバーがプロセスを起こすのは、人が頁のボタンを押した時か CLI を打った時だけ。
+  対話の claude は人の端末で動かす（deep link）。非対話で起こすのは `--fix` だけで、その時は `--permission-mode` と時間の上限を
+  コマンドの引数で人が選ぶ（既定は付けない＝確認を求める）。
 - deep link は、その機械で 1 回でも対話で何か送った後でないと開けない（ハンドラの登録がその時）。頁は開けたかを知れないので、
   リンクの横にいつも「開かない時: 一度 `claude` を起動して何か送る」と 1 行出し、コピーも並べる。
-- リンクはブラウザが OS へ渡すだけで、サーバーはプロセスを起こさない（Desktop だけがサーバーで起こす）。`q` は 5,000 字まで・`cwd` は絶対パスだけ。
+- `q` は 5,000 字まで・`cwd` は絶対パスだけ。
 - ゲームの CLAUDE.md は `@AGENTS.md` の 1 行なので、Claude は起動時に AGENTS.md・skills を読む。Codex は AGENTS.md を直に読む。追加の設定は要らない。
 - WhyNot `claude "<指示>"` を既定にする: 指示がすぐ送られ、人が読んで直す間が無い。下書きで入る deep link を既定にする。
 - WhyNot VS Code（`vscode://anthropic.claude-code/open?prompt=`）を並べる: フォルダを指定できず、開いている VS Code の別のフォルダで始まりうる。
 
-### 15.2 「次にやること」のカード（状態から選ぶ）
+### 15.2 「はじめに」カード（フェーズ 1）と、状態から選ぶカード（フェーズ 3）
 
-ゲームの状態を見て、上から 3 枚まで出す。どのカードも「何をするか 1 行」と「Claude へ渡す指示」を持つ。
+- フェーズ 1 の固定カード: 「このゲームで何ができるか教えて。make status を見て、次にやることを 3 つ挙げて」と、自由に書ける入力欄。
+- フェーズ 3 で、ゲームの状態から上へ 3 枚まで選ぶ。
 
 | 出す時 | カード | 指示（下書き） |
 |---|---|---|
-| 作ったばかり（AGENTS.local.md の画風の節が空） | 画風を決める | 「このゲームの画風を決めたい。/style-interview で質問して」 |
+| 作ったばかり（AGENTS.local.md の画風の節が仮置きのまま） | 画風を決める | 「このゲームの画風を決めたい。/style-interview で質問して」 |
 | Inbox に返事がある | 返事を受けて直す | 「bin/fge dashboard inbox の返事を読んで直し、直した絵を dashboard post で見せて」 |
 | engine の新しい版がある | 版を上げる | 「fge upgrade の UPDATE_PLAN.md に沿って直し、check と test を緑にして」 |
 | F8 のチケットがある | チケットを直す | 「debug/annotations の新しいチケットを読んで直して」 |
-| いつも（最後の 1 枚） | 自由に頼む | 入力欄。書いた文で同じボタンを出す |
 
-- 指示の文は engine から配る `agents-pack/starters.json`（ゲームの `.fge/starters.json` へ sync-agents が写す）に置き、ゲームの engine の版にそろえる。
-  状態の判定は全体の fge が行い、文はそのゲームの版の物を使う。
-- カードの文は、ゲームの AGENTS.md の早見表にある名前（スキル・コマンド）だけを使う。早見表から消えた名前を starters.json が使っていたら `make check-docs-sync` で止める。
-- フェーズ 1 に入れる（往復の始まりなので、無いと人は何を打てばよいか分からない）。
+- 指示の文は engine から配る `agents-pack/starters.json`（sync-agents がゲームへ写す）に置き、ゲームの engine の版にそろえる。
+  カードの文はゲームの AGENTS.md の早見表にある名前だけを使い、消えた名前を使っていたら `make check-docs-sync` で止める。
