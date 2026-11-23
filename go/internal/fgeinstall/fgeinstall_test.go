@@ -585,9 +585,21 @@ func TestSelfUpdateRefusesAMismatchedSum(t *testing.T) {
 	}
 }
 
-func TestFgeAssetNameRefusesWindows(t *testing.T) {
-	if _, err := FgeAssetName("windows", "amd64"); err == nil {
-		t.Fatal("Windows を受けた")
+func TestFgeAssetNameNamesTheWindowsExe(t *testing.T) {
+	if got, err := FgeAssetName("windows", "amd64"); err != nil || got != "fge-windows-amd64.exe" {
+		t.Fatalf("got %q err=%v", got, err)
+	}
+}
+
+func TestFgeAssetNameRefusesWindowsArm64(t *testing.T) {
+	if _, err := FgeAssetName("windows", "arm64"); err == nil {
+		t.Fatal("配っていない windows/arm64 を受けた")
+	}
+}
+
+func TestFgeAssetNameRefusesAnUnknownOS(t *testing.T) {
+	if _, err := FgeAssetName("plan9", "amd64"); err == nil {
+		t.Fatal("知らない OS を受けた")
 	}
 }
 

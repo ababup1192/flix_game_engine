@@ -1,11 +1,13 @@
 package fgeinstall
 
 import (
-	"bytes"
+	"runtime"
+
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/ababup1192/flix_game_engine/go/internal/exereplace"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,14 +21,21 @@ import (
 const FgeSumsName = "fge-SHA256SUMS.txt"
 
 // FgeAssetName は Release に添える全体の fge の名前。
+// WhyNot: windows/arm64 を受けない — Release の fge-windows-* は amd64 の 1 本だけ（plans/windows.md 6 節。arm64 は後）。
 func FgeAssetName(goos, goarch string) (string, error) {
-	if goos != "darwin" && goos != "linux" {
-		return "", fmt.Errorf("この OS（%s）向けの fge は配っていません（macOS と Linux だけ）", goos)
+	switch goos {
+	case "darwin", "linux":
+		if goarch != "amd64" && goarch != "arm64" {
+			return "", fmt.Errorf("この CPU（%s）向けの fge は配っていません（amd64 と arm64 だけ）", goarch)
+		}
+		return "fge-" + goos + "-" + goarch, nil
+	case "windows":
+		if goarch != "amd64" {
+			return "", fmt.Errorf("この CPU（%s）向けの Windows の fge は配っていません（amd64 だけ）", goarch)
+		}
+		return "fge-windows-amd64.exe", nil
 	}
-	if goarch != "amd64" && goarch != "arm64" {
-		return "", fmt.Errorf("この CPU（%s）向けの fge は配っていません（amd64 と arm64 だけ）", goarch)
-	}
-	return "fge-" + goos + "-" + goarch, nil
+	return "", fmt.Errorf("この OS（%s）向けの fge は配っていません（macOS・Linux・Windows だけ）", goos)
 }
 
 type releaseAsset struct {
@@ -105,28 +114,9 @@ func (e *Env) SelfUpdate() (SelfUpdateResult, error) {
 	return res, nil
 }
 
-// replaceExecutable は別名に書いてから名前を替える。
-// WhyNot: dest へ上書きしない — macOS は同じ inode の実行ファイルを書き換えられると、覚えていた署名の検証結果を捨てて次の実行を SIGKILL する。
+// replaceExecutable は走っている fge を差し替える（Windows では今の物を .old に退けてから置く）。
 func replaceExecutable(dest string, body []byte) error {
-	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(dest), ".fge.*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := bytes.NewReader(body).WriteTo(tmp); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Chmod(tmp.Name(), 0o755); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), dest)
+	return exereplace.Write(dest, body, runtime.GOOS)
 }
 
 func sha256Hex(b []byte) string {
