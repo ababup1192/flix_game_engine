@@ -1,7 +1,7 @@
 # Windows 対応（準備のフェーズ）
 
-状態: 設計 第 2 版（相談中）。実装は未着手。plans/onboarding.md（始め方）を macOS と Linux で通した後に、同じ始め方を Windows に載せるための準備。
-レビューは 80 点以上でクリティカルな指摘が無ければ実装に入る（作者の判断）。第 1 版 66 点。答えは 10 節。
+状態: 設計 第 3 版（相談中）。実装は未着手。plans/onboarding.md（始め方）を macOS と Linux で通した後に、同じ始め方を Windows に載せるための準備。
+レビューは 80 点以上でクリティカルな指摘が無ければ実装に入る（作者の判断）。第 1 版 66 点・第 2 版 76 点。答えは 10 節。
 
 ## 0. 決まっていること
 
@@ -145,6 +145,10 @@ project.json（ゲームの根・今もある）に宣言を足す。凍結し�
 | C6 Windows では動いている exe と開いている jar を置き換えられない | 11 節 |
 | 起動の決まりのまとめ方・render-all の時間切れ・端末の文字化け・make hooks | 5 節の末尾・11 節・7 節 |
 | もっと小さく: Git for Windows を前提に・run --seconds を外す・Studio は答えとして写す | 0 節・#13・#3 |
+| （第 2 版）K1 headless-run の lib のリンクが Git Bash では丸写し | 12 節（ジャンクション） |
+| （第 2 版）K2 開いている jar を差し替えられない | 12 節（指紋の入った名前） |
+| （第 2 版）K3 プロセスの木を止められない | 12 節（Job Object） |
+| （第 2 版）パスの形・bash の探し方・Stop の checkd・AF_UNIX・鍵の pid・project.schema・forbid | 12 節の「実装しながら決める物」 |
 
 ## 11. Windows で動いている物を差し替える時
 
@@ -154,7 +158,26 @@ project.json（ゲームの根・今もある）に宣言を足す。凍結し�
 - 時間: 走らせる・描き出す・render-all は Git Bash の headless-run の jar の作り置きで速いまま（Windows の今の毎回コンパイルをやめる）。
   Claude の Bash の 2 分の時間切れに当たる物（new・render-all）は、ワークスペースとゲームの AGENTS.md に「timeout を 600000 に」と書く（onboarding 2.6 と同じ）。
 
-## 12. 後に回す物
+## 12. Git Bash の上の headless-run（jar の作り置き）を Windows で保つ
+
+11 節の「速いまま」は headless-run の jar の作り置きが前提。Git Bash の上で崩れる所が 3 つあり、#6 の中で直す。
+
+| 所 | 崩れ方 | 直し方 |
+|---|---|---|
+| headless-run:249 の `ln -sfn "$PWD/lib" "$proj/lib"` | MSYS の既定の `ln -s` は丸写しを作る。flix が依存を落とすのは写しの方になり、2 回目は写しの中に `lib/lib` を作り、指紋も毎回ずれる（mvn-cache-share.sh:46-47 は同じ理由で MSYS を外している） | MSYS の時だけ `cmd //c mklink /J`（ジャンクション。管理者の権限なしで張れる）。張れなければ毎回コンパイルする道へ移り、その旨を 1 行出す |
+| headless-run:258-259 の `mv "$jar.tmp.$$" "$jar"` | Windows では、`run` のウィンドウや常駐の JVM が開いている jar を差し替えられない（ゲームを開いたまま render する、普段の流れで止まる） | jar の名前に指紋を入れ、別の名前で置く（`headless-<指紋>.jar`）。今の名前は指紋の入った jar を指す小さなファイルにする。古い jar は開かれていなければ次の作り置きの時に消す |
+| headless-run:544・bin/flix の最後の `exec` | MSYS の bash はネイティブの java を本当の exec でなく子のプロセスで起こす。時間切れや Ctrl+C で bash だけが落ち、java が残って jar を開いたままになる | #6 で Go が bash を起こす時は、Windows では Job Object（KILL_ON_JOB_CLOSE）に入れる。Go が止まれば木ごと止まる。#13 の `run --seconds` も同じ仕組みで作る |
+
+実装しながら決める物（第 2 版のレビュー）:
+- bin/flix の `FLIX_PRINT_JAR=1` は Git Bash では `/c/...` の形で返り、checkd が java の `-cp` に渡すと java.exe が読めない（resident.go:282）。bin/flix の側で MSYS の時に `cygpath -m` を通す。
+- bash の探し方（3 節 2）: `CLAUDE_CODE_GIT_BASH_PATH` → Git for Windows の `bin\bash.exe`（`usr\bin` でない）。PATH からは探さない（System32\bash.exe は WSL の入口）。
+- hooks の Stop の checkd は #4 が済むまで Windows では落ちる。#4 までは Windows では何もせず通す（作る順は #1 → #4 を先に）。
+- checkd の常駐の AF_UNIX の socket は Windows 10 1803 以上と JDK 16 以上が前提。パスの長さは `%LocalAppData%` の下なので上限に収まる見込み。CI で 1 度確かめる。
+- headless-run の鍵の pid（MSYS の pid）と Go の jarshare（builder.go:152・Windows の pid）は別のフォルダに置き、混ぜない。
+- project.json に足す欄は project.schema.json に足し、凍結した Studio が知らない欄を読んでも壊れないことを確かめる。
+- 9 節の forbid は `exec.Command("sh"`・`"bash"`・`"env"` も止める。bash は 3 節 2 の起動役 1 か所だけ許す。
+
+## 13. 後に回す物
 
 - 5 節の #13・#14。arm64 の Windows。
 - PowerShell だけ（Git Bash が無い）の Claude Code。Git for Windows を前提にしたので、無い時は install.ps1 と `bin/fge status` が入れ方を出す。
