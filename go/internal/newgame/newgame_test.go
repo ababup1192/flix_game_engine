@@ -9,6 +9,7 @@ import (
 
 	"github.com/ababup1192/flix_game_engine/go/internal/fgehome"
 	"github.com/ababup1192/flix_game_engine/go/internal/fgeinstall"
+	"github.com/ababup1192/flix_game_engine/go/internal/scaffold"
 )
 
 func TestPackageNameReplacesHyphens(t *testing.T) {
@@ -88,7 +89,7 @@ func TestListTemplatesHidesAnUnreplacedTitle(t *testing.T) {
 }
 
 type fakeRun struct {
-	makeArgs  []string
+	req       *scaffold.Request
 	installed []string
 }
 
@@ -101,11 +102,12 @@ func fakeDeps(t *testing.T, engine string, r *fakeRun) Deps {
 			r.installed = append(r.installed, v)
 			return fgeinstall.InstallResult{Version: v, EngineDir: engine}, nil
 		},
-		Latest:   func() (string, error) { return "0.109.0", nil },
-		Newest:   func() string { return "" },
-		LookPath: func(name string) (string, error) { return "/usr/bin/" + name, nil },
-		RunMake: func(args []string) error {
-			r.makeArgs = args
+		Latest:    func() (string, error) { return "0.109.0", nil },
+		Newest:    func() string { return "" },
+		LookPath:  func(name string) (string, error) { return "/usr/bin/" + name, nil },
+		NeedsMake: func() bool { return true },
+		Create: func(req scaffold.Request) error {
+			r.req = &req
 			return nil
 		},
 		Getwd:    func() (string, error) { return cwd, nil },
@@ -114,7 +116,7 @@ func fakeDeps(t *testing.T, engine string, r *fakeRun) Deps {
 	}
 }
 
-func TestRunPassesTheNewGameArgumentsToMake(t *testing.T) {
+func TestRunPassesTheRequestToScaffold(t *testing.T) {
 	engine := makeEngine(t)
 	r := &fakeRun{}
 	d := fakeDeps(t, engine, r)
@@ -124,9 +126,9 @@ func TestRunPassesTheNewGameArgumentsToMake(t *testing.T) {
 	if code := Run(&out, &errOut, []string{"tide-pool", "--template", "rpg-starter", "--title", "潮"}, false, d); code != 0 {
 		t.Fatalf("code=%d %s", code, errOut.String())
 	}
-	want := []string{"-C", engine, "new-game", "GAME=" + filepath.Join(cwd, "tide-pool"), "NAME=tide_pool", "TEMPLATE=rpg-starter", "PACK_NOTE=0", "TITLE=潮"}
-	if strings.Join(r.makeArgs, "|") != strings.Join(want, "|") {
-		t.Fatalf("got %v", r.makeArgs)
+	want := scaffold.Request{Engine: engine, Game: filepath.Join(cwd, "tide-pool"), Name: "tide_pool", Template: "rpg-starter", Title: "潮", GOOS: "linux"}
+	if r.req == nil || *r.req != want {
+		t.Fatalf("got %+v", r.req)
 	}
 }
 
@@ -185,6 +187,23 @@ func TestRunStopsBeforeDownloadingWhenMakeIsMissing(t *testing.T) {
 	}
 }
 
+func TestRunNeedsNeitherPerlNorMakeWhenFgeRunsTheChecks(t *testing.T) {
+	r := &fakeRun{}
+	d := fakeDeps(t, makeEngine(t), r)
+	d.NeedsMake = func() bool { return false }
+	d.LookPath = func(name string) (string, error) {
+		if name == "git" {
+			return "/usr/bin/git", nil
+		}
+		return "", errors.New("not found")
+	}
+
+	var out, errOut strings.Builder
+	if code := Run(&out, &errOut, []string{"tidepool"}, false, d); code != 0 {
+		t.Fatalf("code=%d err=%s", code, errOut.String())
+	}
+}
+
 func TestRunRefusesAnExistingFolder(t *testing.T) {
 	r := &fakeRun{}
 	d := fakeDeps(t, makeEngine(t), r)
@@ -192,7 +211,7 @@ func TestRunRefusesAnExistingFolder(t *testing.T) {
 	os.MkdirAll(filepath.Join(cwd, "tidepool"), 0o755)
 
 	var out, errOut strings.Builder
-	if code := Run(&out, &errOut, []string{"tidepool"}, false, d); code == 0 || r.makeArgs != nil {
+	if code := Run(&out, &errOut, []string{"tidepool"}, false, d); code == 0 || r.req != nil {
 		t.Fatalf("既にあるフォルダへ作った: code=%d", code)
 	}
 }
@@ -203,7 +222,7 @@ func TestRunRefusesAnUnknownTemplate(t *testing.T) {
 
 	var out, errOut strings.Builder
 	code := Run(&out, &errOut, []string{"tidepool", "--template", "shmup-starter"}, false, d)
-	if code == 0 || r.makeArgs != nil || !strings.Contains(errOut.String(), "rpg-starter") {
+	if code == 0 || r.req != nil || !strings.Contains(errOut.String(), "rpg-starter") {
 		t.Fatalf("code=%d err=%s", code, errOut.String())
 	}
 }
@@ -223,7 +242,7 @@ func TestRunRemovesTheHalfMadeFolderWhenMakeStops(t *testing.T) {
 	d := fakeDeps(t, makeEngine(t), r)
 	cwd, _ := d.Getwd()
 	dir := filepath.Join(cwd, "tidepool")
-	d.RunMake = func(args []string) error {
+	d.Create = func(scaffold.Request) error {
 		os.MkdirAll(filepath.Join(dir, "assets"), 0o755)
 		return errors.New("exit status 2")
 	}
@@ -239,7 +258,7 @@ func TestRunSaysItRemovedTheHalfMadeFolder(t *testing.T) {
 	r := &fakeRun{}
 	d := fakeDeps(t, makeEngine(t), r)
 	cwd, _ := d.Getwd()
-	d.RunMake = func(args []string) error {
+	d.Create = func(scaffold.Request) error {
 		os.MkdirAll(filepath.Join(cwd, "tidepool"), 0o755)
 		return errors.New("exit status 2")
 	}
@@ -258,7 +277,7 @@ func TestRunKeepsAFolderThatWasThereBefore(t *testing.T) {
 	keep := filepath.Join(cwd, "tidepool", "mine.txt")
 	os.MkdirAll(filepath.Dir(keep), 0o755)
 	os.WriteFile(keep, []byte("x"), 0o644)
-	d.RunMake = func(args []string) error { return errors.New("exit status 2") }
+	d.Create = func(scaffold.Request) error { return errors.New("exit status 2") }
 
 	var out, errOut strings.Builder
 	Run(&out, &errOut, []string{"tidepool"}, false, d)
@@ -272,7 +291,7 @@ func TestRunKeepsTheGameWhenMakeSucceeds(t *testing.T) {
 	d := fakeDeps(t, makeEngine(t), r)
 	cwd, _ := d.Getwd()
 	dir := filepath.Join(cwd, "tidepool")
-	d.RunMake = func(args []string) error { return os.MkdirAll(dir, 0o755) }
+	d.Create = func(scaffold.Request) error { return os.MkdirAll(dir, 0o755) }
 
 	var out, errOut strings.Builder
 	Run(&out, &errOut, []string{"tidepool"}, false, d)
@@ -287,7 +306,7 @@ func TestRunTellsNewGameNotToPrintThePackNote(t *testing.T) {
 
 	var out, errOut strings.Builder
 	Run(&out, &errOut, []string{"tidepool"}, false, d)
-	if !strings.Contains(strings.Join(r.makeArgs, " "), "PACK_NOTE=0") {
-		t.Fatalf("got %v", r.makeArgs)
+	if r.req == nil || r.req.PackNote {
+		t.Fatalf("got %+v", r.req)
 	}
 }

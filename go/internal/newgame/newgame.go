@@ -1,4 +1,4 @@
-// Package newgame は fge new の本体。配った engine の make new-game を流し、workspace.json に足す。
+// Package newgame は fge new の本体。配った engine のテンプレートから scaffold でゲームを作り、workspace.json に足す。
 // 決まりの本文は plans/onboarding.md の 2.8。
 package newgame
 
@@ -17,6 +17,8 @@ import (
 
 	"github.com/ababup1192/flix_game_engine/go/internal/fgehome"
 	"github.com/ababup1192/flix_game_engine/go/internal/fgeinstall"
+	"github.com/ababup1192/flix_game_engine/go/internal/gamesteps"
+	"github.com/ababup1192/flix_game_engine/go/internal/scaffold"
 )
 
 const (
@@ -25,25 +27,28 @@ const (
 	exitBadUsage = 2
 )
 
-// DefaultTemplate は make new-game の TEMPLATE の既定と同じ。
-const DefaultTemplate = "game-starter"
+// DefaultTemplate は scaffold（make new-game）の TEMPLATE の既定と同じ。
+const DefaultTemplate = scaffold.DefaultTemplate
 
 const usage = `使い方: fge new <フォルダ名> [--template <名>] [--name <パッケージ名>] [--title <題>] [--engine <版>]
         fge new --list [--engine <版>]`
 
-// Deps は外の世界（網・make・置き場）とつなぐ所。テストは差し替える。
+// Deps は外の世界（網・git・置き場）とつなぐ所。テストは差し替える。
 type Deps struct {
 	Install  func(version string) (fgeinstall.InstallResult, error)
 	Latest   func() (string, error)
 	Newest   func() string
 	LookPath func(name string) (string, error)
-	RunMake  func(args []string) error
-	Getwd    func() (string, error)
-	GOOS     string
-	Progress io.Writer
+	// NeedsMake は産声の確認に make を使うか（fge がまだ check・test・render を持たない時）。
+	NeedsMake func() bool
+	Create    func(req scaffold.Request) error
+	Getwd     func() (string, error)
+	GOOS      string
+	GOARCH    string
+	Progress  io.Writer
 }
 
-// DefaultDeps は本物の網・make・置き場を使う。
+// DefaultDeps は本物の網・git・置き場を使う。
 func DefaultDeps(e *fgeinstall.Env) Deps {
 	return Deps{
 		Install: e.Install,
@@ -54,26 +59,24 @@ func DefaultDeps(e *fgeinstall.Env) Deps {
 			}
 			return l.Version, nil
 		},
-		Newest:   fgeinstall.NewestInstalled,
-		LookPath: exec.LookPath,
-		RunMake:  runMakeStreaming,
-		Getwd:    os.Getwd,
-		GOOS:     e.GOOS,
-		Progress: e.Progress,
+		Newest:    fgeinstall.NewestInstalled,
+		LookPath:  exec.LookPath,
+		NeedsMake: func() bool { return !gamesteps.New("").UsesFge() },
+		Create:    createStreaming,
+		Getwd:     os.Getwd,
+		GOOS:      e.GOOS,
+		GOARCH:    e.GOARCH,
+		Progress:  e.Progress,
 	}
 }
 
-// WhyNot: make の出力を貯めずに端末へ直に流す — new-game は 2〜3 分かかり、貯めると呼ぶ側の Claude が止まったと見分けられない。
+// WhyNot: 出力を貯めずに端末へ直に流す — 作るのは 2〜3 分かかり、貯めると呼ぶ側の Claude が止まったと見分けられない。
 // WhyNot: JAVA を足さない — 配った engine では bin/java-resolve.sh が mk/jdk.mk から決める。人が名指しした JAVA は環境のまま子へ届く。
-// WhyNot: Ctrl-C で fge まで落とさない — make だけが止まり、fge が作りかけのフォルダを片付けてから終わる。
-func runMakeStreaming(args []string) error {
+// WhyNot: Ctrl-C で fge まで落とさない — 子の check・描き出しだけが止まり、fge が作りかけのフォルダを片付けてから終わる。
+func createStreaming(req scaffold.Request) error {
 	signal.Ignore(os.Interrupt)
 	defer signal.Reset(os.Interrupt)
-	cmd := exec.Command("make", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = nil
-	return cmd.Run()
+	return scaffold.Create(req, scaffold.DefaultDeps(os.Stdout, gamesteps.New(req.Engine)))
 }
 
 type options struct {
@@ -156,10 +159,14 @@ func checkFolderName(folder string) error {
 	return nil
 }
 
-// missingTools は make・perl・git のうち PATH に無い物。
-func missingTools(lookPath func(string) (string, error)) []string {
+// missingTools は要る道具（git と、産声の確認に make を使う時は make）のうち PATH に無い物。
+func missingTools(lookPath func(string) (string, error), needsMake bool) []string {
+	tools := []string{"git"}
+	if needsMake {
+		tools = append(tools, "make")
+	}
 	var missing []string
-	for _, tool := range []string{"make", "perl", "git"} {
+	for _, tool := range tools {
 		if _, err := lookPath(tool); err != nil {
 			missing = append(missing, tool)
 		}
@@ -171,7 +178,7 @@ func missingTools(lookPath func(string) (string, error)) []string {
 func installHint(goos string, missing []string) string {
 	switch goos {
 	case "darwin":
-		return "macOS では `xcode-select --install` で make・perl・git が入ります"
+		return "macOS では `xcode-select --install` で make・git が入ります"
 	case "linux":
 		return "Debian・Ubuntu は `sudo apt-get install -y " + strings.Join(missing, " ") + "`、Fedora は `sudo dnf install -y " + strings.Join(missing, " ") + "`"
 	}
@@ -260,7 +267,11 @@ func Run(out, errOut *strings.Builder, args []string, asJSON bool, d Deps) int {
 	fmt.Fprintf(out, "[fge new] %s を作りました（engine %s・テンプレート %s）\n", res.Dir, res.Engine, res.Template)
 	fmt.Fprintln(out, "次にやること:")
 	fmt.Fprintf(out, "  fge open %s            このゲームのフォルダで Claude Code を開く\n", res.Name)
-	fmt.Fprintf(out, "  cd %s && make run      動かしてみる（make debug で描き出しの確かめ）\n", res.Name)
+	if d.GOOS == "windows" {
+		fmt.Fprintf(out, "  cd %s && bin/fge run   動かしてみる\n", res.Name)
+	} else {
+		fmt.Fprintf(out, "  cd %s && make run      動かしてみる（make debug で描き出しの確かめ）\n", res.Name)
+	}
 	fmt.Fprintln(out, "配られた skills・rules・AGENTS.md の共通部は版上げで上書きされます。ゲーム用に変えたい時は AGENTS.local.md に書くか、別の名前のスキルを足してください。")
 	return exitDone
 }
@@ -295,8 +306,8 @@ func create(o options, d Deps) (Result, error) {
 	if !templateNameRe.MatchString(template) {
 		return Result{}, fmt.Errorf("テンプレート名 %q は読めません（一覧は fge new --list）", template)
 	}
-	// WhyNot: engine を取るより先に道具を見る — 300 MB を落とした後に make が無いと分かっても、人は何もできない。
-	if missing := missingTools(d.LookPath); len(missing) > 0 {
+	// WhyNot: engine を取るより先に道具を見る — 300 MB を落とした後に git が無いと分かっても、人は何もできない。
+	if missing := missingTools(d.LookPath, d.NeedsMake()); len(missing) > 0 {
 		return Result{}, fmt.Errorf("%s が見つかりません。%s", strings.Join(missing, "・"), installHint(d.GOOS, missing))
 	}
 	cwd, err := d.Getwd()
@@ -328,13 +339,10 @@ func create(o options, d Deps) (Result, error) {
 	}
 
 	d.progressf("[fge new] 2/3 %s を %s から作ります（check → test → 描き出しまで流すので 2〜3 分かかります）\n", o.folder, template)
-	makeArgs := []string{"-C", inst.EngineDir, "new-game", "GAME=" + dir, "NAME=" + pkg, "TEMPLATE=" + template, "PACK_NOTE=0"}
-	if o.title != "" {
-		makeArgs = append(makeArgs, "TITLE="+o.title)
-	}
-	if err := d.RunMake(makeArgs); err != nil {
+	req := scaffold.Request{Engine: inst.EngineDir, Game: dir, Name: pkg, Title: o.title, Template: template, GOOS: d.GOOS, GOARCH: d.GOARCH}
+	if err := d.Create(req); err != nil {
 		removeHalfMade(dir, d.Progress)
-		return Result{}, fmt.Errorf("make new-game が止まりました: %v（上の出力に理由があります）", err)
+		return Result{}, fmt.Errorf("ゲームを作る途中で止まりました: %v（上の出力に理由があります）", err)
 	}
 
 	d.progressf("[fge new] 3/3 ワークスペースの一覧（%s）に足します\n", fgehome.WorkspacePath())
@@ -344,8 +352,8 @@ func create(o options, d Deps) (Result, error) {
 	return Result{Name: o.folder, Dir: dir, Package: pkg, Template: template, Engine: inst.Version}, nil
 }
 
-// removeHalfMade は make new-game が途中で止まった時に作りかけのフォルダを消す。
-// WhyNot: 前からあった物を消すかを見分けない — create が make の前に dir が無いことを確かめ、あれば止めている。
+// removeHalfMade は作る途中で止まった時に作りかけのフォルダを消す。
+// WhyNot: 前からあった物を消すかを見分けない — create が作る前に dir が無いことを確かめ、あれば止めている。
 func removeHalfMade(dir string, progress io.Writer) {
 	if _, err := os.Lstat(dir); err != nil {
 		return
