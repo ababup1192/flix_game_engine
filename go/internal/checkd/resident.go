@@ -31,6 +31,7 @@ import (
 
 	"github.com/ababup1192/flix_game_engine/go/internal/hooks"
 	"github.com/ababup1192/flix_game_engine/go/internal/javacmd"
+	"github.com/ababup1192/flix_game_engine/go/internal/status"
 )
 
 // residentProtocol は flixlint の常駐と話す口の版。
@@ -287,7 +288,9 @@ func prepareResident(r *hooks.Rules, root, pkg string) (residentSetup, error) {
 	if s.shimJar, err = ShimJar(r); err != nil {
 		return s, err
 	}
-	s.java = javaCmd(root)
+	if s.java, err = javaCmd(root); err != nil {
+		return s, err
+	}
 	flixSum, err := cachedSum(r, s.flixJar)
 	if err != nil {
 		return s, err
@@ -340,9 +343,13 @@ func ShimJar(r *hooks.Rules) (string, error) {
 	return path, os.Rename(part, path)
 }
 
-// javaCmd は bin/flix と同じ決め方の java（javacmd.Resolve）。
-func javaCmd(root string) string {
-	return javacmd.Resolve(root)
+// javaCmd は bin/flix と同じ決め方の java（javacmd.Resolve）。root はゲームの根なので、先に engine を引いて渡す。
+func javaCmd(root string) (string, error) {
+	engine, _ := status.ResolveEngineDir(root)
+	if engine == "" {
+		engine = root
+	}
+	return javacmd.Resolve(engine)
 }
 
 func fileSum(path string) (string, error) {

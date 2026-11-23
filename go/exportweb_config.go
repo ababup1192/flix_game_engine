@@ -144,7 +144,10 @@ func loadExportConfig(o exportWebOptions) (exportConfig, *exportFailure) {
 	if err != nil {
 		return c, exportFail(code, err)
 	}
-	c.Paths, c.Java = p, exportWebJava(p.Engine)
+	c.Paths = p
+	if c.Java, err = exportWebJava(p.Engine); err != nil {
+		return c, exportFail(1, err)
+	}
 	if c.Project, err = loadExportProject(p.Game); err != nil {
 		return c, exportFail(1, err)
 	}

@@ -19,7 +19,7 @@
 // 当たる物の schema。Studio と同じ) → Doc の置き場から assets/ まで上って <種類>.schema.json
 // → engine の docs/<種類>.schema.json (fx など engine が持つ種類。engine の場所は
 // status.FindEngineDir = makefile-dup と同じ道具: engine のリポ自身なら根 → ENGINE → local.mk →
-// Makefile の ENGINE)。
+// engine の中のテンプレート → 置き場の engines/<版>)。
 //
 // どれが Doc か: パスに assets/ の段を含み、名前が <名前>.<種類>.json で、種類が skipKinds
 // (schema・sprite・palette…) でない物。sprite は lint-sprite / palette が見る・palette は生成物。

@@ -71,10 +71,11 @@ func TestLabelOnlyWhenSchemaGiven(t *testing.T) {
 }
 
 // engine が持つ種類 (fx など) は engine の docs/<種類>.schema.json で足りる。
-// engine の場所はゲームなら ENGINE → local.mk → Makefile の ENGINE、engine のリポ自身なら根。
+// engine の場所はゲームなら status.FindEngineDir の決まり（ENGINE → local.mk → …）、engine のリポ自身なら根。
 func TestEngineDocsSchema(t *testing.T) {
+	t.Setenv("ENGINE", "")
 	root := lintconf.TestRepo(t, Name, map[string]string{
-		"Makefile":                   "ENGINE ?= engine\ninclude $(ENGINE)/mk/game.mk\n",
+		"local.mk":                   "ENGINE ?= engine\n",
 		"engine/mk/game.mk":          "",
 		"engine/docs/fx.schema.json": `{"type":"object"}`,
 		"assets/town.fx.json":        `{"version":1,"note":"煙"}`,

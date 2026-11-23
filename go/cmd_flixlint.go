@@ -31,9 +31,10 @@ func init() {
 				checkd.StopStaleResident(r, repoRoot(), refactorRoot(), os.Stderr)
 			}
 			fmt.Fprintf(out, "FLIXLINT_DIR='%s'\nFLIXLINT_SHIM='%s'\n", dir, shim)
-			// WhyNot: flixlint へ java のパスを渡す口は無いので、PATH の java が動かない時は engine の devbox の jdk を前に足させる。
-			if !javacmd.PathWorks() {
-				if path, ok := pathWithEngineJava(os.Getenv("PATH"), engineDirOf(repoRoot())); ok {
+			// WhyNot: flixlint へ java のパスを渡す引数は無いので、配った engine の時はいつも、ほかは PATH の java が動かない時に、
+			// engine の java の bin を前に足させる。
+			if engine := engineDirOf(repoRoot()); javacmd.IsBundle(engine) || !javacmd.PathWorks() {
+				if path, ok := pathWithEngineJava(os.Getenv("PATH"), engine); ok {
 					fmt.Fprintf(out, "PATH='%s'\n", path)
 				}
 			}

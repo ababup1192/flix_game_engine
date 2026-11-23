@@ -214,7 +214,11 @@ func newFontBakeRunner(game string) (fontbake.Runner, error) {
 	if flixJar == "" {
 		return fontbake.Runner{}, fmt.Errorf("flix.jar が見つからない（engine の bin/flix.jar を置くか FLIX_JAR で名指す）")
 	}
-	return fontbake.Runner{GameDir: game, FlixJar: flixJar, Java: javacmd.Resolve(engine), Log: os.Stderr}, nil
+	java, err := javacmd.Resolve(engine)
+	if err != nil {
+		return fontbake.Runner{}, err
+	}
+	return fontbake.Runner{GameDir: game, FlixJar: flixJar, Java: java, Log: os.Stderr}, nil
 }
 
 func writeFontsManifest(outDir string, atlases []*fontbake.Atlas, charset int) error {

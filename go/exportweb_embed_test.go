@@ -237,8 +237,11 @@ func embedToolJars(t *testing.T) (java, asm, tools, web string) {
 	web = filepath.Join(root, "build", "web-jar", "fge-web-"+version+".jar")
 	tools = filepath.Join(root, "build", "web-jar", "fge-web-tools-"+version+".jar")
 	asm = filepath.Join(root, "build", "web-jar", "deps", "teavm-relocated-libs-asm-"+teavmVersion+".jar")
-	java = exportWebJava(root)
-	if _, err := exec.LookPath(java); err != nil || !fileExists(web) || !fileExists(tools) || !fileExists(asm) {
+	java, err = exportWebJava(root)
+	if err == nil {
+		_, err = exec.LookPath(java)
+	}
+	if err != nil || !fileExists(web) || !fileExists(tools) || !fileExists(asm) {
 		t.Skip("java か make web-jar の jar が無い")
 	}
 	return java, asm, tools, web
