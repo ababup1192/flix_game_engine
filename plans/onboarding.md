@@ -9,7 +9,8 @@
 - **人が打つのは 2 つだけ。** install.sh の 1 行と `fge dashboard`。ゲームを作るのは、ダッシュボードのカードから開いた Claude（2026-11-23 の作者の判断）。
   `fge new`・`make new-game` は Claude が打つ物で、人向けの案内には出さない。
 - **入れる物は 1 本のバイナリだけ。** npm・devbox・engine の clone を利用者に要らせない。Claude Code は別に入れてもらう。
-- **対象は macOS と Linux。** Windows は、ゲームの make（make・bash・perl）を要らなくする計画が終わるまで対象外。
+- **Windows は必須（2026-11-23 の作者の判断）。** この計画は macOS と Linux で先に通し、Windows（ネイティブ・WSL でない）は
+  準備のフェーズ（plans/windows.md・ゲームの make・bash・perl に頼る所を Go の bin/fge へ移す）を経て同じ始め方に載せる。
 - **engine を clone して直す人（作者）の手元の動きは変えない。** 新しい道は、配った engine（engine の下に `go/` が無い・Makefile:53 の IS_BUNDLE と同じ見方）の時だけ通る。
 
 ## 1. 今の始め方と、詰まる所
@@ -156,8 +157,11 @@ ENGINE ?= $(if $(and $(wildcard ../../mk/game.mk),$(wildcard ../../templates)),.
   engine から配るので、engine の版に合う書き方になる（fge に文を埋め込まない）。要件:
   - **`fge new` は長い**（スパイクで new-game だけで 2 分 41 秒・初回は engine と JDK の約 300 MB も取る）。Claude の Bash の既定の時間切れ（2 分）に当たるので、
     「`fge new` は timeout を 600000 にするか、background で流して終わりを待つ」と書く。fge new は進み具合を 1 行ずつ出す。agent-eval のお題もこの形で当てる。
-  - **作り終えたら作業を止める。** ワークスペースで起動した Claude には、ゲームの .claude/settings.json の hooks とゲームの skills が読まれない
-    （起動したフォルダの物だけを読む）。作り終えたら「ダッシュボードのゲームのカードの [Claude Code で開く] から開き直してください」と人に言って止まる。
+  - **作り終えたら、ゲームのフォルダの Claude を開いて渡す。** ワークスペースで起動した Claude には、ゲームの .claude/settings.json の hooks と
+    ゲームの skills が読まれない（起動したフォルダの物だけを読む）。作り終えたら `fge open <ゲーム> [--prompt <続きの指示>]` を打つ。
+    fge open は `claude-cli://open?cwd=<ゲーム>&q=<続きの指示>` を OS に渡し（macOS は open・Linux は xdg-open・Windows は start）、新しい端末で
+    ゲームのフォルダの Claude が続きの指示を下書きにして開く。人はそこで Enter を押す。ワークスペースの Claude は「新しい端末で続けてください」と言って止まる。
+    deep link が開かない時（登録が無い・WSL）は、fge open はコマンドのコピー用の 1 行を出す。
 
 ### 2.7 全体の fge のサブコマンド
 
@@ -171,6 +175,7 @@ ENGINE ?= $(if $(and $(wildcard ../../mk/game.mk),$(wildcard ../../templates)),.
 | `fge engines` | Claude・人 | 手元の版と最新の版（latest.json を新しくする） |
 | `fge engines install <版>` / `remove <版>` | Claude・人 | engine の zip と、その版の `mk/jdk.mk` が指す JDK を取る（あれば何もしない）/ 消す（使っているゲームが workspace.json にあれば止める） |
 | `fge self-update` | 人 | install.sh と同じ手順で fge を差し替える |
+| `fge open <ゲーム> [--prompt <文>]` | Claude | ゲームのフォルダの Claude を deep link で新しい端末に開く（2.6） |
 
 - WhyNot 全体の fge でゲームの作業もする: ゲームごとに engine の版が違う。古い版のゲームを新しい道具で触ると、Studio の追従の失敗が戻る。
 
@@ -239,7 +244,7 @@ ENGINE ?= $(if $(and $(wildcard ../../mk/game.mk),$(wildcard ../../templates)),.
 |---|---|---|
 | 1 | Makefile（bundle-zip・release-publish）・stage-engine.json | `@natives`・`mk/jdk.mk`・Release に `fge-<os>-<arch>`・`fge-SHA256SUMS.txt`・版を埋めた install.sh |
 | 2 | go/internal/fetchengine | `--standalone`・排他・`.complete`・読み取り専用 |
-| 3 | go（新しいパッケージ） | `fge engines [install/remove]`・JDK を取って開く・`fge new [--list]`・`fge self-update`・latest.json・workspace.json |
+| 3 | go（新しいパッケージ） | `fge engines [install/remove]`・JDK を取って開く・`fge new [--list]`・`fge self-update`・`fge open`・latest.json・workspace.json |
 | 4 | go/internal/status/engine.go と使う所・checkd/client.go | `ResolveEngineDir`・status の「新しい版」の行 |
 | 5 | bin/java-resolve.sh・go/internal/javacmd・bin/flix | 配った engine の JDK の決まり・flix.jar の順・文字化け |
 | 6 | templates/*/Makefile（6 つ）・mk/game.mk | ENGINE の既定・engine が無い時の案内・`engine-upgrade TO=` |
@@ -317,10 +322,10 @@ Release の zip を手で開いた engine（fetchengine は止まるので手で
 
 | | 決め事 | 節 |
 |---|---|---|
-| ◎ | Windows は対象外（ネイティブ）。WSL2 は Linux と同じ道で動く見込み（deep link は Windows 側の claude を開く恐れがあり、コピーで代える） | 0 |
-| ◎ | JDK は配り元 Zulu・版 25.0.3 を engine の版ごとに固定し、Azul から取る（devbox とはそろえない） | 2.4 |
-| ◎ | Claude Code は fge が入れない（人が別に入れる）。deep link は一度 claude で何か送った後でないと開けない | 0・2.6 |
-| ◎ | ワークスペースで開いた Claude はゲームを作ったら止まり、人にゲームのカードから開き直してもらう | 2.6 |
+| 決定 | Windows は必須。準備のフェーズ（plans/windows.md）で Go へ移してから載せる | 0 |
+| 決定 | JDK は Zulu 25.0.3 を engine の版ごとに固定（devbox は engine の開発だけ。作者もゲームを作る時は配った engine を使う） | 2.4 |
+| 決定 | Claude Code は fge が入れない。まず作って様子を見る | 0・2.6 |
+| 決定 | ワークスペースの Claude は作り終えたら `fge open` でゲームのフォルダの Claude を開いて渡す | 2.6 |
 | ○ | 置き場 `~/.flix_ge`・ワークスペース `~/flix-games` | 2.1 |
 | ○ | install.sh は Release に添える（Pages でない）。シェルの設定ファイルは書き換えず、足す行を出すだけ | 2.2 |
 | ○ | Release に `fge-<os>-<arch>` と別の `fge-SHA256SUMS.txt`（今の SHA256SUMS.txt は Studio のために変えない） | 2.3 |
