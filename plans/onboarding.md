@@ -78,6 +78,17 @@ Claude      fge new tidepool --template rpg-starter → 結果を報告
   - WhyNot natives を入れない: new-game は natives を `render_gl/lib/external` から写す（Makefile:1622-1626）が zip にはそれが無く、
     作るたびに Maven Central へ取りに行き、続けて作ると 429 で止まる（スパイクで取りに行くのを確かめた）。
 - `agents-pack/workspace/`（2.6 のワークスペースの案内）は agents-pack ごと zip に入る（stage-engine.json に `agents-pack` がある）。
+- **engine の zip に、初回に外へ取りに行く残りの 2 つも入れる**（2026-11-23 の作者の判断「入れられる物は zip に入れておく」）。
+  - `@mvn-cache` → `lib/cache`: Maven の取り物（coursier の置き場の形）。bundle-zip が `engine_full/lib/cache`（ゲームと同じ依存を持つ。
+    普通は共有の置き場への symlink）か共有の置き場を写して渡す。stage-engine は engine_full/flix.toml の `[mvn-dependencies]` の jar が
+    揃っていなければ組まずに止める。`fge engines install` が共有の置き場（mvncache・Windows では写さない）へ無い物だけ写し、
+    new-game は今まで通り engine の `lib/cache` をゲームへ写してから共有の置き場へ移す（scaffold の seedLib）。
+  - `@flixlint` → `cache/flixlint/<版>/`: flixlint の shim の jar と本体の `src/`（`.git` は入れない）。bundle-zip が `bin/fge flixlint-prepare` で
+    そろえて（手元に無ければ取ってくる。release の CI でも組める）渡す。`fge engines install` が hooks.json の `checkd.cacheDir` の
+    `flixlint/<版>/` へ写す（在れば触らない・shim は sha256 を照合して合わなければ置かない）。ShimJar と prepareFlixlint は置き場に在れば
+    使い、無い時だけ取りに行く（今のまま）。
+  - WhyNot 今の `@maven-seed/cache` を使う: owner が studio で zip に入らない（natives と同じ理由）。
+  - 太り方（実測）: zip が 130.9 MB → 138.7 MB（+7.8 MB。lib/cache が 6.3 MB・flixlint が 1.5 MB）。
 
 ### 2.4 JDK を engine の版ごとに 1 つ固定する: `mk/jdk.mk`（新しく足す・engine の zip に入る）
 
@@ -292,6 +303,18 @@ zulu-25.0.3 の名前で）を、GitHub と Azul の API の形を真似た手�
 - 「配られた skills… は版上げで上書きされる」の 1 行が new-game と fge new の両方から出る。fge new の方だけにする（make new-game を直に打った時は new-game が出す）。
 - 確かめに使った checkd の常駐（約 3 GB ずつ）が担当の作業の後に残り、メモリが足りずに test が止まった。担当に確かめを頼む時は、終わったら `make strays` で片付けることを依頼文に入れる。
 - 確かめられていない物: Azul の API の実物の形（この環境から届かない）。作者の手元で `fge engines install` を 1 回打って確かめる。
+
+### 8.2 外へ取りに行く物を zip に入れた後の確かめ（2026-11-23・Linux のコンテナ）
+
+作業枝の go-build と stage-engine（`--mvn-cache`・`--flixlint` を足して）で組んだ engine を、空の HOME（FGE_HOME 無し）の
+`~/.flix_ge/engines/0.108.0` に開き（bin/fge-go は fetchengine と同じく linux の物に替えた）、JDK を `~/.flix_ge/jdk/zulu-25.0.3` に置いた。
+
+| 確かめたこと | 結果 |
+|---|---|
+| `fge new seedgame --template rpg-starter` | 通った。check → test → lint-flixlint → render-all |
+| install の種付け | 「flixlint 0.9.1（shim の jar・本体）を同梱から ~/.cache/flix-checkd/flixlint/0.9.1 に置きました」「Maven の取り物 134 件を同梱から共有の置き場へ写しました」 |
+| 外へ取りに行く行 | 出なかった。Flix の `Resolving Maven dependencies...` などの見出しは出るが、中の行は全部 `Adding`・`Cached`。git clone と shim を取る行も無い。流した後の共有の置き場は 134 件のまま |
+| 「次にやること」 | 1 回だけ（fge new の物）。make new-game を直に打った時は今まで通り scaffold が出す |
 
 ## 9. レビューとスパイクへの答え
 

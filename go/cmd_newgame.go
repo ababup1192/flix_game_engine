@@ -48,6 +48,7 @@ func cmdNewGame(_, errOut *strings.Builder, rest []string, _ bool) int {
 		return 2
 	}
 	r.PackNote = !noPackNote
+	r.NextSteps = true
 	r.GOOS, r.GOARCH = runtime.GOOS, runtime.GOARCH
 	if err := scaffold.Create(r, scaffold.DefaultDeps(os.Stdout, gamesteps.New(r.Engine))); err != nil {
 		fmt.Fprintf(errOut, "error: %v\n", err)

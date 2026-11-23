@@ -159,7 +159,7 @@ func (w *world) deps() Deps {
 
 func (w *world) create(t *testing.T, goos string) error {
 	t.Helper()
-	return Create(Request{Engine: w.engine, Game: w.game, Name: "tide_pool", Template: "rpg-starter", GOOS: goos, GOARCH: "amd64", PackNote: true}, w.deps())
+	return Create(Request{Engine: w.engine, Game: w.game, Name: "tide_pool", Template: "rpg-starter", GOOS: goos, GOARCH: "amd64", PackNote: true, NextSteps: true}, w.deps())
 }
 
 func TestCreateReplacesTokensWithDefaultSize(t *testing.T) {
@@ -364,6 +364,16 @@ func TestWindowsNextStepsUseBinFge(t *testing.T) {
 	}
 	got := w.out.String()
 	if !strings.Contains(got, "bin/fge run") || !strings.Contains(got, "bin/fge reference update") || strings.Contains(got, "make ") {
+		t.Errorf("案内:\n%s", got)
+	}
+}
+
+func TestNoNextStepsWhenTheCallerPrintsItsOwn(t *testing.T) {
+	w := newWorld(t, bundleEngine(t))
+	if err := Create(Request{Engine: w.engine, Game: w.game, Name: "tide_pool", Template: "rpg-starter", GOOS: "linux", GOARCH: "amd64"}, w.deps()); err != nil {
+		t.Fatal(err)
+	}
+	if got := w.out.String(); strings.Contains(got, "次にやること") {
 		t.Errorf("案内:\n%s", got)
 	}
 }

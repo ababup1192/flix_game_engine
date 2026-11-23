@@ -55,7 +55,7 @@ func prepareFlixlint(root string) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	dir := filepath.Join(hooks.CacheDir(r), "flixlint", *sv.FlixlintVersion, "src")
+	dir := filepath.Join(hooks.FlixlintDir(r), "src")
 	if _, err := os.Stat(filepath.Join(dir, "bin", "flixlint")); err == nil {
 		return dir, shim, nil
 	}

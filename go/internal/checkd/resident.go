@@ -312,7 +312,7 @@ func prepareResident(r *hooks.Rules, root, pkg string) (residentSetup, error) {
 // ShimJar は flixlint の shim の jar (無ければリリースから取り、sha256 が合う時だけ置く)。
 func ShimJar(r *hooks.Rules) (string, error) {
 	sv := r.Checkd.Server
-	path := filepath.Join(hooks.CacheDir(r), "flixlint", *sv.FlixlintVersion, *sv.ShimJar)
+	path := filepath.Join(hooks.FlixlintDir(r), *sv.ShimJar)
 	if sum, err := fileSum(path); err == nil && sum == *sv.ShimSHA256 {
 		return path, nil
 	}

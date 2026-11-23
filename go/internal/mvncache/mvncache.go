@@ -131,18 +131,45 @@ func mergeAndLink(cache, shared string) string {
 		cache, conflicts, len(left)-conflicts, unmerged)
 }
 
-func exists(p string) bool {
-	_, err := os.Lstat(p)
-	return err == nil
+// Seed は from（配った engine の lib/cache のような実体のフォルダ）の中身のうち、共有の置き場に無い物を写し、写した数を返す。
+// 置き場に在る物と from は触らない（from は読み取り専用で開いた engine の中のことがある）。
+//
+// WhyNot: Link の様に移さない — from は版ごとの engine の中身で、移すと engine が欠ける。
+func Seed(from string) (int, error) {
+	info, err := os.Lstat(from)
+	if err != nil || !info.IsDir() {
+		return 0, nil
+	}
+	dir, err := Dir()
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	err = filepath.WalkDir(from, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.Type().IsRegular() || strings.HasSuffix(d.Name(), ".lock") || strings.HasSuffix(d.Name(), ".part") {
+			return nil
+		}
+		rel, _ := filepath.Rel(from, p)
+		to := filepath.Join(dir, filepath.FromSlash(strings.TrimPrefix(filepath.ToSlash(rel), "cache/")))
+		if exists(to) {
+			return nil
+		}
+		if err := copyNew(p, to); err != nil {
+			return err
+		}
+		n++
+		return nil
+	})
+	return n, err
 }
 
-// moveFile は rename し、別のディスクで rename できなければ写してから消す。
-func moveFile(from, to string) error {
+// copyNew は隣に写してから名前を替える（置き場を同時に読む coursier に、書きかけのファイルを見せない）。
+func copyNew(from, to string) error {
 	if err := os.MkdirAll(filepath.Dir(to), 0o755); err != nil {
 		return err
-	}
-	if os.Rename(from, to) == nil {
-		return nil
 	}
 	in, err := os.Open(from)
 	if err != nil {
@@ -150,7 +177,7 @@ func moveFile(from, to string) error {
 	}
 	defer in.Close()
 	tmp := fmt.Sprintf("%s.mvncache-%d", to, os.Getpid())
-	out, err := os.Create(tmp)
+	out, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
 		return err
 	}
@@ -165,6 +192,25 @@ func moveFile(from, to string) error {
 	}
 	if err := os.Rename(tmp, to); err != nil {
 		os.Remove(tmp)
+		return err
+	}
+	return nil
+}
+
+func exists(p string) bool {
+	_, err := os.Lstat(p)
+	return err == nil
+}
+
+// moveFile は rename し、別のディスクで rename できなければ写してから消す。
+func moveFile(from, to string) error {
+	if err := os.MkdirAll(filepath.Dir(to), 0o755); err != nil {
+		return err
+	}
+	if os.Rename(from, to) == nil {
+		return nil
+	}
+	if err := copyNew(from, to); err != nil {
 		return err
 	}
 	return os.Remove(from)

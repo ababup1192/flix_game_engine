@@ -24,6 +24,14 @@ import (
 // CacheDir は常駐の状態を集めて置く根 (~ は展開済み)。
 func CacheDir(r *Rules) string { return expandHome(*r.Checkd.CacheDir) }
 
+// FlixlintDir は flixlint の版ごとの置き場（shim の jar と本体の src/ を置く）。checkd.server に版が無ければ ""。
+func FlixlintDir(r *Rules) string {
+	if r.Checkd.Server.FlixlintVersion == nil {
+		return ""
+	}
+	return filepath.Join(CacheDir(r), "flixlint", *r.Checkd.Server.FlixlintVersion)
+}
+
 // StateDir はそのパッケージの状態の置き場。
 // WhyNot: パスをそのままフォルダ名にしないのは、長さや記号で壊れるため。
 func StateDir(r *Rules, pkg string) string {

@@ -52,8 +52,10 @@ type Request struct {
 	W, H string
 	// PackNote は配った engine の時に最後の「配られた物は版上げで上書きされる」の 1 行を出すか（fge new は自分で出すので false）。
 	PackNote bool
-	GOOS     string
-	GOARCH   string
+	// NextSteps は最後の「次にやること」の案内を出すか（fge new は自分で出すので false）。
+	NextSteps bool
+	GOOS      string
+	GOARCH    string
 }
 
 // Steps は産声の確認に起こすゲームの作業。
@@ -306,7 +308,10 @@ func Create(r Request, d Deps) error {
 			return fmt.Errorf("産声の確認の %s で止まりました: %v", step.name, err)
 		}
 	}
-	printNext(r, d)
+	// WhyNot: fge new から呼ばれた時に案内を出さない — fge new が自分の「次にやること」を最後に出すので、2 回並ぶ。
+	if r.NextSteps {
+		printNext(r, d)
+	}
 	return nil
 }
 

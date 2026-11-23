@@ -1167,8 +1167,9 @@ release-fge-assets: ### | Release に添える全体の fge（fge-<os>-<arch>・
 # 中身の一覧は bin/lint-rules/stage-engine.json が source of truth で、組み立ても最後の照合も
 # bin/fge stage-engine が持つ (Studio の make stage-engine・ci/package-windows.ps1 と同じ口)。
 #
-# lwjgl (Maven) の種は入れない。あれは engine のバージョンで変わらないので、
-# Studio 側が自分の server/lib から渡せば足りる (入れると zip が 9M ほど太る)。
+# Maven の取り物 (lib/cache)・LWJGL の natives・flixlint の本体と shim の jar は入れる。
+# WhyNot: Studio 側の種 (@maven-seed) に任せない — Studio を通らずに install.sh と fge engines install で始める人は、
+# 種が無いとゲームを作るたびに Maven Central と GitHub へ取りに行き、続けて作ると 429 で止まる。
 #
 # flix.jar は devbox profile が指す nix store の実体から借りる (Studio の FLIX_JAR と同じ
 # 見つけ方)。手で置いた bin/flix.jar が古いことがあるので既定にしない。
@@ -1176,6 +1177,8 @@ BUNDLE_ZIP   := flix_game_engine-engine-v$(VERSION).zip
 BUNDLE_STAGE := build/bundle/engine
 BUNDLE_SUMS  := SHA256SUMS.txt
 BUNDLE_NATIVES := build/bundle/natives
+BUNDLE_MVN_CACHE := build/bundle/mvn-cache
+BUNDLE_FLIXLINT := build/bundle/flixlint
 BUNDLE_FLIX_JAR ?= $(shell real=$$(readlink -f .devbox/nix/profile/default/bin/flix 2>/dev/null); \
                      [ -n "$$real" ] && echo "$$(dirname $$(dirname $$real))/share/java/flix/flix.jar")
 BUNDLE_FLIX_WRAPPER ?= bin/flix
@@ -1210,12 +1213,25 @@ bundle-zip: go-build ### | Studio に同梱する engine 一式を zip に固め
 	 done; \
 	 ls "$(BUNDLE_NATIVES)"/lwjgl-*-natives-*.jar >/dev/null 2>&1 \
 	   || { echo "!! $(RENDER_GL_DIR)/lib/external に LWJGL の natives がありません (make sync を流してください)"; exit 1; }
+	@# Maven の取り物は engine_full の lib/cache（ゲームと同じ依存を持つ。普通は共有の置き場への symlink）から写す。
+	@# WhyNot: ゲームの依存だけに絞らず置き場をまるごと写す — 推移的に引く物を解くのは coursier の仕事で、ここで解き直すと解き方が 2 つになる。
+	@# 揃っているかは stage-engine が engine_full/flix.toml と突き合わせる。
+	@src=$$(cd $(ENGINE_FULL_DIR)/lib/cache 2>/dev/null && pwd -P || $(MVN_CACHE_SHARE) --print-dir); \
+	 [ -d "$$src" ] || { echo "!! Maven の取り物の置き場がありません ($$src)。engine_full を一度ビルドしてください (make sync-engine-full)"; exit 1; }; \
+	 mkdir -p "$(BUNDLE_MVN_CACHE)" && cp -R "$$src"/. "$(BUNDLE_MVN_CACHE)"/ \
+	 && find "$(BUNDLE_MVN_CACHE)" \( -name '*.lock' -o -name '*.part' \) -exec rm -f {} +
+	@# flixlint は手元の置き場に無ければ flixlint-prepare が取ってくる（release の CI でも組める）。
+	@eval "$$(bin/fge flixlint-prepare)" && [ -n "$$FLIXLINT_DIR" ] || { echo "!! flixlint の本体と shim の jar をそろえられません"; exit 1; }; \
+	 ver=$$(basename "$$(dirname "$$FLIXLINT_DIR")"); \
+	 mkdir -p "$(BUNDLE_FLIXLINT)/$$ver" && cp "$$FLIXLINT_SHIM" "$(BUNDLE_FLIXLINT)/$$ver/" && cp -R "$$FLIXLINT_DIR" "$(BUNDLE_FLIXLINT)/$$ver/src"
 	@# WhyNot: --all-platforms で 5 種を全部入れる — 1 つに絞ると zip を組んだ機械 (CI は linux) 向けしか入らず、
 	@# mac と Windows の Studio の「engine を更新」が、取ってきた bin/fge-go を走らせる所で exec format error になる。
 	bin/fge stage-engine --out "$(BUNDLE_STAGE)" --all-platforms \
 	  --flix-jar "$(BUNDLE_FLIX_JAR)" \
 	  --flix-wrapper "$(BUNDLE_FLIX_WRAPPER)" \
-	  --natives "$(BUNDLE_NATIVES)"
+	  --natives "$(BUNDLE_NATIVES)" \
+	  --mvn-cache "$(BUNDLE_MVN_CACHE)" \
+	  --flixlint "$(BUNDLE_FLIXLINT)"
 	cd build/bundle && zip -qry "../../$(BUNDLE_ZIP)" engine
 	@# WhyNot: 照合の相手を release でなく bundle-zip で作るのは、zip と対で作れば
 	@# ズレが原理的に起きないため。Studio の self-update はこれと突き合わせてから差し替える。

@@ -325,3 +325,14 @@ func TestRunTellsNewGameNotToPrintThePackNote(t *testing.T) {
 		t.Fatalf("got %+v", r.req)
 	}
 }
+
+func TestRunTellsNewGameNotToPrintItsNextSteps(t *testing.T) {
+	r := &fakeRun{}
+	d := fakeDeps(t, makeEngine(t), r)
+
+	var out, errOut strings.Builder
+	Run(&out, &errOut, []string{"tidepool"}, false, d)
+	if r.req == nil || r.req.NextSteps {
+		t.Fatalf("got %+v", r.req)
+	}
+}

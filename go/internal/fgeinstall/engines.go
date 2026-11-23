@@ -110,6 +110,11 @@ func (e *Env) Install(version string) (InstallResult, error) {
 		return InstallResult{}, err
 	}
 	res := InstallResult{Version: version, EngineDir: dir, EngineWasSet: already}
+	// WhyNot: 開いた時だけでなく揃っていた時も写す — 置き場（~/.cache）は engine と別に消されることがあり、
+	// その後の最初のビルドと lint が外へ取りに行く。在る物は触らないので、2 回目からは数えるだけで終わる。
+	for _, line := range SeedCaches(dir) {
+		e.progressf("[fge engines] %s\n", line)
+	}
 	// WhyNot: ここでワークスペースのフォルダを作らない — dashboard を開いたことの無い人の home に、頼まれていないフォルダが増える。
 	if _, err := SyncWorkspaceFolder(false); err != nil {
 		e.progressf("[fge engines] ワークスペースの AGENTS.md を写し直せませんでした: %v\n", err)

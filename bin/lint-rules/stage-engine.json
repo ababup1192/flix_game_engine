@@ -1,5 +1,5 @@
 {
-  "note": "同梱 engine の組み立ての規約データ。この JSON が source of truth で、bin/fge stage-engine はこれを読んで運ぶ物を決める。mac の Studio (make stage-engine)・Windows (ci/package-windows.ps1)・engine の make bundle-zip はどれもこの一覧を通るので、増やすときはここだけ直す。src が @ で始まる物は場所を引数で渡す (@flix-jar / @flix-wrapper / @fge-go / @maven-seed / @natives)。それ以外は engine リポの根からの相対。末尾が /* の src はそのフォルダ直下の当たるファイルだけ、フォルダを指す src は中身ごと。",
+  "note": "同梱 engine の組み立ての規約データ。この JSON が source of truth で、bin/fge stage-engine はこれを読んで運ぶ物を決める。mac の Studio (make stage-engine)・Windows (ci/package-windows.ps1)・engine の make bundle-zip はどれもこの一覧を通るので、増やすときはここだけ直す。src が @ で始まる物は場所を引数で渡す (@flix-jar / @flix-wrapper / @fge-go / @maven-seed / @natives / @mvn-cache / @flixlint)。それ以外は engine リポの根からの相対。末尾が /* の src はそのフォルダ直下の当たるファイルだけ、フォルダを指す src は中身ごと。",
   "items": [
     {
       "src": "@flix-jar",
@@ -184,6 +184,19 @@
       "dest": "lib/external",
       "optional": true,
       "why": "LWJGL の natives の jar と GL の層の jar（make bundle-zip が render_gl/lib/external から lwjgl-*-natives-*.jar と fge-gl-*.jar だけを選んで渡す）。new-game が lib/external ごとゲームへ写す。無いと作るたびに Maven Central へ取りに行き、続けて作ると 429 で止まる。optional なのは Studio の make stage-engine が渡さないため（Studio は @maven-seed/external で持つ）"
+    },
+    {
+      "src": "@mvn-cache",
+      "dest": "lib/cache",
+      "optional": true,
+      "why": "Maven の取り物（coursier の置き場の形。make bundle-zip が engine_full/lib/cache か共有の置き場から写して渡し、engine_full/flix.toml の [mvn-dependencies] の jar が揃っていなければ組まずに止める）。fge engines install が共有の置き場へ写し、new-game がゲームの lib/cache へ写す。無いとゲームの初回のビルドが Maven Central へ取りに行き、続けて作ると 429 で止まる。optional なのは Studio の make stage-engine が渡さないため（Studio は @maven-seed/cache で持つ）"
+    },
+    {
+      "src": "@flixlint",
+      "dest": "cache/flixlint",
+      "optional": true,
+      "pruneDirs": [".git"],
+      "why": "flixlint の <版>/ の shim の jar と本体の src/（make bundle-zip が bin/fge flixlint-prepare でそろえて渡す。版と sha256 は hooks.json の checkd.server）。fge engines install が hooks.json の checkd.cacheDir の flixlint/<版>/ へ写す。無いと最初の check の常駐と lint-flixlint が GitHub へ取りに行く。optional なのは Studio の make stage-engine が渡さないため"
     },
     {
       "src": "@maven-seed/cache",
