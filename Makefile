@@ -1310,36 +1310,13 @@ sync-agents: ## GAME=<dir> | agents-pack をゲームに配る（manifest.json �
 # 作業ツリーから配るのに対し、検査の中身はここが bin/dist から配るため。組み直しを忘れると
 # 「宣言はあるのに入口が無い」ゲームができる。Go のビルドキャッシュが効くので数秒。
 #
-# WhyNot: 置き換えを cp の上書きでなく別名 + mv にするのは、macOS が実行ファイルの中身を
-# 同じ inode のまま書き換えられると、その inode について覚えていた署名の検証結果を捨て、
-# 次の実行を即 SIGKILL するため。中身も署名も正しいのに配った先だけが死に、
-# pre-commit がこれを呼ぶ git まで道連れになる (index.lock だけが残る)。
-# mv なら inode が新しくなるので踏まない。
+# 置き方（別名に書いてから rename・Windows は今の物を .old に退けてから）の WhyNot は go/internal/exereplace。
 #
 # WhyNot: 配った版（go/ が無い）は組めないので、同梱の bin/fge-go（配った先の OS/CPU 向けの 1 本）をそのまま配る。
 sync-fge-go: ### GAME=<dir> | 配る先の OS/CPU に合う bin/fge-go を 1 つだけゲームへ置く
 	@if [ -z "$(GAME)" ]; then echo "error: GAME を指定してください"; exit 1; fi
-	@if [ -n "$(IS_BUNDLE)" ]; then \
-	  ext=""; case "$$(uname -s)" in MINGW*|MSYS*|CYGWIN*) ext=".exe" ;; esac; \
-	  src=bin/fge-go$$ext; \
-	  if [ ! -f "$$src" ]; then echo "[sync-fge-go] $$src がありません（配った engine が欠けています）"; exit 1; fi; \
-	  tmp="$(GAME)/bin/.fge-go$$ext.new"; cp "$$src" "$$tmp"; chmod +x "$$tmp"; mv -f "$$tmp" "$(GAME)/bin/fge-go$$ext"; \
-	  echo "[sync-fge-go] $$src → $(GAME)/bin/fge-go$$ext"; exit 0; \
-	fi; \
-	$(MAKE) --no-print-directory go-build GO_OSARCH="$(GO_HOST)"
-	@[ -z "$(IS_BUNDLE)" ] || exit 0; \
-	os=$$(uname -s | tr 'A-Z' 'a-z'); arch=$$(uname -m); ext=""; \
-	case "$$os" in darwin) ;; linux) ;; mingw*|msys*|cygwin*) os=windows; ext=".exe" ;; \
-	  *) echo "[sync-fge-go] 知らない OS ($$os)。bin/dist/ から手で選んで $(GAME)/bin/ へ置いてください"; exit 0 ;; esac; \
-	case "$$arch" in arm64|aarch64) arch=arm64 ;; x86_64|amd64) arch=amd64 ;; \
-	  *) echo "[sync-fge-go] 知らない CPU ($$arch)。bin/dist/ から手で選んでください"; exit 0 ;; esac; \
-	src=$(GO_DIST)/fge-go-$$os-$$arch$$ext; \
-	if [ ! -f "$$src" ]; then echo "[sync-fge-go] $$src がありません (make go-build)"; exit 1; fi; \
-	tmp="$(GAME)/bin/.fge-go$$ext.new"; \
-	cp "$$src" "$$tmp"; \
-	chmod +x "$$tmp"; \
-	mv -f "$$tmp" "$(GAME)/bin/fge-go$$ext"; \
-	echo "[sync-fge-go] $$src → $(GAME)/bin/fge-go$$ext"
+	@[ -n "$(IS_BUNDLE)" ] || $(MAKE) --no-print-directory go-build GO_OSARCH="$(GO_HOST)"
+	@bin/fge sync-fge-go --game "$(GAME)"
 
 ##@ 規約と文書
 # 規約の本文は docs/ に 1 つだけ置く。CLAUDE.md は AGENTS.md を import するだけ、
@@ -1554,20 +1531,12 @@ gates-facts: ### | gates.json と比べる Makefile の値（テストのパッ�
 #   - NAME  … Flix パッケージ名（小文字英字はじまり・[a-z0-9_]）。sprite の entityId にも使う。
 #   - TITLE … ウィンドウの題名（省略時は NAME）。
 #   - W/H   … design 解像度（省略時は 480×300。ウィンドウはその 2 倍）。
-# templates/game-starter を写して __NAME__/__TITLE__/__W__/__H__/__WW__/__WH__ を置換する。
-# エンジンの現在地は Makefile には書かず、git に入れない local.mk へ書く（Makefile は
-# マシンをまたいで共有できる形のまま。別のマシンでは local.mk を 1 度だけ書き直す）。
-# lib/ をエンジン手元の成果物から
-# 種付け（初回ダウンロード不要）、git init（commit はしない）、
-# sync-agents を配ってから check → test → render を通して「生きて産まれた」ことを証明する。
-NG_TEMPLATE := $(if $(TEMPLATE),$(TEMPLATE),game-starter)
-NG_W := $(if $(W),$(W),480)
-NG_H := $(if $(H),$(H),300)
+# 中身は bin/fge new-game（go/internal/scaffold）。テンプレートを写して __NAME__/__TITLE__/__W__/__H__/__WW__/__WH__ を置換し、
+# lib/ を engine の手元の物から種付けし、git init（commit はしない）・sync-agents・sync-fge-go の後に check → test → render を通す。
+# ここに残すのは engine の作業コピーだけで要る前処理（engine-full-fresh・fge-go を組む）。
+# 題名は自由文（アポストロフィ・空白・記号を含みうる）。make の export で環境変数として渡し（execve が値をそのまま載せる）、
+# recipe では "$$NG_TITLE" で読む（make の展開を '...' や "..." に埋めると ' や " で構文が壊れる）。
 NG_TITLE = $(if $(TITLE),$(TITLE),$(NAME))
-# 題名は自由文（アポストロフィ・空白・記号を含みうる）。シェルの '...' 囲みだと
-# "Tetris's" のような ' で構文が壊れる。make の export で環境変数として直接渡し
-# （execve が値をそのまま載せる・シェル再クォート無し）、recipe 側の perl は
-# $ENV{NG_TITLE} で安全に読む。
 export NG_TITLE
 
 ##@ ゲームを産む・上げる
@@ -1623,83 +1592,9 @@ engine-full-fresh: ### | engine_full.fpkg が古くないか（古ければ作�
 
 .PHONY: new-game
 new-game: engine-full-fresh ## GAME=/abs/path NAME=<名前> [TITLE=] [W=] [H=] [TEMPLATE=] [PACK_NOTE=0] | 新しいゲームを 1 コマンドで産む（check → test → render-all まで通す）
-	@if [ -z "$(GAME)" ]; then echo "error: GAME を指定してください (make new-game GAME=/abs/path NAME=mygame TITLE=題名 W=240 H=320)"; exit 1; fi
-	@case "$(GAME)" in /*) : ;; *) echo "error: GAME は絶対パスで指定してください: $(GAME)"; exit 1;; esac
-	@if [ -e "$(GAME)" ]; then echo "error: 生成先が既に存在します: $(GAME)"; exit 1; fi
-	@if [ -z "$(NAME)" ]; then echo "error: NAME を指定してください（Flix パッケージ名）"; exit 1; fi
-	@echo "$(NAME)" | grep -Eq '^[a-z][a-z0-9_]*$$' || { echo "error: NAME が不正です: $(NAME)（小文字英字はじまり・英小文字/数字/_ のみ）"; exit 1; }
-	@echo "$(NG_W)" | grep -Eq '^[0-9]+$$' || { echo "error: W が数値ではありません: $(NG_W)"; exit 1; }
-	@echo "$(NG_H)" | grep -Eq '^[0-9]+$$' || { echo "error: H が数値ではありません: $(NG_H)"; exit 1; }
-	@echo "$(NG_TEMPLATE)" | grep -Eq '^[a-z][a-z0-9-]*$$' || { echo "error: TEMPLATE が不正です: $(NG_TEMPLATE)"; exit 1; }
-	@if [ ! -d "templates/$(NG_TEMPLATE)" ]; then echo "error: templates/$(NG_TEMPLATE) がありません"; exit 1; fi
-	@if [ -z "$(W)$(H)" ] && grep -q "__W__" "templates/$(NG_TEMPLATE)/project.json" 2>/dev/null; then echo "[new-game] W/H 未指定 — トークン式テンプレの既定 480×300 で作ります"; fi
-	@set -e; \
-	echo "[new-game] $(GAME) を作成します (NAME=$(NAME) TITLE=$(NG_TITLE) design=$(NG_W)x$(NG_H) TEMPLATE=$(NG_TEMPLATE))"; \
-	mkdir -p "$(GAME)"; \
-	cp -R "templates/$(NG_TEMPLATE)/." "$(GAME)/"; \
-	: 生成物は運ばない。lib は engine_full から置き直す。build はテンプレ 1 本で 500MB 級に育つ; \
-	: ので、運ぶと産まれたゲームがその分太る（パッケージ名が変わるのでどのみち使えない）; \
-	rm -rf "$(GAME)/lib" "$(GAME)/build" "$(GAME)/debug" "$(GAME)/gallery" "$(GAME)/.devbox" "$(GAME)/.test-logs"; \
-	: テンプレートが new-game.exclude に挙げたパス（作例そのもののテストなど）は運ばない。1 行に 1 つ・テンプレートの根からの相対パス・# から行末は注釈; \
-	if [ -f "$(GAME)/new-game.exclude" ]; then \
-	  sed -e 's/#.*//' -e 's/[[:space:]]*$$//' "$(GAME)/new-game.exclude" | while IFS= read -r p; do \
-	    case "$$p" in ""|/*|*..*) continue;; esac; rm -rf "$(GAME)/$$p"; \
-	  done; \
-	fi; \
-	mkdir -p "$(GAME)/gallery" "$(GAME)/reference" "$(GAME)/debug" "$(GAME)/atelier"; \
-	for f in "$(GAME)"/assets/__NAME__.*; do \
-	  [ -e "$$f" ] || continue; \
-	  mv "$$f" "$(GAME)/assets/$(NAME).$${f##*/__NAME__.}"; \
-	done; \
-	NG_NAME='$(NAME)' NG_W='$(NG_W)' NG_H='$(NG_H)' \
-	NG_WW=$$(( $(NG_W) * 2 )) NG_WH=$$(( $(NG_H) * 2 )) \
-	find "$(GAME)" -type f \( -name '*.flix' -o -name '*.json' -o -name '*.toml' -o -name '*.md' -o -name 'Makefile' \) \
-	  -exec perl -pi -e 's/__NAME__/$$ENV{NG_NAME}/g; s/__TITLE__/$$ENV{NG_TITLE}/g; s/__WW__/$$ENV{NG_WW}/g; s/__WH__/$$ENV{NG_WH}/g; s/__W__/$$ENV{NG_W}/g; s/__H__/$$ENV{NG_H}/g;' {} +; \
-	if [ -f "$(GAME)/AGENTS.local.md" ]; then \
-	  NG_TPL='$(NG_TEMPLATE)' perl -pi -e 's/^(## この(?:画面|ゲーム)の画風)\s*$$/$$1\n\n（テンプレ $$ENV{NG_TPL} の画風の仮置き。**最初に決めて、ここに** 自分の画風を書き直す — 決め方は画風の聞き取りスキル）/' "$(GAME)/AGENTS.local.md"; \
-	fi; \
-	: 配った engine では local.mk を書かない。ENGINE はゲームの Makefile が flix.toml の版から決める（版を上げると一緒に替わる）; \
-	if [ -z "$(IS_BUNDLE)" ]; then \
-	  printf '%s\n' '# このマシンの実行環境 (git には入れない — .gitignore 済み)。make new-game が生成。' '# ?= なのは Studio が環境変数 ENGINE で渡してくる同梱 engine を勝たせるため。' 'ENGINE ?= $(CURDIR)' > "$(GAME)/local.mk"; \
-	fi; \
-	mkdir -p "$(GAME)/$(ENGINE_FULL_SUBPATH)"; \
-	: 置き場の束は読むだけ（0444）なので、写した後に書ける形へ戻す（次の engine-upgrade の入れ替えと人の手の差し替えのため）; \
-	$(ENGINE_FULL_GAME_FILES); \
-	cp "$$fpkg" "$(GAME)/$(ENGINE_FULL_SUBPATH)/$(ENGINE_FULL_FPKG_NAME)"; \
-	cp "$$toml" "$(GAME)/$(ENGINE_FULL_SUBPATH)/$(ENGINE_FULL_TOML_NAME)"; \
-	chmod 0644 "$(GAME)/$(ENGINE_FULL_SUBPATH)/$(ENGINE_FULL_FPKG_NAME)" "$(GAME)/$(ENGINE_FULL_SUBPATH)/$(ENGINE_FULL_TOML_NAME)"; \
-	if [ -d lib/external ]; then mkdir -p "$(GAME)/lib"; cp -R lib/external "$(GAME)/lib/external"; fi; \
-	: LWJGL の natives の jar（flix.toml の jar-dependencies）は coursier を通らず lib/cache にも入らない。手元の render_gl の物を写す; \
-	: （無ければ Flix が 1 本ずつ Maven Central へ取りに行き、続けて作ると 429 で止まる。export-web の copyLocalNativeJars と同じ）; \
-	for j in render_gl/lib/external/lwjgl-*-natives-*.jar; do \
-	  [ -f "$$j" ] || continue; mkdir -p "$(GAME)/lib/external"; \
-	  [ -e "$(GAME)/lib/external/$${j##*/}" ] || cp "$$j" "$(GAME)/lib/external/"; \
-	done; \
-	: lib/cache（Maven の取り物）は共有の置き場への symlink にする。engine の lib/cache が実体（同梱 engine の種）なら写してから置き場へ移す; \
-	: （移し方は bin/mvn-cache-share.sh。種は置き場へ移るので次のゲームからは写さずに済む）; \
-	if [ -d lib/cache ] && [ ! -L lib/cache ]; then mkdir -p "$(GAME)/lib"; cp -R lib/cache "$(GAME)/lib/cache"; fi; \
-	if [ -x bin/mvn-cache-share.sh ]; then bin/mvn-cache-share.sh --pkg "$(GAME)"; fi; \
-	echo "[new-game] lib/ を種付けしました（Maven の取り物は共有の置き場 $$(bin/mvn-cache-share.sh --print-dir 2>/dev/null) を使う。無い物は初回ビルドで取りに行く）"; \
-	git -C "$(GAME)" init -q; \
-	git -C "$(GAME)" config core.hooksPath bin/githooks; \
-	$(MAKE) --no-print-directory sync-agents GAME="$(GAME)"; \
-	echo "[new-game] 産声の確認: check → test → lint-flixlint → render-all"; \
-	$(MAKE) --no-print-directory -C "$(GAME)" check ENGINE="$(CURDIR)"; \
-	$(MAKE) --no-print-directory -C "$(GAME)" test ENGINE="$(CURDIR)"; \
-	if [ -f "$(GAME)/lint/rules.flix" ]; then $(MAKE) --no-print-directory -C "$(GAME)" lint-flixlint ENGINE="$(CURDIR)"; fi; \
-	$(MAKE) --no-print-directory -C "$(GAME)" render-all ENGINE="$(CURDIR)"; \
-	echo ""; \
-	echo "🎉 新しいゲームが産まれました: $(GAME)"; \
-	echo "  次にやること:"; \
-	echo "    cd $(GAME) && make run              … ウィンドウを開いて遊ぶ（矢印キーで移動）"; \
-	echo "    make reference-update                 … いまの絵をリファレンス画像(基準)にする"; \
-	: WhyNot: PACK_NOTE=0 の時に上書きの 1 行を出さない — fge new が同じ 1 行を最後に出すので、2 回並ぶ; \
-	if [ -n "$(IS_BUNDLE)" ]; then \
-	  if [ "$(PACK_NOTE)" != "0" ]; then echo "  配られた skills・rules・AGENTS.md の共通部は版上げで上書きされる。ゲーム用に変えたい時は AGENTS.local.md に書くか、別の名前のスキルを足す。"; fi; \
-	else \
-	  echo "    Studio で $(GAME) を開く            … 色や数値をフォームから調整する"; \
-	fi; \
-	echo "  git init 済み・未コミットです。最初のコミットは自分の手で。"
+	@[ -n "$(IS_BUNDLE)" ] || $(MAKE) --no-print-directory go-build GO_OSARCH="$(GO_HOST)"
+	@bin/fge new-game --game "$(GAME)" --name "$(NAME)" --title "$$NG_TITLE" --w "$(W)" --h "$(H)" --template "$(TEMPLATE)" \
+	  $(if $(filter 0,$(PACK_NOTE)),--no-pack-note)
 
 # ── ゲームの engine バージョン追随 ────────────────────────────────
 # ゲームの flix.toml が指す flix_game_engine のバージョンをこの engine の $(VERSION) へ上げ、
@@ -1720,6 +1615,7 @@ new-game: engine-full-fresh ## GAME=/abs/path NAME=<名前> [TITLE=] [W=] [H=] [
 .PHONY: upgrade-game
 upgrade-game: engine-full-fresh ### GAME=/abs/path [REFERENCE=1] | ゲームの engine の版をこの engine へ上げる（ゲームの make engine-upgrade がここへ来る）
 	@if [ -z "$(GAME)" ]; then echo "error: GAME を指定してください (make upgrade-game GAME=/abs/path)"; exit 1; fi
+	@[ -n "$(IS_BUNDLE)" ] || $(MAKE) --no-print-directory go-build GO_OSARCH="$(GO_HOST)"
 	@$(ENGINE_FULL_GAME_FILES); \
 	bin/fge upgrade-game --game "$(GAME)" --version "$(VERSION)" \
 	  --fpkg "$$fpkg" --toml "$$toml" \

@@ -162,20 +162,9 @@ notes-rotate: ### | NOTES.md の先頭が長すぎたら古い項を notes/<年-
 	@bin/fge notes-rotate
 
 # engine の版に追随する (flix.toml と lib/ の fpkg 差し替え + pack 配り直し + check)。
-# status の「engine 版ズレ」を見たらこれ。実体は engine 側の upgrade-game。
-# TO=<版> は配った engine（go/ が無い）の時だけ: その版を ${FGE_HOME:-~/.flix_ge}/engines/<版> に入れてから、その engine の upgrade-game へ。
-# WhyNot: ENGINE=~/.flix_ge/engines/<版> と打たせない — zsh（macOS の既定）は = の後の ~ を展開しない。
-# WhyNot: ゲームの bin/fge だけに頼らない — engines install を持たない古い版の engine で作ったゲームでは、全体の fge を呼ぶ。
-FGE_HOME_DIR = $(or $(FGE_HOME),$(HOME)/.flix_ge)
+# status の「engine 版ズレ」を見たらこれ。中身は bin/fge engine-upgrade（TO= の決まりと、clone した engine で make upgrade-game へ回す所もそちら）。
 engine-upgrade: ## [TO=<版>] | engine の版に追随する（status の「engine 版ズレ」を見たらこれ。TO= で新しい版へ上げる・配った engine の時）
-	@if [ -z "$(TO)" ]; then $(MAKE) -C "$(ENGINE)" upgrade-game GAME="$(CURDIR)"; exit $$?; fi; \
-	if [ -d "$(ENGINE)/go" ]; then \
-	  echo "error: TO= は配った engine の時だけ使えます。clone した engine は、engine の版を替えてから make engine-upgrade を打ってください"; exit 1; \
-	fi; \
-	fge=bin/fge; bin/fge --list 2>/dev/null | grep -qx engines || fge="$(FGE_HOME_DIR)/bin/fge"; \
-	[ -x "$$fge" ] || { echo "error: engines install を持つ fge がありません（$${fge}）。install.sh で入れ直してください"; exit 1; }; \
-	"$$fge" engines install "$(TO)" || exit 1; \
-	$(MAKE) -C "$(FGE_HOME_DIR)/engines/$(TO)" upgrade-game GAME="$(CURDIR)"
+	@ENGINE="$(ENGINE)" "$(ENGINE)/bin/fge" engine-upgrade $(if $(TO),TO="$(TO)") $(if $(REFERENCE),REFERENCE=1)
 
 ##@ 配る
 # 配布物（Linux x64・macOS arm64・Windows x64）。jar は make run と同じ物（headless-run が src の変わった時だけ作り直す）。
@@ -245,15 +234,15 @@ gallery-sounds: ## | 効果音を debug/sounds/ に集め、波形とスペク�
 		"$$fge" waveform $$music --out debug/music.png || exit 1; \
 	fi
 
-# 仕上げの確認: 基準の絵との差（reference-check.sh）と、絵の値段（render-budget）。
+# 仕上げの確認: 基準の絵との差と、絵の値段（render-budget）。中身は bin/fge reference check。
 reference-check: render-all ## | 描き出した絵をリファレンス画像とバイト比較し、絵の値段（render-budget）も見る
-	@"$(ENGINE)/bin/reference-check.sh" && $(MAKE) --no-print-directory render-budget; rc=$$?; $(RESIDENT_STOP); exit $$rc
+	@"$(ENGINE)/bin/fge" reference check; rc=$$?; $(RESIDENT_STOP); exit $$rc
 
 # 基準を作り直す回はキャッシュを写さず全部塗り、前のキャッシュと突き合わせる（docs/render-cache.md）。
 # 写した絵を基準にすると、キャッシュが汚れていた時にそれが正しい絵として固まる。
 reference-update: export FGE_RENDER_CACHE := verify
-reference-update: render-all ## | いまの gallery をリファレンス画像として更新する
-	"$(ENGINE)/bin/reference-update.sh"
+reference-update: render-all ## [BUDGET=accept] | いまの gallery をリファレンス画像として更新する
+	@"$(ENGINE)/bin/fge" reference update $(if $(BUDGET),BUDGET="$(BUDGET)")
 
 # 絵の値段（1 場面が組んだ描き物の数）を、render-all が gallery/ に残した記録で裁く。描き直さないので軽い。
 # 上限は engine の bin/lint-rules/check-render-budget.json・場面ごとの上限は reference/ITEMS.caps.tsv。

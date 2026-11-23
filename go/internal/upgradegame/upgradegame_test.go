@@ -86,8 +86,12 @@ func setup(t *testing.T) (string, string, opts, *recorder) {
 		fpkg: "engine_full/artifact/engine_full.fpkg", toml: "engine_full/flix.toml",
 		dest:     destDir,
 		fpkgName: "flix_game_engine-0.31.0.fpkg", tomlName: "flix_game_engine-0.31.0.toml",
-		makeRun: r.run, makeHas: r.has,
-		progress: &strings.Builder{}, problems: &strings.Builder{},
+		checkGame:         func(g string) error { return r.run(g, "check", "ENGINE="+root) },
+		referenceCheck:    func(g string) error { return r.run(g, "reference-check", "ENGINE="+root) },
+		hasReferenceCheck: func(g string) bool { return r.has(g, "reference-check") },
+		syncAgents:        func(g string) error { return r.run(root, "sync-agents", "GAME="+g) },
+		stopResident:      func(g string) { r.calls = append(r.calls, "checkd-stop@"+g+" ") },
+		progress:          &strings.Builder{}, problems: &strings.Builder{},
 		buildPlan: plannedAs(updateplan.Plan{From: "0.30.0", To: "0.31.0"}, nil),
 	}
 	return root, game, o, r
@@ -366,25 +370,6 @@ func TestParseRejectsADestThatDoesNotMatchTheVersion(t *testing.T) {
 	}
 }
 
-// 差し替えの seam を本物で 1 度も通していないと、--no-print-directory の位置や
-// 終了コードの読み方が間違っていても気づけない。
-func TestRealMakeIsRunAndItsExitCodeIsRead(t *testing.T) {
-	dir := t.TempDir()
-	write(t, dir, "Makefile", "ok:\n\t@true\nng:\n\t@exit 1\n")
-	if err := runMake("make", dir, "ok"); err != nil {
-		t.Errorf("通る的で落ちています: %v", err)
-	}
-	if err := runMake("make", dir, "ng"); err == nil {
-		t.Error("落ちる的を通っています")
-	}
-	if !hasTarget("make", dir, "ok") {
-		t.Error("在る的を無いと言っています")
-	}
-	if hasTarget("make", dir, "nope") {
-		t.Error("無い的を在ると言っています")
-	}
-}
-
 // sameVersionGame は版の字が engine と同じ 0.31.0 で、lib に前の束（old-fpkg・old-toml）と、その sha の packages.lock を持つゲーム。
 func sameVersionGame(t *testing.T) (string, string, opts, *recorder) {
 	t.Helper()
@@ -508,5 +493,28 @@ func TestReadOnlyCopyInTheGameIsReplaced(t *testing.T) {
 	}
 	if got := read(t, filepath.Join(game, destDir, "flix_game_engine-0.31.0.fpkg")); got != "new-fpkg" {
 		t.Errorf("読むだけの写しを入れ替えていません: %q", got)
+	}
+}
+
+// Windows では checkd の常駐の JVM が lib の fpkg を開いていて、開いたファイルは置き換えられない。
+func TestWindowsStopsTheResidentBeforeSwapping(t *testing.T) {
+	root, game, o, r := setup(t)
+	o.goos = "windows"
+	if code, _, problems := call(t, root, o); code != exitDone {
+		t.Fatalf("code=%d problems=%s", code, problems)
+	}
+	if len(r.calls) == 0 || r.calls[0] != "checkd-stop@"+game+" " {
+		t.Errorf("差し替えの前に常駐を止めていません: %v", r.calls)
+	}
+}
+
+func TestOtherOSKeepsTheResident(t *testing.T) {
+	root, _, o, r := setup(t)
+	o.goos = "linux"
+	call(t, root, o)
+	for _, c := range r.targetsOf() {
+		if c == "checkd-stop" {
+			t.Error("Windows でないのに常駐を止めています")
+		}
 	}
 }
