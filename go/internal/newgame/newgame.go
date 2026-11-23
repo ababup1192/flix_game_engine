@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -64,7 +65,10 @@ func DefaultDeps(e *fgeinstall.Env) Deps {
 
 // WhyNot: make の出力を貯めずに端末へ直に流す — new-game は 2〜3 分かかり、貯めると呼ぶ側の Claude が止まったと見分けられない。
 // WhyNot: JAVA を足さない — 配った engine では bin/java-resolve.sh が mk/jdk.mk から決める。人が名指しした JAVA は環境のまま子へ届く。
+// WhyNot: Ctrl-C で fge まで落とさない — make だけが止まり、fge が作りかけのフォルダを片付けてから終わる。
 func runMakeStreaming(args []string) error {
+	signal.Ignore(os.Interrupt)
+	defer signal.Reset(os.Interrupt)
 	cmd := exec.Command("make", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -324,11 +328,12 @@ func create(o options, d Deps) (Result, error) {
 	}
 
 	d.progressf("[fge new] 2/3 %s を %s から作ります（check → test → 描き出しまで流すので 2〜3 分かかります）\n", o.folder, template)
-	makeArgs := []string{"-C", inst.EngineDir, "new-game", "GAME=" + dir, "NAME=" + pkg, "TEMPLATE=" + template}
+	makeArgs := []string{"-C", inst.EngineDir, "new-game", "GAME=" + dir, "NAME=" + pkg, "TEMPLATE=" + template, "PACK_NOTE=0"}
 	if o.title != "" {
 		makeArgs = append(makeArgs, "TITLE="+o.title)
 	}
 	if err := d.RunMake(makeArgs); err != nil {
+		removeHalfMade(dir, d.Progress)
 		return Result{}, fmt.Errorf("make new-game が止まりました: %v（上の出力に理由があります）", err)
 	}
 
@@ -337,6 +342,23 @@ func create(o options, d Deps) (Result, error) {
 		return Result{}, err
 	}
 	return Result{Name: o.folder, Dir: dir, Package: pkg, Template: template, Engine: inst.Version}, nil
+}
+
+// removeHalfMade は make new-game が途中で止まった時に作りかけのフォルダを消す。
+// WhyNot: 前からあった物を消すかを見分けない — create が make の前に dir が無いことを確かめ、あれば止めている。
+func removeHalfMade(dir string, progress io.Writer) {
+	if _, err := os.Lstat(dir); err != nil {
+		return
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		if progress != nil {
+			fmt.Fprintf(progress, "[fge new] 作りかけの %s を消せませんでした: %v（打ち直す前に手で消してください）\n", dir, err)
+		}
+		return
+	}
+	if progress != nil {
+		fmt.Fprintf(progress, "[fge new] 作りかけの %s を消しました（同じ名前で打ち直せます）\n", dir)
+	}
 }
 
 // pickEngine は --engine・手元の最新・Release の最新の順に版を決める。
