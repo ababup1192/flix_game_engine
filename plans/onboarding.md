@@ -274,6 +274,25 @@ Release の zip を手で開いた engine（fetchengine は止まるので手で
 | 読み取り専用の engine（chmod -R a-w の写し）で new-game と upgrade-game | **どちらも engine の中に何も書かなかった**（流した後に engine の下で更新時刻の新しいファイルを探して 0 件。new-game 1 分 48 秒・Maven の取り物は 2 回目なので速い）。コンテナが root なので chmod では止まらず、書いた物を探す形で確かめた |
 | 2.5 の make の行（GNU make 4） | `~/.flix_ge/engines/0.108.0`・`FGE_HOME` の差し替え・engine の中のテンプレートの `../..` の 3 通りとも期待どおり |
 
+### 8.1 実装を取り込んだ後の通しの確かめ（2026-11-23・Linux のコンテナ）
+
+取り込んだ作業枝から fge を組み、今回の変更（Makefile・mk・bin・templates・agents-pack・natives）を v0.108.0 の zip に重ねた zip と JDK（Temurin 25.0.3 を
+zulu-25.0.3 の名前で）を、GitHub と Azul の API の形を真似た手元の HTTPS サーバーから配った（`FGE_RELEASES_API`・`FGE_JDK_URL`・`SSL_CERT_FILE`）。
+
+| 確かめたこと | 結果 |
+|---|---|
+| `fge engines install 0.108.0` | 通った（5 秒）。engines/0.108.0（読み取り専用・`.complete`）と jdk/zulu-25.0.3 |
+| `fge new tide-pool --template rpg-starter`（ワークスペースのフォルダで・JAVA も ENGINE も渡さない） | 通った（2 分 32 秒）。check → test → render-all・workspace.json に足した・local.mk は無い |
+| できたゲームの ENGINE・flix.jar・java | どれも `~/.flix_ge` の物（engines/0.108.0・その bin/flix.jar・jdk/zulu-25.0.3） |
+| engine の中に書いた物 | 0 件 |
+| `bin/fge status`（新しい fge） | 「engine 0.109.0 が出ています → make engine-upgrade TO=0.109.0」・engine を消すと「engine 0.108.0 が手元にありません → fge engines install 0.108.0」。budget の行も出る（古い fge は engine を見失って出せなかった） |
+
+見つけて直す物:
+- `fge new` が途中で止まると、作りかけのフォルダが残り、打ち直すと new-game の「生成先が既に存在します」で止まる。止まった時は作りかけを消す（fge new が作り始めたフォルダだけ）。
+- 「配られた skills… は版上げで上書きされる」の 1 行が new-game と fge new の両方から出る。fge new の方だけにする（make new-game を直に打った時は new-game が出す）。
+- 確かめに使った checkd の常駐（約 3 GB ずつ）が担当の作業の後に残り、メモリが足りずに test が止まった。担当に確かめを頼む時は、終わったら `make strays` で片付けることを依頼文に入れる。
+- 確かめられていない物: Azul の API の実物の形（この環境から届かない）。作者の手元で `fge engines install` を 1 回打って確かめる。
+
 ## 9. レビューとスパイクへの答え
 
 | 指摘・見つけた事 | 答え |
