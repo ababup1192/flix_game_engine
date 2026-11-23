@@ -32,19 +32,24 @@ type parsedArgs struct {
 	game          string
 	version       string
 	checkManifest bool
+	checkFollow   bool
 }
 
 type optionSpec struct {
 	name       string
 	takesValue bool
+	// exactOnly は前を省いた書き方で当てない（後から足した物。--check が今までどおり --check-manifest に当たるように）。
+	exactOnly bool
 }
 
 // optionSpecs は受け取る option。並びは前を省いた書き方を解く順でもある。
 var optionSpecs = []optionSpec{
-	{"--help", false},
-	{"--game", true},
-	{"--version", true},
-	{"--check-manifest", false},
+	{"--help", false, false},
+	{"--game", true, false},
+	{"--version", true, false},
+	{"--check-manifest", false, false},
+	// WhyNot: helpText に載せないのは --root と同じ理由（使い方の字面が出力として決まっている）。
+	{"--check-follow-latest", false, true},
 }
 
 // negativeNumber は option ではなく「値」とみなす負の数の形。
@@ -69,7 +74,7 @@ func matchOption(name string) (optionSpec, []string) {
 		if o.name == name {
 			return o, nil
 		}
-		if strings.HasPrefix(o.name, name) {
+		if !o.exactOnly && strings.HasPrefix(o.name, name) {
 			hits = append(hits, o)
 			names = append(names, o.name)
 		}
@@ -122,6 +127,8 @@ func parseArgs(out, errOut *strings.Builder, argv []string) (parsedArgs, int, bo
 				return res, 0, true
 			case "--check-manifest":
 				res.checkManifest = true
+			case "--check-follow-latest":
+				res.checkFollow = true
 			}
 			continue
 		}

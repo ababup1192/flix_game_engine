@@ -1359,7 +1359,7 @@ api-digest: ### | engine の pub API を docs/api-digest.md に 1 つにまと�
 # DOCS_SYNC_DESC_<名前> は流す時に出す 1 行、DOCS_SYNC_SH_<名前> はシェルの 1 文（落ちたら非 0）。
 # WhyNot: 名前ごとのターゲットに分けない — make -j で並ぶと出力が混ざる（lint と同じ）。
 DOCS_SYNC_NAMES := claude-import rules px-ops check-codes skill-table core-skills core-bridge skill-links skill-frontmatter \
-	skill-sync old-prim-names manifest check-refs api-index api-digest docs-links template-claude gates \
+	skill-sync old-prim-names manifest follow-latest check-refs api-index api-digest docs-links template-claude gates \
 	jdk-major template-engine
 
 DOCS_SYNC_DESC_claude-import = CLAUDE.md が AGENTS.md を import しているか
@@ -1431,6 +1431,11 @@ DOCS_SYNC_SH_old-prim-names = \
 
 DOCS_SYNC_DESC_manifest = agents-pack/manifest.json が正しい JSON で src が全実在するか
 DOCS_SYNC_SH_manifest = bin/fge sync-agents --check-manifest
+
+# WhyNot: 版によらないスキルのコマンドを Go 側の表と比べない — 古い版のゲームに無いコマンドかどうかは、
+# 版ごとの make のターゲットを全部持っていないと決められない。人が決めた一覧（manifest）と比べるだけにする。
+DOCS_SYNC_DESC_follow-latest = 版によらないスキル（manifest の followLatest）の中のコマンドが followLatest.commands にあるか
+DOCS_SYNC_SH_follow-latest = bin/fge sync-agents --check-follow-latest
 
 DOCS_SYNC_DESC_check-refs = Makefile / templates / agents-pack の参照先が実在するか
 DOCS_SYNC_SH_check-refs = bin/fge check-refs

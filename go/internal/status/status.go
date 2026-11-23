@@ -414,6 +414,7 @@ func sectionPack(c *ctx, out *[]string) {
 	if c.isDir("templates") {
 		return // engine リポ自身。AGENTS.md は pack の生成物ではない
 	}
+	followLatestPending(c, out)
 	text, err := readTextPy(c.abs("AGENTS.md"))
 	if err != nil {
 		return

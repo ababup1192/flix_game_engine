@@ -116,6 +116,7 @@ func Run(args []string, stdout, stderr io.Writer, d Deps) int {
 		fmt.Fprintf(stderr, "!! %v\n", err)
 		return exitProblem
 	}
+	fgeinstall.ReportFollowLatestSkills(stdout, "[fge dashboard]")
 	if synced.MissingSource {
 		fmt.Fprintf(stderr, "[fge dashboard] engine %s は %s を持たない版なので、ワークスペースの AGENTS.md を置けません\n",
 			synced.EngineVersion, fgeinstall.WorkspaceAgentsSrc)

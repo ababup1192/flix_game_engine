@@ -4,6 +4,7 @@ package syncagents
 //
 //	fge-go sync-agents --game DIR [--version V]
 //	fge-go sync-agents --check-manifest
+//	fge-go sync-agents --check-follow-latest   版によらないスキルのコマンドが followLatest.commands にあるか
 //	fge-go sync-agents --root DIR      配り元のリポを差し替える
 //
 // 配る物の一覧は agents-pack/manifest.json を読むだけで、この道具は持たない。
@@ -49,6 +50,9 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 	root = pyResolve(root)
 	if opts.checkManifest {
 		return checkManifest(errOut, root, rules)
+	}
+	if opts.checkFollow {
+		return checkFollowLatest(errOut, root, rules)
 	}
 	if opts.game == "" {
 		fmt.Fprintln(errOut, "error: GAME を指定してください (make sync-agents GAME=/path/to/game)")
@@ -206,7 +210,27 @@ func syncGame(out, errOut *strings.Builder, root string, r *Rules, gameArg, vers
 	// copyDirs の配り先で消すのは「前の回に engine が配って、今回の配り元に無い物」だけ。
 	// 一覧 (ledger) に載っていない物はゲームが自分で置いた物として残す。
 	ledgerPath := pyJoin(game, r.LedgerPath)
-	prev, hasLedger := loadLedger(ledgerPath)
+	prevLedger, hasLedger := loadLedgerFile(ledgerPath)
+	prev := prevLedger.Dirs
+	follow, err := loadFollowLatest(root, r)
+	if err != nil {
+		return 2, err
+	}
+	held := heldBack(follow, prevLedger.FollowLatest, version)
+	byVersion := map[string][]string{}
+	var recs []string
+	for _, name := range follow.Skills {
+		if rec, ok := held[name]; ok {
+			if len(byVersion[rec]) == 0 {
+				recs = append(recs, rec)
+			}
+			byVersion[rec] = append(byVersion[rec], name)
+		}
+	}
+	for _, rec := range recs {
+		fmt.Fprintf(out, "[sync-agents] skill: %s は engine %s の物を持っているので、古い %s の物で戻しません\n",
+			strings.Join(byVersion[rec], "・"), rec, version)
+	}
 	if !hasLedger {
 		// WhyNot: 一覧の無い初回 (旧版から上がってきたゲーム) で消さないのは、どれを
 		// engine が配ったか見分けられないため。今回の配りで一覧を書き、次の回から消し込む。
@@ -222,6 +246,11 @@ func syncGame(out, errOut *strings.Builder, root string, r *Rules, gameArg, vers
 		if err != nil {
 			return 2, err
 		}
+		skip := map[string]string{}
+		if isSkillsEntry(r, e) {
+			skip = held
+			files = unionSorted(filterTop(files, skip, false), filterTop(prev[e.dst], skip, true))
+		}
 		if !canPrune(game, src, dst) {
 			// 消し込めない回は前の一覧も持ち越す (配り元が戻ったときに消し忘れない)。
 			next[e.dst] = unionSorted(prev[e.dst], files)
@@ -233,11 +262,11 @@ func syncGame(out, errOut *strings.Builder, root string, r *Rules, gameArg, vers
 			}
 			next[e.dst] = files
 		}
-		if err := copyDir(src, dst); err != nil {
+		if err := copyDirExcept(src, dst, skip); err != nil {
 			return 2, err
 		}
 	}
-	if err := writeLedger(ledgerPath, next); err != nil {
+	if err := writeLedger(ledgerPath, next, nextFollowLatest(root, r, follow, prevLedger.FollowLatest, held, version)); err != nil {
 		return 2, err
 	}
 	skills, err := skillDirNames(root, r)

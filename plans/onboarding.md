@@ -369,7 +369,8 @@ zulu-25.0.3 の名前で）を、GitHub と Azul の API の形を真似た手�
 | 版によらない（最新に追従） | style-interview・pixel-art・critique-code・atelier-draft・critique-render | 中身の大半が描き方・批評の観点・進め方。API の名前はほぼ出ない |
 | 版に依る（ゲームの版のまま） | flix-docs・smooth-render・quality-assurance・compile-fix・wire-doc | API の名前・その版の Flix の決まり・読み込みの作りに触れる |
 
-- 一覧は agents-pack/manifest.json に `followLatest`（スキルの名前の並び）として持つ。sync-agents と fge はこれを読む（二重に持たない）。
+- 一覧は agents-pack/manifest.json に `followLatest.skills`（スキルの名前の並び）として持つ。sync-agents と fge はこれを読む（二重に持たない）。
+  書いてよいコマンドは同じ `followLatest` の `commands`（`make <名前>`・`bin/fge <名前>` の字面）。拾う形は bin/lint-rules/sync-agents.json の followLatestCommandPattern。
 
 ### 12.2 仕組み: fge が写し直す
 
@@ -381,10 +382,11 @@ zulu-25.0.3 の名前で）を、GitHub と Azul の API の形を真似た手�
 - **古い版で上書きしない**: ゲームの `.agents-pack.json`（sync-agents が配った物の一覧を書く・今もある）に、`followLatest` のスキルごとに「どの版の engine から写したか」を書く。
   ゲームの版上げで sync-agents が流れる時、写す元の版が書いてある版より古ければ、そのスキルは飛ばす（最新の物を古い版で戻さない）。
 - **書いてよいコマンド**: 版によらないスキルに書くコマンドは、`followLatest` を持つ最も古い版から今までの全部の版にある物だけ。
-  一覧を agents-pack に置き（`followLatest.commands`）、`make check-docs-sync` が版によらないスキルの中のコマンドをこの一覧と比べて止める。
+  一覧を agents-pack に置き（`followLatest.commands`）、`make check-docs-sync ONLY=follow-latest`（`bin/fge sync-agents --check-follow-latest`）が版によらないスキルの中のコマンドをこの一覧と比べて止める。
   コマンドを足したり名前を替えたりした時は、古い版のゲームに無いので、版によらないスキルには書かない（版に依るスキルに書く）。
 - **ゲームのリポに差分が出る**: 写し直したゲームは `.claude/skills` と `.agents/skills` に差分が出る。`make status` に
   「スキルを engine <版> の物に新しくしました（コミット待ち）」を 1 行出す。コミットは人か Claude がする。
+- 写し直すのは `.claude/skills` か `.agents/skills` を持つゲームだけ（agents-pack を配っていないフォルダには作らない）。入口は fgeinstall の `RefreshFollowLatestSkills`（install の後と dashboard の起動で呼ぶ）、中身は syncagents の `RefreshFollowLatest`。
 - 写し直すのはゲームの中の作業のための物なので、ゲームが開いている Claude のセッションには次の起動から読まれる（今のセッションは古いまま）。
 
 ### 12.3 確かめ方

@@ -31,6 +31,7 @@ type rulesFile struct {
 	SentenceSep      *string   `json:"sentenceSep"`
 	TriggerSuffix    *string   `json:"triggerSuffix"`
 	ClauseSep        *string   `json:"clauseSep"`
+	FollowCommand    *string   `json:"followLatestCommandPattern"`
 }
 
 // Rules は配る側が使う規約。すべて JSON から来る。
@@ -53,6 +54,8 @@ type Rules struct {
 	TriggerSuffix  string
 	// ClauseSep は引き金の文を 1 節に縮める区切り（空なら縮めない）。
 	ClauseSep string
+	// FollowCommand は版によらないスキルの中のコマンドを拾う形（丸括弧 2 組: 打ち方と名前。nil なら検査しない）。
+	FollowCommand *regexp.Regexp
 }
 
 // LoadRules は規約データを読む。
@@ -120,6 +123,16 @@ func LoadRules(root string) (*Rules, error) {
 	if link.NumSubexp() != 1 {
 		return nil, fmt.Errorf("規約ファイルの skillLinkPattern に丸括弧が 1 組ありません (%s)", path)
 	}
+	var follow *regexp.Regexp
+	if f.FollowCommand != nil {
+		follow, err = regexp.Compile(*f.FollowCommand)
+		if err != nil {
+			return nil, fmt.Errorf("規約ファイルの followLatestCommandPattern が正規表現として壊れています (%s): %v", path, err)
+		}
+		if follow.NumSubexp() != 2 {
+			return nil, fmt.Errorf("規約ファイルの followLatestCommandPattern に丸括弧が 2 組ありません (%s)", path)
+		}
+	}
 	return &Rules{
 		ManifestPath:   *f.ManifestPath,
 		ManifestKeys:   *f.ManifestKeys,
@@ -138,6 +151,7 @@ func LoadRules(root string) (*Rules, error) {
 		SentenceSep:    *f.SentenceSep,
 		TriggerSuffix:  *f.TriggerSuffix,
 		ClauseSep:      derefOr(f.ClauseSep),
+		FollowCommand:  follow,
 	}, nil
 }
 

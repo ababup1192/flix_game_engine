@@ -17,29 +17,35 @@ import (
 )
 
 const ledgerNote = "bin/fge sync-agents が書く。copyDirs の配り先ごとに engine が配ったファイルの一覧。" +
-	"次の配りで、ここに載っていて engine から無くなった物だけを消す（載っていない物はゲームの物として残す）。手で編集しない。"
+	"次の配りで、ここに載っていて engine から無くなった物だけを消す（載っていない物はゲームの物として残す）。" +
+	"followLatest は版によらないスキルごとに、写した engine の版（これより古い engine からは写さない）。手で編集しない。"
 
 type ledgerFile struct {
 	Version int                 `json:"version"`
 	Note    string              `json:"note"`
 	Dirs    map[string][]string `json:"dirs"`
+	// FollowLatest は版によらないスキルの名前 → 写した engine の版。
+	FollowLatest map[string]string `json:"followLatest,omitempty"`
 }
 
-// loadLedger は前の回の一覧を読む。無い・壊れているときは ok=false（消し込みを飛ばす側へ倒す）。
-func loadLedger(path string) (map[string][]string, bool) {
+// loadLedgerFile は前の回の一覧を読む。無い・壊れているときは ok=false（消し込みを飛ばす）。
+func loadLedgerFile(path string) (ledgerFile, bool) {
 	data, err := os.ReadFile(fsPath(path))
 	if err != nil {
-		return nil, false
+		return ledgerFile{}, false
 	}
 	var f ledgerFile
 	if err := json.Unmarshal(data, &f); err != nil || f.Dirs == nil {
-		return nil, false
+		return ledgerFile{}, false
 	}
-	return f.Dirs, true
+	return f, true
 }
 
-func writeLedger(path string, dirs map[string][]string) error {
-	data, err := json.MarshalIndent(ledgerFile{Version: 1, Note: ledgerNote, Dirs: dirs}, "", "  ")
+func writeLedger(path string, dirs map[string][]string, follow map[string]string) error {
+	if len(follow) == 0 {
+		follow = nil
+	}
+	data, err := json.MarshalIndent(ledgerFile{Version: 1, Note: ledgerNote, Dirs: dirs, FollowLatest: follow}, "", "  ")
 	if err != nil {
 		return err
 	}

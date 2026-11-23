@@ -16,5 +16,6 @@
   "lintPrefix": "lint-",
   "sentenceSep": "。",
   "triggerSuffix": "使う",
-  "clauseSep": "、"
+  "clauseSep": "、",
+  "followLatestCommandPattern": "\\b(make|bin/fge) ([a-z][a-z0-9_-]*)"
 }

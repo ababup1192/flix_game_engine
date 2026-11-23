@@ -114,6 +114,9 @@ func (e *Env) Install(version string) (InstallResult, error) {
 	if _, err := SyncWorkspaceFolder(false); err != nil {
 		e.progressf("[fge engines] ワークスペースの AGENTS.md を写し直せませんでした: %v\n", err)
 	}
+	var skills strings.Builder
+	ReportFollowLatestSkills(&skills, "[fge engines]")
+	e.progressf("%s", skills.String())
 	spec, ok, err := fgehome.ReadJDKSpec(dir)
 	if err != nil {
 		return res, err
