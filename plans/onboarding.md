@@ -184,7 +184,7 @@ ENGINE ?= $(if $(and $(wildcard ../../mk/game.mk),$(wildcard ../../templates)),.
      rename する。今の fetchengine は `RemoveAll(dest)` の後に Rename する（:304-307）ので、standalone では既にある `<版>/` を消さない
      （`.complete` があれば何もしない・無ければ一時フォルダに取り直してから入れ替える）。JDK も同じ。
    - 開いた後は読み取り専用（chmod a-w）。AI がその版の engine を直すと、同じ版の全部のゲームが変わってしまうため。
-     `fge engines remove` は書けるように戻してから消す。読み取り専用の engine で new-game と upgrade-game が engine の中に書かないことは、8 節のスパイクで確かめる。
+     `fge engines remove` は書けるように戻してから消す。new-game と upgrade-game が engine の中に書かないことは 8 節のスパイクで確かめた。
    - ディスク: 1 版で約 300 MB（zip 117 MB を開いた物と JDK）。足りない時は「`fge engines remove <使っていない版>`」を出す。
 2. **前提を確かめる**: make・perl・git が PATH にあるか。無ければ OS ごとの入れ方（macOS は `xcode-select --install`）を出して止める。
 3. **名前**: `<フォルダ名>` は `-` を許す。パッケージ名（new-game の NAME・英小文字はじまり・`[a-z0-9_]`）は `--name` か、フォルダ名の `-` を `_` に替えた物。
@@ -266,6 +266,7 @@ Release の zip を手で開いた engine（fetchengine は止まるので手で
 | 雑音 | `fatal: not a git repository`・`cd: can't cd to go`・ログの日本語が `??????`。止まりはしない |
 | v0.107.0 で作ったゲームを v0.108.0 の engine で `make upgrade-game` | **通った**（31 秒・check 緑）。skills・AGENTS.md・agent-eval・bin/fge-go・flix.toml・packages.lock が新しい版になった |
 | 版上げの後の local.mk | **ENGINE は 0.107 のまま**。`make status` が「pack 古い → engine 側で make sync-agents を再実行」と出し、その通りにすると skills が 0.107 に**戻る** |
+| 読み取り専用の engine（chmod -R a-w の写し）で new-game と upgrade-game | **どちらも engine の中に何も書かなかった**（流した後に engine の下で更新時刻の新しいファイルを探して 0 件。new-game 1 分 48 秒・Maven の取り物は 2 回目なので速い）。コンテナが root なので chmod では止まらず、書いた物を探す形で確かめた |
 | 2.5 の make の行（GNU make 4） | `~/.flix_ge/engines/0.108.0`・`FGE_HOME` の差し替え・engine の中のテンプレートの `../..` の 3 通りとも期待どおり |
 
 ## 9. レビューとスパイクへの答え
