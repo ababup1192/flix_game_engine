@@ -1207,12 +1207,16 @@ bundle-zip: go-build ### | Studio に同梱する engine 一式を zip に固め
 	rm -rf build/bundle "$(BUNDLE_ZIP)" "$(BUNDLE_SUMS)"
 	@# WhyNot: render_gl/lib/external を丸ごと渡さない — Maven の jar（LWJGL の本体など）は lib/cache の側で足り、zip が太るだけ。
 	@# natives と GL の層の jar は coursier を通らないので、zip に無いと new-game のたびに Maven Central へ取りに行く。
+	@# WhyNot: render_gl だけから集めない — 新しく clone した所（release の CI）では make sync の後でも render_gl の jar-dependencies は
+	@# 取られておらず、同じ物を書いた engine_full の build-pkg が engine_full/lib/external に取る（Windows の CI の 2 回目で止まった）。
 	@mkdir -p "$(BUNDLE_NATIVES)"; \
-	 for j in $(RENDER_GL_DIR)/lib/external/lwjgl-*-natives-*.jar $(RENDER_GL_DIR)/lib/external/fge-gl-*.jar; do \
-	   [ -f "$$j" ] && cp "$$j" "$(BUNDLE_NATIVES)/"; \
+	 for d in $(RENDER_GL_DIR) $(ENGINE_FULL_DIR); do \
+	   for j in $$d/lib/external/lwjgl-*-natives-*.jar $$d/lib/external/fge-gl-*.jar; do \
+	     [ -f "$$j" ] && cp -n "$$j" "$(BUNDLE_NATIVES)/"; \
+	   done; \
 	 done; \
 	 ls "$(BUNDLE_NATIVES)"/lwjgl-*-natives-*.jar >/dev/null 2>&1 \
-	   || { echo "!! $(RENDER_GL_DIR)/lib/external に LWJGL の natives がありません (make sync を流してください)"; exit 1; }
+	   || { echo "!! $(RENDER_GL_DIR)/lib/external にも $(ENGINE_FULL_DIR)/lib/external にも LWJGL の natives がありません (make sync と engine_full の build-pkg を流してください)"; exit 1; }
 	@# Maven の取り物は engine_full の lib/cache（ゲームと同じ依存を持つ。普通は共有の置き場への symlink）から写す。
 	@# WhyNot: ゲームの依存だけに絞らず置き場をまるごと写す — 推移的に引く物を解くのは coursier の仕事で、ここで解き直すと解き方が 2 つになる。
 	@# 揃っているかは stage-engine が engine_full/flix.toml と突き合わせる。
