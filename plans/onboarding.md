@@ -1,7 +1,7 @@
 # 始め方（install.sh とワークスペースのダッシュボード）
 
-状態: 設計 第 5 版（相談中）。実装は未着手。ダッシュボードの残り（plans/dashboard.md）より先に作る（2026-11-23 の作者の判断）。
-初回なのでレビューは 90 点以上で実装に入る（作者の判断）。第 1 版 60 点・第 2 版 80 点・第 3 版 72 点（新しいレビュー役）・第 4 版 84 点。答えは 9 節。
+状態: 設計 第 5 版。**レビュー 91 点で実装に入る**（2026-11-23）。ダッシュボードの残り（plans/dashboard.md）より先に作る（2026-11-23 の作者の判断）。
+初回なのでレビューは 90 点以上で実装に入る（作者の判断）。第 1 版 60 点・第 2 版 80 点・第 3 版 72 点（新しいレビュー役）・第 4 版 84 点・第 5 版 91 点。答えは 9 節。実装しながら決める物は 10 節。
 
 ## 0. 決まっていること
 
@@ -298,3 +298,15 @@ Release の zip を手で開いた engine（fetchengine は止まるので手で
 | （第 4 版）FindEngineDir の self と marker・呼び手の漏れ・版が読めない時の Go | 2.5 の表と本文 |
 | （第 4 版）fge new が Claude の時間切れ（2 分）に当たる・ワークスペースの Claude にはゲームの hooks が読まれない | 2.6 のワークスペースの AGENTS.md の要件 |
 | （第 4 版）`$(FGE_HOME)` が空・ゲームの bin/fge が engines install を持つか・AGENTS.md の写し直し・読み取り専用の engine の remove | 2.9・2.6・2.8 |
+
+## 10. 実装しながら決める物（第 5 版のレビュー・91 点）
+
+- PathWorks の 2 か所: flixlint は java のパスを渡せない（cmd_flixlint.go:34）ので、配った engine の時は Resolve が返した JDK の bin を
+  いつも PATH の頭に足す。pathWithEngineJava（cmd_refactor.go:167・今は DevboxBin だけ）をこの形にする。
+- 版を上げて JDK が替わった時、checkd とヘッドレスの常駐が古い java で残らないか。checkd は StopStaleResident の判断に java のパスを入れる。
+  ヘッドレスは resident/client.go の WithJava の比べで拾えるかを確かめる。
+- macOS の一般ユーザーで、読み取り専用の engine と一時ファイルで止まる所が無いかを、リリース前の手の確かめで 1 回見る（スパイクは root のコンテナ）。
+- flix.toml の版の engine が手元に無い時、Go の道具は黙らず status に「engine <版> が手元にありません → fge engines install <版>」を 1 行出す。
+- latest.json が取れない（オフライン・回数制限）時は止めずに続ける。古い控えはそのまま使う。テストで決める。
+- 古い版の bin/fge-go で新しい版の zip を開く時の前方互換: zip の並びの約束（一番上の engine/ フォルダ）を変えない。`--standalone` の照合を増やす時は古い版でも通るか見る。
+- ワークスペースの AGENTS.md は `fge engines install` の後にも写し直す。
