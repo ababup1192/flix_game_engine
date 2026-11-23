@@ -5,13 +5,15 @@
 #   make solve   … 面を解いて最少手数・解き方・面の指紋を assets/tidepool.levels.json に書く（深さは SOLVE_DEPTH）
 #   make video   … 遊ぶ所を音つきの動画にする = debug/video/tidepool.mp4（題名 → 面 1・3・5 → 全面クリア。VIDEO_FPS=30 か 60）
 #
-# エンジンや java の場所はマシンごとに違うので、git に入れない local.mk に書く
-# （make new-game / Studio が生成する。別のマシンで clone したら 1 度だけ書き直す）:
-#   ENGINE := /abs/path/to/flix_game_engine   （Studio 同梱なら …/resources/engine）
-#   JAVA   := /abs/path/to/java.exe           （Windows のみ。Studio 同梱 JRE の java.exe）
-# 既定の ../.. は「テンプレを engine リポの中でそのまま動かす」ための値。
+# engine の場所は次の順で決まる（Go の道具の ResolveEngineDir と同じ決まり）:
+#   1. 環境変数 ENGINE  2. local.mk の ENGINE（git に入れない。engine を clone して直す人の上書き）
+#   3. engine リポの中のテンプレートなら ../..  4. ${FGE_HOME:-~/.flix_ge}/engines/<flix.toml の flix_game_engine の版>
+#   JAVA   := /abs/path/to/java.exe           （Windows のみ。Studio 同梱 JRE の java.exe・local.mk に書く）
+# WhyNot: local.mk に engine の固定のパスを書かせない — local.mk は git の外なので、版を上げた後も古い engine を読み続け、
+# worktree とゲームを clone した別の機械には無い。git に入っている flix.toml の版から決めれば、どこでも同じ engine になる。
 -include local.mk
-ENGINE ?= ../..
+FGE_VERSION := $(shell sed -n 's/^"github:ababup1192\/flix_game_engine"[^}]*version *= *"\([0-9.]*\)".*/\1/p' flix.toml)
+ENGINE ?= $(if $(and $(wildcard ../../mk/game.mk),$(wildcard ../../templates)),../..,$(or $(FGE_HOME),$(HOME)/.flix_ge)/engines/$(FGE_VERSION))
 
 # Studio 用の色の写し。入力（テーマ・sprite の Doc と、色を解く側のコード）が
 # 写しより新しいときだけ作り直す。flix run は 1 回ごとにパッケージ全体をコンパイルし直すので、
@@ -27,7 +29,11 @@ SHOTS := title play flood dam clear washed ending quit
 # ENGINE の場所が違うと include ごと落ち、make は「そんなファイルは無い」としか言わない。
 # 先に自前で見て、直し方の 1 行を出してから止める（この検査が無いと make status も塞がる）。
 ifeq ($(shell test -f "$(ENGINE)/mk/game.mk" && echo ok),)
+ifeq ($(ENGINE),$(or $(FGE_HOME),$(HOME)/.flix_ge)/engines/$(FGE_VERSION))
+$(error $(if $(FGE_VERSION),engine $(FGE_VERSION) が手元にありません ($(ENGINE)) — fge engines install $(FGE_VERSION) を流してください,flix.toml から flix_game_engine の版を読めません — flix.toml の依存の行を直すか、local.mk に「ENGINE := /abs/path/to/flix_game_engine」を書いてください))
+else
 $(error ENGINE が見当たりません ($(ENGINE)/mk/game.mk が無い) — local.mk に「ENGINE := /abs/path/to/flix_game_engine」を書くか、make <対象> ENGINE=... で指定してください。Studio 同梱なら …/resources/engine)
+endif
 endif
 
 # 共通の口（run / test / check / 描き出し / status …）はエンジンが持つ。

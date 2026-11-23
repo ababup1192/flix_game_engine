@@ -409,7 +409,10 @@
             "Makefile",
             "gates.json",
             "precommit.json",
-            "hooks.json"
+            "hooks.json",
+            "jdk.mk",
+            "devbox.json",
+            "devbox.lock"
           ]
         },
         {

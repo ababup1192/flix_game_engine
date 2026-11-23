@@ -88,6 +88,31 @@ func TestOptionalItemIsSkipped(t *testing.T) {
 	}
 }
 
+// TestNativesAreStagedIntoLibExternal は --natives で渡したフォルダの jar が lib/external に入ることを見る。
+func TestNativesAreStagedIntoLibExternal(t *testing.T) {
+	root := t.TempDir()
+	writeRules(t, root, `{"items": [{"src": "@natives", "dest": "lib/external", "optional": true}]}`)
+	natives := t.TempDir()
+	writeFile(t, filepath.Join(natives, "lwjgl-3.3.4-natives-linux.jar"), "jar")
+	out := filepath.Join(t.TempDir(), "bundle")
+	var body, errBody strings.Builder
+	Run(&body, &errBody, root, []string{"--out", out, "--natives", natives})
+	if _, err := os.Stat(filepath.Join(out, "lib", "external", "lwjgl-3.3.4-natives-linux.jar")); err != nil {
+		t.Fatalf("natives の jar が lib/external に入っていません: %v (%s)", err, errBody.String())
+	}
+}
+
+// TestNativesWithoutFlagAreSkippedLoudly は --natives を渡さない組み立て（Studio）で、止めずに飛ばしたと出すことを見る。
+func TestNativesWithoutFlagAreSkippedLoudly(t *testing.T) {
+	root := t.TempDir()
+	writeRules(t, root, `{"items": [{"src": "@natives", "dest": "lib/external", "optional": true}]}`)
+	var body, errBody strings.Builder
+	Run(&body, &errBody, root, []string{"--out", filepath.Join(t.TempDir(), "bundle")})
+	if !strings.Contains(errBody.String(), "同梱しません: @natives") {
+		t.Fatalf("飛ばしたことが出ていません: %q", errBody.String())
+	}
+}
+
 // TestWindowsSkipsBashOnly は --windows で bash 前提の物だけが外れることを見る。
 func TestWindowsSkipsBashOnly(t *testing.T) {
 	root := t.TempDir()

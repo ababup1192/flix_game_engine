@@ -56,6 +56,12 @@ if [ -n "${FLIX_JAR:-}" ] && [ ! -f "$FLIX_JAR" ]; then
     exit 127
 fi
 FLIX_JAR="${FLIX_JAR:-}"
+. "$SCRIPT_DIR/java-resolve.sh"
+# WhyNot: 配った engine で PATH の nix の flix を先に拾わない — zip に入れた flix.jar はその版の engine を組んだコンパイラで、
+# 手元の devbox の flix は別の版のことがある（ゲームの flix.toml が求める版に届かず組めない）。
+if [ -z "$FLIX_JAR" ] && fge_is_bundle "$PROJECT_ROOT" && [ -f "$SCRIPT_DIR/flix.jar" ]; then
+    FLIX_JAR="$SCRIPT_DIR/flix.jar"
+fi
 while [ -z "$FLIX_JAR" ] && IFS= read -r candidate; do
     real="$(readlink -f "$candidate" 2>/dev/null)"
     case "$real" in
@@ -69,7 +75,6 @@ done < <(type -aP flix)
 # devbox シェルの外 (素のターミナル・Studio の .app 等) では PATH に flix が居ない。
 # engine 自身の devbox profile から直接借りる — new-game で産まれたゲームの
 # make check が「シェルの入り方」で失敗しないように。
-. "$SCRIPT_DIR/java-resolve.sh"
 if [ -z "$FLIX_JAR" ]; then
     while IFS= read -r prof_bin; do
         prof="$prof_bin/flix"
@@ -106,10 +111,10 @@ fi
 # 居るかどうか (command -v) では見ないのは、macOS には必ず /usr/bin/java という
 # 「Java を入れてください」と言うだけのスタブが居て、本物と見分けが付かないため。
 # Studio の .app から起こした make は PATH が /usr/bin:/bin:... しか無く、必ずこれを掴む。
-if ! fge_resolve_java "$PROJECT_ROOT"; then
-    echo "java が見つかりません。devbox shell に入るか、PATH に JDK を通してください（JAVA で名指しもできる）。" >&2
+fge_resolve_java "$PROJECT_ROOT" || {
+    [ "$?" = 2 ] || echo "java が見つかりません。devbox shell に入るか、PATH に JDK を通してください（JAVA で名指しもできる）。" >&2
     exit 127
-fi
+}
 JAVA_CMD=$FGE_JAVA
 JAVA_VERSION_OUT=$FGE_JAVA_VERSION_OUT
 # WhyNot: --sun-misc-unsafe-memory-access を無条件に付けない — JDK 22 以前（Studio が同梱する 21 も）は
@@ -136,4 +141,6 @@ fi
 if [ ! -L lib/cache ] && [ -f flix.toml ] && [ -x "$SCRIPT_DIR/mvn-cache-share.sh" ]; then
     "$SCRIPT_DIR/mvn-cache-share.sh" --pkg "$PWD"
 fi
-exec "$JAVA_CMD" -Xss32m -XX:MaxRAMPercentage=50 $FLAGS -jar "$FLIX_JAR" "$@"
+# WhyNot: 標準出力の文字コードを JVM の既定に任せない — ロケールの無い所（コンテナ・CI・素の sh）では ASCII で書き、
+# ログの日本語が ?????? になる。
+exec "$JAVA_CMD" -Xss32m -XX:MaxRAMPercentage=50 -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 $FLAGS -jar "$FLIX_JAR" "$@"

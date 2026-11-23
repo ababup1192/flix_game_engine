@@ -4,8 +4,10 @@ package stageengine
 //
 //	fge stage-engine --out DIR [--windows]
 //	                 [--flix-jar PATH] [--flix-wrapper PATH]
-//	                 [--fge-go PATH] [--maven-seed DIR] [--all-platforms]
+//	                 [--fge-go PATH] [--maven-seed DIR] [--natives DIR] [--all-platforms]
 //	fge stage-engine --sources
+//
+// --natives は LWJGL の natives と GL の層の jar だけを置いたフォルダ（make bundle-zip が render_gl/lib/external から選んで渡す）。
 //
 // --all-platforms は Release の zip 用。検査の中身を配る先 5 種ぶん入れる（AllPlatformLayout）。
 //
@@ -35,6 +37,7 @@ type Options struct {
 	FlixWrapper string
 	FgeGo       string
 	MavenSeed   string
+	Natives     string
 	Sources     bool
 	// AllPlatforms は検査の中身を 1 つに絞らず、配る先 5 種を全部入れる。
 	AllPlatforms bool
@@ -59,7 +62,7 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 	}
 	if opts.Out == "" {
 		fmt.Fprintln(errOut, "usage: fge stage-engine --out DIR [--windows] "+
-			"[--flix-jar PATH] [--flix-wrapper PATH] [--fge-go PATH] [--maven-seed DIR] [--all-platforms]")
+			"[--flix-jar PATH] [--flix-wrapper PATH] [--fge-go PATH] [--maven-seed DIR] [--natives DIR] [--all-platforms]")
 		return 2, nil
 	}
 	if opts.AllPlatforms && (opts.Windows || opts.FgeGo != "") {
@@ -155,6 +158,8 @@ func parseArgs(args []string) (Options, error) {
 			opts.FgeGo = value
 		case "--maven-seed":
 			opts.MavenSeed = value
+		case "--natives":
+			opts.Natives = value
 		case "--all-platforms":
 			opts.AllPlatforms = true
 		default:
@@ -204,6 +209,8 @@ func resolveSrc(root string, it Item, opts Options) (string, string, error) {
 		}
 		sub := strings.TrimPrefix(it.Src, srcMavenSeed+"/")
 		return needPath(filepath.Join(opts.MavenSeed, filepath.FromSlash(sub)), it, "")
+	case it.Src == srcNatives:
+		return needPath(opts.Natives, it, "--natives で LWJGL の natives の jar を置いたフォルダを渡してください")
 	}
 
 	rel := it.Src
