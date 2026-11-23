@@ -184,7 +184,7 @@
 | worktree の post が見えない | 3.1 で main の作業ツリーの 1 か所に置く |
 | サーバーが手前で止まる | 4 節の start / stop / status・whoami・strays。出力は stdout へ直に |
 | 今の画面は `/render` で取れない・問い合わせでゲームが詰まる | 5 節で `view=shot` を押した時だけ。撮れないゲームの表示も決めた |
-| proposal の頁に返す手段が無い | 5 節で proposal.go に切り替え（send）を足す |
+| proposal の頁に返す方法が無い | 5 節で proposal.go に切り替え（send）を足す |
 | 素材のパス・id の衝突 | 3.2 |
 | DNS rebinding | 6 節で Host を見る |
 | Studio の凍結の表が足りない | 7 節にテンプレートの gates・title.png・sections・games.json を足した |
