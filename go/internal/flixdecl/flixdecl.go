@@ -411,7 +411,7 @@ func ScanText(text string) []ModDecls {
 			}
 			continue
 		}
-		// WhyNot: `///` と宣言の間の `// WhyNot:` の行で doc を捨てない — 決まりで WhyNot は `///` の後・宣言の直前に置く。
+		// WhyNot: `///` と宣言の間の `// WhyNot:` の行で doc を捨てない — このリポの書き方では WhyNot を `///` の後・宣言の直前に置く。
 		if hasPending && strings.HasPrefix(stripped, "//") {
 			continue
 		}

@@ -123,22 +123,28 @@ engine は project.json も git も読まない（ブラウザの束には flix.
 ### 上げ忘れを止めるテスト
 
 版を出す時は flix.toml の `[package]` の `version` を上げる。セーブの字がそれとずれたら、デスクトップのテストで止める
-（テストはゲームの根で走るので flix.toml を `Fs.FileRead` で読める）。
+（テストはゲームの根で走るので flix.toml を `Fs.FileRead` で読める）。読むのは `[package]` の表の中の `version` だけで、
+値の後ろの `# コメント` は落ちる。flix.toml が読めない・`withGameVersion` を付け忘れた時も、両方が `None` で緑にならず赤になる。
 project.json の `"version"` は project.json というファイル自身の形の番号なので、ゲームの版には使わない。
 
 ```flix
 @Test
 def testSaveGameVersionMatchesFlixToml(): Unit \ {Assert, Fs.FileRead} =
-    Assert.assertEq(expected = flixTomlVersion(), SaveFormat.getGameVersion(Saves.format()))
+    let toml = Fs.FileRead.read("flix.toml") |> Result.getWithDefault("");
+    Assert.assertEq(
+        expected = packageVersionOf(toml) |> Option.toOk("flix.toml の [package] に version が無い"),
+        SaveFormat.getGameVersion(Saves.format()) |> Option.toOk("セーブの形式に withGameVersion が無い"))
 
-/// flix.toml の [package] の version の字。
-def flixTomlVersion(): Option[String] \ Fs.FileRead =
-    Fs.FileRead.readLines("flix.toml") |> Result.toOption |> Option.flatMap(List.findMap(line ->
-        match String.splitOn({substr = "="}, line) {
-            case key :: value :: Nil if String.trim(key) == "version" =>
-                Some(String.trim(value) |> String.stripPrefix({substr = "\""}) |> Option.flatMap(String.stripSuffix({substr = "\""})) |> Option.getWithDefault(String.trim(value)))
-            case _ => None
-        }))
+/// flix.toml の [package] の表にある version の字（値の後ろの # コメントは落ちる）。
+def packageVersionOf(toml: String): Option[String] =
+    TextSplit.lines(toml)
+        |> List.map(String.trim)
+        |> List.dropWhile(line -> line != "[package]")
+        |> List.drop(1)
+        |> List.takeWhile(line -> not String.startsWith(prefix = "[", line))
+        |> List.find(line -> (String.splitOn(substr = "=", line) |> List.head |> Option.map(String.trim)) == Some("version"))
+        |> Option.flatMap(line -> String.splitOn(substr = "\"", line) |> List.drop(1) |> List.head)
+        |> Option.filter(v -> not String.isEmpty(v))
 ```
 
 ## アップデートで何をしたか → ゲーム側がすること
@@ -148,15 +154,15 @@ def flixTomlVersion(): Option[String] \ Fs.FileRead =
 | 版を出した（形は不変） | ゲームの版の字を上げる | `withGameVersion`（flix.toml と照らすテスト） |
 | 欄を足した | 無い時の既定値で読む・形の版は上げない | `JsonCodec.*Or`（決まり 2） |
 | Doc に物を足した | 何もしない（id で持てば新しい物として出る）・頼み事など順に意味がある物は末尾へ | 決まり 1・7 |
-| Doc から物を消した | 何もしない（知らないキーは遊びに出さず書き戻す） | ゲーム側のキーと値の置き場 |
-| 欄の名前・入れ物の形を変えた | 形の版を上げ n→n+1 の書き換えを足す（Doc を見ない・知らないキーと `applied.*` の印を残す） | `withMigration`・`checkSamples` |
+| Doc から物を消した | その行だけ落として 1 行言う（決まり 2）。未来の版のために残したいなら、知らないキーを書き戻す置き場をゲームが持つ | `Log.warnThen`・ゲーム側のキーと値の置き場 |
+| 欄の名前・入れ物の形を変えた | 形の版を上げ n→n+1 の書き換えを足す（Doc を見ない・知らないキー（ゲームが一度だけ流した手順の印を含む）を残す） | `withMigration`・`checkSamples` |
 | 古いセーブの遊びの状態に一度だけ手を入れる | 名前付きの手順を列の末尾に足す（版で分けない・名前を変えない・消さない・最初の失敗で止まる） | 名前付きの手順（今はゲーム側で試し中。2 つ目の使い手が出たら engine へ） |
 | 新しい版のセーブを古いゲームで開いた | 何もしない（Err で断り上書きしない） | 決まり 6・Err の文面の版 |
 
 境目の決まり:
 
 - 書き換え（migration）は形だけを変え Doc を見ない（JSON → JSON）。手順（upgrade step）は今の形の上で Doc を見てよい。
-  流れる順は 書き換え → 中間形 → 手順 → 遊びの状態。
+  流れる順は 書き換え → 今の形の中身 → 手順 → 遊びの状態。
 - `gameVersion` は診断用で判断に使わない。版で分けたくなったら名前付きの手順を足す。
 
 ## SaveFormat と Persistence・SaveManager
