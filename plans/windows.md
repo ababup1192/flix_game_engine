@@ -1,6 +1,7 @@
 # Windows 対応（準備のフェーズ）
 
-状態: 設計 第 3 版。**レビュー 84 点・クリティカル無しで実装に入る**（2026-11-23）。onboarding の macOS と Linux の通しの後に始める。plans/onboarding.md（始め方）を macOS と Linux で通した後に、同じ始め方を Windows に載せるための準備。
+状態: 第 3 版。**5 節の #1〜#12 と 4 節・11 節・12 節を実装して作業枝に取り込んだ**（2026-11-23）。#8（flixlint の起動）は担当に渡し漏れ、取り込み後に足した。
+Windows の上での確かめ（9 節の CI）はまだ。Linux の上で make を罠にした通し（install → fge new → check・test・lint・render-all）は make を 1 回も呼ばずに通った（14 節）。plans/onboarding.md（始め方）を macOS と Linux で通した後に、同じ始め方を Windows に載せるための準備。
 レビューは 80 点以上でクリティカルな指摘が無ければ実装に入る（作者の判断）。第 1 版 66 点・第 2 版 76 点・第 3 版 84 点。答えは 10 節。
 
 ## 0. 決まっていること
@@ -185,3 +186,20 @@ project.json（ゲームの根・今もある）に宣言を足す。凍結し�
 
 - 5 節の #13・#14。arm64 の Windows。
 - PowerShell だけ（Git Bash が無い）の Claude Code。Git for Windows を前提にしたので、無い時は install.ps1 と `bin/fge status` が入れ方を出す。
+
+## 14. 取り込み後の確かめ（2026-11-23・Linux のコンテナ）
+
+今の作業枝から `bin/fge stage-engine`（リリースと同じ道）で配る engine を組み、手元の HTTPS サーバーで GitHub と Azul の形で配った。
+PATH の先頭に、呼ばれたら記録して失敗する make を置いた（9 節の CI と同じ考え）。
+
+| 確かめたこと | 結果 |
+|---|---|
+| `fge engines install latest` → `fge new tide-pool --template rpg-starter` | 通った（2 分 24 秒）。check → test（210 件緑）→ lint-flixlint → render-all |
+| make が呼ばれた回数 | 0 |
+
+見つけて直した物:
+- lint-flixlint（5 節 #8）を担当に渡し漏れていて、make を起こしていた。`bin/fge lint-flixlint` を足した（flixlint の起動役は shellrun で Git Bash に）。
+- perl まで罠にした回は、bin/headless-run の鍵を取る所が「鍵が無いのに取れない」まま待たずに取り直し続け、時間切れまで何も言わずに回った。
+  移す先が無い時の perl の失敗は mv で移し、それでも取れなければ 5 回で loud_fallback に移す形にした。
+  perl は Git for Windows に付いてくるので（0 節）、本番の前提では起きにくいが、置き場に書けない時にも同じ形で回るため直した。
+- 9 節の CI の perl の罠は Git Bash の外の perl（Strawberry）だけで、0 節の前提と合っている（直す要は無かった）。
