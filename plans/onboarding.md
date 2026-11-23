@@ -1,7 +1,7 @@
 # 始め方（install.sh とワークスペースのダッシュボード）
 
-状態: 設計 第 4 版（相談中）。実装は未着手。ダッシュボードの残り（plans/dashboard.md）より先に作る（2026-11-23 の作者の判断）。
-初回なのでレビューは 90 点以上で実装に入る（作者の判断）。第 1 版 60 点・第 2 版 80 点・第 3 版 72 点（新しいレビュー役）。答えは 9 節。
+状態: 設計 第 5 版（相談中）。実装は未着手。ダッシュボードの残り（plans/dashboard.md）より先に作る（2026-11-23 の作者の判断）。
+初回なのでレビューは 90 点以上で実装に入る（作者の判断）。第 1 版 60 点・第 2 版 80 点・第 3 版 72 点（新しいレビュー役）・第 4 版 84 点。答えは 9 節。
 
 ## 0. 決まっていること
 
@@ -105,7 +105,7 @@ FGE_JDK_VERSION := 25.0.3
 | 所 | 中身 |
 |---|---|
 | テンプレートの Makefile の既定（6 つ同じ形・game-starter/Makefile:11-13 と :27-29） | 下の make の行 |
-| Go: `go/internal/status/engine.go` に `ResolveEngineDir(G)` を 1 本置く | ReadEngineDir（:24-39）と FindEngineDir（:56-63。Makefile の `ENGINE ?=` の右辺をそのまま拾う）をこれに置き換える。status・refactorhost・makefiledup・docshape・talk・checkd/client.go（:35-45）がこれを使う |
+| Go: `go/internal/status/engine.go` に `ResolveEngineDir(G) (dir string, self bool)` を 1 本置く | 決まりの 1〜4 と、G 自身が engine の時の self 判定。**ReadEngineDir（:24-39）はこれに置き換える。FindEngineDir（:56-63）は消さず、ResolveEngineDir の答えに marker の有る無しを見る薄い包みにする**（talk は `bin/headless-run`、docshape は EngineMarker を marker にし、無い候補を飛ばす動きを持つ。docrefs.go:337 と makefiledup は self を使う）。呼び手: status・refactorhost・makefiledup・docshape・docrefs・talk・useengine.go:288・cmd_refactor.go:158 の engineDirOf・checkd/client.go:35-45 |
 | テスト | 決まりの 4 通りで、make の素振り（`make -pn` の ENGINE）と Go の答えが同じことを見る |
 
 ```make
@@ -117,7 +117,7 @@ ENGINE ?= $(if $(and $(wildcard ../../mk/game.mk),$(wildcard ../../templates)),.
 - 枝を替えても、worktree でも、ゲームを clone した別の機械でも、git に入っている Makefile と flix.toml だけで決まる。
   WhyNot local.mk に固定のパスを書く: local.mk は git の外なので、版を上げた後も古い engine を読み続ける（8 節のスパイク）。worktree と別の機械には無い。
 - `fge new` は ENGINE を local.mk に書かない（new-game は IS_BUNDLE の時は `ENGINE ?=` の行を書かない）。local.mk は engine を clone して直す人が上書きに使う。
-- 版が読めなかったら（`FGE_VERSION` が空）止める。engine が無い時の `$(error …)` は、4 の時は「engine <版> が手元にありません → `fge engines install <版>`」にする。
+- 版が読めなかったら（`FGE_VERSION` が空）make は止める。Go は止めずに空を返す（engine リポの中の engine/ などは flix.toml に依存の行を持たず、そこで道具を止めない）。engine が無い時の `$(error …)` は、4 の時は「engine <版> が手元にありません → `fge engines install <版>`」にする。
 - `FGE_HOME` を既定から替えた人は、シェルで export しておく（make も Go も環境から読む）。install.sh がその 1 行も出す。
 
 **JDK（make を通らない道でも同じになるように、java を探す所そのものに入れる）**:
@@ -125,7 +125,10 @@ ENGINE ?= $(if $(and $(wildcard ../../mk/game.mk),$(wildcard ../../templates)),.
 | 所 | 足す決まり |
 |---|---|
 | bin/java-resolve.sh（:42-45） | engine に `go/` が無く `mk/jdk.mk` がある時は、`JAVA` が無ければ `~/.flix_ge/jdk/<配り元>-<版>/bin/java` だけを使う。**無ければ止めて**「`fge engines install <版>`」と出す（PATH の java へ移らない） |
-| go/internal/javacmd（Resolve・:35） | 同じ決まり |
+| bin/headless-run（:486-490） | `fge_resolve_java` が失敗しても `${JAVA:-java}` で先へ進む作りを、配った engine の時は exit にする |
+| go/internal/javacmd（Resolve・:33-48） | 同じ決まり。引数は **engine の場所**（ゲームの根でない）。「どれも無ければ "java"」をやめて error を返す |
+| javacmd の呼び手 | checkd/resident.go:290 の `javaCmd(root)` は root がゲームの根（ゲームの bin/ に写した fge-go が動く）なので、先に ResolveEngineDir で engine を引いて渡す |
+| `PathWorks()` の 2 か所（cmd_flixlint.go:35・cmd_refactor.go:148） | PATH の java が動くかだけを見て、devbox の jdk しか前に足さない（:167）抜け道。Resolve を通す形に替える（pre-commit の lint-flixlint・checkd の常駐・`bin/fge refactor` が通る道） |
 | bin/flix（:62-72） | 配った engine では、隣の `bin/flix.jar` を nix の flix より先に使う |
 
 - これで make（mk/game.mk）・Stop hook の checkd・git の pre-commit・Go の道具が同じ JDK を使う。mk/game.mk に JAVA の分岐は足さない。
@@ -145,10 +148,16 @@ ENGINE ?= $(if $(and $(wildcard ../../mk/game.mk),$(wildcard ../../templates)),.
   - Claude Code の案内: deep link は一度 `claude` を起動して何か送った後でないと開けない（plans/dashboard.md 15.1）ので、カードの横にいつも
     「開かない時: 一度 claude を起動して何か送る」と、Claude Code が無い時の入れ方の 1 行。
   - 新しい版のお知らせ（latest.json が手元の最新より新しい時）: 「engine 0.109.0 が出ています」と、`fge engines install 0.109.0` のコピー。
+- **ワークスペースの AGENTS.md の写し直し**: `fge dashboard` が立つたびに、手元の最新の engine の物と中身を比べ、違えば写し直す（人が書き足す欄は無い。
+  人の方針はゲームの AGENTS.local.md に書く）。
 - **ワークスペースの AGENTS.md（`agents-pack/workspace/AGENTS.md`・30 行ほど）**: 「ゲームを作る → `fge new <名前> [--template <名>]`、
   テンプレートの一覧 → `fge new --list`、作ったら一覧に出る（fge new が workspace.json に足す）、作った後はそのゲームのフォルダで作業する
   （ゲームの AGENTS.md に従う）」。fge は PATH に無いこともあるので `~/.flix_ge/bin/fge` の絶対パスでも書く。
-  engine から配るので、engine の版に合う書き方になる（fge に文を埋め込まない）。
+  engine から配るので、engine の版に合う書き方になる（fge に文を埋め込まない）。要件:
+  - **`fge new` は長い**（スパイクで new-game だけで 2 分 41 秒・初回は engine と JDK の約 300 MB も取る）。Claude の Bash の既定の時間切れ（2 分）に当たるので、
+    「`fge new` は timeout を 600000 にするか、background で流して終わりを待つ」と書く。fge new は進み具合を 1 行ずつ出す。agent-eval のお題もこの形で当てる。
+  - **作り終えたら作業を止める。** ワークスペースで起動した Claude には、ゲームの .claude/settings.json の hooks とゲームの skills が読まれない
+    （起動したフォルダの物だけを読む）。作り終えたら「ダッシュボードのゲームのカードの [Claude Code で開く] から開き直してください」と人に言って止まる。
 
 ### 2.7 全体の fge のサブコマンド
 
@@ -175,6 +184,7 @@ ENGINE ?= $(if $(and $(wildcard ../../mk/game.mk),$(wildcard ../../templates)),.
      rename する。今の fetchengine は `RemoveAll(dest)` の後に Rename する（:304-307）ので、standalone では既にある `<版>/` を消さない
      （`.complete` があれば何もしない・無ければ一時フォルダに取り直してから入れ替える）。JDK も同じ。
    - 開いた後は読み取り専用（chmod a-w）。AI がその版の engine を直すと、同じ版の全部のゲームが変わってしまうため。
+     `fge engines remove` は書けるように戻してから消す。読み取り専用の engine で new-game と upgrade-game が engine の中に書かないことは、8 節のスパイクで確かめる。
    - ディスク: 1 版で約 300 MB（zip 117 MB を開いた物と JDK）。足りない時は「`fge engines remove <使っていない版>`」を出す。
 2. **前提を確かめる**: make・perl・git が PATH にあるか。無ければ OS ごとの入れ方（macOS は `xcode-select --install`）を出して止める。
 3. **名前**: `<フォルダ名>` は `-` を許す。パッケージ名（new-game の NAME・英小文字はじまり・`[a-z0-9_]`）は `--name` か、フォルダ名の `-` を `_` に替えた物。
@@ -194,7 +204,9 @@ ENGINE ?= $(if $(and $(wildcard ../../mk/game.mk),$(wildcard ../../templates)),.
   ゲームの `make status` は、flix.toml の版より latest.json の版が新しい時に「engine 0.109.0 が出ています → make engine-upgrade TO=0.109.0」を出す。
   WhyNot 今の「engine 版ズレ」の行（status.go:452-466）を使う: ENGINE が flix.toml の版から決まるので、engine とゲームの版は常に同じになり、二度と出ない。
 - **版上げ**: mk/game.mk の `engine-upgrade` に `TO=<版>` を足す。配った engine で TO がある時は
-  `bin/fge engines install $(TO)` → `make -C $(FGE_HOME)/engines/$(TO) upgrade-game GAME=$(CURDIR)`。上げた後は flix.toml が新しい版になり、2.5 の決まりで ENGINE も新しい版を指す。
+  `bin/fge engines install $(TO)` → `make -C $(or $(FGE_HOME),$(HOME)/.flix_ge)/engines/$(TO) upgrade-game GAME=$(CURDIR)`。
+  ゲームの `bin/fge` は全体の fge と同じ fge-go（版はゲームの engine の版）なので、`engines install` をそのまま持つ（2.7 のとおり文脈を読まないコマンド）。
+  ゲームの engine の版が `engines install` を持つより古い時は、全体の `~/.flix_ge/bin/fge` を呼ぶ。上げた後は flix.toml が新しい版になり、2.5 の決まりで ENGINE も新しい版を指す。
   clone した engine の時は今のまま（`make -C $(ENGINE) upgrade-game`）。
   - WhyNot `ENGINE=~/.flix_ge/...` を案内する: zsh（macOS の既定）は `=` の後の `~` を展開しない。`TO=<版>` なら人も Claude も打ち間違えない。
 - 本番の形（ダッシュボードの Inbox のカードから Claude に頼む）は plans/dashboard.md 14 節。中身は同じ `make engine-upgrade TO=<版>`。
@@ -279,3 +291,9 @@ Release の zip を手で開いた engine（fetchengine は止まるので手で
 | （第 3 版）同時に 2 つの fge new・半端な物・RemoveAll | 2.8 の排他・`.complete`・既にある物を消さない |
 | （第 3 版）sed の決め打ち・`../../mk/game.mk` だけの見分け・FGE_HOME・ディスク・`-` 入りの名前・engine を AI が直す | 7 節・2.5・2.8 |
 | （作者）人は make new-game を打たない。ダッシュボードから Claude に作ってもらう | 0 節・2 節・2.6 |
+| （第 4 版）javacmd.Resolve にゲームの根が渡る所がある・「無ければ java」 | 2.5 の表で engine を渡す・error を返す |
+| （第 4 版）flixlint と refactor は PathWorks で Resolve を通らない | 2.5 の表に足した |
+| （第 4 版）headless-run は java が見つからなくても進む | 2.5 の表に足した |
+| （第 4 版）FindEngineDir の self と marker・呼び手の漏れ・版が読めない時の Go | 2.5 の表と本文 |
+| （第 4 版）fge new が Claude の時間切れ（2 分）に当たる・ワークスペースの Claude にはゲームの hooks が読まれない | 2.6 のワークスペースの AGENTS.md の要件 |
+| （第 4 版）`$(FGE_HOME)` が空・ゲームの bin/fge が engines install を持つか・AGENTS.md の写し直し・読み取り専用の engine の remove | 2.9・2.6・2.8 |
