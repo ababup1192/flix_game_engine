@@ -175,6 +175,9 @@ func loadExportConfig(o exportWebOptions) (exportConfig, *exportFailure) {
 	if c.Budget, err = resolveWebStartupBudget(proj.Web); err != nil {
 		return c, exportFail(1, err)
 	}
+	if c.Paths.AppIcon, err = resolveWebAppIcon(p.Game, proj.Web); err != nil {
+		return c, exportFail(1, err)
+	}
 	c.ID = o.ID
 	if c.ID == "" {
 		c.ID = filepath.Base(p.Game)

@@ -19,6 +19,8 @@ type exportWebPaths struct {
 	FullWebFpkg, FullWebToml, GlJar, WebJar, WebToolsJar, WebJS, IndexHTML, FlixJar string
 	// 置き場（build/fpkg-store）のエントリ。空なら置き場が無く、build/engine_full_web などを直に読んでいる。
 	FullWebEntry string
+	// AppIcon は project.json の web.appIcon の絶対の道（空なら engine のロゴでホーム画面のアイコンを作る）。
+	AppIcon string
 }
 
 // resolveExportWebPaths は道を決め、要る物が揃っているかを見る。足りなければ終わりの番号 2 と次の 1 手。

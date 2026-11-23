@@ -3,6 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<!-- ホーム画面に追加した時にアドレスバーの無いアプリとして開く。manifest とアイコンの行は書き出しが版を付けて足す。 -->
+<!-- WhyNot: status-bar-style を black-translucent にしない — 縦持ちの頁がステータスバーの下まで伸び、パッドの時の canvas（top: 0）の上が隠れる。 -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="theme-color" content="#000000">
 <title>game</title>
 <style>
   :root { --fge-aspect: 1.7778; --fge-pad-min: 220px; --fge-side-min: 176px; --fge-edge: 24px; }

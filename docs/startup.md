@@ -70,6 +70,11 @@ fge-web.js が `#fge-splash` の canvas に描く。押した後も wasm の読�
   指のアイコン（押し込みと輪）を出す。後回しの素材（`web.deferred`）の進み具合は、ゲージの下の細い 2 本目の線（配るバイトの割合）。
 - 触ると触った点から波紋が出て、一行が `starting up...` に替わる。`prefers-reduced-motion` の時は文言の点滅・指・波紋を出さない。
 
+### ホーム画面のアイコン（`web.appIcon`）
+
+スマホの「ホーム画面に追加」で出るアイコンは、project.json の `web.appIcon`（ゲームの根からの PNG の道・正方形で 512px 以上が良い）から書き出しが 180・192・512px を作る。
+書かなければ上の起動画面のロゴ。名前は project.json の `title`。開き方（全画面・manifest）は [web-export.md](web-export.md) の「ホーム画面に追加して全画面で開く」。
+
 ## ブラウザで素材を後から取る（`web.deferred`）
 
 project.json の `"web": { "deferred": ["assets/bgm/*.wav", ...] }` に当たる素材は、ブラウザ版で「押して始める」の前に取らない。
