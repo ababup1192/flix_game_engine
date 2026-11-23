@@ -628,6 +628,15 @@ mod TestRules {
         Assert.assertEq(expected = (false, None, Nil), loadOn(res, Map#{ Saves.path() => textOf(savedJson(res)) }))
 
     @Test
+    def testOlderReadableSaveIsCopiedBeforeUpgrade(): Unit \ {Assert, Fs.FileRead} =
+        // 今より 1 つ古い版でも読める形なら読み、元の中身をそのまま backupPath(その版) へ写す。
+        let res = TestKit.res();
+        let older = Saves.formatVersion() - 1;
+        let old = textOf(versioned(older, savedJson(res)));
+        Assert.assertEq(expected = (false, None, (Saves.backupPath(older), old) :: Nil),
+                        loadOn(res, Map#{ Saves.path() => old }))
+
+    @Test
     def testSaveWithShortAmbienceNameReadsTheSoundName(): Unit \ {Assert, Fs.FileRead} =
         // ambience の鍵に amb_ の無い短い名前（"evening"）で書いた枠は、音の名前（amb_evening）として読む。
         let res = TestKit.res();

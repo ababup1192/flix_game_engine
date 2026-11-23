@@ -2387,6 +2387,41 @@
 - ルビつきの字を置く。親字の上に rubySize の字でふりがなを中央そろえで載せる（親字より広ければ親字を中央へ寄せる）。
   `pub def placeRuby(p: Placement, rubySize: Float64, rubies: List[Ruby], visible: Int32, spans: List[Span]): List[Render.PlacedItem]`
 
+## SaveFormat — `engine_world/src/SaveFormat.flix`
+- 版 `fromVersion` の中身を版 `fromVersion + 1` の形へ書き換える。
+  `pub type alias SaveMigration = { fromVersion = Int32, migrate = Json -> Result[String, Json] }`
+- セーブ形式。`make` で作り `withMigration` / `withUnwrappedVersion` で足す。
+  `pub type alias Format = FormatData`
+- 名前 `name`・今の版 `version` のセーブ形式。書き換えはまだ無い。版は 1 から（1 より小さければ 1 にして 1 行言う）。
+  `pub def make(name: String, version: Int32): Format`
+- `pub def withMigration(fromVersion: Int32, migrate: Json -> Result[String, Json], format: Format): Format`
+- 包みの無い古いセーブ（中身の JSON だけ）を何版として読むかを決める関数を渡す。
+  `pub def withUnwrappedVersion(versionOf: Json -> Int32, format: Format): Format`
+- 形式の名前。
+  `pub def getName(format: Format): String`
+- 今の版（書く時に付ける版）。
+  `pub def getVersion(format: Format): Int32`
+- 中身 `data` を今の版の包み `{"format", "version", "data"}` に入れる。
+  `pub def wrap(data: Json, format: Format): Json`
+- 読んだ JSON の版。包みも読み方も無い・名前の違う包みは None。
+  `pub def versionOf(json: Json, format: Format): Option[Int32]`
+- 読んだ JSON を今の版の中身へ書き換えて返す。今より新しい版・書き換えの抜け・書き換えの失敗は Err。
+  `pub def decode(json: Json, format: Format): Result[String, Json]`
+- セーブの字を読んで `decode` する。JSON として読めない字は Err。
+  `pub def decodeText(text: String, format: Format): Result[String, Json]`
+- `path` のセーブを今の版の中身にして読む。ファイルが無ければ Ok(None)（初めての時は正常）。
+  `pub def load(path: String, format: Format): Result[String, Option[Json]] \ Fs.FileRead`
+- 版 `version` の控えの道（`<path>.v<version>.bak`）。セーブと同じフォルダに並ぶ。
+  `pub def backupPath(path: String, version: Int32): String`
+- 中身 `data` を今の版で包んで `path` に書く。
+  `pub def save(path: String, data: Json, format: Format): Result[String, Unit] \ Fs.FileRead + Fs.FileWrite`
+- `Saveable` の値を今の版で包んで `path` に書く（控えと上書きの判断は `save` と同じ）。
+  `pub def saveValue(path: String, value: a, format: Format): Result[String, Unit] \ Fs.FileRead + Fs.FileWrite with Saveable[a]`
+- `path` を今の版の中身にしてから `Saveable` の値に戻す。ファイルが無ければ Ok(None)。
+  `pub def loadValue(path: String, format: Format): Result[String, Option[a]] \ Fs.FileRead with Saveable[a]`
+- フォルダ `dir` のセーブの見本（*.json）を全部、書き換えを通してから `read` に渡し、
+  `pub def checkSamples(dir: String, read: Json -> Result[String, a], format: Format): List[(String, String)] \ Fs.DirList + Fs.FileRead`
+
 ## SaveManager — `engine_world/src/SaveManager.flix`
 - `saves/slot{N}.json` のパス。
   `pub def slotPath(slot: Int32): String`

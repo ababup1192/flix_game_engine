@@ -9,6 +9,7 @@
 |---|---|
 | 巻き戻し・リプレイ・履歴 | Worldline |
 | セーブ・ロード | SaveManager / Persistence |
+| セーブに版を付け、古い版を今の形へ書き換えて読む・上書き前の控え・古いセーブの見本を読むテスト | SaveFormat（決まりは docs/save-compat.md） |
 | Doc の一覧を一覧表 1 枚にし watchFile・一括リロード・表示中バッジを導出 | DocTable |
 | Doc・アトラス・シェーダーを World の外に持ち、読み直しの時だけ替える | Resources（`With[res, w]`・`reloadRow`。手本 templates/game-starter/src/Res.flix・templates/tidepool-starter/src/Res.flix・templates/sound-novel-starter/src/Res.flix） |
 | Doc を fail-open で読む（読めない・壊れは既定値へ） | DocJson.loadOr / decodeObject |
@@ -19,6 +20,7 @@
 
 - **Persistence** — 値をディスクに保存し、また読み戻すための汎用のしくみ。
 - **SaveManager** — セーブデータをスロット番号でファイルに保存・読み出しする薄い層。
+- **SaveFormat** — セーブを「形式の名前・版・中身」で包み、版 n → n+1 の書き換えを順に通して今の形で渡す。古い版を上書きする前の控え・未来の版を上書きしない判断・見本を読むテスト（checkSamples）も持つ。
 - **Worldline** — World の軌跡（履歴・巻き戻し・リプレイ・分岐の土台）。時間区間の振り付けは Timeline（別物）。
 - **JsonCodec** — 値 ⇄ JSON の純変換ヘルパ（expect 系 / encode・decode）。
 - **DocJson** — Doc を読むときの JSON 道具箱。parse・デコード補助（atNode 等）と fail-open 読み込み（loadOr・checkVersion）。

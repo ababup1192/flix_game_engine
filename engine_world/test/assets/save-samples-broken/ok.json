@@ -1,0 +1,5 @@
+{
+  "format": "demo",
+  "version": 3,
+  "data": { "life": 5, "items": ["key"] }
+}

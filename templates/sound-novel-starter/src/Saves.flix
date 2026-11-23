@@ -352,14 +352,19 @@ mod Saves {
             case None         => { saves = fallback, refused = false, keptAs = None }
         }
 
-    /// 読んだ JSON から起動のセーブ（読めない形なら元の文字 text を残す）。
+    /// 読んだ JSON から起動のセーブ（読めない形なら元の文字 text を残す・今より古い版なら backupPath にも残す）。
     def openedOf(fallback: Saves, text: String, json: Json): Opened \ {Fs.FileRead, Fs.FileWrite} =
+        let version = JsonCodec.expectObject(json) |> Option.map(root -> JsonCodec.intOr("version", 0, root)) |> Option.getWithDefault(0);
         match decode(fallback, json) {
-            case Some(s) => { saves = s, refused = false, keptAs = None }
+            case Some(s) =>
+                if (version < formatVersion()) discard keepRefused(backupPath(version), text) else ();
+                { saves = s, refused = false, keptAs = None }
             case None    =>
-                let version = JsonCodec.expectObject(json) |> Option.map(root -> JsonCodec.intOr("version", 0, root)) |> Option.getWithDefault(0);
                 { saves = fallback, refused = true, keptAs = keepRefused(refusedPath(version), text) }
         }
+
+    /// 古い版のセーブを今の版で書き直す前に残す先（版ごとに 1 つ・engine の docs/save-compat.md の 5）。
+    pub def backupPath(version: Int32): String = "${path()}.v${version}.bak"
 
     /// 断ったセーブの文字を dst へ書く。dst が既にあれば書かずにそれを残した先とする（前に断った物を消さない）。書けなければ 1 行言って None。
     // WhyNot: Fs.FileTest で有無を見ない — ブラウザ版の Fs（WebFs）は FileRead と FileWrite しか受けない。
