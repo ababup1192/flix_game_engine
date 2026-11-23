@@ -392,13 +392,9 @@ video-entries: ### | 動画の見回りが流す入口の一覧を Makefile の 
 	@$(FGE_PICK); "$$fge" video-entries --root .
 
 ##@ ゲームの src を引く
-# ゲームの src/ の定義を 1 行で引く（make api Q= のゲーム版・正規表現だけの最小版）。例: make src Q=talkBackdrop
-SRC_INDEX_AWK := $(ENGINE)/mk/src-index.awk
+# ゲームの src/ の定義を 1 行で引く（make api Q= のゲーム版・正規表現だけの最小版・中身は bin/fge src）。例: make src Q=talkBackdrop
 src: ## Q=<名前> | ゲームの src/ の pub 定義を 1 行で引く（.flix を丸読みする前にまずこれ）
-	@test -n "$(Q)" || { echo "usage: make src Q=<関数名や型名>"; exit 1; }
-	@out=$$(find src -name '*.flix' | sort | xargs awk -f "$(SRC_INDEX_AWK)" | grep -i -- "$(Q)" | head -40); \
-	if [ -n "$$out" ]; then printf '%s\n' "$$out"; \
-	else echo "[src] '$(Q)' の pub 定義なし。grep -n '$(Q)' -r src で使われ方を探す"; fi
+	@"$(ENGINE)/bin/fge" src "$(Q)"
 
 ##@ エージェントの道具選びを測る
 # 文書・スキル・早見表で、何も教えていないエージェントが正しい道具を選べるかを測る。

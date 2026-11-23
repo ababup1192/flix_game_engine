@@ -5,7 +5,8 @@
 # 道具が無い環境では関所の都合でコミットを壊さない (fail-open)
 root=$(git rev-parse --show-toplevel) || exit 0
 [ -x "$root/bin/fge" ] || { echo "[pre-commit] bin/fge が見つからないので関所は素通りします"; exit 0; }
-if [ ! -x "$root/bin/fge-go" ]; then
+# WhyNot: MSYS の test -x が .exe を補うことに頼らない — Windows に置かれるのは fge-go.exe で、補わない sh でも見つけたい。
+if [ ! -x "$root/bin/fge-go" ] && [ ! -x "$root/bin/fge-go.exe" ]; then
   # engine のリポジトリ (go/ がある) では止める。焼き忘れでゲートが消えるのが一番危ない。
   # ゲームのリポジトリでは素通りする: 配り直しが済むまで人のコミットを止めない。
   if [ -d "$root/go" ]; then

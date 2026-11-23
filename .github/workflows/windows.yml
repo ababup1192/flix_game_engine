@@ -1,0 +1,234 @@
+name: Windows
+
+# 出す前の版を Windows の始め方（install.ps1 → fge engines install → fge new → bin/fge の作業）で通す（plans/windows.md 9 節）。
+# Linux の job が Go のテスト・go-build・配る zip を組んで artifact にし、Windows の job がそれを手元の https で配って流す。
+# WhyNot: Windows の job で公開済みの Release を取らない — install.ps1 と fge engines install は既定で latest を取り、
+#   確かめたいのは出す前の版。FGE_DOWNLOAD_URL・FGE_RELEASES_API で手元の置き場へ向ける。
+# WhyNot: push や pull_request で起動しない — 1 回 30 分以上かかる。release の前と、Windows に関わる変更の後に手で起こす。
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # 前から赤い testselect の 4 本（gates.json の表と答えがずれている。この workflow の外で直す）。直したらここから消す。
+  GO_TEST_SKIP: "^(TestEngineWorldSrcSkipsOtherLayers|TestRenderGlWgslRunsRenderGlAndDownstream|TestEverythingTestsAllPackages|TestTomlOtherThanVersionRunsDownstream)$"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # release.yml と同じく devbox が nix 経由で JDK25 / Flix コンパイラ / Go / make を用意する（flix.jar もそこから取る）。
+      - name: Install devbox
+        uses: jetify-com/devbox-install-action@v0.13.0
+
+      - name: Read the engine version
+        id: version
+        run: echo "version=$(sed -n 's/^VERSION := //p' Makefile)" >> "$GITHUB_OUTPUT"
+
+      - name: make go-build
+        run: devbox run -- make go-build
+
+      - name: go test (go/ 全部)
+        run: devbox run -- sh -c 'cd go && CGO_ENABLED=0 go test -skip "$GO_TEST_SKIP" ./...'
+
+      # release-publish の後半（sync → engine_full の build-pkg → bundle-zip → release-fge-assets）と同じ順。
+      # WhyNot: release-publish を流さない — release/verified.txt の確かめ・gl-jar-publish・gh release が入っていて、公開しない確かめには要らない。
+      - name: make sync
+        run: devbox run -- make sync
+
+      - name: engine_full build-pkg
+        run: devbox run -- sh -c 'cd engine_full && ../bin/flix build-pkg'
+
+      - name: make bundle-zip
+        run: devbox run -- make bundle-zip
+
+      - name: make release-fge-assets
+        run: devbox run -- make release-fge-assets
+
+      - name: Collect what Windows downloads
+        run: |
+          set -eu
+          v='${{ steps.version.outputs.version }}'
+          mkdir -p ci-dist
+          cp "flix_game_engine-engine-v$v.zip" SHA256SUMS.txt ci-dist/
+          cp build/release-fge/fge-windows-amd64.exe build/release-fge/fge-SHA256SUMS.txt build/release-fge/install.ps1 ci-dist/
+          ls -l ci-dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-dist
+          path: ci-dist/
+          retention-days: 3
+
+  windows:
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      FGE_VERSION: ${{ needs.build.outputs.version }}
+      SERVE_PORT: "8443"
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      # 配る https の小さなサーバー（.github/windows-ci/serve_https.py）だけを取る。ゲームと engine は artifact から。
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-dist
+          path: ${{ runner.temp }}/serve/dl
+
+      # make を「入っていない」にする: PATH の先頭に、呼ばれたら記録を残して失敗する make を置く。
+      # windows-latest には choco の make と Strawberry の perl がある。Git Bash（とその中の perl・sed）は前提なので残す。
+      # WhyNot: choco の make を消さない — PATH の別の所や choco の shim が残ると漏れる。先頭で受ければ、どこから呼ばれても記録が残る。
+      - name: Make make unavailable
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'no-make'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $log = Join-Path $env:RUNNER_TEMP 'forbidden-calls.log'
+          foreach ($tool in @('make', 'perl')) {
+            Set-Content -Encoding ascii -Path (Join-Path $dir "$tool.cmd") -Value @(
+              '@echo off',
+              "echo $tool %*>>`"$log`"",
+              "echo [ci] $tool is not installed on purpose (plans/windows.md 9) 1>&2",
+              'exit /b 127'
+            )
+          }
+          # Git Bash は拡張子の無い make を探す（make.cmd は見ない）。perl は Git Bash の /usr/bin の物が先に当たるので置かない。
+          $sh = "#!/bin/sh`necho `"make `$*`" >> `"$($log -replace '\\','/')`"`necho '[ci] make is not installed on purpose (plans/windows.md 9)' >&2`nexit 127`n"
+          [System.IO.File]::WriteAllText((Join-Path $dir 'make'), $sh)
+          Add-Content -Path $env:GITHUB_PATH -Value $dir
+          git config --global user.name 'ci'
+          git config --global user.email 'ci@example.invalid'
+          git config --global core.autocrlf true
+
+      - name: Serve the unreleased build over https
+        run: |
+          $serve = Join-Path $env:RUNNER_TEMP 'serve'
+          $port = $env:SERVE_PORT
+          $base = "https://127.0.0.1:$port"
+          $openssl = 'C:\Program Files\Git\usr\bin\openssl.exe'
+          & $openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj '/CN=127.0.0.1' `
+            -addext 'subjectAltName=IP:127.0.0.1,DNS:localhost' `
+            -keyout (Join-Path $serve 'key.pem') -out (Join-Path $serve 'cert.pem')
+          if ($LASTEXITCODE -ne 0) { throw 'openssl failed' }
+          certutil -addstore -f Root (Join-Path $serve 'cert.pem')
+          if ($LASTEXITCODE -ne 0) { throw 'certutil failed' }
+
+          $v = $env:FGE_VERSION
+          $assets = Get-ChildItem (Join-Path $serve 'dl') | ForEach-Object {
+            @{ name = $_.Name; browser_download_url = "$base/dl/$($_.Name)" }
+          }
+          $release = @{ tag_name = "v$v"; assets = @($assets) } | ConvertTo-Json -Depth 4
+          $api = Join-Path $serve 'api\repos\ababup1192\flix_game_engine\releases'
+          New-Item -ItemType Directory -Force -Path (Join-Path $api 'tags') | Out-Null
+          [System.IO.File]::WriteAllText((Join-Path $api 'latest'), $release)
+          [System.IO.File]::WriteAllText((Join-Path $api "tags\v$v"), $release)
+
+          $script = Join-Path $env:GITHUB_WORKSPACE '.github\windows-ci\serve_https.py'
+          Start-Process -FilePath python -ArgumentList @($script, $serve, $port, (Join-Path $serve 'cert.pem'), (Join-Path $serve 'key.pem')) `
+            -RedirectStandardError (Join-Path $env:RUNNER_TEMP 'serve.err') -RedirectStandardOutput (Join-Path $env:RUNNER_TEMP 'serve.out')
+          $ok = $false
+          foreach ($i in 1..30) {
+            try { Invoke-WebRequest -UseBasicParsing "$base/dl/fge-SHA256SUMS.txt" | Out-Null; $ok = $true; break } catch { Start-Sleep 1 }
+          }
+          if (-not $ok) { Get-Content (Join-Path $env:RUNNER_TEMP 'serve.err'); throw 'the https server did not come up' }
+          Add-Content -Path $env:GITHUB_ENV -Value "FGE_DOWNLOAD_URL=$base/dl"
+          Add-Content -Path $env:GITHUB_ENV -Value "FGE_RELEASES_API=$base/api"
+
+      - name: install.ps1
+        run: |
+          irm "$env:FGE_DOWNLOAD_URL/install.ps1" | iex
+          $bin = Join-Path $env:USERPROFILE '.flix_ge\bin'
+          Add-Content -Path $env:GITHUB_PATH -Value $bin
+          & (Join-Path $bin 'fge.exe') --version
+
+      - name: fge engines install
+        timeout-minutes: 15
+        run: |
+          fge engines install latest
+          if ($LASTEXITCODE -ne 0) { throw "fge engines install failed ($LASTEXITCODE)" }
+          fge engines
+
+      - name: fge new ci_game
+        timeout-minutes: 15
+        working-directory: ${{ runner.temp }}
+        run: |
+          fge new ci_game --template game-starter
+          if ($LASTEXITCODE -ne 0) { throw "fge new failed ($LASTEXITCODE)" }
+          Add-Content -Path $env:GITHUB_ENV -Value "CI_GAME=$(Join-Path $env:RUNNER_TEMP 'ci_game')"
+
+      # ここからはゲームの中の bin/fge。Claude Code と同じく Git Bash から打つ（PowerShell の bin\fge.cmd は 1 本だけ見る）。
+      - name: bin\fge.cmd --version (PowerShell)
+        working-directory: ${{ env.CI_GAME }}
+        run: |
+          .\bin\fge.cmd --version
+          if ($LASTEXITCODE -ne 0) { throw "bin\fge.cmd failed ($LASTEXITCODE)" }
+
+      - name: bin/fge check
+        timeout-minutes: 20
+        working-directory: ${{ env.CI_GAME }}
+        shell: bash
+        run: bin/fge check
+
+      - name: bin/fge test
+        timeout-minutes: 20
+        working-directory: ${{ env.CI_GAME }}
+        shell: bash
+        run: bin/fge test
+
+      # テンプレートの SHA256SUMS は作者の手元の物なので、新しいゲームでは update から（plans/windows.md 9 節）。
+      - name: bin/fge reference update
+        timeout-minutes: 20
+        working-directory: ${{ env.CI_GAME }}
+        shell: bash
+        run: bin/fge reference update
+
+      - name: bin/fge reference check
+        timeout-minutes: 20
+        working-directory: ${{ env.CI_GAME }}
+        shell: bash
+        run: bin/fge reference check
+
+      - name: bin/fge render --all
+        timeout-minutes: 30
+        working-directory: ${{ env.CI_GAME }}
+        shell: bash
+        run: bin/fge render --all
+
+      - name: Nothing called make
+        if: always()
+        run: |
+          $log = Join-Path $env:RUNNER_TEMP 'forbidden-calls.log'
+          if (Test-Path $log) {
+            Write-Host 'These were called even though they are not installed:'
+            Get-Content $log
+            throw 'make or perl was called'
+          }
+          Write-Host 'make and perl were never called.'
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: windows-logs
+          path: |
+            ${{ runner.temp }}/forbidden-calls.log
+            ${{ runner.temp }}/serve.err
+            ${{ runner.temp }}/ci_game/debug/
+            ${{ runner.temp }}/ci_game/gallery/
+          if-no-files-found: ignore
+          retention-days: 7
