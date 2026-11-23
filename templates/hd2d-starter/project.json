@@ -150,6 +150,10 @@
     }
   ],
   "sounds": [],
+  "// shots": "render の場面の名前（source of truth は Shots.names。ここは bin/fge render の使い方に出す写し）。場面を足したら Shots.names と一緒にここも足す",
+  "shots": ["title", "start", "avenue", "quit"],
+  "// precommit": "pre-commit で流す物の名前（tasks の名前か engine の検査の名前）",
+  "precommit": ["lint-flixlint"],
   "editor": {
     "resources": [
       {

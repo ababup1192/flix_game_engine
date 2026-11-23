@@ -280,11 +280,11 @@ type residentSetup struct {
 // prepareResident は flix.jar・shim の jar・identity・socket を揃える。
 func prepareResident(r *hooks.Rules, root, pkg string) (residentSetup, error) {
 	var s residentSetup
-	out, err := exec.Command("env", "FLIX_PRINT_JAR=1", flixBin(root, pkg)).Output()
+	jar, err := flixJarOf(flixBin(root, pkg))
 	if err != nil {
 		return s, fmt.Errorf("flix.jar の場所が分からない: %v", err)
 	}
-	s.flixJar = strings.TrimSpace(string(out))
+	s.flixJar = jar
 	if s.shimJar, err = ShimJar(r); err != nil {
 		return s, err
 	}
@@ -545,7 +545,7 @@ func SharedServer(r *hooks.Rules, engineRoot, pkg string) (Shared, error) {
 	if r.Checkd.Server.BackendEnvVar == nil {
 		return Shared{}, errors.New("hooks.json に checkd.server が無い")
 	}
-	out, err := exec.Command("env", "FLIX_PRINT_JAR=1", flixBin(engineRoot, pkg)).Output()
+	flixJar, err := flixJarOf(flixBin(engineRoot, pkg))
 	if err != nil {
 		return Shared{}, fmt.Errorf("flix.jar の場所が分からない: %v", err)
 	}
@@ -554,7 +554,7 @@ func SharedServer(r *hooks.Rules, engineRoot, pkg string) (Shared, error) {
 		return Shared{}, err
 	}
 	sv := r.Checkd.Server
-	return Shared{FlixJar: strings.TrimSpace(string(out)), ShimJar: shim, HeapMB: *sv.HeapMB, IdleMinutes: *sv.IdleMinutes}, nil
+	return Shared{FlixJar: flixJar, ShimJar: shim, HeapMB: *sv.HeapMB, IdleMinutes: *sv.IdleMinutes}, nil
 }
 
 // serverMark は、そのパッケージの check を流した常駐の記録（状態の置き場の server。stop・stop-all と、編集フックの

@@ -16,11 +16,10 @@
 FGE_VERSION := $(shell sed -n 's/^"github:ababup1192\/flix_game_engine"[^}]*version *= *"\([0-9.]*\)".*/\1/p' flix.toml)
 ENGINE ?= $(if $(and $(wildcard ../../mk/game.mk),$(wildcard ../../templates)),../..,$(or $(FGE_HOME),$(HOME)/.flix_ge)/engines/$(FGE_VERSION))
 
-# WhyNot: 色票（PALETTE）を決めない — ドット絵の sprite.json を持たず、絵は PNG と glb のまま貼るので、作り直す色票が無い。
+# WhyNot: パレットの作り置き（project.json の prebuild）を書かない — ドット絵の sprite.json を持たず、絵は PNG と glb のまま貼るので、作り直すパレットが無い。
 
-# 描き出せる場面の名前（source of truth は Shots.names。ここは使い方に出す写し）。
-# 場面を足したら Shots.names と一緒にここも足す。
-SHOTS := entrance corridor classroom stairs map map2f talk_girl talk_teacher talk_bright hint hint_bright idle_controls quit door_locked pickup_key items
+# 描き出せる場面の名前（render の使い方に出す写し）と、パレットの作り置き・ゲーム固有の作業は project.json の
+# shots・prebuild・tasks に書く（bin/fge が読むので Windows でも同じ。make <作業> は bin/fge task <作業> の別名）。
 
 # ENGINE の場所が違うと include ごと落ち、make は「そんなファイルは無い」としか言わない。
 # 先に自前で見て、直し方の 1 行を出してから止める（この検査が無いと make status も塞がる）。
@@ -43,7 +42,7 @@ include $(subst $(space),\$(space),$(ENGINE))/mk/game.mk
 # 効果音を全部合成して assets/sfx/ へ書く（足音・戸・時計・空気・風・拾う・紙。src/render/SfxRender.flix）。
 .PHONY: sfx
 sfx:
-	$(HEADLESS_RUN) SfxRender.write
+	@$(FGE_RUN) task sfx
 
 # 校舎を歩く所の動画 = debug/video/<OUT>.mp4（960×720・3D は 320×240 を補間なしで 3 倍・字は 3 倍の画素で描く・音なし）。手順は FLOW（撮るのは mark in_ / out_ の間だけ）。
 #   make video FLOW=e2e/video/corridor.flow OUT=corridor
@@ -88,9 +87,9 @@ precommit-local:
 # 元の glb か layout.json を替えたら流す。束は git に入れる（デスクトップの起動・テスト・描き出しも束を読む）。
 .PHONY: bundles bundles-check
 bundles:
-	$(PYTHON3) tools/glb_bundle.py
+	@$(FGE_RUN) task bundles
 bundles-check:
-	$(PYTHON3) tools/glb_bundle.py --check
+	@$(FGE_RUN) task bundles-check
 
 # ブラウザ版を build/web へ書き出す（束を作り直してから。予算 web.startupBudget を超えたら止まる）。
 # 手元で開く: "$(ENGINE)/bin/py3" -m http.server 8000 --bind 127.0.0.1 --directory build/web → http://127.0.0.1:8000/

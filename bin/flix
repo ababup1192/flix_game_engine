@@ -102,7 +102,12 @@ fi
 
 # FLIX_PRINT_JAR=1 なら、使うコンパイラの jar のパスを出して終わる（bin/headless-run が jar の鍵に混ぜる）。
 # WhyNot: flix --version を呼ばない — JVM を 1 本起こすので 1 秒近くかかり、jar が古い時の頭で毎回払う。
+# Git Bash（MSYS）では /c/... の形を C:/... にして出す。受け取った Go がそのまま java.exe の -cp に渡すため。
+# WhyNot: 下の exec の -jar の引数は直さない — MSYS はネイティブの java.exe へ渡す引数のパスを自分で直す。直らないのは出力だけ。
 if [ "${FLIX_PRINT_JAR:-}" = 1 ]; then
+    case "$(uname -s)" in
+        MINGW*|MSYS*|CYGWIN*) FLIX_JAR="$(cygpath -m "$FLIX_JAR")" ;;
+    esac
     printf '%s\n' "$FLIX_JAR"
     exit 0
 fi

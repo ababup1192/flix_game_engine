@@ -2,6 +2,32 @@
   "//": "project.json の形の宣言（Studio の sections 方言）。editor.resources（この一覧そのもののレジストリ）はわざと載せない — 目次を編集画面から壊さないため。保存は触った値だけを書き換えるので、載せていないフィールドが消えることはない。",
   "version": 1,
   "sections": {
+    "shots":     { "kind": "field", "type": { "list": "text" }, "label": "描き出せる場面の名前（bin/fge render の使い方に出す写し。正は Shots.names）", "group": "作業（bin/fge）", "order": 90 },
+    "lint":      { "kind": "field", "type": { "list": "text" }, "label": "lint に足す作業の名前（中身は tasks）", "group": "作業（bin/fge）", "order": 91 },
+    "precommit": { "kind": "field", "type": { "list": "text" }, "label": "pre-commit で流す物の名前（tasks の名前か engine の検査の名前）", "group": "作業（bin/fge）", "order": 92 },
+    "prebuild": {
+      "kind": "list",
+      "label": "run・render の前に作り直す物（deps のどれかが out より新しければ entry を流す）",
+      "order": 93,
+      "fields": {
+        "out":   { "type": "text", "label": "作る物（ゲームの根からの相対）", "order": 1, "required": true },
+        "deps":  { "type": { "list": "text" }, "label": "入力（ゲームの根からの相対）", "order": 2 },
+        "entry": { "type": "text", "label": "流す入口（Mod.関数）", "order": 3, "required": true }
+      }
+    },
+    "tasks": {
+      "kind": "map",
+      "label": "ゲーム固有の作業（bin/fge task <名前> [K=V…]）。entry か cmd のどちらか 1 つ",
+      "order": 94,
+      "fields": {
+        "about":  { "type": "text", "label": "何をする作業か（一覧に出す 1 行）", "order": 1 },
+        "entry":  { "type": "text", "label": "ヘッドレスで流す入口（Mod.関数）", "order": 2 },
+        "cmd":    { "type": { "list": "text" }, "label": "コマンドの並び（entry の代わり）", "order": 3 },
+        "env":    { "type": "json", "label": "環境変数の既定（K=V の引数が上書きする）", "order": 4 },
+        "window": { "type": "bool", "label": "entry をウィンドウありで流す", "order": 5, "default": false }
+      }
+    },
+
     "title":         { "kind": "field", "type": "text", "label": "ゲームの題（ウィンドウのタイトルに出る）", "group": "題と画面", "order": 1, "required": true },
     "designWidth":   { "kind": "field", "type": "int", "label": "絵を描く基準の幅（px。この座標系で全部描く）", "group": "題と画面", "order": 2, "min": 160, "max": 1920, "default": 640 },
     "designHeight":  { "kind": "field", "type": "int", "label": "絵を描く基準の高さ（px。変えると見える範囲が変わる）", "group": "題と画面", "order": 3, "min": 120, "max": 1080, "default": 360 },

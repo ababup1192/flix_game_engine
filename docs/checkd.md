@@ -118,5 +118,5 @@ flixlint が動かずに落ちた回（heavy の枠を取れなかった等）�
 - `make run` の常駐化
 - engine / engine_world 等パッケージ本体の test
 - LSP (`flix lsp`) 経由の診断: 0.75.1 では CLI check と結果が食い違う偽エラーを出すことがあり不採用
-- Windows: checkd は flix.jar の場所を bash ラッパー (bin/flix) から引くので、template の make check は Windows で
-  `CHECKD := 0`（素の check）のまま
+- Windows の stop の後の lock の待ち: Windows では socket が消えた所で待つのをやめ、lock は見ない（`lock_windows.go`）。
+  Windows でも checkd は使う（`bin/fge check`。bin/flix は Git Bash で起こし、flix.jar の場所は `cygpath -m` を通した形で受け取る・plans/windows.md の 12 節）

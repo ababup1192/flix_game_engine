@@ -27,6 +27,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/ababup1192/flix_game_engine/go/internal/headlessjar"
 )
 
 // Options は組み立ての引数。JRE を空にすると Target の固定の版を使う。
@@ -140,7 +142,7 @@ func Build(t Target, opts Options, log io.Writer) (Result, error) {
 	m.Title = projectTitle(dir, m.Name)
 	jar := opts.Jar
 	if jar == "" {
-		jar = filepath.Join(dir, "build", "headless", "headless.jar")
+		jar = headlessjar.Path(dir)
 	}
 	if _, err := os.Stat(jar); err != nil {
 		return Result{}, fmt.Errorf("jar がありません（%s）。ゲームの根で make dist-%s を使うか、先に headless-run --build-only", jar, t.Key)

@@ -17,11 +17,10 @@
 FGE_VERSION := $(shell sed -n 's/^"github:ababup1192\/flix_game_engine"[^}]*version *= *"\([0-9.]*\)".*/\1/p' flix.toml)
 ENGINE ?= $(if $(and $(wildcard ../../mk/game.mk),$(wildcard ../../templates)),../..,$(or $(FGE_HOME),$(HOME)/.flix_ge)/engines/$(FGE_VERSION))
 
-# 描き出せる場面の名前（source of truth は Shots.names。ここは使い方に出す写し）。
-# 場面を足したら Shots.names と一緒にここも足す。
-SHOTS := title start avenue quit
+# 描き出せる場面の名前（render の使い方に出す写し）と、パレットの作り置き・ゲーム固有の作業は project.json の
+# shots・prebuild・tasks に書く（bin/fge が読むので Windows でも同じ。make <作業> は bin/fge task <作業> の別名）。
 
-# WhyNot: 色票（PALETTE）を決めない — ドット絵の sprite.json を持たず、板の絵は PNG のまま貼るので、作り直す色票が無い。
+# WhyNot: パレットの作り置き（project.json の prebuild）を書かない — ドット絵の sprite.json を持たず、板の絵は PNG のまま貼るので、作り直すパレットが無い。
 
 # ENGINE の場所が違うと include ごと落ち、make は「そんなファイルは無い」としか言わない。
 # 先に自前で見て、直し方の 1 行を出してから止める（この検査が無いと make status も塞がる）。
