@@ -310,3 +310,25 @@ Release の zip を手で開いた engine（fetchengine は止まるので手で
 - latest.json が取れない（オフライン・回数制限）時は止めずに続ける。古い控えはそのまま使う。テストで決める。
 - 古い版の bin/fge-go で新しい版の zip を開く時の前方互換: zip の並びの約束（一番上の engine/ フォルダ）を変えない。`--standalone` の照合を増やす時は古い版でも通るか見る。
 - ワークスペースの AGENTS.md は `fge engines install` の後にも写し直す。
+
+## 11. 作者に確かめていない決め事（2026-11-23 に一覧にして作者に見せた）
+
+作者の判断を待つ物（◎）と、既定として決めた物（○・変えやすい）。
+
+| | 決め事 | 節 |
+|---|---|---|
+| ◎ | Windows は対象外（ネイティブ）。WSL2 は Linux と同じ道で動く見込み（deep link は Windows 側の claude を開く恐れがあり、コピーで代える） | 0 |
+| ◎ | JDK は配り元 Zulu・版 25.0.3 を engine の版ごとに固定し、Azul から取る（devbox とはそろえない） | 2.4 |
+| ◎ | Claude Code は fge が入れない（人が別に入れる）。deep link は一度 claude で何か送った後でないと開けない | 0・2.6 |
+| ◎ | ワークスペースで開いた Claude はゲームを作ったら止まり、人にゲームのカードから開き直してもらう | 2.6 |
+| ○ | 置き場 `~/.flix_ge`・ワークスペース `~/flix-games` | 2.1 |
+| ○ | install.sh は Release に添える（Pages でない）。シェルの設定ファイルは書き換えず、足す行を出すだけ | 2.2 |
+| ○ | Release に `fge-<os>-<arch>` と別の `fge-SHA256SUMS.txt`（今の SHA256SUMS.txt は Studio のために変えない） | 2.3 |
+| ○ | engine の zip に natives（約 13 MB）を入れる | 2.3 |
+| ○ | 取った engine は読み取り専用。消すのは `fge engines remove` | 2.8 |
+| ○ | 新しい版の問い合わせは 1 日 1 回まで（latest.json） | 2.9 |
+| ○ | 版上げは `make engine-upgrade TO=<版>`（今の名前を残す） | 2.9 |
+| ○ | テンプレート 6 つの Makefile の ENGINE の既定を替える（既に産まれたゲームは触らない） | 2.5 |
+| ○ | フォルダ名の `-` はパッケージ名で `_` に替える | 2.8 |
+| ○ | ffmpeg は fge が取らない（要る時に入れ方を出す） | 5 |
+| ○ | JAVA を人が名指しした時はそれが勝つ | 2.5 |
