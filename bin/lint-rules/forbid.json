@@ -467,8 +467,6 @@
     "go/internal/headlessrun/lock_test.go::go-exec-shell": "bin/headless-run（bash）そのものを確かめるテスト",
     "go/internal/status/engine_test.go::go-exec-shell": "Makefile の版の行を make に読ませて答え合わせするテスト",
     "go/internal/precommit/precommit.go::go-exec-shell": "project.json に precommit の無いゲームと engine の作業場の Makefile のターゲット（precommit-local・check-docs-sync）。make が無ければ 1 行出して止める",
-    "go/internal/flow/run.go::go-exec-shell": "flow の make の起動を Go の起動に替えるまで（plans/windows.md 5 節の #12）",
-    "go/internal/checkd/resident.go::go-exec-shell": "env で FLIX_PRINT_JAR を渡して bin/flix から jar を引く所を Go に替えるまで（plans/windows.md 5 節の #4）",
     "engine_web/teavm/java/fge/teavmfix/Rewrite.java::java-regex": "書き出しの時に jar の中の正規表現の字を TeaVM 向けに直す道具（コメントで String.lines の名を出すだけ）。wasm には入らない",
     "engine/test/TestShaderGenWgsl.flix::light-uniform-in-glsl": "LightModel3d.Codegen.toWgsl が出した字の欄の読み（vec4 の配列の x）を確かめるテスト。光の式を手で書いてはいない",
     "src/AssistShow.flix::game-unchecked-pure": "internet_dungeon の Math.sin・cos の包み。Num.sin・Num.cos へ寄せるまで",
