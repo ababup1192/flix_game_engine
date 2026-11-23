@@ -165,12 +165,12 @@ project.json（ゲームの根・今もある）に宣言を足す。凍結し�
 | 所 | 崩れ方 | 直し方 |
 |---|---|---|
 | headless-run:249 の `ln -sfn "$PWD/lib" "$proj/lib"` | MSYS の既定の `ln -s` は丸写しを作る。flix が依存を落とすのは写しの方になり、2 回目は写しの中に `lib/lib` を作り、指紋も毎回ずれる（mvn-cache-share.sh:46-47 は同じ理由で MSYS を外している） | MSYS の時だけ `cmd //c mklink /J`（ジャンクション。管理者の権限なしで張れる）。張れなければ毎回コンパイルする道へ移り、その旨を 1 行出す |
-| headless-run:258-259 の `mv "$jar.tmp.$$" "$jar"` | Windows では、`run` のウィンドウや常駐の JVM が開いている jar を差し替えられない（ゲームを開いたまま render する、普段の流れで止まる） | jar の名前に指紋を入れ、別の名前で置く（`headless-<指紋>.jar`）。今の名前は指紋の入った jar を指す小さなファイルにする。古い jar は開かれていなければ次の作り置きの時に消す |
+| headless-run:258-259 の `mv "$jar.tmp.$$" "$jar"` | Windows では、`run` のウィンドウや常駐の JVM が開いている jar を差し替えられない（ゲームを開いたまま render する、いつもの流れで止まる） | jar の名前に指紋を入れ、別の名前で置く（`headless-<指紋>.jar`）。今の名前は指紋の入った jar を指す小さなファイルにする。古い jar は開かれていなければ次の作り置きの時に消す |
 | headless-run:544・bin/flix の最後の `exec` | MSYS の bash はネイティブの java を本当の exec でなく子のプロセスで起こす。時間切れや Ctrl+C で bash だけが落ち、java が残って jar を開いたままになる | #6 で Go が bash を起こす時は、Windows では Job Object（KILL_ON_JOB_CLOSE）に入れる。Go が止まれば木ごと止まる。#13 の `run --seconds` も同じ仕組みで作る |
 
 実装しながら決める物（第 2 版のレビュー）:
 - bin/flix の `FLIX_PRINT_JAR=1` は Git Bash では `/c/...` の形で返り、checkd が java の `-cp` に渡すと java.exe が読めない（resident.go:282）。bin/flix の側で MSYS の時に `cygpath -m` を通す。
-- bash の探し方（3 節 2）: `CLAUDE_CODE_GIT_BASH_PATH` → Git for Windows の `bin\bash.exe`（`usr\bin` でない）。PATH からは探さない（System32\bash.exe は WSL の入口）。
+- bash の探し方（3 節 2）: `CLAUDE_CODE_GIT_BASH_PATH` → Git for Windows の `bin\bash.exe`（`usr\bin` でない）。PATH からは探さない（System32\bash.exe は WSL を起こす物）。
 - hooks の Stop の checkd は #4 が済むまで Windows では落ちる。#4 までは Windows では何もせず通す（作る順は #1 → #4 を先に）。
 - checkd の常駐の AF_UNIX の socket は Windows 10 1803 以上と JDK 16 以上が前提。パスの長さは `%LocalAppData%` の下なので上限に収まる見込み。CI で 1 度確かめる。
 - headless-run の鍵の pid（MSYS の pid）と Go の jarshare（builder.go:152・Windows の pid）は別のフォルダに置き、混ぜない。
