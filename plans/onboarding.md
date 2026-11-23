@@ -33,7 +33,7 @@ claude                         # AGENTS.md・skills・hooks は fge new が置�
 ```
 ~/.flix_ge/
   bin/fge                       全体の fge（install.sh が置く）
-  engines/<版>/                 engine の zip を開いた物（fetchengine が zip の 1 段目の engine/ を外して開く・fetchengine.go:420-429）
+  engines/<版>/                 engine の zip を開いた物（fetchengine が zip の一番上の engine/ フォルダを外して開く・fetchengine.go:420-429）
     Makefile  mk/  bin/  templates/  lib/external/（LWJGL の natives・2.3）
   jdk/<配り元>-<版>/bin/java     JDK。macOS の `Contents/Home` は fge が開く時に外し、どの OS でも `<dir>/bin/java` にそろえる
 ```
