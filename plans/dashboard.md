@@ -1,7 +1,7 @@
 # ダッシュボード（engine 起点・ブラウザ）
 
-状態: 設計 第 4 版（相談中）。実装は未着手。**始め方（plans/onboarding.md）の後に作る。**
-レビュー: 第 1 版 64 点・第 2 版 78 点・第 3 版 84 点・12〜15 節を足した版 68 点。指摘への答えは 11 節。
+状態: 設計 第 5 版（相談中）。実装は未着手。**始め方（plans/onboarding.md）の後に作る。**
+レビュー: 第 1 版 64 点・第 2 版 78 点・第 3 版 84 点・12〜15 節を足した版 68 点・第 4 版 82 点。指摘への答えは 11 節。
 
 ## 0. 決まっていること（作者の判断）
 
@@ -130,16 +130,6 @@
 
 - `127.0.0.1` だけで待つ。
 - 全部の要求で `Host` が `127.0.0.1:<port>` か `localhost:<port>` であることを見る（DNS rebinding で GET を読まれるのを防ぐ）。
-- POST は `Origin` が無いか自分の時だけ受ける。ブラウザは別の頁からの POST に必ず Origin を付けるので、これで別の頁からの書き込みを断れる。
-  CLI（`stop` の `POST /api/shutdown`）は Go の http クライアントで Origin を付けないので通る。WhyNot token を server.json に置く: 守る相手は
-  手元の別の頁で、Origin で足りる。手元のプロセスは server.json も読めるので token を足しても守りは増えない。
-- ファイルを出すのは決まった置き場の下だけ。`..` と、symlink を辿った先が置き場の外になる物を断る。
-- RemoteDebug への中継は games.json にある port だけ。
-
-## 6. 安全
-
-- `127.0.0.1` だけで待つ。
-- 全部の要求で `Host` が `127.0.0.1:<port>` か `localhost:<port>` であることを見る（DNS rebinding で GET を読まれるのを防ぐ）。
 - POST は `Origin` が自分の時だけ受ける（POST はブラウザの頁からしか来ない。CLI はファイルを書くのでサーバーへ POST しない）。
 - ファイルを出すのは決まった置き場の下だけ。`..` と、symlink を辿った先が置き場の外になる物を断る。
 - API のパスはどれも `/_api/` で始める（13 節でゲーム名の `/<名前>/` とぶつからない）。
@@ -176,7 +166,7 @@
 ## 10. 決めたこと・決めていないこと
 
 1. **ポートは 8790 に固定（決定 2026-11-23）。** 塞がっている時だけ空いた番号を使い、URL を出す。
-2. engine のリポの根で立てるか: **立てない。** 13 節のワークスペースで engine のリポを `fge add` すれば済む。
+2. engine のリポの根で立てるか: **フェーズ 1・2 では立てない。** フェーズ 3 のワークスペース（13 節）で engine のリポを `fge add` すれば済む。
 3. **post を GitHub Pages へ載せる道を足す（決定 2026-11-23）。** `bin/fge dashboard publish <id>` が post の頁（proposal の静的な index.html と素材）を
    tape publish と同じ置き場・同じ作り（go/internal/tape/publish.go の dry run 既定・`--yes`・`--wait`・95 MB を超える動画を縮める）で置く。
    公開した頁は「コピー」だけの静的な頁（返事は Pages から手元へ届かない）。フェーズ 2。
@@ -206,6 +196,10 @@
 | API のパスが `/api` と `/_api` でそろっていない | `/_api` にそろえた（6 節） |
 | templates/* に bin/fge が無い | 4 節で `../../bin/fge`・13 節も同じ |
 | `fge upgrade` が local.mk を書き換えない・版ズレの検知・赤の間の道具が古い | 14 節に足した |
+| （第 4 版）6 節が 2 つ | 古い方を消した |
+| （第 4 版）local.mk は git の外で、枝を替えると ENGINE が戻らない | 14 節で ENGINE を flix.toml の版から決める形に |
+| （第 4 版）中継の Host・Origin・版をまたぐフラグ | 13 節 |
+| （第 4 版）engine の根で立てないのはフェーズ 1・2 の間 | 10 節の 2 |
 | JDK を取ると絵が崩れる・Windows の new-game | plans/onboarding.md の 2.4（版を固定し local.mk の JAVA で渡す）・Windows は対象外 |
 | 14 と 15.1 でプロセスを起こす方針が食い違う | 15.1 に 1 つにまとめた |
 | RELEASE_GATES の漏れ | 7 節 |
@@ -230,6 +224,11 @@ http://127.0.0.1:8790/_api/…      ワークスペースの API
   子のプロセスとして起こし、そのポートへ中継する（Go の httputil.ReverseProxy）。全体の fge を Ctrl-C で止めると子も止まる。
   WhyNot 全体の fge が頁を描く: ゲームごとに engine の版が違う。版の違うゲームの post や tape を新しい道具 1 本で読むと、Studio の追従の失敗が戻る。
 - ダッシュボードより前の版のゲーム（`bin/fge dashboard` を持たない）は一覧に「版を上げると開ける」と出し、中継しない。
+  見分けは子の `bin/fge dashboard --version`（ダッシュボードの約束の版を 1 行で出す）。`--port`・`--no-open`・`--base` はフェーズ 3 で
+  4 節に足す。全体の fge と子の間の約束は、この 4 つのフラグと `--version` だけに保つ（版をまたぐ約束を増やさない）。
+- **中継の Host と Origin。** 子は 6 節のとおり Host と Origin を自分のポートで見るので、ReverseProxy の既定のままだと 8790 から来た要求を断る。
+  全体の fge は Director で Host を子の `127.0.0.1:<子のポート>` に書き換え、子は `--base` を受けた時だけ Origin に `http://127.0.0.1:8790` も許す
+  （全体の fge が自分の Host と Origin を 6 節と同じ決まりで先に見る）。
 - **ゲームの一覧はフォルダの親子ではなく一覧のファイルで持つ。** `~/.flix_ge/workspace.json` に `{name, dir}` を並べる。
   `fge new` は作ったゲームを一覧に足す。既にあるゲームは `fge add <dir>` で足す。
   WhyNot 1 つの親フォルダの下に置かせる: 既にある git のリポを動かさせることになる。
@@ -244,7 +243,7 @@ http://127.0.0.1:8790/_api/…      ワークスペースの API
 
 ```
 fge upgrade            # 全体の fge。作業ツリーがきれいか確かめる → 新しい版があるか見る → engine の zip を ~/.flix_ge/engines/<版>/ に取る
-                       # → 枝 engine-upgrade/<版> を切る → ゲームの local.mk の ENGINE（と JAVA）を新しい版へ書き換える
+                       # → 枝 engine-upgrade/<版> を切る
                        # → その版の engine で upgrade-game → 非互換が無ければ check・test を流して終わり
                        # → 非互換があれば UPDATE_PLAN.md を書き、ダッシュボードに post（当たる所の数・指示書・AI へ渡す文）
 ```
@@ -256,7 +255,12 @@ fge upgrade            # 全体の fge。作業ツリーがきれいか確かめ
   ENGINE が版ごとのフォルダを指す形では出なくなるので、`~/.flix_ge/engines/` の最新（無ければ Release の最新）と比べる形に替える。
   Release の問い合わせは 1 日 1 回まで（結果を `~/.flix_ge/latest.json` に置く。認証なしの GitHub API は 1 時間 60 回まで）。
 - 版は 1 つずつ上げる（0.104 → 0.105 → …）。1 版ごとに指示書が短く、どの版で壊れたかが分かる。`--to <版>` で飛ばすこともできる。
-- engine の版は `~/.flix_ge/engines/` に並べて置き、ゲームの local.mk が指す版を使う（古い版のゲームも動いたまま）。
+- engine の版は `~/.flix_ge/engines/` に並べて置く（古い版のゲームも動いたまま）。
+- **local.mk の ENGINE を書き換えない。flix.toml の版から決める。** local.mk は git の外なので、枝 `engine-upgrade/<版>` で書き換えると、
+  main へ戻っても ENGINE は新しい版のまま（古い flix.toml と新しい game.mk が混ざる）。worktree には local.mk 自体が無い。
+  `fge new` が書く local.mk は `ENGINE ?= $(HOME)/.flix_ge/engines/$(shell <flix.toml の flix_game_engine の版を読む 1 行>)/engine` にする。
+  枝を替えても worktree でも、その時の flix.toml の版の engine を指す。上の「local.mk の ENGINE（と JAVA）を書き換える」はこれで要らなくなる
+  （JAVA は engine の jdk.json から同じように決める）。clone した engine を使う人（`make new-game` で作った人）は今までどおり絶対パス。
 - **`--fix`（AI に直させる）はフェーズ 3。** 手動の往復（post → 人が AI に頼む → AI が直す）が回ってから。プロセスを起こす決まりは 15.1 にまとめる。
   WhyNot fge が自分で直す: update-plan の WhyNot と同じ（読み違えた時に知らせずに壊す）。直すのは AI、fge は材料と確かめの場を渡す。
 - engine 側の仕事: リリースのたびに `<版>.md`（手書きの手当て）を書く今の決まりを続ける。AI が直せなかった所は post に残るので、次の版の手当てに足す。
