@@ -1,5 +1,5 @@
 {
-  "note": "同梱 engine の組み立ての規約データ。この JSON が source of truth で、bin/fge stage-engine はこれを読んで運ぶ物を決める。mac の Studio (make stage-engine)・Windows (ci/package-windows.ps1)・engine の make bundle-zip はどれもこの一覧を通るので、増やすときはここだけ直す。src が @ で始まる物は場所を引数で渡す (@flix-jar / @flix-wrapper / @fge-go / @maven-seed)。それ以外は engine リポの根からの相対。末尾が /* の src はそのフォルダ直下の当たるファイルだけ、フォルダを指す src は中身ごと。",
+  "note": "同梱 engine の組み立ての規約データ。この JSON が source of truth で、bin/fge stage-engine はこれを読んで運ぶ物を決める。mac の Studio (make stage-engine)・Windows (ci/package-windows.ps1)・engine の make bundle-zip はどれもこの一覧を通るので、増やすときはここだけ直す。src が @ で始まる物は場所を引数で渡す (@flix-jar / @flix-wrapper / @fge-go / @maven-seed / @natives)。それ以外は engine リポの根からの相対。末尾が /* の src はそのフォルダ直下の当たるファイルだけ、フォルダを指す src は中身ごと。",
   "items": [
     {
       "src": "@flix-jar",
@@ -183,6 +183,12 @@
       "dest": "templates",
       "pruneDirs": ["lib", "build", ".devbox"],
       "why": "new-game の複製元。ジャンルカードのサムネ (reference/title.png) もここから読む"
+    },
+    {
+      "src": "@natives",
+      "dest": "lib/external",
+      "optional": true,
+      "why": "LWJGL の natives の jar と GL の層の jar（make bundle-zip が render_gl/lib/external から lwjgl-*-natives-*.jar と fge-gl-*.jar だけを選んで渡す）。new-game が lib/external ごとゲームへ写す。無いと作るたびに Maven Central へ取りに行き、続けて作ると 429 で止まる。optional なのは Studio の make stage-engine が渡さないため（Studio は @maven-seed/external で持つ）"
     },
     {
       "src": "@maven-seed/cache",

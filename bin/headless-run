@@ -485,10 +485,12 @@ fi
 . "$engine/bin/java-resolve.sh"
 java_cmd="${JAVA:-java}"
 java_version_out=""
-if fge_resolve_java "$engine"; then
-    java_cmd=$FGE_JAVA
-    java_version_out=$FGE_JAVA_VERSION_OUT
-fi
+resolve_rc=0
+fge_resolve_java "$engine" || resolve_rc=$?
+case "$resolve_rc" in
+    0) java_cmd=$FGE_JAVA; java_version_out=$FGE_JAVA_VERSION_OUT ;;
+    2) exit 127 ;;
+esac
 # WhyNot: --sun-misc-unsafe-memory-access を無条件に付けない — JDK 22 以前（Studio が同梱する 21 も）は
 # この旗を知らず起動しない。版は上の -version の出力から読み、JVM を別に起こさない（bin/flix と同じ）。
 # WhyNot: 窓なしの経路には付けない — LWJGL の native を読まないので警告が出ず、常駐（resident の JavaArgs）と旗がずれる。
@@ -496,6 +498,8 @@ fi
 java_major="${java_version_out#*version \"}"
 java_major="${java_major%%[!0-9]*}"
 java_gl_flags="--enable-native-access=ALL-UNNAMED"
+# 標準出力の文字コードは bin/flix と同じ旗で固める（ロケールの無い所でログの日本語が ?????? にならないため）。
+java_enc_flags="-Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8"
 if [ "$java_major" -ge 24 ] 2>/dev/null; then
     java_gl_flags="$java_gl_flags --sun-misc-unsafe-memory-access=allow"
 fi
@@ -507,7 +511,7 @@ if [ "${built_ok:-0}" = 1 ]; then
     # pipefail と set -e で何も言わずに抜ける。
     printf '%s\n' "$entries" | { grep -E '\.vocab$' || true; } | while IFS= read -r vocab; do
         [ "$vocab" = "$entry" ] && continue
-        FGE_ENTRY="$vocab" "$java_cmd" -Xss32m -Djava.awt.headless=true -jar "$jar" >&2 || true
+        FGE_ENTRY="$vocab" "$java_cmd" -Xss32m -Djava.awt.headless=true $java_enc_flags -jar "$jar" >&2 || true
     done
 fi
 if [ "$mode" = build ]; then
@@ -530,10 +534,10 @@ fi
 # 窓なしは headless に固定（-XstartOnFirstThread の下で AWT が AppKit を待って固まらないため）。
 # GL を開く入口は bin/flix の run と同じく、Darwin だけ -XstartOnFirstThread を付けて headless にしない。
 if [ "$gl" = 1 ]; then
-    java_flags="$java_gl_flags -Xss32m -XX:MaxRAMPercentage=50"
+    java_flags="$java_gl_flags -Xss32m -XX:MaxRAMPercentage=50 $java_enc_flags"
     if [ "$(uname)" = Darwin ]; then java_flags="$java_flags -XstartOnFirstThread"; fi
 else
-    java_flags="-Xss32m -XX:MaxRAMPercentage=50 -Djava.awt.headless=true"
+    java_flags="-Xss32m -XX:MaxRAMPercentage=50 -Djava.awt.headless=true $java_enc_flags"
 fi
 # HEADLESS_JAVA_OPTS は空白で分けて既定の後ろに足す（同じ旗は後ろが勝つ）。
 # shellcheck disable=SC2086

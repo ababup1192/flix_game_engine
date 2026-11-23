@@ -2,8 +2,11 @@
 #
 #   fge_resolve_java <engine のルート>   FGE_JAVA（java のパス）と FGE_JAVA_VERSION_OUT（java -version の出力）を決める
 #   fge_devbox_bins <engine のルート>    devbox の profile の bin を、使う順に 1 行ずつ出す
+#   fge_is_bundle <engine のルート>      配った engine（go/ が無い）か
 #
 # 順は JAVA → PATH の java → engine の .devbox の jdk → main の checkout の .devbox の jdk。どれも java -version が通る物だけ。
+# 配った engine（go/ が無く mk/jdk.mk がある）では JAVA → ${FGE_HOME:-~/.flix_ge}/jdk/<配り元>-<版>/bin/java だけ。
+# どちらも無ければ止めて「fge engines install <版>」を出し、返り値は 2。
 # Go の側（go/internal/javacmd）も同じ順。片方を直したらもう片方も直す。
 #
 # WhyNot: 在るかどうか（command -v）で決めない。macOS には /usr/bin/java という「Java を入れてください」と言うだけの
@@ -38,7 +41,36 @@ _fge_try_java() {
     FGE_JAVA_VERSION_OUT=$_fge_out
 }
 
+fge_is_bundle() {
+    [ -f "$1/Makefile" ] && [ ! -d "$1/go" ]
+}
+
+# _fge_mk_value <ファイル> <名前> は make の `名前 := 値` の値を出す。
+_fge_mk_value() {
+    sed -n "s/^[[:space:]]*$2[[:space:]]*[:?]*=[[:space:]]*\([^[:space:]#]*\).*/\1/p" "$1" | head -n 1
+}
+
+# WhyNot: 配った engine で JDK が無い時に PATH の java へ移らない — 何も言わずに別の JDK で描くと、
+# フォントの計測がずれて絵が変わる。その原因に気づく手がかりも残らない。
+_fge_resolve_bundle_java() {
+    _fge_try_java "${JAVA:-}" && return 0
+    _fge_vendor=$(_fge_mk_value "$1/mk/jdk.mk" FGE_JDK_VENDOR)
+    _fge_jver=$(_fge_mk_value "$1/mk/jdk.mk" FGE_JDK_VERSION)
+    _fge_ever=$(_fge_mk_value "$1/Makefile" VERSION)
+    _fge_jdk="${FGE_HOME:-$HOME/.flix_ge}/jdk/$_fge_vendor-$_fge_jver/bin/java"
+    _fge_try_java "$_fge_jdk" && return 0
+    {
+        echo "engine ${_fge_ever:-?} が使う JDK（$_fge_vendor-$_fge_jver）が手元にありません: $_fge_jdk"
+        echo "  次: fge engines install ${_fge_ever:-<版>}（JAVA=<java のパス> で名指しもできる）"
+    } >&2
+    return 2
+}
+
 fge_resolve_java() {
+    if fge_is_bundle "$1" && [ -f "$1/mk/jdk.mk" ]; then
+        _fge_resolve_bundle_java "$1"
+        return
+    fi
     _fge_try_java "${JAVA:-}" && return 0
     _fge_try_java java && return 0
     while IFS= read -r _fge_bin; do

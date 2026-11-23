@@ -163,8 +163,19 @@ notes-rotate: ### | NOTES.md の先頭が長すぎたら古い項を notes/<年-
 
 # engine の版に追随する (flix.toml と lib/ の fpkg 差し替え + pack 配り直し + check)。
 # status の「engine 版ズレ」を見たらこれ。実体は engine 側の upgrade-game。
-engine-upgrade: ## | engine の版に追随する（status の「engine 版ズレ」を見たらこれ）
-	@$(MAKE) -C "$(ENGINE)" upgrade-game GAME="$(CURDIR)"
+# TO=<版> は配った engine（go/ が無い）の時だけ: その版を ${FGE_HOME:-~/.flix_ge}/engines/<版> に入れてから、その engine の upgrade-game へ。
+# WhyNot: ENGINE=~/.flix_ge/engines/<版> と打たせない — zsh（macOS の既定）は = の後の ~ を展開しない。
+# WhyNot: ゲームの bin/fge だけに頼らない — engines install を持たない古い版の engine で作ったゲームでは、全体の fge を呼ぶ。
+FGE_HOME_DIR = $(or $(FGE_HOME),$(HOME)/.flix_ge)
+engine-upgrade: ## [TO=<版>] | engine の版に追随する（status の「engine 版ズレ」を見たらこれ。TO= で新しい版へ上げる・配った engine の時）
+	@if [ -z "$(TO)" ]; then $(MAKE) -C "$(ENGINE)" upgrade-game GAME="$(CURDIR)"; exit $$?; fi; \
+	if [ -d "$(ENGINE)/go" ]; then \
+	  echo "error: TO= は配った engine の時だけ使えます。clone した engine は、engine の版を替えてから make engine-upgrade を打ってください"; exit 1; \
+	fi; \
+	fge=bin/fge; bin/fge --list 2>/dev/null | grep -qx engines || fge="$(FGE_HOME_DIR)/bin/fge"; \
+	[ -x "$$fge" ] || { echo "error: engines install を持つ fge がありません（$${fge}）。install.sh で入れ直してください"; exit 1; }; \
+	"$$fge" engines install "$(TO)" || exit 1; \
+	$(MAKE) -C "$(FGE_HOME_DIR)/engines/$(TO)" upgrade-game GAME="$(CURDIR)"
 
 ##@ 配る
 # 配布物（Linux x64・macOS arm64・Windows x64）。jar は make run と同じ物（headless-run が src の変わった時だけ作り直す）。
