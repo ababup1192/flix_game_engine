@@ -30,6 +30,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ababup1192/flix_game_engine/go/internal/selfexec"
 	"github.com/ababup1192/flix_game_engine/go/internal/status"
 	"github.com/ababup1192/flix_game_engine/go/internal/videos"
 	"github.com/ababup1192/flix_game_engine/go/internal/yarn"
@@ -285,11 +286,14 @@ func Shot(root string, t Target, entry string) (string, error) {
 	if entry == "" {
 		entry = "E2e.serveHeadless"
 	}
-	engine, _ := status.FindEngineDir(root, "bin/headless-run")
-	if engine == "" {
-		return "", fmt.Errorf("engine の bin/headless-run が見つかりません（ENGINE= か local.mk の ENGINE で場所を渡す）")
+	cmd, ok := selfexec.Headless(entry)
+	if !ok {
+		engine, _ := status.FindEngineDir(root, "bin/headless-run")
+		if engine == "" {
+			return "", fmt.Errorf("engine の bin/headless-run が見つかりません（ENGINE= か local.mk の ENGINE で場所を渡す）")
+		}
+		cmd = exec.Command(filepath.Join(engine, "bin", "headless-run"), entry)
 	}
-	cmd := exec.Command(filepath.Join(engine, "bin", "headless-run"), entry)
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(), "FGE_SHOT="+t.StartLine())
 	if os.Getenv("HEADLESS_JAVA_OPTS") == "" {

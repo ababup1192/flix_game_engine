@@ -226,15 +226,18 @@ func heavyRunner(stage refactor.Stage, desc, dir string, cmd []string, log strin
 	if containsArg(cmd, "--resident") {
 		return runDirect(dir, cmd, log, nil)
 	}
-	return heavy.Hold(desc, dir, heavy.Options{Long: stage == refactor.Typed, Short: stage != refactor.Typed}, func(run heavy.Runner) int {
-		if log == "" {
-			return run(dir, cmd...)
+	o := heavy.Options{Long: stage == refactor.Typed, Short: stage != refactor.Typed}
+	if log != "" {
+		f, err := os.Create(log)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[refactor] %s を書けない: %v\n", log, err)
+			return 2
 		}
-		quoted := make([]string, len(cmd))
-		for i, c := range cmd {
-			quoted[i] = "'" + strings.ReplaceAll(c, "'", `'\''`) + "'"
-		}
-		return run(dir, "sh", "-c", strings.Join(quoted, " ")+" > '"+strings.ReplaceAll(log, "'", `'\''`)+"' 2>&1")
+		defer f.Close()
+		o.Output = f
+	}
+	return heavy.Hold(desc, dir, o, func(run heavy.Runner) int {
+		return run(dir, cmd...)
 	})
 }
 
@@ -242,13 +245,67 @@ func heavyRunner(stage refactor.Stage, desc, dir string, cmd []string, log strin
 // （最初の誤りを拾うため。枠の長短は heavy が名前で決める）。
 func heavyVerify(cmd, dir, log string) int {
 	fmt.Fprintf(os.Stderr, "[refactor] 確かめ: %s（出力は %s）\n", cmd, log)
-	if strings.TrimSpace(cmd) == "make check" {
-		// make check は checkd の server の道で、索引と同じ常駐に頼む（heavy の枠を取らず、heavy が入れる CHECKD=0 も避ける）。
-		return runDirect(dir, []string{"sh", "-c", cmd}, log, []string{"CHECKD=1", "CHECKD_BACKEND=server"})
+	argv, err := splitCommandLine(cmd)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[refactor] 確かめのコマンド %q を読めない: %v\n", cmd, err)
+		return 2
 	}
-	return heavy.Hold(cmd, dir, heavy.Options{}, func(run heavy.Runner) int {
-		return run(dir, "sh", "-c", cmd+" > \""+log+"\" 2>&1")
+	if strings.Join(argv, " ") == "make check" {
+		// make check は checkd の server の道で、索引と同じ常駐に頼む（heavy の枠を取らず、heavy が入れる CHECKD=0 も避ける）。
+		return runDirect(dir, argv, log, []string{"CHECKD=1", "CHECKD_BACKEND=server"})
+	}
+	f, err := os.Create(log)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[refactor] %s を書けない: %v\n", log, err)
+		return 2
+	}
+	defer f.Close()
+	return heavy.Hold(cmd, dir, heavy.Options{Output: f}, func(run heavy.Runner) int {
+		return run(dir, argv...)
 	})
+}
+
+// splitCommandLine は refactor.json の verify の 1 行を、空白で区切った語の並びにする（'…' と "…" の中の空白は区切らない）。
+// WhyNot: sh -c に渡さない — Windows では sh が Git Bash の中にしか無く、PowerShell から打った refactor が確かめで止まる。
+// そのかわり | && ; > < $ ` のようなシェルの書き方は受けず、要るならスクリプトに出してもらう。
+func splitCommandLine(line string) ([]string, error) {
+	var words []string
+	var cur strings.Builder
+	inWord := false
+	var quote rune
+	for _, r := range line {
+		switch {
+		case quote != 0:
+			if r == quote {
+				quote = 0
+			} else {
+				cur.WriteRune(r)
+			}
+		case r == '\'' || r == '"':
+			quote, inWord = r, true
+		case r == ' ' || r == '\t':
+			if inWord {
+				words = append(words, cur.String())
+				cur.Reset()
+				inWord = false
+			}
+		case strings.ContainsRune("|&;<>$`(){}*?", r):
+			return nil, fmt.Errorf("シェルの書き方（%c）は使えません。1 つのコマンドと引数だけを書くか、スクリプトに出してください", r)
+		default:
+			cur.WriteRune(r)
+			inWord = true
+		}
+	}
+	if quote != 0 {
+		return nil, fmt.Errorf("引用符 %c が閉じていません", quote)
+	}
+	if inWord {
+		words = append(words, cur.String())
+	}
+	if len(words) == 0 {
+		return nil, fmt.Errorf("空です")
+	}
+	return words, nil
 }
 
 func containsArg(cmd []string, a string) bool {

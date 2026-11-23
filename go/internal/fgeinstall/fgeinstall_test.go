@@ -205,9 +205,9 @@ func TestAzulPlatformNames(t *testing.T) {
 	}
 }
 
-func TestAzulPlatformRefusesWindows(t *testing.T) {
-	if _, _, err := azulPlatform("windows", "amd64"); err == nil {
-		t.Fatal("Windows を受けた")
+func TestAzulPlatformRefusesAnUnknownOS(t *testing.T) {
+	if _, _, err := azulPlatform("freebsd", "amd64"); err == nil {
+		t.Fatal("知らない OS を受けた")
 	}
 }
 

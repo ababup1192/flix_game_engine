@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ababup1192/flix_game_engine/go/internal/selfexec"
 	"github.com/ababup1192/flix_game_engine/go/internal/suggest"
 )
 
@@ -32,9 +33,9 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 		if len(args) != 2 {
 			return 2, fmt.Errorf("fge flow run <flow>")
 		}
-		return runMake(root, "flow", "FLOW="+args[1])
+		return runHeadless(root, "E2e.play", []string{"FLOW=" + args[1], "FLOW_MODE=run"}, "flow", "FLOW="+args[1])
 	case "vocab":
-		return runMake(root, "flow-vocab")
+		return runHeadless(root, "E2e.vocab", nil, "flow-vocab")
 	}
 	return 2, fmt.Errorf("知らない口 %q（check / run / vocab）", args[0])
 }
@@ -88,6 +89,25 @@ func check(out, errOut *strings.Builder, root string, args []string) (int, error
 		}
 	}
 	return code, nil
+}
+
+// runHeadless は入口 entry を `fge headless` で流す（env は子へ足す環境変数）。headless を持たない fge では make の target を流す。
+// WhyNot: make を先に試さない — Windows では make が無く、macOS と Linux でも make flow の中身は同じ headless の起動。
+func runHeadless(root, entry string, env []string, target string, vars ...string) (int, error) {
+	cmd, ok := selfexec.Headless(entry)
+	if !ok {
+		return runMake(root, target, vars...)
+	}
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(), env...)
+	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	if err := cmd.Run(); err != nil {
+		if exit, ok := err.(*exec.ExitError); ok {
+			return exit.ExitCode(), nil
+		}
+		return 2, err
+	}
+	return 0, nil
 }
 
 // runMake はゲームの根で make を流し、出力をそのまま見せる（JVM を使う口）。

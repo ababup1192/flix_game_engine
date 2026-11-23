@@ -1138,14 +1138,15 @@ release-publish: release-marker-check ### | CI が流す公開（マーカーを
 	@echo "[release] 任意: ゲームを追随させた後に make agent-eval-release で道具の選び方を測り、前の版と比べる（約 20 分・下がったお題が出る。docs/agent-eval.md）"
 
 # ── 全体の fge（install.sh が入れる物）────────────────────
-# Release に fge-<os>-<arch>（go-build の bin/dist/fge-go-<os>-<arch> を改名した物）・fge-SHA256SUMS.txt・版を埋めた install.sh を添える。
+# Release に fge-<os>-<arch>（go-build の bin/dist/fge-go-<os>-<arch> を改名した物。Windows は .exe 付き）・fge-SHA256SUMS.txt・
+# 版を埋めた install.sh と install.ps1（Windows）を添える。
 # WhyNot: 今の SHA256SUMS.txt に足さない — 凍結した Studio の self-update がその 1 行の形を読む。別のファイルにする。
-# WhyNot: Windows を入れない — ゲームの make（make・bash・perl）がまだ要り、install.sh も sh で書いてある。
+# WhyNot: arm64 の Windows を入れない — 後に回した（plans/windows.md 13 節）。
 RELEASE_FGE_DIR     := build/release-fge
-RELEASE_FGE_TARGETS := darwin-amd64 darwin-arm64 linux-amd64 linux-arm64
-RELEASE_FGE_FILES    = $(addprefix $(RELEASE_FGE_DIR)/,$(addprefix fge-,$(RELEASE_FGE_TARGETS)) fge-SHA256SUMS.txt install.sh)
+RELEASE_FGE_TARGETS := darwin-amd64 darwin-arm64 linux-amd64 linux-arm64 windows-amd64.exe
+RELEASE_FGE_FILES    = $(addprefix $(RELEASE_FGE_DIR)/,$(addprefix fge-,$(RELEASE_FGE_TARGETS)) fge-SHA256SUMS.txt install.sh install.ps1)
 .PHONY: release-fge-assets
-release-fge-assets: ### | Release に添える全体の fge（fge-<os>-<arch>・fge-SHA256SUMS.txt・版を埋めた install.sh）を build/release-fge に組む
+release-fge-assets: ### | Release に添える全体の fge（fge-<os>-<arch>・fge-SHA256SUMS.txt・版を埋めた install.sh と install.ps1）を build/release-fge に組む
 	@rm -rf "$(RELEASE_FGE_DIR)" && mkdir -p "$(RELEASE_FGE_DIR)"
 	@for t in $(RELEASE_FGE_TARGETS); do \
 	   src="$(GO_DIST)/fge-go-$$t"; \
@@ -1156,6 +1157,9 @@ release-fge-assets: ### | Release に添える全体の fge（fge-<os>-<arch>・
 	@sed 's/^FGE_VERSION=.*/FGE_VERSION=$(VERSION)/' bin/install.sh > "$(RELEASE_FGE_DIR)/install.sh"
 	@grep -qx 'FGE_VERSION=$(VERSION)' "$(RELEASE_FGE_DIR)/install.sh" \
 	  || { echo "!! bin/install.sh に FGE_VERSION= の行がありません"; exit 1; }
+	@sed "s/^\$$FgeVersion = .*/\$$FgeVersion = '$(VERSION)'/" bin/install.ps1 > "$(RELEASE_FGE_DIR)/install.ps1"
+	@grep -qxF "\$$FgeVersion = '$(VERSION)'" "$(RELEASE_FGE_DIR)/install.ps1" \
+	  || { echo "!! bin/install.ps1 に \$$FgeVersion = の行がありません"; exit 1; }
 	@echo "[release-fge-assets] $(RELEASE_FGE_FILES)"
 
 # ── 同梱用 zip ────────────────────────────────────────────

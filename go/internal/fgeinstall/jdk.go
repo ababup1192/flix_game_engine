@@ -2,6 +2,7 @@ package fgeinstall
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
@@ -40,8 +41,10 @@ func azulPlatform(goos, goarch string) (osName, arch string, err error) {
 		osName = "macos"
 	case "linux":
 		osName = "linux"
+	case "windows":
+		osName = "windows"
 	default:
-		return "", "", fmt.Errorf("この OS（%s）向けの JDK は取れません（macOS と Linux だけ）", goos)
+		return "", "", fmt.Errorf("この OS（%s）向けの JDK は取れません（macOS と Linux と Windows だけ）", goos)
 	}
 	switch goarch {
 	case "amd64":
@@ -60,12 +63,29 @@ func azulListURL(base string, spec fgehome.JDKSpec, osName, arch string) string 
 	q.Set("java_version", spec.Version)
 	q.Set("os", osName)
 	q.Set("arch", arch)
-	q.Set("archive_type", "tar.gz")
+	q.Set("archive_type", azulArchiveType(osName))
 	q.Set("java_package_type", "jdk")
 	q.Set("javafx_bundled", "false")
 	q.Set("release_status", "ga")
 	q.Set("latest", "true")
 	return strings.TrimRight(base, "/") + "/metadata/v1/zulu/packages/?" + q.Encode()
+}
+
+// azulArchiveType は Azul に頼む固め方。
+// WhyNot: Windows で tar.gz を頼まない — Azul の Windows の JDK は zip と msi だけで、tar.gz を頼むと一覧が空になる。
+func azulArchiveType(osName string) string {
+	if osName == "windows" {
+		return "zip"
+	}
+	return "tar.gz"
+}
+
+// javaExe は bin の下の java の名前。
+func javaExe(goos string) string {
+	if goos == "windows" {
+		return "java.exe"
+	}
+	return "java"
 }
 
 // matchesVersion は Azul の java_version（[25, 0, 3] の形）が spec の版で始まるか。
@@ -181,20 +201,29 @@ func (e *Env) InstallJDK(spec fgehome.JDKSpec) (dir string, alreadyThere bool, e
 	}
 
 	e.progressf("[fge engines] JDK %s を取ります（約 200 MB）\n", spec.Name())
+	zipped := e.GOOS == "windows"
 	archive := filepath.Join(staging, "jdk.tar.gz")
+	if zipped {
+		archive = filepath.Join(staging, "jdk.zip")
+	}
 	if err := e.downloadVerified(src, archive); err != nil {
 		return "", false, fmt.Errorf("%v%s", err, diskHint(err))
 	}
 	e.progressf("[fge engines] JDK を照合しました (%s)。開いています\n", src.SHA256[:12])
 	unpacked := filepath.Join(staging, "x")
-	if err := extractTarGz(archive, unpacked); err != nil {
+	extract := extractTarGz
+	if zipped {
+		extract = extractZip
+	}
+	if err := extract(archive, unpacked); err != nil {
 		return "", false, fmt.Errorf("JDK を開けません: %v%s", err, diskHint(err))
 	}
-	home, err := findJavaHome(unpacked)
+	exe := javaExe(e.GOOS)
+	home, err := findJavaHome(unpacked, exe)
 	if err != nil {
 		return "", false, err
 	}
-	java := filepath.Join(home, "bin", "java")
+	java := filepath.Join(home, "bin", exe)
 	// WhyNot: 置いただけで済ませない — 別の CPU 向けを取り違えた時、描き出しの途中で初めて落ちる。
 	if err := e.RunExe(java, "-version"); err != nil {
 		return "", false, fmt.Errorf("取った JDK の java がこの機械で走りません: %v", err)
@@ -240,7 +269,7 @@ func (e *Env) downloadVerified(src jdkSource, path string) error {
 		return fmt.Errorf("JDK を落とせません: %v", err)
 	}
 	if n > limit {
-		return fmt.Errorf("JDK の tar.gz が大きすぎます（%d バイトを超えました）", int64(limit))
+		return fmt.Errorf("JDK の固めた物が大きすぎます（%d バイトを超えました）", int64(limit))
 	}
 	if got := hex.EncodeToString(h.Sum(nil)); got != src.SHA256 {
 		return fmt.Errorf("JDK の中身が API の値と違います (期待 %s / 実際 %s)", src.SHA256, got)
@@ -321,6 +350,50 @@ func extractTarGz(archive, dest string) error {
 	}
 }
 
+// extractZip は zip を dest の下に開く（Windows の JDK）。dest の外を指す名前があれば止める。
+// WhyNot: zip の中の symlink を作らない — Azul の Windows の zip は持たず、Windows では作るのに権限が要る。普通のファイルとして書く。
+func extractZip(archive, dest string) error {
+	zr, err := zip.OpenReader(archive)
+	if err != nil {
+		return err
+	}
+	defer zr.Close()
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		return err
+	}
+	root := filepath.Clean(dest)
+	for _, f := range zr.File {
+		name := strings.ReplaceAll(f.Name, "\\", "/")
+		target, err := insideRoot(root, name)
+		if err != nil {
+			return err
+		}
+		if target == root {
+			continue
+		}
+		if f.FileInfo().IsDir() || strings.HasSuffix(name, "/") {
+			if err := os.MkdirAll(target, 0o755); err != nil {
+				return err
+			}
+			continue
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return err
+		}
+		perm := f.Mode().Perm()
+		if perm == 0 {
+			perm = 0o644
+		}
+		err = writeTarFile(rc, target, perm)
+		rc.Close()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // insideRoot は tar の中の名前を root の下のパスにする。外を指せば止める。
 // WhyNot: 名前を Clean してから比べるだけにしない — ".." を含む名前を正規化すると、外を指す名前が無害な名前に化ける。
 func insideRoot(root, name string) (string, error) {
@@ -363,17 +436,17 @@ func writeTarFile(r io.Reader, target string, perm os.FileMode) error {
 	return out.Close()
 }
 
-// findJavaHome は開いた中から bin/java を持つ一番浅いフォルダを探す。
+// findJavaHome は開いた中から bin/<exe>（java か java.exe）を持つ一番浅いフォルダを探す。
 // macOS の tar.gz は <name>/zulu-25.jdk/Contents/Home の入れ子で、<name>/bin はそこを指す symlink。
 // WhyNot: symlink の bin を当たりにしない — 入れ子の外側を選ぶと、Contents/Home を指すリンクが置き場へ移した後に切れる。
-func findJavaHome(root string) (string, error) {
+func findJavaHome(root, exe string) (string, error) {
 	best, bestDepth := "", -1
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil || !d.IsDir() {
 			return nil
 		}
 		bin := filepath.Join(path, "bin")
-		java := filepath.Join(bin, "java")
+		java := filepath.Join(bin, exe)
 		bi, err1 := os.Lstat(bin)
 		ji, err2 := os.Lstat(java)
 		if err1 != nil || err2 != nil || !bi.IsDir() || !ji.Mode().IsRegular() {
@@ -389,7 +462,7 @@ func findJavaHome(root string) (string, error) {
 		return "", err
 	}
 	if best == "" {
-		return "", fmt.Errorf("取った JDK の中に bin/java が見つかりません")
+		return "", fmt.Errorf("取った JDK の中に bin/%s が見つかりません", exe)
 	}
 	return best, nil
 }
