@@ -1,6 +1,6 @@
 # ダッシュボード（engine 起点・ブラウザ）
 
-状態: 設計 第 3 版（相談中）。実装は未着手。レビューは第 1 版 64 点・第 2 版 78 点。指摘への答えは 11 節。
+状態: 設計 第 3 版（相談中）。実装は未着手。レビューは第 1 版 64 点・第 2 版 78 点・第 3 版 84 点（残りの 2 点は直した）。指摘への答えは 11 節。
 
 ## 0. 決まっていること（作者の判断）
 
@@ -43,10 +43,12 @@
     resolved               空のファイル。あれば片付いた post
 ```
 
-- **置き場の根** = `git worktree list --porcelain` の先頭の作業ツリー + `git rev-parse --show-prefix`
-  （engine のリポの `templates/x` のように、リポの下のフォルダがゲームの時にテンプレートどうしで混ざらない）。
-  bare のリポと submodule では、今のフォルダの `debug/` に戻す。bin/strays.sh の根の決め方（common-dir の名前が `.git` の時だけ使う）と
-  同じ関数（Go）にそろえ、strays.sh もそれを呼ぶ。worktree の中で `bin/fge dashboard post` を打っても、main 側の posts へ書く。WhyNot worktree ごとに持つ: AGENTS.md は worktree での作業を既定にしていて、
+- **置き場の根** = main の作業ツリー + ゲームの根の prefix。
+  - main の作業ツリー: `git worktree list --porcelain` の先頭。bare のリポと submodule では今のゲームの根に戻す。
+    bin/strays.sh の根の決め方（common-dir の名前が `.git` の時だけ使う）と同じ結果になる関数（Go）にする。共有するのはここまで。
+  - ゲームの根の prefix: 今のフォルダから上へたどって最初に flix.toml のあるフォルダを、そのリポの根からの相対パスにした物
+    （engine のリポの `templates/x` では `templates/x`、ふつうのゲームでは空）。WhyNot `git rev-parse --show-prefix`: 今いるフォルダの値なので、
+    ゲームの `src/` で打つと置き場がずれる。WhyNot strays と prefix まで共有する: engine の根で strays を流すと根が `templates/x` に縮む。worktree の中で `bin/fge dashboard post` を打っても、main 側の posts へ書く。WhyNot worktree ごとに持つ: AGENTS.md は worktree での作業を既定にしていて、
   人が開くダッシュボードは 1 つ。worktree ごとだと、人は今どの worktree の物を見ているか分からない。
 - post.json には CLI が `origin`（`{branch, worktree}`）を書き足す。頁はこれを見出しの横に出す。
 - **Tape は worktree をまたいで読む。** テープは撮った worktree の `debug/tape` にできるので、Tape タブは `git worktree list` の
@@ -99,6 +101,7 @@
 - `make status` に 1 行: 「ダッシュボードに返事 N 件 → bin/fge dashboard inbox」（N が 0 なら出さない）。
 - `make strays`: 裏で立てたサーバーは「ppid 1 の fge-go で根の下にいる物」に当たり、今のままだと拾われる。strays.sh は server.json の pid を
   **除く物**として読み（whoami が答えるなら正規のサーバー）、拾うのは server.json があるのに whoami が答えない時だけにする。
+  strays.sh（bash）からは `bin/fge dashboard status --root <根> --quiet`（立っていれば終了コード 0・pid を 1 行）を呼ぶ。curl は使わない。
 
 ### 4.1 裏で立てる作り
 
@@ -133,7 +136,9 @@
 
 - `127.0.0.1` だけで待つ。
 - 全部の要求で `Host` が `127.0.0.1:<port>` か `localhost:<port>` であることを見る（DNS rebinding で GET を読まれるのを防ぐ）。
-- POST は `Origin` が自分の時だけ受ける。
+- POST は `Origin` が無いか自分の時だけ受ける。ブラウザは別の頁からの POST に必ず Origin を付けるので、これで別の頁からの書き込みを断れる。
+  CLI（`stop` の `POST /api/shutdown`）は Go の http クライアントで Origin を付けないので通る。WhyNot token を server.json に置く: 守る相手は
+  手元の別の頁で、Origin で足りる。手元のプロセスは server.json も読めるので token を足しても守りは増えない。
 - ファイルを出すのは決まった置き場の下だけ。`..` と、symlink を辿った先が置き場の外になる物を断る。
 - RemoteDebug への中継は games.json にある port だけ。
 
@@ -199,3 +204,5 @@
 | （第 2 版）start の作り | 4.1（serve・hooks.Detach・server.log・whoami を待つ） |
 | （第 2 版）reply のファイル名の `:` | 3.1 で at の形を替えた |
 | （第 2 版）proposal の bar と今の picks | 5 節で Page() と send・picks |
+| （第 3 版）stop の POST が Origin の決まりで弾かれる | 6 節で「Origin が無いか自分」に |
+| （第 3 版）show-prefix の基準・strays と共有する範囲・bash からの呼び方 | 3.1 で flix.toml のあるフォルダから取る・共有は main の作業ツリーまで・4 節で status --quiet |
