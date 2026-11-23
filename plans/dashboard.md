@@ -1,7 +1,7 @@
 # ダッシュボード（engine 起点・ブラウザ）
 
-状態: 設計 第 5 版（相談中）。実装は未着手。**始め方（plans/onboarding.md）の後に作る。**
-レビュー: 第 1 版 64 点・第 2 版 78 点・第 3 版 84 点・12〜15 節を足した版 68 点・第 4 版 82 点。指摘への答えは 11 節。
+状態: 設計 第 6 版（相談中）。実装は未着手。**始め方（plans/onboarding.md）の後に作る。**
+レビュー: 第 1 版 64 点・第 2 版 78 点・第 3 版 84 点・12〜15 節を足した版 68 点・第 4 版 82 点・第 5 版 85 点。指摘への答えは 11 節。
 
 ## 0. 決まっていること（作者の判断）
 
@@ -200,6 +200,9 @@
 | （第 4 版）local.mk は git の外で、枝を替えると ENGINE が戻らない | 14 節で ENGINE を flix.toml の版から決める形に |
 | （第 4 版）中継の Host・Origin・版をまたぐフラグ | 13 節 |
 | （第 4 版）engine の根で立てないのはフェーズ 1・2 の間 | 10 節の 2 |
+| （第 5 版）版上げで post が 2 つ届く | 14.0 で Claude の 1 つだけ |
+| （第 5 版）お知らせのカードのフェーズ・zip を毎回取るか | 14.0（フェーズ 2・zip は取らない） |
+| （第 5 版）clone して使う人の make engine-upgrade が変わる | 14.0 で ENGINE の下に go/ があるかで分ける |
 | JDK を取ると絵が崩れる・Windows の new-game | plans/onboarding.md の 2.4（版を固定し local.mk の JAVA で渡す）・Windows は対象外 |
 | 14 と 15.1 でプロセスを起こす方針が食い違う | 15.1 に 1 つにまとめた |
 | RELEASE_GATES の漏れ | 7 節 |
@@ -244,7 +247,7 @@ Claude がコマンドを打ち、版の注意書き（docs/migrations）をも�
 
 ```
 Inbox の先頭  ┌ engine 0.109.0 が出ています（いまは 0.108.0）
-              │ 変わる所: 当たりそうな非互換 3 件・手当ての要約（docs/migrations/0.109.0.md の頭）
+              │ 変わる所: Release の説明の頭（何件の非互換が当たるかは、上げてみるまで出さない）
               └ [Claude Code で開く] [コピー]
                     ↓ 下書き: 「engine を最新版に上げて。make engine-upgrade を流し、UPDATE_PLAN.md と docs/migrations の注意に沿って直し、
                     ↓          check と test を緑にして、変わった絵と直した所を dashboard post で見せて」
@@ -258,7 +261,12 @@ Claude        inbox で返事を拾う → 取り込む（人の返事が「取�
 - **お知らせのカードはファイルの post ではなく、ダッシュボードがその場で作る。** 状態（新しい版があるか）から作る物で、AI の post と違い返事を持たない。
   上げ終わると消える。作者は `fge`（AI の名前の代わり）。
 - **AI が打つのは今ある `make engine-upgrade`。** 早見表（AGENTS.core.md）が「status の engine 版ズレを見たらこれ」と既に配っている名前を変えない。
-  中身を 14.1 の形（clone 無しで新しい版を取る）に替える。
+  ENGINE が配った engine（`~/.flix_ge/engines/` の下）の時だけ、中身を 14.1 の形（新しい版を取ってから上げる）に替える。
+  ENGINE が clone した engine の時は今のまま（その clone の版へ上げる）。分け方は ENGINE の下に `go/` があるか（Makefile:53 の IS_BUNDLE と同じ見方）。
+- **カードは Release の説明（GitHub の API で取れる body）だけを出し、engine の zip は取らない。** 当たる非互換の数は zip（約 100 MB）を
+  取ってゲームと突き合わせないと出ないので、Claude が上げた後の post に出す。
+- **post は Claude の 1 つだけ。** `make engine-upgrade` は post しない（UPDATE_PLAN.md を書き、端末に出すだけ）。
+- このカードはフェーズ 2（状態から選ぶカードの中で、これだけ先に作る。ほかは 15.2 のとおりフェーズ 3）。
 - `make status` にも同じ 1 行（「engine 0.109.0 が出ています → make engine-upgrade」）を出す。ダッシュボードを開かずに Claude を使っている時も気づける。
 - カードの下書きは 15 節の deep link と同じ作り（送るのは人が Enter を押した時）。
 
@@ -273,7 +281,7 @@ Claude        inbox で返事を拾う → 取り込む（人の返事が「取�
 make engine-upgrade    # 中身は fge upgrade。作業ツリーがきれいか確かめる → 新しい版があるか見る → engine の zip を ~/.flix_ge/engines/<版>/ に取る
                        # → 枝 engine-upgrade/<版> を切る
                        # → その版の engine で upgrade-game → 非互換が無ければ check・test を流して終わり
-                       # → 非互換があれば UPDATE_PLAN.md を書き、ダッシュボードに post（当たる所の数・指示書・AI へ渡す文）
+                       # → 非互換があれば UPDATE_PLAN.md を書いて端末に出す（post は Claude が直した後に 1 つ・14.0）
 ```
 
 - **赤の間も道具を新しい版にそろえる。** upgrade-game は check が緑になるまで sync-agents を走らせない（upgradegame.go:246-251）ので、
