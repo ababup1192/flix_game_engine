@@ -110,6 +110,10 @@ func (e *Env) Install(version string) (InstallResult, error) {
 		return InstallResult{}, err
 	}
 	res := InstallResult{Version: version, EngineDir: dir, EngineWasSet: already}
+	// WhyNot: ここでワークスペースのフォルダを作らない — dashboard を開いたことの無い人の home に、頼まれていないフォルダが増える。
+	if _, err := SyncWorkspaceFolder(false); err != nil {
+		e.progressf("[fge engines] ワークスペースの AGENTS.md を写し直せませんでした: %v\n", err)
+	}
 	spec, ok, err := fgehome.ReadJDKSpec(dir)
 	if err != nil {
 		return res, err

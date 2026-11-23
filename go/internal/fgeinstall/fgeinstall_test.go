@@ -173,6 +173,8 @@ func testEnv(t *testing.T, f *fakeNet, goos string) *Env {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("FGE_HOME", home)
+	t.Setenv("HOME", filepath.Join(home, "user"))
+	t.Setenv("USERPROFILE", filepath.Join(home, "user"))
 	t.Cleanup(func() {
 		_ = fgehome.RemoveReadOnly(fgehome.EnginesDir())
 		_ = fgehome.RemoveReadOnly(fgehome.JDKRoot())
@@ -418,6 +420,7 @@ func engineZip(t *testing.T, withJDKSpec bool) []byte {
 		"bin/fge-go":                       "tool",
 		"Makefile":                         "VERSION := 0.109.0\n",
 		"templates/game-starter/README.md": "# t\n",
+		WorkspaceAgentsSrc:                 "# ws 0.109.0\n",
 	}
 	if withJDKSpec {
 		files["mk/jdk.mk"] = "FGE_JDK_VENDOR  := zulu\nFGE_JDK_VERSION := 25.0.3\n"
@@ -585,5 +588,60 @@ func TestSelfUpdateRefusesAMismatchedSum(t *testing.T) {
 func TestFgeAssetNameRefusesWindows(t *testing.T) {
 	if _, err := FgeAssetName("windows", "amd64"); err == nil {
 		t.Fatal("Windows を受けた")
+	}
+}
+
+func TestInstallRewritesTheAgentsOfAnExistingWorkspaceFolder(t *testing.T) {
+	f := newFakeNet(t)
+	serveEngine(t, f, false)
+	e := testEnv(t, f, "linux")
+	dir := fgehome.DefaultWorkspaceDir()
+	os.MkdirAll(dir, 0o755)
+	os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("# old\n"), 0o644)
+
+	if _, err := e.Install("0.109.0"); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "AGENTS.md")); string(b) != "# ws 0.109.0\n" {
+		t.Fatalf("AGENTS.md=%q", b)
+	}
+}
+
+func TestInstallDoesNotCreateTheWorkspaceFolder(t *testing.T) {
+	f := newFakeNet(t)
+	serveEngine(t, f, false)
+	e := testEnv(t, f, "linux")
+
+	if _, err := e.Install("0.109.0"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(fgehome.DefaultWorkspaceDir()); !os.IsNotExist(err) {
+		t.Fatalf("ワークスペースのフォルダができています: %v", err)
+	}
+}
+
+func TestSyncWorkspaceFolderWritesNothingWhenUnchanged(t *testing.T) {
+	f := newFakeNet(t)
+	_ = testEnv(t, f, "linux")
+	placeEngine(t, "0.108.0", false)
+	os.MkdirAll(filepath.Join(fgehome.EngineDir("0.108.0"), "agents-pack", "workspace"), 0o755)
+	os.WriteFile(filepath.Join(fgehome.EngineDir("0.108.0"), WorkspaceAgentsSrc), []byte("# ws\n"), 0o644)
+	if _, err := SyncWorkspaceFolder(true); err != nil {
+		t.Fatal(err)
+	}
+	res, err := SyncWorkspaceFolder(true)
+	if err != nil || res.Updated {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+}
+
+func TestSyncWorkspaceFolderReportsAnEngineWithoutTheWorkspaceAgents(t *testing.T) {
+	f := newFakeNet(t)
+	_ = testEnv(t, f, "linux")
+	placeEngine(t, "0.108.0", false)
+	res, err := SyncWorkspaceFolder(true)
+	_, statErr := os.Stat(filepath.Join(res.Dir, "CLAUDE.md"))
+	if err != nil || !res.MissingSource || !os.IsNotExist(statErr) {
+		t.Fatalf("res=%+v err=%v claude=%v", res, err, statErr)
 	}
 }
