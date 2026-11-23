@@ -1,115 +1,160 @@
 # Windows 対応（準備のフェーズ）
 
-状態: 設計 第 1 版（相談中）。実装は未着手。plans/onboarding.md（始め方）を macOS と Linux で通した後に、同じ始め方を Windows に載せるための準備。
-レビューは 80 点以上でクリティカルな指摘が無ければ実装に入る（作者の判断）。
+状態: 設計 第 2 版（相談中）。実装は未着手。plans/onboarding.md（始め方）を macOS と Linux で通した後に、同じ始め方を Windows に載せるための準備。
+レビューは 80 点以上でクリティカルな指摘が無ければ実装に入る（作者の判断）。第 1 版 66 点。答えは 10 節。
 
-## 0. 決まっていること（2026-11-23 の作者の判断）
+## 0. 決まっていること
 
-- **Windows は必須。** 対象は Windows のネイティブ（WSL でない）。WSL は Linux と同じ道なので別に扱わない。
-- **ゲームを作る人に make・bash・perl を入れさせない。** 要る作業は Go の `bin/fge` に移す。
-- engine を直す人（作者・devbox）の手元は今のまま（macOS と Linux）。engine の開発を Windows でする必要は無い。
+- **Windows は必須**（2026-11-23）。対象は Windows のネイティブ。WSL は Linux と同じ道なので別に扱わない。
+- **Git for Windows を前提にする**（2026-11-23・作者がおすすめを選んだ）。ゲームを作る（git init）・版を上げる（枝を切る）ので git はどのみち要り、
+  Windows の git は Git for Windows で、bash・sh・perl・sed・sha256sum が付いてくる（make は付いてこない）。
+  - Claude Code は Git Bash があればそれを Bash ツールと hooks に使う（code.claude.com の setup・hooks）。**hooks・AI が打つコマンド・engine の sh のスクリプトは Git Bash の上で動かす。**
+  - WhyNot bash を一切使わない形（第 1 版）: hooks の 1 本の命令を bash と PowerShell の両方で動かす仕掛けと、bin/headless-run（540 行）を Go へ移す量が要る。
+    git のために入る bash を使えば、作者 1 人が保守する量が小さく済む。
+- **ゲームを作る人に make を入れさせない。** make を通っていた作業を Go の `bin/fge` に移す。make は macOS と Linux の人のための薄い別名として残す。
+- **凍結した Studio は新しい版の engine に更新しない**（2026-11-23）。Studio の同梱 engine も go/ を持たないので、mk/jdk.mk を持つ新しい版に更新すると、
+  bin/headless-run が `~/.flix_ge/jdk` を探して止まりうる（onboarding の担当の報告）。凍結を解く時に Studio が JAVA を渡す形にする。
+- engine を直す人（作者・devbox）の手元は今のまま（macOS と Linux）。
 
 ## 1. 前提（公式の文書で確かめた事・2026-11-23）
 
 | 事 | 出典 |
 |---|---|
-| Windows の Claude Code は Git for Windows（Git Bash）を必須にしない。無ければ Claude のシェルと hooks は PowerShell で動く | code.claude.com の setup・hooks |
-| hooks は 1 つずつ `"shell": "bash"` か `"powershell"` を指定できる。Git Bash が無い時、終了コード 0 と 2 以外は失敗扱い | hooks |
-| deep link（`claude-cli://open`）は Windows でも使える。登録は HKCU の claude-cli、開く端末は Windows Terminal → PowerShell → cmd の順 | deep-links |
+| Windows の Claude Code は Git Bash を必須にしない。あれば Bash ツールと hooks に使う（場所は `CLAUDE_CODE_GIT_BASH_PATH` で指定できる）。無ければ PowerShell | code.claude.com の setup・hooks |
+| deep link（`claude-cli://open`）は Windows でも使える。開く端末は Windows Terminal → PowerShell → cmd の順 | deep-links |
 | Claude Desktop は Windows で PowerShell のプロファイルを読まない。PATH はユーザーの環境変数で通す | desktop |
 
-→ **bash が無くても動く形を既定にする。** Claude の hooks・AI が打つコマンド・人が使う道のどれも、Go の実行ファイルを直に呼ぶ。
+## 2. 今の Windows の道と、止まる所（2026-11-23 の棚卸しとレビュー）
 
-## 2. 今の Windows の道と、止まる所（2026-11-23 の棚卸し）
-
-- mk/game.mk:41-53 は Windows で JAVA と bin/flix.jar を直に使い、`CHECKD=0`・`FGE_NO_BASH=1`。それでも make と sh は前提のまま。
-- ゲームの make のターゲットは約 30。run・debug・render・flow は `bin/headless-run`（bash・540 行）に頼り、Windows では毎回コンパイル（30 秒以上）。
-  `run RUN_SECONDS` は perl、reference-check / update は sh と shasum、lint-flixlint は bash の起動役、dist・web-pages-stage・lint-huge-methods は Windows では止まる。
-- engine の Makefile の new-game は cp -R・find・perl -pi・sed・git・mvn-cache-share.sh（Go に無い。凍結した Studio の Flix 版だけ）。
-  upgrade-game の中身は Go（upgradegame）だが、先に流す engine-full-fresh は sh で、中で `make check` と `make -n` を起こす（upgradegame.go:547,557）。
-- hooks: SessionStart は `make -s status`。ほかは `"$CLAUDE_PROJECT_DIR/bin/fge"`（sh の起動役）。checkd は `bin/flix`（bash）で flix.jar を引く（resident.go:282,541）。
-- git の pre-commit（sh）は `-x bin/fge-go` を見るので、Windows の `fge-go.exe` を見落として検査を飛ばす。
+- mk/game.mk:41-53 は Windows で JAVA と bin/flix.jar を直に使い、`CHECKD=0`・`FGE_NO_BASH=1`。make と sh が前提。
+- ゲームの make のターゲットは約 30。run・debug・render・flow は bin/headless-run（bash）に頼る。
+- **ゲームの Makefile そのものが設定になっている**: `PALETTE`・`PALETTE_DEPS`・`SHOTS`（render-all が先に作る物）・ゲームが足す lint（sound-novel の `lint: lint-cast`）・
+  pre-commit が呼ぶ `precommit-local`・ゲーム固有のターゲット（rpg の `make bot`・`make balance`。rpg の AGENTS.local.md:92,132 で AI に案内している）。
+- engine の Makefile の new-game は cp -R・find・perl -pi・sed・git・mvn-cache-share.sh。upgrade-game の中身は Go だが、先に流す engine-full-fresh は sh で、
+  中で `make check` と `make -n` を起こす（upgradegame.go:547,557）。
+- **Go が中で make を起こす所**: precommit（precommit.go:298,318,360。make が無いと何も言わずに通す）・flow/run.go:95・compare・useengine・upgradegame。
+- **Go が人と AI に make を案内する所**: status・hooks・explain-error の出力（`make test`・`make engine-upgrade` など）と bin/lint-rules の 10 ファイル。
+- AI が最初に打つ道具: `make api`・`make module`（AGENTS.core.md:20・awk と sed）・`make src`・`bin/fge refactor`（cmd_refactor.go:231,241,244 が `sh -c`）・talk（talk.go:292 が headless-run を直に起こす）。
 - `.gitattributes` が無いので、Windows の autocrlf で sh と Makefile が CRLF になりうる。
 
 ## 3. 方針
 
-1. **作業を Go のサブコマンドにする。make はその上の薄い別名にする。** macOS と Linux の人と AI は今までどおり `make run` を打てる。
-   中身は `bin/fge run` を呼ぶだけになり、Windows では `bin/fge run`（`bin\fge.cmd run`・`bin/fge-go.exe run`）を打つ。
-   - WhyNot make を Windows に入れてもらう: 「make・bash・perl を入れさせない」（0 節）。make だけ入れても中の sh で止まる。
-2. **AI に案内する書き方を `bin/fge <作業>` にそろえる。** AGENTS.core.md の早見表・skills・starters の文を、どの OS でも打てる形にする。
-   make のターゲットは「macOS と Linux では `make <作業>` でもよい」と 1 行だけ残す。
-3. **hooks は Go の実行ファイルを直に呼ぶ。** `bin/fge-go <フック名>` の形にする（Git Bash も PowerShell も、Windows では `bin/fge-go` から
-   `bin/fge-go.exe` を引く）。SessionStart の `make -s status` は `bin/fge-go status` にする。
-   - 実物で確かめる事: hooks の作業フォルダがゲームの根か（相対パスで呼べるか）。違えば `$CLAUDE_PROJECT_DIR`（bash）と `$env:CLAUDE_PROJECT_DIR`
-     （PowerShell）を hook ごとの `shell` で分ける。8 節の確かめで決める。
-4. **移しにくい物は、最初の Windows 版の範囲から外す**（4 節の表の「後」）。外した物は Windows で打つと「macOS か Linux で」と 1 行出して止まる。
+1. **make を通っていた作業を Go のサブコマンドにする。make はその上の薄い別名。** macOS と Linux は今までどおり `make run`。中身は `bin/fge run`。
+   Windows は `bin/fge run`（Git Bash でも PowerShell でも打てる。PowerShell では `bin\fge.cmd`）。
+2. **Go のサブコマンドの中身は、engine の sh のスクリプトを Git Bash で起こしてよい。** bin/headless-run・bin/flix・java-resolve.sh・reference-*.sh は
+   Windows では Git Bash の `bash` で起こす（場所は `CLAUDE_CODE_GIT_BASH_PATH` → Git for Windows の既定の場所 → PATH の順で探す）。
+   macOS と Linux では今までどおり直に起こす。Go へ移すのは make だけでなく、Git Bash の上で動かない物（7 節）に限る。
+3. **ゲームの設定は project.json に移す**（4 節）。Makefile は project.json を読む別名になる。
+4. **人と AI への案内は「打つ形」を 1 つの関数で出す**（5 節）。
+5. **移しにくい物は、最初の Windows 版の範囲から外す。** 外した物は Windows で打つと「macOS か Linux で」と 1 行出して止まる。AI に案内している所にも同じ 1 行を足す。
 
-## 4. Go へ移す物
+## 4. ゲームの設定を project.json へ（Makefile から移す）
 
-| # | 作業（`bin/fge <作業>`） | 今の中身 | 移し方 | 最初の Windows 版 |
+project.json（ゲームの根・今もある）に宣言を足す。凍結した Studio が `studioTasks`（Runner.flix:309-325）で同じ形をしていたのにならう。
+
+```jsonc
+{
+  "shots": ["main", "quit"],                     // 今の SHOTS（source of truth は Shots.names のまま。ここは render の一覧の写し）
+  "prebuild": [{"out": "assets/x.palette.json", "deps": ["assets/x.theme.json", "src/Palette.flix"], "entry": "PaletteGen.main"}],
+  "tasks": {                                      // ゲーム固有の作業（今のゲーム固有のターゲット）
+    "bot":     {"entry": "Bot.main",     "about": "自動で遊ぶ"},
+    "balance": {"entry": "Balance.main", "about": "収支を回す", "args": ["SEEDS"]}
+  },
+  "lint": ["lint-cast"],                          // make lint に足す物（中身も tasks に書く）
+  "precommit": ["lint-flixlint"]                  // pre-commit で流す物（今の precommit-local）
+}
+```
+
+- `bin/fge task <名前> [K=V…]` が tasks を流す。`bin/fge headless <Mod.entry> [K=V…]` は今の HEADLESS_RUN と同じ役（汎用）。
+- テンプレート 6 つの Makefile のゲーム固有のターゲットを project.json へ移し、Makefile のターゲットは `bin/fge task <名前>` を呼ぶ 1 行にする。
+  AGENTS.local.md の案内（rpg の `make bot` など）は `bin/fge task bot`（macOS と Linux では `make bot` も）にする。
+- 既に産まれたゲームは触らない（Makefile のまま動く）。版上げの指示書（docs/migrations の手当て）に「project.json へ移すと Windows でも打てる」を書く。
+
+## 5. Go へ移す物と、最初の Windows 版の範囲
+
+| # | 作業（`bin/fge <作業>`） | 今の中身 | 移し方 | 最初の版 |
 |---|---|---|---|---|
-| 1 | `new` | engine の Makefile の new-game（cp・find・perl・sed・git・mvn-cache-share.sh） | Go で写す・置き換える（`__NAME__` などの置き換えは new-game の perl の 1 行と同じ規則）・git init・sync-agents（Go にある）・sync-fge-go。make new-game はこれを呼ぶ別名に | 入れる |
-| 2 | `check` | checkd（Go）と bin/flix・explain-error | flix.jar と java を Go で決める（javacmd と同じ決まり。onboarding 2.5）。checkd の flix.jar の引き方（resident.go:282,541）を Go に | 入れる |
-| 3 | `test` | flix test・with-sample-tests（sh） | Go から java + flix.jar で flix test。with-sample-tests は配らないので要らない | 入れる |
-| 4 | `run [--seconds N] [--start …]`・`debug` | headless-run（bash）・perl の fork | まずは毎回 `flix run`（Windows の今の道と同じ・遅い）。時間で止めるのは Go の子のプロセスの管理で | 入れる（遅い） |
-| 5 | `render [SHOT…] / --all`・`palette`・`flow`・`talk-vocab` | HEADLESS_RUN | 4 と同じ起動を使う | 入れる（遅い） |
-| 6 | `reference check / update` | reference-*.sh（sh・shasum） | Go の sha256（小さい） | 入れる |
-| 7 | `engine-upgrade [TO=…]` | engine の upgrade-game（Go）＋ engine-full-fresh（sh）＋中の make check | 配った engine では engine-full-fresh は要らない（IS_BUNDLE）。中の `make check` を #2 の Go の check に替える | 入れる |
-| 8 | flixlint の起動（`lint-flixlint`・refactor・checkd が使う） | bash の起動役 | Go から java で起こす | 入れる |
-| 9 | `status`・hooks | make -s status・bin/fge（sh） | 3 節の 3 | 入れる |
-| 10 | jar の作り置き（headless-run の速さ・常駐） | headless-run（540 行・鍵・指紋・エントリポイントの拾い出し・常駐） | jarshare・resident・mvncache（Go に部品がある）を組んで移す | 後（#4・#5 を速くする） |
-| 11 | tape・migrate | ffmpeg・bash -c | | 後 |
-| 12 | dist・web-pages-stage・lint-huge-methods | git worktree・headless-run --build-only | | 後 |
-| 13 | strays・worktree-gc・src / api / module（awk・sed） | sh | api と module は Go の apiindex で置き換えられるか見る | 後 |
+| 1 | `status`・hooks | `make -s status`（SessionStart）・bin/fge（sh） | SessionStart は `bin/fge status`。ほかの hooks は今の sh のまま（Git Bash）。searchfirst.go:293 の sh の bin/fge の exec は `os.Executable()` に | 入れる |
+| 2 | 打つ形の案内 | status・hooks・explain-error・bin/lint-rules の 10 ファイルが `make <x>` を出す | `cmdhint` の 1 関数（作業の名前 → その OS の打ち方。make がある macOS と Linux では `make <x>`、無ければ `bin/fge <x>`）に通す。bin/lint-rules の文は `bin/fge <x>` で書く | 入れる |
+| 3 | `new` | engine の Makefile の new-game | Go で写す・置き換える・git init・sync-agents（Go）・sync-fge-go。置き換えの規則は今の perl の 1 行と同じ（Studio の NewGame.flix は仕様とテストの答えとして見る）。make new-game はこれを呼ぶ別名 | 入れる |
+| 4 | `check` | checkd（Go）・bin/flix・explain-error | 今の checkd を Windows でも使う（`CHECKD=0` の決め打ちを外す。checkd の flix.jar の引き方 resident.go:282,541 は bin/flix を Git Bash で起こすか、Go の javacmd で引く） | 入れる |
+| 5 | `test` | flix test | Go から bin/flix を起こす | 入れる |
+| 6 | `run`・`debug`・`render [SHOT…]/--all`・`headless`・`task`・`flow` | HEADLESS_RUN（bin/headless-run） | Go が bin/headless-run を（Windows では Git Bash で）起こす。prebuild（4 節）を先に流す | 入れる |
+| 7 | `reference check / update` | reference-*.sh | Go の sha256（小さい・Git Bash の shasum の違いを避ける） | 入れる |
+| 8 | `engine-upgrade [TO=…]` | upgrade-game（Go）＋ engine-full-fresh（sh）＋中の make check | 配った engine では engine-full-fresh は要らない。中の `make check`・`make -n` を #4 の Go に替える。11 節の差し替え | 入れる |
+| 9 | `api`・`module`・`src` | make（awk・sed・find） | Go の apiindex（既にある）と module の索引を読む | 入れる |
+| 10 | refactor・talk の中の sh | cmd_refactor.go:231,241,244 の `sh -c`・talk.go:292 の headless-run | `sh -c` を Go の exec に。talk は #6 の起動を使う | 入れる |
+| 11 | precommit の中の make | precommit.go:298,318,360（make が無いと通す） | project.json の precommit（4 節）を Go で流す。make が無い時に知らせずに通すのをやめる | 入れる |
+| 12 | flow/run.go:95・compare・useengine の make | | #6 の起動か、Go の作業に | flow は入れる・compare と useengine は後 |
+| 13 | `run --seconds`（perl の fork） | | Go の子のプロセスの管理 | 後 |
+| 14 | tape・migrate・dist・web-pages-stage・lint-huge-methods・strays・worktree-gc | ffmpeg・bash -c・git worktree | | 後（3 節の 5） |
 
-- 作る順: #9（hooks が動かないと AI が使えない）→ #1 → #2 → #3 → #6 → #7 → #8 → #4・#5 → #10。
-- **#1 の new は onboarding の `fge new` の中身を置き換える。** onboarding の実装（`make -C <engine> new-game` を呼ぶ）を先に macOS と Linux で通し、
-  #1 ができたら `fge new` は Go の new を直に呼ぶ。make new-game（engine を clone した人が打つ物）は Go の new を呼ぶ別名にし、二重に持たない。
-- **起動の決まりを 1 か所に。** flix.jar・java・JVM の旗（`--enable-native-access=ALL-UNNAMED`・`-Xss`・Java 24 以上の `--sun-misc-unsafe-memory-access=allow`・
-  macOS の `-XstartOnFirstThread`・headless・`-Dstdout.encoding=UTF-8`）は今 bin/flix と mk/game.mk の Windows の行と headless-run に散っている。
-  Go の 1 つの関数（javacmd の隣）にまとめ、bin/flix はそれを呼ぶ形にしてよい（macOS と Linux の bin/flix は残す。中身を Go に任せる）。
+- 作る順: #1 → #2 → #3 → #4 → #5 → #6 → #7 → #8 → #9 → #10 → #11 → #12。
+- **#3 の new は onboarding の `fge new` の中身を置き換える。** onboarding の実装（`make -C <engine> new-game` を呼ぶ）を先に macOS と Linux で通し、#3 ができたら Go の new を直に呼ぶ。
+- **起動の決まり（flix.jar・java・JVM の旗）は onboarding の後で 1 か所にまとめる。** 今 onboarding の担当が bin/flix・java-resolve.sh・javacmd を直している。
+  まとめる先は Go の javacmd の隣に「足す」だけにし、bin/flix から Go に任せる形にはしない（engine の開発では fge-go が古い時がある）。
 
-## 5. 配る物（onboarding の Windows の分）
+## 6. 配る物（onboarding の Windows の分）
 
-- `install.ps1`（Release に添える・`irm <url> | iex`）: `fge-windows-amd64.exe` と `fge-SHA256SUMS.txt` を取り、`Get-FileHash` で照合し、
-  `%USERPROFILE%\.flix_ge\bin\fge.exe` に置く。ユーザーの PATH に足すかは聞かずに案内だけ（install.sh と同じ）。
+- `install.ps1`（Release に添える・`irm <url> | iex`）: Git for Windows があるかを見る（無ければ入れ方を出して止める）。`fge-windows-amd64.exe` と
+  `fge-SHA256SUMS.txt` を取り、`Get-FileHash` で照合し、`%USERPROFILE%\.flix_ge\bin\fge.exe` に置く。ユーザーの PATH に足す 1 行を出す（書き換えない）。
 - Release の `fge-windows-amd64.exe`（go-build の 5 種に既にある）。arm64 の Windows は後。
-- JDK: Zulu の Windows の zip（onboarding 2.4 と同じ版）。開き方は zip（tar.gz でない）。
-- ゲームの `bin/fge-go.exe`: sync-fge-go が Windows 向けを置く（今も IS_BUNDLE で分けている・Makefile:1286-1291）。#1 で Go に移す。
-- `.gitattributes`: engine とテンプレートに `* text=auto eol=lf`・`*.sh`・`Makefile`・`*.mk`・`bin/fge` を `eol=lf`・`*.cmd`・`*.ps1` を `eol=crlf`・画像と jar を `binary`。
-- git の pre-commit（sh）の `-x bin/fge-go` を、`bin/fge-go` か `bin/fge-go.exe` のどちらかがあれば、に直す（Git for Windows がある人の pre-commit は sh で動く）。
+- JDK: Zulu の Windows の zip（onboarding 2.4 と同じ版）。
+- `.gitattributes`: engine とテンプレートに `* text=auto eol=lf`・`*.sh`・`Makefile`・`*.mk`・`bin/fge`・`bin/headless-run`・`bin/flix` を `eol=lf`・
+  `*.cmd`・`*.ps1` を `eol=crlf`・画像と jar と fpkg を `binary`。
+- git の pre-commit（sh・Git Bash で動く）の `-x bin/fge-go` が `fge-go.exe` を見つけるかは 9 節の確かめで見る（MSYS は `.exe` を補う見込み）。
 
-## 6. パスと OS の違い
+## 7. Git Bash の上で気をつける事
 
-- パスの組み立ては `filepath`、外へ出す時（deep link の cwd・workspace.json・ログ）は絶対パス。workspace.json は OS の区切りのまま持つ。
-- symlink: Windows では張らない（lib/cache は各ゲームに取る。今の mvncache と同じ）。lint-rules-link・use-engine・fontbake の symlink は Windows では写しに替える。
-- 実行ビット: Windows では見ない。読み取り専用は `os.Chmod` で属性を付ける（engine の置き場）。
-- `uname` を使う所（sync-fge-go・bin/flix）は Go の runtime.GOOS / GOARCH に。
-- 改行: Go が書くファイルは LF。Windows の人がエディタで CRLF にしたファイルを読む所（flix.toml・*.json・Makefile の行を読む所）は CRLF でも読めるようにする。
+- パス: Go から Git Bash へ渡すパスは `C:/x/y`（スラッシュ）にそろえる。Git Bash の中の `/c/x/y` を Go が受け取る所（スクリプトの出力を読む所）は両方を読む。
+- symlink: Git Bash の `ln -s` は既定で写しになる。lib/cache は Windows では張らない（今の mvncache と同じ）。lint-rules-link・use-engine・fontbake の symlink は Windows では写しに替える。
+- 改行: Go が書くファイルは LF。CRLF のファイル（flix.toml・*.json・Makefile の行）を読む所は CRLF でも読む。
+- 実行ビット: Windows では見ない。読み取り専用は属性で。
+- `uname`（sync-fge-go・bin/flix）: Git Bash では `MINGW64_NT-…`。今の分岐（Makefile:1287 の MINGW*）がある所はそのまま、無い所は Go の runtime.GOOS で。
+- コンソールの文字コード: Go が起こす java に `-Dstdout.encoding=UTF-8`（onboarding で入れた）。PowerShell の端末の表示は、Go が出す最初の 1 行で
+  文字化けしたら `chcp 65001` を案内する（Windows Terminal は既定で UTF-8）。
 
-## 7. ダッシュボードと始め方の Windows の分
+## 8. ダッシュボードと始め方の Windows の分
 
-- `fge dashboard`・ワークスペースの頁・`fge open` は Go なので、そのまま動く。`fge open` は `cmd /c start "" <url>`（onboarding 2.6）。
-- `claude --desktop`（ダッシュボードのフェーズ 3）は x64 の Windows だけ（desktop の文書）。
-- ワークスペースの AGENTS.md・starters の文の中のコマンドは `bin/fge <作業>` の形（3 節の 2）。fge の絶対パスは `%USERPROFILE%\.flix_ge\bin\fge.exe` も併記。
+- `fge dashboard`・ワークスペースの頁・`fge open` は Go なので動く。`fge open` は `cmd /c start "" <url>`。
+- ワークスペースの AGENTS.md・starters の文の中のコマンドは `bin/fge <作業>`。fge の絶対パスは `%USERPROFILE%\.flix_ge\bin\fge.exe` も併記。
 
-## 8. 確かめ方
+## 9. 確かめ方
 
-- **Windows の CI を足す**（GitHub Actions の windows-latest・手で起こす workflow_dispatch と release の前）:
-  install.ps1 → `fge engines install <版>` → `fge new ci_game --template game-starter` → `bin/fge check` → `bin/fge test` → `bin/fge reference check`。
-  画面を開く run と render は CI では流さない（headless の render だけ流せるか見る）。make・bash・perl を PATH から外した状態で流す
-  （windows-latest には Git Bash と make が入っているので、PATH から外して「入っていない人」と同じにする）。
-- hooks: Windows の CI で、Claude Code の hooks の command を PowerShell で 1 つずつ起こし、終了コードと出力を見る（3 節の 3 の作業フォルダもここで決める）。
-- 各 Go の作業のテスト: OS ごとの分かれ目（GOOS を引数で替えられる形）を Linux の CI で見る。
-- 人の手の確かめ（リリースの前に 1 回）: Windows の機械で install.ps1 → `fge dashboard` → カードから Claude（PowerShell）→ ゲームを作る → `bin/fge run`。
-  **Windows の機械を作者が持っているか確かめる**（無ければ CI だけで出し、最初の利用者に確かめてもらう）。
+- **Windows の CI を足す**（GitHub Actions・workflow_dispatch と release の前）。今の Actions は ubuntu の release と gl-jar だけで、Go のテストも回していない。
+  - Linux の job: Go のテスト（`go test ./...`）・`go-build`・配る zip（flix.jar は今の release の取り方と同じ）を組み、artifact で Windows の job に渡す
+    （install.ps1 が公開済みの前の版を取ってしまうので、出す前の版を確かめるため）。
+  - Windows の job（windows-latest）: artifact を `FGE_DOWNLOAD_URL` で配り、install.ps1 → `fge engines install` → `fge new ci_game` → `bin/fge check` →
+    `bin/fge test` → `bin/fge reference update` → `bin/fge reference check`（テンプレートの SHA256SUMS は作者の手元の物なので、新しいゲームでは update から）→ `bin/fge render --all`（headless）。
+  - **make と、Git Bash 以外の道具を「入っていない」にする**: PATH の先頭に、呼ばれたら記録を残して失敗する `make.cmd`・`make.exe` 相当の小さな物を置く
+    （windows-latest には choco の make・Strawberry の perl・System32 の bash.exe（WSL）がある）。Git Bash は前提なので残す。
+  - hooks: Claude Code の hooks の command を Git Bash で 1 つずつ起こし、終了コードと出力を見る。
+- **Go が make を起こさない検査**: `bin/lint-rules/forbid.json` に、go/ の中の `exec.Command("make"` を止める 1 行（engine の開発だけで使う所は許す一覧に）。
+- 人の手の確かめ（リリースの前に 1 回）: Windows の機械で install.ps1 → `fge dashboard` → カードから Claude → ゲームを作る → `bin/fge run`。
+  Windows の機械が手元に無ければ、CI だけで出し、最初の利用者に確かめてもらう。
 
-## 9. 後に回す物
+## 10. レビューへの答え
 
-- 4 節の表の #10〜#13（jar の作り置き・tape・dist・開発向けのターゲット）。
-- arm64 の Windows。
+| 指摘（第 1 版・66 点） | 答え |
+|---|---|
+| C1 ゲームの Makefile が設定になっていて移す先が無い | 4 節で project.json へ・`bin/fge task`・`bin/fge headless` |
+| C2 hooks の command を全部の OS で 1 本にできるか決まっていない・searchfirst の sh の exec | 0 節で Git for Windows を前提にし、hooks は Git Bash で今の sh のまま。SessionStart だけ `bin/fge status`。searchfirst は `os.Executable()`（5 節 #1） |
+| C3 AI が最初に打つ道具（api・module・src・refactor・talk）が後 | 5 節 #9・#10 で最初の版に |
+| C4 Go が出す make の案内と、Go が中で起こす make・precommit の fail-open | 5 節 #2（cmdhint）・#11・#12 |
+| C5 CI が成り立たない（前の版を取る・PATH から外すと漏れる・SHA256SUMS） | 9 節（artifact・失敗する make・update から） |
+| C6 Windows では動いている exe と開いている jar を置き換えられない | 11 節 |
+| 起動の決まりのまとめ方・render-all の時間切れ・端末の文字化け・make hooks | 5 節の末尾・11 節・7 節 |
+| もっと小さく: Git for Windows を前提に・run --seconds を外す・Studio は答えとして写す | 0 節・#13・#3 |
 
-## 10. 決めていないこと（相談）
+## 11. Windows で動いている物を差し替える時
 
-1. Windows の機械で手の確かめができるか（8 節）。
-2. 最初の Windows 版で run と render が毎回コンパイル（30 秒以上）でもよいか。速くする #10 を最初の版に入れるか。
+- `fge-go.exe` の差し替え（sync-fge-go・engine-upgrade・status の配り直し・`fge self-update`）: 走っている exe は消せないが名前は替えられるので、
+  今の物を `fge-go.exe.old` に名前を替えてから新しい物を置く。`.old` は次に起動した時に消す。
+- lib の fpkg の差し替え（engine-upgrade）: checkd の常駐の JVM が開いているので、差し替えの前に `bin/fge checkd --stop` で常駐を止める。
+- 時間: 走らせる・描き出す・render-all は Git Bash の headless-run の jar の作り置きで速いまま（Windows の今の毎回コンパイルをやめる）。
+  Claude の Bash の 2 分の時間切れに当たる物（new・render-all）は、ワークスペースとゲームの AGENTS.md に「timeout を 600000 に」と書く（onboarding 2.6 と同じ）。
+
+## 12. 後に回す物
+
+- 5 節の #13・#14。arm64 の Windows。
+- PowerShell だけ（Git Bash が無い）の Claude Code。Git for Windows を前提にしたので、無い時は install.ps1 と `bin/fge status` が入れ方を出す。
