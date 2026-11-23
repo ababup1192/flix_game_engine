@@ -157,10 +157,10 @@
 
 | フェーズ | 中身 | 終わりの基準 |
 |---|---|---|
-| 0 | 始め方（plans/onboarding.md） | 空の HOME で install.sh → `fge new` → `make run` が macOS と Linux で通る |
+| 0 | 始め方（plans/onboarding.md）。**ワークスペースの頁（`/`）のうち、ゲームの一覧と「新しいゲームを作ってみよう」のカードだけ**を含む | 空の HOME で install.sh → `fge dashboard` → カードから開いた Claude がゲームを作る → `make run` が macOS と Linux で通る |
 | 1 | 前面の `bin/fge dashboard`・post / inbox / resolve・Inbox と Tape のタブ・proposal の頁の「送る」・固定の「はじめに」カード 1 枚（15 節）・`make dashboard`・status の 1 行・早見表 2 行 + お題 1 本・Studio の凍結の直し（7 節） | game-starter から産んだゲームの worktree で AI が post → 人が main のダッシュボードで選んで返す → AI が inbox で拾う、が会話のコピペ無しで通る |
 | 2 | **版上げのお知らせのカードと、clone 無しの `make engine-upgrade`（14 節）**・Capabilities（早見表を読む）・Games・Images・Tickets のタブ・post を Pages へ載せる（10 節の 3） | Inbox のカードから Claude を開くだけで、版上げ → 直す → post → 人が取り込む、が通る |
-| 3 | ワークスペース（13 節）・状態から選ぶカード（15.2）・Desktop のボタン | 1 つの URL から全部のゲームへ行ける |
+| 3 | ワークスペースからゲームの頁への中継（13 節）・状態から選ぶカード（15.2）・Desktop のボタン | 1 つの URL から全部のゲームへ行ける |
 | 4 | 絵の上を囲むメモ・Tape の注釈を reply へ・頁から make のターゲットを流す（要るか未定） | フェーズ 3 の後に決める |
 
 ## 10. 決めたこと・決めていないこと
@@ -213,7 +213,9 @@
 
 plans/onboarding.md へ移した。
 
-## 13. ワークスペース（フェーズ 3・2026-11-23 の作者の提案から）
+## 13. ワークスペース（`/` の頁はフェーズ 0・ゲームの頁への中継はフェーズ 3・2026-11-23 の作者の提案から）
+
+`/` の頁（ゲームの一覧・新しいゲームを作るカード）は plans/onboarding.md 2.6 で先に作る。ここは中継の決まり。
 
 全体の fge（`~/.flix_ge/bin/fge dashboard`）を 1 台に 1 つ前面で立て、`/` をワークスペース、`/<ゲーム名>/` を各ゲームにする。
 
@@ -236,7 +238,7 @@ http://127.0.0.1:8790/_api/…      ワークスペースの API
   `fge new` は作ったゲームを一覧に足す。既にあるゲームは `fge add <dir>` で足す。
   WhyNot 1 つの親フォルダの下に置かせる: 既にある git のリポを動かさせることになる。
 - engine のリポを `fge add` すると、`templates/*` が子として並ぶ。templates には `bin/fge` が無いので、engine の `bin/fge` を使って中継する。
-- テンプレートから作る画面は `fge new` を呼ぶだけ（Studio の Genesis のような写しを持たない。テンプレートの一覧は engine の zip の templates/ を読む）。
+- テンプレートから作る画面は、カードから Claude を開いて `fge new` を打ってもらうだけ（plans/onboarding.md 2.6）（Studio の Genesis のような写しを持たない。テンプレートの一覧は engine の zip の templates/ を読む）。
 
 ## 14. engine の版上げ（フェーズ 2）
 
