@@ -81,17 +81,11 @@ func (r *Runner) RenderAll(game string) error {
 }
 
 // LintFlixlint は lint/rules.flix の規則を流す（lint/rules.flix の無いゲームでは何もしない）。
-//
-// WhyNot: fge のサブコマンドを探さない — lint-flixlint は plans/windows.md 5 節の表に無く、make の無い所（Windows）では飛ばして 1 行出す。
 func (r *Runner) LintFlixlint(game string) error {
 	if _, err := os.Stat(filepath.Join(game, "lint", "rules.flix")); err != nil {
 		return nil
 	}
-	if _, err := r.LookPath(r.MakeBin); err != nil {
-		fmt.Fprintf(r.Out, "[lint-flixlint] make が無いので飛ばしました（macOS か Linux で make lint-flixlint）\n")
-		return nil
-	}
-	return r.runMake(game, "lint-flixlint")
+	return r.step(game, []string{"lint-flixlint"}, "lint-flixlint")
 }
 
 // HasReferenceCheck はそのゲームで絵の比較を流せるか。

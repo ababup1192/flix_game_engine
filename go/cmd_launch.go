@@ -32,6 +32,14 @@ func init() {
 	register("render", "場面を描き出す: <場面>… は debug/・--all は gallery/（make render・render-all）", launchCmd(runRender))
 	register("headless", "ヘッドレスの入口を 1 つ流す: <Mod.entry> [K=V…]（make の HEADLESS_RUN と同じ）", launchCmd(runHeadless))
 	register("task", "project.json の tasks（ゲーム固有の作業）を流す: <名前> [K=V…]・名前なしで一覧", launchCmd(runTask))
+	register("lint-flixlint", "lint/rules.flix の規則を型つきの AST で見る（make lint-flixlint・FLIXLINT_STAGE=typed）", launchCmd(func(l *launcher.Launcher, args []string) int {
+		vars, rest := launcher.SplitVars(args)
+		if len(rest) > 0 {
+			fmt.Fprint(os.Stderr, launchUsage)
+			return 2
+		}
+		return l.LintFlixlint(vars)
+	}))
 	register("test", "テストを headless で流す（make test・記録は .test-logs/）", launchCmd(func(l *launcher.Launcher, args []string) int {
 		vars, rest := launcher.SplitVars(args)
 		if len(rest) > 0 {

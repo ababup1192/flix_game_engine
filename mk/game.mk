@@ -316,11 +316,7 @@ ifeq ($(wildcard flixlint/bin/flixlint),)
 FLIXLINT_STAGE ?= resolved
 FLIXLINT_JAR = $(FGE_FLIX_JAR)
 lint-flixlint: ### [FLIXLINT_STAGE=typed] | lint/rules.flix の規則（View が World を受けない・依存の向き・テストの形）を型つきの AST で見る（上限は lint/limits/<規則>.json）
-	@[ -f lint/rules.flix ] || { echo "lint-flixlint: lint/rules.flix がありません（手本はテンプレートの lint/rules.flix）"; exit 2; }
-	@$(FGE_PICK); \
-	prep=$$("$$fge" flixlint-prepare) || exit 2; eval "$$prep"; \
-	"$$FLIXLINT_DIR/bin/flixlint" --flix-jar "$(FLIXLINT_JAR)" --shim "$$FLIXLINT_SHIM" --rules lint/rules.flix \
-	  $(if $(wildcard lint/limits),--limits lint/limits) --stage $(FLIXLINT_STAGE) --build-dir build/flixlint src test
+	@$(FGE_RUN) lint-flixlint FLIXLINT_STAGE=$(FLIXLINT_STAGE) $(if $(filter command line environment,$(origin FLIXLINT_JAR)),FLIXLINT_JAR=$(FLIXLINT_JAR))
 endif
 
 # 規約の配線ずれの軽い検査 (engine 版のうちゲームで見るべき 3 点だけ)。

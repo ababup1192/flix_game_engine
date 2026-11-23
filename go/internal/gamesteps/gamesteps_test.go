@@ -61,7 +61,7 @@ func TestOldFgeWithoutMakeStops(t *testing.T) {
 	}
 }
 
-func TestLintFlixlintIsSkippedWithoutMake(t *testing.T) {
+func TestLintFlixlintRunsTheFgeCommandWithoutMake(t *testing.T) {
 	game := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(game, "lint"), 0o755); err != nil {
 		t.Fatal(err)
@@ -70,7 +70,7 @@ func TestLintFlixlintIsSkippedWithoutMake(t *testing.T) {
 		t.Fatal(err)
 	}
 	r, got := fakeRunner(t, []string{"test", "render"}, false)
-	if err := r.LintFlixlint(game); err != nil || len(got.calls) != 0 {
+	if err := r.LintFlixlint(game); err != nil || len(got.calls) != 1 || got.calls[0] != "fge lint-flixlint @"+game {
 		t.Errorf("err=%v calls=%v", err, got.calls)
 	}
 }
