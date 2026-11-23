@@ -356,3 +356,39 @@ zulu-25.0.3 の名前で）を、GitHub と Azul の API の形を真似た手�
 | ○ | フォルダ名の `-` はパッケージ名で `_` に替える | 2.8 |
 | ○ | ffmpeg は fge が取らない（要る時に入れ方を出す） | 5 |
 | ○ | JAVA を人が名指しした時はそれが勝つ | 2.5 |
+
+## 12. 版によらないスキルを最新に追従させる（2026-11-23 の作者の判断）
+
+ゲームの skills はそのゲームの engine の版にそろえて配る（sync-agents）。そのうち **版によらないスキル**（手つき・進め方・好みの聞き取り）だけは、
+ゲームの版を上げなくても手元の最新の engine の物に追従させる。
+
+### 12.1 どのスキルか
+
+| 分け | スキル | 理由 |
+|---|---|---|
+| 版によらない（最新に追従） | style-interview・pixel-art・critique-code・atelier-draft・critique-render | 中身の大半が描き方・批評の観点・進め方。API の名前はほぼ出ない |
+| 版に依る（ゲームの版のまま） | flix-docs・smooth-render・quality-assurance・compile-fix・wire-doc | API の名前・その版の Flix の決まり・読み込みの作りに触れる |
+
+- 一覧は agents-pack/manifest.json に `followLatest`（スキルの名前の並び）として持つ。sync-agents と fge はこれを読む（二重に持たない）。
+
+### 12.2 仕組み: fge が写し直す
+
+- WhyNot ワークスペースのフォルダ（`~/flix-games/.claude/skills`）に置く: Claude Code が上のフォルダの skills を読むのは git のリポの根まで
+  （code.claude.com の skills）。ゲームは各自が git のリポなので読まれない。Codex（`.agents/skills`）も同じ見込み。
+- WhyNot Claude Code のプラグインで配る: 人ごとにインストールが要り、Codex に届かない。
+- **写し直す時**: `fge engines install` で手元の最新の版が上がった時と、`fge dashboard` を立てた時に手元の最新の版より古い物を持つゲームを見つけた時。
+  workspace.json の全部のゲームの `.claude/skills/<名前>` と `.agents/skills/<名前>` を、最新の engine の agents-pack の物で置き換える。
+- **古い版で上書きしない**: ゲームの `.agents-pack.json`（sync-agents が配った物の一覧を書く・今もある）に、`followLatest` のスキルごとに「どの版の engine から写したか」を書く。
+  ゲームの版上げで sync-agents が流れる時、写す元の版が書いてある版より古ければ、そのスキルは飛ばす（最新の物を古い版で戻さない）。
+- **書いてよいコマンド**: 版によらないスキルに書くコマンドは、`followLatest` を持つ最も古い版から今までの全部の版にある物だけ。
+  一覧を agents-pack に置き（`followLatest.commands`）、`make check-docs-sync` が版によらないスキルの中のコマンドをこの一覧と比べて止める。
+  コマンドを足したり名前を替えたりした時は、古い版のゲームに無いので、版によらないスキルには書かない（版に依るスキルに書く）。
+- **ゲームのリポに差分が出る**: 写し直したゲームは `.claude/skills` と `.agents/skills` に差分が出る。`make status` に
+  「スキルを engine <版> の物に新しくしました（コミット待ち）」を 1 行出す。コミットは人か Claude がする。
+- 写し直すのはゲームの中の作業のための物なので、ゲームが開いている Claude のセッションには次の起動から読まれる（今のセッションは古いまま）。
+
+### 12.3 確かめ方
+
+- syncagents のテスト: 写す元の版が `.agents-pack.json` に書いてある版より古い時に飛ばす・新しい時に置き換える。
+- fge のテスト: workspace.json の 2 つのゲームに、最新の engine の `followLatest` のスキルが写る・版に依るスキルは触らない。
+- check-docs-sync: 版によらないスキルに一覧に無いコマンドを書くと止まる。
