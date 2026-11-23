@@ -18,6 +18,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -255,4 +256,21 @@ func writeFileAtomic(path string, data []byte) error {
 		return err
 	}
 	return os.Rename(tmp.Name(), path)
+}
+
+// gameEngineVersionRe は upgradegame の readDepRe と同じ形（plans/onboarding.md 7 節）。
+var gameEngineVersionRe = regexp.MustCompile(
+	`"github:ababup1192/flix_game_engine"\s*=\s*\{[^}]*version\s*=\s*"([^"]+)"`)
+
+// ReadGameEngineVersion はゲームの flix.toml が指す engine の版。読めなければ空。
+func ReadGameEngineVersion(gameDir string) string {
+	b, err := os.ReadFile(filepath.Join(gameDir, "flix.toml"))
+	if err != nil {
+		return ""
+	}
+	m := gameEngineVersionRe.FindSubmatch(b)
+	if m == nil {
+		return ""
+	}
+	return string(m[1])
 }
