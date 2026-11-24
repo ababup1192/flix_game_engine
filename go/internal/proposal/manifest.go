@@ -178,6 +178,7 @@ func (b *builder) sendBar(openQ bool) string {
 
 const sendCSS = `
 .bar.send{align-items:stretch}
+.meta a{color:var(--pick)}
 .bar.send output{align-self:center}
 .bar textarea{flex:1 1 320px;max-width:560px;font:inherit;font-size:.92rem;border-radius:6px;border:0;padding:6px 10px;background:var(--barfg);color:var(--bar);resize:vertical}
 .bar small{align-self:center;flex-basis:100%;text-align:center}
