@@ -44,6 +44,8 @@ type gameProxy struct {
 	stop  func()
 	note  string
 	proxy http.Handler
+	// stopped は stopAll が起こし終える前の entry に立てるフラグ（p.mu の下で読み書きする）。
+	stopped bool
 }
 
 func newGameProxies(l Launcher) *gameProxies {
@@ -81,6 +83,13 @@ func (p *gameProxies) get(g fgehome.Game, mayStart bool) (http.Handler, string, 
 			p.mu.Unlock()
 			p.start(e, g)
 			p.mu.Lock()
+			if e.stopped {
+				p.mu.Unlock()
+				if e.stop != nil {
+					e.stop()
+				}
+				return nil, "ダッシュボードを止めています", nil
+			}
 			if e.proxy == nil {
 				// WhyNot: 起こせなかった子を entries に残さない — 人が版を上げた後に開き直せば起こし直す。
 				if p.entries[g.Name] == e {
@@ -143,14 +152,19 @@ func (p *gameProxies) note(name string) string {
 
 func (p *gameProxies) stopAll() {
 	p.mu.Lock()
-	list := make([]*gameProxy, 0, len(p.entries))
+	var ready []*gameProxy
 	for name, e := range p.entries {
-		list = append(list, e)
 		delete(p.entries, name)
+		select {
+		case <-e.ready:
+			ready = append(ready, e)
+		default:
+			// WhyNot: 起こしている途中の子を待たない — 待ち始めるまで最大 30 秒かかり、Ctrl-C がその間返らない。起こし終えた get がフラグを見て止める。
+			e.stopped = true
+		}
 	}
 	p.mu.Unlock()
-	for _, e := range list {
-		<-e.ready
+	for _, e := range ready {
 		if e.stop != nil {
 			e.stop()
 		}

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net/http"
 	"os"
-	"path"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -148,7 +147,7 @@ func (g *GameServer) post(w http.ResponseWriter, r *http.Request, rest string) {
 	}
 	dir := filepath.Join(g.roots.PostsDir(), id)
 	if file != "" {
-		if strings.Contains(file, "/") || file == posts.ReplyFile {
+		if strings.Contains(file, "/") || strings.EqualFold(file, posts.ReplyFile) {
 			http.NotFound(w, r)
 			return
 		}
@@ -232,7 +231,9 @@ func (g *GameServer) tapeFile(w http.ResponseWriter, r *http.Request, rest strin
 		}
 		// WhyNot: テープの頁に sandbox を付けない — 頁の script が動画を fetch で取り、注釈を localStorage に残すので、
 		// opaque origin では動画も注釈も動かない。頁はこのリポの flow から bin/fge tape が作った物で、リポのコードと同じだけ信じる。
-		if path.Base(rel) == tape.IndexFile {
+		// WhyNot: テープの下の index.html を深さによらず例外にしない — 下のフォルダに置かれた別の HTML が、同じ origin で script を動かせる。
+		if parts := strings.Split(rel, "/"); len(parts) == 2 && parts[1] == tape.IndexFile {
+			w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'")
 			serveFile(w, r, p)
 			return
 		}
