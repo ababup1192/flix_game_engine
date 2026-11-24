@@ -60,3 +60,10 @@ func TestSetAppendsNewKeyAtEnd(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestChoiceOfReturnsLabelAndMedia(t *testing.T) {
+	m := mustParse(t, `{"sections": [{"id": "A", "options": [{"id": "A2", "label": "暗い青", "media": [{"src": "a2.png"}]}]}]}`)
+	if c, ok := m.ChoiceOf("A", "A2"); !ok || c.Label != "暗い青" || len(c.Media) != 1 || c.Media[0] != "a2.png" {
+		t.Fatalf("%+v %v", c, ok)
+	}
+}

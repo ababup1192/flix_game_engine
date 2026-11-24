@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,7 +24,7 @@ const (
 	ReplyFile = "reply.json"
 	// RepliesDir は出し直す前の返事を残す所。
 	RepliesDir = "replies"
-	// ResolvedFile は空のファイル。あれば片付いた post。
+	// ResolvedFile は片付けた返事の at を書いたファイル。中身が今の reply.json の at と同じ時だけ片付いた post。
 	ResolvedFile = "resolved"
 )
 
@@ -60,6 +61,14 @@ type Post struct {
 	Created  time.Time `json:"created"`
 	Reply    *Reply    `json:"reply,omitempty"`
 	Resolved bool      `json:"resolved"`
+}
+
+// Ref は inbox が出し resolve が受ける「<id>@<返事の at>」（返事が無ければ id だけ）。
+func (p Post) Ref() string {
+	if p.Reply == nil {
+		return p.ID
+	}
+	return p.ID + "@" + p.Reply.At
 }
 
 // ValidID は id が置き場の 1 つ下のフォルダ名として安全な形か。
@@ -100,7 +109,7 @@ func Create(o CreateOptions) (string, error) {
 		if err != nil || !info.Mode().IsRegular() {
 			return "", fmt.Errorf("素材がありません: %s", src)
 		}
-		if !inside(root, RealPath(full)) {
+		if !Inside(root, RealPath(full)) {
 			return "", fmt.Errorf("素材がリポの根（%s）の外にあります: %s", root, src)
 		}
 		sources[src] = RealPath(full)
@@ -128,7 +137,7 @@ func Create(o CreateOptions) (string, error) {
 			rename[src] = name
 			continue
 		}
-		name := freeName(filepath.Base(from), taken)
+		name := freeName(safeName(filepath.Base(from)), taken)
 		taken[name] = true
 		if err := copyFile(from, filepath.Join(dir, name)); err != nil {
 			return "", err
@@ -152,7 +161,22 @@ func Create(o CreateOptions) (string, error) {
 	return id, nil
 }
 
-var slugDropRe = regexp.MustCompile(`[^a-z0-9]+`)
+var (
+	slugDropRe = regexp.MustCompile(`[^a-z0-9]+`)
+	unsafeRe   = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
+)
+
+// safeName は写した素材の名前を [A-Za-z0-9._-] にそろえる。
+// WhyNot: 元の名前のまま写さない — 空白・#・? を含む名前は頁の URL で別の物を指し、頭の . は隠しファイルになる。
+func safeName(name string) string {
+	ext := filepath.Ext(name)
+	stem := strings.Trim(unsafeRe.ReplaceAllString(strings.TrimSuffix(name, ext), "-"), "-.")
+	ext = unsafeRe.ReplaceAllString(ext, "")
+	if stem == "" {
+		stem = "media"
+	}
+	return stem + ext
+}
 
 // slug は題から作る短い名前（英数字だけを拾い、無ければ post）。
 func slug(title string) string {
@@ -201,7 +225,8 @@ func freeName(name string, taken map[string]bool) string {
 	}
 }
 
-func inside(root, path string) bool {
+// Inside は path が root の下（root そのものは含まない）か。どちらも symlink を辿った後のパスで渡す。
+func Inside(root, path string) bool {
 	rel, err := filepath.Rel(root, path)
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
 }
@@ -223,7 +248,7 @@ func copyFile(from, to string) error {
 	return out.Close()
 }
 
-// writeAtomic は隣の一時ファイルに書いてから rename で差し替える（読み手が書きかけを見ない）。
+// writeAtomic は path を書く。読み手は前の中身か新しい中身のどちらかだけを見る。
 func writeAtomic(path string, data []byte) error {
 	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.tmp")
 	if err != nil {
@@ -239,11 +264,22 @@ func writeAtomic(path string, data []byte) error {
 		os.Remove(name)
 		return err
 	}
-	if err := os.Rename(name, path); err != nil {
+	if err := renameRetry(name, path); err != nil {
 		os.Remove(name)
 		return err
 	}
 	return nil
+}
+
+// renameRetry は Windows で rename が落ちた時だけ、短く数回やり直す。
+// WhyNot: 1 回で諦めない — Windows では人のブラウザやウイルス検査が reply.json を開いている間、上書きの rename が共有違反で落ちる。
+func renameRetry(from, to string) error {
+	err := os.Rename(from, to)
+	for i := 0; err != nil && runtime.GOOS == "windows" && i < 5; i++ {
+		time.Sleep(time.Duration(20*(i+1)) * time.Millisecond)
+		err = os.Rename(from, to)
+	}
+	return err
 }
 
 // Load は posts/<id> を読む。post.json が無い（書きかけ・消した）フォルダは os.ErrNotExist。
@@ -274,8 +310,9 @@ func Load(postsDir, id string) (Post, *proposal.Manifest, error) {
 	if r, err := readReply(filepath.Join(dir, ReplyFile)); err == nil {
 		p.Reply = &r
 	}
-	if _, err := os.Stat(filepath.Join(dir, ResolvedFile)); err == nil {
-		p.Resolved = true
+	if done, err := os.ReadFile(filepath.Join(dir, ResolvedFile)); err == nil {
+		// WhyNot: resolved があるだけで片付いたと見ない — AI が拾った後に人が出し直した返事まで片付き、誰にも届かない。
+		p.Resolved = p.Reply == nil || strings.TrimSpace(string(done)) == p.Reply.At
 	}
 	return p, m, nil
 }
@@ -337,8 +374,7 @@ func Inbox(list []Post, worktree string, all bool) []Post {
 	return out
 }
 
-// WriteReply は reply.json を書く。前の reply.json は replies/<at>.json へ移してから書き、resolved があれば外す。
-// WhyNot: 片付いた post への新しい返事で resolved を残さない — 残すと inbox に出ず、人の返事が AI に届かない。
+// WriteReply は reply.json を書く。前の reply.json は replies/<at>.json へ写してから、新しい物で上から差し替える。
 func WriteReply(postsDir, id string, picks map[string]string, comment string, now time.Time) (Reply, error) {
 	if _, _, err := Load(postsDir, id); err != nil {
 		return Reply{}, err
@@ -349,52 +385,91 @@ func WriteReply(postsDir, id string, picks map[string]string, comment string, no
 	}
 	r := Reply{Version: 1, At: now.Format(time.RFC3339), Picks: picks, Comment: comment}
 	cur := filepath.Join(dir, ReplyFile)
-	if old, err := readReply(cur); err == nil || !os.IsNotExist(err) {
+	if old, err := os.ReadFile(cur); err == nil {
 		if err := keepOldReply(dir, old, now); err != nil {
 			return Reply{}, err
 		}
+	} else if !os.IsNotExist(err) {
+		return Reply{}, err
 	}
 	data, err := json.MarshalIndent(r, "", "  ")
 	if err != nil {
 		return Reply{}, err
 	}
+	// WhyNot: 前の reply.json を消してから書かない — 消えている間に inbox を打つと「返事なし」に見える。
 	if err := writeAtomic(cur, append(data, '\n')); err != nil {
-		return Reply{}, err
-	}
-	if err := os.Remove(filepath.Join(dir, ResolvedFile)); err != nil && !os.IsNotExist(err) {
 		return Reply{}, err
 	}
 	return r, nil
 }
 
-func keepOldReply(dir string, old Reply, now time.Time) error {
-	at, err := time.Parse(time.RFC3339, old.At)
-	if err != nil {
-		at = now
+// keepOldReply は前の返事の中身を replies/<at>.json に写す（名前は O_EXCL で取り、ぶつかれば -2 から番号を付ける）。
+func keepOldReply(dir string, old []byte, now time.Time) error {
+	var r Reply
+	at := now
+	if json.Unmarshal(old, &r) == nil {
+		if t, err := time.Parse(time.RFC3339, r.At); err == nil {
+			at = t
+		}
 	}
 	if err := os.MkdirAll(filepath.Join(dir, RepliesDir), 0o755); err != nil {
 		return err
 	}
 	stem := at.Format(replyStamp)
-	for i := 1; ; i++ {
+	for i := 1; i < 1000; i++ {
 		name := stem + ".json"
 		if i > 1 {
 			name = stem + "-" + strconv.Itoa(i) + ".json"
 		}
-		to := filepath.Join(dir, RepliesDir, name)
-		if _, err := os.Stat(to); err == nil {
+		f, err := os.OpenFile(filepath.Join(dir, RepliesDir, name), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+		if os.IsExist(err) {
 			continue
 		}
-		return os.Rename(filepath.Join(dir, ReplyFile), to)
+		if err != nil {
+			return err
+		}
+		if _, err := f.Write(old); err != nil {
+			f.Close()
+			return err
+		}
+		return f.Close()
 	}
+	return fmt.Errorf("%s の下に %s を作れません", RepliesDir, stem)
 }
 
-// MarkResolved は resolved を置く。
-func MarkResolved(postsDir, id string) error {
-	if _, _, err := Load(postsDir, id); err != nil {
-		return err
+// StaleError は resolve が受けた返事より新しい返事が来ている時の誤り。
+type StaleError struct {
+	Post Post
+}
+
+func (e *StaleError) Error() string {
+	return "片付ける前に新しい返事が来ています（" + e.Post.Ref() + "）"
+}
+
+// ParseRef は「<id>@<at>」を id と at に分ける（@ が無ければ at は空）。
+func ParseRef(ref string) (string, string) {
+	id, at, _ := strings.Cut(ref, "@")
+	return id, at
+}
+
+// MarkResolved は resolved に今の返事の at を書く。at を渡した時は、それが今の返事の at と違えば *StaleError で断る。
+func MarkResolved(postsDir, id, at string) (Post, error) {
+	p, _, err := Load(postsDir, id)
+	if err != nil {
+		return Post{}, err
 	}
-	return os.WriteFile(filepath.Join(postsDir, id, ResolvedFile), nil, 0o644)
+	cur := ""
+	if p.Reply != nil {
+		cur = p.Reply.At
+	}
+	if at != "" && at != cur {
+		return p, &StaleError{Post: p}
+	}
+	if err := writeAtomic(filepath.Join(postsDir, id, ResolvedFile), []byte(cur+"\n")); err != nil {
+		return p, err
+	}
+	p.Resolved = true
+	return p, nil
 }
 
 // Signature は置き場の変わり目を見分ける短い文字列（post の数と、post.json・reply.json・resolved の最新の時刻）。

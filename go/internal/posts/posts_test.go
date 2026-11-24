@@ -4,6 +4,7 @@ package posts
 // リポの外と無い素材を止める）、返事の出し直しで前の返事を消さないこと、inbox が片付いた物と他の worktree の物を出さないこと。
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -77,6 +78,7 @@ func TestResolveFromGameSubfolderKeepsGameRoot(t *testing.T) {
 func TestResolveKeepsTemplatePrefix(t *testing.T) {
 	main, wt := repoWithWorktree(t)
 	write(t, filepath.Join(wt, "templates", "x", "flix.toml"), "")
+	write(t, filepath.Join(main, "templates", "x", "flix.toml"), "")
 	if got := Resolve(filepath.Join(wt, "templates", "x")).MainRoot; got != filepath.Join(main, "templates", "x") {
 		t.Fatalf("templates/x の prefix が落ちた: %s", got)
 	}
@@ -144,24 +146,12 @@ func TestCreateWritesOrigin(t *testing.T) {
 	}
 }
 
-func TestWriteReplyKeepsPreviousReply(t *testing.T) {
-	_, wt := repoWithWorktree(t)
-	write(t, filepath.Join(wt, "post.json"), `{"title": "t"}`)
-	roots := Resolve(wt)
-	id := create(t, roots, filepath.Join(wt, "post.json"))
-	WriteReply(roots.PostsDir(), id, map[string]string{"A": "A1"}, "1 回目", now)
-	WriteReply(roots.PostsDir(), id, map[string]string{"A": "A2"}, "2 回目", now.Add(time.Minute))
-	if _, err := os.Stat(filepath.Join(roots.PostsDir(), id, "replies", "20261124T101500.json")); err != nil {
-		t.Fatalf("前の返事が replies に残らない: %v", err)
-	}
-}
-
 func TestWriteReplyReopensResolvedPost(t *testing.T) {
 	_, wt := repoWithWorktree(t)
 	write(t, filepath.Join(wt, "post.json"), `{"title": "t"}`)
 	roots := Resolve(wt)
 	id := create(t, roots, filepath.Join(wt, "post.json"))
-	MarkResolved(roots.PostsDir(), id)
+	MarkResolved(roots.PostsDir(), id, "")
 	WriteReply(roots.PostsDir(), id, nil, "もう一度", now)
 	if p, _, _ := Load(roots.PostsDir(), id); p.Resolved {
 		t.Fatal("新しい返事の後も片付いたまま")
@@ -174,7 +164,7 @@ func TestInboxSkipsResolvedPosts(t *testing.T) {
 	roots := Resolve(wt)
 	id := create(t, roots, filepath.Join(wt, "post.json"))
 	WriteReply(roots.PostsDir(), id, nil, "ok", now)
-	MarkResolved(roots.PostsDir(), id)
+	MarkResolved(roots.PostsDir(), id, "")
 	if got := Inbox(List(roots.PostsDir()), wt, false); len(got) != 0 {
 		t.Fatalf("片付いた post が出た: %v", got)
 	}
@@ -207,5 +197,76 @@ func TestWorktreesListsMainFirst(t *testing.T) {
 	got := Worktrees(wt)
 	if len(got) != 2 || got[0].Path != main || got[1].Branch != "wt" {
 		t.Fatalf("%+v", got)
+	}
+}
+
+func TestResolveFallsBackWhenMainLacksGame(t *testing.T) {
+	_, wt := repoWithWorktree(t)
+	write(t, filepath.Join(wt, "games", "new", "flix.toml"), "")
+	r := Resolve(filepath.Join(wt, "games", "new"))
+	if !r.MainMissing || r.MainRoot != filepath.Join(wt, "games", "new") {
+		t.Fatalf("worktree の置き場へ戻らない: %+v", r)
+	}
+}
+
+func TestResolveLeavesNewerReplyInInbox(t *testing.T) {
+	_, wt := repoWithWorktree(t)
+	write(t, filepath.Join(wt, "post.json"), `{"title": "t"}`)
+	roots := Resolve(wt)
+	id := create(t, roots, filepath.Join(wt, "post.json"))
+	WriteReply(roots.PostsDir(), id, nil, "v1", now)
+	WriteReply(roots.PostsDir(), id, nil, "v2", now.Add(time.Minute))
+	MarkResolved(roots.PostsDir(), id, now.Format(time.RFC3339))
+	if got := Inbox(List(roots.PostsDir()), wt, false); len(got) != 1 || got[0].Reply.Comment != "v2" {
+		t.Fatalf("AI が読んでいない v2 まで片付いた: %+v", got)
+	}
+}
+
+func TestMarkResolvedRefusesStaleAt(t *testing.T) {
+	_, wt := repoWithWorktree(t)
+	write(t, filepath.Join(wt, "post.json"), `{"title": "t"}`)
+	roots := Resolve(wt)
+	id := create(t, roots, filepath.Join(wt, "post.json"))
+	WriteReply(roots.PostsDir(), id, nil, "v2", now.Add(time.Minute))
+	_, err := MarkResolved(roots.PostsDir(), id, now.Format(time.RFC3339))
+	var stale *StaleError
+	if !errors.As(err, &stale) {
+		t.Fatalf("古い at の resolve を断らない: %v", err)
+	}
+}
+
+func TestMarkResolvedWithoutAtResolvesCurrentReply(t *testing.T) {
+	_, wt := repoWithWorktree(t)
+	write(t, filepath.Join(wt, "post.json"), `{"title": "t"}`)
+	roots := Resolve(wt)
+	id := create(t, roots, filepath.Join(wt, "post.json"))
+	WriteReply(roots.PostsDir(), id, nil, "v1", now)
+	MarkResolved(roots.PostsDir(), id, "")
+	if got := Inbox(List(roots.PostsDir()), wt, false); len(got) != 0 {
+		t.Fatalf("今の返事が片付かない: %+v", got)
+	}
+}
+
+func TestWriteReplyKeepsReplyJSONWhenReplacing(t *testing.T) {
+	_, wt := repoWithWorktree(t)
+	write(t, filepath.Join(wt, "post.json"), `{"title": "t"}`)
+	roots := Resolve(wt)
+	id := create(t, roots, filepath.Join(wt, "post.json"))
+	WriteReply(roots.PostsDir(), id, nil, "v1", now)
+	WriteReply(roots.PostsDir(), id, nil, "v2", now.Add(time.Minute))
+	old, _ := os.ReadFile(filepath.Join(roots.PostsDir(), id, "replies", "20261124T101500.json"))
+	if !strings.Contains(string(old), "v1") {
+		t.Fatalf("前の返事の中身が replies に写らない: %s", old)
+	}
+}
+
+func TestCreateMakesMediaNamesSafe(t *testing.T) {
+	_, wt := repoWithWorktree(t)
+	write(t, filepath.Join(wt, "my shot #1.png"), "A")
+	write(t, filepath.Join(wt, "post.json"), `{"sections": [{"id": "A", "options": [{"id": "A1", "media": ["my shot #1.png"]}]}]}`)
+	roots := Resolve(wt)
+	id := create(t, roots, filepath.Join(wt, "post.json"))
+	if _, err := os.Stat(filepath.Join(roots.PostsDir(), id, "my-shot-1.png")); err != nil {
+		t.Fatalf("名前が [A-Za-z0-9._-] にそろわない: %v", err)
 	}
 }

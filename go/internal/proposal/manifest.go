@@ -31,6 +31,8 @@ type PageOptions struct {
 	Comment string
 	// BackURL があれば頁の頭に戻るリンクを置く。
 	BackURL string
+	// Byline があれば見出しのすぐ下に出す（誰がどの枝から置いたか）。
+	Byline string
 }
 
 // Page は manifest を 1 枚の HTML にする。root は相対パスの素材を探すフォルダ。missing は見つからなかった素材。
@@ -53,6 +55,39 @@ func (m *Manifest) text(key string) string {
 		return ""
 	}
 	return str(get(m.v, key))
+}
+
+// Choice は選べる節の案 1 つの見出し。
+type Choice struct {
+	Label string
+	Media []string
+}
+
+// ChoiceOf は節 sid の案 oid の label と素材のパス（無ければ ok=false）。
+func (m *Manifest) ChoiceOf(sid, oid string) (Choice, bool) {
+	for _, sec := range list(get(m.v, "sections")) {
+		if !has(sec, "id") || str(get(sec, "id")) != sid {
+			continue
+		}
+		for _, o := range list(get(sec, "options")) {
+			if str(get(o, "id")) != oid {
+				continue
+			}
+			c := Choice{}
+			if has(o, "label") {
+				c.Label = str(get(o, "label"))
+			}
+			for _, x := range list(get(o, "media")) {
+				if s, ok := x.(string); ok {
+					c.Media = append(c.Media, s)
+				} else if src, ok := get(x, "src").(string); ok {
+					c.Media = append(c.Media, src)
+				}
+			}
+			return c, true
+		}
+	}
+	return Choice{}, false
 }
 
 // HasChoices は options を持つ節（選べる節）があるか。

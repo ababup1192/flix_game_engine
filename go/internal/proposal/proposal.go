@@ -597,6 +597,9 @@ func (b *builder) page(m any) string {
 		body = append(body, `<p class="meta"><a href="`+attr(b.opts.BackURL)+`">← Inbox へ戻る</a></p>`)
 	}
 	body = append(body, "<h1>"+text(orEmpty(m, "title"))+"</h1>")
+	if b.opts.Byline != "" {
+		body = append(body, `<p class="meta">`+text(b.opts.Byline)+"</p>")
+	}
 	if truthy(get(m, "meta")) {
 		body = append(body, `<p class="meta">`+text(get(m, "meta"))+"</p>")
 	}

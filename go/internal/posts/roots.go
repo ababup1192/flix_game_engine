@@ -24,6 +24,16 @@ type Roots struct {
 	MainRoot string
 	// Branch は今の枝の名前（git でない・切り離した HEAD なら空）。
 	Branch string
+	// MainMissing は main の作業ツリーにこのゲーム（flix.toml）が無く、MainRoot を今の作業ツリーのゲームの根へ戻した時に true。
+	MainMissing bool
+}
+
+// MissingNote は MainMissing の時に人と AI へ出す 1 行（そうでなければ空）。
+func (r Roots) MissingNote() string {
+	if !r.MainMissing {
+		return ""
+	}
+	return "main の作業ツリーにこのゲーム（flix.toml）がまだ無いので、この worktree の置き場を使います: " + r.PostsDir()
 }
 
 // PostsDir は posts の置き場。
@@ -33,7 +43,7 @@ func (r Roots) PostsDir() string {
 
 // Resolve は cwd から置き場の根を決める。
 func Resolve(cwd string) Roots {
-	game := findFlixToml(cwd)
+	game := FindFlixToml(cwd)
 	if game == "" {
 		game = cwd
 	}
@@ -62,7 +72,13 @@ func Resolve(cwd string) Roots {
 	if filepath.Base(common) != ".git" {
 		return r
 	}
-	r.MainRoot = filepath.Join(RealPath(filepath.Dir(common)), filepath.FromSlash(r.Prefix))
+	main := filepath.Join(RealPath(filepath.Dir(common)), filepath.FromSlash(r.Prefix))
+	// WhyNot: main にまだ無いゲームの置き場を main 側に作らない — 人のダッシュボードは main のゲームしか一覧に出さず、誰にも見えない。
+	if info, err := os.Stat(filepath.Join(main, "flix.toml")); err != nil || !info.Mode().IsRegular() {
+		r.MainMissing = true
+		return r
+	}
+	r.MainRoot = main
 	return r
 }
 
@@ -94,7 +110,8 @@ func Worktrees(dir string) []Worktree {
 	return list
 }
 
-func findFlixToml(dir string) string {
+// FindFlixToml は dir から上へたどって最初に flix.toml のあるフォルダ（無ければ空）。
+func FindFlixToml(dir string) string {
 	for d := dir; ; d = filepath.Dir(d) {
 		if info, err := os.Stat(filepath.Join(d, "flix.toml")); err == nil && info.Mode().IsRegular() {
 			return d
