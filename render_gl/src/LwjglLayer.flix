@@ -858,7 +858,10 @@ pub mod LwjglLayer {
             case GameEngine.Cursor.NEResize   => nesw
             case GameEngine.Cursor.SWResize   => nesw
         };
-        { lookup = lookup, handles = arrow :: crosshair :: hResize :: vResize :: allResize :: rotate :: nwse :: nesw :: Nil }
+        // WhyNot: 作れなかった 0 を handles に残さない — カーソルを持たない X サーバー（Xvfb など）では glfwCreateStandardCursor が 0 を返し、
+        // 閉じる時の glfwDestroyCursor(0) が NullPointerException で落ちる。lookup の 0 は glfwSetCursor で既定のカーソルになるので残してよい。
+        let handles = (arrow :: crosshair :: hResize :: vResize :: allResize :: rotate :: nwse :: nesw :: Nil) |> List.filter(c -> c != 0i64);
+        { lookup = lookup, handles = handles }
 
     /// OpenAL の装置と文脈・音の登録簿・注釈のシャッター音。openAudio が作り、closeAudio が捨てる。
     type alias AudioSession = { device = Int64, context = Int64, state = AudioState, shutterSource = Int32 }
