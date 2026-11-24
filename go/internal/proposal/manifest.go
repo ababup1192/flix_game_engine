@@ -21,11 +21,11 @@ func ParseManifest(name string, data []byte) (*Manifest, []string) {
 
 // PageOptions は Page の切り替え。ゼロ値は fge proposal build と同じ静的な頁。
 type PageOptions struct {
-	// Send は頁の下の帯を常に出し、自由文の欄と「送る」を置く（帯は SendURL へ {picks, comment} を POST する）。
+	// Send は頁の下のバーを常に出し、自由文の欄と「送る」を置く（バーは SendURL へ {picks, comment} を POST する）。
 	Send    bool
 	SendURL string
 	// Picks は節の id → 選んだ案の id。選べる節をこの選択で開く（無い節は rec の案）。
-	// WhyNot: decision へ入れて描かない — decision は「採用」の札と片付けの手順を出す別の意味の欄。
+	// WhyNot: decision へ入れて描かない — decision は「採用」のラベルと片付けの手順を出す別の意味の欄。
 	Picks map[string]string
 	// Comment は自由文の欄に最初から入れる文。
 	Comment string

@@ -1,6 +1,6 @@
 package proposal
 
-// 何を守るか: ダッシュボードの「送る」頁が、今の返事の選択で開き、選べる節が無くても送る帯を出すこと。
+// 何を守るか: ダッシュボードの「送る」頁が、今の返事の選択で開き、選べる節が無くても送るバーを出すこと。
 // post の素材を写す時に、書いた人のキーの順を崩さずにパスだけを書き換えること。
 
 import (
@@ -30,14 +30,14 @@ func TestSendPageOpensWithReplyPicks(t *testing.T) {
 func TestSendPageShowsBarWithoutChoices(t *testing.T) {
 	html, _ := Page(mustParse(t, `{"title": "見るだけ", "sections": [{"title": "x"}]}`), t.TempDir(), PageOptions{Send: true, SendURL: "/r"})
 	if !strings.Contains(html, `data-send="/r"`) || !strings.Contains(html, "<textarea") {
-		t.Fatalf("選べる節の無い頁に送る帯が無い:\n%s", html)
+		t.Fatalf("選べる節の無い頁に送るバーが無い:\n%s", html)
 	}
 }
 
 func TestStaticPageHasNoSendBar(t *testing.T) {
 	html, _ := Page(mustParse(t, choiceManifest), t.TempDir(), PageOptions{})
 	if strings.Contains(html, "<textarea") {
-		t.Fatal("静的な頁に送る帯が出た")
+		t.Fatal("静的な頁に送るバーが出た")
 	}
 }
 
