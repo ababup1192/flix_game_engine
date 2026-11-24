@@ -7,9 +7,6 @@ name: Windows
 # WhyNot: push や pull_request で起動しない — 1 回 30 分以上かかる。release の前と、Windows に関わる変更の後に手で起こす。
 on:
   workflow_dispatch:
-  # 一時: 作業枝で Windows の始め方を初めて通すため（workflow が main に無い間は workflow_dispatch で起こせない）。通ったら外す。
-  push:
-    branches: [ccr-327f257c-qts18w]
 
 permissions:
   contents: read
