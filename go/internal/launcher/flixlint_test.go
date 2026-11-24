@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -36,8 +37,12 @@ func TestShasumShimMatchesSha1sumAndSha256sum(t *testing.T) {
 		{nil, "sha1sum"},
 		{[]string{"-a", "256"}, "sha256sum"},
 	} {
-		got, err1 := exec.Command("sh", append([]string{"-c", "printf x | \"$0\" \"$@\"", shim}, c.args...)...).Output()
-		want, err2 := exec.Command("sh", "-c", "printf x | "+c.want).Output()
+		g := exec.Command(shim, c.args...)
+		g.Stdin = strings.NewReader("x")
+		got, err1 := g.Output()
+		w := exec.Command(c.want)
+		w.Stdin = strings.NewReader("x")
+		want, err2 := w.Output()
 		if err1 != nil || err2 != nil || string(got) != string(want) {
 			t.Errorf("%v: got %q (%v) want %q (%v)", c.args, got, err1, want, err2)
 		}
