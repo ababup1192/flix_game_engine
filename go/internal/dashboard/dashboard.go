@@ -25,6 +25,7 @@ import (
 	"github.com/ababup1192/flix_game_engine/go/internal/claudeopen"
 	"github.com/ababup1192/flix_game_engine/go/internal/fgehome"
 	"github.com/ababup1192/flix_game_engine/go/internal/fgeinstall"
+	"github.com/ababup1192/flix_game_engine/go/internal/posts"
 )
 
 const (
@@ -221,7 +222,10 @@ func localURL(port int, path string) string {
 func prepareWorkspace(dir string, getwd func() (string, error)) (string, error) {
 	gameDir := ""
 	if wd, err := getwd(); err == nil {
-		gameDir = findGameRoot(wd)
+		if findGameRoot(wd) != "" {
+			// WhyNot: worktree のフォルダを一覧に足さない — post は main 側の置き場へ書くので、worktree の頁には何も並ばない。
+			gameDir = posts.Resolve(wd).MainRoot
+		}
 	}
 	if dir == "" && gameDir == "" {
 		return "", nil
@@ -272,21 +276,15 @@ func gameName(ws fgehome.Workspace, gameDir string) string {
 
 // findGameRoot は wd から上へ flix.toml のあるフォルダを探す。engine のリポと置き場の engine はゲームとして扱わない。
 func findGameRoot(wd string) string {
-	enginesDir, _ := filepath.Abs(fgehome.EnginesDir())
-	for dir := wd; ; dir = filepath.Dir(dir) {
-		if strings.HasPrefix(dir, enginesDir+string(filepath.Separator)) || dir == enginesDir {
-			return ""
-		}
-		if info, err := os.Stat(filepath.Join(dir, "flix.toml")); err == nil && info.Mode().IsRegular() {
-			if isEngineRoot(dir) {
-				return ""
-			}
-			return dir
-		}
-		if filepath.Dir(dir) == dir {
-			return ""
-		}
+	dir := posts.FindFlixToml(wd)
+	if dir == "" || isEngineRoot(dir) {
+		return ""
 	}
+	enginesDir, _ := filepath.Abs(fgehome.EnginesDir())
+	if dir == enginesDir || strings.HasPrefix(dir, enginesDir+string(filepath.Separator)) {
+		return ""
+	}
+	return dir
 }
 
 func isEngineRoot(dir string) bool {

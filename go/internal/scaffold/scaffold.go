@@ -323,12 +323,9 @@ func printNext(r Request, d Deps) {
 	d.printf("    cd %s && %s              … ウィンドウを開いて遊ぶ（矢印キーで移動）\n", r.Game, run)
 	d.printf("    %s                 … いまの絵をリファレンス画像(基準)にする\n", refUpdate)
 	d.printf("    %s              … ダッシュボードを開く（AI が置いた絵・案を選んで返す）\n", cmdhint.CommandFor(r.GOOS, "dashboard"))
-	if IsBundle(r.Engine) {
-		// WhyNot: fge new から呼ばれた時に上書きの 1 行を出さない — fge new が同じ 1 行を最後に出すので、2 回並ぶ。
-		if r.PackNote {
-			d.printf("  配られた skills・rules・AGENTS.md の共通部は版上げで上書きされる。ゲーム用に変えたい時は AGENTS.local.md に書くか、別の名前のスキルを足す。\n")
-		}
-	} else {
+	// WhyNot: fge new から呼ばれた時に上書きの 1 行を出さない — fge new が同じ 1 行を最後に出すので、2 回並ぶ。
+	if IsBundle(r.Engine) && r.PackNote {
+		d.printf("  配られた skills・rules・AGENTS.md の共通部は版上げで上書きされる。ゲーム用に変えたい時は AGENTS.local.md に書くか、別の名前のスキルを足す。\n")
 	}
 	d.printf("  git init 済み・未コミットです。最初のコミットは自分の手で。\n")
 }

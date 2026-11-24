@@ -3,12 +3,14 @@ package dashboard
 import (
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,6 +19,7 @@ import (
 	"github.com/ababup1192/flix_game_engine/go/internal/fgehome"
 	"github.com/ababup1192/flix_game_engine/go/internal/fgeinstall"
 	"github.com/ababup1192/flix_game_engine/go/internal/newgame"
+	"github.com/ababup1192/flix_game_engine/go/internal/posts"
 )
 
 //go:embed page.html
@@ -47,7 +50,7 @@ func NewServer(port int, install *installState, startInstall func(), latest func
 		startInstall:  startInstall,
 		latest:        latest,
 		installedList: fgeinstall.InstalledVersions,
-		games:         newGameProxies(execLauncher{log: os.Stderr}),
+		games:         newGameProxies(execLauncher{log: os.Stderr, goos: runtime.GOOS}),
 	}
 }
 
@@ -59,13 +62,6 @@ func (s *Server) SetLauncher(l Launcher) {
 // Close は起こした子を全部止める。
 func (s *Server) Close() {
 	s.games.stopAll()
-}
-
-// SetPort は待ち受けを決めた後に、Host と Origin の検査に使う番号を替える。
-func (s *Server) SetPort(port int) {
-	s.mu.Lock()
-	s.port = port
-	s.mu.Unlock()
 }
 
 func (s *Server) getPort() int {
@@ -162,7 +158,14 @@ func (s *Server) gamePath(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/"+url.PathEscape(name)+"/", http.StatusFound)
 		return
 	}
-	proxy, _ := s.games.get(g)
+	// WhyNot: 外のサイトからの読み込みで子を起こさない — Host と Origin の検査を通る img や iframe の GET でも、プロセスは起きる。
+	site := r.Header.Get("Sec-Fetch-Site")
+	mayStart := site == "" || site == "same-origin" || site == "none"
+	proxy, _, err := s.games.get(g, mayStart)
+	if errors.Is(err, errNotStarted) {
+		http.Error(w, "このゲームの頁はダッシュボードの頁から開いてください", http.StatusForbidden)
+		return
+	}
 	if proxy != nil {
 		proxy.ServeHTTP(w, r)
 		return
@@ -312,8 +315,7 @@ func insideDir(root, path string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	rel, err := filepath.Rel(realRoot, realPath)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+	if !posts.Inside(realRoot, realPath) {
 		return "", false
 	}
 	info, err := os.Stat(realPath)

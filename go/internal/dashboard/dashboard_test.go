@@ -54,6 +54,7 @@ func newTestServer() (*Server, *int) {
 	srv := NewServer(testPort, &installState{}, func() { installs++ }, func() (fgehome.Latest, bool) {
 		return fgehome.Latest{Version: "0.109.0"}, true
 	})
+	srv.SetLauncher(&inProcLauncher{version: 1})
 	return srv, &installs
 }
 

@@ -101,6 +101,10 @@ textarea:focus-visible,.btn:focus-visible,.tab:focus-visible,.chipbtn:focus-visi
   };
   const MAX_Q = 5000;
   const shellQuote = (s) => s !== '' && /^[A-Za-z0-9\/._~-]+$/.test(s) ? s : "'" + s.replace(/'/g, "'\\''") + "'";
+  const psQuote = (s) => "'" + s.replace(/'/g, "''") + "'";
+  const cdLine = (dir, cmd) => state.goos === 'windows'
+    ? 'Set-Location -LiteralPath ' + psQuote(dir) + '; ' + cmd(psQuote)
+    : 'cd ' + shellQuote(dir) + ' && ' + cmd(shellQuote);
   const deepLink = (dir, q) => 'claude-cli://open?cwd=' + encodeURIComponent(dir) + (q ? '&q=' + encodeURIComponent(q.slice(0, MAX_Q)) : '');
   const copy = async (text, toast) => {
     try { await navigator.clipboard.writeText(text); }
@@ -126,11 +130,12 @@ textarea:focus-visible,.btn:focus-visible,.tab:focus-visible,.chipbtn:focus-visi
     $('#starter').replaceChildren(
       h('h1', {}, h('span', {}, state.name)),
       h('div', {class: 'dir'}, state.dir),
+      state.note ? h('p', {class: 'hint', style: 'color:var(--warm)'}, state.note) : null,
       h('p', {class: 'lede'}, 'はじめに: 下の文を直して [Claude Code で開く] を押すと、このゲームのフォルダで Claude Code が開き、文が入力欄に入ります。Enter で送ります。'),
       ta,
       h('div', {class: 'row'}, open,
-        h('button', {class: 'btn ghost', onclick: () => copy('cd ' + shellQuote(state.dir) + ' && claude -n ' + shellQuote(state.name) + ' ' + shellQuote(ta.value.trim()), toast)}, 'コマンドをコピー'),
-        h('button', {class: 'btn ghost', onclick: () => copy('cd ' + shellQuote(state.dir) + ' && codex ' + shellQuote(ta.value.trim()), toast)}, 'Codex のコマンドをコピー'),
+        h('button', {class: 'btn ghost', onclick: () => copy(cdLine(state.dir, (q) => 'claude -n ' + q(state.name) + ' ' + q(ta.value.trim())), toast)}, 'コマンドをコピー'),
+        h('button', {class: 'btn ghost', onclick: () => copy(cdLine(state.dir, (q) => 'codex ' + q(ta.value.trim())), toast)}, 'Codex のコマンドをコピー'),
         h('button', {class: 'btn ghost small', onclick: () => { ta.value = state.prompt; sync(); }}, '元の文に戻す'),
         toast),
       h('p', {class: 'hint'}, '開かない時: 一度 ', h('code', {}, 'claude'), ' を起動して何か送ると、このボタンで開けるようになります。'));

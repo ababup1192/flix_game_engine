@@ -6,7 +6,9 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,6 +16,7 @@ import (
 
 	"github.com/ababup1192/flix_game_engine/go/internal/posts"
 	"github.com/ababup1192/flix_game_engine/go/internal/proposal"
+	"github.com/ababup1192/flix_game_engine/go/internal/tape"
 )
 
 //go:embed game.html
@@ -39,20 +42,31 @@ type GameServer struct {
 	name  string
 	roots posts.Roots
 	now   func() time.Time
-	// replyMu は同じ post への返事が 2 つ同時に来ても、前の返事を replies へ移す順が崩れないようにする。
+	goos  string
+	// WhyNot: 返事の書き込みを並べて走らせない — 同じ post へ 2 つ同時に来ると、前の返事を replies へ写す順が入れ替わる。
 	replyMu sync.Mutex
+
+	tapeMu    sync.Mutex
+	tapeAt    time.Time
+	tapeCache []tapeRoot
+}
+
+// tapeTTL は git worktree list の答えを覚えておく長さ。
+// WhyNot: 毎回 git を起こさない — 頁は 3 秒ごとに index を問い合わせ、そのたびに git のプロセスが 1 つ起きる。
+const tapeTTL = 5 * time.Second
+
+func (g *GameServer) tapeRoots() []tapeRoot {
+	g.tapeMu.Lock()
+	defer g.tapeMu.Unlock()
+	if g.tapeCache == nil || time.Since(g.tapeAt) > tapeTTL {
+		g.tapeCache, g.tapeAt = tapeRoots(g.roots), time.Now()
+	}
+	return g.tapeCache
 }
 
 // NewGameServer は base（/ か /<名前>/）の下で roots のゲームを出す GameServer を作る。
 func NewGameServer(port int, base, name string, roots posts.Roots, now func() time.Time) *GameServer {
-	return &GameServer{port: port, base: base, name: name, roots: roots, now: now}
-}
-
-// SetPort は待ち受けを決めた後に、Host と Origin の検査に使う番号を替える。
-func (g *GameServer) SetPort(port int) {
-	g.mu.Lock()
-	g.port = port
-	g.mu.Unlock()
+	return &GameServer{port: port, base: base, name: name, roots: roots, now: now, goos: runtime.GOOS}
 }
 
 func (g *GameServer) allowedHosts() []string {
@@ -82,11 +96,11 @@ func (g *GameServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case rest == "_api/state":
 		g.state(w)
 	case rest == "_api/index":
-		writeJSON(w, map[string]string{"posts": posts.Signature(g.roots.PostsDir()), "tapes": tapesSignature(tapeRoots(g.roots))})
+		writeJSON(w, map[string]string{"posts": posts.Signature(g.roots.PostsDir()), "tapes": tapesSignature(g.tapeRoots())})
 	case rest == "_api/posts":
 		writeJSON(w, posts.List(g.roots.PostsDir()))
 	case rest == "_api/tapes":
-		writeJSON(w, listTapes(tapeRoots(g.roots)))
+		writeJSON(w, listTapes(g.tapeRoots()))
 	case strings.HasPrefix(rest, "_api/posts/") && strings.HasSuffix(rest, "/reply"):
 		g.reply(w, r, strings.TrimSuffix(strings.TrimPrefix(rest, "_api/posts/"), "/reply"))
 	case strings.HasPrefix(rest, "_api/"):
@@ -108,12 +122,16 @@ type GameState struct {
 	Branch   string `json:"branch,omitempty"`
 	PostsDir string `json:"postsDir"`
 	Prompt   string `json:"prompt"`
+	// Goos はコピーするコマンドの形を決める（windows なら PowerShell）。
+	Goos string `json:"goos"`
+	// Note は main の作業ツリーにゲームが無く、worktree の置き場を使っている時の 1 行。
+	Note string `json:"note,omitempty"`
 }
 
 func (g *GameServer) state(w http.ResponseWriter) {
 	writeJSON(w, GameState{
 		Name: g.name, Dir: g.roots.MainRoot, Base: g.base, Branch: g.roots.Branch,
-		PostsDir: g.roots.PostsDir(), Prompt: StarterPrompt,
+		PostsDir: g.roots.PostsDir(), Prompt: StarterPrompt, Goos: g.goos, Note: g.roots.MissingNote(),
 	})
 }
 
@@ -140,7 +158,7 @@ func (g *GameServer) post(w http.ResponseWriter, r *http.Request, rest string) {
 			return
 		}
 		w.Header().Set("Cache-Control", "no-cache")
-		serveFile(w, r, path)
+		serveMedia(w, r, path)
 		return
 	}
 	p, m, err := posts.Load(g.roots.PostsDir(), id)
@@ -152,6 +170,7 @@ func (g *GameServer) post(w http.ResponseWriter, r *http.Request, rest string) {
 	if p.Reply != nil {
 		opts.Picks, opts.Comment = p.Reply.Picks, p.Reply.Comment
 	}
+	opts.Byline = byline(p)
 	html, _ := proposal.Page(m, dir, opts)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'")
@@ -203,18 +222,54 @@ func (g *GameServer) tapeFile(w http.ResponseWriter, r *http.Request, rest strin
 	if strings.HasSuffix(rel, "/") {
 		rel += "index.html"
 	}
-	for _, root := range tapeRoots(g.roots) {
+	for _, root := range g.tapeRoots() {
 		if root.key != key {
 			continue
 		}
-		path, ok := insideDir(root.dir, filepath.Join(root.dir, filepath.FromSlash(rel)))
+		p, ok := insideDir(root.dir, filepath.Join(root.dir, filepath.FromSlash(rel)))
 		if !ok {
 			break
 		}
-		serveFile(w, r, path)
+		// WhyNot: テープの頁に sandbox を付けない — 頁の script が動画を fetch で取り、注釈を localStorage に残すので、
+		// opaque origin では動画も注釈も動かない。頁はこのリポの flow から bin/fge tape が作った物で、リポのコードと同じだけ信じる。
+		if path.Base(rel) == tape.IndexFile {
+			serveFile(w, r, p)
+			return
+		}
+		serveMedia(w, r, p)
 		return
 	}
 	http.NotFound(w, r)
+}
+
+func byline(p posts.Post) string {
+	var parts []string
+	if p.Author != "" {
+		parts = append(parts, p.Author)
+	}
+	if p.Origin.Branch != "" {
+		parts = append(parts, "枝 "+p.Origin.Branch)
+	}
+	if p.Origin.Worktree != "" {
+		parts = append(parts, p.Origin.Worktree)
+	}
+	return strings.Join(parts, " ・ ")
+}
+
+// serveMedia は素材を、script の動かない頁として返す。絵・動画・音の外はダウンロードにする。
+// WhyNot: AI が写した素材をそのまま同じ origin の頁として開かせない — HTML や SVG の script が返事の API を叩ける。
+func serveMedia(w http.ResponseWriter, r *http.Request, p string) {
+	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'")
+	ext := strings.ToLower(filepath.Ext(p))
+	if !mediaExt[ext] {
+		w.Header().Set("Content-Disposition", "attachment")
+	}
+	serveFile(w, r, p)
+}
+
+var mediaExt = map[string]bool{
+	".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".webp": true,
+	".mp4": true, ".webm": true, ".mov": true, ".wav": true, ".mp3": true, ".ogg": true, ".m4a": true,
 }
 
 // serveFile は path を返す。

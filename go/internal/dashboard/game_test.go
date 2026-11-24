@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ababup1192/flix_game_engine/go/internal/fgehome"
 	"github.com/ababup1192/flix_game_engine/go/internal/posts"
 )
 
@@ -219,6 +220,7 @@ type inProcLauncher struct {
 	mu      sync.Mutex
 	version int
 	started int
+	stopped int
 	hosts   []string
 	origins []string
 }
@@ -250,7 +252,15 @@ func (l *inProcLauncher) Start(dir, base string) (int, <-chan struct{}, func(), 
 	l.started++
 	l.mu.Unlock()
 	var once sync.Once
-	return port, done, func() { once.Do(func() { srv.Close(); close(done) }) }, nil
+	return port, done, func() {
+		once.Do(func() {
+			srv.Close()
+			close(done)
+			l.mu.Lock()
+			l.stopped++
+			l.mu.Unlock()
+		})
+	}, nil
 }
 
 func proxiedServer(t *testing.T, l *inProcLauncher) *Server {
@@ -430,8 +440,139 @@ func TestFgeForTemplateUsesEngineBin(t *testing.T) {
 	write(t, filepath.Join(root, "agents-pack", "manifest.json"), "{}")
 	write(t, filepath.Join(root, "bin", "fge-go"), "")
 	write(t, filepath.Join(root, "templates", "x", "flix.toml"), "")
-	got, err := fgeFor(filepath.Join(root, "templates", "x"))
+	got, err := fgeFor("linux", filepath.Join(root, "templates", "x"))
 	if err != nil || got != filepath.Join(root, "bin", "fge-go") {
 		t.Fatalf("got=%s err=%v", got, err)
+	}
+}
+
+func TestFgeForOnWindowsSkipsBinaryWithoutExe(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "bin", "fge-go"), "")
+	if _, err := fgeFor("windows", root); err == nil {
+		t.Fatal("Windows で拡張子の無い fge-go を選んだ")
+	}
+}
+
+func TestStateCarriesGoosForCopyCommand(t *testing.T) {
+	root := setup(t, false)
+	main, _ := gameRepo(t, root)
+	gs := gameServer(main, "/tide/")
+	gs.goos = "windows"
+	var st GameState
+	json.Unmarshal(do(gs, "GET", "/tide/_api/state", nil).Body.Bytes(), &st)
+	if st.Goos != "windows" {
+		t.Fatalf("%+v", st)
+	}
+}
+
+func TestPostMediaIsSandboxed(t *testing.T) {
+	root := setup(t, false)
+	main, _ := gameRepo(t, root)
+	id := putPost(t, main)
+	rec := do(gameServer(main, "/tide/"), "GET", "/tide/posts/"+id+"/a2.png", nil)
+	if !strings.HasPrefix(rec.Header().Get("Content-Security-Policy"), "sandbox;") {
+		t.Fatalf("csp=%q", rec.Header().Get("Content-Security-Policy"))
+	}
+}
+
+func TestPostNonMediaFileIsDownloaded(t *testing.T) {
+	root := setup(t, false)
+	main, _ := gameRepo(t, root)
+	id := putPost(t, main)
+	write(t, filepath.Join(posts.Resolve(main).PostsDir(), id, "x.html"), "<script>alert(1)</script>")
+	rec := do(gameServer(main, "/tide/"), "GET", "/tide/posts/"+id+"/x.html", nil)
+	if rec.Header().Get("Content-Disposition") != "attachment" {
+		t.Fatalf("disposition=%q", rec.Header().Get("Content-Disposition"))
+	}
+}
+
+func TestPostPageShowsOriginBranch(t *testing.T) {
+	root := setup(t, false)
+	_, wt := gameRepo(t, root)
+	id := putPost(t, wt)
+	if rec := do(gameServer(wt, "/tide/"), "GET", "/tide/posts/"+id+"/", nil); !strings.Contains(rec.Body.String(), "枝 feat") {
+		t.Fatalf("code=%d", rec.Code)
+	}
+}
+
+func TestCrossSiteRequestDoesNotStartChild(t *testing.T) {
+	root := setup(t, true)
+	main, _ := gameRepo(t, root)
+	addGame(t, "tide", main)
+	l := &inProcLauncher{version: 1}
+	rec := do(proxiedServer(t, l), "GET", "/tide/", map[string]string{"Sec-Fetch-Site": "cross-site"})
+	if rec.Code != http.StatusForbidden || l.started != 0 {
+		t.Fatalf("code=%d started=%d", rec.Code, l.started)
+	}
+}
+
+func TestMovedGameStopsOldChild(t *testing.T) {
+	root := setup(t, true)
+	main, _ := gameRepo(t, root)
+	addGame(t, "tide", main)
+	l := &inProcLauncher{version: 1}
+	srv := proxiedServer(t, l)
+	do(srv, "GET", "/tide/", nil)
+	other := filepath.Join(root, "moved", "tide")
+	write(t, filepath.Join(other, "flix.toml"), "")
+	ws, _ := fgehome.ReadWorkspace()
+	ws.Games[0].Dir = other
+	fgehome.WriteWorkspace(ws)
+	var wg sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() { defer wg.Done(); do(srv, "GET", "/tide/", nil) }()
+	}
+	wg.Wait()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.started != 2 || l.stopped != 1 {
+		t.Fatalf("started=%d stopped=%d", l.started, l.stopped)
+	}
+}
+
+func TestInboxShowsRefAndPickLabel(t *testing.T) {
+	root := setup(t, false)
+	main, _ := gameRepo(t, root)
+	id := putPost(t, main)
+	posts.WriteReply(posts.Resolve(main).PostsDir(), id, map[string]string{"A": "A2"}, "", fixedNow)
+	var out bytes.Buffer
+	Main([]string{"inbox"}, false, &out, &bytes.Buffer{}, Deps{Getwd: func() (string, error) { return main, nil }})
+	if !strings.Contains(out.String(), "== "+id+"@"+fixedNow.Format(time.RFC3339)) || !strings.Contains(out.String(), "a2.png") {
+		t.Fatalf("out=%s", out.String())
+	}
+}
+
+func TestResolveWithStaleAtIsRefused(t *testing.T) {
+	root := setup(t, false)
+	main, _ := gameRepo(t, root)
+	id := putPost(t, main)
+	dir := posts.Resolve(main).PostsDir()
+	posts.WriteReply(dir, id, nil, "v1", fixedNow)
+	posts.WriteReply(dir, id, nil, "v2", fixedNow.Add(time.Minute))
+	var errOut bytes.Buffer
+	code := Main([]string{"resolve", id + "@" + fixedNow.Format(time.RFC3339)}, false, &bytes.Buffer{}, &errOut, Deps{Getwd: func() (string, error) { return main, nil }})
+	if code != exitProblem || !strings.Contains(errOut.String(), "v2") {
+		t.Fatalf("code=%d err=%s", code, errOut.String())
+	}
+}
+
+func TestInboxUnknownFlagIsRefused(t *testing.T) {
+	root := setup(t, false)
+	main, _ := gameRepo(t, root)
+	if code := Main([]string{"inbox", "--al"}, false, &bytes.Buffer{}, &bytes.Buffer{}, Deps{Getwd: func() (string, error) { return main, nil }}); code != exitBadUsage {
+		t.Fatalf("code=%d", code)
+	}
+}
+
+func TestRunInWorktreeAddsMainGameToWorkspace(t *testing.T) {
+	root := setup(t, true)
+	main, wt := gameRepo(t, root)
+	f := &fakeDeps{ours: true, wd: wt}
+	runDashboard(t, f)
+	ws, _ := fgehome.ReadWorkspace()
+	if len(ws.Games) != 1 || ws.Games[0].Dir != main {
+		t.Fatalf("games=%+v", ws.Games)
 	}
 }
