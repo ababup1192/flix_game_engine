@@ -36,7 +36,12 @@ const (
 // DefaultPort はワークスペースのサーバーの番号。
 const DefaultPort = 8790
 
-const usage = "使い方: fge dashboard [--port <番号>] [--no-open] [--dir <ワークスペースのフォルダ>]"
+const usage = "使い方: fge dashboard [--port <番号>] [--no-open] [--dir <ワークスペースのフォルダ>]\n" +
+	"        bin/fge dashboard post <post.json> [--author <名前>] [--json]   人に見せる物を置く\n" +
+	"        bin/fge dashboard inbox [--json] [--all]                       人の返事を拾う\n" +
+	"        bin/fge dashboard resolve <id>                                 拾った返事を片付ける\n" +
+	"        bin/fge dashboard --version                                    約束の版\n" +
+	"        bin/fge dashboard --base /<名前>/ [--port 0] [--no-open]        このゲームの頁だけを立てる（全体の fge が子として起こす）"
 
 // Deps は外の世界（網・ブラウザ・待ち受け）とつなぐ所。テストは欄を差し替える。
 type Deps struct {
@@ -48,6 +53,9 @@ type Deps struct {
 	IsOurServer func(port int) bool
 	// Serve は ln で h を出し、人が止めるまで返らない。
 	Serve func(ln net.Listener, h http.Handler) error
+	// WatchParent は子として起こされた時に、親がいなくなったら自分を止める仕掛けを始める（nil なら何もしない）。
+	WatchParent func()
+	Now         func() time.Time
 }
 
 // DefaultDeps は本物の網・ブラウザ・待ち受けを使う。
@@ -75,22 +83,48 @@ func DefaultDeps(goos string, env *fgeinstall.Env) Deps {
 		},
 		IsOurServer: isOurServer,
 		Serve:       serveUntilInterrupt,
+		WatchParent: exitWhenStdinCloses,
+		Now:         time.Now,
 	}
+}
+
+// Main は fge dashboard の入口。post・inbox・resolve はファイルを読み書きするだけで、サーバーを要らない。
+func Main(args []string, asJSON bool, stdout, stderr io.Writer, d Deps) int {
+	if len(args) > 0 {
+		switch args[0] {
+		case "post":
+			return runPost(args[1:], asJSON, stdout, stderr, d)
+		case "inbox":
+			return runInbox(args[1:], asJSON, stdout, stderr, d)
+		case "resolve":
+			return runResolve(args[1:], stdout, stderr, d)
+		}
+	}
+	return Run(args, stdout, stderr, d)
 }
 
 // Run は fge dashboard の本体。出力は居座るサーバーなので stdout へ直に書く。
 func Run(args []string, stdout, stderr io.Writer, d Deps) int {
 	port := DefaultPort
-	var noOpen bool
-	var dir string
+	var noOpen, showVersion bool
+	var dir, base string
 	fs := flag.NewFlagSet("dashboard", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.IntVar(&port, "port", DefaultPort, "待つ番号（塞がっていれば空いた番号）")
 	fs.BoolVar(&noOpen, "no-open", false, "ブラウザを開かない")
 	fs.StringVar(&dir, "dir", "", "ワークスペースのフォルダ（workspace.json に残す。既定 ~/flix-games）")
+	fs.StringVar(&base, "base", "", "このゲームの頁だけを /<名前>/ の下で出す")
+	fs.BoolVar(&showVersion, "version", false, "約束の版を出す")
 	if err := fs.Parse(args); err != nil || fs.NArg() != 0 || port < 0 || port > 65535 {
 		fmt.Fprintln(stderr, usage)
 		return exitBadUsage
+	}
+	if showVersion {
+		fmt.Fprintln(stdout, ContractVersion)
+		return exitDone
+	}
+	if base != "" {
+		return runGame(base, port, noOpen, stdout, stderr, d)
 	}
 
 	openPath := "/"
@@ -158,7 +192,9 @@ func Run(args []string, stdout, stderr io.Writer, d Deps) int {
 
 	fmt.Fprintf(stdout, "[fge dashboard] %s で待っています（ワークスペース: %s・Ctrl-C で止める）\n", localURL(actual, "/"), synced.Dir)
 	openOrPrint(stdout, d, localURL(actual, openPath), noOpen)
-	if err := d.Serve(ln, srv); err != nil {
+	err = d.Serve(ln, srv)
+	srv.Close()
+	if err != nil {
 		fmt.Fprintf(stderr, "!! %v\n", err)
 		return exitProblem
 	}

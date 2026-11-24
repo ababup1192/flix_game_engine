@@ -1,0 +1,419 @@
+package posts
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/ababup1192/flix_game_engine/go/internal/proposal"
+)
+
+const (
+	// PostFile は AI が書く物（proposal.json の形に author と origin を足した物）。
+	PostFile = "post.json"
+	// ReplyFile は人の最新の返事。
+	ReplyFile = "reply.json"
+	// RepliesDir は出し直す前の返事を残す所。
+	RepliesDir = "replies"
+	// ResolvedFile は空のファイル。あれば片付いた post。
+	ResolvedFile = "resolved"
+)
+
+// replyStamp は replies/<at>.json の名前に使う時刻の形。
+// WhyNot: RFC3339 のまま名前にしない — `:` は Windows のファイル名に使えない。
+const replyStamp = "20060102T150405"
+
+var idRe = regexp.MustCompile(`^[0-9]{8}-[0-9]{6}-[a-z0-9-]+$`)
+
+// Origin は post を書いた所。
+type Origin struct {
+	Branch   string `json:"branch"`
+	Worktree string `json:"worktree"`
+}
+
+// Reply は reply.json の形。
+type Reply struct {
+	Version int               `json:"version"`
+	At      string            `json:"at"`
+	Picks   map[string]string `json:"picks"`
+	Comment string            `json:"comment"`
+}
+
+// Post は置き場の post 1 つの見出し。
+type Post struct {
+	ID       string    `json:"id"`
+	Dir      string    `json:"dir"`
+	Title    string    `json:"title"`
+	Lead     string    `json:"lead,omitempty"`
+	Author   string    `json:"author,omitempty"`
+	Origin   Origin    `json:"origin"`
+	Choose   bool      `json:"choose"`
+	Images   []string  `json:"images"`
+	Created  time.Time `json:"created"`
+	Reply    *Reply    `json:"reply,omitempty"`
+	Resolved bool      `json:"resolved"`
+}
+
+// ValidID は id が置き場の 1 つ下のフォルダ名として安全な形か。
+func ValidID(id string) bool { return idRe.MatchString(id) }
+
+// CreateOptions は Create の指定。
+type CreateOptions struct {
+	PostsDir string
+	// Manifest は AI が書いた post.json（proposal.json の形）のパス。
+	Manifest string
+	// RepoRoot は素材を許す根（この下の外の素材は止める）。
+	RepoRoot string
+	Author   string
+	Origin   Origin
+	Now      time.Time
+}
+
+// Create は manifest と素材を posts/<id>/ へ写し、id を返す。
+func Create(o CreateOptions) (string, error) {
+	data, err := os.ReadFile(o.Manifest)
+	if err != nil {
+		return "", err
+	}
+	m, errs := proposal.ParseManifest(filepath.Base(o.Manifest), data)
+	if len(errs) > 0 {
+		return "", errors.New(strings.Join(errs, "\n"))
+	}
+	base := filepath.Dir(RealPath(o.Manifest))
+	root := RealPath(o.RepoRoot)
+	sources := map[string]string{}
+	var order []string
+	for _, src := range m.MediaSources() {
+		full := filepath.FromSlash(src)
+		if !filepath.IsAbs(full) {
+			full = filepath.Join(base, full)
+		}
+		info, err := os.Stat(full)
+		if err != nil || !info.Mode().IsRegular() {
+			return "", fmt.Errorf("素材がありません: %s", src)
+		}
+		if !inside(root, RealPath(full)) {
+			return "", fmt.Errorf("素材がリポの根（%s）の外にあります: %s", root, src)
+		}
+		sources[src] = RealPath(full)
+		order = append(order, src)
+	}
+	if err := os.MkdirAll(o.PostsDir, 0o755); err != nil {
+		return "", err
+	}
+	id, dir, err := makePostDir(o.PostsDir, o.Now, m.Title())
+	if err != nil {
+		return "", err
+	}
+	ok := false
+	defer func() {
+		if !ok {
+			os.RemoveAll(dir)
+		}
+	}()
+	rename := map[string]string{}
+	copied := map[string]string{}
+	taken := map[string]bool{PostFile: true, ReplyFile: true, RepliesDir: true, ResolvedFile: true}
+	for _, src := range order {
+		from := sources[src]
+		if name, done := copied[from]; done {
+			rename[src] = name
+			continue
+		}
+		name := freeName(filepath.Base(from), taken)
+		taken[name] = true
+		if err := copyFile(from, filepath.Join(dir, name)); err != nil {
+			return "", err
+		}
+		copied[from] = name
+		rename[src] = name
+	}
+	m.RewriteMedia(rename)
+	if o.Author != "" {
+		if err := m.Set("author", o.Author); err != nil {
+			return "", err
+		}
+	}
+	if err := m.Set("origin", o.Origin); err != nil {
+		return "", err
+	}
+	if err := writeAtomic(filepath.Join(dir, PostFile), m.JSON()); err != nil {
+		return "", err
+	}
+	ok = true
+	return id, nil
+}
+
+var slugDropRe = regexp.MustCompile(`[^a-z0-9]+`)
+
+// slug は題から作る短い名前（英数字だけを拾い、無ければ post）。
+func slug(title string) string {
+	s := strings.Trim(slugDropRe.ReplaceAllString(strings.ToLower(title), "-"), "-")
+	if len(s) > 24 {
+		s = strings.TrimRight(s[:24], "-")
+	}
+	if s == "" {
+		return "post"
+	}
+	return s
+}
+
+// makePostDir は id のフォルダを os.Mkdir で作る。同じ id が既にあれば -2 から番号を付けて作り直す。
+func makePostDir(postsDir string, now time.Time, title string) (string, string, error) {
+	stem := now.Format("20060102-150405") + "-" + slug(title)
+	for i := 1; i < 1000; i++ {
+		id := stem
+		if i > 1 {
+			id = stem + "-" + strconv.Itoa(i)
+		}
+		dir := filepath.Join(postsDir, id)
+		err := os.Mkdir(dir, 0o755)
+		if err == nil {
+			return id, dir, nil
+		}
+		if !os.IsExist(err) {
+			return "", "", err
+		}
+	}
+	return "", "", fmt.Errorf("%s の下に %s を作れません", postsDir, stem)
+}
+
+// freeName は taken とぶつからない名前（ぶつかれば拡張子の前に -2 -3 を付ける）。
+func freeName(name string, taken map[string]bool) string {
+	if !taken[name] {
+		return name
+	}
+	ext := filepath.Ext(name)
+	stem := strings.TrimSuffix(name, ext)
+	for i := 2; ; i++ {
+		n := stem + "-" + strconv.Itoa(i) + ext
+		if !taken[n] {
+			return n
+		}
+	}
+}
+
+func inside(root, path string) bool {
+	rel, err := filepath.Rel(root, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
+}
+
+func copyFile(from, to string) error {
+	in, err := os.Open(from)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(to, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
+}
+
+// writeAtomic は隣の一時ファイルに書いてから rename で差し替える（読み手が書きかけを見ない）。
+func writeAtomic(path string, data []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(name)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(name)
+		return err
+	}
+	if err := os.Rename(name, path); err != nil {
+		os.Remove(name)
+		return err
+	}
+	return nil
+}
+
+// Load は posts/<id> を読む。post.json が無い（書きかけ・消した）フォルダは os.ErrNotExist。
+func Load(postsDir, id string) (Post, *proposal.Manifest, error) {
+	if !ValidID(id) {
+		return Post{}, nil, os.ErrNotExist
+	}
+	dir := filepath.Join(postsDir, id)
+	data, err := os.ReadFile(filepath.Join(dir, PostFile))
+	if err != nil {
+		return Post{}, nil, err
+	}
+	m, errs := proposal.ParseManifest(PostFile, data)
+	if len(errs) > 0 {
+		return Post{}, nil, errors.New(strings.Join(errs, "\n"))
+	}
+	var extra struct {
+		Origin Origin `json:"origin"`
+	}
+	json.Unmarshal(data, &extra)
+	p := Post{
+		ID: id, Dir: dir, Title: m.Title(), Lead: m.Lead(), Author: m.Author(), Origin: extra.Origin,
+		Choose: m.HasChoices(), Images: m.Images(), Created: createdOf(id, dir),
+	}
+	if p.Images == nil {
+		p.Images = []string{}
+	}
+	if r, err := readReply(filepath.Join(dir, ReplyFile)); err == nil {
+		p.Reply = &r
+	}
+	if _, err := os.Stat(filepath.Join(dir, ResolvedFile)); err == nil {
+		p.Resolved = true
+	}
+	return p, m, nil
+}
+
+func createdOf(id, dir string) time.Time {
+	if t, err := time.ParseInLocation("20060102-150405", id[:15], time.Local); err == nil {
+		return t
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		return time.Time{}
+	}
+	return info.ModTime()
+}
+
+func readReply(path string) (Reply, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Reply{}, err
+	}
+	var r Reply
+	if err := json.Unmarshal(data, &r); err != nil {
+		return Reply{}, fmt.Errorf("%s を読めません: %w", path, err)
+	}
+	return r, nil
+}
+
+// List は置き場の post を新しい順に返す（読めない post は飛ばす）。
+func List(postsDir string) []Post {
+	entries, err := os.ReadDir(postsDir)
+	if err != nil {
+		return []Post{}
+	}
+	out := []Post{}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if p, _, err := Load(postsDir, e.Name()); err == nil {
+			out = append(out, p)
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].ID > out[j].ID })
+	return out
+}
+
+// Inbox は返事があり片付いていない post。all でなければ origin の worktree が worktree に合う物だけ。
+func Inbox(list []Post, worktree string, all bool) []Post {
+	out := []Post{}
+	for _, p := range list {
+		if p.Reply == nil || p.Resolved {
+			continue
+		}
+		if !all && !SamePath(p.Origin.Worktree, worktree) {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+// WriteReply は reply.json を書く。前の reply.json は replies/<at>.json へ移してから書き、resolved があれば外す。
+// WhyNot: 片付いた post への新しい返事で resolved を残さない — 残すと inbox に出ず、人の返事が AI に届かない。
+func WriteReply(postsDir, id string, picks map[string]string, comment string, now time.Time) (Reply, error) {
+	if _, _, err := Load(postsDir, id); err != nil {
+		return Reply{}, err
+	}
+	dir := filepath.Join(postsDir, id)
+	if picks == nil {
+		picks = map[string]string{}
+	}
+	r := Reply{Version: 1, At: now.Format(time.RFC3339), Picks: picks, Comment: comment}
+	cur := filepath.Join(dir, ReplyFile)
+	if old, err := readReply(cur); err == nil || !os.IsNotExist(err) {
+		if err := keepOldReply(dir, old, now); err != nil {
+			return Reply{}, err
+		}
+	}
+	data, err := json.MarshalIndent(r, "", "  ")
+	if err != nil {
+		return Reply{}, err
+	}
+	if err := writeAtomic(cur, append(data, '\n')); err != nil {
+		return Reply{}, err
+	}
+	if err := os.Remove(filepath.Join(dir, ResolvedFile)); err != nil && !os.IsNotExist(err) {
+		return Reply{}, err
+	}
+	return r, nil
+}
+
+func keepOldReply(dir string, old Reply, now time.Time) error {
+	at, err := time.Parse(time.RFC3339, old.At)
+	if err != nil {
+		at = now
+	}
+	if err := os.MkdirAll(filepath.Join(dir, RepliesDir), 0o755); err != nil {
+		return err
+	}
+	stem := at.Format(replyStamp)
+	for i := 1; ; i++ {
+		name := stem + ".json"
+		if i > 1 {
+			name = stem + "-" + strconv.Itoa(i) + ".json"
+		}
+		to := filepath.Join(dir, RepliesDir, name)
+		if _, err := os.Stat(to); err == nil {
+			continue
+		}
+		return os.Rename(filepath.Join(dir, ReplyFile), to)
+	}
+}
+
+// MarkResolved は resolved を置く。
+func MarkResolved(postsDir, id string) error {
+	if _, _, err := Load(postsDir, id); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(postsDir, id, ResolvedFile), nil, 0o644)
+}
+
+// Signature は置き場の変わり目を見分ける短い文字列（post の数と、post.json・reply.json・resolved の最新の時刻）。
+func Signature(postsDir string) string {
+	entries, err := os.ReadDir(postsDir)
+	if err != nil {
+		return "0"
+	}
+	n, latest := 0, int64(0)
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		n++
+		for _, f := range []string{"", PostFile, ReplyFile, ResolvedFile} {
+			if info, err := os.Stat(filepath.Join(postsDir, e.Name(), f)); err == nil && info.ModTime().UnixNano() > latest {
+				latest = info.ModTime().UnixNano()
+			}
+		}
+	}
+	return strconv.Itoa(n) + "-" + strconv.FormatInt(latest, 36)
+}
