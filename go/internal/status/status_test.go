@@ -461,3 +461,14 @@ func find(t *testing.T, lines []string, prefix string) string {
 	}
 	return ""
 }
+
+func TestDashboardRepliesAreCounted(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "flix.toml"), "")
+	post := filepath.Join(root, "debug", "dashboard", "posts", "20261124-101500-t")
+	write(t, filepath.Join(post, "post.json"), `{"title": "t", "origin": {"branch": "", "worktree": ""}}`)
+	write(t, filepath.Join(post, "reply.json"), `{"version": 1, "at": "2026-11-24T10:20:00+09:00", "picks": {}, "comment": "ok"}`)
+	if lines := build(t, root); !has(lines, "ダッシュボードに返事 1 件 → bin/fge dashboard inbox") {
+		t.Errorf("返事の行が出ません: %v", lines)
+	}
+}
