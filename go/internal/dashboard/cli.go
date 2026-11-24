@@ -154,9 +154,9 @@ type InboxItem struct {
 	Picks  []InboxPick  `json:"picks"`
 }
 
-func inboxItem(postsDir string, p posts.Post) InboxItem {
+func inboxItem(p posts.Post) InboxItem {
 	it := InboxItem{ID: p.ID, Ref: p.Ref(), Title: p.Title, Dir: p.Dir, Origin: p.Origin, Reply: *p.Reply, Picks: []InboxPick{}}
-	_, m, err := posts.Load(postsDir, p.ID)
+	m := p.Manifest
 	keys := make([]string, 0, len(p.Reply.Picks))
 	for k := range p.Reply.Picks {
 		keys = append(keys, k)
@@ -164,7 +164,7 @@ func inboxItem(postsDir string, p posts.Post) InboxItem {
 	sort.Strings(keys)
 	for _, k := range keys {
 		pick := InboxPick{Section: k, Option: p.Reply.Picks[k]}
-		if err == nil {
+		if m != nil {
 			if c, ok := m.ChoiceOf(k, pick.Option); ok {
 				pick.Label = c.Label
 				for _, src := range c.Media {
@@ -197,7 +197,7 @@ func runInbox(args []string, asJSON bool, stdout, stderr io.Writer, d Deps) int 
 	sort.SliceStable(found, func(i, j int) bool { return found[i].ID < found[j].ID })
 	items := make([]InboxItem, 0, len(found))
 	for _, p := range found {
-		items = append(items, inboxItem(roots.PostsDir(), p))
+		items = append(items, inboxItem(p))
 	}
 	if asJSON {
 		b, _ := json.MarshalIndent(items, "", "  ")
@@ -256,11 +256,11 @@ func runResolve(args []string, stdout, stderr io.Writer, d Deps) int {
 		return exitProblem
 	}
 	id, at := posts.ParseRef(args[0])
-	_, err = posts.MarkResolved(roots.PostsDir(), id, at)
+	p, err := posts.MarkResolved(roots.PostsDir(), id, at)
 	var stale *posts.StaleError
 	if errors.As(err, &stale) {
 		fmt.Fprintf(stderr, "!! %s を片付けません: 拾った後に人が返事を出し直しています。新しい返事を読んで直してから %s で片付けてください\n", id, stale.Post.Ref())
-		printInboxItem(stderr, inboxItem(roots.PostsDir(), stale.Post))
+		printInboxItem(stderr, inboxItem(stale.Post))
 		return exitProblem
 	}
 	if err != nil {
@@ -268,6 +268,10 @@ func runResolve(args []string, stdout, stderr io.Writer, d Deps) int {
 		return exitProblem
 	}
 	fmt.Fprintf(stdout, "[dashboard] %s を片付けました\n", args[0])
+	if at == "" && p.Reply != nil {
+		// WhyNot: @<at> を省いた時に黙らない — 片付けたのが自分の読んだ返事かを、AI がここで見比べられるようにする。
+		fmt.Fprintf(stdout, "  片付けた返事: %s「%s」\n", p.Reply.At, commentHead(p.Reply.Comment))
+	}
 	return exitDone
 }
 
@@ -323,4 +327,13 @@ func exitWhenStdinCloses() {
 		io.Copy(io.Discard, os.Stdin)
 		os.Exit(0)
 	}()
+}
+
+// commentHead は自由文の頭の 1 行（長ければ 40 字で切る）。
+func commentHead(c string) string {
+	line, _, _ := strings.Cut(strings.TrimSpace(c), "\n")
+	if r := []rune(line); len(r) > 40 {
+		return string(r[:40]) + "…"
+	}
+	return line
 }

@@ -576,3 +576,87 @@ func TestRunInWorktreeAddsMainGameToWorkspace(t *testing.T) {
 		t.Fatalf("games=%+v", ws.Games)
 	}
 }
+
+// slowLauncher は release を閉じるまで Start を返さない。
+type slowLauncher struct {
+	inProcLauncher
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (l *slowLauncher) Start(dir, base string) (int, <-chan struct{}, func(), error) {
+	close(l.entered)
+	<-l.release
+	return l.inProcLauncher.Start(dir, base)
+}
+
+func TestStopAllDoesNotWaitForStartingChild(t *testing.T) {
+	root := setup(t, true)
+	main, _ := gameRepo(t, root)
+	l := &slowLauncher{inProcLauncher: inProcLauncher{version: 1}, entered: make(chan struct{}), release: make(chan struct{})}
+	p := newGameProxies(l)
+	got := make(chan http.Handler)
+	go func() {
+		h, _, _ := p.get(fgehome.Game{Name: "tide", Dir: main}, true)
+		got <- h
+	}()
+	<-l.entered
+	returned := make(chan struct{})
+	go func() { p.stopAll(); close(returned) }()
+	select {
+	case <-returned:
+	case <-time.After(2 * time.Second):
+		t.Fatal("stopAll が起こしている途中の子を待った")
+	}
+	close(l.release)
+	if h := <-got; h != nil {
+		t.Fatal("止めた後に起こし終えた子へ中継した")
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.stopped != 1 {
+		t.Fatalf("起こし終えた子が止まらない: stopped=%d", l.stopped)
+	}
+}
+
+func TestTapePageIsServedWithoutSandbox(t *testing.T) {
+	root := setup(t, false)
+	main, _ := gameRepo(t, root)
+	write(t, filepath.Join(main, "debug", "tape", "intro", "tape.json"), `{"title": "t"}`)
+	write(t, filepath.Join(main, "debug", "tape", "intro", "index.html"), "TAPE")
+	gs := gameServer(main, "/tide/")
+	var cards []TapeCard
+	json.Unmarshal(do(gs, "GET", "/tide/_api/tapes", nil).Body.Bytes(), &cards)
+	csp := do(gs, "GET", "/tide/"+cards[0].PageURL, nil).Header().Get("Content-Security-Policy")
+	if strings.Contains(csp, "sandbox") || !strings.Contains(csp, "connect-src 'self'") {
+		t.Fatalf("csp=%q", csp)
+	}
+}
+
+func TestNestedTapeHTMLIsSandboxed(t *testing.T) {
+	root := setup(t, false)
+	main, _ := gameRepo(t, root)
+	write(t, filepath.Join(main, "debug", "tape", "intro", "tape.json"), `{"title": "t"}`)
+	write(t, filepath.Join(main, "debug", "tape", "intro", "index.html"), "TAPE")
+	write(t, filepath.Join(main, "debug", "tape", "intro", "x", "index.html"), "X")
+	gs := gameServer(main, "/tide/")
+	var cards []TapeCard
+	json.Unmarshal(do(gs, "GET", "/tide/_api/tapes", nil).Body.Bytes(), &cards)
+	key := strings.Split(cards[0].PageURL, "/")[1]
+	csp := do(gs, "GET", "/tide/tapes/"+key+"/intro/x/index.html", nil).Header().Get("Content-Security-Policy")
+	if !strings.HasPrefix(csp, "sandbox;") {
+		t.Fatalf("csp=%q", csp)
+	}
+}
+
+func TestResolveWithoutAtPrintsResolvedReply(t *testing.T) {
+	root := setup(t, false)
+	main, _ := gameRepo(t, root)
+	id := putPost(t, main)
+	posts.WriteReply(posts.Resolve(main).PostsDir(), id, nil, "暗くして\n2 行目", fixedNow)
+	var out bytes.Buffer
+	Main([]string{"resolve", id}, false, &out, &bytes.Buffer{}, Deps{Getwd: func() (string, error) { return main, nil }})
+	if !strings.Contains(out.String(), "片付けた返事: "+fixedNow.Format(time.RFC3339Nano)+"「暗くして」") {
+		t.Fatalf("out=%s", out.String())
+	}
+}

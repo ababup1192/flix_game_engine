@@ -41,7 +41,7 @@
     post.json              AI が書く（3.2）
     *.png *.mp4 …          post.json が指す素材（CLI が写す）
     reply.json             人の最新の返事（3.3）
-    replies/<at>.json      出し直す前の返事（上書きで消さない。at は 20261123T120000 の形。`:` は Windows のファイル名に使えない）
+    replies/<at>.json      出し直す前の返事（上書きで消さない。at は 20261123T120000.000000000 の形。`:` は Windows のファイル名に使えない。at は RFC3339Nano なので 1 秒に 2 回送ってもぶつからない）
     resolved               片付けた返事の at を 1 行書いたファイル。中身が今の reply.json の at と同じ時だけ片付いた post
 ```
 

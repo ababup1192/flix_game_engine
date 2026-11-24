@@ -254,7 +254,7 @@ func TestWriteReplyKeepsReplyJSONWhenReplacing(t *testing.T) {
 	id := create(t, roots, filepath.Join(wt, "post.json"))
 	WriteReply(roots.PostsDir(), id, nil, "v1", now)
 	WriteReply(roots.PostsDir(), id, nil, "v2", now.Add(time.Minute))
-	old, _ := os.ReadFile(filepath.Join(roots.PostsDir(), id, "replies", "20261124T101500.json"))
+	old, _ := os.ReadFile(filepath.Join(roots.PostsDir(), id, "replies", "20261124T101500.000000000.json"))
 	if !strings.Contains(string(old), "v1") {
 		t.Fatalf("前の返事の中身が replies に写らない: %s", old)
 	}
@@ -268,5 +268,29 @@ func TestCreateMakesMediaNamesSafe(t *testing.T) {
 	id := create(t, roots, filepath.Join(wt, "post.json"))
 	if _, err := os.Stat(filepath.Join(roots.PostsDir(), id, "my-shot-1.png")); err != nil {
 		t.Fatalf("名前が [A-Za-z0-9._-] にそろわない: %v", err)
+	}
+}
+
+func TestRepliesInSameSecondGetDistinctAt(t *testing.T) {
+	_, wt := repoWithWorktree(t)
+	write(t, filepath.Join(wt, "post.json"), `{"title": "t"}`)
+	roots := Resolve(wt)
+	id := create(t, roots, filepath.Join(wt, "post.json"))
+	a, _ := WriteReply(roots.PostsDir(), id, nil, "v1", now.Add(100*time.Millisecond))
+	b, _ := WriteReply(roots.PostsDir(), id, nil, "v2", now.Add(200*time.Millisecond))
+	if a.At == b.At {
+		t.Fatalf("同じ秒の 2 つの返事が同じ at: %s", a.At)
+	}
+}
+
+func TestCreateTreatsNamesCaseInsensitively(t *testing.T) {
+	_, wt := repoWithWorktree(t)
+	write(t, filepath.Join(wt, "a", "Shot.png"), "A")
+	write(t, filepath.Join(wt, "b", "shot.png"), "B")
+	write(t, filepath.Join(wt, "post.json"), `{"sections": [{"id": "A", "options": [{"id": "A1", "media": ["a/Shot.png"]}, {"id": "A2", "media": ["b/shot.png"]}]}]}`)
+	roots := Resolve(wt)
+	id := create(t, roots, filepath.Join(wt, "post.json"))
+	if got, _ := os.ReadFile(filepath.Join(roots.PostsDir(), id, "shot-2.png")); string(got) != "B" {
+		t.Fatalf("大文字小文字だけ違う名前が -2 にならない: %q", got)
 	}
 }

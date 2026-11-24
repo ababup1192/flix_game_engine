@@ -30,7 +30,8 @@ const (
 
 // replyStamp は replies/<at>.json の名前に使う時刻の形。
 // WhyNot: RFC3339 のまま名前にしない — `:` は Windows のファイル名に使えない。
-const replyStamp = "20060102T150405"
+// WhyNot: 秒で切らない — 1 秒の間に 2 回送ると同じ名前になる。
+const replyStamp = "20060102T150405.000000000"
 
 var idRe = regexp.MustCompile(`^[0-9]{8}-[0-9]{6}-[a-z0-9-]+$`)
 
@@ -61,6 +62,8 @@ type Post struct {
 	Created  time.Time `json:"created"`
 	Reply    *Reply    `json:"reply,omitempty"`
 	Resolved bool      `json:"resolved"`
+	// Manifest は読んだ post.json（JSON には出さない）。
+	Manifest *proposal.Manifest `json:"-"`
 }
 
 // Ref は inbox が出し resolve が受ける「<id>@<返事の at>」（返事が無ければ id だけ）。
@@ -130,6 +133,7 @@ func Create(o CreateOptions) (string, error) {
 	}()
 	rename := map[string]string{}
 	copied := map[string]string{}
+	// WhyNot: 名前の重なりを字のまま見ない — macOS と Windows のファイルシステムは大文字小文字を区別せず、A.png が a.png を上書きする。
 	taken := map[string]bool{PostFile: true, ReplyFile: true, RepliesDir: true, ResolvedFile: true}
 	for _, src := range order {
 		from := sources[src]
@@ -138,7 +142,7 @@ func Create(o CreateOptions) (string, error) {
 			continue
 		}
 		name := freeName(safeName(filepath.Base(from)), taken)
-		taken[name] = true
+		taken[strings.ToLower(name)] = true
 		if err := copyFile(from, filepath.Join(dir, name)); err != nil {
 			return "", err
 		}
@@ -212,14 +216,14 @@ func makePostDir(postsDir string, now time.Time, title string) (string, string, 
 
 // freeName は taken とぶつからない名前（ぶつかれば拡張子の前に -2 -3 を付ける）。
 func freeName(name string, taken map[string]bool) string {
-	if !taken[name] {
+	if !taken[strings.ToLower(name)] {
 		return name
 	}
 	ext := filepath.Ext(name)
 	stem := strings.TrimSuffix(name, ext)
 	for i := 2; ; i++ {
 		n := stem + "-" + strconv.Itoa(i) + ext
-		if !taken[n] {
+		if !taken[strings.ToLower(n)] {
 			return n
 		}
 	}
@@ -302,7 +306,7 @@ func Load(postsDir, id string) (Post, *proposal.Manifest, error) {
 	json.Unmarshal(data, &extra)
 	p := Post{
 		ID: id, Dir: dir, Title: m.Title(), Lead: m.Lead(), Author: m.Author(), Origin: extra.Origin,
-		Choose: m.HasChoices(), Images: m.Images(), Created: createdOf(id, dir),
+		Choose: m.HasChoices(), Images: m.Images(), Created: createdOf(id, dir), Manifest: m,
 	}
 	if p.Images == nil {
 		p.Images = []string{}
@@ -383,7 +387,8 @@ func WriteReply(postsDir, id string, picks map[string]string, comment string, no
 	if picks == nil {
 		picks = map[string]string{}
 	}
-	r := Reply{Version: 1, At: now.Format(time.RFC3339), Picks: picks, Comment: comment}
+	// WhyNot: at を秒で切らない — 1 秒の間に出し直すと前の返事と同じ at になり、resolve が新しい返事まで片付ける。
+	r := Reply{Version: 1, At: now.Format(time.RFC3339Nano), Picks: picks, Comment: comment}
 	cur := filepath.Join(dir, ReplyFile)
 	if old, err := os.ReadFile(cur); err == nil {
 		if err := keepOldReply(dir, old, now); err != nil {
@@ -408,7 +413,7 @@ func keepOldReply(dir string, old []byte, now time.Time) error {
 	var r Reply
 	at := now
 	if json.Unmarshal(old, &r) == nil {
-		if t, err := time.Parse(time.RFC3339, r.At); err == nil {
+		if t, err := time.Parse(time.RFC3339Nano, r.At); err == nil {
 			at = t
 		}
 	}
