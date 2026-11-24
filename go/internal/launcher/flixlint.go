@@ -47,10 +47,40 @@ func (l *Launcher) LintFlixlint(vars map[string]string) int {
 		return 2
 	}
 	cmd = l.wire(cmd)
-	if path := prep["PATH"]; path != "" {
-		cmd.Env = withEnv(os.Environ(), map[string]string{"PATH": path})
+	path := prep["PATH"]
+	if path == "" {
+		path = os.Getenv("PATH")
 	}
+	if runtime.GOOS == "windows" {
+		shim, err := l.writeShasumShim()
+		if err != nil {
+			fmt.Fprintf(l.Stderr, "lint-flixlint: %v\n", err)
+			return 2
+		}
+		path = shim + string(os.PathListSeparator) + path
+	}
+	cmd.Env = withEnv(os.Environ(), map[string]string{"PATH": path})
 	return shellrun.Run(cmd, "lint-flixlint")
+}
+
+// shasumShim は shasum（macOS と Linux の perl の道具）を Git Bash にある sha1sum・sha256sum へ渡す sh。
+// WhyNot: flixlint の起動役をそのまま起こす — 起動役の engine.jar の鍵が `shasum` を決め打ちで呼び（flixlint 0.9.1 の bin/flixlint:329）、
+// Git for Windows には shasum が無く、鍵が作れずに止まる（Windows の CI の 4 回目）。flixlint の側で直るまでの手当て。
+const shasumShim = `#!/bin/sh
+if [ "$1" = "-a" ]; then algo=$2; shift 2; else algo=1; fi
+exec "sha${algo}sum" "$@"
+`
+
+// writeShasumShim は build/flixlint/shim/shasum を書き、その置き場を返す。
+func (l *Launcher) writeShasumShim() (string, error) {
+	dir := filepath.Join(l.Root, "build", "flixlint", "shim")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "shasum"), []byte(shasumShim), 0o755); err != nil {
+		return "", err
+	}
+	return dir, nil
 }
 
 // prepareFlixlint は同じ版の fge の flixlint-prepare を流し、KEY='値' の行を読む。

@@ -350,12 +350,28 @@ func create(o options, d Deps) (Result, error) {
 	return Result{Name: o.folder, Dir: dir, Package: pkg, Template: template, Engine: inst.Version}, nil
 }
 
+// stopResident は作りかけのゲームの checkd の常駐を止める（そのゲームの bin/fge-go で）。
+// WhyNot: 止めずに消す — Windows では常駐の JVM が開いている lib/cache の jar を消せず、作りかけが残る（Windows の CI の 4 回目で残った）。
+func stopResident(dir string) {
+	for _, name := range []string{"fge-go", "fge-go.exe"} {
+		exe := filepath.Join(dir, "bin", name)
+		if _, err := os.Stat(exe); err != nil {
+			continue
+		}
+		c := exec.Command(exe, "checkd", "--stop", dir)
+		c.Dir = dir
+		_ = c.Run()
+		return
+	}
+}
+
 // removeHalfMade は作る途中で止まった時に作りかけのフォルダを消す。
 // WhyNot: 前からあった物を消すかを見分けない — create が作る前に dir が無いことを確かめ、あれば止めている。
 func removeHalfMade(dir string, progress io.Writer) {
 	if _, err := os.Lstat(dir); err != nil {
 		return
 	}
+	stopResident(dir)
 	if err := os.RemoveAll(dir); err != nil {
 		if progress != nil {
 			fmt.Fprintf(progress, "[fge new] 作りかけの %s を消せませんでした: %v（打ち直す前に手で消してください）\n", dir, err)
