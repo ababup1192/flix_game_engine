@@ -1,23 +1,22 @@
 package flow
 
-// fge flow の入口: check（JVM なし）・run と vocab（ゲームの make flow / flow-vocab へ渡す）。
+// fge flow の入口: check（JVM なし）・run と vocab（bin/headless-run で E2e.play / E2e.vocab を流す。launcher）。
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/ababup1192/flix_game_engine/go/internal/launcher"
 	"github.com/ababup1192/flix_game_engine/go/internal/suggest"
 )
 
 const usage = `使い方:
   fge flow check [<flow>...]   読むだけ（JVM なし・速い）。書き間違いを行番号と近い名前の案つきで全部言う。
                                引数が無ければ e2e/*.flow を全部。名前の一覧は e2e/vocab.json（--vocab <パス> で別の所）
-  fge flow run <flow>          画面なしで最後まで流す（make flow FLOW=<flow>。失敗は行番号つきで 1）
-  fge flow vocab               e2e/vocab.json を書き直す（make flow-vocab）`
+  fge flow run <flow>          画面なしで最後まで流す（make flow FLOW=<flow> と同じ。失敗は行番号つきで 1）
+  fge flow vocab               e2e/vocab.json を書き直す（make flow-vocab と同じ）`
 
 // Run は fge flow の本体。
 func Run(out, errOut *strings.Builder, root string, args []string) (int, error) {
@@ -32,9 +31,17 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 		if len(args) != 2 {
 			return 2, fmt.Errorf("fge flow run <flow>")
 		}
-		return runMake(root, "flow", "FLOW="+args[1])
+		l, err := launcher.New(root)
+		if err != nil {
+			return 2, err
+		}
+		return l.Flow(args[1], nil), nil
 	case "vocab":
-		return runMake(root, "flow-vocab")
+		l, err := launcher.New(root)
+		if err != nil {
+			return 2, err
+		}
+		return l.Headless("E2e.vocab", nil), nil
 	}
 	return 2, fmt.Errorf("知らない口 %q（check / run / vocab）", args[0])
 }
@@ -88,18 +95,4 @@ func check(out, errOut *strings.Builder, root string, args []string) (int, error
 		}
 	}
 	return code, nil
-}
-
-// runMake はゲームの根で make を流し、出力をそのまま見せる（JVM を使う口）。
-func runMake(root string, target string, vars ...string) (int, error) {
-	cmd := exec.Command("make", append([]string{"-s", target}, vars...)...)
-	cmd.Dir = root
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	if err := cmd.Run(); err != nil {
-		if exit, ok := err.(*exec.ExitError); ok {
-			return exit.ExitCode(), nil
-		}
-		return 2, err
-	}
-	return 0, nil
 }

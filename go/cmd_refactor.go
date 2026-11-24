@@ -141,11 +141,13 @@ func localNamesFlixlint(root string) bool {
 	return strings.TrimSpace(c.Flixlint) != ""
 }
 
-// useEngineJava は、PATH の java が動かない時に engine の devbox の jdk を PATH の先頭へ足す（checkd の javaCmd と同じ順）。
+// useEngineJava は、配った engine の時はいつも、ほかは PATH の java が動かない時に、engine の java の bin を PATH の先頭へ足す
+// （checkd の javaCmd と同じ決め方）。
 // WhyNot: flixlint へ java のパスを渡す口は無く、flixlint は PATH の java で常駐を起こす。macOS の /usr/bin/java は
 // jdk の無い入口なので、engine の外（ゲーム・templates/*）で流すと索引を作れずに止まっていた。
+// WhyNot: 配った engine で PATH の java が動くからと足さずに済ませない — mk/jdk.mk の JDK と違う java で索引と check が動く。
 func useEngineJava(engine string) {
-	if javacmd.PathWorks() {
+	if !javacmd.IsBundle(engine) && javacmd.PathWorks() {
 		return
 	}
 	if path, ok := pathWithEngineJava(os.Getenv("PATH"), engine); ok {
@@ -153,7 +155,7 @@ func useEngineJava(engine string) {
 	}
 }
 
-// engineDirOf は root から engine の置き場（mk/game.mk のある所）を引く。生成したゲームでは local.mk・Makefile の ENGINE を辿る。
+// engineDirOf は root から engine の置き場（mk/game.mk のある所）を引く。生成したゲームでは status.ResolveEngineDir の決まりで辿る。
 // WhyNot: repoRoot のままにしない — 生成したゲームでは bin/fge-go がゲームの bin に写されていて、repoRoot はゲームの根になる。
 func engineDirOf(root string) string {
 	if dir, _ := status.FindEngineDir(root, "mk/game.mk"); dir != "" {
@@ -162,9 +164,13 @@ func engineDirOf(root string) string {
 	return root
 }
 
-// pathWithEngineJava は devbox の java がある時だけ（javacmd.DevboxBin）、その bin を先頭に足した PATH を返す。
+// pathWithEngineJava は engine の java の bin（配った engine は置き場の JDK・javacmd.BundleBin、ほかは devbox の物・
+// javacmd.DevboxBin）がある時だけ、それを先頭に足した PATH を返す。
 func pathWithEngineJava(path, engine string) (string, bool) {
-	bin := javacmd.DevboxBin(engine)
+	bin, ok := javacmd.BundleBin(engine)
+	if !ok {
+		bin = javacmd.DevboxBin(engine)
+	}
 	if bin == "" {
 		return path, false
 	}
@@ -220,29 +226,119 @@ func heavyRunner(stage refactor.Stage, desc, dir string, cmd []string, log strin
 	if containsArg(cmd, "--resident") {
 		return runDirect(dir, cmd, log, nil)
 	}
-	return heavy.Hold(desc, dir, heavy.Options{Long: stage == refactor.Typed, Short: stage != refactor.Typed}, func(run heavy.Runner) int {
-		if log == "" {
-			return run(dir, cmd...)
+	o := heavy.Options{Long: stage == refactor.Typed, Short: stage != refactor.Typed}
+	if log != "" {
+		f, err := os.Create(log)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[refactor] %s を書けない: %v\n", log, err)
+			return 2
 		}
-		quoted := make([]string, len(cmd))
-		for i, c := range cmd {
-			quoted[i] = "'" + strings.ReplaceAll(c, "'", `'\''`) + "'"
-		}
-		return run(dir, "sh", "-c", strings.Join(quoted, " ")+" > '"+strings.ReplaceAll(log, "'", `'\''`)+"' 2>&1")
+		defer f.Close()
+		o.Output = f
+	}
+	return heavy.Hold(desc, dir, o, func(run heavy.Runner) int {
+		return run(dir, cmd...)
 	})
 }
 
-// heavyVerify は書き換えの後の確かめ（make check・make test など）を heavy の枠で流し、出力を全部 log へ書く
+// heavyVerify は書き換えの後の確かめ（bin/fge check・bin/fge test など）を heavy の枠で流し、出力を全部 log へ書く
 // （最初の誤りを拾うため。枠の長短は heavy が名前で決める）。
 func heavyVerify(cmd, dir, log string) int {
 	fmt.Fprintf(os.Stderr, "[refactor] 確かめ: %s（出力は %s）\n", cmd, log)
-	if strings.TrimSpace(cmd) == "make check" {
-		// make check は checkd の server の道で、索引と同じ常駐に頼む（heavy の枠を取らず、heavy が入れる CHECKD=0 も避ける）。
-		return runDirect(dir, []string{"sh", "-c", cmd}, log, []string{"CHECKD=1", "CHECKD_BACKEND=server"})
+	argv, err := splitCommandLine(cmd)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[refactor] 確かめのコマンド %q を読めない: %v\n", cmd, err)
+		return 2
 	}
-	return heavy.Hold(cmd, dir, heavy.Options{}, func(run heavy.Runner) int {
-		return run(dir, "sh", "-c", cmd+" > \""+log+"\" 2>&1")
+	argv = resolveVerifyArgv(argv, isEngineRepo(dir), hasMakeOnPath())
+	if isCheckVerify(argv) {
+		// check は checkd の server の道で、索引と同じ常駐に頼む（heavy の枠を取らず、heavy が入れる CHECKD=0 も避ける）。
+		return runDirect(dir, argv, log, []string{"CHECKD=1", "CHECKD_BACKEND=server"})
+	}
+	f, err := os.Create(log)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[refactor] %s を書けない: %v\n", log, err)
+		return 2
+	}
+	defer f.Close()
+	return heavy.Hold(cmd, dir, heavy.Options{Output: f}, func(run heavy.Runner) int {
+		return run(dir, argv...)
 	})
+}
+
+// resolveVerifyArgv は verify の bin/fge を、いま走っている fge-go そのものに替える。
+// WhyNot: "bin/fge" のまま exec しない — Windows では bin/fge が sh の 1 行で、PowerShell からは起こせない（隣の fge.cmd を探す道も PATHEXT 頼み）。
+// WhyNot: engine の根で make があれば bin/fge check・test を make check・test で流す — engine の根の make check・test は
+// 全パッケージの確かめで、bin/fge check・test はゲームの 1 パッケージの確かめ。配る既定を bin/fge にしても engine の確かめを細らせない。
+func resolveVerifyArgv(argv []string, engineRepo, makeAvailable bool) []string {
+	if len(argv) < 2 || (argv[0] != "bin/fge" && argv[0] != `bin\fge`) {
+		return argv
+	}
+	if engineRepo && makeAvailable && len(argv) == 2 && (argv[1] == "check" || argv[1] == "test") {
+		return []string{"make", argv[1]}
+	}
+	if self, err := os.Executable(); err == nil {
+		return append([]string{self}, argv[1:]...)
+	}
+	return argv
+}
+
+// isCheckVerify は verify が型検査だけの 1 行か（make check・bin/fge check を fge-go に替えた物）。
+func isCheckVerify(argv []string) bool {
+	return len(argv) == 2 && argv[1] == "check" && (argv[0] == "make" || argv[0] == "bin/fge" || argv[0] == `bin\fge` || isSelf(argv[0]))
+}
+
+func isSelf(path string) bool {
+	self, err := os.Executable()
+	return err == nil && path == self
+}
+
+func hasMakeOnPath() bool {
+	_, err := exec.LookPath("make")
+	return err == nil
+}
+
+// splitCommandLine は refactor.json の verify の 1 行を、空白で区切った語の並びにする（'…' と "…" の中の空白は区切らない）。
+// WhyNot: sh -c に渡さない — Windows では sh が Git Bash の中にしか無く、PowerShell から打った refactor が確かめで止まる。
+// そのかわり | && ; > < $ ` のようなシェルの書き方は受けず、要るならスクリプトに出してもらう。
+func splitCommandLine(line string) ([]string, error) {
+	var words []string
+	var cur strings.Builder
+	inWord := false
+	var quote rune
+	for _, r := range line {
+		switch {
+		case quote != 0:
+			if r == quote {
+				quote = 0
+			} else {
+				cur.WriteRune(r)
+			}
+		case r == '\'' || r == '"':
+			quote, inWord = r, true
+		case r == ' ' || r == '\t':
+			if inWord {
+				words = append(words, cur.String())
+				cur.Reset()
+				inWord = false
+			}
+		case strings.ContainsRune("|&;<>$`(){}*?", r):
+			return nil, fmt.Errorf("シェルの書き方（%c）は使えません。1 つのコマンドと引数だけを書くか、スクリプトに出してください", r)
+		default:
+			cur.WriteRune(r)
+			inWord = true
+		}
+	}
+	if quote != 0 {
+		return nil, fmt.Errorf("引用符 %c が閉じていません", quote)
+	}
+	if inWord {
+		words = append(words, cur.String())
+	}
+	if len(words) == 0 {
+		return nil, fmt.Errorf("空です")
+	}
+	return words, nil
 }
 
 func containsArg(cmd []string, a string) bool {

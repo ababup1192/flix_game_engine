@@ -1,0 +1,36 @@
+# 改行の決まり（plans/windows.md 6 節）。Windows の core.autocrlf で sh と Makefile が CRLF になり、Git Bash の sh が
+# `$'\r': command not found` で止まるのを防ぐ。
+* text=auto eol=lf
+
+*.sh             text eol=lf
+Makefile         text eol=lf
+*.mk             text eol=lf
+bin/fge          text eol=lf
+bin/headless-run text eol=lf
+bin/flix         text eol=lf
+
+# cmd.exe と PowerShell が読む物は CRLF。
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.ico   binary
+*.ttf   binary
+*.otf   binary
+*.wav   binary
+*.ogg   binary
+*.mp3   binary
+*.glb   binary
+*.jar   binary
+*.fpkg  binary
+*.zip   binary
+*.exe   binary
+*.wasm  binary
+
+# 公式の作例の見本。CRLF のまま読めることを確かめるテストの入力なので、改行を変えない。
+testdata/yarn/official/ShortcutOptions.yarn -text

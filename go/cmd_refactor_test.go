@@ -30,6 +30,31 @@ func TestPathWithEngineJavaKeepsPathWithoutDevbox(t *testing.T) {
 	}
 }
 
+// 配った engine では、置き場の JDK の bin が PATH の先頭に来る。
+func TestPathWithEngineJavaPrependsHomeJDKForBundledEngine(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("FGE_HOME", home)
+	t.Setenv("JAVA", "")
+	engine := t.TempDir()
+	bin := filepath.Join(home, "jdk", "zulu-25.0.3", "bin")
+	for path, body := range map[string]string{
+		filepath.Join(engine, "Makefile"):     "VERSION := 0.108.0\n",
+		filepath.Join(engine, "mk", "jdk.mk"): "FGE_JDK_VENDOR := zulu\nFGE_JDK_VERSION := 25.0.3\n",
+		filepath.Join(bin, "java"):            "#!/bin/sh\nexit 0\n",
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, ok := pathWithEngineJava("/usr/bin", engine)
+	if !ok || got != bin+string(os.PathListSeparator)+"/usr/bin" {
+		t.Errorf("got %q %v", got, ok)
+	}
+}
+
 // refactor.local.json が flixlint を書いた時だけ、既定の flixlint の探し方を止める。
 func TestLocalNamesFlixlintOnlyWhenTheFieldIsSet(t *testing.T) {
 	for body, want := range map[string]bool{

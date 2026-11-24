@@ -285,7 +285,9 @@ func engineRepo(o Options) (string, error) {
 	if st, err := readState(o.Game); err == nil && st.HadLocalMk {
 		candidates = append(candidates, engineOfLocalMk(st.OrigLocalMk))
 	}
-	candidates = append(candidates, status.ReadEngineDir(o.Game))
+	if dir, self := status.ResolveEngineDir(o.Game); !self {
+		candidates = append(candidates, dir)
+	}
 	for _, c := range candidates {
 		if c == "" {
 			continue

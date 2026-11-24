@@ -6,25 +6,30 @@
 #   make bot / make balance  … 自動の通しプレイ / つり合いのシミュレーション（下に詳しく）
 #   make video               … 1 周を縮めた紹介の動画 = debug/video/rune.mp4（手順は e2e/video.flow）
 #
-# エンジンや java の場所はマシンごとに違うので、git に入れない local.mk に書く
-# （make new-game / Studio が生成する。別のマシンで clone したら 1 度だけ書き直す）:
-#   ENGINE := /abs/path/to/flix_game_engine   （Studio 同梱なら …/resources/engine）
-#   JAVA   := /abs/path/to/java.exe           （Windows のみ。Studio 同梱 JRE の java.exe）
-# 既定の ../.. は「テンプレを engine リポの中でそのまま動かす」ための値。
+# engine の場所は次の順で決まる（Go の道具の ResolveEngineDir と同じ決まり）:
+#   1. 環境変数 ENGINE  2. local.mk の ENGINE（git に入れない。engine を clone して直す人の上書き）
+#   3. engine リポの中のテンプレートなら ../..  4. ${FGE_HOME:-~/.flix_ge}/engines/<flix.toml の flix_game_engine の版>
+#   JAVA   := /abs/path/to/java.exe           （Windows のみ。Studio 同梱 JRE の java.exe・local.mk に書く）
+# WhyNot: local.mk に engine の固定のパスを書かせない — local.mk は git の外なので、版を上げた後も古い engine を読み続け、
+# worktree とゲームを clone した別の機械には無い。git に入っている flix.toml の版から決めれば、どこでも同じ engine になる。
 -include local.mk
-ENGINE ?= ../..
+FGE_VERSION := $(shell sed -n 's/^"github:ababup1192\/flix_game_engine"[^}]*version *= *"\([0-9.]*\)".*/\1/p' flix.toml)
+ENGINE ?= $(if $(and $(wildcard ../../mk/game.mk),$(wildcard ../../templates)),../..,$(or $(FGE_HOME),$(HOME)/.flix_ge)/engines/$(FGE_VERSION))
 
-# 描き出せる場面の名前（source of truth は Shots.names。ここは使い方に出す写し）。
-# 場面を足したら Shots.names と一緒にここも足す。
-SHOTS := title village quest join world cave dungeon1 dungeon2 dungeon3 battle magic item equip boss clear ending
+# 描き出せる場面の名前（render の使い方に出す写し）と、パレットの作り置き・ゲーム固有の作業は project.json の
+# shots・prebuild・tasks に書く（bin/fge が読むので Windows でも同じ。make <作業> は bin/fge task <作業> の別名）。
 
 # WhyNot: 色票（assets/rpg.palette.json）は FC の色をそのまま並べた原本で、生成物ではない。
-# PALETTE を決めると game.mk が Palette.write で作り直しに行くので、ここでは決めない。
+# project.json の prebuild に書くと bin/fge が Palette.write で作り直しに行くので、書かない。
 
 # ENGINE の場所が違うと include ごと落ち、make は「そんなファイルは無い」としか言わない。
 # 先に自前で見て、直し方の 1 行を出してから止める（この検査が無いと make status も塞がる）。
 ifeq ($(shell test -f "$(ENGINE)/mk/game.mk" && echo ok),)
+ifeq ($(ENGINE),$(or $(FGE_HOME),$(HOME)/.flix_ge)/engines/$(FGE_VERSION))
+$(error $(if $(FGE_VERSION),engine $(FGE_VERSION) が手元にありません ($(ENGINE)) — fge engines install $(FGE_VERSION) を流してください,flix.toml から flix_game_engine の版を読めません — flix.toml の依存の行を直すか、local.mk に「ENGINE := /abs/path/to/flix_game_engine」を書いてください))
+else
 $(error ENGINE が見当たりません ($(ENGINE)/mk/game.mk が無い) — local.mk に「ENGINE := /abs/path/to/flix_game_engine」を書くか、make <対象> ENGINE=... で指定してください。Studio 同梱なら …/resources/engine)
+endif
 endif
 
 # 共通の口（run / test / check / 描き出し / status …）はエンジンが持つ。
@@ -43,19 +48,16 @@ precommit-local:
 	fi
 
 # 自動の通しプレイ（タイトルからエンディングを見てタイトルへ戻るまで。方針は src/sim/Bot.flix）→ debug/bot.md。詰んだら終了コード 1。
-#   make bot                  5 本（種 0..4）
+#   make bot                  5 本（種 0..4。既定は project.json の tasks.bot）
 #   make bot BOT_RUNS=1 BOT_SEED=7
-BOT_RUNS ?= 5
-BOT_SEED ?= 0
 .PHONY: bot balance
 bot:
-	BOT_RUNS=$(BOT_RUNS) BOT_SEED=$(BOT_SEED) $(HEADLESS_RUN) BotRun.play
+	@$(FGE_RUN) task bot
 
 # つり合いのシミュレーション（戦いだけを BattleActs.resolveRound で回す。src/sim/BalanceSim.flix）→ debug/balance.md。
 # テストではなく知らせる口（終了コードはいつも 0）。BALANCE_SEEDS で 1 組あたりの種の数を下げられる（既定 500）。
-BALANCE_SEEDS ?= 500
 balance:
-	BALANCE_SEEDS=$(BALANCE_SEEDS) $(HEADLESS_RUN) BalanceSim.play
+	@$(FGE_RUN) task balance
 
 # 動画の口の共通部: 連番のフォルダを消す（FGE_VIDEO_PAINT で一部だけ塗る時は残す）→ 入口を流す → フォルダごとに mp4 へ束ねる。
 #   $(call video,入口,debug/video/ の下のフォルダ…,fps,ffmpeg の出力の旗,出力名の後ろに足す字)

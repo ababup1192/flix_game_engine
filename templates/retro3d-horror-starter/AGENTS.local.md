@@ -31,12 +31,12 @@ sync で AGENTS.md に入るので、重複して書かない。書いたら eng
 | 暗さ・霧・月明かり・非常口の灯り・PS1 風の強さ・字幕の見た目 | `assets/night_school.look.json` |
 | 歩く速さ・走る速さ・1 歩の長さ・マウスの効き | `assets/walk.kind.json` |
 | 音の大きさと距離での聞こえ方（足音が主役） | `assets/sound.kind.json` |
-| 音そのもの（足音・戸・時計・空気・風・拾う・紙） | `src/render/SfxRender.flix` を直して `make sfx`（WAV を書き直す） |
+| 音そのもの（足音・戸・時計・空気・風・拾う・紙） | `src/render/SfxRender.flix` を直して `bin/fge task sfx`（macOS と Linux は `make sfx` も）（WAV を書き直す） |
 | 人物の置き場所・向き・話しかけ方 | `assets/characters.kind.json`（台詞は `assets/talk/night.yarn` を直して `bin/fge yarn build`） |
 | 拾える物・鍵のかかった部屋 | `assets/items.kind.json` |
 | キーの割り当て | `assets/player.keys.json` |
-| 校舎の形・部屋・小物の置き場所 | Blender などで glb と `assets/school/layout.json` を書き出し直して `make bundles` |
+| 校舎の形・部屋・小物の置き場所 | Blender などで glb と `assets/school/layout.json` を書き出し直して `bin/fge task bundles`（macOS と Linux は `make bundles` も） |
 
 - Doc は保存すると走っているゲームにその場で映る。校舎の glb と layout.json だけは起動し直す。
-- ゲームが読むのは束（`assets/school/bundle/*.glb`）。元の glb か `layout.json` を替えたら `make bundles`（`make bundles-check` で束が古くないかを見る）。
+- ゲームが読むのは束（`assets/school/bundle/*.glb`）。元の glb か `layout.json` を替えたら `bin/fge task bundles`（`bin/fge task bundles-check`（macOS と Linux は `make bundles-check` も） で束が古くないかを見る）。
 - 描き出し（`make render` / `render-all`）は CPU で描く。

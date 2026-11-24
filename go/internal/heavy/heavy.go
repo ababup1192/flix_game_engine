@@ -183,6 +183,9 @@ type Options struct {
 	delegateNote string
 	Now          func() time.Time
 	Err          io.Writer
+	// Output は子の標準出力と標準エラーの行き先（nil なら fge の物をそのまま渡す）。
+	// WhyNot: 呼ぶ側に sh -c '… > log 2>&1' で包ませない — Windows では sh が Git Bash の中にしか無い。
+	Output io.Writer
 }
 
 func defaults(o Options) Options {
@@ -749,6 +752,9 @@ func runChild(cmd []string, dir, token string, started func(int), o Options, sig
 	c := exec.Command(cmd[0], cmd[1:]...)
 	c.Dir = dir
 	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if o.Output != nil {
+		c.Stdout, c.Stderr = o.Output, o.Output
+	}
 	env := os.Environ()
 	if _, set := os.LookupEnv("CHECKD"); !set {
 		// WhyNot: 常駐の checkd に相乗りさせない。重い処理は 1 本ずつ流すので

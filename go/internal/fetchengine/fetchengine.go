@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ababup1192/flix_game_engine/go/internal/fgehome"
 	"github.com/ababup1192/flix_game_engine/go/internal/stageengine"
 )
 
@@ -72,10 +73,11 @@ type checkResult struct {
 }
 
 type installResult struct {
-	Installed bool     `json:"installed"`
-	Version   string   `json:"version"`
-	Dir       string   `json:"dir"`
-	CarriedTo []string `json:"carriedTo,omitempty"`
+	Installed    bool     `json:"installed"`
+	AlreadyThere bool     `json:"alreadyThere,omitempty"`
+	Version      string   `json:"version"`
+	Dir          string   `json:"dir"`
+	CarriedTo    []string `json:"carriedTo,omitempty"`
 }
 
 type opts struct {
@@ -87,6 +89,9 @@ type opts struct {
 	into      string
 	carryFrom string
 	asJSON    bool
+
+	// standalone は Studio を通さずに入れる形（plans/onboarding.md 2.8 の 1）。
+	standalone bool
 
 	progress io.Writer
 
@@ -118,6 +123,7 @@ func parse(args []string, asJSON bool, out, errOut *strings.Builder) (*opts, int
 	fs.StringVar(&o.version, "version", "", "入れるバージョン (例 0.32.0)")
 	fs.StringVar(&o.into, "into", "", "バージョンごとの engine を並べる場所")
 	fs.StringVar(&o.carryFrom, "carry-from", "", "持ち越す物を写してくる、今使っている engine の場所")
+	fs.BoolVar(&o.standalone, "standalone", false, "Studio を通さずに入れる (--into の既定は ~/.flix_ge/engines)")
 	if err := fs.Parse(args); err != nil {
 		return nil, exitBadUsage, nil
 	}
@@ -134,8 +140,16 @@ func parse(args []string, asJSON bool, out, errOut *strings.Builder) (*opts, int
 	if o.check {
 		return o, exitDone, nil
 	}
+	if o.standalone && o.into == "" {
+		o.into = fgehome.EnginesDir()
+	}
 	if o.version == "" || o.into == "" {
 		fmt.Fprintln(errOut, "使い方: fge fetch-engine --version 0.32.0 --into <engines の場所> [--carry-from <今の engine>]")
+		fmt.Fprintln(errOut, "        fge fetch-engine --standalone --version 0.32.0 [--into <engines の場所>]")
+		return nil, exitBadUsage, nil
+	}
+	if o.standalone && o.carryFrom != "" {
+		fmt.Fprintln(errOut, "!! --standalone は持ち越しをしないので --carry-from と一緒には使えません")
 		return nil, exitBadUsage, nil
 	}
 	if !IsVersionName(o.version) {
@@ -227,11 +241,18 @@ func runInstall(out, errOut *strings.Builder, o *opts) (int, error) {
 	if o.asJSON {
 		return emit(out, res)
 	}
+	if res.AlreadyThere {
+		fmt.Fprintf(out, "[fetch-engine] engine %s は既に置いてあります: %s\n", res.Version, res.Dir)
+		return exitDone, nil
+	}
 	fmt.Fprintf(out, "[fetch-engine] engine %s を置きました: %s\n", res.Version, res.Dir)
 	return exitDone, nil
 }
 
 func install(o *opts) (installResult, error) {
+	if o.standalone {
+		return installStandalone(o)
+	}
 	found, err := lookUp(o, "v"+o.version)
 	if err != nil {
 		return installResult{}, err
@@ -248,25 +269,10 @@ func install(o *opts) (installResult, error) {
 			Dir: filepath.Join(o.into, found.Version)}, nil
 	}
 
-	fmt.Fprintf(o.progress, "[fetch-engine] engine %s を落としています (100MB 前後・数分かかります)\n", found.Version)
-	sums, err := o.get(found.SumsURL)
+	body, err := fetchVerifiedZip(o, found)
 	if err != nil {
-		return installResult{}, fmt.Errorf("%s を落とせません: %v", SumsName, err)
+		return installResult{}, err
 	}
-	want := SumFor(string(sums), ZipName(found.Version))
-	if want == "" {
-		return installResult{}, fmt.Errorf("%s に %s の値がありません", SumsName, ZipName(found.Version))
-	}
-
-	body, err := o.get(found.ZipURL)
-	if err != nil {
-		return installResult{}, fmt.Errorf("zip を落とせません: %v", err)
-	}
-	got := hex.EncodeToString(sha256Of(body))
-	if got != want {
-		return installResult{}, fmt.Errorf("zip の中身が公開されている値と違います (期待 %s / 実際 %s)", want, got)
-	}
-	fmt.Fprintf(o.progress, "[fetch-engine] zip を照合しました (%s)\n", want[:12])
 
 	dest := filepath.Join(o.into, found.Version)
 	sweepHalfDone(o.into)
@@ -310,6 +316,157 @@ func install(o *opts) (installResult, error) {
 	return installResult{Installed: true, Version: found.Version, Dir: dest, CarriedTo: carried}, nil
 }
 
+// fetchVerifiedZip は zip を落とし、SHA256SUMS.txt の値と照合する。
+func fetchVerifiedZip(o *opts, found Found) ([]byte, error) {
+	fmt.Fprintf(o.progress, "[fetch-engine] engine %s を落としています (100MB 前後・数分かかります)\n", found.Version)
+	sums, err := o.get(found.SumsURL)
+	if err != nil {
+		return nil, fmt.Errorf("%s を落とせません: %v", SumsName, err)
+	}
+	want := SumFor(string(sums), ZipName(found.Version))
+	if want == "" {
+		return nil, fmt.Errorf("%s に %s の値がありません", SumsName, ZipName(found.Version))
+	}
+	body, err := o.get(found.ZipURL)
+	if err != nil {
+		return nil, fmt.Errorf("zip を落とせません: %v", err)
+	}
+	got := hex.EncodeToString(sha256Of(body))
+	if got != want {
+		return nil, fmt.Errorf("zip の中身が公開されている値と違います (期待 %s / 実際 %s)", want, got)
+	}
+	fmt.Fprintf(o.progress, "[fetch-engine] zip を照合しました (%s)\n", want[:12])
+	return body, nil
+}
+
+// installStandalone は Studio を通さずに <into>/<版>/ へ入れる。持ち越しは無く、zip の中身をそのまま使う。
+// 既に .complete があれば網に出ずに終わる。書く間は <into> の親の .lock で排他を取る。
+func installStandalone(o *opts) (installResult, error) {
+	dest := filepath.Join(o.into, o.version)
+	done := installResult{Installed: true, AlreadyThere: true, Version: o.version, Dir: dest}
+	if fgehome.IsComplete(dest) {
+		return done, nil
+	}
+	unlock, err := fgehome.Lock(filepath.Join(filepath.Dir(filepath.Clean(o.into)), ".lock"), o.progress)
+	if err != nil {
+		return installResult{}, fmt.Errorf("排他を取れません: %v", err)
+	}
+	defer unlock()
+	if fgehome.IsComplete(dest) {
+		return done, nil
+	}
+
+	found, err := lookUp(o, "v"+o.version)
+	if err != nil {
+		return installResult{}, err
+	}
+	body, err := fetchVerifiedZip(o, found)
+	if err != nil {
+		return installResult{}, err
+	}
+
+	if err := os.MkdirAll(o.into, 0o755); err != nil {
+		return installResult{}, fmt.Errorf("%s を作れません: %v", o.into, err)
+	}
+	sweepHalfDone(o.into)
+	staging := dest + ".partial-" + strconv.Itoa(os.Getpid())
+	if err := fgehome.RemoveReadOnly(staging); err != nil {
+		return installResult{}, fmt.Errorf("途中の場所を空けられません: %v", err)
+	}
+	defer fgehome.RemoveReadOnly(staging)
+	if err := os.MkdirAll(staging, 0o755); err != nil {
+		return installResult{}, fmt.Errorf("途中の場所を作れません: %v", err)
+	}
+	if err := unzipInto(body, staging); err != nil {
+		return installResult{}, err
+	}
+	rules, err := stageengine.LoadRules(staging)
+	if err != nil {
+		return installResult{}, fmt.Errorf("落とした engine の組み立ての規約を読めません: %v", err)
+	}
+	if err := pickFgeGo(rules, staging, runtime.GOOS, runtime.GOARCH); err != nil {
+		return installResult{}, err
+	}
+	applyExec(rules, staging)
+	if err := checkContents(o, rules, staging); err != nil {
+		return installResult{}, err
+	}
+	if err := os.WriteFile(filepath.Join(staging, fgehome.CompleteMarker), []byte(found.Version+"\n"), 0o644); err != nil {
+		return installResult{}, fmt.Errorf("%s を置けません: %v", fgehome.CompleteMarker, err)
+	}
+
+	// WhyNot: 半端に残った <版>/ を先に消さない — 消してから名前を付ける間に落ちると、
+	// その版が手元から消える。脇へどけてから入れ替え、どけた物は後で消す。
+	if _, err := os.Lstat(dest); err == nil {
+		aside := staging + "-old"
+		if err := os.Rename(dest, aside); err != nil {
+			return installResult{}, fmt.Errorf("半端な %s をどけられません: %v", dest, err)
+		}
+		defer fgehome.RemoveReadOnly(aside)
+	}
+	if err := os.Rename(staging, dest); err != nil {
+		return installResult{}, fmt.Errorf("%s へ名前を付けられません: %v", dest, err)
+	}
+	// WhyNot: 書けるまま置かない — AI がその版の engine を直すと、同じ版を使う全部のゲームが変わる。
+	if err := fgehome.MakeReadOnly(dest); err != nil {
+		return installResult{}, fmt.Errorf("%s を読み取り専用にできません: %v", dest, err)
+	}
+	return installResult{Installed: true, Version: found.Version, Dir: dest}, nil
+}
+
+// Standalone は InstallStandalone の材料。空の欄は fge fetch-engine --standalone と同じ既定になる。
+type Standalone struct {
+	Version  string
+	Into     string // 既定 ~/.flix_ge/engines
+	APIBase  string // 既定 https://api.github.com
+	Repo     string // 既定 ababup1192/flix_game_engine
+	Progress io.Writer
+	Get      func(url string) ([]byte, error)
+	RunExe   func(path string, args ...string) error
+}
+
+// InstallStandalone は Studio を通さずに engine を入れる（fge engines install が呼ぶ）。
+func InstallStandalone(s Standalone) (dir string, alreadyThere bool, err error) {
+	if !IsVersionName(s.Version) {
+		return "", false, fmt.Errorf("版 %q はフォルダ名として置けません", s.Version)
+	}
+	o := &opts{
+		repo: s.Repo, apiBase: s.APIBase, version: s.Version, into: s.Into,
+		standalone: true, progress: s.Progress, get: s.Get, runExe: s.RunExe,
+	}
+	if o.repo == "" {
+		o.repo = defaultRepo
+	}
+	if o.apiBase == "" {
+		o.apiBase = "https://api.github.com"
+	}
+	if o.into == "" {
+		o.into = fgehome.EnginesDir()
+	}
+	if o.progress == nil {
+		o.progress = io.Discard
+	}
+	if o.get == nil {
+		o.get = httpGet
+	}
+	if o.runExe == nil {
+		o.runExe = runExe
+	}
+	res, err := installStandalone(o)
+	return res.Dir, res.AlreadyThere, err
+}
+
+// LookUpLatest は Release の最新を引く。
+func LookUpLatest(apiBase, repo string, get func(url string) ([]byte, error)) (Found, error) {
+	if repo == "" {
+		repo = defaultRepo
+	}
+	if get == nil {
+		get = httpGetQuick
+	}
+	return lookUp(&opts{apiBase: apiBase, repo: repo, get: get}, "")
+}
+
 // checkRoom は入れ先が空いているかを先に見る。落とし始めてから断るより安い。
 func checkRoom(o *opts, dest string) error {
 	if o.carryFrom != "" && filepath.Clean(dest) == filepath.Clean(o.carryFrom) {
@@ -332,6 +489,9 @@ func placed(o *opts, dest string) bool {
 	return checkContents(o, rules, dest) == nil
 }
 
+// SweepHalfDone は dir の下の、触られなくなって 1 時間経った ".partial-" の残骸を消す。
+func SweepHalfDone(dir string) { sweepHalfDone(dir) }
+
 // sweepHalfDone は、電源が落ちるなどして残った途中の場所を掃く。
 // WhyNot: 掃除を install の defer だけに任せない — kill と電源断では defer が走らず、
 // 1 回 100MB 級の残骸が置き場に溜まり続ける。
@@ -351,7 +511,7 @@ func sweepHalfDone(into string) {
 		if err != nil || time.Since(info.ModTime()) < time.Hour {
 			continue
 		}
-		_ = os.RemoveAll(filepath.Join(into, e.Name()))
+		_ = fgehome.RemoveReadOnly(filepath.Join(into, e.Name()))
 	}
 }
 
@@ -480,7 +640,8 @@ func applyExec(rules *stageengine.Rules, staging string) {
 // checkContents は組み上がった中身が本当に走る形かを見る。存在の照合だけでは足りない。
 func checkContents(o *opts, rules *stageengine.Rules, staging string) error {
 	windows := runtime.GOOS == "windows"
-	if rel := destForSrc(rules, "@flix-wrapper", windows); rel != "" {
+	// WhyNot: standalone で /jre/ を見ない — 単体で入れた engine の bin/flix はリポと同じラッパで、同梱 JRE を持たない。
+	if rel := destForSrc(rules, "@flix-wrapper", windows); rel != "" && !o.standalone {
 		if body, err := os.ReadFile(filepath.Join(staging, filepath.FromSlash(rel))); err == nil {
 			// WhyNot: 中身まで見るのは、engine のリポの devbox ラッパで上書きしていると
 			// nix も devbox も無い Studio でゲームのビルドが一切通らなくなるため。

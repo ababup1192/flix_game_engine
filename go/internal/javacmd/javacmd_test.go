@@ -29,6 +29,15 @@ func withBrokenPathJava(t *testing.T) {
 	})
 }
 
+func mustResolve(t *testing.T, engine string) string {
+	t.Helper()
+	got, err := Resolve(engine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return got
+}
+
 func withJavaWorks(t *testing.T, f func(string) bool) {
 	old := javaWorks
 	javaWorks = f
@@ -53,7 +62,7 @@ func mainAndWorktree(t *testing.T, mainDevbox, worktreeDevbox string) (string, s
 func TestResolvePrefersJavaEnv(t *testing.T) {
 	t.Setenv("JAVA", "/opt/jdk/bin/java")
 	withJavaWorks(t, func(string) bool { return true })
-	if got := Resolve(t.TempDir()); got != "/opt/jdk/bin/java" {
+	if got := mustResolve(t, t.TempDir()); got != "/opt/jdk/bin/java" {
 		t.Errorf("got %q", got)
 	}
 }
@@ -64,7 +73,7 @@ func TestResolveUsesWorkingPathJava(t *testing.T) {
 	withJavaWorks(t, func(string) bool { return true })
 	root := t.TempDir()
 	write(t, devboxJava(root), "")
-	if got := Resolve(root); got != "java" {
+	if got := mustResolve(t, root); got != "java" {
 		t.Errorf("got %q", got)
 	}
 }
@@ -75,7 +84,7 @@ func TestResolveSkipsBrokenJavaEnv(t *testing.T) {
 	t.Setenv("JAVA", "/nowhere/bin/java")
 	root := t.TempDir()
 	write(t, devboxJava(root), "")
-	if got := Resolve(root); got != devboxJava(root) {
+	if got := mustResolve(t, root); got != devboxJava(root) {
 		t.Errorf("got %q", got)
 	}
 }
@@ -85,7 +94,7 @@ func TestResolveFallsBackToEngineDevbox(t *testing.T) {
 	withBrokenPathJava(t)
 	root := t.TempDir()
 	write(t, devboxJava(root), "")
-	if got := Resolve(root); got != devboxJava(root) {
+	if got := mustResolve(t, root); got != devboxJava(root) {
 		t.Errorf("got %q", got)
 	}
 }
@@ -94,17 +103,17 @@ func TestResolveFallsBackToEngineDevbox(t *testing.T) {
 func TestResolveBorrowsMainCheckoutDevboxFromWorktree(t *testing.T) {
 	withBrokenPathJava(t)
 	main, wt := mainAndWorktree(t, `{"packages":["jdk@25"]}`, `{"packages":["jdk@25"]}`)
-	if got := Resolve(wt); got != devboxJava(main) {
+	if got := mustResolve(t, wt); got != devboxJava(main) {
 		t.Errorf("got %q", got)
 	}
 }
 
-// worktree の devbox.json が main の checkout と違えば（jdk の版を替えた枝）、main の jdk を借りない。
+// worktree の devbox.json が main の checkout と違えば（jdk の版を替えた枝）、main の jdk を借りず、見つからない誤り。
 func TestResolveDoesNotBorrowWhenDevboxJSONDiffers(t *testing.T) {
 	withBrokenPathJava(t)
 	_, wt := mainAndWorktree(t, `{"packages":["jdk@25"]}`, `{"packages":["jdk@26"]}`)
-	if got := Resolve(wt); got != "java" {
-		t.Errorf("got %q", got)
+	if got, err := Resolve(wt); err == nil {
+		t.Errorf("誤りになりません: %q", got)
 	}
 }
 

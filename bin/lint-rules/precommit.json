@@ -169,6 +169,14 @@
               "Makefile",
               "project.json"
             ]
+          },
+          {
+            "prefixes": [
+              "go/"
+            ],
+            "suffixes": [
+              ".go"
+            ]
           }
         ]
       }
@@ -409,7 +417,10 @@
             "Makefile",
             "gates.json",
             "precommit.json",
-            "hooks.json"
+            "hooks.json",
+            "jdk.mk",
+            "devbox.json",
+            "devbox.lock"
           ]
         },
         {
@@ -441,12 +452,12 @@
     "target": "precommit-local"
   },
   "failOpen": {
-    "makeMissing": "[pre-commit] make が見つからないので配線検査 (check-docs-sync) は飛ばします",
+    "makeMissing": "[pre-commit] make が見つからないので Makefile の {target} を流せません。止めます（make を入れるか、ゲームなら project.json の precommit へ移すと make なしで流れます）",
     "targetMissing": "[pre-commit] make check-docs-sync が無いので配線検査は飛ばします",
     "targetMissingExitCode": 2
   },
   "referenceDrift": {
-    "note": "描き出した絵がリファレンスと違うのに、そのままコミットするのを止める（go/internal/precommit/refdrift.go）。affects はゲーム（テンプレート）の根からの相対で当てる、絵を変えうるファイル。engineSources は engine の作業場で全部のテンプレートの絵を変えうるファイル。見るのは前のコミットより後に描き出した gallery だけで、reference/SHA256SUMS.txt を同じコミットに入れていれば（make reference-update = 意図した差のマーカー）通す。",
+    "note": "描き出した絵がリファレンスと違うのに、そのままコミットするのを止める（go/internal/precommit/refdrift.go）。affects はゲーム（テンプレート）の根からの相対で当てる、絵を変えうるファイル。engineSources は engine の作業場で全部のテンプレートの絵を変えうるファイル。見るのは前のコミットより後に描き出した gallery だけで、reference/SHA256SUMS.txt を同じコミットに入れていれば（bin/fge reference update = 意図した差のマーカー）通す。",
     "affects": {
       "anyOf": [{"suffixes": [".flix", ".json", ".png", ".wav", ".ttf", ".otf"]}],
       "exceptPrefixes": ["gallery/", "reference/", "debug/", "docs/", "agent-eval/", "build/", "lib/", "notes/"]

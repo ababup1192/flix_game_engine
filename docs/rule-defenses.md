@@ -61,7 +61,7 @@
 | テスト方針（何をテストするか・期待値は Doc から・橋渡しは最大 3 本・1 テスト 1 アサート・本体にロジックを書かない） | 文書 | quality-assurance・AGENTS.md の判断の向き。数のリテラルの forbid 案は 66 件が正しい使い方で見送り | r3 断った・r4 `expected = 12` でコミット（文書だけの決まり。止めない） |
 | 初学者の足場・早見表に足すのと対でまとめる | 文書 | ― | ― |
 | 絵の入口は /pixel-art・長い参考はスキルにしない | 構造 | 長い参考 5 本を engine の docs/art-ref/ へ移し、スキル一覧に載らなくした（入口の表から節を引く） | ― |
-| sync-agents の出力（AGENTS.md の形）を変えたら Studio の `server/src/NewGame.flix` も同じ変更にする | script | `make release` の前段 `studio-parity` が Studio の `check-agents-parity` をこの engine で流す（clone が無ければ `STUDIO=none` で飛ばしたと残る） | 0.35.36 で Studio v0.32.13 の CI が落ちた（v0.32.14 で直した） |
+| sync-agents の出力（AGENTS.md の形）を変えたら Studio の `server/src/NewGame.flix` も同じ変更にする | script | `make studio-parity` が Studio の `check-agents-parity` をこの engine で流す（clone が無ければ `STUDIO=none` で飛ばしたと残る）。Studio は凍結中なので `make release` の門から外してある（plans/dashboard.md の 7 節） | 0.35.36 で Studio v0.32.13 の CI が落ちた（v0.32.14 で直した） |
 
 ## 型と構成の案（types 担当）
 

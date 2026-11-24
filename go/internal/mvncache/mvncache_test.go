@@ -152,3 +152,43 @@ func TestOffIsQuietWhenThereIsNoCacheYet(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestSeedCopiesOnlyWhatTheSharedDirLacks(t *testing.T) {
+	pkg, shared := setup(t)
+	from := filepath.Join(pkg, "lib", "cache")
+	write(t, filepath.Join(from, "https/a/new.jar"), "new")
+	write(t, filepath.Join(from, "https/a/kept.jar"), "engine")
+	write(t, filepath.Join(shared, "https/a/kept.jar"), "shared")
+	n, err := Seed(from)
+	if err != nil || n != 1 {
+		t.Fatalf("n=%d err=%v", n, err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(shared, "https/a/kept.jar")); string(b) != "shared" {
+		t.Errorf("置き場に在った物を書き換えた: %s", b)
+	}
+}
+
+func TestSeedLeavesTheSourceInPlace(t *testing.T) {
+	pkg, _ := setup(t)
+	from := filepath.Join(pkg, "lib", "cache")
+	write(t, filepath.Join(from, "https/a/new.jar"), "new")
+	if _, err := Seed(from); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(from, "https/a/new.jar")); err != nil {
+		t.Errorf("元が消えた: %v", err)
+	}
+}
+
+func TestSeedSkipsLocksAndPartials(t *testing.T) {
+	pkg, shared := setup(t)
+	from := filepath.Join(pkg, "lib", "cache")
+	write(t, filepath.Join(from, "https/a/x.jar.lock"), "")
+	write(t, filepath.Join(from, "https/a/.x.jar.part"), "")
+	if n, _ := Seed(from); n != 0 {
+		t.Errorf("n=%d", n)
+	}
+	if _, err := os.Stat(filepath.Join(shared, "https/a")); !os.IsNotExist(err) {
+		t.Errorf("lock か part を写した: %v", err)
+	}
+}

@@ -1,6 +1,7 @@
 # エージェント共通指針（エンジン公式・全ゲーム共有）
 
 エンジンの agents-pack から配られる共通部。ゲーム固有の方針は同じフォルダの `AGENTS.local.md` に書く。
+配られた skills・rules・AGENTS.md の共通部は版上げで上書きされる。ゲーム用に変えたい時は AGENTS.local.md に書くか、別の名前のスキルを足す。
 lint・フック・make の口で止まる決まりはここに書かない（止まった所で hint が代わりの道具を示す）。
 
 ## .flix の名前を探す（grep の前に・最初の 1 手から）
@@ -17,7 +18,8 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 ## やりたいこと → 道具（早見表。まずここを引く）
 
 1 行 1 件・80 字まで。行には名前だけ置き、詳しい所は `--help`・engine の docs・モジュール冒頭の doc へ。
-表に無ければ `make module Q=<やりたいことの語>`、型と引数は `make api Q=<名前>`。ゲーム固有は `AGENTS.local.md`。
+表に無ければ `bin/fge module <やりたいことの語>`、型と引数は `bin/fge api <名前>`。ゲーム固有は `AGENTS.local.md`。
+表の `make <x>` は `bin/fge <x>` でも打てる物が多い（status・check・test・run・debug・render・flow・task・api・module・src・lint-flixlint・engine-upgrade・reference check|update。一覧は `bin/fge`）。Windows は `bin/fge` で打ち、bin/fge に無い make の行は macOS か Linux で。
 
 | やりたいこと | 使う道具 |
 |---|---|
@@ -105,20 +107,22 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | どう遊んでも崩れない決まりを確かめる（性質テスト） | `PropertyTest.forAll`（画面なしで `App.trace` と同じ道） |
 | テストで実機と同じ 1 コマ（時計・固定刻み・押した瞬間の持ち越し・系・音）を進める | `App.traceFrame`（`App.freshStepState()` から持ち回す）か列ごと `App.trace`（`App.Internal.*` は App の中身で、ゲームの src と test に書くと lint-forbid の app-internal が止める） |
 | 画面なしで描く物を作る・Item を描く命令にする所を自分で呼びたい（`SoftRaster` や `Render` の中の関数） | 親のモジュールの関数（`SoftRaster.renderToImage`・`Render.toDrawables`・`Render.softSceneOf` など。`make api Q=Render.`）。`<モジュール>.Internal.*`（`Render.Internal`・`SoftRaster.Internal`）は中身で、ゲームの src と test に書くと lint-forbid の app-internal が止める。足りなければ engine に足すよう相談する |
-| e2e・動画の手順を書いて画面なしで流す（失敗は行番号つき） | `e2e/<名前>.flow` + `App.withFlow`・`bin/fge flow check`・`make flow` |
+| e2e・動画の手順を書いて画面なしで流す（失敗は行番号つき） | `e2e/<名前>.flow` + `App.withFlow`・`bin/fge flow check`・`bin/fge flow` |
 | `run` で入れる部品の flow を単独でも流す（親の `fps`・`ready` が抜けて別の速さ・待ち方になる） | 部品にも親と同じ設定の行を書く。食い違いは `bin/fge flow check` が「run で入れる親と設定が違う」で止める。離した時に受ける押し方（点のタップ）も `ready off` は要らない（返事は離したフレームの後に確かめる） |
-| 途中でセーブして読み直しても後の遊びが変わらないか確かめる（書く時に値を落とす・自分で書いたキーを読めない、を欄の一覧なしで止める） | flow の表（`App.withFlow`）に `saveRoundTrip = Some({ save, load, unsaved })`（実機と同じ書く関数・「つづきから」と同じ読み方・load の 2 つ目は起動したての World）+ flow の落ち着いた所に `saveload` の 1 行 → `make flow` が読み直さない流れと問いの値・最後のセーブを比べる（ウィンドウを開いたまま読み直さない・engine の `docs/flow.md` の「セーブの読み直しの門」） |
-| 好きな場面から起動・テスト・遊んだ通りに再生 | `App.withStarts`（`START=`・`startOrBug`）・記録は `make flow` で再生 |
-| ギャラリーの 1 枚の World から実機で開く・実機の記録が再生と同じか | `App.withShots`（`<ゲーム>/src/Shots.flix`）+ `SHOT=<場面> make run`・engine で `make determinism`（台本 `FLIX_GE_INPUT_SCRIPT`） |
+| 途中でセーブして読み直しても後の遊びが変わらないか確かめる（書く時に値を落とす・自分で書いたキーを読めない、を欄の一覧なしで止める） | flow の表（`App.withFlow`）に `saveRoundTrip = Some({ save, load, unsaved })`（実機と同じ書く関数・「つづきから」と同じ読み方・load の 2 つ目は起動したての World）+ flow の落ち着いた所に `saveload` の 1 行 → `bin/fge flow` が読み直さない流れと問いの値・最後のセーブを比べる（ウィンドウを開いたまま読み直さない・engine の `docs/flow.md` の「セーブの読み直しの門」） |
+| 好きな場面から起動・テスト・遊んだ通りに再生 | `App.withStarts`（`START=`・`startOrBug`）・記録は `bin/fge flow` で再生 |
+| ギャラリーの 1 枚の World から実機で開く・実機の記録が再生と同じか | `App.withShots`（`<ゲーム>/src/Shots.flix`）+ `bin/fge run SHOT=<場面>`・engine で `make determinism`（入力のシナリオ `FLIX_GE_INPUT_SCRIPT`） |
 | 記録の再生が起動した時刻などの外の値で `expect world=` に止まる | `App.withWorldSummaryMask`（その欄だけ決まった値へ） |
 | 実機の窓の絵が同じ起動で毎回同じかを、頭の数コマを撮って確かめる（2 コマ目以降も） | `FLIX_GE_FIXED_DT=1/60`（dt を固定）+ `FLIX_GE_HIDDEN=1` + `FLIX_GE_FRAME_SHOT=<フォルダ>` + `START=<場面>` で `make run RUN_SECONDS=30` を 2 回（撮る口は 64 枚で止まるだけで窓は閉じない）し、`frame-N.png` を比べる |
-| PC の描き手を選ぶ（既定は WebGPU。GL の絵と比べたい・WebGPU で絵が崩れたので GL で確かめたい） | 何も付けなければ WebGPU・`FLIX_GE_BACKEND=gl make run` で GL（WebGPU を使えない機械は `[backend] WebGPU を使えない` を 1 行言って GL で起動する）。ブラウザも既定は WebGPU で、頁の URL に `?fge=webgl2` で WebGL2（WebGPU を使えないブラウザは `[backend] WebGPU を使えない` を console に 1 行出して WebGL2 で起動する） |
+| PC の描き手を選ぶ（既定は WebGPU。GL の絵と比べたい・WebGPU で絵が崩れたので GL で確かめたい） | 何も付けなければ WebGPU・`bin/fge run FLIX_GE_BACKEND=gl` で GL（WebGPU を使えない機械は `[backend] WebGPU を使えない` を 1 行言って GL で起動する）。ブラウザも既定は WebGPU で、頁の URL に `?fge=webgl2` で WebGL2（WebGPU を使えないブラウザは `[backend] WebGPU を使えない` を console に 1 行出して WebGL2 で起動する） |
 | 描き手（render_gl）を直した前後で、実機の GL の呼び出しの並び（関数・引数・戻り値・送ったバッファの CRC）が同じかを比べる | `FLIX_GE_GL_LOG=<ファイル>` で 2 回起動して diff（GL の backend だけ・engine の `docs/backend-parity.md` の「GL の呼び出しの並びを控えて比べる」） |
 | ブラウザ版に入れるフォントアトラスを前もって生成する・台詞や Doc の字がフォントに無い（ブラウザで字が出ない）のを書き出しの前に止める | `bin/fge font-bake <ゲーム> <出力>`（無い字は出所を出して止まる。字を手で数えない・engine の `docs/web-export.md` の「フォントアトラスを前もって作る」） |
 | 起動の読み込みが数秒かかる・起動画面でカーソルが応答なしのくるくるになる | `LoadProgress.mapWithProgress` / `parMapWithProgress` で区切る・並列の仕事で絵を解くなら頭で `LoadProgress.imageDecoder()` を受けて渡す（`Texture3d.decodeUsing`）・テストの入口は `HeadlessLoad.handle` か `LoadProgress.runNoop`・main は `App.loadAndLaunch`（engine の `docs/startup.md` の「読み込みを区切る」） |
 | 開発の道具（リモートデバッグ・flow の記録・ゲームの名簿・ヒッチの見張り・Doc の保存検知・F8 の注釈）を持たずに走らせる（ブラウザ版の入口など） | `App.launchWithDevTools(App.DevTools.none(), app)`（`App.debugFromEnv()` は呼ばず `withDebug` は値で・`App.launch` / `loadAndLaunch` はデスクトップの道具 `App.DevTools.desktop(env)` のまま）・`App.onRenderRequest` / `onShotRequest` は `Game.app` でなく `Main` で繋ぐ（lint `dev-request-outside-main`） |
 | ゲームをブラウザ（PC の Chrome など）で遊べる形に書き出す | ゲームに `web/WebMain.flix`（rpg-starter の物が写経元）を置き `bin/fge export-web <ゲーム>`（出力 `build/web`・型検査だけは `--check`・engine の作業場では先に `make sync-engine-full-web`・engine の `docs/web-export.md` の「書き出す」） |
-| engine を作り直した後、版の番号が同じままゲームの engine の束（lib の fpkg と packages.lock の sha）を新しくする | `make engine-upgrade`（中身のハッシュが違えば入れ替える。lib の fpkg や packages.lock を手で替えない・束の置き場は engine の `docs/web-export.md` の「engine の作業場で書き出す時」） |
+| engine の新しい版に上げる（「engine を最新に上げて」） | `bin/fge engine-upgrade TO=<版>`（配った engine の時。engine と JDK を取ってから上げる。版は `bin/fge status` の engine の行に出る） |
+| `bin/fge status` に「engine <版> が出ています」「engine <版> が手元にありません」 | 前者は新しい版がある → `bin/fge engine-upgrade TO=<版>`・後者は flix.toml の版の engine が無い → `fge engines install <版>` |
+| engine を作り直した後、版の番号が同じままゲームの engine の束（lib の fpkg と packages.lock の sha）を新しくする | `bin/fge engine-upgrade`（中身のハッシュが違えば入れ替える。lib の fpkg や packages.lock を手で替えない・束の置き場は engine の `docs/web-export.md` の「engine の作業場で書き出す時」） |
 | Studio の「engine を更新」が `exec format error`・「この機械で走りません」で止まる | 0.102.1 より前の Release の zip は検査の中身（fge-go）を CI の linux 向けの 1 つしか持たない。0.102.1 以降を選ぶ（zip が 5 種を持ち、`fge fetch-engine` が機械に合う物を選ぶ・engine の `docs/migrations/0.102.1.md`）。fge-go を手で別の機械向けに差し替えない |
 | ブラウザ版を URL から決まった場面・台本の行で開く（`?talk=Lair&line=46` のようなリンク・テープの「ここから遊ぶ」） | `web/WebMain.flix` で `App.launchWithDevTools(WebLayer.devTools(), app)`（クエリの最初の鍵が Start の名前。頁の旗は `?fge=fps` のように `fge` の 1 つの鍵に並べるので Start と順を気にせず一緒に付けられる（`?talk=Lair&fge=fps`）・engine の `docs/web-export.md` の「URL から決まった場面・台本の行で開く」） |
 | Scene3d のゲームをブラウザで動かす（3D が映らない・マウスの視点・glb の絵） | `web/WebMain.flix` の入口を `with WebLayer.withProject3d(".")` にする（`withProject` は 3D を描かず、`export-web` と起動の時に 1 回言う。wasm は 3D のぶん太る）。`LoadProgress.imageDecoder`・`App.withMouseCapture` はそのまま効く。頁の `?fge=glcheck` は GL の誤りを console へ・`?fge=loadtime` は絵の解読の時間を `console.time` へ出す（Mip の時間はデスクトップの F3 と hitch の 3D の区間 `mip`） |
@@ -184,27 +188,28 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | Doc・アトラス・シェーダーを World に平らに持たず外に出す | App の w を `Resources.With[res, w]`・`Resources.system` / `view` / `read`・読み直しは `Resources.reloadRow` |
 | Doc が壊れたら既定値で続けて知らせる | `DocJson.loadOr` + `Log.fellBackThen` / `warnThen` |
 | 知らせ（`Log.warnThen` など）を出す経路をテストで通す・知らせの文面を確かめる | `let (value, lines) = LogCapture.capture(() -> 式)`（stderr に出るとテストの実行器が FAIL にする。テストで System.setErr を自分で差し替えない） |
-| 直した後に絵を確かめる | `make render SHOT=<場面>` → 仕上げ `make reference-check` |
-| 描き出した絵がリファレンスと違った（画素の差が出た）時のコミット | 狙っていない差なら入れずに止めて報告。意図した差は `make reference-update` で直した `reference/SHA256SUMS.txt` を同じコミットに入れる（入れずに出すと pre-commit が止める） |
+| 直した後に絵を確かめる | `bin/fge render <場面>` → 仕上げ `bin/fge reference check` |
+| 描き出した絵がリファレンスと違った（画素の差が出た）時のコミット | 狙っていない差なら入れずに止めて報告。意図した差は `bin/fge reference update` で直した `reference/SHA256SUMS.txt` を同じコミットに入れる（入れずに出すと pre-commit が止める） |
 | 描き出しの字の被り・z の外れを止める | `make render-lint`（許す物は `text-audit.local.json`） |
-| 依存の向き（規則 → View → 入力の逆を呼ばない・ファイルの輪）・View に World を渡さない・テストの分岐を止める | `make lint-flixlint`（決まりは <ゲーム>/lint/rules.flix の冒頭。View の入口が World から In を組み、部品は In を受ける） |
+| 依存の向き（規則 → View → 入力の逆を呼ばない・ファイルの輪）・View に World を渡さない・テストの分岐を止める | `bin/fge lint-flixlint`（決まりは <ゲーム>/lint/rules.flix の冒頭。View の入口が World から In を組み、部品は In を受ける） |
 | 直す前と後の絵・音・動画を比べる | `make compare BASE=<ref>` |
 | ブラウザ（WebGPU・WebGL2）で描いた canvas の画素を PNG に撮る | `bin/fge web-capture <URL> <出力.png> [--wait 秒] [--size WxH] [--dir <書き出したフォルダ>] [--dev <語,…>]`（頁が `window.fgeCaptureReady` と `fgeCapture()` を出す・`export-web` の頁は `--dev capture:<n>`（WebGL2 は `--dev capture:<n>,webgl2`・URL に旗を付けない・自前の CDP は頁より先に `window.fgeDev`）で dt を固定した n コマ目を撮らせる・engine の `docs/web-capture.md`） |
-| 遊んでいて重くなる（動いた瞬間のカクつき）の原因を探す・直したか確かめる | `make debug`（音なしは `FLIX_GE_MUTE=1`）で遊ぶと重いコマだけ `debug/perf/hitches/<起動時刻>/f<コマ>/hitch.md` に出る（`make status` に件数）→ 読んで直す → 同じ手を `POST /perf?path=<flow>`（隠しウィンドウは `FLIX_GE_HIDDEN=1`）で流し、作ったシェーダーの数で比べる（engine の `docs/performance.md` の 11 節） |
+| 遊んでいて重くなる（動いた瞬間のカクつき）の原因を探す・直したか確かめる | `bin/fge debug`（音なしは `FLIX_GE_MUTE=1`）で遊ぶと重いコマだけ `debug/perf/hitches/<起動時刻>/f<コマ>/hitch.md` に出る（`bin/fge status` に件数）→ 読んで直す → 同じ手を `POST /perf?path=<flow>`（隠しウィンドウは `FLIX_GE_HIDDEN=1`）で流し、作ったシェーダーの数で比べる（engine の `docs/performance.md` の 11 節） |
 | 1 コマに 1 万個を超える物を回すループが、数に比べて重い（物が多くて重い時の書き方） | 1 個ぶんを `@DontInline` の def に出す・ループから直に呼ぶ関数を別の関数の呼び出しで終えない（末尾呼び出しは Thunk を返す）・多い列は `MutList.push`。見つけ方は `make lint-huge-methods` と `bin/fge osr-skipped`（engine の `docs/performance.md` の 13 節） |
 | 動画が最後まで撮れたか（途中で止まった動画を見つける） | `bin/fge videos status`（Studio のギャラリーの動画） |
 | 動画のコマ・自前のギャラリーで同じ絵を塗り直さない | `RenderCache.writeFramePng`（`SoftRaster.render*` は自動。docs/render-cache.md） |
 | 人が見る動画・会話のプレビューを GPU で塗る | 動画 `VideoOut.writeFrames`（Pass を使う画面は `writeFramesWithPasses`）・1 枚 `GpuShot.shotOf`（`FGE_GPU`） |
 | 描き出しに ShaderDoc の面と追加フォントを一緒に渡す（字の縁は本ごとに） | `HeadlessRender.renderPngFull(cfg, scene, name)`（`Scene` の `fonts`・本ごとの字の縁は `fontAntialias`） |
-| 遊ぶ起動を速くする（src を変えていない 2 回目からコンパイルしない） | `make run` / `make debug`（engine の headless-run `--window main` が描き出しと同じ jar から流す）・裏で作るだけは `--build-only` |
-| 起動して確かめるだけ（数十秒で自分で止め、ウィンドウを残さない） | `make run RUN_SECONDS=40`（プロセスの組ごと止め、時間で止めた時は成功で返る） |
+| 遊ぶ起動を速くする（src を変えていない 2 回目からコンパイルしない） | `bin/fge run` / `bin/fge debug`（engine の headless-run `--window main` が描き出しと同じ jar から流す）・裏で作るだけは `--build-only` |
+| 起動して確かめるだけ（数十秒で自分で止め、ウィンドウを残さない） | `make run RUN_SECONDS=40`（macOS か Linux で。プロセスの組ごと止め、時間で止めた時は成功で返る） |
 | 起こしたまま残ったプロセス（ヘッドレスの Chrome・http.server・ゲームのウィンドウ・消した worktree の常駐）を探して止める | `make strays`（このリポから起こして親のいない物だけ。人の普段の Chrome やアプリは拾わない）→ `make strays KILL=1`（`AGE` 分より古い物だけ。ps や pkill で名前から止めない） |
 | たまった git worktree を片付ける（ディスクが減った） | `make worktree-gc`（main に取り込み済み・未コミット 0・未追跡 0・使っているプロセス無しの物を一覧に）→ `APPLY=1` で git worktree remove（枝は残す）。`make status` に本数と大きさ |
 | Makefile のレシピや shell スクリプトから python3 を呼ぶ（macOS で `tool 'python3' not found` になる） | レシピは `$(PYTHON3)`（mk/common.mk）・shell スクリプトは `$(ENGINE)/bin/py3`（DEVELOPER_DIR が nix の apple-sdk を指す時だけ直して python3 を起こす。素の python3 は lint-forbid が止める） |
 | 描き出しを続けて流すたびの JVM の立ち上げを省く（render・reference-check・会話の撮り） | `HEADLESS_RESIDENT=1`（窓なしのゲームを常駐・入口は `<名前>Job(req): Int32` と `jobs()`）・`bin/fge resident status` / `verify` |
 | F8 のチケット・閉じる | `debug/annotations/` の README → `world.json`・`bin/fge tickets close` |
 | 直しが別の不具合を生んだ率 | `bin/fge tickets stats`（前の直しの候補は `suspects`） |
-| ゲームの定義を引く | `make src Q=<名前>` |
+| ゲームの定義を引く | `bin/fge src <名前>` |
+| ゲーム固有の作業（bot・素材づくりなど project.json の tasks）を流す | `bin/fge task <名前> [K=V…]`（名前なしで一覧） |
 | 文書が消えた名前・無いファイルを指していないか | `make lint-doc-refs`（古い記録は `doc-refs.local.json` の skip） |
 | 関数・型の本文を読む・名前の一部で宣言を探す・ファイルの宣言の一覧（丸ごと読まない。理由は `/flix-docs`） | `bin/fge refactor show` / `search` / `outline` |
 | 直す前に周り（本文・呼び手・呼ぶ先・型）を 1 回で見る | `bin/fge refactor context <名前>`・呼ぶ先の木は `trace` |
@@ -246,7 +251,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 ## 判断の向き（機械では止められない物）
 
 - **エンジンにある物（メニュー・スクロール・文字折り・当たり判定・地形・音のバス・長押し…）を自前で書かない**。ゲームに
-  自前の物があってもエンジンの物を選ぶ。早見表で道具が決まればそのまま使い、表に無い時だけ `make module` / `make api` で引く。
+  自前の物があってもエンジンの物を選ぶ。早見表で道具が決まればそのまま使い、表に無い時だけ `bin/fge module` / `bin/fge api` で引く。
   使い方はモジュール冒頭の doc と `templates/` が正。「一番高い API で書けたか」を疑う。
 - **言葉は業界の語**（カタカナか英語）で、説明は平易に。造語・比喩・このリポだけの意味を作らない。
   名前は業界の語 → 他のエンジン（迷ったら Bevy）の順に探す。動詞は `load`/`fetch` 外から取る（失敗しうる）・
@@ -262,8 +267,8 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
   絵を委ねる親は prompt に「N 周まで」と文で書かず、drawing.md の「絵の周回」を指す（周を任せる時は snap の `--max N`）。
 - 作業に入る前に当たるスキル（一覧は末尾）を読む。サブエージェントには rules とスキルの自動読みが効かないので、
   委ねる親は読ませる rules とスキルを prompt で名指しする。
-- フックの無いエージェントは手で: 最初に `make status`・`.flix` を直すたび `make check`・clone ごとに `make hooks`。
+- フックの無いエージェントは手で: 最初に `bin/fge status`・`.flix` を直すたび `bin/fge check`・clone ごとに `make hooks`（Windows は `git config core.hooksPath bin/githooks`）。
 - flix は make か `bin/fge` から流す（`java -jar flix.jar` を直に叩くと Maven の取り物の共有の置き場を通らず、
-  Maven Central が 429 を返す）。`make status` に mvn の行が出たら `make mvn-cache-share`。
+  Maven Central が 429 を返す）。`bin/fge status` に mvn の行が出たら `make mvn-cache-share`。
   スキルの実体は `.claude/skills/<名前>/SKILL.md`（Codex は `.agents/skills/`・`.codex/hooks.json` は project trust の後に効く）。
 - 「engine の `docs/…`」はゲームの `Makefile` の `ENGINE` が指す所にある。

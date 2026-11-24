@@ -1,6 +1,6 @@
 ---
 name: style-interview
-description: "絵を描き始める前に人へ最大 7 問で画風の好みを聞き取り、AGENTS.local.md の「この画面の画風」へ書き取る。新しいゲームを作り始めるとき、画風が決まっていないとき、make status に促しが出たときに使う。"
+description: "絵を描き始める前に人へ最大 7 問で画風の好みを聞き取り、AGENTS.local.md の「この画面の画風」へ書き取る。新しいゲームを作り始めるとき、画風が決まっていないとき、bin/fge status に促しが出たときに使う。"
 sync: 2026-08-11
 ---
 

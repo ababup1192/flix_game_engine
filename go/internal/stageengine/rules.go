@@ -80,11 +80,14 @@ const (
 	srcFlixWrapper = "@flix-wrapper"
 	srcFgeGo       = "@fge-go"
 	srcMavenSeed   = "@maven-seed"
+	srcNatives     = "@natives"
+	srcMvnCache    = "@mvn-cache"
+	srcFlixlint    = "@flixlint"
 )
 
 func knownSource(src string) bool {
 	switch {
-	case src == srcFlixJar, src == srcFlixWrapper, src == srcFgeGo:
+	case src == srcFlixJar, src == srcFlixWrapper, src == srcFgeGo, src == srcNatives, src == srcMvnCache, src == srcFlixlint:
 		return true
 	case strings.HasPrefix(src, srcMavenSeed+"/"):
 		return true

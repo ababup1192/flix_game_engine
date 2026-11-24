@@ -3,53 +3,52 @@ package checkd
 // クライアント側 — 常駐を探し、話し、駄目なら素の CLI に落ちる。
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
+	"runtime"
 	"strings"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/hooks"
 	"github.com/ababup1192/flix_game_engine/go/internal/mvncache"
+	"github.com/ababup1192/flix_game_engine/go/internal/shellrun"
+	"github.com/ababup1192/flix_game_engine/go/internal/status"
 )
 
-// enginePat は local.mk の「ENGINE := /path/to/engine」の行。
-var enginePat = regexp.MustCompile(`^\s*ENGINE\s*[?:]*=\s*(.+?)\s*$`)
-
-// flixBin はこのパッケージが使う flix コンパイラの呼び口を返す。
-//
-// WhyNot: Windows の「JAVA + bin/flix.jar」経路をまだ知らない (常駐の flix.jar の場所引きも
-// 素の CLI への逃げ道も落ちる)。そのためテンプレの make check は Windows で
-// CHECKD := 0 に固定している。教えるなら local.mk の JAVA と
-// $(ENGINE)/bin/flix.jar から組み立てる。
+// flixBin はこのパッケージが使う flix コンパイラの呼び口（bin/flix）を返す。Windows では Git Bash で起こす（shellrun）。
 func flixBin(root, pkg string) string {
 	// ゲーム側の bin/flix (symlink 含む) を優先。
-	if cand := filepath.Join(pkg, "bin", "flix"); isExec(cand) {
+	if cand := filepath.Join(pkg, "bin", "flix"); shellrun.IsRunnable(cand) {
 		return cand
 	}
 	// 配った先 (ゲームの bin/) に flix は居ないので、engine の場所を
-	// 環境変数 ENGINE → local.mk から引く (game Makefile と同じ解決順)。
-	engine := os.Getenv("ENGINE")
-	if engine == "" {
-		if f, err := os.Open(filepath.Join(pkg, "local.mk")); err == nil {
-			sc := bufio.NewScanner(f)
-			for sc.Scan() {
-				if m := enginePat.FindStringSubmatch(sc.Text()); m != nil {
-					engine = m[1]
-				}
-			}
-			f.Close()
-		}
-	}
+	// game Makefile の ENGINE の既定と同じ決まり (status.ResolveEngineDir) で引く。
+	engine, _ := status.ResolveEngineDir(pkg)
 	if engine != "" {
-		if cand := filepath.Join(engine, "bin", "flix"); isExec(cand) {
+		if cand := filepath.Join(engine, "bin", "flix"); shellrun.IsRunnable(cand) {
 			return cand
 		}
 	}
 	return filepath.Join(root, "bin", "flix")
+}
+
+// flixJarOf は bin/flix が使う flix.jar のパス（FLIX_PRINT_JAR=1）。Windows では MSYS の /c/... を C:/... に直して返す。
+//
+// WhyNot: 標準入力を開いたまま渡さない — FLIX_PRINT_JAR を知らない古い bin/flix は素の java -jar flix.jar（REPL）になり、
+// 開いた標準入力を待って止まる（bin/headless-run の shared_flix_jar と同じ理由）。
+func flixJarOf(bin string) (string, error) {
+	cmd, err := shellrun.Command(bin)
+	if err != nil {
+		return "", err
+	}
+	cmd.Env = append(os.Environ(), "FLIX_PRINT_JAR=1")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return shellrun.NativePath(runtime.GOOS, strings.TrimSpace(string(out))), nil
 }
 
 func debugLog(errOut *strings.Builder, msg string) {
@@ -76,7 +75,11 @@ func clientRun(r *hooks.Rules, out, errOut *strings.Builder, root, pkg, verb str
 
 // runFallback は素の flix CLI をそのまま走らせる (出力も終了コードもそのまま)。
 func runFallback(root, pkg, verb string) int {
-	cmd := exec.Command(flixBin(root, pkg), verb)
+	cmd, err := shellrun.Command(flixBin(root, pkg), verb)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[checkd] 素の %s を起動できません: %v\n", verb, err)
+		return 2
+	}
 	cmd.Dir = pkg
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	cmd.Env = os.Environ()

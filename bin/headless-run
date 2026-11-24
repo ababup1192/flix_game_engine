@@ -34,7 +34,7 @@
 # 2 本の make が同時に来ても作るのは 1 本だけ（build/headless/.lock で順番に。鍵はフォルダ + 作り手の pid のファイルで、
 # pid を書いた一時フォルダを鍵の名前へ rename して 1 回で取る。作り手が落ちていた・pid の無いまま 60 秒を過ぎた鍵は
 # 次の人が外す。待つ間は 30 秒ごとに鍵の pid と年齢を出し、15 分待っても空かなければ止める）。
-# 作り直しは別名で書いてから mv するので、走っている JVM の jar は消えない。
+# 作り直しは別名で書いてから mv するので、走っている JVM の jar は消えない（Git Bash では指紋の入った名前で置き、headless.jar はその名前を書いたファイル）。
 # 作れなかった時は build/headless/.failed に印（エラーの最後の 15 行）を、.failed.manifest に作れなかった時の中身の指紋を残し、
 # 指紋が変わるまで作り直さない
 # （作れない状態のまま毎回コンパイルを 2 回払わないため）。jar を作り直させたい時は rm -rf build/headless。
@@ -92,6 +92,11 @@ fge_go="$engine/bin/fge-go"
 # 作り方の版。入口の拾い方（list_entries）か入口の束の書き方（build_dispatcher）を変えたら 1 上げる
 # （段 1 の鍵に混ぜるので、前の作り方の jar を分け合わない）。
 headless_revision=1
+# Git Bash（MSYS）か。lib の繋ぎ方と jar の置き方だけを分ける（plans/windows.md の 12 節）。
+msys=0
+case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) msys=1 ;;
+esac
 
 if [ ! -d src ] || [ ! -f flix.toml ]; then
     echo "headless-run: ゲームの根（src/ と flix.toml のある所）で呼んでください" >&2
@@ -199,7 +204,7 @@ manifest_now() {
 # jar が古いか: 無い・入口の一覧が変わった・中身の指紋が jar を作った時と違う
 # （指紋を作れない時は src / flix.toml / lib のどれかが jar より新しい）。
 is_stale() {
-    [ -f "$jar" ] || return 0
+    [ -f "$(jar_target)" ] || return 0
     [ -f "$proj/src/$main.flix" ] || return 0
     [ "$(build_dispatcher)" = "$(cat "$proj/src/$main.flix")" ] || return 0
     now=$(manifest_now)
@@ -227,6 +232,55 @@ failed_before() {
     [ -z "$(newer_than "$out/.failed")" ]
 }
 
+# 今の名前（$jar）が指す jar。Git Bash では $jar が指紋の入った jar の名前を書いた小さなファイルのことがある（place_named_jar）。
+# 頭が PK（zip）なら $jar が jar そのもの（macOS と Linux・Go の jar fetch が写した物）。
+jar_target() {
+    if [ "$msys" = 1 ] && [ -f "$jar" ] && [ "$(head -c 2 "$jar")" != PK ]; then
+        printf '%s/%s' "$out" "$(head -n 1 "$jar" | tr -d '\r')"
+    else
+        printf '%s' "$jar"
+    fi
+}
+
+# Git Bash の時だけ: 作った jar を指紋の入った名前（headless-<指紋>.jar）で置き、$jar にはその名前だけを書く。
+# 古い名前の jar は消す（開いている物は Windows が消させないので、次の回に回る）。
+# WhyNot: 同じ名前へ mv しない — Windows は開いている jar（遊んでいるウィンドウ・常駐の JVM）を差し替えさせず、描き出しが止まる。
+# WhyNot: macOS と Linux では使わない — headless.jar を名前で直に読む所（mk の 2 か所・凍結した Studio）が残っている。
+place_named_jar() {
+    fp=$(printf '%s' "${started_manifest:-}" | cut -c1-16)
+    [ -n "$fp" ] || fp="t$(date +%s)"
+    named="headless-$fp.jar"
+    [ ! -e "$out/$named" ] || named="headless-$fp-$$.jar"
+    mv "$1" "$out/$named.tmp.$$"
+    touch -r "$out/.started" "$out/$named.tmp.$$"
+    mv "$out/$named.tmp.$$" "$out/$named"
+    printf '%s\n' "$named" > "$jar.tmp.$$"
+    if ! mv -f "$jar.tmp.$$" "$jar" 2>/dev/null; then
+        rm -f "$jar.tmp.$$"
+        echo "[headless-run] ${jar} を書き換えられない（開いている jar を閉じてから流し直す）" >&2
+        return 1
+    fi
+    for old in "$out"/headless-*.jar; do
+        [ "$old" = "$out/$named" ] || rm -f "$old" 2>/dev/null || true
+    done
+}
+
+# Git Bash の時だけ: $proj/lib をゲームの lib へのジャンクション（mklink /J・管理者の権限なしで張れる）にする。張れたら 0。
+# WhyNot: ln -s を使わない — MSYS の既定の ln -s は丸写しを作り、flix が依存を落とすのが写しの方になって、指紋が毎回ずれる。
+# WhyNot: 前の物を rm -rf で消さない — MSYS はジャンクションを symlink と見せるが、そう見えない時に rm -rf は先のゲームの lib まで消す。
+link_lib_junction() {
+    link="$proj/lib"
+    if [ -L "$link" ]; then
+        [ "$(cd "$link" 2>/dev/null && pwd -P)" = "$(cd lib && pwd -P)" ] && return 0
+        rm -f "$link" 2>/dev/null || return 1
+    elif [ -e "$link" ]; then
+        rm -rf "$link"
+    fi
+    mkdir -p "$proj"
+    cmd //c mklink /J "$(cygpath -w "$link")" "$(cygpath -w "$PWD/lib")" >/dev/null 2>&1 || return 1
+    [ -L "$link" ]
+}
+
 # 作れたら 0。jar.manifest には、作り終えた後に jar を作った写し（$proj: 写した src・flix.toml・lib）から取った指紋を書く
 # — 作っている間に flix が lib へ依存を落とす（版を上げた直後の 1 回目）ので、作り始めの指紋だと次の回にまた作り直す。
 # 写しの src は作り始めに写した物なので、作っている最中にゲームの src を保存すれば次の回に「jar と違う」と気づける。
@@ -246,7 +300,11 @@ build_jar() {
     # lib はゲームの根の物を繋ぐ（無ければ作る）— flix が作っている間に落とす依存をゲームの lib に置き、
     # 写しから取る指紋とゲームの根から取る指紋をそろえるため。
     mkdir -p lib
-    ln -sfn "$PWD/lib" "$proj/lib"
+    if [ "$msys" = 1 ]; then
+        link_lib_junction || { lib_link_failed=1; return 1; }
+    else
+        ln -sfn "$PWD/lib" "$proj/lib"
+    fi
     build_dispatcher > "$proj/src/$main.flix"
     echo "[headless-run] jar を作る（src か lib が変わった）" >&2
     # 作った時の出力は build.log にも残す（作れなかった理由を、次からの回の知らせでも見せるため）。
@@ -256,9 +314,13 @@ build_jar() {
     fi
     built=$(ls "$proj"/artifact/*.jar 2>/dev/null | head -1)
     [ -n "$built" ] || return 1
-    mv "$built" "$jar.tmp.$$"
-    touch -r "$out/.started" "$jar.tmp.$$"
-    mv "$jar.tmp.$$" "$jar"
+    if [ "$msys" = 1 ]; then
+        place_named_jar "$built" || return 1
+    else
+        mv "$built" "$jar.tmp.$$"
+        touch -r "$out/.started" "$jar.tmp.$$"
+        mv "$jar.tmp.$$" "$jar"
+    fi
     built_seconds=$(( $(date +%s) - build_began ))
     printf '%s\n' "$built_seconds" > "$out/last-build-seconds.tmp.$$"
     mv "$out/last-build-seconds.tmp.$$" "$out/last-build-seconds"
@@ -295,7 +357,10 @@ mtime_of() {
 # フォルダ $1 を $2 の名前へ 1 回の rename(2) で移す。$2 に中身があれば失敗する。
 rename_dir() {
     if command -v perl >/dev/null 2>&1; then
-        perl -e 'rename($ARGV[0], $ARGV[1]) or exit 1' "$1" "$2" 2>/dev/null
+        perl -e 'rename($ARGV[0], $ARGV[1]) or exit 1' "$1" "$2" 2>/dev/null && return 0
+        # WhyNot: perl の失敗をそのまま失敗にしない — 移す先が無いのに失敗するのは perl の側が動かない時で、鍵が取られている合図ではない。
+        # そのまま失敗にすると acquire_lock が「鍵は無いのに取れない」を待たずに繰り返し、止まらなくなる。
+        [ ! -e "$2" ] && mv "$1" "$2" 2>/dev/null
     else
         # perl が無い時: 無い名前への mv だけ（ある時は中へ入れてしまうので失敗として扱う）。
         [ ! -e "$2" ] && mv "$1" "$2" 2>/dev/null
@@ -368,10 +433,17 @@ remove_stale_lock() {
 # 鍵を取るまで待つ。lock_wait_limit 秒待っても取れなければ止める（loud_fallback）。
 acquire_lock() {
     waited=0
+    vanished=0
     until take_lock; do
         inspect_lock
         case "$lock_state" in
-            none) continue ;;
+            none)
+                # WhyNot: 数えずに取り直さない — 鍵が無いのに取れない時（置き場に書けない・rename が動かない）に止まらずに回り続ける。
+                vanished=$(( vanished + 1 ))
+                if [ "$vanished" -ge 5 ]; then
+                    loud_fallback "鍵が無いのに jar を作る鍵を取れない（5 回）。${out} に書けるか、rename(2) を呼ぶ perl が動くかを見る（鍵: ${lock}）"
+                fi
+                continue ;;
             dead | old) remove_stale_lock; continue ;;
         esac
         if [ $(( waited % 30 )) = 0 ]; then
@@ -462,6 +534,7 @@ if is_stale; then
             rm -f "$out/.failed" "$out/.failed.manifest"
             if [ "${FGE_JAR_PUBLISH_REMOTE:-}" = 1 ]; then publish_shared_jar .; fi
         elif build_jar; then rm -f "$out/.failed" "$out/.failed.manifest"; publish_shared_jar
+        elif [ "${lib_link_failed:-0}" = 1 ]; then built_ok=0
         else
             built_ok=0
             # 色の符号を落とした最後の 15 行（MethodTooLargeException などの理由が見える所）。
@@ -472,6 +545,11 @@ if is_stale; then
     fi
     release_lock
     trap - EXIT
+    if [ "$built_ok" = 0 ] && [ "${lib_link_failed:-0}" = 1 ]; then
+        echo "[headless-run] lib のジャンクション（mklink /J）を張れないので jar を作らない — 毎回コンパイルして流す" >&2
+        if [ "$mode" = build ]; then exit 3; fi
+        run_with_flix
+    fi
     if [ "$built_ok" = 0 ]; then
         if [ "$mode" = build ]; then
             { echo "[headless-run] jar を作れなかった（$out/build.log）"; sed 's/^/    /' "$out/.failed" 2>/dev/null || true; } >&2
@@ -485,10 +563,12 @@ fi
 . "$engine/bin/java-resolve.sh"
 java_cmd="${JAVA:-java}"
 java_version_out=""
-if fge_resolve_java "$engine"; then
-    java_cmd=$FGE_JAVA
-    java_version_out=$FGE_JAVA_VERSION_OUT
-fi
+resolve_rc=0
+fge_resolve_java "$engine" || resolve_rc=$?
+case "$resolve_rc" in
+    0) java_cmd=$FGE_JAVA; java_version_out=$FGE_JAVA_VERSION_OUT ;;
+    2) exit 127 ;;
+esac
 # WhyNot: --sun-misc-unsafe-memory-access を無条件に付けない — JDK 22 以前（Studio が同梱する 21 も）は
 # この旗を知らず起動しない。版は上の -version の出力から読み、JVM を別に起こさない（bin/flix と同じ）。
 # WhyNot: 窓なしの経路には付けない — LWJGL の native を読まないので警告が出ず、常駐（resident の JavaArgs）と旗がずれる。
@@ -496,6 +576,8 @@ fi
 java_major="${java_version_out#*version \"}"
 java_major="${java_major%%[!0-9]*}"
 java_gl_flags="--enable-native-access=ALL-UNNAMED"
+# 標準出力の文字コードは bin/flix と同じ旗で固める（ロケールの無い所でログの日本語が ?????? にならないため）。
+java_enc_flags="-Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8"
 if [ "$java_major" -ge 24 ] 2>/dev/null; then
     java_gl_flags="$java_gl_flags --sun-misc-unsafe-memory-access=allow"
 fi
@@ -507,7 +589,7 @@ if [ "${built_ok:-0}" = 1 ]; then
     # pipefail と set -e で何も言わずに抜ける。
     printf '%s\n' "$entries" | { grep -E '\.vocab$' || true; } | while IFS= read -r vocab; do
         [ "$vocab" = "$entry" ] && continue
-        FGE_ENTRY="$vocab" "$java_cmd" -Xss32m -Djava.awt.headless=true -jar "$jar" >&2 || true
+        FGE_ENTRY="$vocab" "$java_cmd" -Xss32m -Djava.awt.headless=true $java_enc_flags -jar "$(jar_target)" >&2 || true
     done
 fi
 if [ "$mode" = build ]; then
@@ -530,11 +612,11 @@ fi
 # 窓なしは headless に固定（-XstartOnFirstThread の下で AWT が AppKit を待って固まらないため）。
 # GL を開く入口は bin/flix の run と同じく、Darwin だけ -XstartOnFirstThread を付けて headless にしない。
 if [ "$gl" = 1 ]; then
-    java_flags="$java_gl_flags -Xss32m -XX:MaxRAMPercentage=50"
+    java_flags="$java_gl_flags -Xss32m -XX:MaxRAMPercentage=50 $java_enc_flags"
     if [ "$(uname)" = Darwin ]; then java_flags="$java_flags -XstartOnFirstThread"; fi
 else
-    java_flags="-Xss32m -XX:MaxRAMPercentage=50 -Djava.awt.headless=true"
+    java_flags="-Xss32m -XX:MaxRAMPercentage=50 -Djava.awt.headless=true $java_enc_flags"
 fi
 # HEADLESS_JAVA_OPTS は空白で分けて既定の後ろに足す（同じ旗は後ろが勝つ）。
 # shellcheck disable=SC2086
-FGE_ENTRY="$entry" exec "$java_cmd" $java_flags ${HEADLESS_JAVA_OPTS:-} -jar "$jar"
+FGE_ENTRY="$entry" exec "$java_cmd" $java_flags ${HEADLESS_JAVA_OPTS:-} -jar "$(jar_target)"

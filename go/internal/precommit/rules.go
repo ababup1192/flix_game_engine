@@ -148,7 +148,7 @@ type LocalGate struct {
 	Target string `json:"target"`
 }
 
-// FailOpen は make が使えないときに飛ばす旨を知らせる文面。
+// FailOpen は make のターゲットを流せないときの文面。MakeMissing は make が無くて Makefile にターゲットが書いてある時に出して止める（{target} をターゲットの名前に替える）。
 type FailOpen struct {
 	MakeMissing           string `json:"makeMissing"`
 	TargetMissing         string `json:"targetMissing"`

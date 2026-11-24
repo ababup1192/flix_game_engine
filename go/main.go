@@ -18,10 +18,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/ababup1192/flix_game_engine/go/internal/exereplace"
 	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
 	"github.com/ababup1192/flix_game_engine/go/internal/status"
 )
@@ -156,7 +158,7 @@ func printVersion() int {
 	root := repoRoot()
 	version := status.ReadEngineVersion(root)
 	if version == "" {
-		if engine := status.ReadEngineDir(root); engine != "" {
+		if engine, _ := status.ResolveEngineDir(root); engine != "" {
 			version = status.ReadEngineVersion(engine)
 		}
 	}
@@ -196,6 +198,10 @@ func orAbort(errOut *strings.Builder, code int, err error) int {
 }
 
 func main() {
+	// WhyNot: 起動のたびに消す — Windows は走っている exe を消せないので、差し替えの時に退けた .old は次に起動した時にしか消せない。
+	if exe, err := os.Executable(); err == nil {
+		exereplace.RemoveOld(exe, runtime.GOOS)
+	}
 	args := os.Args[1:]
 	if len(args) == 0 {
 		usage()

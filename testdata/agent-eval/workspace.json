@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "note": "ワークスペース（fge dashboard が開く、ゲームの外のフォルダ）のお題。engine のリポでだけ流す: agents-pack/workspace/AGENTS.md と 1 行の CLAUDE.md（@AGENTS.md）だけを置いたフォルダへ移り、そこで <engine>/bin/fge agent-eval --tasks <engine>/testdata/agent-eval/workspace.json を打つ（claude -p は打った場所を作業場にする）。ゲームへは配らない（agents-pack/agent-eval はゲームの足元で流れるので、そこに置くとゲームの AGENTS.md で採点される）。",
+  "tasks": [
+    {
+      "id": "workspace-new-game",
+      "prompt": "tidepool という名前で、rpg-starter から新しいゲームを作って。",
+      "expect": [
+        {"re": "fge\\s+new", "why": "fge new tidepool --template rpg-starter"}
+      ],
+      "avoid": [
+        {"re": "make\\s+new-game|git\\s+clone[^\\n]*flix_game_engine", "why": "engine を clone して make new-game を打つ"}
+      ]
+    }
+  ]
+}

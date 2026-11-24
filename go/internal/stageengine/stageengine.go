@@ -4,8 +4,15 @@ package stageengine
 //
 //	fge stage-engine --out DIR [--windows]
 //	                 [--flix-jar PATH] [--flix-wrapper PATH]
-//	                 [--fge-go PATH] [--maven-seed DIR] [--all-platforms]
+//	                 [--fge-go PATH] [--maven-seed DIR] [--natives DIR] [--all-platforms]
+//	                 [--mvn-cache DIR] [--flixlint DIR]
 //	fge stage-engine --sources
+//
+// --natives は LWJGL の natives と GL の層の jar だけを置いたフォルダ（make bundle-zip が render_gl/lib/external から選んで渡す）。
+//
+// --mvn-cache は Maven の取り物（coursier の置き場の形）。engine_full/flix.toml の [mvn-dependencies] の jar が
+// 揃っていなければ止める。--flixlint は <版>/ に shim の jar と本体の src/ を置いたフォルダ。hooks.json の版と sha256 に
+// 合わなければ止める（どちらも make bundle-zip が組んで渡す）。
 //
 // --all-platforms は Release の zip 用。検査の中身を配る先 5 種ぶん入れる（AllPlatformLayout）。
 //
@@ -35,6 +42,9 @@ type Options struct {
 	FlixWrapper string
 	FgeGo       string
 	MavenSeed   string
+	Natives     string
+	MvnCache    string
+	Flixlint    string
 	Sources     bool
 	// AllPlatforms は検査の中身を 1 つに絞らず、配る先 5 種を全部入れる。
 	AllPlatforms bool
@@ -59,7 +69,8 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 	}
 	if opts.Out == "" {
 		fmt.Fprintln(errOut, "usage: fge stage-engine --out DIR [--windows] "+
-			"[--flix-jar PATH] [--flix-wrapper PATH] [--fge-go PATH] [--maven-seed DIR] [--all-platforms]")
+			"[--flix-jar PATH] [--flix-wrapper PATH] [--fge-go PATH] [--maven-seed DIR] [--natives DIR] [--all-platforms] "+
+			"[--mvn-cache DIR] [--flixlint DIR]")
 		return 2, nil
 	}
 	if opts.AllPlatforms && (opts.Windows || opts.FgeGo != "") {
@@ -99,6 +110,10 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 			// 一見同じに見えて、配った先の初回ビルドだけが何分も止まるため。
 			fmt.Fprintf(errOut, "!! [stage-engine] 同梱しません: %s (%s)\n", it.Src, skipped)
 			continue
+		}
+		if err := checkSeed(root, it, src); err != nil {
+			fmt.Fprintf(errOut, "[stage-engine] %v\n", err)
+			return 1, nil
 		}
 		dest := filepath.Join(opts.Out, filepath.FromSlash(it.DestOf(opts.Windows)))
 		if err := copyItem(src, dest, it); err != nil {
@@ -155,6 +170,12 @@ func parseArgs(args []string) (Options, error) {
 			opts.FgeGo = value
 		case "--maven-seed":
 			opts.MavenSeed = value
+		case "--natives":
+			opts.Natives = value
+		case "--mvn-cache":
+			opts.MvnCache = value
+		case "--flixlint":
+			opts.Flixlint = value
 		case "--all-platforms":
 			opts.AllPlatforms = true
 		default:
@@ -204,6 +225,12 @@ func resolveSrc(root string, it Item, opts Options) (string, string, error) {
 		}
 		sub := strings.TrimPrefix(it.Src, srcMavenSeed+"/")
 		return needPath(filepath.Join(opts.MavenSeed, filepath.FromSlash(sub)), it, "")
+	case it.Src == srcNatives:
+		return needPath(opts.Natives, it, "--natives で LWJGL の natives の jar を置いたフォルダを渡してください")
+	case it.Src == srcMvnCache:
+		return needPath(opts.MvnCache, it, "--mvn-cache で Maven の取り物の置き場を渡してください")
+	case it.Src == srcFlixlint:
+		return needPath(opts.Flixlint, it, "--flixlint で flixlint の本体と shim の jar を置いたフォルダを渡してください")
 	}
 
 	rel := it.Src

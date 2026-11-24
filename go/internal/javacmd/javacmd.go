@@ -3,18 +3,26 @@
 //
 //	JAVA → PATH の java → engine の devbox の jdk → main の checkout の devbox の jdk（どれも java -version が通る物だけ）
 //
+// 配った engine（go/ が無く mk/jdk.mk がある）だけは JAVA → 置き場の JDK（mk/jdk.mk が決める 1 つ）で、無ければ誤り。
+// WhyNot: 配った engine で PATH の java へ移らない — 何も言わずに別の JDK で描き、フォントの計測がずれて絵が変わる。
+//
 // WhyNot: PATH の java を在るかどうか（LookPath）で決めない。macOS には /usr/bin/java という「Java を入れてください」と
 // 言うだけの入口が必ず在り、devbox の外（Studio の .app・素のターミナル・devbox の無い worktree）ではそれを掴んで止まる。
 package javacmd
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
+
+	"github.com/ababup1192/flix_game_engine/go/internal/fgehome"
 )
 
 var versionChecked sync.Map
@@ -29,23 +37,77 @@ var javaWorks = func(cmd string) bool {
 	return ok
 }
 
-// Resolve は engine（engine のルート）から見た java の呼び方。PATH の java なら "java"、devbox の jdk なら絶対パス。
-// どれも通らなければ JAVA（無ければ "java"）を返す（起こした所で止まり、誤りはそこで出る）。
-func Resolve(engine string) string {
+// Resolve は engine（engine のルート。ゲームの根ではない）から見た java の呼び方。PATH の java なら "java"、ほかは絶対パス。
+// どれも通らなければ、JAVA を名指していればそれを、無ければ誤りを返す。
+func Resolve(engine string) (string, error) {
 	named := os.Getenv("JAVA")
+	spec, ok, err := bundleJDK(engine)
+	if err != nil {
+		return "", err
+	}
+	if ok {
+		for _, c := range []string{named, spec.Java()} {
+			if c != "" && javaWorks(c) {
+				return c, nil
+			}
+		}
+		if named != "" {
+			return named, nil
+		}
+		v := engineVersion(engine)
+		return "", fmt.Errorf("engine %s の JDK（%s）がありません → fge engines install %s", v, spec.Dir(), v)
+	}
 	cands := []string{named, "java"}
 	for _, bin := range devboxBins(engine) {
 		cands = append(cands, filepath.Join(bin, exe()))
 	}
 	for _, c := range cands {
 		if c != "" && javaWorks(c) {
-			return c
+			return c, nil
 		}
 	}
 	if named != "" {
-		return named
+		return named, nil
 	}
-	return "java"
+	return "", errors.New("java が見つかりません（JAVA で名指すか、engine で devbox shell に入る）")
+}
+
+// BundleBin は配った engine の時、Resolve が返した java の居る bin（PATH の頭に足す物）。配った engine でなければ ok=false。
+func BundleBin(engine string) (string, bool) {
+	if !IsBundle(engine) {
+		return "", false
+	}
+	java, err := Resolve(engine)
+	if err != nil || !filepath.IsAbs(java) {
+		return "", false
+	}
+	return filepath.Dir(java), true
+}
+
+// IsBundle は engine が配った engine で、JDK を mk/jdk.mk で決める物か。
+func IsBundle(engine string) bool {
+	_, ok, _ := bundleJDK(engine)
+	return ok
+}
+
+// bundleJDK は配った engine の mk/jdk.mk。clone した engine・mk/jdk.mk の無い版は ok=false。
+func bundleJDK(engine string) (fgehome.JDKSpec, bool, error) {
+	if !fgehome.IsBundle(engine) {
+		return fgehome.JDKSpec{}, false, nil
+	}
+	return fgehome.ReadJDKSpec(engine)
+}
+
+var versionLineRe = regexp.MustCompile(`(?m)^VERSION\s*:=\s*(\S+)`)
+
+// engineVersion は engine の Makefile の VERSION（読めなければ engine のフォルダ名。置き場では engines/<版>）。
+func engineVersion(engine string) string {
+	if b, err := os.ReadFile(filepath.Join(engine, "Makefile")); err == nil {
+		if m := versionLineRe.FindSubmatch(b); m != nil {
+			return string(m[1])
+		}
+	}
+	return filepath.Base(engine)
 }
 
 // PathWorks は PATH の java が -version で通るか（PATH を替えて flixlint などに java を渡す所が使う）。

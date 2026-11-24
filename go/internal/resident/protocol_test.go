@@ -261,19 +261,19 @@ func TestSpawnEnvNamesResidentEntry(t *testing.T) {
 }
 
 func TestJavaArgsAddsHeapCap(t *testing.T) {
-	if got := strings.Join(JavaArgs("-Xss64m", 3000), " "); !strings.Contains(got, "-Xmx3000m -Xss64m") {
+	if got := strings.Join(JavaArgs("-Xss64m", 3000, "build/headless/headless.jar"), " "); !strings.Contains(got, "-Xmx3000m -Xss64m") {
 		t.Fatalf("args = %q", got)
 	}
 }
 
 func TestJavaArgsKeepsCallersXmx(t *testing.T) {
-	if got := strings.Join(JavaArgs("-Xmx1g", 3000), " "); strings.Contains(got, "-Xmx3000m") {
+	if got := strings.Join(JavaArgs("-Xmx1g", 3000, "build/headless/headless.jar"), " "); strings.Contains(got, "-Xmx3000m") {
 		t.Fatalf("args = %q", got)
 	}
 }
 
 func TestJavaArgsEndsWithJar(t *testing.T) {
-	args := JavaArgs("", 1)
+	args := JavaArgs("", 1, "build/headless/headless.jar")
 	if args[len(args)-1] != "build/headless/headless.jar" {
 		t.Fatalf("args = %q", args)
 	}

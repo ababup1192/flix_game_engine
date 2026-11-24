@@ -15,7 +15,7 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
 | `make debug`  | 保存即反映(watchFile)と F8 を有効にして起動 |
 | `make check`  | 型検査だけ走らせる（一番速い確認） |
 | `make test`   | テストを実行する |
-| `make palette` | Studio 用の色の写し(`assets/tidepool.palette.json`)を作り直す |
+| `bin/fge task palette` | Studio 用の色の写し(`assets/tidepool.palette.json`)を作り直す |
 | `make render-all`   | ギャラリー PNG を全部描き出す（決定的） |
 | `make render SHOT=play` | その場面だけ `debug/play.png` へ描き出す（場面は title play flood dam clear washed ending quit） |
 | `make reference-check`  | 描き出した絵をリファレンス画像とバイト比較する |
@@ -48,7 +48,7 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
 - `assets/tidepool.rules.json` … 既定の満ち引き・貝殻の幅・取り消しの数など。`src/RulesDoc.flix` が読む。
 - `assets/*.theme.json` … 色票。`src/ThemeDoc.flix` が読む。
 - `assets/tidepool.palette.json` … Studio のドット絵エディタに「意味色キー → 実色」を教える写し（生成物）。
-  つや・影のような派生色はコードで導いていて Studio からは見えないので、`make palette` で
+  つや・影のような派生色はコードで導いていて Studio からは見えないので、`bin/fge task palette` で
   書き出して `*.sprite.json` の `paletteFile` から指す。手で直さない（色を変えるのはテーマ側）。
 - `assets/*.sprite.json` … ドット絵（文字格子）。entityId は `<パッケージ名>.sprites`。
   絵は差し色 1 色で平らに塗り、ふち光・影は読み込み時に `PxShade` が乗せます。

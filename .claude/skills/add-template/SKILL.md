@@ -35,8 +35,8 @@ allowed-tools: Read, Grep, Glob, Bash, Edit, Write
 - [ ] 3. make lint ONLY=palette が通った
 - [ ] 4. Doc の外形規約を守った（全 Doc に version・schema は sections 方言）
 - [ ] 5. 画風を宣言した（AGENTS.local.md + View.flix 冒頭の層の並び）
-- [ ] 6. Studio に登録した（Genesis.flix の families の starter）
-- [ ] 7. make swap-jar して Studio を Cmd+Q → 開き直した
+- [ ] 6. （Studio は凍結中。飛ばす）Studio に登録した（Genesis.flix の families の starter）
+- [ ] 7. （Studio は凍結中。飛ばす）make swap-jar して Studio を Cmd+Q → 開き直した
 - [ ] 8. project.json の web 欄を決めた（下の「8.」）
 ```
 
@@ -98,10 +98,14 @@ Studio のフォームが「Expecting an OBJECT with a field named `sections`」
 
 ### 6. Studio に登録する
 
+**Studio は凍結中。飛ばす**（plans/dashboard.md の 7 節）。凍結を解いた時のために手順を残す。
+
 `flix_ge_studio` の `server/src/Genesis.flix` の families で、該当ジャンルの
 `starter = "templates/<genre>-starter"` にする（starter が空だとゼロ生成フローのまま）。
 
 ### 7. Studio に反映する
+
+**Studio は凍結中。飛ばす**（6 と同じ）。
 
 `flix_ge_studio` で **`make swap-jar`**（動いている `.app` の同梱 jar を差し替え + 再署名）
 → Studio を Cmd+Q して開き直し。**`make jar` だけでは動いている .app に効かない**。

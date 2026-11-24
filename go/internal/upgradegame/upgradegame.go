@@ -29,10 +29,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/fpkgstore"
+	"github.com/ababup1192/flix_game_engine/go/internal/gamesteps"
 	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
+	"github.com/ababup1192/flix_game_engine/go/internal/scaffold"
 	"github.com/ababup1192/flix_game_engine/go/internal/updateplan"
 )
 
@@ -73,10 +76,15 @@ type opts struct {
 	// 進み具合はそのまま流す。溜めると make の長い出力より後に出て、
 	// 何が始まったのか分からないまま数分待つことになる。
 	progress, problems io.Writer
-	// テストから外の物を差し替える口（本物は runMake / hasTarget / updateplan.Build）。
-	makeRun   func(dir string, args ...string) error
-	makeHas   func(dir, target string) bool
-	buildPlan func(root, game string) (updateplan.Plan, error)
+	// goos は Windows の分かれ目（checkd の常駐を止める・fge-go.exe を退けて置く）。テストは "windows" を渡す。
+	goos string
+	// テストから外の物を差し替える所（本物は gamesteps・syncAgents・stopResident・updateplan.Build）。
+	checkGame         func(game string) error
+	referenceCheck    func(game string) error
+	hasReferenceCheck func(game string) bool
+	syncAgents        func(game string) error
+	stopResident      func(game string)
+	buildPlan         func(root, game string) (updateplan.Plan, error)
 }
 
 // result は --json で出す形。Studio は「上げ切った / 追随待ち / 失敗」を
@@ -97,18 +105,46 @@ type result struct {
 // Run はゲームを載せ替えて終了コードを返す。
 func Run(out, errOut *strings.Builder, root string, args []string, asJSON bool) (int, error) {
 	o := opts{
-		makeBin: "make", asJSON: asJSON,
+		makeBin: "make", asJSON: asJSON, goos: runtime.GOOS,
 		progress: os.Stdout, problems: os.Stderr,
 		buildPlan: func(root, game string) (updateplan.Plan, error) {
 			return updateplan.Build(root, game, "")
 		},
 	}
-	o.makeRun = func(dir string, args ...string) error { return runMake(o.makeBin, dir, args...) }
-	o.makeHas = func(dir, target string) bool { return hasTarget(o.makeBin, dir, target) }
 	if code := parse(&o, errOut, args); code != 0 {
 		return code, nil
 	}
+	steps := gamesteps.New(root)
+	steps.MakeBin = o.makeBin
+	o.checkGame = steps.Check
+	o.referenceCheck = steps.ReferenceCheck
+	o.hasReferenceCheck = steps.HasReferenceCheck
+	o.syncAgents = func(game string) error { return syncAgents(root, game, o.version, o.goos, o.progress) }
+	o.stopResident = func(game string) { stopResident(steps.Exe, game, o.progress) }
 	return run(root, o)
+}
+
+// syncAgents は agents-pack と機械に合う fge-go をゲームへ配る（make sync-agents と同じ 2 つ）。
+//
+// WhyNot: make sync-agents を起こさない — make の無い Windows で版を上げられない。fge-go.exe の差し替えは
+// 走っている物を退けてから置く（exereplace）。
+func syncAgents(root, game, version, goos string, progress io.Writer) error {
+	if err := scaffold.RunSyncAgents(progress, root, game, version); err != nil {
+		return err
+	}
+	line, err := scaffold.SyncFgeGo(root, game, goos, runtime.GOARCH)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(progress, line)
+	return nil
+}
+
+// stopResident はゲームの checkd の常駐を止める（fge checkd --stop）。
+func stopResident(exe, game string, progress io.Writer) {
+	cmd := exec.Command(exe, "checkd", "--stop", game)
+	cmd.Stdout, cmd.Stderr = progress, progress
+	_ = cmd.Run()
 }
 
 func parse(o *opts, errOut *strings.Builder, args []string) int {
@@ -206,6 +242,10 @@ func run(root string, o opts) (int, error) {
 			fmt.Fprintf(o.progress, "[upgrade-game] %s: v%s -> v%s\n",
 				o.game, versionIn(before), o.version)
 		}
+		// WhyNot: Windows で常駐を止めずに束を差し替えない — checkd の常駐の JVM が lib の fpkg を開いていて、開いたファイルは置き換えられない。
+		if o.goos == "windows" && o.stopResident != nil {
+			o.stopResident(o.game)
+		}
 		undo, err = apply(o, gameToml, before)
 		if err != nil {
 			if undo != nil {
@@ -237,7 +277,7 @@ func run(root string, o opts) (int, error) {
 
 // decide は check を回し、その結果で分かれる。
 func decide(root string, o opts, res *result, plan updateplan.Plan, planErr error, undo *backup) (int, error) {
-	if err := o.makeRun(o.game, "check", "ENGINE="+root); err != nil {
+	if err := o.checkGame(o.game); err != nil {
 		return red(o, res, plan, planErr, undo)
 	}
 	res.CheckGreen = true
@@ -246,7 +286,7 @@ func decide(root string, o opts, res *result, plan updateplan.Plan, planErr erro
 
 // green は check が通ったとき。ここで初めて agents-pack を配る。
 func green(root string, o opts, res *result, plan updateplan.Plan, planErr error) (int, error) {
-	if err := o.makeRun(root, "sync-agents", "GAME="+o.game); err != nil {
+	if err := o.syncAgents(o.game); err != nil {
 		return exitUnknown, fmt.Errorf("check は通りましたが sync-agents が失敗しました: %v", err)
 	}
 	fmt.Fprintf(o.progress, "[upgrade-game] check OK / agents-pack を配りました\n")
@@ -371,11 +411,11 @@ func referenceLine(root string, o opts) string {
 	if !o.reference {
 		return ""
 	}
-	if !o.makeHas(o.game, "reference-check") {
+	if !o.hasReferenceCheck(o.game) {
 		return "絵の比較はしていません（reference-check がありません）"
 	}
 	fmt.Fprintf(o.progress, "[upgrade-game] 絵の比較を回します（描き出すので数分かかります）\n")
-	if err := o.makeRun(o.game, "reference-check", "ENGINE="+root); err != nil {
+	if err := o.referenceCheck(o.game); err != nil {
 		return "絵が変わりました（reference-check が赤）。変わってよい差かは人が見て決めます"
 	}
 	return "絵は変わっていません（reference-check は緑）"
@@ -540,21 +580,4 @@ func absFrom(root, path string) string {
 		return path
 	}
 	return filepath.Join(root, path)
-}
-
-// runMake は make を回し、出す物はそのまま流す（長いので溜めない）。
-func runMake(makeBin, dir string, args ...string) error {
-	cmd := exec.Command(makeBin, append([]string{"--no-print-directory", "-C", dir}, args...)...)
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	return cmd.Run()
-}
-
-// hasTarget はそのフォルダの Makefile がその的を持つか（空回しで見る）。
-//
-// WhyNot: 空回しにも同じ引数を渡すのは、渡さないと local.mk の解決に失敗して
-// 「的が無い」と読み、絵の比較を黙って飛ばすため。
-func hasTarget(makeBin, dir, target string) bool {
-	cmd := exec.Command(makeBin, "-C", dir, "-n", target)
-	cmd.Stdout, cmd.Stderr = nil, nil
-	return cmd.Run() == nil
 }

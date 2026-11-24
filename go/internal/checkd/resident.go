@@ -31,6 +31,7 @@ import (
 
 	"github.com/ababup1192/flix_game_engine/go/internal/hooks"
 	"github.com/ababup1192/flix_game_engine/go/internal/javacmd"
+	"github.com/ababup1192/flix_game_engine/go/internal/status"
 )
 
 // residentProtocol は flixlint の常駐と話す口の版。
@@ -279,15 +280,17 @@ type residentSetup struct {
 // prepareResident は flix.jar・shim の jar・identity・socket を揃える。
 func prepareResident(r *hooks.Rules, root, pkg string) (residentSetup, error) {
 	var s residentSetup
-	out, err := exec.Command("env", "FLIX_PRINT_JAR=1", flixBin(root, pkg)).Output()
+	jar, err := flixJarOf(flixBin(root, pkg))
 	if err != nil {
 		return s, fmt.Errorf("flix.jar の場所が分からない: %v", err)
 	}
-	s.flixJar = strings.TrimSpace(string(out))
+	s.flixJar = jar
 	if s.shimJar, err = ShimJar(r); err != nil {
 		return s, err
 	}
-	s.java = javaCmd(root)
+	if s.java, err = javaCmd(root); err != nil {
+		return s, err
+	}
 	flixSum, err := cachedSum(r, s.flixJar)
 	if err != nil {
 		return s, err
@@ -309,7 +312,7 @@ func prepareResident(r *hooks.Rules, root, pkg string) (residentSetup, error) {
 // ShimJar は flixlint の shim の jar (無ければリリースから取り、sha256 が合う時だけ置く)。
 func ShimJar(r *hooks.Rules) (string, error) {
 	sv := r.Checkd.Server
-	path := filepath.Join(hooks.CacheDir(r), "flixlint", *sv.FlixlintVersion, *sv.ShimJar)
+	path := filepath.Join(hooks.FlixlintDir(r), *sv.ShimJar)
 	if sum, err := fileSum(path); err == nil && sum == *sv.ShimSHA256 {
 		return path, nil
 	}
@@ -340,9 +343,13 @@ func ShimJar(r *hooks.Rules) (string, error) {
 	return path, os.Rename(part, path)
 }
 
-// javaCmd は bin/flix と同じ決め方の java（javacmd.Resolve）。
-func javaCmd(root string) string {
-	return javacmd.Resolve(root)
+// javaCmd は bin/flix と同じ決め方の java（javacmd.Resolve）。root はゲームの根なので、先に engine を引いて渡す。
+func javaCmd(root string) (string, error) {
+	engine, _ := status.ResolveEngineDir(root)
+	if engine == "" {
+		engine = root
+	}
+	return javacmd.Resolve(engine)
 }
 
 func fileSum(path string) (string, error) {
@@ -538,7 +545,7 @@ func SharedServer(r *hooks.Rules, engineRoot, pkg string) (Shared, error) {
 	if r.Checkd.Server.BackendEnvVar == nil {
 		return Shared{}, errors.New("hooks.json に checkd.server が無い")
 	}
-	out, err := exec.Command("env", "FLIX_PRINT_JAR=1", flixBin(engineRoot, pkg)).Output()
+	flixJar, err := flixJarOf(flixBin(engineRoot, pkg))
 	if err != nil {
 		return Shared{}, fmt.Errorf("flix.jar の場所が分からない: %v", err)
 	}
@@ -547,7 +554,7 @@ func SharedServer(r *hooks.Rules, engineRoot, pkg string) (Shared, error) {
 		return Shared{}, err
 	}
 	sv := r.Checkd.Server
-	return Shared{FlixJar: strings.TrimSpace(string(out)), ShimJar: shim, HeapMB: *sv.HeapMB, IdleMinutes: *sv.IdleMinutes}, nil
+	return Shared{FlixJar: flixJar, ShimJar: shim, HeapMB: *sv.HeapMB, IdleMinutes: *sv.IdleMinutes}, nil
 }
 
 // serverMark は、そのパッケージの check を流した常駐の記録（状態の置き場の server。stop・stop-all と、編集フックの

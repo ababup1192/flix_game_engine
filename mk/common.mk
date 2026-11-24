@@ -34,23 +34,16 @@ hooks: ### | git の pre-commit ゲート（bin/githooks）をこの clone に�
 	@git config core.hooksPath bin/githooks
 	@echo "[hooks] 配線しました: pre-commit = bin/githooks/pre-commit (中身は bin/fge precommit)"
 
-# エンジン API の型・引数を 1 行で引く（docs/api-digest の grep）。例: make api Q=gradPolygon 。ソースを読む前にまずこれ。
+# エンジン API の型・引数を 1 行で引く（docs/api-digest の grep・中身は bin/fge api）。例: make api Q=gradPolygon 。ソースを読む前にまずこれ。
+# WhyNot: ゲームの bin/fge を呼ばない — 配った時期が古いゲームの bin/fge-go は api・module を持たない。engine の bin/fge は engine と同じ版。
 api: ## Q=<名前> | エンジン API の型・引数を 1 行で引く（ソースを読む前にまずこれ）
-	@test -n "$(Q)" || { echo "usage: make api Q=<関数名やモジュール名>"; exit 1; }
-	@out=$$(grep -h -i -- "$(Q)" "$(FGE_PREFIX)docs/api-digest/"*.md 2>/dev/null | head -40); \
-	if [ -n "$$out" ]; then printf '%s\n' "$$out"; \
-	else echo "[api] '$(Q)' に当たりなし。make module Q=<やりたいこと> で別名を探す"; fi
+	@"$(FGE_PREFIX)bin/fge" api $(if $(FGE_PREFIX),--engine "$(patsubst %/,%,$(FGE_PREFIX))") "$(Q)"
 	@$(API_AFTER)
 
-# やりたいこと → エンジンのモジュールを 1 行ずつ引く（docs/modules/<分野>.md の grep）。
+# やりたいこと → エンジンのモジュールを 1 行ずつ引く（docs/modules/<分野>.md の grep・中身は bin/fge module）。
 # 例: make module Q=スクロール 。当たった行に「分野のファイル:行番号」が付く。自前で書く前にまずこれ。
-# 行の形（表の 1 行 = 1 件・「- **名前** — 説明」= 1 モジュール）は mk/module.sed が読みやすく直す。
 module: ## Q=<語> | やりたいこと → エンジンのモジュールを 1 行ずつ引く（自前で書く前にまずこれ）
-	@test -n "$(Q)" || { echo "usage: make module Q=<やりたいこと・モジュール名の一部>"; exit 1; }
-	@# WhyNot: engine.md（engine/src の下請け）を最後に引くのは、ゲームが使う engine_world の行を先に見せるため。
-	@out=$$(grep -n -i -F -- "$(Q)" $$(ls "$(FGE_PREFIX)docs/modules/"*.md | grep -v '/engine\.md$$') "$(FGE_PREFIX)docs/modules/engine.md" 2>/dev/null | sed -f "$(FGE_PREFIX)mk/module.sed" | head -40); \
-	if [ -n "$$out" ]; then printf '%s\n' "$$out"; \
-	else echo "[module] '$(Q)' に当たりなし。別の言い方で引き直すか、分野の目次 $(FGE_PREFIX)docs/module-index.md から分野のファイルを開く"; fi
+	@"$(FGE_PREFIX)bin/fge" module $(if $(FGE_PREFIX),--engine "$(patsubst %/,%,$(FGE_PREFIX))") "$(Q)"
 
 # lib/cache（Maven の取り物）を共有の置き場 1 か所へ移して symlink にする（中身は捨てない・使用中は飛ばす）。
 # ROOT を省くとこの作業場。置き場・移し方・同時に使っても壊れない根拠は bin/mvn-cache-share.sh。

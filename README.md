@@ -9,9 +9,9 @@ A 2D game engine written in [Flix](https://flix.dev/), built to be worked on
 usually need can ship as official parts rather than plugins, and it is wired so
 an AI can check its own work instead of asking you to look.
 
-**[flix_ge_studio](https://github.com/ababup1192/flix_ge_studio)** is the companion
-editor: pick a genre, generate a game, and tune its values through forms and sliders
-while it runs.
+**[flix_ge_studio](https://github.com/ababup1192/flix_ge_studio)**, the companion
+editor, is frozen for now. If you already have it, do not let its self-update move it
+to a newer engine: a frozen Studio cannot run the newer engines.
 
 | | | |
 |:--:|:--:|:--:|
@@ -78,65 +78,48 @@ functions run each frame by a Bevy-style `App`, and every frame is rendered from
 the `World`. Rendering, input, and audio are a from-scratch implementation on top
 of LWJGL (OpenGL 3.3 Core / GLFW / OpenAL). The engine ships as a reusable
 library, with ready-to-run starter games living under `templates/`, in a monorepo
-layout. `make new-game` copies a template into a new repository of your own.
+layout. `fge new` copies a template into a new folder with its own git repository.
 
 > 日本語版は[下](#flix-game-engine-日本語)にあります。
 
-## Requirements
+## Getting started (macOS / Linux)
 
-- **devbox** (required — fetches JDK 25, GNU make, and the Flix 0.80.0 compiler automatically)
-- Supported OS: macOS (Apple Silicon / Intel) / Windows x86_64
-
-The Flix **0.80.0** compiler is provided via [Cj-bc/flix.nix](https://github.com/Cj-bc/flix.nix)
-(pinned in `devbox.json`), so no manual jar download is needed. The `bin/flix` wrapper runs that
-jar with devbox's JDK 25 (adding `-XstartOnFirstThread` / headless flags as needed).
-
-## Setup
-
-Set up the toolchain and build the engine packages:
+You need [Claude Code](https://claude.com/claude-code), plus `make`, `perl` and `git`
+(on macOS, `xcode-select --install` gives you all three). Then run two commands:
 
 ```bash
-devbox shell        # fetch JDK 25 + make + Flix compiler, and add bin/ to PATH
-make sync            # build-pkg all engine packages and distribute (via symlink) to templates & bench
+curl -fsSL https://github.com/ababup1192/flix_game_engine/releases/latest/download/install.sh | sh
+fge dashboard        # opens http://127.0.0.1:8790/ in your browser
 ```
 
-Run `make sync` **once on first setup**. Each template resolves the engine through
-a relative symlink under `lib/github/ababup1192/.../0.1.0/`, so without it the
-dependency cannot be resolved. After editing an engine package, re-run `make sync`
-(`render_gl` / `engine_world` / `engine_tools` are checked in `.layers/<pkg>/`, a
-symlinked tree of `engine` + that package, which `make sync-layers` lays out).
+On the dashboard, the "Make a new game" card lets you pick a name and a template.
+Press **Open in Claude Code**: Claude starts in your games folder (`~/flix-games`), creates the game
+with `fge new`, checks that it runs, and tells you what to do next. The engine and
+the JDK are downloaded for you into `~/.flix_ge` the first time.
 
-```bash
-make help            # list other targets (sync-layers, etc.)
-```
+Windows support is in preparation.
 
 ## Starter games (templates)
 
 Each template is a complete, playable game with its own art style, Docs, and
-tests — read one to learn the engine, or copy it with `make new-game` to start
+tests — read one to learn the engine, or copy it with `fge new` to start
 your own.
 
 | Template | Description |
 |---|---|
-| **game-starter** | The bare skeleton: move a pixel-art hero with the arrow keys. The default for `make new-game` |
+| **game-starter** | The bare skeleton: move a pixel-art hero with the arrow keys. The default for `fge new` |
 | **rpg-starter** | FC-style classic RPG: a village whose spring has run dry, a world map, a mine dungeon and command battles |
 | **sound-novel-starter** | Sound novel in the countryside: blurred real photos, Mincho prose with ruby, NVL/ADV, log, auto, skip, save/load — all scripted in Yarn |
 | **tidepool-starter** | Turn-based puzzle on a tide pool: push rocks to reroute channels as the tide rises and falls each move; undo, retry and a look-ahead preview |
 | **hd2d-starter** | HD-2D town walk: a 3D harbor town built from a tile map with pixel-art billboards, a party of three that follows the leader, wall sliding, sun shadows and depth of field; keys, gamepad or an on-screen stick |
 | **retro3d-horror-starter** | Retro 3D horror in first person: a low-poly three-storey wooden school at night with a PS1-style look (color banding, dither, vertex jitter, CRT bleed), baked lighting in vertex colors, three people to talk to, keys and locked rooms, and synthesized footsteps as the main sound |
 
-Every template runs and tests the same way:
+You can also make a game without the dashboard (a new folder with its own git repository):
 
 ```bash
-cd templates/<name>
-flix run             # launch
-flix test            # test
-```
-
-To start a game of your own (a new directory with its own git repository):
-
-```bash
-make new-game GAME=/abs/path/to/mygame NAME=mygame TITLE="My Game" TEMPLATE=rpg-starter
+fge new --list                             # the templates
+fge new my-game --template rpg-starter     # create ./my-game
+cd my-game && make run                     # play it (make test runs its tests)
 ```
 
 ## Game data (Docs)
@@ -149,7 +132,7 @@ the editor form, startup validation, and AI-written data. A game can watch its
 Docs with `App.watchFile`, so saving a Doc shows up in the running game right away.
 
 Docs are edited by hand, or through forms/sliders in **flix_ge_studio** (a
-separate Elm + Tauri editor). See [docs/doc-conventions.md](docs/doc-conventions.md)
+separate Elm + Tauri editor, frozen for now). See [docs/doc-conventions.md](docs/doc-conventions.md)
 for the full convention, and the "エディタと Doc の流儀" section in
 [CLAUDE.md](CLAUDE.md).
 
@@ -178,9 +161,50 @@ bundles all four into the single package games depend on.
 `make sync` runs `build-pkg` on each package and distributes it to dependents via
 relative symlinks (symlink, not cp — so rebuilding the engine is reflected instantly).
 
-## Development tips
+## For people changing the engine itself
+
+Everything above uses an engine downloaded by `fge`. To change the engine, clone this
+repository and build it yourself.
+
+- **devbox** (required — fetches JDK 25, GNU make, and the Flix 0.80.0 compiler automatically)
+- Supported OS: macOS (Apple Silicon / Intel) / Linux
+
+The Flix **0.80.0** compiler is provided via [Cj-bc/flix.nix](https://github.com/Cj-bc/flix.nix)
+(pinned in `devbox.json`), so no manual jar download is needed. The `bin/flix` wrapper runs that
+jar with devbox's JDK 25 (adding `-XstartOnFirstThread` / headless flags as needed).
+
+Set up the toolchain and build the engine packages:
 
 ```bash
+devbox shell        # fetch JDK 25 + make + Flix compiler, and add bin/ to PATH
+make sync            # build-pkg all engine packages and distribute (via symlink) to templates & bench
+make go-build        # build bin/fge from go/
+```
+
+Run `make sync` **once on first setup**. Each template resolves the engine through
+a relative symlink under `lib/github/ababup1192/.../0.1.0/`, so without it the
+dependency cannot be resolved. After editing an engine package, re-run `make sync`
+(`render_gl` / `engine_world` / `engine_tools` are checked in `.layers/<pkg>/`, a
+symlinked tree of `engine` + that package, which `make sync-layers` lays out).
+
+Every template runs and tests the same way:
+
+```bash
+cd templates/<name>
+flix run             # launch
+flix test            # test
+```
+
+To make a game from this clone instead of a downloaded engine:
+
+```bash
+make new-game GAME=/abs/path/to/mygame NAME=mygame TITLE="My Game" TEMPLATE=rpg-starter
+```
+
+Development tips:
+
+```bash
+make help                # list other targets (sync-layers, etc.)
 make sync-layers         # lay out .layers/ (engine + render_gl / engine_world / engine_tools)
 make sync-root-src       # regenerate the root src/ symlinks for the Flix community build
 make clean-locks         # remove stale *.lock left in the Maven cache by an interrupted flix check
@@ -250,8 +274,8 @@ baking entirely. A damaged or outdated cache is ignored and simply re-baked. Del
 表現を 2D に絞ることで、足りない機能をプラグインで継ぎ足す形をやめ、ゲームでよくやることを
 公式の部品として用意する。さらに、AI が自分の仕事を自分で確かめられる作りにしてある。
 
-対になるエディタが **[flix_ge_studio](https://github.com/ababup1192/flix_ge_studio)**。
-ジャンルを選んでゲームを作り、走らせたままフォームやスライダーで値を調整できる。
+対になるエディタ **[flix_ge_studio](https://github.com/ababup1192/flix_ge_studio)** は凍結中。
+手元にある人は、Studio の self-update で新しい版の engine に上げない（凍結した Studio は新しい版の engine を動かせない）。
 
 | | | |
 |:--:|:--:|:--:|
@@ -313,61 +337,44 @@ AI がコードを書けば、どのエンジンでも敷居は下がる。差�
 純粋関数で、各フレームは `World` から描画を導出する。描画・入力・音声は
 LWJGL（OpenGL 3.3 Core / GLFW / OpenAL）を直接叩く自前実装。エンジンを再利用ライブラリとして
 提供し、`templates/` 配下にそのまま動くスターターゲームが並ぶ monorepo 構成。
-`make new-game` でテンプレを写して、自分のリポジトリとして新しいゲームを始められる。
+`fge new` でテンプレを写して、自分の git リポジトリとして新しいゲームを始められる。
 
-## 必要環境
+## 始め方（macOS・Linux）
 
-- **devbox**（必須。JDK 25 + GNU make + Flix 0.80.0 コンパイラを自動取得）
-- 対応 OS: macOS（Apple Silicon / Intel）/ Windows x86_64
-
-Flix **0.80.0** コンパイラは [Cj-bc/flix.nix](https://github.com/Cj-bc/flix.nix) 経由で提供され
-（`devbox.json` に固定）、jar の手動ダウンロードは不要。`bin/flix` ラッパがその jar を
-devbox の JDK 25 で実行する（必要に応じて `-XstartOnFirstThread`・headless フラグを付与）。
-
-## セットアップ
-
-ツールチェーンを用意し、エンジンパッケージをビルドする:
+[Claude Code](https://claude.com/claude-code) と `make`・`perl`・`git` が要る
+（macOS は `xcode-select --install` で 3 つとも入る）。あとは 2 つのコマンドを打つだけ:
 
 ```bash
-devbox shell        # JDK 25 + make + Flix コンパイラを取得し、bin/ を PATH に追加
-make sync            # 全エンジンパッケージを build-pkg し、templates・bench へ symlink 配布
+curl -fsSL https://github.com/ababup1192/flix_game_engine/releases/latest/download/install.sh | sh
+fge dashboard        # ブラウザで http://127.0.0.1:8790/ が開く
 ```
 
-`make sync` は **初回に必ず一度実行する**。各テンプレはエンジンを
-`lib/github/ababup1192/.../0.1.0/` への相対 symlink 経由で解決するため、これが無いと依存を解決できない。
-エンジンパッケージを編集したら `make sync` で反映する（`render_gl` / `engine_world` / `engine_tools` は
-`engine` のソースと束ねた `.layers/<層>/` で組む。張り直しは `make sync-layers`）。
+ダッシュボードの「新しいゲームを作ってみよう」のカードで、名前とテンプレートを選んで
+**Claude Code で開く** を押す。Claude がゲームを置くフォルダ（`~/flix-games`）で起動し、`fge new` でゲームを作り、
+動くか確かめて、次にやることを教えてくれる。engine と JDK は初回に `~/.flix_ge` へ自動で取ってくる。
 
-```bash
-make help            # 他ターゲット（sync-layers など）を一覧表示
-```
+Windows は準備中。
 
 ## スターターゲーム（templates）
 
 テンプレはどれも「そのまま遊べる 1 本のゲーム」で、画風・Doc・テストが一式そろっている。
-エンジンの使い方を読むならここを読み、自分のゲームを始めるなら `make new-game` で写す。
+エンジンの使い方を読むならここを読み、自分のゲームを始めるなら `fge new` で写す。
 
 | テンプレ | 内容 |
 |---|---|
-| **game-starter** | 骨組みだけ。主人公（ドット絵）を矢印キーで動かせる。`make new-game` の既定 |
+| **game-starter** | 骨組みだけ。主人公（ドット絵）を矢印キーで動かせる。`fge new` の既定 |
 | **rpg-starter** | FC 風の王道 RPG。泉の枯れた村から、ワールドマップと坑道を抜け、コマンドバトルで進む |
 | **sound-novel-starter** | 田舎のサウンドノベル。実写の写真をシェーダーでぼかした背景・明朝とルビ・NVL/ADV・ログ・オート・スキップ・セーブとロード。台本は Yarn |
 | **tidepool-starter** | 潮だまりのターン制パズル。1 手ごとに潮が満ち引きする磯で岩を押して水路を作り変える。取り消し・やり直し・先読みつき |
 | **hd2d-starter** | HD-2D の町歩き。タイルの地図から組んだ 3D の港町にドット絵の板を立て、旅の 3 人で歩き回る。壁で滑る・仲間が後をなぞる・太陽の影と手前と奥のぼけ。キー・パッド・画面のスティック |
 | **retro3d-horror-starter** | レトロ 3D ホラー。夜の木造 3 階建ての校舎を一人称で歩く。PS1 風の描き方（色の段・ディザ・頂点のがたつき・テレビのにじみ）・頂点の色にベイクした明るさ・3 人の人物との会話・鍵と閉じた部屋・足音が主役の合成の効果音 |
 
-どのテンプレも同じ手順で実行・テストできる:
+ダッシュボードを使わずに作ることもできる（新しいフォルダに、独立した git リポジトリとして産む）:
 
 ```bash
-cd templates/<name>
-flix run             # 起動
-flix test            # テスト
-```
-
-自分のゲームを始める（別ディレクトリに、独立した git リポジトリとして産む）:
-
-```bash
-make new-game GAME=/abs/path/to/mygame NAME=mygame TITLE=題名 TEMPLATE=rpg-starter
+fge new --list                             # テンプレートの一覧
+fge new my-game --template rpg-starter     # ./my-game を作る
+cd my-game && make run                     # 遊ぶ（make test でテスト）
 ```
 
 ## ゲームデータ（Doc）
@@ -379,7 +386,7 @@ Doc の種類ごとに `<種類>.schema.json` があり、この 1 枚のスキ�
 エディタのフォーム生成・起動時の検証・AI がデータを書くときの仕様書を兼ねる。
 ゲームが `App.watchFile` で Doc を監視すると、保存した内容が走っているゲームに即反映される。
 
-Doc は手書きでも、**flix_ge_studio**（別リポの Elm + Tauri エディタ）の
+Doc は手書きでも、**flix_ge_studio**（別リポの Elm + Tauri エディタ・凍結中）の
 フォーム／スライダーからでも編集できる。詳しくは
 [docs/doc-conventions.md](docs/doc-conventions.md) と、[CLAUDE.md](CLAUDE.md) の
 「エディタと Doc の流儀」の節を参照。
@@ -408,9 +415,48 @@ src/           Flix コミュニティビルド用のルートプロジェクト
 `make sync` が各パッケージを `build-pkg` し、依存先へ相対 symlink で配布する
 （cp ではなく symlink なので、エンジンを再ビルドすれば即座に反映される）。
 
-## 開発 Tips
+## engine を直す人向け
+
+ここまでは `fge` が取ってきた engine を使う。engine そのものを直すときは、このリポジトリを clone して自分で組む。
+
+- **devbox**（必須。JDK 25 + GNU make + Flix 0.80.0 コンパイラを自動取得）
+- 対応 OS: macOS（Apple Silicon / Intel）/ Linux
+
+Flix **0.80.0** コンパイラは [Cj-bc/flix.nix](https://github.com/Cj-bc/flix.nix) 経由で提供され
+（`devbox.json` に固定）、jar の手動ダウンロードは不要。`bin/flix` ラッパがその jar を
+devbox の JDK 25 で実行する（必要に応じて `-XstartOnFirstThread`・headless フラグを付与）。
+
+ツールチェーンを用意し、エンジンパッケージをビルドする:
 
 ```bash
+devbox shell        # JDK 25 + make + Flix コンパイラを取得し、bin/ を PATH に追加
+make sync            # 全エンジンパッケージを build-pkg し、templates・bench へ symlink 配布
+make go-build        # go/ から bin/fge を組む
+```
+
+`make sync` は **初回に必ず一度実行する**。各テンプレはエンジンを
+`lib/github/ababup1192/.../0.1.0/` への相対 symlink 経由で解決するため、これが無いと依存を解決できない。
+エンジンパッケージを編集したら `make sync` で反映する（`render_gl` / `engine_world` / `engine_tools` は
+`engine` のソースと束ねた `.layers/<層>/` で組む。張り直しは `make sync-layers`）。
+
+どのテンプレも同じ手順で実行・テストできる:
+
+```bash
+cd templates/<name>
+flix run             # 起動
+flix test            # テスト
+```
+
+取ってきた engine でなく、この clone からゲームを作る:
+
+```bash
+make new-game GAME=/abs/path/to/mygame NAME=mygame TITLE=題名 TEMPLATE=rpg-starter
+```
+
+開発 Tips:
+
+```bash
+make help                # 他ターゲット（sync-layers など）を一覧表示
 make sync-layers         # .layers/ を張り直す（engine + render_gl / engine_world / engine_tools）
 make sync-root-src       # コミュニティビルド用ルート src/ symlink 集を再生成
 make clean-locks         # flix check 中断で残った Maven cache の *.lock を削除

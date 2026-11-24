@@ -92,10 +92,8 @@
   `pub def loopPointsOf(getByte: Int32 -> Int8 \ ef, getInt32LE: Int32 -> Int32 \ ef, limit: Int32): Option[(Int32, Int32)] \ ef`
 
 ## BackgroundLoad — `engine/src/platform/BackgroundLoad.flix`
-- 鍵（場面の名前など）ごとに読む物の組。
-  `pub type alias Group[r: Type, a: Type] = { name = String, keys = List[String], pathsOf = String -> List[String], read = String -> r \ Fs.FileRead, decode = r -> Result[String, a] \ IO, costMs = Float64 }`
-- 待ちの表（鍵ごとの状態）。ゲームは resources 側に置く。
-  `pub type alias Pending = { group = String, states = Map[String, LoadProgress.LoadState], sentPriority = List[String], costMs = Float64, idleSinceMs = Float64 }`
+- `pub type alias Group[r: Type, a: Type] = { name = String, keys = List[String], pathsOf = String -> List[String], read = String -> r \ Fs.FileRead, decode = r -> Result[String, a] \ IO, costMs = Float64 }`
+- `pub type alias Pending = { group = String, states = Map[String, LoadProgress.LoadState], sentPriority = List[String], costMs = Float64, idleSinceMs = Float64 }`
 - 鍵の並びが使えるか（Godot の load_threaded_get_status）。判定するだけで待たない。
   `pub enum Readiness with Eq, ToString { case Ready case Waiting case GaveUp(String) }`
 - 起動の読み込み: 道が全部起動の素材（Loaded）の鍵は read を順に・decode を並列に回し、残りは待ちの表に載せる
@@ -337,8 +335,7 @@
   `pub type alias Cache[a] = CacheData[a]`
 - 空の置き場を作る。
   `pub def fresh(): Cache[a] \ IO`
-- params ごとに、前回 build がファイルから受け取った物と今のディスクが同じなら前の値を返し、違えば build で作り直す。
-  `pub def loadOrBuild(cache: Cache[a], params: String, extraFiles: List[String], build: Unit -> a \ ef): a \ (ef - Fs.FileRead) + Fs.FileRead + IO`
+- `pub def loadOrBuild(cache: Cache[a], params: String, extraFiles: List[String], build: Unit -> a \ ef): a \ (ef - Fs.FileRead) + Fs.FileRead + IO`
 - loadOrBuild に加えて、build の中の Fs.FileTest（exists 系）と Fs.DirList（一覧）も記録する。
   `pub def loadOrBuildWithDirs(cache: Cache[a], params: String, extraFiles: List[String], build: Unit -> a \ ef): a \ (ef - Fs.FileRead - Fs.FileTest - Fs.DirList) + Fs.FileRead + Fs.FileTest + Fs.DirList + IO`
 
@@ -347,8 +344,7 @@
   `pub enum SizeClass with Eq, Order, ToString { case Small case Medium case Large }`
 - pointer の種類（ブラウザの PointerEvent.pointerType と同じ分け方。ペンは Mouse に入れる）。
   `pub enum PointerKind with Eq, ToString { case Mouse case Touch }`
-- 起動の時に選んだ design の向き（持ち方ではない）。縦の指定（project.json の web.portraitDesign）を持つゲームを
-  `pub enum Orientation with Eq, ToString { case Landscape case Portrait }`
+- `pub enum Orientation with Eq, ToString { case Landscape case Portrait }`
 - design の大きさの形から向きを決める（高さが幅より大きい時だけ Portrait）。
   `pub def orientationOf(design: Vec2.Vec2): Orientation`
 - size = 描き先（ウィンドウ・canvas）の大きさ（論理 px。ブラウザは CSS px・mac は point）。
@@ -535,8 +531,7 @@
 - `pub type alias Frustum = FrustumData`
 - clip の行列（projectionMatrix × viewMatrix）の行から 6 つの面を取り出す（左・右・下・上・near・far）。
   `pub def ofClipMatrix(clip: Mat4.Mat4): Frustum`
-- 形の座標の箱（min・max）を world で写した物が、視錐台に掛かりうるか。8 つの角が 1 つの面の外に全部あれば偽。
-  `pub def intersectsBox(f: Frustum, min: Vec3.Vec3, max: Vec3.Vec3, world: Mat4.Mat4): Bool`
+- `pub def intersectsBox(f: Frustum, min: Vec3.Vec3, max: Vec3.Vec3, world: Mat4.Mat4): Bool`
 - 中心 center・半径 radius の球が、視錐台に掛かりうるか。
   `pub def intersectsSphere(f: Frustum, center: Vec3.Vec3, radius: Float64): Bool`
 - 中心 center・半径 radius の球が視錐台の中へ入っている度合い（0〜1）。6 つの面の「球が面の内側へ入っている長さ ÷ 直径」の一番小さい物。
@@ -636,8 +631,7 @@
   `pub def load(path: String): Result[String, Model3d.Model3d] \ Fs.FileRead`
 - .glb のバイトから作る。壊れている・読まない物を含む時は Err。parts は primitive ごと（材質 None・gltfMaterial の絵の名前は None）・textures は空。
   `pub def fromGlb(bytes: Vector[Int8]): Result[String, Model3d.Model3d]`
-- fromGlb の、形の中身の鍵を key から作る版（part ごとに "key#part<番号>"・まとめた形は "key#all"）。
-  `pub def fromGlbKeyed(key: String, bytes: Vector[Int8]): Result[String, Model3d.Model3d]`
+- `pub def fromGlbKeyed(key: String, bytes: Vector[Int8]): Result[String, Model3d.Model3d]`
 - 材質の絵の長い辺の上限（px）。baseColor = baseColorTexture と emissiveTexture（同じ色の絵）・normal = normalTexture。
   `pub type alias TextureLimits = { baseColor = Int32, normal = Int32 }`
 - 上限なし。ほかの値は { normal = 1024 | Gltf.noTextureLimits() } の形で替える。
@@ -646,12 +640,10 @@
   `pub def loadTexturedUsing(decoder: ImageData.ImageDecoder, limits: TextureLimits, path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO`
 - loadTexturedUsing のバイトの版。
   `pub def fromGlbTexturedUsing(decoder: ImageData.ImageDecoder, limits: TextureLimits, bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO`
-- loadTexturedUsing に、材質の metallic・roughness も読んで付ける版（Scene3d.withMetallicRoughness。付く条件・既定値・絵の読み方は materialOf の説明）。
-  `pub def loadTexturedPbrUsing(decoder: ImageData.ImageDecoder, limits: TextureLimits, path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO`
+- `pub def loadTexturedPbrUsing(decoder: ImageData.ImageDecoder, limits: TextureLimits, path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO`
 - loadTexturedPbrUsing のバイトの版。
   `pub def fromGlbTexturedPbrUsing(decoder: ImageData.ImageDecoder, limits: TextureLimits, bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO`
-- 絵と材質つきの読み込みの選択肢。limits = 材質の絵の大きさの上限（loadTexturedUsing の limits）・
-  `pub type alias LoadOptions = { limits = TextureLimits, pbr = Bool, vertexColors = Bool }`
+- `pub type alias LoadOptions = { limits = TextureLimits, pbr = Bool, vertexColors = Bool }`
 - 上限なし・metallic・roughness を読まない・COLOR_0 を読まない（loadTexturedUsing と同じ）。欄を書き替えて使う:
   `pub def defaultLoadOptions(): LoadOptions`
 - path の .glb を、選択肢 options で絵と材質つきで読む（読み方は loadTexturedUsing・欄は LoadOptions）。
@@ -758,20 +750,16 @@
   `pub def pointStride(): Int32`
 - スポット 1 本の欄の数（位置 3・向き 3・外の cos・内の cos・color × intensity 3・range²）。
   `pub def spotStride(): Int32`
-- 点光源を 1 本の Vector に並べた物（1 本 = pointStride() 個）。生成した SoftRaster3dLight の点光源の輪が読む。
-  `pub def packPointLights(lights: List[Scene3d.PointLight]): Vector[Float64]`
+- `pub def packPointLights(lights: List[Scene3d.PointLight]): Vector[Float64]`
 - スポットを 1 本の Vector に並べた物（1 本 = spotStride() 個）。
   `pub def packSpotLights(lights: List[Scene3d.SpotLight]): Vector[Float64]`
 
 ## LightModel3d.Codegen — `engine/src/scene3d/LightModel3d/Codegen.flix`
-- 生成する CPU の光の関数が呼ぶ engine_tools の名前（影の地図の型と、地図・スポットの並びの位置・world の点 → 影の割合の関数）。
+- shadowFunction は (shadow, スポットの並びの欄の位置（スポットの番号 × LightModel3d.spotStride()）, px, py, pz) -> Float64 の関数の名前・
   `pub type alias CpuHooks = { shadowType = String, shadowFunction = String, countLitFunction = String }`
-- 生成した CPU の光の関数（engine_tools の gen/SoftRaster3dLight.flix）のソースの全部（engine の開発用。ゲームは使わない）。
-  `pub def generateFlix(hooks: CpuHooks): String`
-- 生成器のエッジケース（1 成分だけ使う Let・引数を読まない光のループ・同じエントリの 2 つのループ・文のある枝の Select・エントリに書いた引数の順）を
-  `pub def generateFlixCases(hooks: CpuHooks): String`
-- 式 e を GLSL の関数 `vec3 name(…)` に生成した字。画素ごとの入力（点・法線・lightmap の色・かすみの前の色・空の向き・albedo・拡散の光・metallic と roughness）は
-  `pub def toGlsl(name: String, perPixel: List[Vec3Input], e: Vec3Expr): String`
+- `pub def generateFlix(hooks: CpuHooks): String`
+- `pub def generateFlixCases(hooks: CpuHooks): String`
+- `pub def toGlsl(name: String, perPixel: List[Vec3Input], e: Vec3Expr): String`
 - 式 e を WGSL の関数 `fn name(…) -> vec3f` に生成した字（toGlsl と同じ木・同じ引数の並び）。場面の値は `r3d` の欄（Render3dWgsl の struct）で読み、
   `pub def toWgsl(name: String, perPixel: List[Vec3Input], e: Vec3Expr): String`
 
@@ -780,8 +768,7 @@
   `pub def toGlsl(): String`
 - WGSL の fn r3d_pointShadowLit(i, p, g, n) -> f32（場面の値は r3d と r3dLight の欄。atlas の行は読む時だけ高さ − 1 − 行 に返す）。
   `pub def toWgsl(): String`
-- CPU の描き手の pointShadowLitAt の def の字（生成するファイルの mod の中に置く）。countLit = 面の地図・一辺・左下の画素 (x, y)・幅・比べる値・0・0 → 数 の関数の名前。
-  `pub def toFlix(countLit: String): String`
+- `pub def toFlix(countLit: String): String`
 
 ## LoadProgress — `engine/src/platform/LoadProgress.flix`
 - 起動の読み込みの進み具合（区切りごとに 1 回）と、読み込みの仕事を回す口。
@@ -812,8 +799,7 @@
   `pub type alias LoadWait = { reason = LoadWaitReason, names = List[String], waited = Float64, progress = Float64, pressed = Bool }`
 - 後回しの無い機種の組: stateOf と getCodeLoadState はいつも Loaded・missing はいつも空・missingGen と spentMs はいつも 0・
   `pub def localDownloads(): AssetDownloads`
-- 知らせを捨て、仕事を順に回す handler（headless の描き出し・動画・テスト・flow の再生）。
-  `pub def runNoop(f: Unit -> a \ ef): a \ (ef - LoadProgress) + IO`
+- `pub def runNoop(f: Unit -> a \ ef): a \ (ef - LoadProgress) + IO`
 - tasks を 1 つずつ回し、最初に (phase, 0, n)・1 つ終わるたびに (phase, 終わった数, n) を report へ渡す（空なら何も渡さない）。
   `pub def runTasksInOrder(report: (String, Int32, Int32) -> Unit \ ef, phase: String, tasks: List[Unit -> Unit \ IO]): Unit \ ef + IO`
 - xs を f で 1 つずつ作り、作るたびに (phase, 作った数, 全部の数) を知らせる（最初に (phase, 0, n)）。
@@ -844,8 +830,7 @@
   `pub enum SoundCall with Eq, ToString { case Play case Stop case SetVolume(Float64) case SetPitch(Float64) case SetLooping(Bool) }`
 - 名前 name の音への呼び出しを覚えた表へ合わせる。Stop は忘れる（届いても鳴らさず、音量も当てない）。
   `pub def notePendingSound(name: String, call: SoundCall, pending: Map[String, PendingSound]): Map[String, PendingSound]`
-- 届いた音を鳴らすか。declaredLooping = 宣言（project.json の looping）でループするか。
-  `pub def playsOnArrival(sound: PendingSound, declaredLooping: Bool): Bool`
+- `pub def playsOnArrival(sound: PendingSound, declaredLooping: Bool): Bool`
 
 ## Log — `engine/src/core/Log.flix`
 - stderr へ 1 行。効果は `unsafe IO` で隠す
@@ -864,24 +849,21 @@
 ## Mat4 — `engine/src/scene3d/Mat4.flix`
 - `pub type alias Mat4 = Mat4Data`
 - `pub def identity(): Mat4`
-- a × b（点には b を先に当て、次に a を当てる）。
-  `pub def mul(a: Mat4, b: Mat4): Mat4`
+- `pub def mul(a: Mat4, b: Mat4): Mat4`
 - 点を写す（w = 1 で掛け、w での割り算はしない。射影の行列には applyPerspective）。
   `pub def apply(m: Mat4, p: Vec3.Vec3): Vec3.Vec3`
 - 向きを写す（w = 0。平行移動を受けない）。法線には normalMatrix を掛けた物を使う。
   `pub def applyDir(m: Mat4, d: Vec3.Vec3): Vec3.Vec3`
 - 点を w = 1 で掛け、出た w で割る（projectionMatrix × viewMatrix の後の NDC）。w が 0 以下（目の後ろ）は None。
   `pub def applyPerspective(m: Mat4, p: Vec3.Vec3): Option[Vec3.Vec3]`
-- 法線を写す行列（左上 3×3 の逆行列の転置。平行移動は持たない）。
-  `pub def normalMatrix(m: Mat4): Mat4`
+- `pub def normalMatrix(m: Mat4): Mat4`
 - 行優先の 16 個（cells[row * 4 + col]）。見方を変えるだけで写さない（判定の熱い所が 1 点ずつ record を作らずに引くため）。
   `pub def asRows(m: Mat4): Vector[Float64]`
 - GL の uniform（glUniformMatrix4fv の transpose = false）に渡す列優先の 16 個。
   `pub def toColumns(m: Mat4): Vector[Float64]`
 - 列優先の 16 個から作る（toColumns の逆・glTF の MAT4 と同じ並び）。長さが 16 でなければ Err。
   `pub def ofColumns(v: Vector[Float64]): Result[String, Mat4]`
-- 逆行列。行列式がほぼ 0（1e-12 未満）なら None。
-  `pub def inverse(m: Mat4): Option[Mat4]`
+- `pub def inverse(m: Mat4): Option[Mat4]`
 - 平行移動。
   `pub def translate(v: Vec3.Vec3): Mat4`
 - 軸ごとの倍率。
@@ -917,18 +899,14 @@
   `pub type alias TexturedPolygon = { points = List[Vec3.Vec3], uvs = List[Vec2.Vec2], color = Color }`
 - uv つきの多角形の列から作る（割り方と法線は fromPolygons と同じ・3 点未満の多角形は捨てる）。
   `pub def fromTexturedPolygons(polys: List[TexturedPolygon]): Result[String, Mesh3d]`
-- 箱投影の uv（形の座標 × scale。置き場所を動かしても絵が付いて動く）。三角形ごとに、面の法線の一番大きい軸の面へ写す:
-  `pub def withBoxUvs(scale: Float64, m: Mesh3d): Mesh3d`
+- `pub def withBoxUvs(scale: Float64, m: Mesh3d): Mesh3d`
 - 2 本目の uv（lightmap を読む UV。頂点ごとに u・v の 2 つ・(0, 0) が絵の左上）を付ける。Unity の uv2・Godot の UV2・
   `pub def withUvs2(uvs: Vector[Float64], m: Mesh3d): Result[String, Mesh3d]`
-- Wavefront OBJ と .mtl の字から作る。読むのは v・vt・f（v/vt/vn の形は 1 番目と 2 番目の番号・負の番号はその行までの頂点から数える）・
-  `pub def fromObj(objText: String, mtlText: String): Result[String, Mesh3d]`
-- 頂点の色に k を掛けた形（1 を超えてよい。材質は絵 × 頂点の色なので、2 で頂点の色の 0.5 が絵のままの明るさになる）。
-  `pub def scaleColors(k: Float64, m: Mesh3d): Mesh3d`
+- `pub def fromObj(objText: String, mtlText: String): Result[String, Mesh3d]`
+- `pub def scaleColors(k: Float64, m: Mesh3d): Mesh3d`
 - 中身の鍵（位置・色・番号の SHA-256 の 16 進。uv つきは uv とタンジェントも）。同じ中身なら同じ字になる。GL はこれで頂点バッファを引く。
   `pub def contentHash(m: Mesh3d): String`
-- 中身の鍵を key から作った物に差し替えた形（中身はそのまま）。key は、同じ key なら同じ中身だと呼ぶ側が約束できる字
-  `pub def withContentKey(key: String, m: Mesh3d): Mesh3d`
+- `pub def withContentKey(key: String, m: Mesh3d): Mesh3d`
 - 軸にそろった箱（AABB）の最小と最大の角。
   `pub type alias Bounds = { min = Vec3.Vec3, max = Vec3.Vec3 }`
 - 頂点の最小と最大（形の座標）。頂点の無い形は 0。
@@ -949,8 +927,7 @@
   `pub def skinJoints(m: Mesh3d): Option[Vector[Int32]]`
 - 頂点ごとに 4 つの重み（足して 1）。ジョイントの無い形は None。
   `pub def skinWeights(m: Mesh3d): Option[Vector[Float64]]`
-- 使っているジョイントの番号の最大（重みが 0 の欄の番号も数える）。ジョイントの無い形は None。
-  `pub def maxSkinJoint(m: Mesh3d): Option[Int32]`
+- `pub def maxSkinJoint(m: Mesh3d): Option[Int32]`
 - 三角形の頂点の番号（3 つで 1 枚・外から見て時計回り）。
   `pub def indices(m: Mesh3d): Vector[Int32]`
 - 頂点の uv（頂点ごとに u・v の 2 つ。(0, 0) が絵の左上）。uv の無い形は None。
@@ -963,14 +940,11 @@
 ## Mip — `engine/src/scene3d/Mip.flix`
 - 段を作る時の、4 つのテクセルの色の平均の仕方。SrgbCurve = 8bit の値を sRGB の曲線の値と見て、線形の量へ戻して平均し、
   `pub enum Average with Eq, ToString { case SrgbCurve case Raw }`
-- 絵 tex の段の列（段 0 = tex・1 × 1 まで）。次の段の辺は floor(n / 2)（1 未満にはしない）で、
-  `pub def build(average: Average, tex: ShaderEval.TexData): List[ShaderEval.TexData]`
-- tex の長い辺が maxSide 以下になるまで、Raw の段と同じ縮め方で半分にした絵（もう収まっていれば tex のまま）。
-  `pub def shrinkTo(maxSide: Int32, tex: ShaderEval.TexData): ShaderEval.TexData`
+- `pub def build(average: Average, tex: ShaderEval.TexData): List[ShaderEval.TexData]`
+- `pub def shrinkTo(maxSide: Int32, tex: ShaderEval.TexData): ShaderEval.TexData`
 - 絵を読む座標の、画面の右隣と下隣の画素との差（uv の単位）。
   `pub type alias Derivatives = { dudx = Float64, dvdx = Float64, dudy = Float64, dvdy = Float64 }`
-- 読む段の番号（GL と CPU で同じ式）。差の各成分から floor(d + 0.5) を引き（REPEAT で座標が 1 跳ぶ継ぎ目の画素で
-  `pub def lodOf(d: Derivatives, width: Int32, height: Int32, levels: Int32): Float64`
+- `pub def lodOf(d: Derivatives, width: Int32, height: Int32, levels: Int32): Float64`
 
 ## Model3d — `engine/src/scene3d/Model3d.flix`
 - primitive 1 つ。mesh = 形（uv を持つ primitive だけ uv つき。ノードの world の行列は焼き込んである）・
@@ -998,8 +972,7 @@
   `pub def partInstances(world: Mat4.Mat4, model: Model3d): List[Scene3d.Instance3d]`
 - ノードの world の原点（world の行列の平行移動の列）。
   `pub def nodeOrigin(node: ModelNode): Vec3.Vec3`
-- ノード node から出た parts の形（world をベイクした頂点）を、そのノードの局所の座標へ戻す行列（焼き込みに使った world の逆行列）。
-  `pub def partLocalToNode(node: ModelNode, model: Model3d): Option[Mat4.Mat4]`
+- `pub def partLocalToNode(node: ModelNode, model: Model3d): Option[Mat4.Mat4]`
 
 ## Num — `engine/src/core/Num.flix`
 - 0 以上 1 以下に収める。濃さ・進み具合・混ぜ具合など「0〜1 のはずの値」を
@@ -1018,8 +991,7 @@
   `pub def floorInt(x: Float64): Int32`
 - 最も近い整数へ丸めて Int32 に落とす（0.5 は上へ）。負でも床基準（-1.5 → -1）。
   `pub def roundInt(x: Float64): Int32`
-- 平方根。負の数は NaN（Java の Math.sqrt と同じ）。
-  `pub def sqrt(x: Float64): Float64`
+- `pub def sqrt(x: Float64): Float64`
 - sin（角はラジアン）。
   `pub def sin(x: Float64): Float64`
 - cos（角はラジアン）。
@@ -1097,8 +1069,7 @@
   `pub eff Draw3d { def drawScene3d(cmd: Scene3d.RenderCmd): Unit }`
 - 遊びの途中で初めて出る物を GPU へ先に上げる。前と同じ cmd#key なら何もしない。
   `pub eff Draw3d { def preload3d(cmd: Scene3d.PreloadCmd): Unit }`
-- 描くのと重ねて進める仕事を 1 つずつ預ける口。
-  `pub eff Tasks`
+- `pub eff Tasks`
 - `pub eff Tasks { def startTask(task: Unit -> JObject \ IO): Unit }`
 - `pub eff Tasks { def finishTask(): JObject }`
 - 仕事を重ねない handler（ブラウザ版・窓の無い描き手）: 預けた仕事を finishTask の時にその場で走らせる。
@@ -1156,8 +1127,7 @@
 
 ## Pose3d — `engine/src/scene3d/Pose3d.flix`
 - `pub type alias Pose3d = PoseData`
-- 局所の姿勢（AnimationClip3d.sample か blend の結果）を親から順に重ねる。
-  `pub def compute(skin: Skin3d.Skin3d, local: Vector[Skin3d.JointPose]): Pose3d`
+- `pub def compute(skin: Skin3d.Skin3d, local: Vector[Skin3d.JointPose]): Pose3d`
 - `pub def jointCount(p: Pose3d): Int32`
 - 2 つの局所の姿勢を混ぜる（t = 0 で a・1 で b）。平行移動と倍率は 2 つの値の間をなめらかにつなぎ、回転は球面の上で。
   `pub def blend(a: Vector[Skin3d.JointPose], b: Vector[Skin3d.JointPose], t: Float64): Vector[Skin3d.JointPose]`
@@ -1191,8 +1161,7 @@
   `pub type alias ProjectConfig = { rootDir = String, glyphs = String, designWidth = Int32, designHeight = Int32, windowWidth = Int32, windowHeight = Int32, title = String, textureManifest = List[{name = String, path = String, hasAlpha = Bool}], fontManifest = List[{name = String, path = String, fontSize = Float64}], soundManifest = List[{name = String, path = String, looping = Bool}], clearColor = Color, maxDeltaTime = Float64, scene3dTextureBudgetMB = Int32, scene3dTextureBudgetCount = Int32 }`
 - 読み込み結果。シーンは別途 `findSceneFiles` で列挙する。
   `pub type alias Project = { rootDir = String, config = ProjectConfig, portraitDesign = Option[PortraitDesign] }`
-- 縦の design の決め方（project.json の web.portraitDesign）。幅は width に固定し、高さは開いた画面の縦横の比から決めて
-  `pub type alias PortraitDesign = { width = Int32, minHeight = Int32, maxHeight = Int32 }`
+- `pub type alias PortraitDesign = { width = Int32, minHeight = Int32, maxHeight = Int32 }`
 - 縦の design の大きさ（幅, 高さ）。view = 描き先の大きさ（CSS px など。比だけを使う）。view が 0 以下なら高さは minHeight。
   `pub def portraitDesignOf(spec: PortraitDesign, view: Vec2.Vec2): (Int32, Int32)`
 - 縦で起動する時の設定: design を portraitDesignOf に替え、窓の大きさを view にした config。縦の指定が無ければ None（横のまま起動する）。
@@ -1216,10 +1185,8 @@
 - `pub type alias Quat = { x = Float64, y = Float64, z = Float64, w = Float64 }`
 - 回さない向き。
   `pub def identity(): Quat`
-- 長さ 1 に直した物。長さ 0 の時は identity。
-  `pub def normalized(q: Quat): Quat`
-- a から b へ球面の上をなめらかにつなぐ（t = 0 で a・1 で b。結果は長さ 1）。
-  `pub def slerp(a: Quat, b: Quat, t: Float64): Quat`
+- `pub def normalized(q: Quat): Quat`
+- `pub def slerp(a: Quat, b: Quat, t: Float64): Quat`
 - 回転の行列（平行移動なし）。q は長さ 1 として読む。
   `pub def toMat4(q: Quat): Mat4.Mat4`
 
@@ -1398,8 +1365,7 @@
   `pub def directionalShadowFor(sizeClass: Display.SizeClass): DirectionalShadow`
 - 描く時に使う太陽（使える時だけ Some。direction は長さ 1 にした光の進む向き）。GL・CPU・描き出しの鍵はこれだけを読む。
   `pub def directionalLightOf(scene: Scene3dCmd): Option[DirectionalLight]`
-- 太陽を使わない理由（1 行）。使える時と、太陽が無い時は None。毎コマ通るので、呼ぶ側が鍵（"@sun:direction"）ごとに初回 1 回だけ出す
-  `pub def directionalLightWarning(scene: Scene3dCmd): Option[String]`
+- `pub def directionalLightWarning(scene: Scene3dCmd): Option[String]`
 - 太陽の光（directionalLightOf の値）が、点から光源へ向かう向き（長さ 1）と、線形の量にした color × intensity。GL の uniform と CPU の引数に同じ値を入れる。
   `pub def sunTermsOf(l: DirectionalLight): { toward = Vec3.Vec3, color = Vec3.Vec3 }`
 - 太陽の影の地図を描く材料。matrix = world → 光の clip（正射影・Float64）・frustum = 影を落とす物の間引き（matrix の箱）・
@@ -1436,8 +1402,7 @@
   `pub def psxPreset(): PsxLook`
 - 場面の PS1 風の描き方を替える（Scene3dCmd の psx）。
   `pub def withPsx(look: PsxLook, scene: Scene3dCmd): Scene3dCmd`
-- 書き出す物。Color = 色・Depth = 目からの奥行きの灰色（near で黒・near + range で白。ピントの Pass の入力）。
-  `pub enum Output { case Color case Depth({ near = Float64, range = Float64 }) }`
+- `pub enum Output { case Color case Depth({ near = Float64, range = Float64 }) }`
 - uv が 0..1 の外へ出た時の読み方。Repeat = 繰り返す・Clamp = 端の色を伸ばす。
   `pub enum Wrap with Eq { case Repeat case Clamp }`
 - 法線マップ。texture = 絵の名前（タンジェント空間・緑が絵の上）・strength = でこぼこの強さ（1 で絵のまま）。
@@ -1472,8 +1437,7 @@
   `pub def withEmissionIntensity(k: Float64, m: Material3d): Material3d`
 - spec の名前だけを替える（知らせの文面・GL のプログラムの名前に出る）。木の違う材質に別の名前を付けなくてよい
   `pub def withSpecName(name: String, m: Material3d): Material3d`
-- 金属っぽさ metallic と粗さ roughness を付ける（Unity の Standard・Godot の StandardMaterial3D と同じ 2 つの値。どちらも 0..1 に丸める）。
-  `pub def withMetallicRoughness(metallic: Float64, roughness: Float64, m: Material3d): Material3d`
+- `pub def withMetallicRoughness(metallic: Float64, roughness: Float64, m: Material3d): Material3d`
 - metallic と roughness を絵 texture から読む（glTF の metallicRoughnessTexture と同じ決まり: B = metallic・G = roughness）。
   `pub def withMetallicRoughnessTexture(texture: String, m: Material3d): Material3d`
 - metallic と roughness を外す（glb の材質を今までのマットな絵に戻す時）。
@@ -1509,8 +1473,7 @@
   `pub def withPose(p: Pose3d.Pose3d, i: Instance3d): Instance3d`
 - 描く時に曲げる Pose（GL と CPU が同じ判定に使う）。None ならバインドポーズのまま描く:
   `pub def skinningOf(i: Instance3d): Option[Pose3d.Pose3d]`
-- skinningOf がジョイントの数の食い違いでバインドポーズへ落とす時の、知らせる 1 行（落とさない時は None）。
-  `pub def skinningWarning(i: Instance3d): Option[String]`
+- `pub def skinningWarning(i: Instance3d): Option[String]`
 - 置いた物の中身を読む（GL・CPU・鍵が使う）。
   `pub def instanceFieldsOf(i: Instance3d): InstanceFields`
 - 置いた物の world の境界（形の境界の 8 つの角を world で写した物を囲む AABB）。
@@ -1533,8 +1496,7 @@
   `pub def frustumOf(scene: Scene3dCmd): Frustum.Frustum`
 - スポットの影の地図を描く目の視錐台（縦横の比は 1）。目に見えない物も影は落とすので、影の地図はこちらで間引く。
   `pub def shadowFrustumOf(spot: SpotLight): Frustum.Frustum`
-- lightmap を読む mip のレベルの数の上限の既定（レベル 0〜3。UV の島の間が 16 px の lightmap に合う）。
-  `pub def lightmapMaxLevels(): Int32`
+- `pub def lightmapMaxLevels(): Int32`
 - UV の島の間の px（読み込んだ lightmap の絵の上で）から、読む mip のレベルの数の上限を決める（1 以上）。
   `pub def lightmapLevelsForGap(gapPx: Int32): Int32`
 - colorSpace = Srgb・intensity = 1・maxLevels = lightmapMaxLevels() の lightmap。ほかの値は { intensity = 2.0 | Scene3d.lightmap(name) } の形で替える。
@@ -1555,20 +1517,16 @@
   `pub type alias Billboard3d = BillboardData`
 - anchor 足元の真ん中・tint 白・光を当てる・影を落とさない・影を受けない。
   `pub def billboard(texture: String, regionRect: Rect2.Rect2, position: Vec3.Vec3, size: Vec2.Vec2): Billboard3d`
-- 太陽の影の地図に描く（Unity の Cast Shadows・Godot の cast_shadow）。地図の中では、同じ大きさの板を地面に垂直に立て、
-  `pub def withCastShadows(on: Bool, b: Billboard3d): Billboard3d`
-- 影の地図に描く板の大きさの倍率（x = 幅・y = 高さ。既定 (1, 1)）。見えている板は変えず、影だけを細く・短くする
-  `pub def withShadowCasterScale(scale: Vec2.Vec2, b: Billboard3d): Billboard3d`
+- `pub def withCastShadows(on: Bool, b: Billboard3d): Billboard3d`
+- `pub def withShadowCasterScale(scale: Vec2.Vec2, b: Billboard3d): Billboard3d`
 - 影の地図に描く時の板（size に shadowCasterScale を掛けた物）。描き手は影の地図にこの値を描く。
   `pub def shadowCasterFieldsOf(f: BillboardFields): BillboardFields`
 - 太陽の影を受ける（Unity の Receive Shadows）。lit の時だけ効く。受ける点は絵の中の高さごとに 1 つ（billboardShadowPointOf）で、
   `pub def withReceiveShadows(on: Bool, b: Billboard3d): Billboard3d`
-- 影の地図に描くビルボードの板の横の向き（長さ 1・水平）。toward = 点から太陽への向き・fallback = 太陽が真上の時の向き（カメラの right）。
-  `pub def billboardShadowRightOf(toward: Vec3.Vec3, fallback: Vec3.Vec3): Vec3.Vec3`
+- `pub def billboardShadowRightOf(toward: Vec3.Vec3, fallback: Vec3.Vec3): Vec3.Vec3`
 - 場面の太陽の影の地図に描くビルボードの板の横の向き（太陽の無い場面はカメラの right）。GL・WebGPU・CPU の描き手がこれ 1 つを読む。
   `pub def billboardShadowRightOfScene(scene: Scene3dCmd): Vec3.Vec3`
-- ビルボードが太陽の影を受ける点: 絵の中の縦の位置 v（0 = 絵の上・1 = 絵の下）の、影の地図に描いた板の真ん中の縦の線の上の点を、
-  `pub def billboardShadowPointOf(f: BillboardFields, toward: Vec3.Vec3, v: Float64): Vec3.Vec3`
+- `pub def billboardShadowPointOf(f: BillboardFields, toward: Vec3.Vec3, v: Float64): Vec3.Vec3`
 - 影を受ける点を板から水平に離す長さ（板の幅の半分）。billboardShadowPointOf が太陽の高さで割って太陽の方へ進める。
   `pub def billboardShadowOffsetOf(f: BillboardFields): Float64`
 - billboardShadowPointOf が割る、太陽への向きの水平の長さの下限（太陽の高さ約 75.5°）。GLSL・WGSL の字にも同じ数を書く。
@@ -1583,8 +1541,7 @@
   `pub def billboardFieldsOf(b: Billboard3d): BillboardFields`
 - 場面 1 つ。size = 描き物の大きさ（位置は PlacedItem の at。Shader 面と同じ決まり）・zIndex = 2D の並びの中の重なり順・
   `pub type alias Scene3dCmd = { size = Vec2.Vec2, camera = Camera3d.Camera3d, instances = List[Instance3d], groups = List[StaticGroup], billboards = List[Billboard3d], pointLights = List[PointLight], spotLights = List[SpotLight], directionalLight = Option[DirectionalLight], environment = Environment3d, resolution = Resolution, output = Output, zIndex = Int32, time = Float64, textures = List[Texture3d.Texture3d], sky = Option[Sky3d], environmentMap = Option[EnvironmentMap], unitsPerMeter = Float64, pointShadows = Option[PointShadowMap], lightUnits = LightUnits, psx = PsxLook }`
-- 空の場面（環境光は白・光なし・かすみなし・地の色なし・Native・色を書き出す・zIndex 0・時刻 0・絵なし・空なし・1 m = 1・点光源の影なし・Legacy の光・PS1 風は切る）。
-  `pub def scene(camera: Camera3d.Camera3d, size: Vec2.Vec2): Scene3dCmd`
+- `pub def scene(camera: Camera3d.Camera3d, size: Vec2.Vec2): Scene3dCmd`
 - 1 m が場面の長さのいくつかを言う（既定 1 = glTF・Blender と同じ）。Blender の 1 m を 16 で置いた場面は 16。
   `pub def withUnitsPerMeter(k: Float64, scene: Scene3dCmd): Scene3dCmd`
 - 動かない物の集まりの中身。name = 診断と知らせに出す名前・items = (鍵, 置いた物) の並び・removed = 描かない物の鍵（withoutItems）・
@@ -1595,8 +1552,7 @@
   `pub def staticGroup(name: String, items: List[(String, Instance3d)]): StaticGroup`
 - keys の鍵の物を描かない集まり（前に外した鍵に足す）。外す物を変えたコマは、描き手が持ち越しを作り直す。
   `pub def withoutItems(keys: Set[String], g: StaticGroup): StaticGroup`
-- 中の物の tint に c を掛ける集まり（前の withGroupTint の色は置き換える）。色を変えたコマは、描き手が持ち越しを作り直す。
-  `pub def withGroupTint(c: Color, g: StaticGroup): StaticGroup`
+- `pub def withGroupTint(c: Color, g: StaticGroup): StaticGroup`
 - 集まりの中身を読む（描き手が使う）。
   `pub def staticGroupFieldsOf(g: StaticGroup): StaticGroupFields`
 - 集まりの描く物（外した鍵の物を除き、tint を掛けた物・来た順）。
@@ -1657,22 +1613,18 @@
   `pub def maxShadowMapSize(): Int32`
 - pcfRadius の上限（(2r+1)² 回の読みを画素ごとに行うので、大きすぎる値で GPU を止めない）。GL と CPU が同じ値で頭打ちにする。
   `pub def maxShadowPcfRadius(): Int32`
-- スポットライトから見たカメラ（影の地図を描く目）。位置から target を向き、fovY の角で見る。far は max(2, range)・near は min(1, far / 100)。
-  `pub def shadowCamera(spot: SpotLight): Camera3d.Camera3d`
-- スポットの影の判定で地図の値と比べる時に引く値（ShadowMap の bias を、shadowCamera の near で縮めた物）。GL・WebGPU・CPU の描き手がこの値を使う。
-  `pub def spotShadowDepthBiasOf(spot: SpotLight, bias: Float64): Float64`
+- `pub def shadowCamera(spot: SpotLight): Camera3d.Camera3d`
+- `pub def spotShadowDepthBiasOf(spot: SpotLight, bias: Float64): Float64`
 - 影の地図の行列（world → 光の clip 空間。縦横の比は 1）。GL と CPU が同じ物を使う。
   `pub def shadowMatrix(spot: SpotLight): Mat4.Mat4`
-- 上限を超えた光を選んで残す。残った物は元の並びの順のまま。上限以下の光は何も変えない（intensity も触らない）。
-  `pub def pickLights(cmd: Scene3dCmd): Scene3dCmd`
+- `pub def pickLights(cmd: Scene3dCmd): Scene3dCmd`
 - 上限を超えた光の本数（points = 点光源・spots = スポット）。上限以下なら 0。
   `pub def droppedLightsOf(cmd: Scene3dCmd): { points = Int32, spots = Int32 }`
 - 1 コマに描く 3D の場面の列で上限を超えた光の本数の合計（points = 点光源・spots = スポット。droppedLightsOf の和）。
   `pub def droppedLightsOfScenes(scenes: List[RenderCmd]): { points = Int32, spots = Int32 }`
 - 落とす光があれば、種類ごとに (鍵, 知らせる 1 行)。毎コマ通るので、呼ぶ側が鍵ごとに初回 1 回だけ出す（GL と CPU で同じ文面）。
   `pub def droppedLightsWarnings(cmd: Scene3dCmd): List[(String, String)]`
-- Shader 効果へ渡す場面 1 つ。at = 描き物の左上（画面の px）・clip = 切り抜く矩形（画面の px）。
-  `pub type alias RenderCmd = { at = Vec2.Vec2, clip = Option[Rect2.Rect2], scene = Scene3dCmd }`
+- `pub type alias RenderCmd = { at = Vec2.Vec2, clip = Option[Rect2.Rect2], scene = Scene3dCmd }`
 - 描き手へ渡す、先に GPU へ上げる物の宣言（App.withPreload3d）。key = 中身を決める全入力をまとめた字・
   `pub type alias PreloadCmd = { key = DrawCmd.StaticKey, instances = Unit -> List[Instance3d], textures = Unit -> List[Texture3d.Texture3d], variants = List[PreloadVariant] }`
 - textures が空・variants が空の宣言（`{ textures = () -> .. | Scene3d.preloadCmd(key, instances) }` で替える）。
@@ -1823,8 +1775,7 @@
   `pub def roundToHalf(x: Float64): Float64`
 - width × height の画素（rgba = 1 画素に r, g, b, α の 4 つ・行優先）を half に丸めて凍らせる。足りない分は 0。
   `pub def hdrTextureOf(width: Int32, height: Int32, rgba: Vector[Float64]): HdrTexture`
-- hdrTextureOf の、丸め終えた値を受ける版。halves は 1 画素に r, g, b, α の 4 つ・行優先で、どれも roundToHalf を通した値（長さは width × height × 4）。
-  `pub def hdrTextureOfHalves(width: Int32, height: Int32, halves: Vector[Float32]): HdrTexture`
+- `pub def hdrTextureOfHalves(width: Int32, height: Int32, halves: Vector[Float32]): HdrTexture`
 - 幅（テクセルの数）。
   `pub def hdrWidthOf(tex: HdrTexture): Int32`
 - 高さ（テクセルの数）。
@@ -1863,8 +1814,7 @@
   `pub type alias MaterialSample = { albedo = Color, alpha = Float64, emission = Color, metallicRoughness = Option[(Float64, Float64)] }`
 - evalCompiled3 に emission を足した版（bindings の評価を色・α・emission で共有する）。
   `pub def evalMaterial3(compiled: CompiledSpec, point: SurfacePoint, t: Float64): MaterialSample`
-- evalMaterial3 の、段つきの絵を lod で読む版。nextX・nextY = 右隣・下隣の画素の入力（隣が三角形の外でも、重みを外へ延ばした値）。
-  `pub def evalMaterial3Mip(compiled: CompiledSpec, center: SurfacePoint, nextX: SurfacePoint, nextY: SurfacePoint, t: Float64): MaterialSample`
+- `pub def evalMaterial3Mip(compiled: CompiledSpec, center: SurfacePoint, nextX: SurfacePoint, nextY: SurfacePoint, t: Float64): MaterialSample`
 - 段の列 chain の uv (u, v) の r・g・b を lod で読む（sampleMip と同じ読み方。3D の法線マップが読む）。
   `pub def sampleMipRgb(chain: Vector[TexData], sampling: { linear = Bool, repeat = Bool }, lod: Float64, u: Float64, v: Float64): (Float64, Float64, Float64)`
 
@@ -1889,8 +1839,7 @@
   `pub type alias MaterialGlsl = { uniforms = String, functions = String, paramNames = List[String], texReads = List[(String, ShaderDoc.FilterMode)], cutoutAlpha = String }`
 - 3D の材質（spec・自分で光る色 emission・metallic と roughness を RGB の r と g に入れた色 metallicRoughness）の GLSL の部品。World / Normal / VertexColor は varying の vWorld / vNormal / vColor を、
   `pub def compile3d(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], metallicRoughness: Option[ShaderDoc.Shade]): MaterialGlsl`
-- 3D の材質の段つきの読み。c = 読む座標（Spec の変換の後・REPEAT で 0..1 に戻す前）・levels = 段の数（1 なら段 0）。
-  `pub def texMipSource(): String`
+- `pub def texMipSource(): String`
 - `pub def compileBody(spec: ShaderDoc.Spec): String`
 
 ## ShaderGen.Wgsl — `engine/src/shader/ShaderGen/Wgsl.flix`
@@ -1900,16 +1849,14 @@
   `pub type alias SurfaceWgsl = { module = String, functions = String, slots = List[UniformSlot], texReads = List[(String, ShaderDoc.FilterMode)] }`
 - Spec → 2D の面の WGSL（式は ShaderGen.compile と同じ木から作る）。
   `pub def compile(spec: ShaderDoc.Spec): SurfaceWgsl`
-- GL の射影の行列が出した clip の点を WebGPU の clip へ（z を -w..w から 0..w へ。x・y・w はそのまま）。
-  `pub def clipFromGlSource(): String`
+- `pub def clipFromGlSource(): String`
 - 3D の材質の WGSL の部品。declarations = `SgValues` と絵の宣言（`@group(group)`）・functions = ノイズの関数と
   `pub type alias MaterialWgsl = { declarations = String, functions = String, slots = List[UniformSlot], paramNames = List[String], texReads = List[(String, ShaderDoc.FilterMode)], cutoutAlpha = String }`
 - 3D の材質の WGSL（式は ShaderGen.compile3d と同じ木から作る）。group = `sg` と絵を置く bind group の番号。
   `pub def compile3d(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], metallicRoughness: Option[ShaderDoc.Shade], group: Int32): MaterialWgsl`
 - 欄の WGSL の名前（GLSL の uniform と同じ名前）。
   `pub def slotName(slot: UniformSlot): String`
-- 3D の材質の mip のレベルを選ぶ読み（ShaderGen.texMipSource と同じ式。上下は返さない）。
-  `pub def texMipSource(): String`
+- `pub def texMipSource(): String`
 
 ## ShaderJson — `engine/src/shader/ShaderJson.flix`
 - JSON をトップレベルの Spec へ読み取る。壊れていれば Err（パス付きの説明）。
@@ -2088,8 +2035,7 @@
   `pub def fromImage(image: ImageData.ImageData): Result[String, Texture3d]`
 - PNG / JPEG のバイトを decoder で画素に戻して作る（decoder は LoadProgress.imageDecoder() で受け取る）。
   `pub def decodeUsing(decoder: ImageData.ImageDecoder, bytes: Vector[Int8]): Result[String, Texture3d] \ IO`
-- 道 path から読んだバイト bytes の絵。機種が道の絵を自分の側に持てるなら（decoder の platformImage）それを使い、
-  `pub def decodeAtUsing(decoder: ImageData.ImageDecoder, path: String, bytes: Vector[Int8]): Result[String, Texture3d] \ IO`
+- `pub def decodeAtUsing(decoder: ImageData.ImageDecoder, path: String, bytes: Vector[Int8]): Result[String, Texture3d] \ IO`
 - `pub def width(t: Texture3d): Int32`
 - `pub def height(t: Texture3d): Int32`
 - 画素の在りか。
@@ -2100,12 +2046,10 @@
   `pub def name(t: Texture3d): String`
 - 場面の textures から引く名前の頭（GL と CPU が名前の引き分けに使う）。
   `pub def namePrefix(): String`
-- 長い辺が maxSide 以下になるまで半分にした絵（mip の段を作るのと同じ縮め方。もう収まっていれば t のまま）。
-  `pub def limitSize(maxSide: Int32, t: Texture3d): Texture3d`
+- `pub def limitSize(maxSide: Int32, t: Texture3d): Texture3d`
 - 8bit の絵の値の意味。Srgb = sRGB の曲線で書いた値（Blender の PNG・色の絵）・Linear = 値がそのまま量（法線マップ・数値の絵）。
   `pub enum ColorSpace with Eq, Order, Hash, ToString { case Srgb case Linear }`
-- 3D の描き手が絵を貼る使い方（段の平均の仕方を決める）。MaterialTexture = 材質の色の絵（Srgb として平均する）・
-  `pub enum TextureUse with Eq, Order, Hash, ToString { case MaterialTexture case NormalMap case Lightmap(ColorSpace) }`
+- `pub enum TextureUse with Eq, Order, Hash, ToString { case MaterialTexture case NormalMap case Lightmap(ColorSpace) }`
 - 3D の色を線形の量で計算する描き手が、使い方 textureUse の絵の段を平均する時の色空間（GL と CPU が同じ判定を使う）。
   `pub def mipSpaceOf(textureUse: TextureUse): ColorSpace`
 - 色空間 space の絵の段の平均の仕方（Mip.build に渡す）。
@@ -2125,12 +2069,10 @@
   `pub def srgbToLinearLut(lut: ColorLut, s: Float64): Float64`
 - linearToSrgb の表の版（0〜1 の外は式のまま。負は 0・1 を超えても切らない）。
   `pub def linearToSrgbLut(lut: ColorLut, l: Float64): Float64`
-- srgbToLinear と同じ式の GLSL の関数（float → float）。名前は呼ぶ側が決める（ShaderGen の sg_ と重ねない）。
-  `pub def srgbToLinearGlsl(name: String): String`
+- `pub def srgbToLinearGlsl(name: String): String`
 - linearToSrgb と同じ式の GLSL の関数（float → float。負は 0・1 を超えても切らない）。
   `pub def linearToSrgbGlsl(name: String): String`
-- srgbToLinearGlsl の WGSL の版（f32 → f32。式は同じ）。
-  `pub def srgbToLinearWgsl(name: String): String`
+- `pub def srgbToLinearWgsl(name: String): String`
 - linearToSrgbGlsl の WGSL の版（f32 → f32。式は同じ）。
   `pub def linearToSrgbWgsl(name: String): String`
 
@@ -2307,8 +2249,7 @@
   `pub def cross(a: Vec3, b: Vec3): Vec3`
 - `pub def length(v: Vec3): Float64`
 - `pub def distanceSquared(a: Vec3, b: Vec3): Float64`
-- 長さ 1 にした向き。長さ 0 の時は 0 のまま返す。
-  `pub def normalized(v: Vec3): Vec3`
+- `pub def normalized(v: Vec3): Vec3`
 
 ## Visual — `engine/src/render2d/Visual.flix`
 - 既定の見た目（白で色変調なし・表示・重なり順 0）。

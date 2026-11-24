@@ -8,26 +8,31 @@ import (
 	"strings"
 
 	"github.com/ababup1192/flixlint/go/checkres"
+
+	"github.com/ababup1192/flix_game_engine/go/internal/launcher"
 )
 
-const checkUsage = `使い方: bin/fge check codes [--md] [--check] [px|snd|state-shape|doc-refs]
+const checkUsage = `使い方: bin/fge check [CHECKD=0] [QUIET=0]
+  ゲームの根で型検査だけ（make check と同じ。全文は .test-logs/check.log・画面には要約）。
+  CHECKD=0 で常駐を使わない素の check・QUIET=0 で全文を出す。
+使い方: bin/fge check codes [--md] [--check] [px|snd|state-shape|doc-refs]
   検査の code の表（px・snd・state-shape・doc-refs の全部の code の level・metric・unit・want の向き）。
   --md は docs/check-codes.md を書き、--check はずれていれば 1（書かない）。
   1 件の形・score・next・stop・終了コードの決まりは docs/check-results.md。
 `
 
 func init() {
-	register("check", "検査の code の表 (codes [--md|--check])・結果の形は docs/check-results.md", cmdCheck)
+	register("check", "ゲームの型検査（make check）・codes で検査の code の表 (codes [--md|--check])", cmdCheck)
 }
 
 func cmdCheck(out, errOut *strings.Builder, rest []string, asJSON bool) int {
 	args := dropJSONFlag(rest)
-	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
 		out.WriteString(checkUsage)
-		if len(args) == 0 {
-			return 2
-		}
 		return 0
+	}
+	if vars, others := launcher.SplitVars(args); len(others) == 0 {
+		return launchCmd(func(l *launcher.Launcher, _ []string) int { return l.Check(vars) })(out, errOut, nil, false)
 	}
 	if args[0] != "codes" {
 		fmt.Fprintf(errOut, "check: 知らない口 %q\n%s", args[0], checkUsage)

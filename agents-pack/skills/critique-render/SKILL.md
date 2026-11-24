@@ -1,6 +1,6 @@
 ---
 name: critique-render
-description: "描き出し（make render SHOT=… / gallery-sounds 等）の PNG・波形を目視・目聴して、設計原則と絵の下限 5 性質で批評する。絵や音を作った・直した直後の報告の前、スナップショットを更新する前、「見た目はどう？」と聞かれたときに使う。"
+description: "描き出し（bin/fge render <場面名> / make gallery-sounds 等）の PNG・波形を目視・目聴して、設計原則と絵の下限 5 性質で批評する。絵や音を作った・直した直後の報告の前、スナップショットを更新する前、「見た目はどう？」と聞かれたときに使う。"
 sync: 2026-11-16
 ---
 
@@ -13,9 +13,9 @@ sync: 2026-11-16
 1. ゲームの設計原則を読む（共通部はこのファイル群と AGENTS.md、
    ゲーム固有の原則 — 文字なし等 — は **AGENTS.local.md** を参照）。
 2. 描き出しを実行する:
-   - 絵: `make render-all`（gallery/ に全場面）や `make render SHOT=<場面名>`（debug/ に 1 枚）
-     （素の `make render` は使い方を出して失敗する。全部いるときだけ `make render-all`）
-   - 音: `make gallery-sounds`（assets/sfx/*.wav を debug/sounds/ に集め、debug/sounds.png を描く。
+   - 絵: `bin/fge render --all`（gallery/ に全場面）や `bin/fge render <場面名>`（debug/ に 1 枚）
+     （場面名の無い `bin/fge render` は使い方を出して失敗する。全部いるときだけ `--all`）
+   - 音: `make gallery-sounds`（macOS か Linux で。assets/sfx/*.wav を debug/sounds/ に集め、debug/sounds.png を描く。
      BGM の WAV（assets/music/ か assets/bgm/）があるときだけ debug/music.png も描く）
      音どうしの聞こえ方（BGM と効果音の音量差・効果音の間だけ BGM を下げる・籠もらせる・連打の間引き）は
      WAV を作り直さず mixer.json（`App.withMixer` + `AudioMixer`）で直す。混ぜた後の音を聴くなら

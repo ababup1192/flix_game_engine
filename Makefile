@@ -634,7 +634,8 @@ go-build: ## | go/ を bin/fge-go と、配る先ごとの 5 種にビルドす�
 
 # sync-fge-go が組むのは手元の OS/CPU の 1 本だけ（GO_OSARCH=$(GO_HOST)）。5 種そろえるのは go-build（bundle-zip・リリース）。
 # WhyNot: = で置く（:= にしない）のは、go env を呼ぶのをこの口を使う時だけにするため。
-GO_HOST = $(shell cd go && go env GOOS)/$(shell cd go && go env GOARCH)
+# WhyNot: 配った engine（go/ が無い）では引かない — レシピを展開するだけで sh が「cd: can't cd to go」を出す（sync-fge-go は先に抜ける）。
+GO_HOST = $(if $(IS_BUNDLE),,$(shell cd go && go env GOOS)/$(shell cd go && go env GOARCH))
 .PHONY: go-test
 # FRESH=<名前>,… はその分を -count=1 で流す（テストが exec する子の読むファイルを go の test cache が追わないため）。名前の . は main。
 # PKG も FRESH も無ければ全部。bin/fge test-select は PKG と FRESH を重ねずに渡す。
@@ -1029,7 +1030,8 @@ fpkg-store-gc: ### [DRY=1] | 束の置き場（build/fpkg-store）から、ど�
 # release-guard の安全策:
 #   - engine ソースが未コミットだと配布 fpkg がどのコミットにも対応しなくなるため中断する。
 # 並列のテストに不審な挙動があれば逐次にフォールバックする (make release JOBS=1)。
-RELEASE_SHA := $(shell git rev-parse HEAD)
+# WhyNot: 配った engine（git の外）では引かない — make を起こすたびに「fatal: not a git repository」が出る。公開は clone した engine でしか打たない。
+RELEASE_SHA := $(if $(IS_BUNDLE),,$(shell git rev-parse HEAD))
 # 古い書き方: TEST= は 1 リリース後に消す（渡された時だけ、その口をテストの門に使う）
 RELEASE_TEST := $(if $(filter command line,$(origin TEST)),$(TEST),test-release)
 $(if $(and $(filter command line,$(origin TEST)),$(filter 0,$(MAKELEVEL))),$(info [release] 古い書き方: TEST= は次から付けない（逐次は make release JOBS=1）))
@@ -1069,7 +1071,7 @@ release-guard: ### | 公開の前の安全策（未コミット・壊れた flix
 STUDIO_CANDIDATES := $(abspath $(CURDIR)/../flix_ge_studio) $(HOME)/Desktop/flix_ge_studio
 STUDIO ?= $(or $(patsubst %/Makefile,%,$(firstword $(wildcard $(addsuffix /Makefile,$(STUDIO_CANDIDATES))))),$(firstword $(STUDIO_CANDIDATES)))
 .PHONY: studio-parity
-studio-parity: ### [STUDIO=<パス>|none] | Studio の check-agents-parity をこの engine で流す（release-verify の門）
+studio-parity: ### [STUDIO=<パス>|none] | Studio の check-agents-parity をこの engine で流す（Studio は凍結中なので release-verify の門から外してある）
 	@if [ "$(STUDIO)" = "none" ]; then echo "[release] STUDIO=none: Studio との AGENTS の突き合わせを飛ばしました"; exit 0; fi; \
 	 test -f "$(STUDIO)/Makefile" || { echo "[release] Studio の clone が見つかりません ($(STUDIO)・探した所: $(STUDIO_CANDIDATES))。STUDIO=<パス> で指定するか、無い環境なら STUDIO=none"; exit 1; }; \
 	 git -C "$(STUDIO)" fetch -q origin main \
@@ -1079,7 +1081,8 @@ studio-parity: ### [STUDIO=<パス>|none] | Studio の check-agents-parity を�
 	 env -u JOBS -u ALL -u TEST -u SUITE -u ONLY $(MAKE) --no-print-directory -C "$(STUDIO)" MAKEOVERRIDES= check-agents-parity ENGINE="$(CURDIR)" \
 	   || { echo "[release] sync-agents の出力が Studio の server/src/NewGame.flix とずれています。Studio 側も同じ変更を入れて main へ push してから公開してください"; exit 1; }
 # gl-parity も全量ゲートの一員 — GL と SoftRaster の絵の退行はテストに出ないため。
-RELEASE_GATES := release-guard studio-parity sync $(RELEASE_TEST) gl-parity
+# WhyNot: studio-parity を門に入れない — Studio は凍結中（plans/dashboard.md の 7 節）。凍結を解いたら戻す。
+RELEASE_GATES := release-guard sync $(RELEASE_TEST) gl-parity
 .PHONY: release
 release: release-verify ### [JOBS=1] | release-verify と同じ
 
@@ -1124,27 +1127,58 @@ release-publish: release-marker-check ### | CI が流す公開（マーカーを
 	@# WhyNot: build-pkg の後に置くのは、zip の中身に engine_full.fpkg が入るため。
 	@# 先に組むと 1 つ前のバージョンの fpkg を配ってしまう。
 	$(MAKE) bundle-zip
+	$(MAKE) --no-print-directory release-fge-assets
 	gh release create v$(VERSION) --repo ababup1192/flix_game_engine --target $(RELEASE_SHA) \
 	  --title "v$(VERSION)" --generate-notes \
 	  "$(ENGINE_FULL_FPKG_SRC)#$(ENGINE_FULL_FPKG_NAME)" \
 	  "$(ENGINE_FULL_TOML_SRC)#$(ENGINE_FULL_TOML_NAME)" \
-	  "$(BUNDLE_ZIP)" "$(BUNDLE_SUMS)"
+	  "$(BUNDLE_ZIP)" "$(BUNDLE_SUMS)" \
+	  $(RELEASE_FGE_FILES)
 	@echo "[release] v$(VERSION) を CI から公開しました。外部 fetch 検証: lib/ を消したサンプルで github:ababup1192/flix_game_engine v$(VERSION) を引けるか確認してください"
 	@echo "[release] 任意: ゲームを追随させた後に make agent-eval-release で道具の選び方を測り、前の版と比べる（約 20 分・下がったお題が出る。docs/agent-eval.md）"
+
+# ── 全体の fge（install.sh が入れる物）────────────────────
+# Release に fge-<os>-<arch>（go-build の bin/dist/fge-go-<os>-<arch> を改名した物。Windows は .exe 付き）・fge-SHA256SUMS.txt・
+# 版を埋めた install.sh と install.ps1（Windows）を添える。
+# WhyNot: 今の SHA256SUMS.txt に足さない — 凍結した Studio の self-update がその 1 行の形を読む。別のファイルにする。
+# WhyNot: arm64 の Windows を入れない — 後に回した（plans/windows.md 13 節）。
+RELEASE_FGE_DIR     := build/release-fge
+RELEASE_FGE_TARGETS := darwin-amd64 darwin-arm64 linux-amd64 linux-arm64 windows-amd64.exe
+RELEASE_FGE_FILES    = $(addprefix $(RELEASE_FGE_DIR)/,$(addprefix fge-,$(RELEASE_FGE_TARGETS)) fge-SHA256SUMS.txt install.sh install.ps1)
+.PHONY: release-fge-assets
+release-fge-assets: ### | Release に添える全体の fge（fge-<os>-<arch>・fge-SHA256SUMS.txt・版を埋めた install.sh と install.ps1）を build/release-fge に組む
+	@rm -rf "$(RELEASE_FGE_DIR)" && mkdir -p "$(RELEASE_FGE_DIR)"
+	@for t in $(RELEASE_FGE_TARGETS); do \
+	   src="$(GO_DIST)/fge-go-$$t"; \
+	   [ -f "$$src" ] || { echo "!! $$src がありません (make go-build)"; exit 1; }; \
+	   cp "$$src" "$(RELEASE_FGE_DIR)/fge-$$t" && chmod 755 "$(RELEASE_FGE_DIR)/fge-$$t" || exit 1; \
+	 done
+	@cd "$(RELEASE_FGE_DIR)" && shasum -a 256 $(addprefix fge-,$(RELEASE_FGE_TARGETS)) > fge-SHA256SUMS.txt
+	@sed 's/^FGE_VERSION=.*/FGE_VERSION=$(VERSION)/' bin/install.sh > "$(RELEASE_FGE_DIR)/install.sh"
+	@grep -qx 'FGE_VERSION=$(VERSION)' "$(RELEASE_FGE_DIR)/install.sh" \
+	  || { echo "!! bin/install.sh に FGE_VERSION= の行がありません"; exit 1; }
+	@sed "s/^\$$FgeVersion = .*/\$$FgeVersion = '$(VERSION)'/" bin/install.ps1 > "$(RELEASE_FGE_DIR)/install.ps1"
+	@grep -qxF "\$$FgeVersion = '$(VERSION)'" "$(RELEASE_FGE_DIR)/install.ps1" \
+	  || { echo "!! bin/install.ps1 に \$$FgeVersion = の行がありません"; exit 1; }
+	@echo "[release-fge-assets] $(RELEASE_FGE_FILES)"
 
 # ── 同梱用 zip ────────────────────────────────────────────
 # Studio に同梱する engine 一式を、そのまま Release に添えられる zip にする。
 # 中身の一覧は bin/lint-rules/stage-engine.json が source of truth で、組み立ても最後の照合も
 # bin/fge stage-engine が持つ (Studio の make stage-engine・ci/package-windows.ps1 と同じ口)。
 #
-# lwjgl (Maven) の種は入れない。あれは engine のバージョンで変わらないので、
-# Studio 側が自分の server/lib から渡せば足りる (入れると zip が 9M ほど太る)。
+# Maven の取り物 (lib/cache)・LWJGL の natives・flixlint の本体と shim の jar は入れる。
+# WhyNot: Studio 側の種 (@maven-seed) に任せない — Studio を通らずに install.sh と fge engines install で始める人は、
+# 種が無いとゲームを作るたびに Maven Central と GitHub へ取りに行き、続けて作ると 429 で止まる。
 #
 # flix.jar は devbox profile が指す nix store の実体から借りる (Studio の FLIX_JAR と同じ
 # 見つけ方)。手で置いた bin/flix.jar が古いことがあるので既定にしない。
 BUNDLE_ZIP   := flix_game_engine-engine-v$(VERSION).zip
 BUNDLE_STAGE := build/bundle/engine
 BUNDLE_SUMS  := SHA256SUMS.txt
+BUNDLE_NATIVES := build/bundle/natives
+BUNDLE_MVN_CACHE := build/bundle/mvn-cache
+BUNDLE_FLIXLINT := build/bundle/flixlint
 BUNDLE_FLIX_JAR ?= $(shell real=$$(readlink -f .devbox/nix/profile/default/bin/flix 2>/dev/null); \
                      [ -n "$$real" ] && echo "$$(dirname $$(dirname $$real))/share/java/flix/flix.jar")
 BUNDLE_FLIX_WRAPPER ?= bin/flix
@@ -1171,11 +1205,37 @@ bundle-zip: go-build ### | Studio に同梱する engine 一式を zip に固め
 	  || (echo "!! flix.jar が見つかりません (BUNDLE_FLIX_JAR= で場所を指定してください)" && exit 1)
 	@$(MAKE) --no-print-directory check-bundle-flix
 	rm -rf build/bundle "$(BUNDLE_ZIP)" "$(BUNDLE_SUMS)"
+	@# WhyNot: render_gl/lib/external を丸ごと渡さない — Maven の jar（LWJGL の本体など）は lib/cache の側で足り、zip が太るだけ。
+	@# natives と GL の層の jar は coursier を通らないので、zip に無いと new-game のたびに Maven Central へ取りに行く。
+	@# WhyNot: render_gl だけから集めない — 新しく clone した所（release の CI）では make sync の後でも render_gl の jar-dependencies は
+	@# 取られておらず、同じ物を書いた engine_full の build-pkg が engine_full/lib/external に取る（Windows の CI の 2 回目で止まった）。
+	@mkdir -p "$(BUNDLE_NATIVES)"; \
+	 for d in $(RENDER_GL_DIR) $(ENGINE_FULL_DIR); do \
+	   for j in $$d/lib/external/lwjgl-*-natives-*.jar $$d/lib/external/fge-gl-*.jar; do \
+	     [ -f "$$j" ] && cp -n "$$j" "$(BUNDLE_NATIVES)/"; \
+	   done; \
+	 done; \
+	 ls "$(BUNDLE_NATIVES)"/lwjgl-*-natives-*.jar >/dev/null 2>&1 \
+	   || { echo "!! $(RENDER_GL_DIR)/lib/external にも $(ENGINE_FULL_DIR)/lib/external にも LWJGL の natives がありません (make sync と engine_full の build-pkg を流してください)"; exit 1; }
+	@# Maven の取り物は engine_full の lib/cache（ゲームと同じ依存を持つ。普通は共有の置き場への symlink）から写す。
+	@# WhyNot: ゲームの依存だけに絞らず置き場をまるごと写す — 推移的に引く物を解くのは coursier の仕事で、ここで解き直すと解き方が 2 つになる。
+	@# 揃っているかは stage-engine が engine_full/flix.toml と突き合わせる。
+	@src=$$(cd $(ENGINE_FULL_DIR)/lib/cache 2>/dev/null && pwd -P || $(MVN_CACHE_SHARE) --print-dir); \
+	 [ -d "$$src" ] || { echo "!! Maven の取り物の置き場がありません ($$src)。engine_full を一度ビルドしてください (make sync-engine-full)"; exit 1; }; \
+	 mkdir -p "$(BUNDLE_MVN_CACHE)" && cp -R "$$src"/. "$(BUNDLE_MVN_CACHE)"/ \
+	 && find "$(BUNDLE_MVN_CACHE)" \( -name '*.lock' -o -name '*.part' \) -exec rm -f {} +
+	@# flixlint は手元の置き場に無ければ flixlint-prepare が取ってくる（release の CI でも組める）。
+	@eval "$$(bin/fge flixlint-prepare)" && [ -n "$$FLIXLINT_DIR" ] || { echo "!! flixlint の本体と shim の jar をそろえられません"; exit 1; }; \
+	 ver=$$(basename "$$(dirname "$$FLIXLINT_DIR")"); \
+	 mkdir -p "$(BUNDLE_FLIXLINT)/$$ver" && cp "$$FLIXLINT_SHIM" "$(BUNDLE_FLIXLINT)/$$ver/" && cp -R "$$FLIXLINT_DIR" "$(BUNDLE_FLIXLINT)/$$ver/src"
 	@# WhyNot: --all-platforms で 5 種を全部入れる — 1 つに絞ると zip を組んだ機械 (CI は linux) 向けしか入らず、
 	@# mac と Windows の Studio の「engine を更新」が、取ってきた bin/fge-go を走らせる所で exec format error になる。
 	bin/fge stage-engine --out "$(BUNDLE_STAGE)" --all-platforms \
 	  --flix-jar "$(BUNDLE_FLIX_JAR)" \
-	  --flix-wrapper "$(BUNDLE_FLIX_WRAPPER)"
+	  --flix-wrapper "$(BUNDLE_FLIX_WRAPPER)" \
+	  --natives "$(BUNDLE_NATIVES)" \
+	  --mvn-cache "$(BUNDLE_MVN_CACHE)" \
+	  --flixlint "$(BUNDLE_FLIXLINT)"
 	cd build/bundle && zip -qry "../../$(BUNDLE_ZIP)" engine
 	@# WhyNot: 照合の相手を release でなく bundle-zip で作るのは、zip と対で作れば
 	@# ズレが原理的に起きないため。Studio の self-update はこれと突き合わせてから差し替える。
@@ -1274,36 +1334,13 @@ sync-agents: ## GAME=<dir> | agents-pack をゲームに配る（manifest.json �
 # 作業ツリーから配るのに対し、検査の中身はここが bin/dist から配るため。組み直しを忘れると
 # 「宣言はあるのに入口が無い」ゲームができる。Go のビルドキャッシュが効くので数秒。
 #
-# WhyNot: 置き換えを cp の上書きでなく別名 + mv にするのは、macOS が実行ファイルの中身を
-# 同じ inode のまま書き換えられると、その inode について覚えていた署名の検証結果を捨て、
-# 次の実行を即 SIGKILL するため。中身も署名も正しいのに配った先だけが死に、
-# pre-commit がこれを呼ぶ git まで道連れになる (index.lock だけが残る)。
-# mv なら inode が新しくなるので踏まない。
+# 置き方（別名に書いてから rename・Windows は今の物を .old に退けてから）の WhyNot は go/internal/exereplace。
 #
 # WhyNot: 配った版（go/ が無い）は組めないので、同梱の bin/fge-go（配った先の OS/CPU 向けの 1 本）をそのまま配る。
 sync-fge-go: ### GAME=<dir> | 配る先の OS/CPU に合う bin/fge-go を 1 つだけゲームへ置く
 	@if [ -z "$(GAME)" ]; then echo "error: GAME を指定してください"; exit 1; fi
-	@if [ -n "$(IS_BUNDLE)" ]; then \
-	  ext=""; case "$$(uname -s)" in MINGW*|MSYS*|CYGWIN*) ext=".exe" ;; esac; \
-	  src=bin/fge-go$$ext; \
-	  if [ ! -f "$$src" ]; then echo "[sync-fge-go] $$src がありません（配った engine が欠けています）"; exit 1; fi; \
-	  tmp="$(GAME)/bin/.fge-go$$ext.new"; cp "$$src" "$$tmp"; chmod +x "$$tmp"; mv -f "$$tmp" "$(GAME)/bin/fge-go$$ext"; \
-	  echo "[sync-fge-go] $$src → $(GAME)/bin/fge-go$$ext"; exit 0; \
-	fi; \
-	$(MAKE) --no-print-directory go-build GO_OSARCH="$(GO_HOST)"
-	@[ -z "$(IS_BUNDLE)" ] || exit 0; \
-	os=$$(uname -s | tr 'A-Z' 'a-z'); arch=$$(uname -m); ext=""; \
-	case "$$os" in darwin) ;; linux) ;; mingw*|msys*|cygwin*) os=windows; ext=".exe" ;; \
-	  *) echo "[sync-fge-go] 知らない OS ($$os)。bin/dist/ から手で選んで $(GAME)/bin/ へ置いてください"; exit 0 ;; esac; \
-	case "$$arch" in arm64|aarch64) arch=arm64 ;; x86_64|amd64) arch=amd64 ;; \
-	  *) echo "[sync-fge-go] 知らない CPU ($$arch)。bin/dist/ から手で選んでください"; exit 0 ;; esac; \
-	src=$(GO_DIST)/fge-go-$$os-$$arch$$ext; \
-	if [ ! -f "$$src" ]; then echo "[sync-fge-go] $$src がありません (make go-build)"; exit 1; fi; \
-	tmp="$(GAME)/bin/.fge-go$$ext.new"; \
-	cp "$$src" "$$tmp"; \
-	chmod +x "$$tmp"; \
-	mv -f "$$tmp" "$(GAME)/bin/fge-go$$ext"; \
-	echo "[sync-fge-go] $$src → $(GAME)/bin/fge-go$$ext"
+	@[ -n "$(IS_BUNDLE)" ] || $(MAKE) --no-print-directory go-build GO_OSARCH="$(GO_HOST)"
+	@bin/fge sync-fge-go --game "$(GAME)"
 
 ##@ 規約と文書
 # 規約の本文は docs/ に 1 つだけ置く。CLAUDE.md は AGENTS.md を import するだけ、
@@ -1323,7 +1360,8 @@ api-digest: ### | engine の pub API を docs/api-digest.md に 1 つにまと�
 # DOCS_SYNC_DESC_<名前> は流す時に出す 1 行、DOCS_SYNC_SH_<名前> はシェルの 1 文（落ちたら非 0）。
 # WhyNot: 名前ごとのターゲットに分けない — make -j で並ぶと出力が混ざる（lint と同じ）。
 DOCS_SYNC_NAMES := claude-import rules px-ops check-codes skill-table core-skills core-bridge skill-links skill-frontmatter \
-	skill-sync old-prim-names manifest check-refs api-index api-digest docs-links template-claude gates
+	skill-sync old-prim-names manifest follow-latest check-refs api-index api-digest docs-links template-claude gates \
+	jdk-major template-engine
 
 DOCS_SYNC_DESC_claude-import = CLAUDE.md が AGENTS.md を import しているか
 DOCS_SYNC_SH_claude-import = \
@@ -1395,6 +1433,11 @@ DOCS_SYNC_SH_old-prim-names = \
 DOCS_SYNC_DESC_manifest = agents-pack/manifest.json が正しい JSON で src が全実在するか
 DOCS_SYNC_SH_manifest = bin/fge sync-agents --check-manifest
 
+# WhyNot: 版によらないスキルのコマンドを Go 側の表と比べない — 古い版のゲームに無いコマンドかどうかは、
+# 版ごとの make のターゲットを全部持っていないと決められない。人が決めた一覧（manifest）と比べるだけにする。
+DOCS_SYNC_DESC_follow-latest = 版によらないスキル（manifest の followLatest）の中のコマンドが followLatest.commands にあるか
+DOCS_SYNC_SH_follow-latest = bin/fge sync-agents --check-follow-latest
+
 DOCS_SYNC_DESC_check-refs = Makefile / templates / agents-pack の参照先が実在するか
 DOCS_SYNC_SH_check-refs = bin/fge check-refs
 
@@ -1420,6 +1463,25 @@ DOCS_SYNC_SH_template-claude = ok=1; \
 
 DOCS_SYNC_DESC_gates = 根の gates.json が Makefile の口・テストのパッケージ・検査の名前・リリースの門とそろっているか
 DOCS_SYNC_SH_gates = bin/fge gates --check
+
+# WhyNot: 版の全部（25.0.3）をそろえない — devbox の JDK は OS ごとに違う（macOS は Zulu・Linux は nixpkgs の OpenJDK）。
+# 主な版が違うと、配った engine と作者の手元で使える Java の機能が食い違う。
+DOCS_SYNC_DESC_jdk-major = mk/jdk.mk の JDK の主な版が devbox.json・devbox.lock の jdk の主な版と同じか
+DOCS_SYNC_SH_jdk-major = mk=$$(sed -n 's/^FGE_JDK_VERSION[[:space:]]*[:?]*=[[:space:]]*\([0-9]*\).*/\1/p' mk/jdk.mk); \
+	got=$$( { grep -o '"jdk@[0-9]*"' devbox.json devbox.lock | sed 's/.*@//; s/"//'; grep -o -- 'jdk-[0-9][0-9]*\.' devbox.lock | sed 's/jdk-//; s/\.//'; } | sort -u | tr '\n' ' '); \
+	if [ -n "$$mk" ] && [ "$$got" = "$$mk " ]; then exit 0; fi; \
+	echo "[check-docs-sync] NG: mk/jdk.mk の主な版（$${mk:-読めない}）と devbox の jdk の主な版（$${got:-読めない}）が違います。版を上げる時は両方を一緒に替えてください"; exit 1
+
+# WhyNot: 6 つを同じ形にそろえる — ENGINE の決まりは Go の ResolveEngineDir と同じでなければならず、1 つだけずれると
+# そのテンプレートから作ったゲームだけが別の engine を読む。
+DOCS_SYNC_DESC_template-engine = テンプレートの Makefile の ENGINE の既定の行（FGE_VERSION と ENGINE ?=）が 6 つとも同じ形か
+DOCS_SYNC_SH_template-engine = ok=1; first=""; \
+	for f in templates/*/Makefile; do \
+	  lines=$$(grep -E '^(FGE_VERSION :=|ENGINE \?=)' "$$f"); \
+	  if [ "$$(printf '%s\n' "$$lines" | grep -c .)" != 2 ]; then echo "[check-docs-sync] NG: $$f に FGE_VERSION := と ENGINE ?= の行が 1 つずつありません"; ok=0; continue; fi; \
+	  if [ -z "$$first" ]; then first=$$f; want=$$lines; \
+	  elif [ "$$lines" != "$$want" ]; then echo "[check-docs-sync] NG: $$f の ENGINE の既定の行が $$first と違います"; ok=0; fi; \
+	done; [ $$ok = 1 ]
 
 DOCS_SYNC_RUN := $(if $(ONLY),$(subst $(comma), ,$(ONLY)),$(DOCS_SYNC_NAMES))
 .PHONY: check-docs-sync
@@ -1498,20 +1560,12 @@ gates-facts: ### | gates.json と比べる Makefile の値（テストのパッ�
 #   - NAME  … Flix パッケージ名（小文字英字はじまり・[a-z0-9_]）。sprite の entityId にも使う。
 #   - TITLE … ウィンドウの題名（省略時は NAME）。
 #   - W/H   … design 解像度（省略時は 480×300。ウィンドウはその 2 倍）。
-# templates/game-starter を写して __NAME__/__TITLE__/__W__/__H__/__WW__/__WH__ を置換する。
-# エンジンの現在地は Makefile には書かず、git に入れない local.mk へ書く（Makefile は
-# マシンをまたいで共有できる形のまま。別のマシンでは local.mk を 1 度だけ書き直す）。
-# lib/ をエンジン手元の成果物から
-# 種付け（初回ダウンロード不要）、git init（commit はしない）、
-# sync-agents を配ってから check → test → render を通して「生きて産まれた」ことを証明する。
-NG_TEMPLATE := $(if $(TEMPLATE),$(TEMPLATE),game-starter)
-NG_W := $(if $(W),$(W),480)
-NG_H := $(if $(H),$(H),300)
+# 中身は bin/fge new-game（go/internal/scaffold）。テンプレートを写して __NAME__/__TITLE__/__W__/__H__/__WW__/__WH__ を置換し、
+# lib/ を engine の手元の物から種付けし、git init（commit はしない）・sync-agents・sync-fge-go の後に check → test → render を通す。
+# ここに残すのは engine の作業コピーだけで要る前処理（engine-full-fresh・fge-go を組む）。
+# 題名は自由文（アポストロフィ・空白・記号を含みうる）。make の export で環境変数として渡し（execve が値をそのまま載せる）、
+# recipe では "$$NG_TITLE" で読む（make の展開を '...' や "..." に埋めると ' や " で構文が壊れる）。
 NG_TITLE = $(if $(TITLE),$(TITLE),$(NAME))
-# 題名は自由文（アポストロフィ・空白・記号を含みうる）。シェルの '...' 囲みだと
-# "Tetris's" のような ' で構文が壊れる。make の export で環境変数として直接渡し
-# （execve が値をそのまま載せる・シェル再クォート無し）、recipe 側の perl は
-# $ENV{NG_TITLE} で安全に読む。
 export NG_TITLE
 
 ##@ ゲームを産む・上げる
@@ -1566,76 +1620,10 @@ engine-full-fresh: ### | engine_full.fpkg が古くないか（古ければ作�
 	[ -z "$$why" ] || { echo "error: sync-engine-full の後も束が古いままです:"; echo "$$why" | sed 's/^/  /'; exit 1; }
 
 .PHONY: new-game
-new-game: engine-full-fresh ## GAME=/abs/path NAME=<名前> [TITLE=] [W=] [H=] [TEMPLATE=] | 新しいゲームを 1 コマンドで産む（check → test → render-all まで通す）
-	@if [ -z "$(GAME)" ]; then echo "error: GAME を指定してください (make new-game GAME=/abs/path NAME=mygame TITLE=題名 W=240 H=320)"; exit 1; fi
-	@case "$(GAME)" in /*) : ;; *) echo "error: GAME は絶対パスで指定してください: $(GAME)"; exit 1;; esac
-	@if [ -e "$(GAME)" ]; then echo "error: 生成先が既に存在します: $(GAME)"; exit 1; fi
-	@if [ -z "$(NAME)" ]; then echo "error: NAME を指定してください（Flix パッケージ名）"; exit 1; fi
-	@echo "$(NAME)" | grep -Eq '^[a-z][a-z0-9_]*$$' || { echo "error: NAME が不正です: $(NAME)（小文字英字はじまり・英小文字/数字/_ のみ）"; exit 1; }
-	@echo "$(NG_W)" | grep -Eq '^[0-9]+$$' || { echo "error: W が数値ではありません: $(NG_W)"; exit 1; }
-	@echo "$(NG_H)" | grep -Eq '^[0-9]+$$' || { echo "error: H が数値ではありません: $(NG_H)"; exit 1; }
-	@echo "$(NG_TEMPLATE)" | grep -Eq '^[a-z][a-z0-9-]*$$' || { echo "error: TEMPLATE が不正です: $(NG_TEMPLATE)"; exit 1; }
-	@if [ ! -d "templates/$(NG_TEMPLATE)" ]; then echo "error: templates/$(NG_TEMPLATE) がありません"; exit 1; fi
-	@if [ -z "$(W)$(H)" ] && grep -q "__W__" "templates/$(NG_TEMPLATE)/project.json" 2>/dev/null; then echo "[new-game] W/H 未指定 — トークン式テンプレの既定 480×300 で作ります"; fi
-	@set -e; \
-	echo "[new-game] $(GAME) を作成します (NAME=$(NAME) TITLE=$(NG_TITLE) design=$(NG_W)x$(NG_H) TEMPLATE=$(NG_TEMPLATE))"; \
-	mkdir -p "$(GAME)"; \
-	cp -R "templates/$(NG_TEMPLATE)/." "$(GAME)/"; \
-	: 生成物は運ばない。lib は engine_full から置き直す。build はテンプレ 1 本で 500MB 級に育つ; \
-	: ので、運ぶと産まれたゲームがその分太る（パッケージ名が変わるのでどのみち使えない）; \
-	rm -rf "$(GAME)/lib" "$(GAME)/build" "$(GAME)/debug" "$(GAME)/gallery" "$(GAME)/.devbox" "$(GAME)/.test-logs"; \
-	: テンプレートが new-game.exclude に挙げたパス（作例そのもののテストなど）は運ばない。1 行に 1 つ・テンプレートの根からの相対パス・# から行末は注釈; \
-	if [ -f "$(GAME)/new-game.exclude" ]; then \
-	  sed -e 's/#.*//' -e 's/[[:space:]]*$$//' "$(GAME)/new-game.exclude" | while IFS= read -r p; do \
-	    case "$$p" in ""|/*|*..*) continue;; esac; rm -rf "$(GAME)/$$p"; \
-	  done; \
-	fi; \
-	mkdir -p "$(GAME)/gallery" "$(GAME)/reference" "$(GAME)/debug" "$(GAME)/atelier"; \
-	for f in "$(GAME)"/assets/__NAME__.*; do \
-	  [ -e "$$f" ] || continue; \
-	  mv "$$f" "$(GAME)/assets/$(NAME).$${f##*/__NAME__.}"; \
-	done; \
-	NG_NAME='$(NAME)' NG_W='$(NG_W)' NG_H='$(NG_H)' \
-	NG_WW=$$(( $(NG_W) * 2 )) NG_WH=$$(( $(NG_H) * 2 )) \
-	find "$(GAME)" -type f \( -name '*.flix' -o -name '*.json' -o -name '*.toml' -o -name '*.md' -o -name 'Makefile' \) \
-	  -exec perl -pi -e 's/__NAME__/$$ENV{NG_NAME}/g; s/__TITLE__/$$ENV{NG_TITLE}/g; s/__WW__/$$ENV{NG_WW}/g; s/__WH__/$$ENV{NG_WH}/g; s/__W__/$$ENV{NG_W}/g; s/__H__/$$ENV{NG_H}/g;' {} +; \
-	if [ -f "$(GAME)/AGENTS.local.md" ]; then \
-	  NG_TPL='$(NG_TEMPLATE)' perl -pi -e 's/^(## この(?:画面|ゲーム)の画風)\s*$$/$$1\n\n（テンプレ $$ENV{NG_TPL} の画風の仮置き。**最初に決めて、ここに** 自分の画風を書き直す — 決め方は画風の聞き取りスキル）/' "$(GAME)/AGENTS.local.md"; \
-	fi; \
-	printf '%s\n' '# このマシンの実行環境 (git には入れない — .gitignore 済み)。make new-game が生成。' '# ?= なのは Studio が環境変数 ENGINE で渡してくる同梱 engine を勝たせるため。' 'ENGINE ?= $(CURDIR)' > "$(GAME)/local.mk"; \
-	mkdir -p "$(GAME)/$(ENGINE_FULL_SUBPATH)"; \
-	: 置き場の束は読むだけ（0444）なので、写した後に書ける形へ戻す（次の engine-upgrade の入れ替えと人の手の差し替えのため）; \
-	$(ENGINE_FULL_GAME_FILES); \
-	cp "$$fpkg" "$(GAME)/$(ENGINE_FULL_SUBPATH)/$(ENGINE_FULL_FPKG_NAME)"; \
-	cp "$$toml" "$(GAME)/$(ENGINE_FULL_SUBPATH)/$(ENGINE_FULL_TOML_NAME)"; \
-	chmod 0644 "$(GAME)/$(ENGINE_FULL_SUBPATH)/$(ENGINE_FULL_FPKG_NAME)" "$(GAME)/$(ENGINE_FULL_SUBPATH)/$(ENGINE_FULL_TOML_NAME)"; \
-	if [ -d lib/external ]; then mkdir -p "$(GAME)/lib"; cp -R lib/external "$(GAME)/lib/external"; fi; \
-	: LWJGL の natives の jar（flix.toml の jar-dependencies）は coursier を通らず lib/cache にも入らない。手元の render_gl の物を写す; \
-	: （無ければ Flix が 1 本ずつ Maven Central へ取りに行き、続けて作ると 429 で止まる。export-web の copyLocalNativeJars と同じ）; \
-	for j in render_gl/lib/external/lwjgl-*-natives-*.jar; do \
-	  [ -f "$$j" ] || continue; mkdir -p "$(GAME)/lib/external"; \
-	  [ -e "$(GAME)/lib/external/$${j##*/}" ] || cp "$$j" "$(GAME)/lib/external/"; \
-	done; \
-	: lib/cache（Maven の取り物）は共有の置き場への symlink にする。engine の lib/cache が実体（同梱 engine の種）なら写してから置き場へ移す; \
-	: （移し方は bin/mvn-cache-share.sh。種は置き場へ移るので次のゲームからは写さずに済む）; \
-	if [ -d lib/cache ] && [ ! -L lib/cache ]; then mkdir -p "$(GAME)/lib"; cp -R lib/cache "$(GAME)/lib/cache"; fi; \
-	if [ -x bin/mvn-cache-share.sh ]; then bin/mvn-cache-share.sh --pkg "$(GAME)"; fi; \
-	echo "[new-game] lib/ を種付けしました（Maven の取り物は共有の置き場 $$(bin/mvn-cache-share.sh --print-dir 2>/dev/null) を使う。無い物は初回ビルドで取りに行く）"; \
-	git -C "$(GAME)" init -q; \
-	git -C "$(GAME)" config core.hooksPath bin/githooks; \
-	$(MAKE) --no-print-directory sync-agents GAME="$(GAME)"; \
-	echo "[new-game] 産声の確認: check → test → lint-flixlint → render-all"; \
-	$(MAKE) --no-print-directory -C "$(GAME)" check ENGINE="$(CURDIR)"; \
-	$(MAKE) --no-print-directory -C "$(GAME)" test ENGINE="$(CURDIR)"; \
-	if [ -f "$(GAME)/lint/rules.flix" ]; then $(MAKE) --no-print-directory -C "$(GAME)" lint-flixlint ENGINE="$(CURDIR)"; fi; \
-	$(MAKE) --no-print-directory -C "$(GAME)" render-all ENGINE="$(CURDIR)"; \
-	echo ""; \
-	echo "🎉 新しいゲームが産まれました: $(GAME)"; \
-	echo "  次にやること:"; \
-	echo "    cd $(GAME) && make run              … ウィンドウを開いて遊ぶ（矢印キーで移動）"; \
-	echo "    make reference-update                 … いまの絵をリファレンス画像(基準)にする"; \
-	echo "    Studio で $(GAME) を開く            … 色や数値をフォームから調整する"; \
-	echo "  git init 済み・未コミットです。最初のコミットは自分の手で。"
+new-game: engine-full-fresh ## GAME=/abs/path NAME=<名前> [TITLE=] [W=] [H=] [TEMPLATE=] [PACK_NOTE=0] | 新しいゲームを 1 コマンドで産む（check → test → render-all まで通す）
+	@[ -n "$(IS_BUNDLE)" ] || $(MAKE) --no-print-directory go-build GO_OSARCH="$(GO_HOST)"
+	@bin/fge new-game --game "$(GAME)" --name "$(NAME)" --title "$$NG_TITLE" --w "$(W)" --h "$(H)" --template "$(TEMPLATE)" \
+	  $(if $(filter 0,$(PACK_NOTE)),--no-pack-note)
 
 # ── ゲームの engine バージョン追随 ────────────────────────────────
 # ゲームの flix.toml が指す flix_game_engine のバージョンをこの engine の $(VERSION) へ上げ、
@@ -1656,6 +1644,7 @@ new-game: engine-full-fresh ## GAME=/abs/path NAME=<名前> [TITLE=] [W=] [H=] [
 .PHONY: upgrade-game
 upgrade-game: engine-full-fresh ### GAME=/abs/path [REFERENCE=1] | ゲームの engine の版をこの engine へ上げる（ゲームの make engine-upgrade がここへ来る）
 	@if [ -z "$(GAME)" ]; then echo "error: GAME を指定してください (make upgrade-game GAME=/abs/path)"; exit 1; fi
+	@[ -n "$(IS_BUNDLE)" ] || $(MAKE) --no-print-directory go-build GO_OSARCH="$(GO_HOST)"
 	@$(ENGINE_FULL_GAME_FILES); \
 	bin/fge upgrade-game --game "$(GAME)" --version "$(VERSION)" \
 	  --fpkg "$$fpkg" --toml "$$toml" \

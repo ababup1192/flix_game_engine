@@ -3,6 +3,10 @@
 何も教えていない `claude -p` にお題（依頼の言葉だけ）を渡し、答えに出た道具を正規表現で採点する。
 お題は `agent-eval/engine.json`（エンジン共通・配られる）とゲーム固有の `agent-eval/<名前>.json`。
 形と採点の決まりは `bin/fge agent-eval --help`。
+claude -p は打った場所を作業場にするので、ゲームの外のお題は流す場所を替える: engine のリポだけのお題は
+`testdata/agent-eval/engine-repo.json` を engine の根で、ワークスペース（`fge dashboard` が開くフォルダ）のお題は
+`testdata/agent-eval/workspace.json` を、`agents-pack/workspace/AGENTS.md` と 1 行の `CLAUDE.md`（`@AGENTS.md`）だけを置いたフォルダで
+`<engine>/bin/fge agent-eval --tasks <engine>/testdata/agent-eval/workspace.json` と打つ。
 
 | 口 | いつ | 時間と費用の目安（0.35.21・18 題） |
 |---|---|---|
