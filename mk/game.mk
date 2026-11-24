@@ -83,7 +83,7 @@ HELP_TAIL = echo ""; echo "make render の場面: $(SHOTS)"; $(if $(RENDER_NOTE)
 fge_space := $(subst ,, )
 include $(subst $(fge_space),\$(fge_space),$(ENGINE))/mk/common.mk
 
-.PHONY: status run debug test build dist-linux dist-macos dist-windows dist-all check flow flow-vocab render render-all gallery-sounds reference-check reference-update render-budget render-lint lint lint-doc-refs lint-record-wrap lint-flixlint lint-forbid lint-huge-methods lint-rules-link video-entries src check-docs-sync compare agent-eval agent-eval-compare agent-eval-release engine-upgrade web-pages-stage
+.PHONY: status run debug test build dist-linux dist-macos dist-windows dist-all check flow flow-vocab render render-all gallery-sounds reference-check reference-update render-budget render-lint lint lint-doc-refs lint-record-wrap lint-flixlint lint-forbid lint-huge-methods lint-rules-link video-entries src check-docs-sync compare agent-eval agent-eval-compare agent-eval-release engine-upgrade web-pages-stage dashboard
 
 ##@ 遊ぶ・確かめる
 # RUN_SECONDS=N を付けると N 秒でゲームを止める（起動して確かめるだけの時。止め忘れでウィンドウが残らない）。
@@ -102,6 +102,11 @@ endif
 
 debug: ## | 保存即反映（watchFile）と F8 を有効にして起動する
 	@$(FGE_RUN) debug
+
+# 前面でワークスペースのサーバー（127.0.0.1:8790）を立ててこのゲームの頁を開く。既に立っていればブラウザだけ開く。
+# ゲームに配った bin/fge が dashboard --version を持たない古い物（と bin/fge の無い templates/*）なら engine の bin/fge を使う。
+dashboard: ## | ダッシュボードを開く（AI が置いた絵・案を見て選んで返す・Tape の一覧。Ctrl-C で止める）
+	@fge=bin/fge; "$$fge" dashboard --version >/dev/null 2>&1 || fge="$(ENGINE)/bin/fge"; "$$fge" dashboard
 
 # check の全文は .test-logs/check.log に落とし、画面には要約だけ出す:
 # 成功 = 1 行、失敗 = 最初のエラー全文 + 残りの file:line 一覧 + 処方箋 1 行
@@ -400,6 +405,7 @@ agent-eval-compare: ### A=<前> B=<後> | 2 回の点・トークン・ターン
 ##@ 同じマシンで何本も並んで作業するときの道具 (bin/fge)
 ##> bin/fge heavy <コマンド...> | 重い処理を枠 3 本で流す（render-all・動画・compare と Makefile の HEAVY_LONG は長い物として枠 1〜2 の 2 本まで・枠 3 は短い物だけ）。--status で持ち主と列・--history で待ちの合計
 ##> bin/fge use-engine <版|パス> | この作業場の local.mk と lib をそのエンジンへ。--status / --restore
+##> bin/fge dashboard post <post.json> | 人に絵・案を見せる（素材ごと main の debug/dashboard/posts へ写す）。返事は bin/fge dashboard inbox・片付けは inbox が出す resolve <id>@<at>
 ##> bin/fge proposal build <proposal.json> | 案を選んでもらうページ（index.html）を組む。knobs で片付けの残りを数える
 
 # 何も指定せず make と打ったらゲームが起動する（テンプレの元の既定と同じ）。

@@ -213,7 +213,7 @@ input[type=text]:focus-visible,.tpl:focus-visible,.btn:focus-visible,a.btn:focus
     return [
       h('section', {class: 'panel hero'},
         h('h1', {}, h('span', {}, g.name)),
-        h('p', {class: 'lede'}, 'このゲームの頁（Inbox・Tape など）はこれから足します。今は Claude Code を開くか、手元で動かしてください。'),
+        h('p', {class: 'lede'}, g.note || 'このゲームの頁（Inbox・Tape）を開けませんでした。開き直してください。'),
         h('div', {class: 'games'}, gameCard(g, true)),
         h('div', {class: 'draft'}, h('div', {class: 'sub', style: 'margin:0'}, 'Claude Code に渡す文（下書き）'), h('q', {}, GAME_PROMPT), openHint()))];
   };

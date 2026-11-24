@@ -196,13 +196,24 @@
     },
     {
       "id": "proposal-page",
-      "prompt": "演出の案を 3 つ動画で並べて、依頼主に 1 つ選んでもらうページを作りたい",
+      "prompt": "演出の案を 3 つ動画で並べた 1 枚の静的なページを作って、依頼主にメールで渡したい",
       "expect": [
         {"re": "proposal\\.json", "why": "manifest"},
         {"re": "fge proposal", "why": "bin/fge proposal build"}
       ],
       "avoid": [
         {"re": "proposal\\.py", "why": "移した後の古い道具"}
+      ]
+    },
+    {
+      "id": "dashboard-post",
+      "prompt": "描き出した 3 枚の絵を人に見せて、どれが良いか選んでもらいたい。返事が来たらその絵で進めて",
+      "expect": [
+        {"re": "dashboard post", "why": "bin/fge dashboard post で main の posts へ置く"},
+        {"re": "dashboard inbox", "why": "人の返事は bin/fge dashboard inbox で拾う"}
+      ],
+      "avoid": [
+        {"re": "proposal build", "why": "静的な頁は返事を会話のコピペに頼る"}
       ]
     },
     {

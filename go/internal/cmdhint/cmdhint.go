@@ -33,6 +33,7 @@ var fgeForms = map[string]string{
 	"reference-check":  "reference check",
 	"reference-update": "reference update",
 	"engine-upgrade":   "engine-upgrade",
+	"dashboard":        "dashboard",
 	"api":              "api",
 	"module":           "module",
 	"src":              "src",

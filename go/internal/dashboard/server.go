@@ -3,12 +3,14 @@ package dashboard
 import (
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,6 +19,7 @@ import (
 	"github.com/ababup1192/flix_game_engine/go/internal/fgehome"
 	"github.com/ababup1192/flix_game_engine/go/internal/fgeinstall"
 	"github.com/ababup1192/flix_game_engine/go/internal/newgame"
+	"github.com/ababup1192/flix_game_engine/go/internal/posts"
 )
 
 //go:embed page.html
@@ -36,6 +39,7 @@ type Server struct {
 	startInstall  func()
 	latest        func() (fgehome.Latest, bool)
 	installedList func() []string
+	games         *gameProxies
 }
 
 // NewServer は port で待つ前提の Server を作る。startInstall は engine を取る仕事を裏で始める（走っていれば何もしない）。
@@ -46,14 +50,18 @@ func NewServer(port int, install *installState, startInstall func(), latest func
 		startInstall:  startInstall,
 		latest:        latest,
 		installedList: fgeinstall.InstalledVersions,
+		games:         newGameProxies(execLauncher{log: os.Stderr, goos: runtime.GOOS}),
 	}
 }
 
-// SetPort は待ち受けを決めた後に、Host と Origin の検査に使う番号を替える。
-func (s *Server) SetPort(port int) {
-	s.mu.Lock()
-	s.port = port
-	s.mu.Unlock()
+// SetLauncher は子の bin/fge dashboard を起こす口を替える。
+func (s *Server) SetLauncher(l Launcher) {
+	s.games = newGameProxies(l)
+}
+
+// Close は起こした子を全部止める。
+func (s *Server) Close() {
+	s.games.stopAll()
 }
 
 func (s *Server) getPort() int {
@@ -68,22 +76,9 @@ func (s *Server) allowedHosts() []string {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// WhyNot: Host を見ずに答えない — 外のサイトが DNS rebinding で自分の名前を 127.0.0.1 に向けると、頁と API を読まれる。
-	if !contains(s.allowedHosts(), r.Host) {
-		http.Error(w, "Host が違います", http.StatusForbidden)
+	if !guard(w, r, s.allowedHosts()) {
 		return
 	}
-	if r.Method == http.MethodPost {
-		if !s.isOwnOrigin(r.Header.Get("Origin")) {
-			http.Error(w, "Origin が違います", http.StatusForbidden)
-			return
-		}
-	} else if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		http.Error(w, "GET と POST だけです", http.StatusMethodNotAllowed)
-		return
-	}
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Referrer-Policy", "no-referrer")
 	path := r.URL.Path
 	switch {
 	case path == "/_api/whoami":
@@ -108,8 +103,29 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) isOwnOrigin(origin string) bool {
-	for _, h := range s.allowedHosts() {
+// guard は Host と（POST の時は）Origin が hosts のどれかの時だけ true を返す。違えば断りを書いて false。
+func guard(w http.ResponseWriter, r *http.Request, hosts []string) bool {
+	// WhyNot: Host を見ずに答えない — 外のサイトが DNS rebinding で自分の名前を 127.0.0.1 に向けると、頁と API を読まれる。
+	if !contains(hosts, r.Host) {
+		http.Error(w, "Host が違います", http.StatusForbidden)
+		return false
+	}
+	if r.Method == http.MethodPost {
+		if !isOwnOrigin(hosts, r.Header.Get("Origin")) {
+			http.Error(w, "Origin が違います", http.StatusForbidden)
+			return false
+		}
+	} else if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "GET と POST だけです", http.StatusMethodNotAllowed)
+		return false
+	}
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	return true
+}
+
+func isOwnOrigin(hosts []string, origin string) bool {
+	for _, h := range hosts {
 		if origin == "http://"+h {
 			return true
 		}
@@ -118,22 +134,40 @@ func (s *Server) isOwnOrigin(origin string) bool {
 }
 
 func (s *Server) page(w http.ResponseWriter) {
+	servePage(w, pageHTML)
+}
+
+func servePage(w http.ResponseWriter, html []byte) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	// WhyNot: 外の CDN や inline の外の物を読まない — 手元だけで開く頁で、網が無くても同じに見せる。
 	w.Header().Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'")
 	w.Header().Set("Cache-Control", "no-store")
-	w.Write(pageHTML)
+	w.Write(html)
 }
 
-// gamePath は /<ゲーム名>/ を、workspace.json にある名前の時だけ頁で返す。
+// gamePath は /<ゲーム名>/ の下を、workspace.json にある名前の時だけそのゲームの子へ中継する。
+// 子を起こせない（ダッシュボードより前の版など）時は、/<ゲーム名>/ だけをワークスペースの頁で返し、理由を出す。
 func (s *Server) gamePath(w http.ResponseWriter, r *http.Request) {
-	name, rest, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/"), "/")
-	if _, ok := findGame(name); !ok {
+	name, rest, slash := strings.Cut(strings.TrimPrefix(r.URL.Path, "/"), "/")
+	g, ok := findGame(name)
+	if !ok {
 		http.NotFound(w, r)
 		return
 	}
-	if !strings.HasSuffix(r.URL.Path, "/") && rest == "" {
+	if !slash {
 		http.Redirect(w, r, "/"+url.PathEscape(name)+"/", http.StatusFound)
+		return
+	}
+	// WhyNot: 外のサイトからの読み込みで子を起こさない — Host と Origin の検査を通る img や iframe の GET でも、プロセスは起きる。
+	site := r.Header.Get("Sec-Fetch-Site")
+	mayStart := site == "" || site == "same-origin" || site == "none"
+	proxy, _, err := s.games.get(g, mayStart)
+	if errors.Is(err, errNotStarted) {
+		http.Error(w, "このゲームの頁はダッシュボードの頁から開いてください", http.StatusForbidden)
+		return
+	}
+	if proxy != nil {
+		proxy.ServeHTTP(w, r)
 		return
 	}
 	if rest != "" {
@@ -190,6 +224,8 @@ type GameCard struct {
 	Dir           string `json:"dir"`
 	EngineVersion string `json:"engineVersion,omitempty"`
 	Exists        bool   `json:"exists"`
+	// Note はこのゲームの頁を中継できなかった理由（まだ開いていない・開けた時は空）。
+	Note string `json:"note,omitempty"`
 }
 
 func (s *Server) state(w http.ResponseWriter) {
@@ -224,6 +260,7 @@ func (s *Server) state(w http.ResponseWriter) {
 			Dir:           g.Dir,
 			EngineVersion: fgehome.ReadGameEngineVersion(g.Dir),
 			Exists:        err == nil && info.IsDir(),
+			Note:          s.games.note(g.Name),
 		})
 	}
 	writeJSON(w, st)
@@ -278,8 +315,7 @@ func insideDir(root, path string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	rel, err := filepath.Rel(realRoot, realPath)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+	if !posts.Inside(realRoot, realPath) {
 		return "", false
 	}
 	info, err := os.Stat(realPath)

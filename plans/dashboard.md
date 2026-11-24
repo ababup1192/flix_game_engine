@@ -1,6 +1,6 @@
 # ダッシュボード（engine 起点・ブラウザ）
 
-状態: 設計 第 6 版（相談中）。実装は未着手。**始め方（plans/onboarding.md）の後に作る。**
+状態: 設計 第 6 版。フェーズ 0 と 1 は実装済み（go/internal/dashboard・go/internal/posts）。
 レビュー: 第 1 版 64 点・第 2 版 78 点・第 3 版 84 点・12〜15 節を足した版 68 点・第 4 版 82 点・第 5 版 85 点。指摘への答えは 11 節。
 
 ## 0. 決まっていること（作者の判断）
@@ -41,8 +41,8 @@
     post.json              AI が書く（3.2）
     *.png *.mp4 …          post.json が指す素材（CLI が写す）
     reply.json             人の最新の返事（3.3）
-    replies/<at>.json      出し直す前の返事（上書きで消さない。at は 20261123T120000 の形。`:` は Windows のファイル名に使えない）
-    resolved               空のファイル。あれば片付いた post
+    replies/<at>.json      出し直す前の返事（上書きで消さない。at は 20261123T120000.000000000 の形。`:` は Windows のファイル名に使えない。at は RFC3339Nano なので 1 秒に 2 回送ってもぶつからない）
+    resolved               片付けた返事の at を 1 行書いたファイル。中身が今の reply.json の at と同じ時だけ片付いた post
 ```
 
 - **置き場の根** = main の作業ツリー + ゲームの根の prefix。
@@ -53,6 +53,10 @@
     ゲームの `src/` で打つと置き場がずれる。WhyNot strays と prefix まで共有する: engine の根で strays を流すと根が `templates/x` に縮む。worktree の中で `bin/fge dashboard post` を打っても、main 側の posts へ書く。WhyNot worktree ごとに持つ: AGENTS.md は worktree での作業を既定にしていて、
   人が開くダッシュボードは 1 つ。worktree ごとだと、人は今どの worktree の物を見ているか分からない。
 - post.json には CLI が `origin`（`{branch, worktree}`）を書き足す。頁はこれを見出しの横に出す。
+- **片付けは返事の版ごと。** resolved があるだけでは片付いたと見ない。AI が inbox で返事 v1 を拾った後に人が v2 を出し直すと、
+  resolved の at（v1）と reply.json の at（v2）が食い違い、v2 は inbox に出たままになる（resolved のあるなしだけで見ると、v2 が誰にも届かない）。
+- **main の作業ツリーにゲーム（flix.toml）がまだ無い時**（worktree で作り始めたゲーム）は、その worktree の置き場を使い、CLI と頁が 1 行で知らせる。
+- worktree で `fge dashboard` を打った時も、一覧に足すのは main の作業ツリーのゲームの根（post は main 側へ書くので）。
 - **Tape は worktree をまたいで読む。** テープは撮った worktree の `debug/tape` にできるので、Tape タブは `git worktree list` の
   全部の作業ツリーの `debug/tape` を読み、どの枝で撮ったかを出す（写さない）。
 - git の外（`debug/` の下）。生成した絵は git に入れない決まりに合う。git でないフォルダでは今のフォルダの `debug/` を使う。
@@ -84,7 +88,9 @@
   "comment": "B はもう少し暗く" }
 ```
 
-- サーバーは tmp に書いてから rename で差し替える。返事を出し直したら、前の reply.json を `replies/<at>.json` へ移してから書く。
+- サーバーは tmp に書いてから rename で上から差し替える（reply.json が消える間を作らない。Windows で共有違反の時は短く数回やり直す）。
+  返事を出し直したら、前の reply.json の中身を `replies/<at>.json` へ写して（名前は O_EXCL で取る）から差し替える。
+- 素材は写す時に名前を `[A-Za-z0-9._-]` にそろえる。頁は素材を `sandbox` の CSP で返し、絵・動画・音の外はダウンロードにする。
 - 絵の上を囲むメモ（座標つきの注釈）はフェーズ 4（9 節）。
 
 ## 4. CLI（AI と人が打つ）
@@ -93,8 +99,8 @@
 |---|---|
 | `fge dashboard`（どこで打っても同じ） | **前面で**ワークスペースのサーバーを 1 つ立てる（人が別の端末で打つ・Ctrl-C で止める）。既に 8790 で立っていれば立てず、ブラウザだけ開く。ゲームのフォルダで打った時は、そのゲームを一覧に足して `/<ゲーム名>/` を開く（2026-11-23 の作者の判断） |
 | `bin/fge dashboard post <post.json>` | 素材ごと posts へ写し、id と URL（`…/#post-<id>`）を出す。サーバーは要らない（ファイルを書くだけ） |
-| `bin/fge dashboard inbox [--json] [--all]` | reply.json があり resolved が無い post を、返事の中身ごと出す。既定は origin の worktree が今の物に合う post だけ（並んで動く AI が他の担当の返事を拾わない）。`--all` で全部。何も書き換えない |
-| `bin/fge dashboard resolve <id>` | resolved を置く。WhyNot `close`: `bin/fge tickets close` と同じ語で別の物を指すことになる |
+| `bin/fge dashboard inbox [--json] [--all]` | reply.json があり、片付いていない（3.1）post を、返事の中身（選んだ案の label と素材のパス・自由文）ごと `<id>@<返事の at>` の形で出す。既定は origin の worktree が今の物に合う post だけ（並んで動く AI が他の担当の返事を拾わない）。`--all` で全部。何も書き換えない |
+| `bin/fge dashboard resolve <id>@<at>` | resolved に返事の at を書く。`<at>` が今の返事の at と違えば（拾った後に人が出し直した）断って新しい返事を出す。`@<at>` を省くと今の返事の at を書く。WhyNot `close`: `bin/fge tickets close` と同じ語で別の物を指すことになる |
 
 - **AI が打つ post・inbox・resolve はファイルを読み書きするだけで、サーバーを要らない。** サーバーは人がブラウザで見る時だけ。
   WhyNot 裏で立てる: 裏で立てると、pid とポートの書き置き・立っているかの問い合わせ・engine を上げた後の立て直し・
@@ -227,15 +233,20 @@ http://127.0.0.1:8790/mygame/     ゲーム: そのゲームの bin/fge dashboar
 http://127.0.0.1:8790/_api/…      ワークスペースの API
 ```
 
-- **各ゲームの頁は中継する。** `/<ゲーム名>/` を初めて開いた時、全体の fge がそのゲームの `bin/fge dashboard --port 0 --no-open --base /<ゲーム名>/` を
+- **各ゲームの頁は中継する。** `/<ゲーム名>/` を初めて開いた時、全体の fge がそのゲームの `bin/fge-go dashboard --port 0 --no-open --base /<ゲーム名>/` を
   子のプロセスとして起こし、そのポートへ中継する（Go の httputil.ReverseProxy）。全体の fge を Ctrl-C で止めると子も止まる。
+  子の stdin は開けたまま渡し、子は stdin が pipe で閉じたら自分で止まる（全体の fge が kill で落ちても子が残らない）。
+  子を起こすのは `Sec-Fetch-Site` が same-origin か none の時（ヘッダが無い時も）だけ（外のサイトの img や iframe でプロセスを起こさせない）。
+  WhyNot bin/fge（sh の 1 行）を通す: Windows の素の環境に sh が無い。Windows では `fge-go.exe` だけを見る。
   WhyNot 全体の fge が頁を描く: ゲームごとに engine の版が違う。版の違うゲームの post や tape を新しい道具 1 本で読むと、Studio の追従の失敗が戻る。
 - ダッシュボードより前の版のゲーム（`bin/fge dashboard` を持たない）は一覧に「版を上げると開ける」と出し、中継しない。
-  見分けは子の `bin/fge dashboard --version`（ダッシュボードの約束の版を 1 行で出す）。`--port`・`--no-open`・`--base` はフェーズ 3 で
-  4 節に足す。全体の fge と子の間の約束は、この 4 つのフラグと `--version` だけに保つ（版をまたぐ約束を増やさない）。
+  見分けは子の `bin/fge dashboard --version`（ダッシュボードの約束の版を 1 行で出す）。見分けるのは人がそのゲームを開いた時で、
+  一覧を描くたびには見ない（ゲームの数だけプロセスを起こすと一覧が遅れる。理由は開いた頁と一覧の行に出る）。
+  全体の fge と子の間の約束は、`--port`・`--no-open`・`--base` の 3 つのフラグと `--version`、子が待ち始めた時に stdout の最初に出す
+  `[fge dashboard] listen 127.0.0.1:<番号>` の 1 行だけに保つ（版をまたぐ約束を増やさない）。
 - **中継の Host と Origin。** 子は 6 節のとおり Host と Origin を自分のポートで見るので、ReverseProxy の既定のままだと 8790 から来た要求を断る。
-  全体の fge は Director で Host を子の `127.0.0.1:<子のポート>` に書き換え、子は `--base` を受けた時だけ Origin に `http://127.0.0.1:8790` も許す
-  （全体の fge が自分の Host と Origin を 6 節と同じ決まりで先に見る）。
+  全体の fge は自分の Host と Origin を 6 節と同じ決まりで先に見て、通った要求の Host と Origin を子の `127.0.0.1:<子のポート>` に書き換える。
+  WhyNot 子に 8790 の Origin を許させる: 全体の fge が 8790 で待てずに別の番号へ移った時に、子が POST を断る。
 - **ゲームの一覧はフォルダの親子ではなく一覧のファイルで持つ。** `~/.flix_ge/workspace.json` に `{name, dir}` を並べる。
   `fge new` は作ったゲームを一覧に足す。既にあるゲームは `fge add <dir>` で足す。
   WhyNot 1 つの親フォルダの下に置かせる: 既にある git のリポを動かさせることになる。

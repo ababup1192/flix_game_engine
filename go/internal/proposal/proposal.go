@@ -346,6 +346,7 @@ var (
 type builder struct {
 	root    string
 	missing []string
+	opts    PageOptions
 }
 
 // extOf は Python の os.path.splitext と同じく、名前の頭の . は拡張子に数えない。
@@ -444,7 +445,11 @@ func (b *builder) option(sec, o any, won any) string {
 	radio := ""
 	if !decided {
 		radio = `<input type="radio" name="` + attr(sid) + `" value="` + attr(oid) + `"`
-		if truthy(get(o, "rec")) {
+		checked := truthy(get(o, "rec"))
+		if pick, ok := b.opts.Picks[str(sid)]; ok {
+			checked = pick == str(oid)
+		}
+		if checked {
 			radio += " checked"
 		}
 		radio += ">"
@@ -587,7 +592,14 @@ func (b *builder) page(m any) string {
 			openQ = true
 		}
 	}
-	body := []string{"<h1>" + text(orEmpty(m, "title")) + "</h1>"}
+	body := []string{}
+	if b.opts.BackURL != "" {
+		body = append(body, `<p class="meta"><a href="`+attr(b.opts.BackURL)+`">← Inbox へ戻る</a></p>`)
+	}
+	body = append(body, "<h1>"+text(orEmpty(m, "title"))+"</h1>")
+	if b.opts.Byline != "" {
+		body = append(body, `<p class="meta">`+text(b.opts.Byline)+"</p>")
+	}
 	if truthy(get(m, "meta")) {
 		body = append(body, `<p class="meta">`+text(get(m, "meta"))+"</p>")
 	}
@@ -607,8 +619,10 @@ func (b *builder) page(m any) string {
 		}
 		body = append(body, "<h2>"+part.title+`</h2><div class="rec">`+strings.Join(ps, "")+"</div>")
 	}
-	bar := ""
-	if openQ {
+	bar, style := "", css
+	if b.opts.Send {
+		bar, style = b.sendBar(openQ), css+sendCSS
+	} else if openQ {
 		bar = `<div class="bar"><output></output><button type="button">コピー</button>` +
 			"<small>カードを押して選び、この 1 行を返事に貼る</small></div>" +
 			"<script>" + js + "</script>"
@@ -619,7 +633,7 @@ func (b *builder) page(m any) string {
 	}
 	return "<!doctype html>\n<html lang=\"ja\"><head><meta charset=\"utf-8\">" +
 		"<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">" +
-		"<title>" + text(title) + "</title><style>" + css + "</style></head><body><main>\n" +
+		"<title>" + text(title) + "</title><style>" + style + "</style></head><body><main>\n" +
 		strings.Join(body, "\n") + "\n</main>" + bar + "</body></html>\n"
 }
 
@@ -728,18 +742,18 @@ func Build(path string, out, errOut io.Writer) int {
 		return 2
 	}
 	abs, _ := filepath.Abs(path)
-	b := &builder{root: filepath.Dir(abs)}
-	page := b.page(m)
-	target := filepath.Join(b.root, "index.html")
+	root := filepath.Dir(abs)
+	page, missing := Page(&Manifest{v: m}, root, PageOptions{})
+	target := filepath.Join(root, "index.html")
 	if err := os.WriteFile(target, []byte(page), 0o644); err != nil {
 		fmt.Fprintf(errOut, "%s を書けない（%v）\n", target, err)
 		return 2
 	}
-	for _, s := range b.missing {
+	for _, s := range missing {
 		fmt.Fprintf(errOut, "proposal: 素材が無い: %s\n", s)
 	}
 	fmt.Fprintf(out, "%s (%d 行)\n", target, strings.Count(page, "\n"))
-	if len(b.missing) > 0 {
+	if len(missing) > 0 {
 		return 1
 	}
 	return 0

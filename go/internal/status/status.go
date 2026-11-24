@@ -32,6 +32,7 @@ import (
 	"github.com/ababup1192/flix_game_engine/go/internal/fgehome"
 	"github.com/ababup1192/flix_game_engine/go/internal/fpkgstore"
 	"github.com/ababup1192/flix_game_engine/go/internal/mvncache"
+	"github.com/ababup1192/flix_game_engine/go/internal/posts"
 	"github.com/ababup1192/flix_game_engine/go/internal/renderbudget"
 )
 
@@ -378,6 +379,14 @@ func sectionTickets(c *ctx, out *[]string) {
 		summary := c.firstLine(d + "/README.md")
 		*out = append(*out, fmt.Sprintf("  %s (%s) %s",
 			pyBasename(d), c.age(d), pyHead(summary, c.rules.TicketSummaryWidth)))
+	}
+}
+
+// sectionDashboard は、この worktree から置いた post に人の返事が来ていれば 1 行（0 件なら出さない）。
+func sectionDashboard(c *ctx, out *[]string) {
+	roots := posts.Resolve(filepath.FromSlash(c.root))
+	if n := len(posts.Inbox(posts.List(roots.PostsDir()), roots.Worktree, false)); n > 0 {
+		*out = append(*out, fmt.Sprintf("ダッシュボードに返事 %d 件 → bin/fge dashboard inbox", n))
 	}
 }
 
@@ -749,6 +758,7 @@ var sectionsByName = map[string]func(*ctx, *[]string){
 	"section_reference":     sectionReference,
 	"section_budget":        sectionBudget,
 	"section_tickets":       sectionTickets,
+	"section_dashboard":     sectionDashboard,
 	"section_style":         sectionStyle,
 	"section_pack":          sectionPack,
 	"section_engine_drift":  sectionEngineDrift,

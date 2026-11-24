@@ -351,7 +351,8 @@
   `pub def loadAndLaunch(loadApp: Unit -> App[w, {}] \ ef2): Unit \ (ef2 + Platform.Services + Platform.Annotation + LoadProgress + Fs.FileRead + Fs.FileWrite + IO)`
 - 開発の道具の組を選んで App を実機で走らせる（launch はデスクトップの道具の組でこれを呼ぶ）。
   `pub def launchWithDevTools(tools: DevTools[w, efTools], app: App[w, {}]): Unit \ (efTools + Platform.Services + LoadProgress + Fs.FileRead + Fs.FileWrite + IO)`
-- `pub def launchForBench(app: App[w, ef]): Unit \ (ef + Platform.Services + Fs.FileRead + Fs.FileWrite + IO)`
+- 系の中で IO を測る bench のための launch（effect を持つ App も受ける）。開発の道具は持たない。ゲームからは呼ばない
+  `pub def launchForBench(app: App[w, ef]): Unit \ (ef + Platform.Services + Fs.FileRead + Fs.FileWrite + IO)`
 
 ## App.CursorLook — `engine_world/src/App/CursorLook.flix`
 - withCursor の宣言を最後にどう当てたか。Stale = まだ当てていない・止めた画面の見た目が上書きした
@@ -405,7 +406,8 @@
 - 今いる所（ゲームの根）の実パス。
   `pub def gameDir(): String \ IO`
 - `pub def pidText(): String \ IO`
-- `pub def register(port: Int32): Unit \ IO`
+- このゲームを port で書き置く。窓を閉じずに終わらせられた時（SIGTERM・make を止めた）も消えるよう、
+  `pub def register(port: Int32): Unit \ IO`
 - このゲームの行を消す（閉じる時）。
   `pub def unregister(): Unit \ IO`
 
@@ -421,7 +423,8 @@
   `pub def requestFromProcess(): Request \ IO`
 - 静止画（常駐で流す）か、動画（GPU で塗るなら常駐に送らない）か。
   `pub enum JobKind with Eq, ToString { case Still, case Video }`
-- `pub type alias Job = { name = String, kind = JobKind, launch = Request -> Int32 \ IO }`
+- 常駐が受ける入口 1 つ。name は bin/headless-run に渡す名前（"SceneRender.one"）。launch の戻り値は終了コード。
+  `pub type alias Job = { name = String, kind = JobKind, launch = Request -> Int32 \ IO }`
 - 素の道の入口の終わり方: 0 ならそのまま戻り、それ以外はその終了コードでプロセスを終える。
   `pub def exitWith(code: Int32): Unit \ IO`
 - 静止画の入口。名前は "<モジュール>.<関数>" に組む。
@@ -541,10 +544,12 @@
   `pub def tagged(id: Int64, text: String): String`
 - tagged の逆。番号の無い・読めない形は None。
   `pub def untagged(raw: String): Option[(Int64, String)]`
-- `pub def start(port: Int32, render: Option[Unit -> List[String] \ IO]): Bridge \ IO`
+- 127.0.0.1 の port で HTTP サーバを立てて Bridge を返す。
+  `pub def start(port: Int32, render: Option[Unit -> List[String] \ IO]): Bridge \ IO`
 - 窓なしのゲーム（App.Headless）の待ち受け: 同じ橋を、名乗らず（listening の行も書き置きも無し）に開く。
   `pub def startQuiet(port: Int32): Bridge \ IO`
-- `pub def startQuietWith(port: Int32, direct: List[DirectRoute]): Bridge \ IO`
+- startQuiet に、橋の外で答える口（DirectRoute）を足して開く。
+  `pub def startQuietWith(port: Int32, direct: List[DirectRoute]): Bridge \ IO`
 - startQuiet で開いた橋を閉じる（書き置きに触れない）。
   `pub def stopQuiet(bridge: Bridge): Unit \ IO`
 - ゲームループが毎フレーム呼ぶ非ブロッキングの受信。届いていなければ None。
@@ -601,7 +606,8 @@
   `pub def nextRenderTarget(requested: Int64, done: Int64): Option[Int64]`
 - 番号 id の依頼が済んだか。後の番号の回でまとめて描き終えていても済んだ扱い
   `pub def isRenderSettled(id: Int64, done: Int64): Bool`
-- `pub def answerWaitSecs(params: Map[String, String]): Int64`
+- 橋が主の糸の答えを待つ秒数。`wait=<秒>`（1〜600）があればそれ、無ければ view=shot は 60 秒、ほかは 10 秒。
+  `pub def answerWaitSecs(params: Map[String, String]): Int64`
 - 時間内に答えられなかったときの応答。古い Studio はこの 1 行目を「描いている途中」と読む
   `pub def busyText(): String`
 - 描き出しの実体（App.onRenderRequest）を登録していないゲームへの応答。
@@ -1799,7 +1805,8 @@
   `pub def fromKeys(resolver: String -> Color, keys: List[String]): Map[String, Color]`
 - 色票 Doc 1 枚ぶんの JSON テキスト（末尾に改行付き）。
   `pub def build(spec: { note = String, colors = Map[String, Color] }): String`
-- `pub def write(path: String, spec: { note = String, colors = Map[String, Color] }): Result[String, Unit] \ { Fs.FileRead, Fs.FileWrite }`
+- 色票 Doc を path へ書き出す。親ディレクトリは作らない（`Fs.WriteFile` の流儀）。
+  `pub def write(path: String, spec: { note = String, colors = Map[String, Color] }): Result[String, Unit] \ { Fs.FileRead, Fs.FileWrite }`
 - path に text と同じ中身がもうあるか（読めない・無いときは false）。
   `pub def isSameAsOnDisk(path: String, text: String): Bool \ Fs.FileRead`
 
@@ -1944,7 +1951,8 @@
 - `pub def withDistortion(d: Option[Distortion], s: Stack): Stack`
 - `pub def withHeightFog(h: Option[HeightFog], s: Stack): Stack`
 - `pub def withCrt(c: Option[Crt], s: Stack): Stack`
-- `pub def withTime(t: Clock.Time[c], s: Stack): Stack`
+- 時間で動く後がけ（Distortion と HeightFog のむら）の時刻。陽炎と霧は遊びの時計（ポーズで止まる）を渡す。描き出しとテストは決まった時刻を渡す。
+  `pub def withTime(t: Clock.Time[c], s: Stack): Stack`
 - `pub def exposureOf(s: Stack): Float64`
 - `pub def viewTransformOf(s: Stack): ViewTransform`
 - `pub def bloomOf(s: Stack): Option[Bloom]`
@@ -1986,7 +1994,8 @@
   `pub def issueText(issue: Issue): String`
 
 ## ProcessEnv — `engine_world/src/ProcessEnv.flix`
-- `pub def snapshot(): Map[String, String] \ IO`
+- 今のプロセスの環境変数を丸ごと表にする。
+  `pub def snapshot(): Map[String, String] \ IO`
 - 0 ならそのまま戻り、それ以外はその終了コードでプロセスを終える。
   `pub def exitWith(code: Int32): Unit \ IO`
 
@@ -2321,14 +2330,16 @@
   `pub type alias ShaderSurface = { rect = Rect2.Rect2, spec = ShaderDoc.Spec, time = Float64, mask = List[List[Vec2.Vec2]], zIndex = Int32, blend = DrawCmd.BlendMode }`
 - Shader 面を純データ（ShaderSurface）で取り出す（描き出し / SoftRaster 用）。
   `pub def shaderSurfaces(items: List[PlacedItem]): List[ShaderSurface]`
-- `pub def surfaceZShared(items: List[PlacedItem]): List[Int32]`
+- 面（Item.Shader）か 3D の場面（Item.Scene3d）の後ろに同じ zIndex の他の描き物を並べた z と、
+  `pub def surfaceZShared(items: List[PlacedItem]): List[Int32]`
 - Shader 面を除いた PlacedItem 列（GL 経路で draw に渡す前に外す — 本物のシェーダーは
   `pub def withoutShaders(items: List[PlacedItem]): List[PlacedItem]`
 - 3D の場面だけを取り出して Platform.Draw3d.drawScene3d が受ける命令へ（GL 経路専用。Clipped も剥がして拾う）。
   `pub def drawScenes3d(items: List[PlacedItem]): List[Scene3d.RenderCmd]`
 - 3D の場面を除いた PlacedItem 列（GL 経路と CPU の描き出しで drawWith に渡す前に外す — 場面は drawScenes3d が
   `pub def withoutScenes3d(items: List[PlacedItem]): List[PlacedItem]`
-- `pub type alias SoftSceneRec = { drawables = List[GameEngine.Drawable], polygons = List[GameEngine.PolygonRenderCmd], surfaces = List[ShaderSurface], scenes = List[Scene3d.RenderCmd] }`
+- CPU の描き出しへ渡す物（engine_tools の HeadlessRender.SoftScene と同じ欄）。
+  `pub type alias SoftSceneRec = { drawables = List[GameEngine.Drawable], polygons = List[GameEngine.PolygonRenderCmd], surfaces = List[ShaderSurface], scenes = List[Scene3d.RenderCmd] }`
 - 描き物の列を CPU の描き出しへ渡す形にまとめる（HeadlessRender.renderPngSoft にそのまま渡せる）。
   `pub def softSceneOf(textureInfoOf: String -> Option[GameEngine.TextureInfo] \ ef, items: List[PlacedItem]): SoftSceneRec \ ef`
 - World 由来 Drawable 群に camera のズーム倍率を適用する（位置は `Projection.applyToWorldPos` で
@@ -2416,10 +2427,12 @@
   `pub type alias Format = FormatData`
 - 名前 `name`・今の版 `version` のセーブ形式。書き換えはまだ無い。版は 1 から（1 より小さければ 1 にして 1 行言う）。
   `pub def make(name: String, version: Int32): Format`
-- `pub def withMigration(fromVersion: Int32, migrate: Json -> Result[String, Json], format: Format): Format`
+- 版 `fromVersion` → `fromVersion + 1` の書き換えを足す。`fromVersion` は 0 以上・今の版より小さいこと。
+  `pub def withMigration(fromVersion: Int32, migrate: Json -> Result[String, Json], format: Format): Format`
 - 包みの無い古いセーブ（中身の JSON だけ）を何版として読むかを決める関数を渡す。
   `pub def withUnwrappedVersion(versionOf: Json -> Int32, format: Format): Format`
-- `pub def withGameVersion(gameVersion: String, format: Format): Format`
+- 書くセーブの包みに `gameVersion` として残す、ゲームの版（遊ぶ人が見る "1.4.0" など）。字は `trimGameVersion` で整える。
+  `pub def withGameVersion(gameVersion: String, format: Format): Format`
 - ゲームの版の字の前後の空白を落とす。空なら None。
   `pub def trimGameVersion(gameVersion: String): Option[String]`
 - `withGameVersion` で渡したゲームの版。渡していなければ None。
@@ -2428,8 +2441,10 @@
   `pub def getName(format: Format): String`
 - 今の版（書く時に付ける版）。
   `pub def getVersion(format: Format): Int32`
-- `pub def wrap(data: Json, format: Format): Json`
-- `pub def gameVersionOf(json: Json): Option[String]`
+- 中身 `data` を今の版の包み `{"format", "version", "data"}` に入れる。`withGameVersion` があれば `"gameVersion"` も足す。
+  `pub def wrap(data: Json, format: Format): Json`
+- 読んだセーブの包みにある、書いたゲームの版（最後に書いた版）。包みでない・`gameVersion` の無い古い包み・字でない時は None。
+  `pub def gameVersionOf(json: Json): Option[String]`
 - 読んだ JSON の版。包みも読み方も無い・名前の違う包みは None。
   `pub def versionOf(json: Json, format: Format): Option[Int32]`
 - 読んだ JSON を今の版の中身へ書き換えて返す。今より新しい版・書き換えの抜け・書き換えの失敗は Err。
@@ -2808,7 +2823,8 @@
   `pub def progressOn(clock: Clock.Clock[c], at: Clock.Time[c], tag: a, tl: Timeline[a]): Float64 with Order[a]`
 - 長さを合わせる音（withFittedSound）を書き出すときの長さ（秒）。
   `pub def soundLengthOf(name: String, tl: Timeline[a]): Option[Float64]`
-- `pub def playheadOf(wall: Float64, resumes: List[Float64], tl: Timeline[a]): Playhead`
+- 場面の時計 wall と、待ちが解けた時刻の列から、時刻表の上の時刻を出す（playheadOn の、解いた時刻だけを持つ形）。
+  `pub def playheadOf(wall: Float64, resumes: List[Float64], tl: Timeline[a]): Playhead`
 - いま解けていない待ちで止まっているか。
   `pub def isWaiting(wall: Float64, resumes: List[Float64], tl: Timeline[a]): Bool`
 - 決定キーを押した。待ちで止まっている間だけ解いた時刻を記録する（待ちに着く前の早押しは数えない）。
@@ -3352,7 +3368,8 @@
   `pub def centerOf(face: Face): Vec2.Vec2`
 
 ## WorldHash — `engine_world/src/WorldHash.flix`
-- `pub def sha256Of(x: a): String`
+- x の中身の SHA-256 の頭 16 字（16 進）。同じ中身なら、record の欄を組んだ順・共有の形・プロセスによらず同じ字（Map・Set の穴は頭のコメント）。
+  `pub def sha256Of(x: a): String`
 - x の中を depth 段まで開いた部分ごとの要約（"欄の道 16 字" の行。record の欄は名前・enum と Flix の物は v0 などの欄の名前）。
   `pub def partsOf(x: a, depth: Int32): List[String]`
 - sha256Of と partsOf を、x を 1 回だけ辿って両方返す（大きな World を閉じる時に 2 回辿らない）。
@@ -3528,7 +3545,8 @@
   `pub def list(h: Opt[t]): Opt[List[t]]`
 - 同じ group の引数のどれか 1 つは要る（hide の名前か at= など）。
   `pub def oneOf(group: String, h: Opt[t]): Opt[t]`
-- `pub def scopedBy(other: String, h: Opt[t]): Opt[t]`
+- build が ref を「同じ行の引数 other の値 + "." + この値」で照らす（other を書いていない・other が orWords の語の時は照らさない）。
+  `pub def scopedBy(other: String, h: Opt[t]): Opt[t]`
 - 表に並べる形にする。
   `pub def erase(h: Handle[m, t]): Erased`
 - 引数の値（書いてなければ既定の値）。

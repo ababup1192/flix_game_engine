@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Flix_GE dashboard</title>
+<style>
+:root{color-scheme:dark;--bg:#0e1118;--panel:#151a25;--panel2:#1b2230;--line:#262c3a;--ink:#eef1f6;--mute:#9aa3b5;--acc:#4cc3fa;--acc2:#a58cf0;--ok:#3fd39a;--hot:#f0506e;--warm:#f5b84c;--grad:linear-gradient(90deg,#38bdf8,#3b6cf6);--mono:ui-monospace,"SF Mono",Menlo,Consolas,"JetBrains Mono",monospace}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.65 system-ui,-apple-system,"Hiragino Sans","Noto Sans JP","Yu Gothic UI",sans-serif;overflow-x:clip}
+code,.mono{font-family:var(--mono);font-size:.92em}
+a{color:var(--acc)}
+.top{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px max(4vw,16px);background:rgba(14,17,24,.92);backdrop-filter:blur(6px);border-bottom:3px solid transparent;border-image:linear-gradient(90deg,#38bdf8,#3b6cf6,#8b6fd6) 1}
+.logo{font:800 18px var(--mono);letter-spacing:-.02em;white-space:nowrap;text-decoration:none;color:var(--ink)}
+.logo b{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.crumb{font:500 13px var(--mono);color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.crumb a{text-decoration:none}
+.top .ver{margin-left:auto;font:500 12px var(--mono);color:var(--mute);white-space:nowrap}
+main{max-width:1180px;margin:0 auto;padding:clamp(18px,3vw,36px) max(4vw,16px) 64px;display:grid;gap:clamp(18px,2.4vw,28px)}
+h1{font:800 clamp(24px,3.2vw,34px)/1.15 var(--mono);letter-spacing:-.02em;margin:0}
+h1 span{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+h2{font:800 clamp(17px,2vw,20px)/1.3 var(--mono);margin:0}
+.lede{color:var(--mute);margin:4px 0 0;max-width:72ch}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:clamp(16px,2.4vw,26px)}
+.panel.hero{background:radial-gradient(120% 140% at 100% 0%,rgba(139,111,214,.18),transparent 55%),radial-gradient(90% 120% at 0% 100%,rgba(56,189,248,.12),transparent 60%),var(--panel)}
+.dir{font:12px var(--mono);color:var(--mute);overflow-wrap:anywhere}
+textarea{display:block;width:100%;font:14px/1.6 system-ui,sans-serif;background:var(--bg);color:var(--ink);border:1px dashed #3a4256;border-radius:10px;padding:10px 12px;resize:vertical;min-height:64px;margin:14px 0 10px}
+textarea:focus-visible,.btn:focus-visible,.tab:focus-visible,.chipbtn:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:.35em;min-height:40px;padding:0 15px;border-radius:10px;border:0;background:var(--grad);color:#fff;font:700 14px system-ui,sans-serif;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn.ghost{background:none;border:1px solid #3a4256;color:var(--ink);font-weight:600}
+.btn.small{min-height:32px;padding:0 11px;font-size:13px}
+.hint{font-size:12.5px;color:var(--mute);margin:8px 0 0}
+.toast{font-size:13px;color:var(--ok)}
+.toast:empty{display:none}
+.tabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin:-4px 0 0}
+.tab{font:700 15px var(--mono);background:none;border:0;color:var(--mute);padding:10px 16px;border-bottom:3px solid transparent;cursor:pointer;display:inline-flex;gap:8px;align-items:center}
+.tab[aria-selected=true]{color:var(--ink);border-bottom-color:var(--acc)}
+.badge{min-width:22px;padding:0 7px;border-radius:99px;background:var(--hot);color:#fff;font:700 12px/20px var(--mono);text-align:center}
+.badge.quiet{background:var(--panel2);color:var(--mute)}
+.filters{display:flex;gap:6px;flex-wrap:wrap;margin:16px 0 4px}
+.chipbtn{font:600 12.5px system-ui,sans-serif;background:var(--bg);color:var(--mute);border:1px solid #3a4256;border-radius:99px;padding:4px 12px;cursor:pointer}
+.chipbtn[aria-pressed=true]{color:var(--ink);border-color:var(--acc);background:rgba(76,195,250,.12)}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr));gap:14px;margin-top:12px}
+.card{background:var(--bg);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;transition:border-color .2s,box-shadow .2s}
+.card.focus{border-color:var(--acc);box-shadow:0 0 0 3px rgba(76,195,250,.25)}
+.card.done{opacity:.6}
+.thumbs{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:2px;background:#0a0d13;aspect-ratio:16/8;border-bottom:1px solid var(--line)}
+.thumbs img{width:100%;height:100%;object-fit:cover;display:block;image-rendering:auto}
+.thumbs.none{display:grid;place-items:center;color:var(--mute);font:600 12px var(--mono)}
+.card .body{padding:12px 14px 14px;display:grid;gap:8px;align-content:start;flex:1}
+.card h3{margin:0;font:800 16px/1.35 system-ui,sans-serif}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{display:inline-block;padding:1px 9px;border:1px solid #3a4256;border-radius:99px;font:500 11.5px var(--mono);color:var(--mute);white-space:nowrap}
+.chip.acc{border-color:rgba(165,140,240,.6);color:var(--acc2)}
+.chip.hot{border-color:var(--hot);color:var(--hot)}
+.chip.ok{border-color:rgba(63,211,154,.6);color:var(--ok)}
+.chip.warm{border-color:rgba(245,184,76,.6);color:var(--warm)}
+.lead{font-size:13.5px;color:var(--mute);margin:0;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.reply{background:var(--panel2);border-left:3px solid var(--ok);border-radius:6px;padding:7px 10px;font-size:13px;display:grid;gap:2px}
+.reply b{font-family:var(--mono)}
+.when{font:12px var(--mono);color:var(--mute)}
+.card .row{margin-top:auto}
+.empty{color:var(--mute);font-size:14px;border:1px dashed var(--line);border-radius:12px;padding:16px;margin-top:12px}
+.foot{font-size:12px;color:var(--mute);text-align:center}
+[hidden]{display:none!important}
+@media(max-width:600px){.top .ver{display:none}.tab{padding:9px 10px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="logo" id="logo" href="./"><b>Flix_GE</b> dashboard</a>
+  <span class="crumb" id="crumb"></span>
+  <span class="ver" id="ver"></span>
+</header>
+<main id="main">
+  <section class="panel hero" id="starter"></section>
+  <section class="panel">
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" id="tab-inbox" aria-controls="inbox" aria-selected="true">Inbox <span class="badge quiet" id="n-inbox">0</span></button>
+      <button class="tab" role="tab" id="tab-tape" aria-controls="tape" aria-selected="false">Tape <span class="badge quiet" id="n-tape">0</span></button>
+    </div>
+    <div id="inbox" role="tabpanel" aria-labelledby="tab-inbox" aria-live="polite"></div>
+    <div id="tape" role="tabpanel" aria-labelledby="tab-tape" hidden></div>
+  </section>
+  <p class="foot" id="foot"></p>
+</main>
+<script>
+(() => {
+  const $ = (s) => document.querySelector(s);
+  const h = (tag, attrs, ...kids) => {
+    const el = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (v === undefined || v === null || v === false) continue;
+      if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+      else if (k === 'class') el.className = v;
+      else el.setAttribute(k, v === true ? '' : v);
+    }
+    for (const kid of kids.flat()) if (kid !== null && kid !== undefined && kid !== false) el.append(kid);
+    return el;
+  };
+  const MAX_Q = 5000;
+  const shellQuote = (s) => s !== '' && /^[A-Za-z0-9\/._~-]+$/.test(s) ? s : "'" + s.replace(/'/g, "'\\''") + "'";
+  const psQuote = (s) => "'" + s.replace(/'/g, "''") + "'";
+  const cdLine = (dir, cmd) => state.goos === 'windows'
+    ? 'Set-Location -LiteralPath ' + psQuote(dir) + '; ' + cmd(psQuote)
+    : 'cd ' + shellQuote(dir) + ' && ' + cmd(shellQuote);
+  const deepLink = (dir, q) => 'claude-cli://open?cwd=' + encodeURIComponent(dir) + (q ? '&q=' + encodeURIComponent(q.slice(0, MAX_Q)) : '');
+  const copy = async (text, toast) => {
+    try { await navigator.clipboard.writeText(text); }
+    catch (_) {
+      const ta = h('textarea', {style: 'position:fixed;opacity:0'}); ta.value = text; document.body.append(ta); ta.select();
+      document.execCommand('copy'); ta.remove();
+    }
+    if (toast) toast.textContent = 'コピーしました';
+  };
+  const when = (s) => { const d = new Date(s); return isNaN(d) ? '' : d.toLocaleString('ja-JP', {month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'}); };
+  const enc = (s) => s.split('/').map(encodeURIComponent).join('/');
+
+  let state = null, postsList = [], tapes = [], filter = 'all', sigs = {posts: '', tapes: ''};
+
+  const renderStarter = () => {
+    const toast = h('span', {class: 'toast'});
+    const ta = h('textarea', {id: 'prompt', 'aria-label': 'Claude Code に渡す文', spellcheck: 'false'});
+    ta.value = localStorage.getItem('fge.prompt.' + state.dir) || state.prompt;
+    const open = h('a', {class: 'btn'}, 'Claude Code で開く');
+    const sync = () => { open.href = deepLink(state.dir, ta.value.trim()); localStorage.setItem('fge.prompt.' + state.dir, ta.value); };
+    ta.addEventListener('input', sync);
+    sync();
+    $('#starter').replaceChildren(
+      h('h1', {}, h('span', {}, state.name)),
+      h('div', {class: 'dir'}, state.dir),
+      state.note ? h('p', {class: 'hint', style: 'color:var(--warm)'}, state.note) : null,
+      h('p', {class: 'lede'}, 'はじめに: 下の文を直して [Claude Code で開く] を押すと、このゲームのフォルダで Claude Code が開き、文が入力欄に入ります。Enter で送ります。'),
+      ta,
+      h('div', {class: 'row'}, open,
+        h('button', {class: 'btn ghost', onclick: () => copy(cdLine(state.dir, (q) => 'claude -n ' + q(state.name) + ' ' + q(ta.value.trim())), toast)}, 'コマンドをコピー'),
+        h('button', {class: 'btn ghost', onclick: () => copy(cdLine(state.dir, (q) => 'codex ' + q(ta.value.trim())), toast)}, 'Codex のコマンドをコピー'),
+        h('button', {class: 'btn ghost small', onclick: () => { ta.value = state.prompt; sync(); }}, '元の文に戻す'),
+        toast),
+      h('p', {class: 'hint'}, '開かない時: 一度 ', h('code', {}, 'claude'), ' を起動して何か送ると、このボタンで開けるようになります。'));
+  };
+
+  const statusOf = (p) => p.resolved ? 'resolved' : p.reply ? 'replied' : 'open';
+  const STATUS = {open: ['未返事', 'hot'], replied: ['返事済み', 'ok'], resolved: ['片付いた', '']};
+  const FILTERS = [['all', 'すべて'], ['open', '未返事'], ['replied', '返事済み'], ['resolved', '片付いた']];
+
+  const postCard = (p) => {
+    const st = statusOf(p);
+    const imgs = p.images.slice(0, 3);
+    const picks = p.reply ? Object.entries(p.reply.picks || {}).map(([k, v]) => k + '=' + v).join(' ') : '';
+    return h('article', {class: 'card' + (st === 'resolved' ? ' done' : ''), id: 'post-' + p.id},
+      imgs.length ? h('div', {class: 'thumbs'}, imgs.map((src) => h('img', {src: 'posts/' + p.id + '/' + enc(src), alt: '', loading: 'lazy'})))
+        : h('div', {class: 'thumbs none'}, p.choose ? '選ぶ post' : '見る post'),
+      h('div', {class: 'body'},
+        h('h3', {}, p.title || p.id),
+        h('div', {class: 'chips'},
+          h('span', {class: 'chip ' + STATUS[st][1]}, STATUS[st][0]),
+          h('span', {class: 'chip warm'}, p.choose ? '選ぶ' : '見る'),
+          p.author ? h('span', {class: 'chip acc'}, p.author) : null,
+          p.origin && p.origin.branch ? h('span', {class: 'chip', title: p.origin.worktree}, p.origin.branch) : null),
+        p.lead ? h('p', {class: 'lead'}, p.lead) : null,
+        h('div', {class: 'when'}, when(p.created) + ' ・ ' + p.id),
+        p.reply ? h('div', {class: 'reply'},
+          h('span', {class: 'when'}, '返事 ' + when(p.reply.at)),
+          picks ? h('span', {}, '選んだ: ', h('b', {}, picks)) : null,
+          p.reply.comment ? h('span', {}, p.reply.comment) : null) : null,
+        h('div', {class: 'row'},
+          h('a', {class: 'btn small', href: 'posts/' + p.id + '/'}, st === 'open' ? (p.choose ? '開いて選ぶ' : '開いて返事') : '開く'))));
+  };
+
+  const renderInbox = () => {
+    const open = postsList.filter((p) => statusOf(p) === 'open').length;
+    const badge = $('#n-inbox');
+    badge.textContent = open;
+    badge.className = 'badge' + (open ? '' : ' quiet');
+    const shown = postsList.filter((p) => filter === 'all' || statusOf(p) === filter);
+    $('#inbox').replaceChildren(
+      h('div', {class: 'filters', role: 'group', 'aria-label': '絞る'}, FILTERS.map(([k, label]) =>
+        h('button', {class: 'chipbtn', 'aria-pressed': String(filter === k), onclick: () => { filter = k; renderInbox(); }},
+          label + ' ' + (k === 'all' ? postsList.length : postsList.filter((p) => statusOf(p) === k).length)))),
+      shown.length ? h('div', {class: 'cards'}, shown.map(postCard))
+        : h('div', {class: 'empty'}, postsList.length ? 'この絞り込みには何もありません。'
+          : ['AI が ', h('code', {}, 'bin/fge dashboard post <post.json>'), ' で絵や案を置くと、ここに並びます。置き場: ', h('code', {}, state.postsDir)]));
+    focusHash();
+  };
+
+  const tapeCard = (t) => h('article', {class: 'card'},
+    h('div', {class: 'body'},
+      h('h3', {}, t.title),
+      h('div', {class: 'chips'},
+        h('span', {class: 'chip acc'}, t.name),
+        t.branch ? h('span', {class: 'chip', title: t.worktree}, t.branch) : null,
+        t.published ? h('span', {class: 'chip ok'}, '公開済み') : null),
+      h('div', {class: 'when'}, '撮った日 ' + when(t.at)),
+      h('div', {class: 'row'},
+        t.pageUrl ? h('a', {class: 'btn small', href: t.pageUrl, target: '_blank', rel: 'noopener'}, '頁を開く') : h('span', {class: 'hint'}, 'index.html がまだありません'),
+        t.published ? h('a', {class: 'btn ghost small', href: t.published, target: '_blank', rel: 'noopener noreferrer'}, '公開の URL') : null)));
+
+  const renderTape = () => {
+    const badge = $('#n-tape');
+    badge.textContent = tapes.length;
+    $('#tape').replaceChildren(tapes.length ? h('div', {class: 'cards'}, tapes.map(tapeCard))
+      : h('div', {class: 'empty'}, 'テープはまだありません。', h('code', {}, 'make tape FLOW=e2e/tape.flow'), ' で撮ると、全部の worktree の物がここに並びます。'));
+  };
+
+  const selectTab = (name) => {
+    for (const t of ['inbox', 'tape']) {
+      $('#tab-' + t).setAttribute('aria-selected', String(t === name));
+      $('#' + t).hidden = t !== name;
+    }
+  };
+  $('#tab-inbox').onclick = () => { selectTab('inbox'); history.replaceState(null, '', '#inbox'); };
+  $('#tab-tape').onclick = () => { selectTab('tape'); history.replaceState(null, '', '#tape'); };
+
+  let focused = '';
+  const focusHash = () => {
+    const m = location.hash.match(/^#post-(.+)$/);
+    if (!m || focused === m[1]) return;
+    const el = document.getElementById('post-' + m[1]);
+    if (!el) return;
+    focused = m[1];
+    selectTab('inbox');
+    el.classList.add('focus');
+    el.scrollIntoView({block: 'center'});
+  };
+  window.addEventListener('hashchange', () => { focused = ''; if (location.hash === '#tape') selectTab('tape'); else selectTab('inbox'); focusHash(); });
+
+  const getJSON = async (path) => { const r = await fetch(path, {cache: 'no-store'}); if (!r.ok) throw new Error(r.status); return r.json(); };
+
+  const poll = async () => {
+    try {
+      const idx = await getJSON('_api/index');
+      if (idx.posts !== sigs.posts) { postsList = await getJSON('_api/posts'); sigs.posts = idx.posts; renderInbox(); }
+      if (idx.tapes !== sigs.tapes) { tapes = await getJSON('_api/tapes'); sigs.tapes = idx.tapes; renderTape(); }
+    } catch (_) {}
+    setTimeout(poll, 3000);
+  };
+
+  const start = async () => {
+    try { state = await getJSON('_api/state'); }
+    catch (_) { $('#main').replaceChildren(h('section', {class: 'panel'}, h('h2', {}, 'サーバーに届きません'), h('p', {class: 'lede'}, 'fge dashboard を打ち直してください。'))); return; }
+    document.title = state.name + ' — Flix_GE dashboard';
+    const inWorkspace = state.base !== '/';
+    $('#logo').href = inWorkspace ? '/' : './';
+    $('#crumb').replaceChildren(inWorkspace ? h('span', {}, h('a', {href: '/'}, 'workspace'), ' / ' + state.name) : state.name);
+    $('#ver').textContent = state.branch ? 'branch ' + state.branch : '';
+    $('#foot').replaceChildren('posts: ', h('code', {}, state.postsDir));
+    renderStarter();
+    if (location.hash === '#tape') selectTab('tape');
+    poll();
+  };
+  start();
+})();
+</script>
+</body>
+</html>

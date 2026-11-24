@@ -20,13 +20,6 @@ func (l *Launcher) LintFlixlint(vars map[string]string) int {
 		fmt.Fprintln(l.Stderr, "lint-flixlint: lint/rules.flix がありません（手本はテンプレートの lint/rules.flix）")
 		return 2
 	}
-	// WhyNot: Windows でも flixlint の起動役（bash）を Git Bash で起こす — flixlint 0.9.1 の起動役は Windows に未対応で、
-	// engine.jar の鍵に shasum を決め打ちで呼び（bin/flixlint:329・Git for Windows に無い）、java のクラスパスを ':' 区切りの
-	// /c/... で組むので Windows の java が flixlint.Lint を見つけられない（Windows の CI の 4・5 回目）。flixlint の側で直るまで飛ばす。
-	if runtime.GOOS == "windows" {
-		fmt.Fprintln(l.Stderr, "[lint-flixlint] Windows では飛ばしました（flixlint の起動役が Windows に未対応。型検査は bin/fge check で流れる。lint は macOS か Linux で）")
-		return 0
-	}
 	prep, err := l.prepareFlixlint()
 	if err != nil {
 		fmt.Fprintf(l.Stderr, "lint-flixlint: %v\n", err)
