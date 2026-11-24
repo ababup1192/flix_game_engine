@@ -6,7 +6,8 @@
 `engine_tools/src` 配下の `pub def` / `pub enum` / `pub type alias` の一覧。索引は [api-digest.md](../api-digest.md)。
 
 ## AtomicFile — `engine_tools/src/AtomicFile.flix`
-- `pub def write(path: String, fill: File -> Unit \ IO): Unit \ IO`
+- `path` へ書く。`fill` は渡された一時ファイルへ中身を全部書く関数。
+  `pub def write(path: String, fill: File -> Unit \ IO): Unit \ IO`
 
 ## CpuTiming — `engine_tools/src/CpuTiming.flix`
 - 測り方: warmup は捨てる回数、runs は測る回数。
@@ -29,14 +30,16 @@
   `pub type alias Inputs = { engine = String, runtime = String, files = Map[String, String], images = Map[String, String] }`
 - 1 コマの描き出しに入る、ファイル以外の全部（SoftRaster.renderToImageCached の引数と同じ物）。
   `pub type alias Frame = { req = SoftRaster.RasterReq, surfaces = List[SoftRaster.SurfaceCmd], extraFonts = Map[String, SoftRaster.FontEntry], fontAntialias = SoftRaster.FontAntialias }`
-- `pub def usedTextures(frame: Frame): Set[String]`
+- このコマの命令が名前で引く絵（Drawable のテクスチャ名・シェーダー面の tex 場・3D の場面のビルボードと材質の tex 場）。
+  `pub def usedTextures(frame: Frame): Set[String]`
 - 鍵を作るのに中身の指紋が要るファイル（引く絵・既定の TTF・追加の TTF）。
   `pub def filesOf(frame: Frame): List[String]`
 - 字のアトラスを畳んだバイト列の覚え。RenderCache の Session が 1 つ持つ。
   `pub type alias AtlasCache = AtlasMemo`
 - 空の覚え（糸をまたいで使ってよい）。
   `pub def freshAtlasCache(): AtlasCache \ IO`
-- `pub def computeKey(inputs: Inputs, encoding: PngEncoding, frame: Frame): Option[Key]`
+- 1 コマの鍵。`inputs` に要るファイルの指紋が欠けている・エンジンの指紋が空なら None（塗るしかない）。
+  `pub def computeKey(inputs: Inputs, encoding: PngEncoding, frame: Frame): Option[Key]`
 - computeKey と同じ鍵（ビット単位で同じ）を、アトラスを畳んだバイト列を `cache` から引いて作る。
   `pub def computeKeyCached(cache: AtlasCache, inputs: Inputs, encoding: PngEncoding, frame: Frame): Option[Key] \ IO`
 
@@ -97,7 +100,8 @@
   `pub def silhouette(scope: SilhouetteScope, drawables: List[GameEngine.Drawable], polygons: List[GameEngine.PolygonRenderCmd]): (List[GameEngine.Drawable], List[GameEngine.PolygonRenderCmd])`
 - 宣言シェーダー面も含めた silhouette。面は「rect と mask の形をそのまま黒で塗る」に
   `pub def silhouetteWith(scope: SilhouetteScope, drawables: List[GameEngine.Drawable], polygons: List[GameEngine.PolygonRenderCmd], surfaces: List[SoftRaster.SurfaceCmd]): (List[GameEngine.Drawable], List[GameEngine.PolygonRenderCmd], List[SoftRaster.SurfaceCmd])`
-- `pub def silhouetteScenes(scope: SilhouetteScope, scenes: List[Scene3d.RenderCmd]): List[Scene3d.RenderCmd]`
+- 3D の場面を「三角形とビルボードが覆う画素は黒・それ以外は透明」に写す（silhouetteWith の 3D 版）。
+  `pub def silhouetteScenes(scope: SilhouetteScope, scenes: List[Scene3d.RenderCmd]): List[Scene3d.RenderCmd]`
 - シルエット PNG を生成する（renderPng の変形版）。対象を黒・背景を白で <name>.png に書く。
   `pub def silhouettePng(cfg: RenderConfig, scope: SilhouetteScope, drawables: List[GameEngine.Drawable], polygons: List[GameEngine.PolygonRenderCmd], name: String): Unit \ IO`
 - silhouettePng の「宣言シェーダー面も写す」版。地面・空・水面を ShaderDoc の面で
@@ -142,7 +146,8 @@
   `pub def every(stride: Int32, xs: List[a]): List[a]`
 
 ## LogCapture — `engine_tools/src/LogCapture.flix`
-- `pub def capture(f: Unit -> a \ ef): (a, List[String]) \ ef + IO`
+- f を呼ぶ間に知らせた行を stderr へ出さずに集め、f の値と、知らせた行（出た順）を返す。
+  `pub def capture(f: Unit -> a \ ef): (a, List[String]) \ ef + IO`
 
 ## RadialGlow — `engine_tools/src/RadialGlow.flix`
 - Addハロ用の1画素: rgb=白固定、alpha=中心で高く縁で0（straight alpha）。
@@ -195,7 +200,8 @@
   `pub def writePlainPng(req: SoftRaster.RasterReq, surfaces: List[SoftRaster.SurfaceCmd], extraFonts: Map[String, SoftRaster.FontEntry], extraImages: Map[String, SoftRaster.PassImage]): Unit \ IO`
 - writePlainPng の、字の縁を本ごとに決める表（SoftRaster.FontAntialias）つき版。
   `pub def writePlainPngAntialias(req: SoftRaster.RasterReq, surfaces: List[SoftRaster.SurfaceCmd], extraFonts: Map[String, SoftRaster.FontEntry], fontAntialias: SoftRaster.FontAntialias, extraImages: Map[String, SoftRaster.PassImage]): Unit \ IO`
-- `pub def painterKeyOf(key: String, painter: String): String \ IO`
+- 描き手 painter で塗った絵の置き場の名前（DrawHash の鍵の字 key と描き手の素性の SHA-256 の字）。
+  `pub def painterKeyOf(key: String, painter: String): String \ IO`
 - painter で塗った key のコマが置き場にあれば outPath へ写して true。置き場を使わない・verify・鍵が `-` の時は false（塗る）。
   `pub def copyPaintedPng(session: Session, painter: String, key: String, outPath: String): Bool \ IO`
 - painter で塗った image を outPath へ（writeFramePng と同じ書き方で）書き、鍵が `-` でなければ置き場へも入れる。
@@ -210,7 +216,8 @@
   `pub def passImageDigest(image: SoftRaster.PassImage): String \ IO`
 - packages.lock の字から、エンジンの版の fpkg の SHA-256（`fpkg = "sha256:…"`）を取り出す（純粋）。無ければ None。
   `pub def lockedEngineDigestOf(version: String, lock: String): Option[String]`
-- `pub def paintFlagsOf(flags: List[String]): List[String]`
+- JVM の起動旗のうち、塗った絵を変えうる物だけ（純粋）。Java2D・AWT・Swing・字の設定（`-Dsun.java2d.*`・`-Dawt.*`・
+  `pub def paintFlagsOf(flags: List[String]): List[String]`
 
 ## RenderLint — `engine_tools/src/RenderLint.flix`
 - 要素の描画種別（リンタ内の分類。ゲームの widget 名とは独立）。
@@ -384,17 +391,20 @@
   `pub type alias LightProbe = { environment = Scene3d.Environment3d, pointLights = List[Scene3d.PointLight], spotLights = List[Scene3d.SpotLight], units = Scene3d.LightUnits, unitsPerMeter = Float64, sun = Option[{ toward = Vec3.Vec3, color = Vec3.Vec3, lit = Float64 }] }`
 - Legacy・unitsPerMeter 1・太陽なしの材料。
   `pub def lightProbe(env: Scene3d.Environment3d, pointLights: List[Scene3d.PointLight], spotLights: List[Scene3d.SpotLight]): LightProbe`
-- `pub def lightAt(probe: LightProbe, position: Vec3.Vec3, normal: Vec3.Vec3): Color`
+- world の点 position・法線 normal（長さ 1）に probe の光が当てる量（色ごと。toonSteps の丸めまで済ませた値）。太陽の拡散は lightmap の面には足さない。
+  `pub def lightAt(probe: LightProbe, position: Vec3.Vec3, normal: Vec3.Vec3): Color`
 - 目 eye から見た world の点 position の色 c に、距離のかすみを掛けた色（fog が None なら c のまま）。
   `pub def fogAt(env: Scene3d.Environment3d, eye: Vec3.Vec3, position: Vec3.Vec3, c: Color): Color`
-- `pub def surfaceOutAt(env: Scene3d.Environment3d, eye: Vec3.Vec3, position: Vec3.Vec3, albedoLinear: Color, tint: Color, light: Color, emission: Color, intensity: Float64, fogOn: Bool): Color`
+- 3D の色を作る最後の組み立て（GL の r3d_surfaceOut と同じ式。gl-parity の式の行が値をそろえて確かめる）:
+  `pub def surfaceOutAt(env: Scene3d.Environment3d, eye: Vec3.Vec3, position: Vec3.Vec3, albedoLinear: Color, tint: Color, light: Color, emission: Color, intensity: Float64, fogOn: Bool): Color`
 - 場面の影（影を落とすスポットが無ければ None）。生成した SoftRaster3dLight がスポットごとに shadowFactorAt へ渡す。
   `pub type alias SpotShadow = Option[Shadow]`
 - 3D の色を作った直後の 1 回の変換（3 成分を画面の値へ）。
   `pub def toSrgbColor(lut:Texture3d.ColorLut, c: (Float64, Float64, Float64)): (Float64, Float64, Float64)`
 - スポットの並びの位置 offset のスポットが、world の点 (px, py, pz) へ届ける光に掛ける割合（影を落とさないスポットは 1）。
   `pub def shadowFactorAt(shadow: SpotShadow, offset: Int32, px: Float64, py: Float64, pz: Float64): Float64`
-- `pub def shadowLitFractionAt(m: Vector[Float64], n: Int32, bias: Float64, pcfRadius: Int32, map: Vector[Float64], shift: Float64, px0: Float64, py0: Float64, pz0: Float64, nx: Float64, ny: Float64, nz: Float64): Float64`
+- world の点 (px, py, pz) を法線 (nx, ny, nz) の向きに shift だけずらした点が、影の地図で照らされている割合
+  `pub def shadowLitFractionAt(m: Vector[Float64], n: Int32, bias: Float64, pcfRadius: Int32, map: Vector[Float64], shift: Float64, px0: Float64, py0: Float64, pz0: Float64, nx: Float64, ny: Float64, nz: Float64): Float64`
 - スポットの並びの位置 offset のスポットが落とす影（引数は shadowLitFractionAt と同じ・strength = 影の濃さ）。
   `pub def spotShadowOf(offset: Int32, m: Vector[Float64], n: Int32, bias: Float64, pcfRadius: Int32, strength: Float64, map: Vector[Float64]): SpotShadow`
 - 行列 m の 16 個（行優先）。shadowLitFractionAt の rows の形。
@@ -405,10 +415,12 @@
   `pub def drawSceneHdr(rgba: Array[Float64, Static], size: (Int32, Int32), sf: Float64, textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]], time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO`
 - 置いた物を光の目 eye から見た n × n の深度の地図（SoftRaster3d.ShadowMaps.buildShadowMap と同じ形。視錐台の間引きは eye の行列から作る）。
   `pub def depthMapOf(instances: List[Scene3d.Instance3d], eye: LightEye, n: Int32): Vector[Float64] \ IO`
-- `pub enum Projection { case Perspective(Float64) case Orthographic }`
+- 三角形の道の射影の種類。Perspective(near) は w = 目の座標の −z で w ≥ near の側を残す・Orthographic は w = 1 で z ≥ −w の側を残す。
+  `pub enum Projection { case Perspective(Float64) case Orthographic }`
 - 影の地図を描く光の目。
   `pub type alias LightEye = { view = Mat4.Mat4, proj = Mat4.Mat4, projection = Projection }`
-- `pub def applyNormalMap(n: Vec3.Vec3, raw: Vec3.Vec3, w: Float64, strength: Float64, c: (Float64, Float64, Float64)): Vec3.Vec3`
+- 外向きの法線 n（長さ 1）を、タンジェント raw（長さはそろえない）・w（±1）と法線マップの rgb c で傾けた法線（式はファイルの頭）。
+  `pub def applyNormalMap(n: Vec3.Vec3, raw: Vec3.Vec3, w: Float64, strength: Float64, c: (Float64, Float64, Float64)): Vec3.Vec3`
 
 ## SoftRaster3d.PointShadows — `engine_tools/src/SoftRaster3d/PointShadows.flix`
 - 場面の点光源の影。atlas の値と、点光源の番号（pickLights の後の並び・maxPointLights() 個）ごとの影を落とす灯りと面 6 枚の地図（影を落とさない灯りは None）。
@@ -445,12 +457,14 @@
 - 影の地図に描くビルボード（中身と段 0 の絵と板の横の向き）と、その板の縦と前の向き（basis の right は使わず、板ごとの横の向きを使う）。
   `pub type alias BillboardCasters = { casters = List[(Scene3d.BillboardFields, ShaderEval.TexData, Vec3.Vec3)], basis = { right = Vec3.Vec3, up = Vec3.Vec3, facing = Vec3.Vec3 } }`
 - `pub def noBillboards(): BillboardCasters`
-- `pub def buildShadowMap(instances: List[Placed], billboards: BillboardCasters, eye: LightEye, frustum: Frustum.Frustum, n: Int32): Vector[Float64] \ IO`
+- 光から見た n × n の地図（一番近い面の NDC の z × 0.5 + 0.5。何も無い画素は 1。行 0 が NDC の y = −1 側）。
+  `pub def buildShadowMap(instances: List[Placed], billboards: BillboardCasters, eye: LightEye, frustum: Frustum.Frustum, n: Int32): Vector[Float64] \ IO`
 
 ## SoftRaster3d.Sun — `engine_tools/src/SoftRaster3d/Sun.flix`
 - 影の判定に要る値。matrix = 光の行列の 16 個（行優先）・mapSize・depthBias・pcfRadius・normalShift・strength・
   `pub enum Shadow { case Shadow(Vector[Float64], Int32, Float64, Int32, Float64, Float64, Vector[Float64], Vector[Float64], Float64, Float64) }`
-- `pub enum Light { case Light(Float64, Float64, Float64, Float64, Float64, Float64, Option[Shadow]) }`
+- 場面の太陽。点から太陽への向きの x・y・z・linear の color × intensity の r・g・b・影（無ければ None）。
+  `pub enum Light { case Light(Float64, Float64, Float64, Float64, Float64, Float64, Option[Shadow]) }`
 - 太陽の無い場面。
   `pub def none(): Light`
 - 太陽 light（Scene3d.directionalLightOf の値）と影 shadow の太陽。light が None なら太陽なし。
@@ -461,7 +475,8 @@
   `pub def shadowOf(setup: Scene3d.SunShadowSetup, eye: Vec3.Vec3, map: Vector[Float64]): Shadow`
 - 点から太陽への向きの x・y・z と、color × intensity の r・g・b。
   `pub def terms(s: Light): (Float64, Float64, Float64, Float64, Float64, Float64)`
-- `pub def litAt(s: Light, px: Float64, py: Float64, pz: Float64, gx: Float64, gy: Float64, gz: Float64, nx: Float64, ny: Float64, nz: Float64): Float64`
+- world の点 (px, py, pz) へ届く太陽の光に掛ける影の割合（式は LightModel3d の頭の sunLit）。(gx, gy, gz) = 点を地図の画素の幅だけずらす向きの
+  `pub def litAt(s: Light, px: Float64, py: Float64, pz: Float64, gx: Float64, gy: Float64, gz: Float64, nx: Float64, ny: Float64, nz: Float64): Float64`
 
 ## SoftRaster3dLight — `engine_tools/src/gen/SoftRaster3dLight.flix`
 - lightingModel の光の量（toon の丸めまで済ませた値。sunLit = 太陽の影の割合）。
