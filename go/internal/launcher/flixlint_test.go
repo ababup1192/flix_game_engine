@@ -14,4 +14,3 @@ func TestParseAssignmentsSkipsLinesWithoutEquals(t *testing.T) {
 		t.Fatalf("%v", got)
 	}
 }
-
