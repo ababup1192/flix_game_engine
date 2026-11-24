@@ -33,8 +33,28 @@ pub mod Flow.Cli {
                 if (mode == "check") {
                     println("ok ${path}: ${Int32.toString(List.length(script#lines))} 手を読めた");
                     0
-                } else report(app, path, Flow.play(app, { design = design, limit = 100000000 }, script,
-                                                   { world = startWorld(app, design, fresh, script), state = App.freshStepState() }), script#fps)
+                } else {
+                    let setup = { design = design, limit = 100000000 };
+                    let start = { world = startWorld(app, design, fresh, script), state = App.freshStepState() };
+                    if (not Flow.SaveLoad.hasSaveLoad(script)) report(app, path, Flow.play(app, setup, script, start), script#fps)
+                    else {
+                        let both = Flow.SaveLoad.playBoth(app, setup, script, start);
+                        reportSaveLoad(app, path, script, both#plain, both#reloaded)
+                    }
+                }
+        }
+
+    /// saveload の行がある flow: 読み直さない流れと読み直した流れを両方流し、どちらも通って最後のセーブが同じなら 0。
+    pub def reportSaveLoad(app: App.App[w, ef], path: String, script: Flow.Script,
+                       plain: Result[Flow.Failure[w], Flow.Outcome[w]], reloaded: Result[Flow.Failure[w], Flow.Outcome[w]]): Int32 \ ef + IO =
+        if (report(app, path, plain, script#fps) != 0) 1
+        else match Flow.SaveLoad.compareRuns(app, path, plain, reloaded) {
+            case Ok(note) =>
+                println("ok saveload: ${note}");
+                0
+            case Err(lines) =>
+                lines |> List.forEach(println);
+                1
         }
 
     /// 語彙だけを書く（ゲームの E2e.vocab が呼ぶ。bin/headless-run が jar を作った時・make flow-vocab）。

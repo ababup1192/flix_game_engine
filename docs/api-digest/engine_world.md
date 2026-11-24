@@ -1,4 +1,4 @@
-<!-- engine v0.108.0 / 生成: 2026-11-24 -->
+<!-- engine v0.110.0 / 生成: 2026-11-24 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_world
@@ -1203,14 +1203,18 @@
 - act の引数は (drive の始まりか最後の Tap・Restart から待った秒, いまの World)。
   `pub type alias DriveRow[w] = { name = String, doc = String, act = (Float64, w) -> DriveAct }`
 - ゲームが出す表。ready と replies を宣言しないゲームは、自動の待ちと返事の確かめをしない。
-  `pub type alias Table[w] = { roles = w -> InputMap.Table[String], probes = List[ProbeRow[w]], drives = List[DriveRow[w]], ready = Option[w -> Ready], replies = Option[w -> Int64], options = List[(String, List[String])] }`
+  `pub type alias Table[w] = { roles = w -> InputMap.Table[String], probes = List[ProbeRow[w]], drives = List[DriveRow[w]], ready = Option[w -> Ready], replies = Option[w -> Int64], options = List[(String, List[String])], saveRoundTrip = Option[SaveRoundTrip[w]] }`
+- セーブの書き出しと読み直し（docs/flow.md の「セーブの読み直しの門」）。実機と同じ書き方・読み方を渡す。
+  `pub type alias SaveRoundTrip[w] = { save = w -> Option[String], load = (String, w) -> Result[String, w], unsaved = List[String] }`
+- saveload の行の扱い: Reload = 読み直す（make flow の 2 本目）・Skip = World を替えない（make flow の 1 本目と、ほかの流し手）。
+  `pub enum SaveLoadPass with Eq { case Reload case Skip }`
 - 何も宣言しない表（{ probes = … | Flow.emptyTable() } で要る欄だけ書く）。
   `pub def emptyTable(): Table[w]`
 - ゲームの役の enum の表（InputMap.Table[a]）を、名前の表にする。
   `pub def rolesOf(name: a -> String, table: InputMap.Table[a]): InputMap.Table[String]`
 - `pub enum Kind with Eq, ToString { case Num case Text case Flag }`
 - 名前の一覧。roles は World から読むので、語彙は World を 1 つ決めて作る（ふつうは新しく作った初期の World）。
-  `pub type alias Vocab = { roles = List[String], probes = List[(String, Kind, String)], drives = List[(String, String)], starts = List[(String, String, Map[String, String])], options = List[(String, List[String])], keys = List[String], ready = Bool, replies = Bool, fingerprint = Bool }`
+  `pub type alias Vocab = { roles = List[String], probes = List[(String, Kind, String)], drives = List[(String, String)], starts = List[(String, String, Map[String, String])], options = List[(String, List[String])], keys = List[String], ready = Bool, replies = Bool, fingerprint = Bool, saveLoad = Bool }`
 - 手の語（閉じた一覧）。記録が書く語（reload・request・close・rewind）も同じ文法で読める。
   `pub def verbs(): List[String]`
 - エンジンが持つ設定の語（ゲームの設定は Table#options）。
@@ -1241,7 +1245,7 @@
 - 記録が書いたファイルの中身（再生はこの中身を読ませる）。Missing = 読めなかった（無いセーブ）。
   `pub enum File with Eq, ToString { case Text(String) case Missing }`
 - 手 1 つ。tap・hold・release・wait はフレームを使い、expect・mark は使わない。
-  `pub enum Step { case Start(String, Map[String, String], Map[String, File]) case Tap(Target, Opt) case Hold(Target, Option[Span], Opt) case Release(Target, Opt) case Wait(Span, Opt) case Until(Expr, Float64) case Drive(String, Expr, Float64) case Expect(Expr) case Mark(String) case Reload(String, Map[String, File]) case Request(String, Map[String, String], Map[String, File]) case Close case Rewind(Int32) }`
+  `pub enum Step { case Start(String, Map[String, String], Map[String, File]) case Tap(Target, Opt) case Hold(Target, Option[Span], Opt) case Release(Target, Opt) case Wait(Span, Opt) case Until(Expr, Float64) case Drive(String, Expr, Float64) case Expect(Expr) case Mark(String) case Reload(String, Map[String, File]) case Request(String, Map[String, String], Map[String, File]) case Close case Rewind(Int32) case SaveLoad }`
 - 手 1 つと、その書いてある所（失敗の知らせに載せる）。
   `pub type alias Line = { file = String, number = Int32, text = String, step = Step }`
 - 読んだ手順。ready = None は on と同じ（ready off だけが待ちと返事の確かめを止める）。
@@ -1258,6 +1262,8 @@
   `pub def worldsOf(outcome: Outcome[w]): List[w]`
 - 手順を流す。start = 最初の手が start でない時に使う World と持ち越し（/step は走っている World、
   `pub def play(app: App.App[w, ef], setup: Setup, script: Script, start: { world = w, state = App.StepState }): Result[Failure[w], Outcome[w]] \ ef + Fs.FileRead`
+- play と同じ。pass = Reload なら saveload の行でセーブ → 読み直した World へ差し替える。
+  `pub def playWith(app: App.App[w, ef], setup: Setup, script: Script, start: { world = w, state = App.StepState }, pass: SaveLoadPass): Result[Failure[w], Outcome[w]] \ ef + Fs.FileRead`
 - flow のマウスのボタンの名前（left・right・middle）→ ボタン。
   `pub def mouseButtonOf(name: String): Option[GameEngine.MouseButton]`
 - ボタン → flow の名前（mouseButtonOf の逆）。
@@ -1286,6 +1292,8 @@
   `pub def main(app: App.App[w, ef]): Unit \ ef + Fs.FileRead + Fs.FileWrite + IO`
 - main の中身。env は入口の頭で読んだ環境変数の表（常駐なら App.Headless.envOf(req)）。戻り値は終了コード。
   `pub def mainOf(app: App.App[w, ef], env: Map[String, String]): Int32 \ ef + Fs.FileRead + Fs.FileWrite + IO`
+- saveload の行がある flow: 読み直さない流れと読み直した流れを両方流し、どちらも通って最後のセーブが同じなら 0。
+  `pub def reportSaveLoad(app: App.App[w, ef], path: String, script: Flow.Script, plain: Result[Flow.Failure[w], Flow.Outcome[w]], reloaded: Result[Flow.Failure[w], Flow.Outcome[w]]): Int32 \ ef + IO`
 - 語彙だけを書く（ゲームの E2e.vocab が呼ぶ。bin/headless-run が jar を作った時・make flow-vocab）。
   `pub def writeVocabOf(app: App.App[w, ef]): Unit \ ef + Fs.FileRead + Fs.FileWrite + IO`
 - writeVocabOf の中身。env は入口の頭で読んだ環境変数の表。書けなくても 0 を返す（理由は 1 行出す）。
@@ -1356,6 +1364,20 @@
   `pub def copyMarked(rec: Recorder, dir: String, back: Int32, comment: String, name: String): Bool \ IO`
 - 記録を閉じる（まとめている行を書き出す）。
   `pub def close(rec: Recorder): Unit \ IO`
+
+## Flow.SaveLoad — `engine_world/src/Flow/SaveLoad.flix`
+- saveload の行があるか（make flow が 2 本流すかを決める）。
+  `pub def hasSaveLoad(script: Flow.Script): Bool`
+- 2 本の流れを流す（plain = 読み直さない流れ・reloaded = saveload で読み直した流れ）。どちらも同じ始まりから。
+  `pub def playBoth(app: App.App[w, ef], setup: Flow.Setup, script: Flow.Script, start: { world = w, state = App.StepState }): { plain = Result[Flow.Failure[w], Flow.Outcome[w]], reloaded = Result[Flow.Failure[w], Flow.Outcome[w]] } \ ef + Fs.FileRead`
+- 2 本の結果を比べる: 両方通り、問いの値が毎フレーム同じで、フレームの数と最後のセーブが同じなら Ok(1 行の知らせ)、違えば Err(出す行の列)。
+  `pub def compareRuns(app: App.App[w, ef], path: String, plain: Result[Flow.Failure[w], Flow.Outcome[w]], reloaded: Result[Flow.Failure[w], Flow.Outcome[w]]): Result[List[String], String]`
+- unsaved に挙げたのに probes に無い名前（挙げた順）。
+  `pub def unknownUnsaved(app: App.App[w, ef]): List[String]`
+- 2 本の流れの最後の World のセーブを比べる。同じなら Ok(そのセーブの字の長さの説明)、違えば Err(違うキー)。
+  `pub def compareLast(trip: Flow.SaveRoundTrip[w], plain: w, reloaded: w): Result[String, String]`
+- 2 つのセーブの字の違うキー（object を "." でつないだ道。先頭の 8 個と残りの数）。JSON でなければ字の長さだけ言う。
+  `pub def diffText(before: String, after: String): String`
 
 ## FlowField — `engine_world/src/FlowField.flix`
 - 下るマスの選び方。歩数はどちらでも 4 方向で塗る。
@@ -2390,19 +2412,24 @@
 ## SaveFormat — `engine_world/src/SaveFormat.flix`
 - 版 `fromVersion` の中身を版 `fromVersion + 1` の形へ書き換える。
   `pub type alias SaveMigration = { fromVersion = Int32, migrate = Json -> Result[String, Json] }`
-- セーブ形式。`make` で作り `withMigration` / `withUnwrappedVersion` で足す。
+- セーブ形式。`make` で作り `withMigration` / `withUnwrappedVersion` / `withGameVersion` で足す。
   `pub type alias Format = FormatData`
 - 名前 `name`・今の版 `version` のセーブ形式。書き換えはまだ無い。版は 1 から（1 より小さければ 1 にして 1 行言う）。
   `pub def make(name: String, version: Int32): Format`
 - `pub def withMigration(fromVersion: Int32, migrate: Json -> Result[String, Json], format: Format): Format`
 - 包みの無い古いセーブ（中身の JSON だけ）を何版として読むかを決める関数を渡す。
   `pub def withUnwrappedVersion(versionOf: Json -> Int32, format: Format): Format`
+- `pub def withGameVersion(gameVersion: String, format: Format): Format`
+- ゲームの版の字の前後の空白を落とす。空なら None。
+  `pub def trimGameVersion(gameVersion: String): Option[String]`
+- `withGameVersion` で渡したゲームの版。渡していなければ None。
+  `pub def getGameVersion(format: Format): Option[String]`
 - 形式の名前。
   `pub def getName(format: Format): String`
 - 今の版（書く時に付ける版）。
   `pub def getVersion(format: Format): Int32`
-- 中身 `data` を今の版の包み `{"format", "version", "data"}` に入れる。
-  `pub def wrap(data: Json, format: Format): Json`
+- `pub def wrap(data: Json, format: Format): Json`
+- `pub def gameVersionOf(json: Json): Option[String]`
 - 読んだ JSON の版。包みも読み方も無い・名前の違う包みは None。
   `pub def versionOf(json: Json, format: Format): Option[Int32]`
 - 読んだ JSON を今の版の中身へ書き換えて返す。今より新しい版・書き換えの抜け・書き換えの失敗は Err。

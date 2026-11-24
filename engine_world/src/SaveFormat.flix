@@ -1,6 +1,7 @@
 // SaveFormat — セーブの JSON を「形式の名前・版・中身」で包み、古い版を今の形へ書き換えてから渡す。
 // 形を変えた時は版を上げ、版 n → n+1 の書き換え（SaveMigration）を登録すれば、ゲームはいつも最新の形の
 // JSON だけを読めばよい。版が上がる前の中身は、初めて書く時に控え（`<道>.v<版>.bak`）へ 1 つ残す。
+// 包みには書いたゲームの版（`withGameVersion` の字）も `gameVersion` として残せる。
 // 利用例: 版 3 のセーブ形式を作り、v1→v2・v2→v3 の書き換えを登録して load / save する /
 //   テストで test/save-samples の見本を全部読めるか確かめる（checkSamples）。
 // 注意: 読み書きは Fs.FileRead / Fs.FileWrite の上だけで書く。ブラウザ版は WebFs が saves/ の下を
@@ -14,7 +15,7 @@ pub mod SaveFormat {
     /// 版 `fromVersion` の中身を版 `fromVersion + 1` の形へ書き換える。
     pub type alias SaveMigration = { fromVersion = Int32, migrate = Json -> Result[String, Json] }
 
-    /// セーブ形式。`make` で作り `withMigration` / `withUnwrappedVersion` で足す。
+    /// セーブ形式。`make` で作り `withMigration` / `withUnwrappedVersion` / `withGameVersion` で足す。
     pub type alias Format = FormatData
 
     // WhyNot: record をそのまま出さない — 版と書き換えの並びの食い違い（今の版より先の書き換え・0 より小さい版）を作れてしまう。
@@ -23,18 +24,19 @@ pub mod SaveFormat {
             name = String,
             version = Int32,
             migrations = Map[Int32, Json -> Result[String, Json]],
-            unwrappedVersion = Option[Json -> Int32]
+            unwrappedVersion = Option[Json -> Int32],
+            gameVersion = Option[String]
         })
     }
 
-    def fieldsOf(format: Format): { name = String, version = Int32, migrations = Map[Int32, Json -> Result[String, Json]], unwrappedVersion = Option[Json -> Int32] } =
+    def fieldsOf(format: Format): { name = String, version = Int32, migrations = Map[Int32, Json -> Result[String, Json]], unwrappedVersion = Option[Json -> Int32], gameVersion = Option[String] } =
         match format {
             case FormatData.FormatData(fields) => fields
         }
 
     /// 名前 `name`・今の版 `version` のセーブ形式。書き換えはまだ無い。版は 1 から（1 より小さければ 1 にして 1 行言う）。
     pub def make(name: String, version: Int32): Format =
-        let fields = { name = name, version = Int32.max(1, version), migrations = Map.empty(), unwrappedVersion = None };
+        let fields = { name = name, version = Int32.max(1, version), migrations = Map.empty(), unwrappedVersion = None, gameVersion = None };
         if (version < 1) Log.warnThen("[SaveFormat] ${name} の版 ${version} は 1 にした（版は 1 から）", FormatData.FormatData(fields))
         else FormatData.FormatData(fields)
 
@@ -56,34 +58,76 @@ pub mod SaveFormat {
     pub def withUnwrappedVersion(versionOf: Json -> Int32, format: Format): Format =
         FormatData.FormatData({ unwrappedVersion = Some(versionOf) | fieldsOf(format) })
 
+    /// 書くセーブの包みに `gameVersion` として残す、ゲームの版（遊ぶ人が見る "1.4.0" など）。字は `trimGameVersion` で整える。
+    /// 字はゲームが持ち、engine は project.json も git も読まない（上げ忘れはゲームのテストで flix.toml と照らす）。
+    /// 空の字は入れずに 1 行言う。書き換えの版（`make` の版）とは別物で、セーブの形が変わらない更新でも上げる。
+    // WhyNot: engine が project.json や git の sha から自動で入れない — ブラウザの束に flix.toml も git も無く、
+    //   sha は make run・書き出し・配布物の 3 か所に焼き込む口が要り、遊ぶ人に見せる字にもならない。
+    pub def withGameVersion(gameVersion: String, format: Format): Format =
+        match trimGameVersion(gameVersion) {
+            case Some(trimmed) => FormatData.FormatData({ gameVersion = Some(trimmed) | fieldsOf(format) })
+            case None => Log.warnThen("[SaveFormat] ${getName(format)} のゲームの版が空なので gameVersion は付けない", format)
+        }
+
+    /// ゲームの版の字の前後の空白を落とす。空なら None。
+    pub def trimGameVersion(gameVersion: String): Option[String] =
+        let trimmed = String.trim(gameVersion);
+        if (String.isEmpty(trimmed)) None else Some(trimmed)
+
+    /// `withGameVersion` で渡したゲームの版。渡していなければ None。
+    pub def getGameVersion(format: Format): Option[String] = fieldsOf(format)#gameVersion
+
     /// 形式の名前。
     pub def getName(format: Format): String = fieldsOf(format)#name
 
     /// 今の版（書く時に付ける版）。
     pub def getVersion(format: Format): Int32 = fieldsOf(format)#version
 
-    /// 中身 `data` を今の版の包み `{"format", "version", "data"}` に入れる。
+    /// 中身 `data` を今の版の包み `{"format", "version", "data"}` に入れる。`withGameVersion` があれば `"gameVersion"` も足す。
+    // WhyNot: ゲームの版が無い時に "gameVersion": null や "" を書かない — 版の分からないセーブを欄の無い古いセーブと同じ扱いにして、読む側の場合分けを 1 つにする。
     pub def wrap(data: Json, format: Format): Json =
-        JObject(Map#{
+        let base = Map#{
             "format" => JString(getName(format)),
             "version" => JNumber(JsonCodec.intToBd(getVersion(format))),
             "data" => data
-        })
+        };
+        match getGameVersion(format) {
+            case Some(gameVersion) => JObject(Map.insert("gameVersion", JString(gameVersion), base))
+            case None => JObject(base)
+        }
 
-    /// 包みなら (版, 中身)。包みでなければ None。名前の違う包みは Err。
-    def unwrap(json: Json, format: Format): Result[String, Option[(Int32, Json)]] =
-        let header = JsonCodec.expectObject(json) |> Option.flatMap(obj ->
+    /// 包みの欄。`gameVersion` は無くても包みとして読む。
+    type alias Envelope = { formatName = String, version = Int32, data = Json, gameVersion = Option[String] }
+
+    def envelopeOf(json: Json): Option[Envelope] =
+        JsonCodec.expectObject(json) |> Option.flatMap(obj ->
             forM (
                 formatName <- Map.get("format", obj) |> Option.flatMap(JsonCodec.expectString);
                 version <- Map.get("version", obj) |> Option.flatMap(JsonCodec.expectInt);
                 data <- Map.get("data", obj)
-            ) yield (formatName, version, data));
-        match header {
+            ) yield { formatName = formatName, version = version, data = data,
+                      gameVersion = Map.get("gameVersion", obj) |> Option.flatMap(JsonCodec.expectString) })
+
+    /// 読んだセーブの包みにある、書いたゲームの版（最後に書いた版）。包みでない・`gameVersion` の無い古い包み・字でない時は None。
+    /// 形式の名前は照らさない（別の形式の包みでも版を返す。報告に出すだけなので、どの形式かは問わない）。
+    /// 不具合の報告・見本の出どころ・未来の版を断る時の文言に出すための物。
+    // WhyNot: この字で読み方を分けない — 形の違いは包みの版と書き換えが持つ。ゲームの版で分けると、
+    //   形の変わらない更新ごとに分岐が増え、gameVersion の無い古いセーブを読めない道ができる。
+    pub def gameVersionOf(json: Json): Option[String] =
+        envelopeOf(json) |> Option.flatMap(envelope -> envelope#gameVersion)
+
+    /// 包みなら (版, 中身)。包みでなければ None。名前の違う包みは Err。
+    def unwrap(json: Json, format: Format): Result[String, Option[(Int32, Json)]] =
+        match envelopeOf(json) {
             case None => Ok(None)
-            case Some((formatName, version, data)) =>
-                if (formatName == getName(format)) Ok(Some((version, data)))
-                else Err("別の形式のセーブ（${formatName}・読もうとしたのは ${getName(format)}）")
+            case Some(envelope) =>
+                if (envelope#formatName == getName(format)) Ok(Some((envelope#version, envelope#data)))
+                else Err("別の形式のセーブ（${envelope#formatName}・読もうとしたのは ${getName(format)}）")
         }
+
+    /// `gameVersion` があれば「・<版> で書いた」、無ければ空。
+    def gameVersionNote(json: Json): String =
+        gameVersionOf(json) |> Option.map(gameVersion -> "・${gameVersion} で書いた") |> Option.getWithDefault("")
 
     /// 読んだ JSON の (版, 中身)。包みが無ければ `withUnwrappedVersion` の関数で版を決める。
     def openEnvelope(json: Json, format: Format): Result[String, (Int32, Json)] =
@@ -101,7 +145,7 @@ pub mod SaveFormat {
 
     /// 読んだ JSON を今の版の中身へ書き換えて返す。今より新しい版・書き換えの抜け・書き換えの失敗は Err。
     pub def decode(json: Json, format: Format): Result[String, Json] =
-        openEnvelope(json, format) |> Result.flatMap(match (version, data) -> migrateFrom(version, data, format))
+        openEnvelope(json, format) |> Result.flatMap(match (version, data) -> migrateFrom(version, data, gameVersionNote(json), format))
 
     /// セーブの字を読んで `decode` する。JSON として読めない字は Err。
     pub def decodeText(text: String, format: Format): Result[String, Json] =
@@ -110,16 +154,16 @@ pub mod SaveFormat {
     def parseText(text: String): Result[String, Json] =
         DocJson.parse(text) |> Option.toOk("JSON として読めない")
 
-    def migrateFrom(version: Int32, data: Json, format: Format): Result[String, Json] =
+    def migrateFrom(version: Int32, data: Json, note: String, format: Format): Result[String, Json] =
         let fields = fieldsOf(format);
         if (version == fields#version) Ok(data)
-        else if (version > fields#version) Err("今より新しい版のセーブ（${version} 版・このゲームは ${fields#version} 版まで）")
+        else if (version > fields#version) Err("今より新しい版のセーブ（${version} 版${note}・このゲームは ${fields#version} 版まで）")
         else match Map.get(version, fields#migrations) {
             case None => Err("${version} 版 → ${version + 1} 版の書き換えが無い")
             case Some(migrate) =>
                 migrate(data)
                     |> Result.mapErr(reason -> "${version} 版 → ${version + 1} 版の書き換えに失敗: ${reason}")
-                    |> Result.flatMap(next -> migrateFrom(version + 1, next, format))
+                    |> Result.flatMap(next -> migrateFrom(version + 1, next, note, format))
         }
 
     /// `path` のセーブを今の版の中身にして読む。ファイルが無ければ Ok(None)（初めての時は正常）。
@@ -145,11 +189,13 @@ pub mod SaveFormat {
         match Fs.FileRead.read(path) {
             case Err(_) => Ok(())
             case Ok(text) =>
-                let found = parseText(text) |> Result.toOption |> Option.flatMap(json -> versionOf(json, format));
+                let parsed = parseText(text) |> Result.toOption;
+                let found = parsed |> Option.flatMap(json -> versionOf(json, format));
+                let note = parsed |> Option.map(gameVersionNote) |> Option.getWithDefault("");
                 match found {
                     case None => Ok(())
                     case Some(version) =>
-                        if (version > getVersion(format)) Err("${path} は今より新しい版（${version} 版）なので上書きしない")
+                        if (version > getVersion(format)) Err("${path} は今より新しい版（${version} 版${note}）なので上書きしない")
                         else if (version == getVersion(format)) Ok(())
                         else writeBackupOnce(backupPath(path, version), text)
                 }

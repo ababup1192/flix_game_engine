@@ -217,7 +217,7 @@ mod TestFlow {
           starts = ("count", "n を足す", Map#{"n" => "1"}) :: Nil,
           options = ("look", "day" :: "night" :: Nil) :: Nil,
           keys = "A" :: "B" :: "X" :: "Z" :: "Up" :: "Down" :: "Left" :: "Right" :: "Enter" :: "Space" :: "Escape" :: Nil,
-          ready = true, replies = true, fingerprint = true }
+          ready = true, replies = true, fingerprint = true, saveLoad = false }
 
     // 書き間違いの見本を読むと、Go の check の expected.txt（1 行目の件数と最後の終わりの番号を除く）と同じ知らせになる。
     @Test

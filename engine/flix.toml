@@ -1,5 +1,5 @@
 [package]
-version     = "0.108.0"
+version     = "0.110.0"
 flix        = "0.80.0"
 repository  = "github:ababup1192/flix_engine_core"
 

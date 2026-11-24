@@ -109,6 +109,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 画面なしで描く物を作る・Item を描く命令にする所を自分で呼びたい（`SoftRaster` や `Render` の中の関数） | 親のモジュールの関数（`SoftRaster.renderToImage`・`Render.toDrawables`・`Render.softSceneOf` など。`make api Q=Render.`）。`<モジュール>.Internal.*`（`Render.Internal`・`SoftRaster.Internal`）は中身で、ゲームの src と test に書くと lint-forbid の app-internal が止める。足りなければ engine に足すよう相談する |
 | e2e・動画の手順を書いて画面なしで流す（失敗は行番号つき） | `e2e/<名前>.flow` + `App.withFlow`・`bin/fge flow check`・`bin/fge flow` |
 | `run` で入れる部品の flow を単独でも流す（親の `fps`・`ready` が抜けて別の速さ・待ち方になる） | 部品にも親と同じ設定の行を書く。食い違いは `bin/fge flow check` が「run で入れる親と設定が違う」で止める。離した時に受ける押し方（点のタップ）も `ready off` は要らない（返事は離したフレームの後に確かめる） |
+| 途中でセーブして読み直しても後の遊びが変わらないか確かめる（書く時に値を落とす・自分で書いたキーを読めない、を欄の一覧なしで止める） | flow の表（`App.withFlow`）に `saveRoundTrip = Some({ save, load, unsaved })`（実機と同じ書く関数・「つづきから」と同じ読み方・load の 2 つ目は起動したての World）+ flow の落ち着いた所に `saveload` の 1 行 → `bin/fge flow` が読み直さない流れと問いの値・最後のセーブを比べる（ウィンドウを開いたまま読み直さない・engine の `docs/flow.md` の「セーブの読み直しの門」） |
 | 好きな場面から起動・テスト・遊んだ通りに再生 | `App.withStarts`（`START=`・`startOrBug`）・記録は `bin/fge flow` で再生 |
 | ギャラリーの 1 枚の World から実機で開く・実機の記録が再生と同じか | `App.withShots`（`<ゲーム>/src/Shots.flix`）+ `bin/fge run SHOT=<場面>`・engine で `make determinism`（入力のシナリオ `FLIX_GE_INPUT_SCRIPT`） |
 | 記録の再生が起動した時刻などの外の値で `expect world=` に止まる | `App.withWorldSummaryMask`（その欄だけ決まった値へ） |
@@ -162,6 +163,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 音の長さ（秒）をゲームで使う（効果音が鳴り終わるまで次へ進まない） | `GameEngine.Audio.audioSeconds(name)`（描く元を組む所からも呼べる・ブラウザ版では音が Fs の表に無いので WAV を `Fs.FileRead.readBytes` で読む形は必ず失敗する・engine の `docs/audio.md` の「音の長さをゲームのコードで使う」） |
 | 効果音・曲を作る・直す（音割れも検査） | 台本 `*.snd.star` か `*.sndsrc.json` を `bin/fge snd build` |
 | セーブの形を変える・古い版のセーブを今の形で読む・上書き前に控えを残す | `SaveFormat.make` + `withMigration`（版 n → n+1）→ `SaveFormat.load` / `save`（未来の版は上書きしない・欄を足すだけなら既定値で読む） |
+| どの版のゲームが書いたセーブかを残す（不具合の報告・未来の版を断る文面に「1.6.0 で書いた」） | `SaveFormat.withGameVersion("1.4.0")` → 包みに `gameVersion`・読むのは `SaveFormat.gameVersionOf(json)`・上げ忘れはゲームのテスト `testSaveGameVersionMatchesFlixToml`（flix.toml の version と `getGameVersion` を照らす。project.json の `"version"` はファイルの形の番号なので使わない）・形の番号 `make` の版とは別で読み方を分ける材料にしない（engine の `docs/save-compat.md`） |
 | 出した版のセーブが新しい版でも読めるかをテストで確かめる | `test/save-samples/*.json` + `SaveFormat.checkSamples(フォルダ, 読み関数, 形式)` が `Nil`（決まりの全文は engine の `docs/save-compat.md`） |
 | 会話を人が書く・台詞と選択肢を順に出す・会話の中で数えて分ける | `*.yarn`（`<<declare>>` `<<set>>` `<<if>>` `{$x}` `visited`）を `bin/fge yarn build` → `Yarn.loadOr` + `YarnRunner.start` / `step`・値は `YarnRunner.valueOf` / `startWith` / `YarnStorage`・選べない選択肢は `DialogueOption` の `available` |
 | 会話の話し手・変数の表示名・最初のノード・描き出しの場面のノードを Doc に置き、台本の名前と build で照らす（名前を足すのに Flix を走らせない） | vocab.json の版 2 の `from`・`bin/fge yarn check <Doc>`（engine の `docs/novel.md` の「名前を Doc に置いて build で照らす」） |

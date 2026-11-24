@@ -121,6 +121,22 @@ func TestDocCommentTakesFirstLineOnly(t *testing.T) {
 	}
 }
 
+func TestDocCommentSurvivesLineCommentsBeforeDecl(t *testing.T) {
+	src := "mod M {\n    /// 説明\n    // WhyNot: 一行目\n    //   続き\n    pub def f(): Unit = ()\n}\n"
+	mods := ScanText(src)
+	if len(mods) != 1 || len(mods[0].Decls) != 1 || mods[0].Decls[0].Doc != "説明" {
+		t.Fatalf("// の行の後の宣言の doc が %v", mods)
+	}
+}
+
+func TestLineCommentAloneGivesNoDoc(t *testing.T) {
+	src := "mod M {\n    // ただのコメント\n    pub def f(): Unit = ()\n}\n"
+	mods := ScanText(src)
+	if len(mods) != 1 || len(mods[0].Decls) != 1 || mods[0].Decls[0].Doc != "" {
+		t.Fatalf("// の行だけで doc が付いた: %v", mods)
+	}
+}
+
 func TestDeclOutsideModIsDropped(t *testing.T) {
 	if got := ScanText("pub def loose(): Unit = ()\n"); len(got) != 0 {
 		t.Fatalf("mod の外の宣言を拾った: %v", got)
