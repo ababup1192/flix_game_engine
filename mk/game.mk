@@ -405,7 +405,7 @@ agent-eval-compare: ### A=<前> B=<後> | 2 回の点・トークン・ターン
 ##@ 同じマシンで何本も並んで作業するときの道具 (bin/fge)
 ##> bin/fge heavy <コマンド...> | 重い処理を枠 3 本で流す（render-all・動画・compare と Makefile の HEAVY_LONG は長い物として枠 1〜2 の 2 本まで・枠 3 は短い物だけ）。--status で持ち主と列・--history で待ちの合計
 ##> bin/fge use-engine <版|パス> | この作業場の local.mk と lib をそのエンジンへ。--status / --restore
-##> bin/fge dashboard post <post.json> | 人に絵・案を見せる（素材ごと main の debug/dashboard/posts へ写す）。返事は bin/fge dashboard inbox・片付けは resolve <id>
+##> bin/fge dashboard post <post.json> | 人に絵・案を見せる（素材ごと main の debug/dashboard/posts へ写す）。返事は bin/fge dashboard inbox・片付けは inbox が出す resolve <id>@<at>
 ##> bin/fge proposal build <proposal.json> | 案を選んでもらうページ（index.html）を組む。knobs で片付けの残りを数える
 
 # 何も指定せず make と打ったらゲームが起動する（テンプレの元の既定と同じ）。
