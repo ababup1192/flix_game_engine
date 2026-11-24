@@ -230,7 +230,9 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | ゲームを配る（Java の無い Mac・Windows・Linux・Steam Deck で遊べる形に。jar・JRE・起動を 1 本に） | `make dist-macos` / `dist-windows` / `dist-linux` / `dist-all`（置き方は engine の `docs/dist.md`・Deck は `docs/steam-deck.md`） |
 | 重い処理を順に流す | `bin/fge heavy <コマンド>`（`--help`・`--status`・`--history`） |
 | 作業場を別の版のエンジンへ一時的に向ける | `bin/fge use-engine <版かパス>`・戻すは `--restore` |
-| 案を並べて依頼主に選んでもらう | `reports/<名前>/proposal.json` → `bin/fge proposal` |
+| 人に絵・動画・案を見せて選んでもらう | `bin/fge dashboard post <post.json>`（形は proposal.json と同じ・素材ごと main の作業ツリーの debug/dashboard/posts へ写し URL を出す。人は `make dashboard` で選んで返す） |
+| 人の返事を拾う | `bin/fge dashboard inbox`（`--json`・他の worktree の分も `--all`）。直したら `bin/fge dashboard resolve <id>` |
+| 案を並べた静的な頁を作って渡す（ダッシュボードの外へ・返事は会話で受ける） | `reports/<名前>/proposal.json` → `bin/fge proposal build` |
 | flow で撮った動画にスマホで注釈を付けてもらい、AI 向けのプロンプトにする頁を作る | sound-novel-starter の子では `make tape FLOW=e2e/tape.flow`（既定は縦の 1 本・PC と並べるなら `TAPE_VIEWS="phone pc"`・engine の `docs/migrate-diff.md` の「テープ」） |
 | 選択肢で分かれた道ごとにテープを撮り、頁の分岐のグラフから隣の道へ移れるようにする | 結末ごとに同じ始まりの flow を 1 本ずつ書き、`make tape FLOWS="e2e/a.flow e2e/b.flow"`（中で `bin/fge tape --group debug/tape/a debug/tape/b` が tape.json の choices から branches を組む）。公開は `bin/fge tape publish debug/tape/a debug/tape/b`（1 つの URL の下に並ぶ） |
 | テープを撮るのが遅い・分岐が多くて待てない | `make tape` はブラウザ版を `bin/fge export-web --reuse` で書き出す（写すゲーム・engine の束と jar・bin/fge の指紋が前と同じなら組まない。組み直させるなら `TAPE_WEB_REUSE=0`）。書き出しは録画と並べて裏で走り（ログは `$(TAPE_WEB)/export.log`）、分岐の flow も並べて撮る。同時に走るのは書き出しを含めて `TAPE_JOBS` 本（既定 2・今までの 1 本ずつは `TAPE_JOBS=1`） |
