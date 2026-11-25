@@ -181,8 +181,8 @@ func TestLegacyPageKeysAgreeAcrossPageFlixAndGo(t *testing.T) {
 		t.Errorf("頁の FGE_SWITCHES の前の鍵 %v %v と Go の webLegacyPageKeys %v %v が同じはず", jsFields, jsKeys, goFields, goKeys)
 	case !sortedEq(flixSet, withoutSw):
 		t.Errorf("Flix の legacyPageQueryKeys %v と Go の前の鍵（sw を除く）%v が同じはず", flixSet, withoutSw)
-	case !sortedEq(tagFields, goFields):
-		t.Errorf("webPageSwitches の欄 %v の全部が前の鍵を持つはず（webLegacyPageKeys %v）", tagFields, goFields)
+	case !sortedEq(slices.DeleteFunc(slices.Clone(tagFields), func(f string) bool { return slices.Contains(webSwitchesWithoutLegacy, f) }), goFields):
+		t.Errorf("webPageSwitches の欄 %v の全部（webSwitchesWithoutLegacy を除く）が前の鍵を持つはず（webLegacyPageKeys %v）", tagFields, goFields)
 	}
 }
 

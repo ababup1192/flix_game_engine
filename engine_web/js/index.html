@@ -82,7 +82,9 @@
   .fge-dpad-down { left: 50px; bottom: 0; border-radius: 4px 4px 10px 10px; }
   .fge-dpad-left { left: 0; top: 50px; border-radius: 10px 4px 4px 10px; }
   .fge-dpad-right { right: 0; top: 50px; border-radius: 4px 10px 10px 4px; }
-  .fge-pad-buttons { display: flex; flex-direction: row-reverse; align-items: flex-start; gap: 14px; }
+  /* 2 個ずつで折り返す。WhyNot: 1 列に並べない — 縦持ちの右の欄は画面の幅の半分で、3 個目から左の十字キーの上へはみ出す。 */
+  .fge-pad-buttons { display: flex; flex-direction: row-reverse; flex-wrap: wrap; align-items: flex-start; gap: 14px;
+                     max-width: calc(2 * 68px + 14px); }
   .fge-pad-button { width: 68px; height: 68px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
                     background: rgba(255, 255, 255, .16); border: 2px solid rgba(255, 255, 255, .3); color: #fff;
                     font: bold 20px system-ui, sans-serif; box-sizing: border-box; }

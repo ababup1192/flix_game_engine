@@ -5,7 +5,7 @@
 "use strict";
 
 // 1 行 = 1 つの旗。field は window.fgeDev と読んだ結果の欄の名前・name は ?fge= の名前（小文字）・values は取れる値（無ければ真偽・"int" は正の整数）・
-// short は値だけで書ける語・legacy は前の鍵（読んだら知らせる。sw だけは期限なしで知らせない）。
+// short は値だけで書ける語・legacy は前の鍵（読んだら知らせる。sw だけは期限なしで知らせない。?fge= の後に足した旗は持たない）。
 var FGE_SWITCHES = [
   { field: "fps", name: "fps", legacy: "fps" },
   { field: "backend", name: "backend", values: ["webgl2", "gl", "webgpu"], short: ["webgl2", "gl", "webgpu"], legacy: "backend" },
@@ -19,13 +19,14 @@ var FGE_SWITCHES = [
   { field: "capture", name: "capture", values: "int", legacy: "capture" },
   { field: "deferred", name: "deferred", values: ["all"], short: [], legacy: "deferred" },
   { field: "usedAssets", name: "usedassets", legacy: "usedAssets" },
-  { field: "webgpuFail", name: "webgpufail", values: ["prepare", "canvas"], short: [], legacy: "webgpuFail" }
+  { field: "webgpuFail", name: "webgpufail", values: ["prepare", "canvas"], short: [], legacy: "webgpuFail" },
+  { field: "errors", name: "errors" }
 ];
 
 // 何も頼まれていない時の値。backend の "" は既定（WebGPU を使えれば WebGPU）。
 function fgeSwitchDefaults() {
   return { fps: false, backend: "", net: "", sw: true, input: "", orientation: "", size: "", glcheck: false, loadtime: false,
-           capture: 0, deferred: "", usedAssets: false, webgpuFail: "" };
+           capture: 0, deferred: "", usedAssets: false, webgpuFail: "", errors: false };
 }
 
 // 旗 s の字の値 raw を欄の値にする（読めなければ undefined）。前の鍵の真偽は "1" だけを真と読む。
@@ -85,7 +86,7 @@ function fgeReadSwitches(search, dev) {
   });
   var webgl2 = false;
   FGE_SWITCHES.forEach(function (s) {
-    var old = params.get(s.legacy);
+    var old = s.legacy ? params.get(s.legacy) : null;
     var fromLegacy = old === null ? undefined : fgeSwitchValueOf(s, old);
     if (old !== null && !s.keep) legacy.push({ from: s.legacy + "=" + old, to: fgeSwitchWordFor(s, old) });
     var fromDev = dev ? fgeSwitchDevValueOf(s, dev[s.field]) : undefined;

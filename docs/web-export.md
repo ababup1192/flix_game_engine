@@ -437,6 +437,7 @@ GitHub Pages は全部のファイルに `max-age=600` を付けるので、Serv
 | `deferred` | `deferred:all` | 後回しの素材が全部届いてから main を呼ぶ（画素を比べる撮る頁に足す。engine の待ちで撮るコマがずれない・[startup.md](startup.md)） |
 | `usedAssets` | `usedassets` | 使った素材を `window.fgeUsedAssets` に記録する（書き出しの確かめ ⑨ が後回しの候補に使う） |
 | `webgpuFail` | `webgpufail:prepare` / `webgpufail:canvas` | WebGPU の準備で落ちる道・canvas の描き先を作った後に落ちる道を起こす（WebGL2 へ落ちる道を手で確かめる時） |
+| `errors` | `errors` | console の誤りと知らせ・止まった理由・シェーダーが組めなかった行・描き手の行（`[webgpu]`・`[backend]`）を画面の下に重ね、一番上に GPU の名前と上限（WebGL2 の絵の枚数・頂点の uniform の数・WebGPU の storage buffer の数など）を出す。コンソールを開けないスマホで確かめる時に使う（欄は指を受けない・新しい行が上） |
 
 `WebLayer.devTools()` で起こすゲームは、クエリの最初の鍵を Start の名前・全部の鍵と値を引数にする（知らない名前なら先頭の始まりで開いて console.error に 1 行）。
 頁が読む鍵 `fge` と `sw`（`App.DevTools.pageQueryKeys`）は外すので、Start と旗の順を気にしなくてよい。ゲームの Start の名前に `fge` と `sw` は使えない。

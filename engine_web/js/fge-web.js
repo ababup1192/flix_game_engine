@@ -45,13 +45,78 @@ var fgeSwitches = (function () {
   if (typeof fgePageSwitches !== "function") {
     console.error("[fge] 頁の旗の読み手（fge-switches.js）が index.html に無い — 旗は効かない（bin/fge export-web で書き出し直す）");
     return { fps: false, backend: "", net: "", sw: true, input: "", orientation: "", size: "", glcheck: false, loadtime: false,
-             capture: 0, deferred: "", usedAssets: false, webgpuFail: "" };
+             capture: 0, deferred: "", usedAssets: false, webgpuFail: "", errors: false };
   }
   var read = fgePageSwitches();
   read.legacy.forEach(function (l) { console.warn("[fge] ?" + l.from + " は ?fge=" + l.to + " に替わった（次の版で読まなくなる）"); });
   if (read.unknown.length > 0) console.warn("[fge] ?fge= の知らない語を捨てた: " + read.unknown.join(","));
   return read.switches;
 })();
+
+// ?fge=errors: console の誤りと知らせ・止まった理由・GPU の名前と上限を画面の下に重ねる（コンソールを開けないスマホで確かめる時）。
+// WhyNot: console.log を全部は重ねない — [loadtime] などの毎回の行で誤りが流れて読めなくなる。描き手の行と、誤りの語を含む行（シェーダーの組み立ての失敗は println で出る）だけ拾う。
+// WhyNot: 上限は描き手の文脈から読まない — 描き手の準備で落ちた時ほど要る数で、別の canvas と adapter から読めば準備の成否に左右されない。
+var fgeErrorLines = [];
+function fgeWireErrorOverlay() {
+  if (!fgeSwitches.errors) return;
+  var el = null;
+  var show = function () {
+    if (el === null) {
+      if (!document.body) return;
+      el = document.createElement("pre");
+      // WhyNot: 欄で指を受けない — スマホでは十字ボタンと決定の上に重なり、遊んで確かめられなくなる。読むのはスクリーンショットで足りるので、新しい行を上に置く。
+      el.style.cssText = "position:fixed;left:0;right:0;bottom:0;max-height:45vh;overflow:hidden;margin:0;z-index:10000;padding:6px 8px;" +
+        "font:11px/1.35 monospace;color:#fff;background:rgba(0,0,0,.72);white-space:pre-wrap;word-break:break-all;pointer-events:none";
+      document.body.appendChild(el);
+    }
+    var gpu = fgeErrorLines.filter(function (l) { return l.indexOf("[gpu]") >= 0; });
+    var rest = fgeErrorLines.filter(function (l) { return l.indexOf("[gpu]") < 0; }).reverse();
+    el.textContent = gpu.concat(rest).join("\n");
+  };
+  var add = function (kind, args) {
+    var text = Array.prototype.map.call(args, function (a) { return a && a.stack ? a.stack : String(a); }).join(" ");
+    fgeErrorLines.push(kind + " " + text);
+    if (fgeErrorLines.length > 200) fgeErrorLines.shift();
+    show();
+  };
+  ["error", "warn", "log"].forEach(function (k) {
+    var orig = console[k].bind(console);
+    console[k] = function () {
+      orig.apply(null, arguments);
+      var first = String(arguments[0]);
+      if (k !== "log" || /^\[(webgpu|backend|gpu)\]|error|fail|bug|shader|誤り|失敗|落ち|読めない|止ま/i.test(first)) add(k === "log" ? "i" : k === "warn" ? "W" : "E", arguments);
+    };
+  });
+  window.addEventListener("error", function (e) { add("E", [e.message + " @" + e.filename + ":" + e.lineno]); });
+  window.addEventListener("unhandledrejection", function (e) { add("E", [e.reason && e.reason.stack || e.reason]); });
+  try {
+    var gl = document.createElement("canvas").getContext("webgl2");
+    if (gl) {
+      var dbg = gl.getExtension("WEBGL_debug_renderer_info");
+      var p = function (n) { return n + "=" + gl.getParameter(gl[n]); };
+      add("i", ["[gpu] webgl2 " + (dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)),
+        p("MAX_TEXTURE_IMAGE_UNITS"), p("MAX_VERTEX_TEXTURE_IMAGE_UNITS"), p("MAX_COMBINED_TEXTURE_IMAGE_UNITS"),
+        p("MAX_VERTEX_UNIFORM_VECTORS"), p("MAX_FRAGMENT_UNIFORM_VECTORS"), p("MAX_UNIFORM_BLOCK_SIZE"),
+        p("MAX_TEXTURE_SIZE"), p("MAX_ARRAY_TEXTURE_LAYERS"), p("MAX_VERTEX_ATTRIBS"), p("MAX_VARYING_VECTORS"),
+        "float_rt=" + !!gl.getExtension("EXT_color_buffer_float")]);
+    } else add("W", ["[gpu] webgl2 の文脈を取れない"]);
+  } catch (err) { add("W", ["[gpu] webgl2 の上限を読めない: " + err]); }
+  if (navigator.gpu) {
+    navigator.gpu.requestAdapter().then(function (a) {
+      if (!a) { add("W", ["[gpu] webgpu の adapter を取れない"]); return; }
+      var i = a.info || {};
+      var keys = ["maxStorageBuffersPerShaderStage", "maxStorageBuffersInVertexStage", "maxStorageBuffersInFragmentStage",
+        "maxSampledTexturesPerShaderStage", "maxSamplersPerShaderStage", "maxUniformBuffersPerShaderStage", "maxBindGroups",
+        "maxStorageBufferBindingSize", "maxUniformBufferBindingSize", "maxTextureDimension2D", "maxTextureArrayLayers",
+        "maxVertexBuffers", "maxVertexAttributes", "maxInterStageShaderVariables", "maxColorAttachmentBytesPerSample"];
+      add("i", ["[gpu] webgpu " + [i.vendor, i.architecture, i.device, i.description].filter(Boolean).join(" ")]
+        .concat(keys.filter(function (k) { return typeof a.limits[k] === "number"; }).map(function (k) { return k + "=" + a.limits[k]; }))
+        .concat(["core=" + a.features.has("core-features-and-limits")]));
+    }, function (err) { add("W", ["[gpu] webgpu の adapter で誤り: " + err]); });
+  } else add("i", ["[gpu] navigator.gpu が無い"]);
+  if (!document.body) document.addEventListener("DOMContentLoaded", show);
+}
+fgeWireErrorOverlay();
 
 // WhyNot: 普段の起動で見ない — getError は GPU の待ちになり、1 コマが何倍にも延びる。
 var fgeGlCheck = { calls: 0, errors: 0, seen: Object.create(null), counts: Object.create(null) };
