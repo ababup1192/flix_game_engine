@@ -211,7 +211,9 @@ mod Render3d.StaticRows {
         let i = Array.get(0, b#next);
         match Ref.get(b#phase) {
             case BuildPhase.Place  => true
-            case BuildPhase.Meshes => i < Vector.length(b#meshes) and Mesh3d.vertexCount(Vector.get(i, b#meshes)) >= heavyVertices()
+            case BuildPhase.Meshes =>
+                let meshes = Ref.get(b#meshes);
+                i < Vector.length(meshes) and Mesh3d.vertexCount(Vector.get(i, meshes)) >= heavyVertices()
             case _                 => false
         }
 

@@ -231,7 +231,8 @@ mod Render3d.TestStaticRows {
     /// 予算の残りが半分に満たない時は、頂点の多い形を作る仕事を次のコマへ回す（頂点の少ない形は作る）。
     @Test
     def testHeavyMeshWaitsForTheNextFrameWhenLittleIsLeft(): Unit \ {Assert, IO} =
-        let planner = freshPlanner(Render3d.DrawMode.Instanced);
+        // Instanced ではつなぐ段が先に予算を使い、形を作る段まで届かない
+        let planner = freshPlanner(Render3d.DrawMode.OneByOne);
         let made = Ref.fresh(Static, 0);
         let steps = { prepareMesh = (_: Mesh3d.Mesh3d) -> Ref.put(Ref.get(made) + 1, made) | countingSteps(Ref.fresh(Static, 0), _ -> (), 0i64) };
         let big = Scene3d.meshInstance(Mesh3d.withBoxUvs(1.0, gridMesh(50)), Mat4.identity());
