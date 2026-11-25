@@ -2484,6 +2484,12 @@
 - 1 本のストリップ（横一列）にセルを敷く。疑似遠近の絵（奥のストリップほど広い世界が画面に入る）では
   `pub def strip(span: {lo = Float64, hi = Float64}, spec: {cell = Float64, salt = Int32, lane = Int32, reach = Float64, cellsMax = Int32}, place: (Int32, Int32 -> Float64) -> List[a]): List[a]`
 
+## Scene3dCheck — `engine_world/src/Scene3dCheck.flix`
+- 見つけた食い違い 1 つ（座標は m・0.01 に丸める）。
+  `pub enum Problem with Eq, Order, ToString { case InvisibleWall(Float64, Float64, Float64) case PassableVisual(String) case EscapeHole(Float64, Float64, Float64) }`
+- visible（見た目）と world（当たり）と body（歩く体）と start（体の足の位置）を照らした食い違い（InvisibleWall → PassableVisual → EscapeHole の順・それぞれ来た順）。
+  `pub def check(visible: List[Scene3d.Instance3d], world: CollisionWorld3d.CollisionWorld3d, body: CharacterBody3d.Settings, start: Vec3.Vec3): List[Problem]`
+
 ## SceneSeq — `engine_world/src/SceneSeq.flix`
 - perform が返す、カット 1 つの行方。
   `pub enum Status[p] { case Running(p) case Done case Skip(String) }`

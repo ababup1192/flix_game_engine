@@ -8,7 +8,7 @@
 // 拾った物と開けた戸と行った部屋は、どの画面でも持ち歩く Session の progress に入れる。
 mod World {
 
-    use fge::{CharacterBody3d, Clock, Num, UiTypewriter, Vec2, Vec3, Yarn, YarnRunner}
+    use fge::{CharacterBody3d, Clock, Num, Scene3d, Scene3dCheck, UiTypewriter, Vec2, Vec3, Yarn, YarnRunner}
 
     /// このフレームの入力。forward・strafe・turn = -1 / 0 / +1 の軸・pitch = 見下ろす向きが +1 の軸（キー）・
     /// look = マウスの動き（px。視点を取り込んでいない時は 0。下へ動かすと見下ろす）・dash = 走るキーを押している・
@@ -124,6 +124,18 @@ mod World {
     def bodySettings(res: Res.Res): CharacterBody3d.Settings =
         let wk = Res.walkOf(res);
         CharacterBody3d.settings(wk#radius, wk#height)
+
+    /// 校舎の見た目（階ごとの集まり）と当たり判定の箱の食い違いのうち、見えない壁と外へ抜ける穴（Scene3dCheck.check。テストが Nil を求める）。
+    // WhyNot: 見えるのに通れる物（PassableVisual）を数えない — この校舎は机・椅子・カーテンなどの小物に当たりの箱を置かず、通り抜けられる作り。
+    //   小物に当たりを置く校舎へ直したら、ここで PassableVisual も返す。
+    pub def collisionProblems(res: Res.Res): List[Scene3dCheck.Problem] =
+        let visible = res#school#groups |> Map.valuesOf |> List.flatMap(Scene3d.groupInstancesOf);
+        Scene3dCheck.check(visible, res#school#collision, bodySettings(res), res#layout#start#pos) |> List.filter(isBlockingProblem)
+
+    def isBlockingProblem(p: Scene3dCheck.Problem): Bool = match p {
+        case Scene3dCheck.Problem.PassableVisual(_) => false
+        case _                                      => true
+    }
 
     /// ゲーム開始時の状態。表の spawn（1 階の昇降口）に立つ。
     pub def initial(res: Res.Res): World =

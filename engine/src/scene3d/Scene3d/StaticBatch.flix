@@ -123,7 +123,6 @@ pub mod Scene3d.StaticBatch {
         let params = Map.toList(m#params) |> List.map(match (k, v) -> "${k}=${v}") |> String.intercalate(",");
         "${force m#shaderHash}|${wrap}|${m#cutout}|${m#doubleSided}|${m#emissionIntensity}|${m#maxMipLevels}|${reads}|${params}"
 
-
     /// group（同じ単位の物・2 つ以上）を 1 つの形につないで置いた物。world は単位行列。
     /// 材質の無い物は tint を頂点の色へ掛けておき（線形の量で掛けて sRGB の値へ戻す）、置いた物の tint は白。材質のある物は頂点の色のまま、頭の物の材質と tint を付ける。
     /// uv は材質のある物で、全部の物にある時だけ付ける。中身の鍵は元の形の鍵と world（材質の無い物は tint も）から作る。

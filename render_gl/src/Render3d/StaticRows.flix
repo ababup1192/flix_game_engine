@@ -272,7 +272,6 @@ mod Render3d.StaticRows {
         Ref.put(startCarried(planner, b#coverage, b#scene, drawn), b#grouping);
         enter(b, BuildPhase.Meshes)
 
-
     /// 分け終えた b の行を作って置き、置いた物を返す（Upload の段へ進む）。
     def placeOf(planner: Planner, steps: BuildSteps[a], b: Build[a]): a \ IO =
         let grouped = carriedResultOf(Ref.get(b#grouping));

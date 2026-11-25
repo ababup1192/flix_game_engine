@@ -68,6 +68,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 3D の光の落ち方を物理の形（逆二乗・拡散の 1/π。Blender の光に近い）にする | `Scene3d.withLightUnits(Scene3d.LightUnits.Physical, scene)`（intensity は 1 m の所の照度・場面の長さが m でなければ `Scene3d.withUnitsPerMeter`・今の値のままだと拡散が 1/π に暗くなるので intensity と ambient を決め直す・既定は `Legacy`） |
 | 3D のビルボードが多くて draw が多い（木・人の板が数百枚） | 同じ絵の板を `scene#billboards` に**続けて**並べる（描き手が来た順で続く同じ絵の板を 1 回の instanced draw で描く・影の地図は描き手が絵ごとにまとめる・板を四角の形にまとめて staticGroup にしない・重なりの前後を来た順で決めている所は崩さない。engine の `docs/scene3d.md`「ビルボードの draw の数」） |
 | 3D の動かない物（壁・家具・glb の部品・小物）が多くて draw call が多い | まず `Scene3d.staticGroup(name, items)` に入れて毎コマ `groups` に載せる（1 回しか使わない形は engine が 1 つの形につなぐ・Blender で手でつながない・絵つきの小物は tint を数種にそろえる・engine の `docs/scene3d.md` の「動かない物をまとめる（staticGroup）」） |
+| 3D の部屋を作った・小物を置き直した（見えない壁・見えるのに通れる柵・外へ抜ける戸を止めたい） | ゲームのテストに `Assert.assertEq(expected = Nil, Scene3dCheck.check(visible, collisionWorld, bodySettings, start))` を 1 本（python で当たりを調べる道具を書かない・engine の `docs/scene3d.md` の「置いた物と当たりの食い違いを調べる」） |
 | 3D のドット絵のキャラ（ビルボード）の影が大きすぎる・長すぎる | `Scene3d.withShadowCasterScale(Vec2.v2(0.6, 0.7), b)`（影の地図の板だけ幅と高さを絞る・見えている板は変えない・太陽と点光源の影の両方に効く・影の板を別のビルボードで描き直さない） |
 | 3D の点光源が 8 本を超える | 光は全部 `pointLights` に入れる（ゲームで選び直さない）。落とした本数は `scene3dCounts#droppedPointLights`・テストは `Scene3d.droppedLightsOfScenes`（選び方は engine の `docs/scene3d.md` の「点光源（8 本を超えた時の選び方）」） |
 | 3D の球（光の届く範囲など）が画面にどれだけ入っているかで値をなめらかに変える | `Frustum.sphereInsideRatio(Scene3d.frustumOf(scene), center, radius)`（0 = 掛からない・1 = まるごと中。`Frustum.intersectsSphere` の真偽で切り替えると画面の端でぱっと変わる） |

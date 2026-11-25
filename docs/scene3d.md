@@ -755,6 +755,27 @@ let next = CharacterBody3d.moveAndSlide(world, doorLeaves, s, motion, Clock.dtOf
 - 当たり判定の箱を場面に重ねて見る時は `CollisionShape3d.debugMesh(boxes, color)` を `Scene3d.meshInstance(m, Mat4.identity())` で置く
 - 形は箱だけで歩く（三角形の壁・正確なカプセル × 箱は無い）。跳ぶ口も無い（`motion` の y は使わない）
 
+## 置いた物と当たりの食い違いを調べる（Scene3dCheck）
+
+見た目（`Instance3d` の列）と当たり（`CollisionWorld3d`）は別の値なので、置き直すたびに食い違いが出る。ゲームのテストに 1 本書いておくと止まる
+（配置は Doc の値からコードで作るので、lint には見えない）:
+
+```flix
+@Test
+def testRoomHasNoProblem(): Unit \ Assert =
+    Assert.assertEq(expected = Nil, Scene3dCheck.check(visible, world, CharacterBody3d.settings(0.22, 1.7), start))
+```
+
+| `Problem` | 拾う物 |
+|---|---|
+| `InvisibleWall(x, y, z)` | 見た目の三角形がどれも掛からない当たりの箱（見えない壁。座標は箱の真ん中） |
+| `PassableVisual(名前)` | 立つ床の上で体の高さ（段の上から頭まで）に掛かる見た目なのに、足元のどこかに体が当たりに掛からずに立てる物（見えるのに通れる柵。名前は `withName`・無ければ `#<番号>`・同じ名前は 1 つ） |
+| `EscapeHole(x, y, z)` | `start` から体の半径の升で歩いて、当たりの箱の集まりの外へ出られる所（絵だけの戸。座標は外へ出る手前） |
+
+- 体は `CharacterBody3d.Settings` をそのまま渡す（歩く時と同じ値）。抜け穴は `start` の高さの 1 階分を見る
+- 通り抜けてよい物（カーテン・当たりを置かない小物）は、`visible` から外して渡すか、`PassableVisual` だけ数えない
+- 重なり・浮きは拾わない（見た目の磨き）
+
 ## 見ている物を調べる（レイ）
 
 クロスヘアの先の物は `Camera3d.forwardRay(camera)` → `Ray3d.pickNearest(ray, 届く距離, 的の列)` で引く。
