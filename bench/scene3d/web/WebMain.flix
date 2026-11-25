@@ -7,7 +7,7 @@ mod WebMain {
 
     import fge.web.Browser
 
-    def loadScene(knobs: Map[String, String]): Result[String, SceneBench.Scene] \ Fs.FileRead + LoadProgress =
+    def loadScene(knobs: Map[String, String]): Result[String, SceneBench.Scene] \ Fs.FileRead + LoadProgress + IO =
         if (First.modeOf(knobs) == Some(First.Mode.Glb)) Ok(SceneBench.Scene.First(First.kitOf(First.Mode.Glb, knobs, None) |> First.withGlb(glbJob(knobs))))
         else if (First.modeOf(knobs) == Some(First.Mode.Group) or First.modeOf(knobs) == Some(First.Mode.Preload))
             Ok(SceneBench.Scene.First(First.kitOf(First.modeOf(knobs) |> Option.getWithDefault(First.Mode.Group), knobs, None)))
@@ -17,13 +17,21 @@ mod WebMain {
             case None       => Room.loadMeshes() |> Result.map(meshes -> SceneBench.Scene.Room(Room.kitOf(meshes)))
         }
 
-    /// assets/props_1f.glb を解く仕事（keyed=1 なら鍵つきの読み方）。かかった ms を返す。
-    def glbJob(knobs: Map[String, String]): (Unit -> (Float64, Option[Model3d.Model3d]) \ IO) \ (Fs.FileRead + LoadProgress) =
-        let path = "assets/props_1f.glb";
+    /// assets/<glb>（既定 props_1f.glb）を解く仕事（keyed=1 なら鍵つきの読み方）。かかった ms を返す。
+    /// warm=1 なら読み込みの時に assets/entrance.glb を 1 回解いておく（ゲームが起動の束を先に解いた後の、wasm のコードが温まった状態で測る）。
+    def glbJob(knobs: Map[String, String]): (Unit -> (Float64, Option[Model3d.Model3d]) \ IO) \ (Fs.FileRead + LoadProgress + IO) =
+        let path = "assets/" + (Map.get("glb", knobs) |> Option.getWithDefault("props_1f.glb"));
         let bytes = Fs.FileRead.readBytes(path) |> Result.getWithDefault(Vector.empty());
         let decoder = LoadProgress.imageDecoder();
         let keyed = Map.get("keyed", knobs) == Some("1");
         let options = { vertexColors = true | Gltf.defaultLoadOptions() };
+        if (Map.get("warm", knobs) == Some("1")) {
+            let warmPath = "assets/entrance.glb";
+            let warm = Fs.FileRead.readBytes(warmPath) |> Result.getWithDefault(Vector.empty());
+            let began = Browser.now();
+            let warmed = Gltf.fromGlbTexturedKeyedUsingOptions((decoder#versionedKey)(warmPath) |> Option.getWithDefault(warmPath), decoder, options, warm);
+            println("[scene3d] warm entrance.glb: ${Browser.now() - began} ms・読めた ${Result.isOk(warmed)}")
+        } else ();
         () -> {
             let began = Browser.now();
             let model = if (keyed) Gltf.fromGlbTexturedKeyedUsingOptions((decoder#versionedKey)(path) |> Option.getWithDefault(path), decoder, options, bytes)

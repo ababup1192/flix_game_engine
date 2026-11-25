@@ -2,6 +2,8 @@
 
 /// Gltf の中身。ゲームからは呼ばない。
 pub mod Gltf.Internal {
+    import java.lang.Float
+
     pub def mirror(): Mat4.Mat4 = Mat4.scale(Vec3.v3(-1.0, 1.0, 1.0))
 
     /// COLOR_0 の accessor の形 width と型 componentType が読める物か（VEC3・VEC4 と、FLOAT か正規化した UNSIGNED_BYTE・UNSIGNED_SHORT）。読めなければ理由。
@@ -79,6 +81,14 @@ pub mod Gltf.Internal {
     /// src（頂点ごとに width 個）から、sources の頂点の順に写した並び。
     pub def gather(width: Int32, src: Vector[a], sources: Vector[Int32]): Vector[a] =
         rowsOf(Vector.length(sources), width, (k, c) -> Vector.get(Vector.get(k, sources) * width + c, src))
+
+    /// v の [start, end) を写す。
+    // WhyNot: Vector.slice・take・drop を使わない — 標準の版は v 全体を配列へ写してから切るので、1.5 MB の束から絵 46 枚を切ると 70 MB 写す。
+    pub def copyRange(start: Int32, end: Int32, v: Vector[a]): Vector[a] =
+        Vector.range(start, end) |> Vector.map(i -> Vector.get(i, v))
+
+    /// IEEE 754 の単精度のビットから組む。
+    pub def float32OfBits(bits: Int32): Float64 = Float32.toFloat64(Float.intBitsToFloat(bits))
 
     pub def flatXyz(vs: Vector[Vec3.Vec3]): Vector[Float64] = rowsOf(Vector.length(vs), 3, (k, c) -> component(c, Vector.get(k, vs)))
 

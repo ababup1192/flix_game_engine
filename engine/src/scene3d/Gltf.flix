@@ -13,12 +13,15 @@
 pub mod Gltf {
     use Util.Json.Json
     use Util.Json.Json.{JObject, JArray, JNumber, JString}
-    use Gltf.Internal.{rowsOf, gather, flatXyz, component}
+    use Gltf.Internal.{rowsOf, gather, flatXyz, component, copyRange, float32OfBits}
 
     type alias Obj = Map[String, Json]
 
-    /// GLB の中身: JSON の木と、元のバイトの中の BIN チャンクの場所。
-    type alias Glb = { json = Obj, bytes = Vector[Int8], bin = Option[{ start = Int32, length = Int32 }] }
+    /// GLB の中身: JSON の木と、元のバイトの中の BIN チャンクの場所と、番号で引く JSON の配列（parseGlb で 1 回だけ取り出す）。
+    // WhyNot: 番号で引くたびに json から配列を取り出さない — 取り出すたびに配列全体を作り直すので、accessor 2,000 個の束で二乗になる。
+    type alias Glb = { json = Obj, bytes = Vector[Int8], bin = Option[{ start = Int32, length = Int32 }],
+                       accessors = Vector[Obj], bufferViews = Vector[Obj], images = Vector[Obj], meshes = Vector[Obj],
+                       materials = Vector[Obj], textures = Vector[Obj], samplers = Vector[Obj], skins = Vector[Obj] }
 
     /// 読んだ accessor（成分を平らに並べた値。normalized の物は 0..1 / −1..1 に直してある）。
     type alias Accessor = { count = Int32, width = Int32, componentType = Int32, values = Vector[Float64] }
@@ -53,7 +56,7 @@ pub mod Gltf {
         parseAndBuild(defaultLoadOptions(), bytes) |> Result.map(gb -> {
             let (glb, built) = gb;
             let infoOnly = (material: Obj) -> { withUv = None, withoutUv = None, info = gltfMaterialOf(noTextureNames(), material), lines = Nil, noUvLines = Nil };
-            let (parts, lines) = attachMaterials(built, objectsOf("materials", glb#json) |> Vector.map(infoOnly));
+            let (parts, lines) = attachMaterials(built, glb#materials |> Vector.map(infoOnly));
             Log.warnAllThen(List.append(warningsOf(glb#json, built#jointOfNode), lines), { parts = parts | built#model })
         })
 
@@ -130,13 +133,13 @@ pub mod Gltf {
         match parseAndBuild(options, bytes) {
             case Err(e) => Err(e)
             case Ok((glb, built)) =>
-                let used = usedImages(options#limits, pbr, glb#json);
-                let images = objectsOf("images", glb#json) |> Vector.mapWithIndex((k, image) -> match Map.get(k, used) {
+                let used = usedImages(options#limits, pbr, glb);
+                let images = glb#images |> Vector.mapWithIndex((k, image) -> match Map.get(k, used) {
                     case Some(maxSide) => decodeImage(decode(k, maxSide), glb, image) |> (decoded -> (Option.map(Texture3d.limitSize(maxSide), fst(decoded)), snd(decoded)))
                     case None          => (None, Nil)
                 });
                 let decoded = images |> Vector.map(fst);
-                let materials = objectsOf("materials", glb#json) |> Vector.mapWithIndex(materialOf(glb, decoded, pbr));
+                let materials = glb#materials |> Vector.mapWithIndex(materialOf(glb, decoded, pbr));
                 let (parts, attachLines) = attachMaterials(built, materials);
                 let lines = List.flatten((Vector.toList(images) |> List.flatMap(snd)) :: attachLines :: Nil) |> List.distinct;
                 Ok(Log.warnAllThen(List.append(warningsOf(glb#json, built#jointOfNode), lines),
@@ -194,9 +197,9 @@ pub mod Gltf {
     /// （2 つ以上から指されたら大きい方）。
     // WhyNot: 全部の画像を decode しない — occlusion の絵は描くのに使わず、2048² なら 1 枚 16 MB をヒープに持つ。metallicRoughnessTexture は
     //   metallic・roughness を付ける材質（wantsMetallicRoughness）だけ読む。
-    def usedImages(limits: TextureLimits, pbr: Bool, json: Obj): Map[Int32, Int32] =
-        let textures = objectsOf("textures", json);
-        objectsOf("materials", json) |> Vector.toList
+    def usedImages(limits: TextureLimits, pbr: Bool, glb: Glb): Map[Int32, Int32] =
+        let textures = glb#textures;
+        glb#materials |> Vector.toList
             |> List.flatMap(material -> (objectOf("baseColorTexture", objectOf("pbrMetallicRoughness", material)), limits#baseColor)
                                         :: (objectOf("normalTexture", material), limits#normal)
                                         :: List.append(emissiveImageOf(limits, material), metallicRoughnessImageOf(limits, pbr, material)))
@@ -219,12 +222,12 @@ pub mod Gltf {
     /// bufferView のバイト（BIN の中）。
     def viewBytes(glb: Glb, viewIndex: Int32): Result[String, Vector[Int8]] =
         forM (
-            view <- objectAt("bufferViews", viewIndex, glb#json);
+            view <- entryAt("bufferViews", viewIndex, glb#bufferViews);
             bin <- glb#bin |> Option.toOk("glTF: BIN のチャンクが無い");
             length <- intOf("byteLength", view) |> Option.toOk("glTF: bufferViews[${viewIndex}] に byteLength が無い");
             offset <- Ok(Option.getWithDefault(0, intOf("byteOffset", view)));
             _ <- require(offset >= 0 and length >= 0 and offset + length <= bin#length, "glTF: bufferViews[${viewIndex}] が BIN の外を指す")
-        ) yield Vector.slice(start = bin#start + offset, end = bin#start + offset + length, glb#bytes)
+        ) yield copyRange(bin#start + offset, bin#start + offset + length, glb#bytes)
 
     /// 材質 index 1 つ（材質の番号ごとに 1 回）:
     ///
@@ -450,8 +453,8 @@ pub mod Gltf {
             case Some(_) if Option.getWithDefault(0, intOf("texCoord", info)) != 0 =>
                 (None, "glTF: texCoord が 0 でない絵を読み飛ばした（TEXCOORD_0 だけを読む）" :: transformLine)
             case Some(k) =>
-                let texture = objectsOf("textures", glb#json) |> Vector.nth(k) |> Option.getWithDefault(Map.empty());
-                let sampler = intOf("sampler", texture) |> Option.flatMap(sk -> Vector.nth(sk, objectsOf("samplers", glb#json)))
+                let texture = glb#textures |> Vector.nth(k) |> Option.getWithDefault(Map.empty());
+                let sampler = intOf("sampler", texture) |> Option.flatMap(sk -> Vector.nth(sk, glb#samplers))
                     |> Option.getWithDefault(Map.empty());
                 let wraps = intOf("wrapS", sampler) :: intOf("wrapT", sampler) :: Nil;
                 let mirroredLine = if (List.exists(w -> w == Some(33648), wraps))
@@ -475,16 +478,6 @@ pub mod Gltf {
 
     def i16(bytes: Vector[Int8], i: Int32): Int32 = let v = u16(bytes, i); if (v >= 32768) v - 65536 else v
 
-    /// IEEE 754 の単精度のビットから組む。
-    // WhyNot: java.lang.Float.intBitsToFloat を呼ばない — Java の呼び出しは IO の効果が付き、純粋な読み込みにならない。
-    def float32OfBits(bits: Int32): Float64 =
-        let sign = if (bits < 0) -1.0 else 1.0;
-        let exponent = Int32.bitwiseAnd(Int32.logicalRightShift(dist = 23, bits), 0xFF);
-        let mantissa = Int32.toFloat64(Int32.bitwiseAnd(bits, 0x7FFFFF));
-        if (exponent == 0) sign * mantissa * Float64.pow(base = 2.0, -149.0)
-        else if (exponent == 255) (if (mantissa == 0.0) sign * Float64.positiveInfinity() else Float64.nan())
-        else sign * (1.0 + mantissa / 8388608.0) * Float64.pow(base = 2.0, Int32.toFloat64(exponent - 127))
-
     def require(cond: Bool, message: String): Result[String, Unit] = if (cond) Ok(()) else Err(message)
 
     // ── チャンク ─────────────────────────────────────────────
@@ -502,7 +495,7 @@ pub mod Gltf {
 
     def readChunks(bytes: Vector[Int8], total: Int32, at: Int32, json: Option[Obj], bin: Option[{ start = Int32, length = Int32 }]): Result[String, Glb] =
         if (at >= total) match json {
-            case Some(j) => Ok({ json = j, bytes = bytes, bin = bin })
+            case Some(j) => Ok(glbOf(j, bytes, bin))
             case None => Err("GLB: JSON のチャンクが無い")
         }
         else if (total - at < 8) Err("GLB: チャンクの頭が途中で切れている")
@@ -518,9 +511,15 @@ pub mod Gltf {
             else readChunks(bytes, total, start + length, json, bin)
         }
 
+    def glbOf(json: Obj, bytes: Vector[Int8], bin: Option[{ start = Int32, length = Int32 }]): Glb =
+        { json = json, bytes = bytes, bin = bin,
+          accessors = objectsOf("accessors", json), bufferViews = objectsOf("bufferViews", json), images = objectsOf("images", json),
+          meshes = objectsOf("meshes", json), materials = objectsOf("materials", json), textures = objectsOf("textures", json),
+          samplers = objectsOf("samplers", json), skins = objectsOf("skins", json) }
+
     // 後ろの空白の詰め物は trim で落ちる。
     def parseJson(bytes: Vector[Int8], start: Int32, length: Int32): Result[String, Obj] =
-        let text = String.fromBytes(Vector.slice(start = start, end = start + length, bytes)) |> String.trim;
+        let text = String.fromBytes(copyRange(start, start + length, bytes)) |> String.trim;
         match Util.Json.parse(text) {
             case Ok(JObject(m)) => Ok(m)
             case Ok(_) => Err("GLB: JSON の頭がオブジェクトでない")
@@ -547,8 +546,9 @@ pub mod Gltf {
         case _ => Map.empty()
     }
 
-    def objectAt(kind: String, index: Int32, o: Obj): Result[String, Obj] =
-        Vector.nth(index, objectsOf(kind, o)) |> Option.toOk("glTF: ${kind}[${index}] が無い")
+    /// items（Glb の配列）の index 番目。kind は知らせに書く配列の名前。
+    def entryAt(kind: String, index: Int32, items: Vector[Obj]): Result[String, Obj] =
+        Vector.nth(index, items) |> Option.toOk("glTF: ${kind}[${index}] が無い")
 
     def intOf(key: String, o: Obj): Option[Int32] = match Map.get(key, o) {
         case Some(JNumber(d)) => BigDecimal.tryToInt32(d)
@@ -617,10 +617,10 @@ pub mod Gltf {
 
     def readAccessor(glb: Glb, index: Int32): Result[String, Accessor] =
         forM (
-            acc <- objectAt("accessors", index, glb#json);
+            acc <- entryAt("accessors", index, glb#accessors);
             _ <- require(not Map.memberOf("sparse", acc), "glTF: accessors[${index}] の sparse は読まない");
             viewIndex <- intOf("bufferView", acc) |> Option.toOk("glTF: accessors[${index}] に bufferView が無い");
-            view <- objectAt("bufferViews", viewIndex, glb#json);
+            view <- entryAt("bufferViews", viewIndex, glb#bufferViews);
             _ <- require(Option.getWithDefault(0, intOf("buffer", view)) == 0, "glTF: bufferViews[${viewIndex}] が buffers[0] 以外を指す");
             bin <- glb#bin |> Option.toOk("glTF: BIN のチャンクが無い");
             width <- widthOfType(stringOf("type", acc));
@@ -705,7 +705,7 @@ pub mod Gltf {
 
     def buildSkin(glb: Glb, nodes: Vector[Obj], parentOf: Map[Int32, Int32], skinIndex: Int32): Result[String, SkinBuild] =
         forM (
-            skinObj <- objectAt("skins", skinIndex, glb#json);
+            skinObj <- entryAt("skins", skinIndex, glb#skins);
             jointNodes <- Ok(intsOf("joints", skinObj));
             _ <- require(Vector.length(jointNodes) > 0, "glTF: skins[${skinIndex}] にジョイントが無い");
             _ <- require(Vector.length(jointNodes) <= Skin3d.maxJoints(),
@@ -753,7 +753,7 @@ pub mod Gltf {
                     acc <- readAccessorWidth(glb, index, 16, "inverseBindMatrices");
                     _ <- require(acc#count == count, "glTF: inverseBindMatrices の数 ${acc#count} がジョイントの数 ${count} と違う");
                     mats <- Vector.toList(Vector.range(0, count)) |> Result.traverse(k ->
-                                Mat4.ofColumns(Vector.slice(start = k * 16, end = k * 16 + 16, acc#values)))
+                                Mat4.ofColumns(copyRange(k * 16, k * 16 + 16, acc#values)))
                 ) yield List.toVector(mats)
         }
 
@@ -854,7 +854,7 @@ pub mod Gltf {
     /// mesh の全部の primitive の POSITION の min と max（engine の座標）。accessor の min / max があればそれを、無ければ頂点から求める。
     /// X の反転で min と max の x が入れ替わるので、反転した後で組み直す。読めない primitive は数えない（全部読めなければ None）。
     def localBoundsOfMesh(glb: Glb, meshIndex: Int32): Option[Mesh3d.Bounds] =
-        let prims = objectAt("meshes", meshIndex, glb#json) |> Result.toOption |> Option.map(m -> objectsOf("primitives", m))
+        let prims = entryAt("meshes", meshIndex, glb#meshes) |> Result.toOption |> Option.map(m -> objectsOf("primitives", m))
             |> Option.getWithDefault(Vector.empty());
         prims |> Vector.toList
             |> List.filterMap(prim -> intOf("POSITION", objectOf("attributes", prim)) |> Option.flatMap(positionBoundsOf(glb)))
@@ -863,7 +863,7 @@ pub mod Gltf {
 
     def positionBoundsOf(glb: Glb, accessorIndex: Int32): Option[Mesh3d.Bounds] =
         let declared = forM (
-            acc <- objectAt("accessors", accessorIndex, glb#json) |> Result.toOption;
+            acc <- entryAt("accessors", accessorIndex, glb#accessors) |> Result.toOption;
             low <- numbersOf("min", 3, acc) |> Result.toOption |> Option.flatMap(identity);
             high <- numbersOf("max", 3, acc) |> Result.toOption |> Option.flatMap(identity)
         ) yield (Gltf.Internal.vec3At(low, 0), Gltf.Internal.vec3At(high, 0));
@@ -912,7 +912,7 @@ pub mod Gltf {
         forM (
             placement <- placementR;
             meshIndex <- intOf("mesh", node) |> Option.toOk("glTF: nodes[${i}] の mesh が数でない");
-            meshObj <- objectAt("meshes", meshIndex, glb#json);
+            meshObj <- entryAt("meshes", meshIndex, glb#meshes);
             parts <- objectsOf("primitives", meshObj) |> Vector.toList |> Result.traverse(prim -> readPrimitive(read, glb, fst(placement), snd(placement), prim))
         ) yield parts
 
@@ -952,7 +952,7 @@ pub mod Gltf {
     /// COLOR_0 を読む（読める形と型は Gltf.Internal.colorAccessorProblem）。無ければ None・読めない時は使わずに 1 行知らせる。
     def vertexColorsOf(glb: Glb, attributes: Obj, count: Int32): Option[Accessor] =
         intOf("COLOR_0", attributes) |> Option.flatMap(k -> {
-            let normalized = objectAt("accessors", k, glb#json) |> Result.toOption |> Option.exists(acc -> Map.get("normalized", acc) == Some(Util.Json.Json.JBool(true)));
+            let normalized = entryAt("accessors", k, glb#accessors) |> Result.toOption |> Option.exists(acc -> Map.get("normalized", acc) == Some(Util.Json.Json.JBool(true)));
             let checked = readAccessor(glb, k) |> Result.flatMap(a ->
                 Gltf.Internal.colorAccessorProblem(a#width, a#componentType, normalized) |> Option.map(Err) |> Option.getWithDefault(Ok(a)));
             match checked {
@@ -1029,7 +1029,7 @@ pub mod Gltf {
                     case Some(rgba) => Vector.take(3, rgba) |> Vector.map(c -> Float64.max(0.0, Float64.min(1.0, c)))
                         |> Vector.map(c -> if (linear) Texture3d.linearToSrgb(c) else c)
                     case None => white
-                }, numbersOf("baseColorFactor", 4, objectOf("pbrMetallicRoughness", material))), objectAt("materials", k, glb#json))
+                }, numbersOf("baseColorFactor", 4, objectOf("pbrMetallicRoughness", material))), entryAt("materials", k, glb#materials))
         }
 
     /// 法線の無い primitive は、三角形ごとに頂点を分けて面の法線を付ける（glTF の表は外から見て反時計回り）。
@@ -1167,7 +1167,7 @@ pub mod Gltf {
             case Some("CUBICSPLINE") =>
                 if (Vector.length(values) != count * 3 * width) Err("glTF: CUBICSPLINE の output が times の数 × 3 でない")
                 else Ok((AnimationClip3d.Interpolation.Linear,
-                         Vector.range(0, count) |> Vector.flatMap(k -> Vector.slice(start = (k * 3 + 1) * width, end = (k * 3 + 2) * width, values))))
+                         Vector.range(0, count) |> Vector.flatMap(k -> copyRange((k * 3 + 1) * width, (k * 3 + 2) * width, values))))
             case Some(other) => Err("glTF: interpolation ${other} は読まない")
         }
 

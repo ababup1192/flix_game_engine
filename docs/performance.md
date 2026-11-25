@@ -179,6 +179,13 @@ engine / engine_world の `pub` は、このリポジトリの外にある独立
 
 見えない側は**測らない**と決め切る。守るのはユニットテストだけになる。
 
+### lint で拾えない隠れた二乗の形（呼んだ関数の中にある）
+
+`lint-quadratic` はループの中に書いた字を見るので、呼んだ関数の中の二乗とコピーは拾えない。glb の読み込み（`Gltf`）で 1 束 78 ms を食っていた 2 つ:
+
+- **番号で引く関数が、呼ぶたびに配列を作り直す**: `objectAt(kind, i, json)` が `objectsOf(kind, json)` で accessor 1,915 個の Vector をそのたびに作っていた。配列は読んだ時に 1 回だけ取り出して型に持たせる（`Gltf.Glb` の `accessors` など）
+- **標準の `Vector.slice`・`take`・`drop`・`splitAt` は Vector 全体を配列へコピーしてから切る**（flix.jar の `Vector.flix`）。大きな Vector から何度も切ると、切る回数 × 全体の長さだけ写す（1.5 MB の束から絵 46 枚で 70 MB）。切る分だけ写す関数（`Gltf.Internal.copyRange`）を使う。短い Vector の `take` は害が無いので止めない
+
 ### 時間で測るとき
 
 熱スロットリングで 4 割方遅く出るので、倍率の閾値は成立しない。**N を 100 / 200 / 400 / 800 と
