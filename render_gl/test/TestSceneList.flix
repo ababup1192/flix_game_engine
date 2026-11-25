@@ -282,6 +282,50 @@ mod Render3d.TestSceneList {
         let instances = on(uvMesh, shared) :: on(triangle(2.0), shared) :: skinned :: on(uvMesh, shared) :: on(triangle(2.0), shared) :: skinned :: Nil;
         Assert.assertEq(expected = referenceOrder(instances), groupedOrder(instances))
 
+    /// 同じ材質の値と同じ形の値を何度も使う入力（分け方を使い回す道）でも、候補の並びは見本と同じ。
+    /// 中身が同じで値の違う材質・材質の無い物・半透明（1 体ずつの候補）・間引いた物を混ぜる。
+    @Test
+    def testReusedValuesMatchTheReference(): Unit \ {Assert, IO} =
+        let (x, y) = (triangle(1.0), triangle(2.0));
+        let (red, blue) = (materialOf(0.1), materialOf(0.9));
+        let glass = materialOf(0.5) |> Scene3d.withAlphaBlend(true);
+        let plain = (mesh: Mesh3d.Mesh3d) -> Scene3d.meshInstance(mesh, Mat4.identity());
+        let behind = Scene3d.meshInstance(x, Mat4.translate(Vec3.v3(0.0, 0.0, -50.0))) |> Scene3d.withMaterial(red);
+        let instances = on(x, red) :: on(x, red) :: on(y, red) :: plain(x) :: on(x, blue) :: on(x, glass) :: on(x, red) :: behind :: on(x, materialOf(0.1))
+            :: plain(x) :: on(x, glass) :: on(y, red) :: plain(y) :: on(x, blue) :: Nil;
+        Assert.assertEq(expected = referenceOrder(instances), groupedOrder(instances))
+
+    /// DrawMode.OneByOne では、同じ材質の値と同じ形の値の物も 1 体ずつの候補になる（使い回しで 1 つにまとめない）。
+    @Test
+    def testOneByOneKeepsReusedValuesApart(): Unit \ {Assert, IO} =
+        let red = materialOf(0.1);
+        let x = triangle(1.0);
+        let scenes = groupScenes(freshPlanner(Render3d.DrawMode.OneByOne), caps(false), 1, cmdOf(sceneOf(on(x, red) :: on(x, red) :: Scene3d.meshInstance(x, Mat4.identity()) :: Scene3d.meshInstance(x, Mat4.identity()) :: Nil)) :: Nil)#scenes;
+        Assert.assertEq(expected = 1 :: 1 :: 1 :: 1 :: Nil, scenes |> List.flatMap(s -> List.map(g -> g#batch#count, s#groups)))
+
+    /// 詰めた 1 体の 32 個は、Mat4.toColumns（world）と Mat4.normalMatrix の列・tint の線形の値とビットで同じ（軸ごとに違う伸び・白と白でない tint）。
+    @Test
+    def testPackedValuesMatchMatrixColumns(): Unit \ {Assert, IO} =
+        let world = Mat4.mul(Mat4.translate(Vec3.v3(1.5, -2.0, 3.25)), Mat4.mul(Mat4.rotateY(0.7), Mat4.mul(Mat4.rotateX(-0.3), Mat4.scale(Vec3.v3(0.5, 2.0, 1.25)))));
+        let packed = (tint: Color) -> {
+            let d = { fields = Scene3d.instanceFieldsOf(Scene3d.meshInstance(triangle(1.0), world) |> Scene3d.withTint(tint)), pose = None, poseRow = 0, culled = false };
+            let out = FloatBuffer.allocate(32);
+            let scratch = Array.repeat(Static, 32, 0.0f32);
+            Render3d.InstanceValues.packDraw(out, scratch, PackMode.Lit, d);
+            List.range(0, 32) |> List.map(i -> out.get(i))
+        };
+        let f = RenderUtil.f32;
+        let normal = Mat4.toColumns(Mat4.normalMatrix(world));
+        let expectedFor = (tint: Color) -> {
+            let lin = Texture3d.srgbToLinearColor(tint);
+            let cols = Mat4.toColumns(world) |> Vector.toList |> List.map(f);
+            let n = List.range(0, 12) |> List.map(i -> if (i == 3) 1.0f32 else if (i == 7) 0.0f32 else f(Vector.get(i, normal)));
+            cols ::: n ::: (f(lin#r) :: f(lin#g) :: f(lin#b) :: 0.0f32 :: Nil)
+        };
+        let white = Color.rgb(1.0, 1.0, 1.0);
+        let warm = Color.rgb(0.8, 0.4, 0.2);
+        Assert.assertEq(expected = (expectedFor(white), expectedFor(warm)), (packed(white), packed(warm)))
+
     /// 版と木の鍵が同じでも木の違う材質（木の鍵の衝突）は、候補の頭の確かめで別の番号になり、同じ材質は同じ番号のまま。
     @Test
     def testCollidingTreeKeyAsksSeparately(): Unit \ {Assert, IO} =

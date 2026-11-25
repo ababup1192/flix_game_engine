@@ -67,20 +67,62 @@ pub mod Render3d.InstanceValues {
 
     /// d の 1 体ごとの値を scratch（1 体の長さ）へ組み、out の今の位置へ 1 回で詰める。ShadowDepth は法線と tint の所へ前の物の値を残す。
     pub def packDraw(out: FloatBuffer, scratch: Array[Float32, Static], mode: PackMode, d: MeshDraw): Unit \ IO =
-        let world = d#fields#world;
-        Mat4.toColumns(world) |> Vector.forEachWithIndex((i, v) -> Array.put(RenderUtil.f32(v), i, scratch));
+        let fields = d#fields;
+        let m = Mat4.asRows(fields#world);
+        putColumns(m, scratch, 0);
         match mode {
             case PackMode.Lit =>
-                Mat4.toColumns(Mat4.normalMatrix(world)) |> Vector.forEachWithIndex((i, v) -> if (i < 12) Array.put(RenderUtil.f32(v), 16 + i, scratch) else ());
+                putNormalColumns(m, scratch);
                 Array.put(RenderUtil.f32(emissionIntensityOf(d)), 19, scratch);
-                let tint = Texture3d.srgbToLinearColor(d#fields#tint);
-                Array.put(RenderUtil.f32(tint#r), 28, scratch);
-                Array.put(RenderUtil.f32(tint#g), 29, scratch);
-                Array.put(RenderUtil.f32(tint#b), 30, scratch)
+                putTint(fields#tint, scratch)
             case PackMode.ShadowDepth => ()
         };
         Array.put(Int32.toFloat32(d#poseRow), 23, scratch);
         discard out.put(scratch)
+
+    // 行優先の m を列優先で scratch[0..15] へ（Mat4.toColumns と同じ並び）。
+    // WhyNot: Mat4.toColumns を通さない — 1 体ごとに 16 個の Vector を作り、物が万を超える場面で確保と GC が 1 コマの何割にもなる。
+    def putColumns(m: Vector[Float64], scratch: Array[Float32, Static], base: Int32): Unit \ IO =
+        let put = (k: Int32, i: Int32) -> Array.put(Float64.truncateToFloat32(Vector.get(i, m)), base + k, scratch);
+        put(0, 0); put(1, 4); put(2, 8); put(3, 12);
+        put(4, 1); put(5, 5); put(6, 9); put(7, 13);
+        put(8, 2); put(9, 6); put(10, 10); put(11, 14);
+        put(12, 3); put(13, 7); put(14, 11); put(15, 15)
+
+    // Mat4.normalMatrix の列優先の 12 個（w の所は 0）を scratch[16..27] へ。式と足す順は Mat4.normalMatrix と同じ（丸めを変えない）。
+    def putNormalColumns(m: Vector[Float64], scratch: Array[Float32, Static]): Unit \ IO =
+        let at = (i: Int32) -> Vector.get(i, m);
+        let a = at(0); let b = at(1); let c = at(2);
+        let d = at(4); let e = at(5); let f = at(6);
+        let g = at(8); let h = at(9); let i = at(10);
+        let c00 = e * i - f * h;
+        let c01 = f * g - d * i;
+        let c02 = d * h - e * g;
+        let c10 = c * h - b * i;
+        let c11 = a * i - c * g;
+        let c12 = b * g - a * h;
+        let c20 = b * f - c * e;
+        let c21 = c * d - a * f;
+        let c22 = a * e - b * d;
+        let det = a * c00 + b * c01 + c * c02;
+        let s = if (Float64.abs(det) < 1.0e-12) 1.0 else 1.0 / det;
+        let put = (k: Int32, v: Float64) -> Array.put(RenderUtil.f32(v), k, scratch);
+        put(16, c00 * s); put(17, c10 * s); put(18, c20 * s); put(19, 0.0);
+        put(20, c01 * s); put(21, c11 * s); put(22, c21 * s); put(23, 0.0);
+        put(24, c02 * s); put(25, c12 * s); put(26, c22 * s); put(27, 0.0)
+
+    // WhyNot: 白の tint で pow を回さない — 物の多くは白のままで、srgbToLinear(1) は 1 ちょうど。
+    def putTint(c: Color, scratch: Array[Float32, Static]): Unit \ IO =
+        if (c#r == 1.0 and c#g == 1.0 and c#b == 1.0) {
+            Array.put(1.0f32, 28, scratch);
+            Array.put(1.0f32, 29, scratch);
+            Array.put(1.0f32, 30, scratch)
+        } else {
+            let tint = Texture3d.srgbToLinearColor(c);
+            Array.put(RenderUtil.f32(tint#r), 28, scratch);
+            Array.put(RenderUtil.f32(tint#g), 29, scratch);
+            Array.put(RenderUtil.f32(tint#b), 30, scratch)
+        }
 
     def emissionIntensityOf(d: MeshDraw): Float64 =
         d#fields#material |> Option.map(m -> Scene3d.materialFieldsOf(m)#emissionIntensity) |> Option.getWithDefault(1.0)

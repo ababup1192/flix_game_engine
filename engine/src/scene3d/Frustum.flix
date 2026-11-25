@@ -46,6 +46,29 @@ pub mod Frustum {
     pub def intersectsBox(f: Frustum, min: Vec3.Vec3, max: Vec3.Vec3, world: Mat4.Mat4): Bool =
         let FrustumData.FrustumData(planes) = f;
         let m = Mat4.asRows(world);
+        isSphereInside(planes, m, min, max) or cornersIntersect(planes, m, min, max)
+
+    // 箱を囲む球が 6 つの面の内側に余裕を持って収まるか（収まれば角を写さずに「掛かる」と言える）。
+    // 球の半径は箱の対角の半分 × 3×3 の部分の Frobenius の長さ（どの向きの伸びよりも大きい）。
+    // WhyNot: 余裕に margin を足さない — 角の判定は「margin より外」で外と言うので、球を 0 の内側に収めれば丸めがずれても角の判定と答えが食い違わない。
+    def isSphereInside(planes: Vector[Float64], m: Vector[Float64], min: Vec3.Vec3, max: Vec3.Vec3): Bool =
+        let cx = (min#x + max#x) * 0.5; let cy = (min#y + max#y) * 0.5; let cz = (min#z + max#z) * 0.5;
+        let hx = (max#x - min#x) * 0.5; let hy = (max#y - min#y) * 0.5; let hz = (max#z - min#z) * 0.5;
+        let sq = (i: Int32) -> Vector.get(i, m) * Vector.get(i, m);
+        let stretch = Num.sqrt(sq(0) + sq(1) + sq(2) + sq(4) + sq(5) + sq(6) + sq(8) + sq(9) + sq(10));
+        let reach = Num.sqrt(hx * hx + hy * hy + hz * hz) * stretch * 1.000001 + 1.0e-9;
+        let wx = rowAt(m, 0, cx, cy, cz); let wy = rowAt(m, 4, cx, cy, cz); let wz = rowAt(m, 8, cx, cy, cz);
+        isSpherePastAll(planes, wx, wy, wz, reach, 0)
+
+    def isSpherePastAll(planes: Vector[Float64], x: Float64, y: Float64, z: Float64, reach: Float64, i: Int32): Bool =
+        if (i >= 6) true
+        else {
+            let o = i * planeStride();
+            Vector.get(o, planes) * x + Vector.get(o + 1, planes) * y + Vector.get(o + 2, planes) * z + Vector.get(o + 3, planes) >= reach
+                and isSpherePastAll(planes, x, y, z, reach, i + 1)
+        }
+
+    def cornersIntersect(planes: Vector[Float64], m: Vector[Float64], min: Vec3.Vec3, max: Vec3.Vec3): Bool =
         let x0 = min#x; let y0 = min#y; let z0 = min#z;
         let x1 = max#x; let y1 = max#y; let z1 = max#z;
         let corners = Vector#{ rowAt(m, 0, x0, y0, z0), rowAt(m, 4, x0, y0, z0), rowAt(m, 8, x0, y0, z0),

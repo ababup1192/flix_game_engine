@@ -1,6 +1,7 @@
 // Render3d.ScenePlan — 3D の描き手（Render3d）の、prepare の中で場面を描く物へ分ける所（計画の側。GL を呼ばない）。描く順（半透明の物の遠い順も）と姿勢の行はここで決まる。約束は Render3d.flix の頭。
 // WhyNot: backend を計画の中から呼ばない — 計画が GL を知ることになり、WebGPU の backend が同じ計画を使えない。描き先の能力と材質の答えは値で受け取る（groupScenes の後・planScenes の前に backend が材質を引く）。
 mod Render3d.ScenePlan {
+    import java.lang.Integer
     import java.lang.Object
     import java.util.HashMap
     import java.util.IdentityHashMap
@@ -310,13 +311,14 @@ mod Render3d.ScenePlan {
 
     def freshSplit(): Split \ IO =
         { buckets = (new HashMap(): HashMap[String, Object]), firstTexture = MutList.empty(Static), subCount = MutList.empty(Static),
-          extraSubs = Ref.fresh(Static, (Map.empty(): Map[(Int32, Int32), Int32])) }
+          extraSubs = Ref.fresh(Static, (Map.empty(): Map[(Int32, Int32), Int32])), plainSeen = new IdentityHashMap() }
 
     /// (形, 鍵) の候補の番号を振る控え。buckets = 形の鍵の字 → (batch の鍵の番号 → 候補の番号)・firstTexture = 候補ごとの最初の絵の並びの番号・
-    /// subCount = 候補ごとの絵の並びの数・extraSubs = (候補, 2 つ目からの絵の並び) → その中の番号。
+    /// subCount = 候補ごとの絵の並びの数・extraSubs = (候補, 2 つ目からの絵の並び) → その中の番号・
+    /// plainSeen = 姿勢・lightmap の無い物の、材質の値（参照）→ 形の値（参照）→ その組を初めて分けた物の番号（seenByMeshOf）。
     pub type alias Split = {
         buckets = HashMap[String, Object], firstTexture = MutList[Int32, Static], subCount = MutList[Int32, Static],
-        extraSubs = Ref[Map[(Int32, Int32), Int32], Static]
+        extraSubs = Ref[Map[(Int32, Int32), Int32], Static], plainSeen = IdentityHashMap[Object, Object]
     }
 
     def placeFrom(g: Grouping, split: Split, placed: Array[Scene3d.Instance3d, Static], draws: Array[MeshDraw, Static], placements: Array[Placement, Static],
@@ -332,6 +334,44 @@ mod Render3d.ScenePlan {
     @DontInline
     def placeOne(g: Grouping, split: Split, placed: Array[Scene3d.Instance3d, Static], draws: Array[MeshDraw, Static], placements: Array[Placement, Static],
                  levels: Array[Int32, Static], subs: Array[Int32, Static], i: Int32): Unit \ IO =
+        let item = Array.get(i, placed);
+        let fields = Scene3d.instanceFieldsOf(item);
+        let plain = Option.isEmpty(fields#pose) and Option.isEmpty(fields#lightmap);
+        let byMesh = if (plain) Some(seenByMeshOf(split#plainSeen, fields#material)) else None;
+        let seen = byMesh |> Option.map(m -> seenIndexOf(m, unchecked_cast(fields#mesh as Object))) |> Option.getWithDefault(-1);
+        // WhyNot: batch の鍵の無い分け方（DrawMode.OneByOne）を使い回さない — 鍵の無い物は 1 体ずつ別の候補にする決まり。
+        if (seen >= 0 and Array.get(seen, placements)#key >= 0) {
+            Array.put({ fields = fields, pose = None, poseRow = 0, culled = (g#outside)(item) }, i, draws);
+            Array.put(Array.get(seen, placements), i, placements);
+            Array.put(Array.get(seen, levels), i, levels);
+            Array.put(Array.get(seen, subs), i, subs)
+        } else {
+            placeFresh(g, split, placed, draws, placements, levels, subs, i);
+            byMesh |> Option.forEach(m -> discard m.put(unchecked_cast(fields#mesh as Object), unchecked_cast(Integer.valueOf(i) as Object)))
+        };
+        ()
+
+    // 材質の値（参照・無ければ控えそのものを鍵にする）ごとの、形の値（参照）→ 初めて分けた物の番号の表。
+    def seenByMeshOf(seen: IdentityHashMap[Object, Object], material: Option[Scene3d.Material3d]): IdentityHashMap[Object, Object] \ IO =
+        let key = match material {
+            case Some(m) => unchecked_cast(m as Object)
+            case None    => unchecked_cast(seen as Object)
+        };
+        let found = seen.get(key);
+        if (Objects.isNull(found)) {
+            let made: IdentityHashMap[Object, Object] = new IdentityHashMap();
+            discard seen.put(key, unchecked_cast(made as Object));
+            made
+        } else unchecked_cast(found as IdentityHashMap[Object, Object])
+
+    def seenIndexOf(seen: IdentityHashMap[Object, Object], key: Object): Int32 \ IO =
+        let found = seen.get(key);
+        if (Objects.isNull(found)) -1 else unchecked_cast(found as Integer).intValue()
+
+    // 姿勢・lightmap の無い物で、同じ材質の値と同じ形の値の組を前に分けた物があれば、その分け方と候補の番号をそのまま使う（placeOne）。初めての組はここで決める。
+    // WhyNot: 2 つ目からの同じ形で batchKeyOf・表の引き・形の鍵の字の引きをやり直さない — どれも形と材質だけで決まり、1 万個の物では 1 コマの数 ms になる。
+    def placeFresh(g: Grouping, split: Split, placed: Array[Scene3d.Instance3d, Static], draws: Array[MeshDraw, Static], placements: Array[Placement, Static],
+                   levels: Array[Int32, Static], subs: Array[Int32, Static], i: Int32): Unit \ IO =
         let item = Array.get(i, placed);
         Scene3d.lightmapWarning(item) |> Option.forEach(line ->
             warnOnce(g#planner, "lightmap:" + line + Mesh3d.contentHash(Scene3d.instanceFieldsOf(item)#mesh), line));

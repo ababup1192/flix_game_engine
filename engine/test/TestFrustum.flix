@@ -125,3 +125,41 @@ mod TestFrustum {
         case Err(e) => bug!(e)
     }
 }
+
+// 箱を囲む球の先の判定（Frustum.intersectsBox）が、角 8 つだけで決めた答え（Frustum.cornersIntersect）と同じになるか。
+mod Frustum.TestSphereShortcut {
+
+    def camera(): Camera3d.Camera3d = { eye = Vec3.v3(1.0, 2.0, -3.0), yaw = 0.4, pitch = 0.2, fovY = 1.0, near = 0.5, far = 60.0, lensShift = Vec2.zero() }
+
+    // 0 以上 1 未満の数の並び（同じ種からいつも同じ並び）。
+    def unitAt(seed: Int32, k: Int32): Float64 =
+        let x = Int32.modulo(seed * 1103515245 + k * 12345 + 1013904223, 1000003);
+        Int32.toFloat64(x) / 1000003.0
+
+    // i 番目の箱と行列（大きさ・向き・軸ごとに違う伸び・視錐台の中・外・面にかかる所へばらまく）。
+    def caseAt(i: Int32): (Vec3.Vec3, Vec3.Vec3, Mat4.Mat4) =
+        let u = (k: Int32) -> unitAt(i, k);
+        let half = Vec3.v3(0.05 + 3.0 * u(1), 0.05 + 3.0 * u(2), 0.05 + 3.0 * u(3));
+        let center = Vec3.v3(u(4) - 0.5, u(5) - 0.5, u(6) - 0.5);
+        let at = Vec3.v3(80.0 * u(7) - 40.0, 40.0 * u(8) - 20.0, 90.0 * u(9) - 20.0);
+        let world = Mat4.mul(Mat4.translate(at), Mat4.mul(Mat4.rotateY(6.0 * u(10)), Mat4.mul(Mat4.rotateX(6.0 * u(11)), Mat4.scale(Vec3.v3(0.2 + 2.0 * u(12), 0.2 + 2.0 * u(13), 0.2 + 2.0 * u(14))))));
+        (Vec3.sub(center, half), Vec3.add(center, half), world)
+
+    /// ばらまいた 1,000 個の箱（中・外・面にかかる物を含む）で、球の先の判定を通した答えと角だけの答えが同じ。
+    @Test
+    def testSphereShortcutAgreesWithCorners(): Unit \ Assert =
+        let f = Camera3d.frustum(camera(), 16.0 / 9.0);
+        let Frustum.FrustumData.FrustumData(planes) = f;
+        let disagree = List.range(0, 1000) |> List.filter(i -> {
+            let (lo, hi, world) = caseAt(i);
+            Frustum.intersectsBox(f, lo, hi, world) != Frustum.cornersIntersect(planes, Mat4.asRows(world), lo, hi)
+        });
+        Assert.assertEq(expected = Nil, disagree)
+
+    /// ばらまいた箱には、中・外の両方の答えがある（上の比べが片方の答えだけで済んでいない）。
+    @Test
+    def testScatteredBoxesCoverBothAnswers(): Unit \ Assert =
+        let f = Camera3d.frustum(camera(), 16.0 / 9.0);
+        let answers = List.range(0, 1000) |> List.map(i -> { let (lo, hi, world) = caseAt(i); Frustum.intersectsBox(f, lo, hi, world) });
+        Assert.assertEq(expected = (true, true), (List.exists(identity, answers), List.exists(a -> not a, answers)))
+}
