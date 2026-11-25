@@ -9,7 +9,11 @@
 #                draw call・3D の描き手の CPU の区間）を出し、4 区間で閉じる（GL の確かめと重さを測る用。垂直同期は切る）
 #   make run SCENE=field … 小さな箱と柱を格子に並べた場面（src/Field.flix）。つまみ:
 #                COUNT=1000（物の数）・SHAPES=1（形の種類。each で物ごとに違う形）・MATS=1（材質の種類）・MOVING=100（動く物の %）・
-#                ALPHA=0（半透明の物の %）・SHADOW=1（太陽の影）・GROUP=1（動かない物を Scene3d.staticGroup の集まり 1 つで渡す）。FRAMES=240 で 1 区間で測るコマ数・REPEAT=4 で同じ条件を続けて測る回数
+#                ALPHA=0（半透明の物の %）・SHADOW=1（太陽の影）・GROUP=1（動かない物を Scene3d.staticGroup の集まり 1 つで渡す）。FRAMES=240 で 1 区間で測るコマ数・REPEAT=4 で同じ条件を続けて測る回数・
+#                VERTS=24（形ごとの頂点の数の目安。箱の面を割って増やす）
+#   make run FIRST=1 … 初めての 1 回（src/First.flix）: 物を置かずに回した後に集まりを初めて載せるコマ（区間 first）・同じ名前の別の値の集まりへ替えるコマ（rebuild）の
+#                最悪（frame_max・split_max・draw_max）を出す。Field のつまみ（COUNT・SHAPES・MATS・VERTS）が効く。起動し直して 3 回流す
+#   make run FIRST=skin … 集まりを頭から載せ、途中で骨つきの人物（PERSON=<glb>・既定は retro3d-horror-starter の teacher_woman）を出すコマ（区間 skin）の最悪
 #   make run SCENE=orb POST=agx … 光る球の場面（view transform の見比べ。POST は standard / agx / neutral）
 #   make run POST=1 … 同じ場面に画面全体の後がけ（App.withPostStack・夕方の屋外の preset）を掛ける（後がけの重さを POST なしと並べる）
 #   make run POST=haze … POST=1 に床から立つ陽炎（PostStack.Distortion）を足す（歪みの Pass の重さを POST=1 と並べる）

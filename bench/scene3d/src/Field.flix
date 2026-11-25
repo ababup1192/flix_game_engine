@@ -10,10 +10,12 @@ mod Field {
     }
 
     /// つまみ。count = 物の数・materials = 材質の種類・movingPercent = 毎コマ位置と向きを変える物の割合（%）・
-    /// translucentPercent = 半透明の物の割合（%）・sunShadow = 太陽の影を落とすか・staticGroup = 動かない物を Scene3d.staticGroup の集まり 1 つで渡すか。
-    pub type alias Config = { count = Int32, shapes = Shapes, materials = Int32, movingPercent = Int32, translucentPercent = Int32, sunShadow = Bool, staticGroup = Bool }
+    /// translucentPercent = 半透明の物の割合（%）・sunShadow = 太陽の影を落とすか・staticGroup = 動かない物を Scene3d.staticGroup の集まり 1 つで渡すか・
+    /// faceGrid = 箱の面 1 つを何 × 何の四角に割るか（1 = 割らない。形ごとの頂点の数を寄せる）。
+    pub type alias Config = { count = Int32, shapes = Shapes, materials = Int32, movingPercent = Int32, translucentPercent = Int32, sunShadow = Bool, staticGroup = Bool,
+                              faceGrid = Int32 }
 
-    /// つまみの表（n・shapes = 数か each・mats・moving・alpha・shadow = 1 で影あり・group = 1 で動かない物を集まりに）を読む。
+    /// つまみの表（n・shapes = 数か each・mats・moving・alpha・shadow = 1 で影あり・group = 1 で動かない物を集まりに・verts = 形ごとの頂点の数の目安）を読む。
     pub def configOf(knobs: Map[String, String]): Config =
         { count = Int32.max(1, BenchRun.intKnob("n", 1000, knobs)),
           shapes = if (Map.get("shapes", knobs) == Some("each")) Shapes.PerObject else Shapes.Shared(Int32.max(1, BenchRun.intKnob("shapes", 1, knobs))),
@@ -21,7 +23,12 @@ mod Field {
           movingPercent = BenchRun.intKnob("moving", 100, knobs),
           translucentPercent = BenchRun.intKnob("alpha", 0, knobs),
           sunShadow = Map.get("shadow", knobs) == Some("1"),
-          staticGroup = Map.get("group", knobs) == Some("1") }
+          staticGroup = Map.get("group", knobs) == Some("1"),
+          faceGrid = faceGridOf(BenchRun.intKnob("verts", 24, knobs)) }
+
+    /// 頂点の数の目安 verts に近づく面の割り方（箱は 6 面 × 割った四角 × 4 頂点）。
+    def faceGridOf(verts: Int32): Int32 =
+        Float64.ceil(Num.sqrt(Int32.toFloat64(Int32.max(24, verts)) / 24.0)) |> Float64.tryToInt32 |> Option.getWithDefault(1)
 
     /// 結果の行に足すつまみ（JSON の値）。
     pub def knobFields(c: Config): List[(String, String)] =
@@ -31,7 +38,7 @@ mod Field {
         };
         ("n", Int32.toString(c#count)) :: ("shapes", shapes) :: ("mats", Int32.toString(c#materials)) ::
         ("moving", Int32.toString(c#movingPercent)) :: ("alpha", Int32.toString(c#translucentPercent)) ::
-        ("shadow", if (c#sunShadow) "1" else "0") :: ("group", if (c#staticGroup) "1" else "0") :: Nil
+        ("shadow", if (c#sunShadow) "1" else "0") :: ("group", if (c#staticGroup) "1" else "0") :: ("verts", Int32.toString(24 * c#faceGrid * c#faceGrid)) :: Nil
 
     /// 描き物の大きさ（design px）。
     pub def design(): Vec2.Vec2 = { x = 320.0, y = 180.0 }
@@ -46,24 +53,36 @@ mod Field {
     def quad(a: Vec3.Vec3, b: Vec3.Vec3, c: Vec3.Vec3, d: Vec3.Vec3, color: Color): Mesh3d.Polygon =
         { points = a :: b :: c :: d :: Nil, color = color }
 
+    /// 四角 a b c d を grid × grid の四角に割った列。
+    def gridQuads(grid: Int32, a: Vec3.Vec3, b: Vec3.Vec3, c: Vec3.Vec3, d: Vec3.Vec3, color: Color): List[Mesh3d.Polygon] =
+        let n = Int32.toFloat64(grid);
+        let mix = (p: Vec3.Vec3, q: Vec3.Vec3, t: Float64) -> Vec3.add(p, Vec3.mul(Vec3.sub(q, p), t));
+        let at = (u: Float64, v: Float64) -> mix(mix(a, b, v), mix(d, c, v), u);
+        List.range(0, grid * grid) |> List.map(k -> {
+            let (u0, v0) = (Int32.toFloat64(Int32.modulo(k, grid)) / n, Int32.toFloat64(k / grid) / n);
+            let (u1, v1) = (u0 + 1.0 / n, v0 + 1.0 / n);
+            quad(at(u0, v0), at(u0, v1), at(u1, v1), at(u1, v0), color)
+        })
+
     /// 底の真ん中が原点の箱（6 面とも外を向く）。half = 幅と奥行きの半分・height = 高さ。
-    def boxMesh(halfW: Float64, height: Float64, halfD: Float64): Mesh3d.Mesh3d =
+    def boxMesh(grid: Int32, halfW: Float64, height: Float64, halfD: Float64): Mesh3d.Mesh3d =
         let (x0, y0, z0) = (0.0 - halfW, 0.0, 0.0 - halfD);
         let (x1, y1, z1) = (halfW, height, halfD);
         let v = Vec3.v3;
         let (top, side, front) = (Color.rgb(1.0, 1.0, 1.0), Color.rgb(0.78, 0.78, 0.78), Color.rgb(0.62, 0.62, 0.62));
-        Mesh3d.fromPolygons(
-            quad(v(x0, y1, z0), v(x0, y1, z1), v(x1, y1, z1), v(x1, y1, z0), top) ::
-            quad(v(x0, y0, z0), v(x1, y0, z0), v(x1, y0, z1), v(x0, y0, z1), front) ::
-            quad(v(x1, y0, z1), v(x1, y1, z1), v(x0, y1, z1), v(x0, y0, z1), front) ::
-            quad(v(x0, y0, z0), v(x0, y1, z0), v(x1, y1, z0), v(x1, y0, z0), front) ::
-            quad(v(x1, y0, z0), v(x1, y1, z0), v(x1, y1, z1), v(x1, y0, z1), side) ::
-            quad(v(x0, y0, z1), v(x0, y1, z1), v(x0, y1, z0), v(x0, y0, z0), side) :: Nil)
+        let face = gridQuads(grid);
+        Mesh3d.fromPolygons(List.flatten(
+            face(v(x0, y1, z0), v(x0, y1, z1), v(x1, y1, z1), v(x1, y1, z0), top) ::
+            face(v(x0, y0, z0), v(x1, y0, z0), v(x1, y0, z1), v(x0, y0, z1), front) ::
+            face(v(x1, y0, z1), v(x1, y1, z1), v(x0, y1, z1), v(x0, y0, z1), front) ::
+            face(v(x0, y0, z0), v(x0, y1, z0), v(x1, y1, z0), v(x1, y0, z0), front) ::
+            face(v(x1, y0, z0), v(x1, y1, z0), v(x1, y1, z1), v(x1, y0, z1), side) ::
+            face(v(x0, y0, z1), v(x0, y1, z1), v(x0, y1, z0), v(x0, y0, z0), side) :: Nil))
 
     /// k 番目の形（寸法は k で決まる。低い箱から細い柱まで）。
-    def shapeOf(k: Int32): Mesh3d.Mesh3d =
+    pub def shapeOf(grid: Int32, k: Int32): Mesh3d.Mesh3d =
         let f = Int32.toFloat64(k);
-        boxMesh(0.35 + 0.6 * fract(f * 0.61803), 0.5 + 2.5 * fract(f * 0.2716), 0.35 + 0.6 * fract(f * 0.7548))
+        boxMesh(grid, 0.35 + 0.6 * fract(f * 0.61803), 0.5 + 2.5 * fract(f * 0.2716), 0.35 + 0.6 * fract(f * 0.7548))
 
     def shapeCount(c: Config): Int32 = match c#shapes {
         case Shapes.Shared(k) => k
@@ -109,7 +128,7 @@ mod Field {
     pub def kitOf(c: Config): Kit =
         let side = sideOf(c#count);
         let extent = Int32.toFloat64(side) * spacing();
-        let shapes = Vector.range(0, shapeCount(c)) |> Vector.map(shapeOf);
+        let shapes = Vector.range(0, shapeCount(c)) |> Vector.map(shapeOf(c#faceGrid));
         let opaque = Vector.range(0, c#materials) |> Vector.map(materialOf(false));
         let translucent = Vector.range(0, c#materials) |> Vector.map(materialOf(true));
         let placed = List.range(0, c#count) |> List.map(i -> {

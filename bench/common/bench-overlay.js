@@ -38,14 +38,15 @@
   var metricKeys = { frames: 1, frame_avg: 1, frame_p50: 1, frame_p95: 1, frame_p99: 1, work_p50: 1, work_p95: 1, submit_p50: 1, submit_p95: 1,
     swap_p50: 1, gpu_p50: 1, gpu_frames: 1, draw_items: 1, instances: 1, drawn: 1, draw_calls: 1, cpu_phases: 1,
     draw2d_calls: 1, draw2d_breaks: 1, draw3d_breaks: 1,
-    cpu_frames: 1, cpu_mean: 1, cpu_p50: 1, cpu_p95: 1, raf_lag_p50: 1 };
+    cpu_frames: 1, cpu_mean: 1, cpu_p50: 1, cpu_p95: 1, cpu_max: 1, raf_lag_p50: 1,
+    frame_max: 1, split_max: 1, draw_max: 1, preload_max: 1 };
 
   function resultLine(r) {
     // WhyNot: 門の結果（bench/webgpu_check の頁）に測りの欄を並べない — 測った値を持たず、undefined が並ぶだけになる。
     if (typeof r.ok === "boolean") return (r.ok ? "OK " : "NG ") + r.name + "\n  " + r.detail;
     var knobs = Object.keys(r).filter(function (k) { return !metricKeys[k] && k !== "bench"; })
       .map(function (k) { return k + "=" + r[k]; }).join(" ");
-    var line = knobs + "\n  cpu p50 " + r.cpu_p50 + " / p95 " + r.cpu_p95 + " ms   frame p50 " + r.frame_p50 + " / p95 " + r.frame_p95 +
+    var line = knobs + "\n  cpu p50 " + r.cpu_p50 + " / p95 " + r.cpu_p95 + " / max " + r.cpu_max + " ms   frame p50 " + r.frame_p50 + " / p95 " + r.frame_p95 +
       " ms   submit p50 " + r.submit_p50 + " ms";
     if (r.work_p50 > 0) line += "   work p50 " + r.work_p50 + " ms";
     line += r.draw_calls > 0 ? "\n  3D draw " + r.draw_calls + "（物 " + r.drawn + "/" + r.instances + "）" : "\n  2D の物 " + r.draw_items;
@@ -85,7 +86,7 @@
       var stats = window.fgeStats ? window.fgeStats.summary() : null;
       if (stats) {
         r.cpu_frames = stats.cpu.frames; r.cpu_mean = stats.cpu.mean; r.cpu_p50 = stats.cpu.median; r.cpu_p95 = stats.cpu.p95;
-        r.raf_lag_p50 = stats.lag.median;
+        r.cpu_max = stats.cpu.max; r.raf_lag_p50 = stats.lag.median;
       }
       bench.results.push(r);
       bench.measuring = false;

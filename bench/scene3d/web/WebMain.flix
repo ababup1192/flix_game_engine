@@ -8,7 +8,8 @@ mod WebMain {
     import fge.web.Browser
 
     def loadScene(knobs: Map[String, String]): Result[String, SceneBench.Scene] \ Fs.FileRead =
-        if (SceneBench.isField(knobs)) Ok(SceneBench.Scene.Field(Field.kitOf(Field.configOf(knobs))))
+        if (First.modeOf(knobs) == Some(First.Mode.Group)) Ok(SceneBench.Scene.First(First.kitOf(First.Mode.Group, knobs, None)))
+        else if (SceneBench.isField(knobs)) Ok(SceneBench.Scene.Field(Field.kitOf(Field.configOf(knobs))))
         else match Map.get("psx", knobs) {
             case Some(look) => Room.loadMeshes() |> Result.map(meshes -> SceneBench.Scene.PsxRoom(PsxRoom.kitOf(Room.kitOf(meshes)), look))
             case None       => Room.loadMeshes() |> Result.map(meshes -> SceneBench.Scene.Room(Room.kitOf(meshes)))
@@ -44,7 +45,7 @@ mod WebMain {
     pub def main(): Unit \ IO =
         let knobs = BenchRun.knobsOfPairs(Array.toList(Browser.queryPairs()));
         run {
-            if (Map.memberOf("scene", knobs)) measure(knobs) else show(Map.get("psx", knobs))
+            if (Map.memberOf("scene", knobs) or Map.memberOf("first", knobs)) measure(knobs) else show(Map.get("psx", knobs))
         } with WebLayer.withProject3d(".")
           with WebFs.runFileRead
           with WebFs.runFileWrite

@@ -151,3 +151,33 @@ main（6855cdb2）と直した engine を 1 本ずつ交互に 2 本ずつ（202
 
 - 点光源の影の面ではビルボードを 1 枚ずつ描くので、draw call が「板 × 面 × 灯り」で増える（4 本で 1,304）。重さの大半はこれで、まとめて描く（instancing）のは後の仕事。
 
+
+## 初めての 1 回（`make run FIRST=1|skin`・plans/engine-first-use-hitches.md）
+
+測った日 2026-11-25 / Apple M4 Pro・macOS / WebGPU（PC は Dawn・ブラウザは Chrome 156 のヘッドレス）/ engine 0.112.0 / 起動し直して 3 回（「a / b / c」）。
+つまみ `COUNT=300 SHAPES=137 MATS=8 VERTS=600`（形 137 種・1 形 600 頂点・材質 8 種の物 300 個を集まり 1 つに）。ブラウザは `make bench-web BENCH=scene3d ARGS='scene=field&first=1&n=300&shapes=137&mats=8&verts=600'`。
+PC の frame は `frame#dt`（この機械の窓は 120 Hz に張り付き、ふだんのコマが 8.3 ms に見える）。ブラウザの cpu は `fgeStats` の 1 コマの CPU の最大。split・draw は 3D の描き手の CPU の区間の最大。
+
+| 区間 | PC frame max | PC split max | PC draw max | ブラウザ cpu max | ブラウザ split max |
+|---|---|---|---|---|---|
+| first（集まりを初めて載せたコマ） | 59.5 / 56.7 / 68.1 | 46.7 / 44.2 / 53.5 | 11.5 / 11.5 / 13.1 | 58.8 / 58.4 / 56.8 | 55.0 / 54.7 / 53.3 |
+| steady（同じ集まり） | 9.3 / 9.1 / 9.4 | 0.3 / 0.2 / 0.6 | 0.9 / 0.6 / 1.0 | 1.8 / 1.4 / 1.6 | 0.3 / 0.3 / 0.3 |
+| rebuild（別の値・新しい形の集まりへ替えたコマ） | 30.5 / 31.0 / 32.0 | 26.7 / 26.9 / 27.9 | 1.7 / 1.6 / 1.7 | 62.7 / 64.1 / 63.6 | 60.8 / 61.9 / 61.6 |
+| skin（骨つきの人物が初めて出たコマ・`FIRST=skin`） | 17.7 / 24.1 / 24.0 | 9.9 / 14.9 / 14.8 | 5.8 / 6.1 / 6.2 | — | — |
+
+split の中（一時的に区間を切って 1 回測った値。ms・PC / ブラウザ）:
+
+| 仕事 | first PC | rebuild PC | first ブラウザ |
+|---|---|---|---|
+| 候補分け（`groupCarried`） | 7.7〜9.6 | 3.7〜5.3 | 10.5 |
+| 材質の program と pipeline（`resolve`） | 7.9〜8.7 | 0（組んである） | 10.9 |
+| 1 体ごとの値を詰める（`numberSpan`） | 2.0 | 1.1〜1.4 | 0.7 |
+| 場面と影の行（`buildSceneList`・`buildShadowList`） | 5.1 | 4.1〜5.0 | 4.2 |
+| 形の控え（`slotsOf`） | 0.4〜0.5 | 0.4 | 0.4 |
+| 上の残り（純粋な仕事: 形の中身の鍵・`splitGroups`・`materialsInOrder`） | 5.5〜8 | 8〜12 | 約 35 |
+| 形を GPU に作る（`uploadRows`） | 16.1〜16.6 | 9.0〜10.1 | 8.9 |
+| Draw の側: 集まりの bundle を積む（`recordBundle`） | 9.3〜9.4 | 1.2 | 2.0 |
+| Draw の側: 場面の形式の材質の pipeline | 1.9 | 0 | — |
+
+- 1 コマで全部作るので、PC で 1 体ごとの値・行・形の作成・材質の program が同じコマに重なる。ブラウザは純粋な仕事（中身の鍵の SHA-256 を含む）が半分を超える。
+- 置き場が捨てた回数（`meshEvictions`）はどの区間も 0。

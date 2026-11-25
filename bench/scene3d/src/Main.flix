@@ -3,6 +3,7 @@
 //   物を並べた場面（SCENE=field）… Field のつまみ（Makefile の頭）で物の数・形・材質・動く割合・半透明・影を替える
 //   書斎の場面（SCENE=study）… 実写スキャンの家具（Poly Haven の glb。MODELS=<フォルダ>・既定 ../../build/polyhaven-glb・git に入れない）の卓に光る球・燭台・ランタン（src/Study.flix）
 //   夜の街灯の場面（SCENE=lamps）… 街灯 8 本・SHADOWS=n で影を落とす灯りの数（0 = 影なし）・MAPSIZE・PCF（src/Lighting.flix）
+//   初めての 1 回（FIRST=1 / FIRST=skin）… Field の場面で、集まりを初めて載せる・別の値へ替える・骨つきの人物を出すコマの最悪を測る（src/First.flix）
 //   光る球の場面（SCENE=orb）… 暗い部屋に強く光る緑の球・ろうそく・赤い瓶・本（src/Orb.flix。view transform の見比べ用）
 // PSX=dither|full で部屋を PS1 風の描き方（Scene3d.PsxLook・src/PsxRoom.flix）で描く（Design の解像度・板目の床。PSX=off は同じ場面を切って描く）。
 // POST=1 で画面全体の後がけ（App.withPostStack の夕方の屋外の preset）を掛ける（後がけの重さを前後で比べる・PostStack の手本）。
@@ -10,7 +11,7 @@
 use fge::LwjglLayer
 
 mod SceneBench {
-    use fge::{App, Clock, Color, LwjglLayer, Num, PostStack, Render, Scene3d}
+    use fge::{App, Clock, Color, Gltf, HeadlessLoad, LwjglLayer, Num, PostStack, Render, Scene3d}
 
     import java.lang.System
 
@@ -22,11 +23,12 @@ mod SceneBench {
         case Orb
         case Study(Study.Kit)
         case Lamps(Lighting.Config)
+        case First(First.Kit)
     }
 
-    pub type alias World = { t = Float64, now = Clock.Time[Clock.Real], progress = BenchRun.Run }
+    pub type alias World = { t = Float64, now = Clock.Time[Clock.Real], progress = BenchRun.Run, first = First.Run }
 
-    pub def initialWorld(): World = { t = 0.0, now = Clock.zero(), progress = BenchRun.start() }
+    pub def initialWorld(): World = { t = 0.0, now = Clock.zero(), progress = BenchRun.start(), first = First.start() }
 
     /// 起動直後は JIT とメッシュの初めての上げで dt が荒れるため、各区間の頭を捨てる。
     def warmup(): Int32 = 60
@@ -49,6 +51,7 @@ mod SceneBench {
             case Scene.Field(kit) => List.append(head, ("scene", BenchRun.quoted("field")) :: Field.knobFields(kit#config))
             case Scene.Orb        => List.append(head, ("scene", BenchRun.quoted("orb")) :: Nil)
             case Scene.Study(_)   => List.append(head, ("scene", BenchRun.quoted("study")) :: Nil)
+            case Scene.First(kit) => List.append(head, ("scene", BenchRun.quoted("first")) :: Field.knobFields(kit#field#config))
             case Scene.Lamps(cfg) =>
                 let shadowed = cfg#shadows |> Option.map(m -> m#maxShadowedLights) |> Option.getWithDefault(0);
                 let size = cfg#shadows |> Option.map(m -> m#mapSize) |> Option.getWithDefault(0);
@@ -56,9 +59,16 @@ mod SceneBench {
                                   ("mapSize", Int32.toString(size)) :: ("crowd", Int32.toString(cfg#crowd)) :: Nil)
         }
 
-    pub def step(plan: BenchRun.Plan, emit: String -> Unit \ IO, scene: Scene, frame: App.Frame, w: World): World \ IO =
+    pub def step(plan: BenchRun.Plan, emit: String -> Unit \ IO, scene: Scene, frame: App.Frame, w: World): World \ IO = match scene {
+        case Scene.First(kit) =>
+            let first = First.advance(kit, emit, knobsOf(scene, 0), First.sampleOf(frame), w#first);
+            { t = w#t + frame#dt, now = frame#realNow, first = first, progress = { done = first#done | w#progress } | w }
+        case _ => stepBench(plan, emit, scene, frame, w)
+    }
+
+    def stepBench(plan: BenchRun.Plan, emit: String -> Unit \ IO, scene: Scene, frame: App.Frame, w: World): World \ IO =
         if (w#progress#done) w
-        else { t = w#t + frame#dt, now = frame#realNow, progress = BenchRun.advance(plan, emit, knobsOf(scene), BenchRun.sampleOf(frame, 0.0), w#progress) }
+        else { t = w#t + frame#dt, now = frame#realNow, progress = BenchRun.advance(plan, emit, knobsOf(scene), BenchRun.sampleOf(frame, 0.0), w#progress) | w }
 
     pub def items(scene: Scene, w: World): List[Render.PlacedItem] = match scene {
         case Scene.Room(kit)  => Room.items(kit, yawAt(w#t))
@@ -67,6 +77,7 @@ mod SceneBench {
         case Scene.Orb        => Orb.items(0.0)
         case Scene.Study(kit) => Study.items(kit)
         case Scene.Lamps(cfg) => Lighting.lampsItems(cfg, w#t)
+        case Scene.First(kit) => First.items(kit, w#first#frame, w#t)
     }
 
     /// 夜の街灯の場面のつまみ（shadows = 影を落とす灯りの数・0 で影なし・mapsize・pcf）。
@@ -117,7 +128,8 @@ mod SceneBench {
     }
 
     def loadScene(knobs: Map[String, String]): Result[String, Scene] \ Fs.FileRead + IO =
-        if (isField(knobs)) Ok(Scene.Field(Field.kitOf(Field.configOf(knobs))))
+        if (Option.nonEmpty(First.modeOf(knobs))) firstOf(knobs)
+        else if (isField(knobs)) Ok(Scene.Field(Field.kitOf(Field.configOf(knobs))))
         else if (Map.get("scene", knobs) == Some("orb")) Ok(Scene.Orb)
         else if (Map.get("scene", knobs) == Some("lamps")) Ok(Scene.Lamps(lampsConfigOf(knobs)))
         else if (Map.get("scene", knobs) == Some("study")) Study.load(Map.getWithDefault("models", "../../build/polyhaven-glb", knobs)) |> Result.map(Scene.Study)
@@ -126,10 +138,20 @@ mod SceneBench {
             case None       => Room.loadMeshes() |> Result.map(meshes -> Scene.Room(Room.kitOf(meshes)))
         }
 
+    /// 初めての 1 回の場面（first=skin なら人物の glb を つまみ person の道から読む）。
+    def firstOf(knobs: Map[String, String]): Result[String, Scene] \ Fs.FileRead + IO =
+        let mode = First.modeOf(knobs) |> Option.getWithDefault(First.Mode.Group);
+        if (mode == First.Mode.Skin) {
+            let p = Map.getWithDefault("person", "../../templates/retro3d-horror-starter/assets/characters/teacher_woman.glb", knobs);
+            Gltf.loadTexturedUsingOptions(HeadlessLoad.imageIoDecoder(), Gltf.defaultLoadOptions(), p)
+                |> Result.map(model -> Scene.First(First.kitOf(mode, knobs, Some(model))))
+        } else Ok(Scene.First(First.kitOf(mode, knobs, None)))
+
     pub def go(): Unit \ IO =
         let knobs = BenchEnv.knobs(("SCENE", "scene") :: ("COUNT", "n") :: ("SHAPES", "shapes") :: ("MATS", "mats") :: ("MOVING", "moving") ::
                                    ("ALPHA", "alpha") :: ("SHADOW", "shadow") :: ("GROUP", "group") :: ("FRAMES", "frames") :: ("REPEAT", "repeat") :: ("DIAG", "diag") :: ("POST", "post") :: ("MODELS", "models") ::
-                                   ("SHADOWS", "shadows") :: ("MAPSIZE", "mapsize") :: ("PCF", "pcf") :: ("CROWD", "crowd") :: ("PSX", "psx") :: Nil);
+                                   ("SHADOWS", "shadows") :: ("MAPSIZE", "mapsize") :: ("PCF", "pcf") :: ("CROWD", "crowd") :: ("PSX", "psx") ::
+                                   ("FIRST", "first") :: ("VERTS", "verts") :: ("PERSON", "person") :: Nil);
         run {
             match loadScene(knobs) {
                 case Err(why) =>
