@@ -132,12 +132,14 @@ mod Controls {
             |> List.map(m -> Bundles.personKey(m#model));
         List.flatten(bundleKeys :: personKeys :: (itemGlbs(res#items) |> List.map(Bundles.itemKey)) :: Nil) |> List.distinct
 
-    /// 解く予算: 今要る鍵が届いて解く順番を待っている時と、紙のマップを開いている間は、見込みを問わず 1 本解く（Covered）。
-    /// ほかは Idle（束 1 本の見込みは収まらないので始めない）。
-    // WhyNot: 届いた鍵を全部すぐ解かない — 束 1 本はスマホで数百 ms 止まる。2・3 階の束は階段の近くかマップの間まで解かない。
+    /// 解く予算: 紙のマップかアイテム画面（校舎に暗い幕が掛かる）を開いている間は Covered（1 本目は見込みを問わず始め、40 ms に満たない間続ける）。
+    /// 遊んでいる最中は、今要る鍵が届いて解く順番を待っていれば Idle(45)（見込み 35 ms の束を 1 コマに 1 本）・ほかは Idle(4)（束は始めない）。
+    // WhyNot: 遊んでいる最中に Covered を使わない — 1 本目の後も 40 ms に満たない間 2 本目を始め、半分に分けた束 2 つが同じコマで解かれて約 70 ms 止まる。
+    // WhyNot: 届いた鍵を全部すぐ解かない — 束 1 本はスマホで 100〜180 ms 止まる。2・3 階の束は階段の近くかマップの間まで解かない。
     pub def decodeBudget(res: Res.Res, w: World.World): LoadProgress.DecodeBudget =
         let downloaded = key -> BackgroundLoad.stateOf(key, res#pending) == LoadProgress.LoadState.Downloaded;
-        if (World.isMapOpen(w) or List.exists(downloaded, wantedKeys(res, w))) LoadProgress.DecodeBudget.Covered(40.0)
+        if (World.isMapOpen(w) or World.isItemsOpen(w)) LoadProgress.DecodeBudget.Covered(40.0)
+        else if (List.exists(downloaded, wantedKeys(res, w))) LoadProgress.DecodeBudget.Idle(45.0)
         else LoadProgress.DecodeBudget.Idle(4.0)
 
     /// engine の待ち（App.withLoadGate）へ渡す道: 今いる階の建物の束。届くまで前の場面のまま待つ（階段を上り切る前に止まる）。

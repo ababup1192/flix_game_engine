@@ -170,7 +170,9 @@ App.make(...)
   （1 回の値は見込みの 3 倍で頭打ち）。`Idle` で届いた鍵を 2 秒始めず、見込みが `Group#costMs` の 2 倍を超えていたら、見込みを `Group#costMs` へ戻す（解きはしない）。
   目安は glb と jpg の部屋 1 つで PC 100 ms 前後・スマホはその 3〜5 倍なので、部屋は暗転（`Covered`）で解く形にする。
   タップ待ち・タイトルの間に部屋を解きたいゲームだけが、その間を `Idle(150.0)` などへ上げる。
-  後回しの glb のうち primitive が 200 個を超える束は `bin/fge export-web` が 1 行知らせる（遊んでいる最中に届くと、解くコマがその束 1 つで止まる）。
+  **glb の束を遊んでいる最中に解く**なら、束 1 つを primitive 200 個前後にする（M4 Pro の Chrome で 1 束 35 ms 前後・ウォームアップ前は 1.8 倍・スマホは 3〜5 倍。
+  200 個を超える後回しの束は `bin/fge export-web` が 1 行知らせる）。予算は遊んでいる最中を `Idle(45)`・`costMs` を測った値（35 前後）にすると 1 コマに 1 束になる。
+  `Covered` は 1 本目の後も ms に満たない間 2 本目を始めるので（2 束で約 70 ms）、暗転中とマップを開いている間だけにする（手本は retro3d-horror-starter の `Controls.decodeBudget`）。
   ブラウザでは届いた 2D の絵を登録する量も同じ予算に従う（step が毎コマ `AssetDownloads#setBudget` へ渡し、登録に使った ms は
   `AssetDownloads#spentMs` で解く側の ms に足すので、1 コマで予算を 2 回使わない）。グループが複数あっても、前のグループが使った ms を次へ渡すので予算は 1 コマに 1 つ。
 - 解いた鍵の道の生のバイトは捨てる（`AssetDownloads#release`。まだ解いていない鍵も使う道は残す）。捨てた道は `stateOf` が `Queued` と言い、

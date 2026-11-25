@@ -374,7 +374,7 @@
       ],
       "notice": true,
       "pattern": "\\bGltf\\.(fromGlb\\w*|load\\w*|decodeWith)\\(",
-      "hint": "glb は読み込みの頭で Model3d.loader() を 1 回作り、Model3d.load(loader, 道) か Model3d.decode(loader, 道, バイト)（BackgroundLoad の decode・並列の仕事の中）で読む。鍵の有無は decode が道から決め、PBR・頂点の色・絵の上限は project.json の \"gltf\" に書く。Gltf.decodeWith は engine のテストと bench の口（engine の docs/migrations/0.114.0.md）"
+      "hint": "glb は読み込みの頭で Model3d.loader() を 1 回作り、Model3d.load(loader, 道) か Model3d.decode(loader, 道, バイト)（BackgroundLoad の decode・並列の仕事の中）で読む。鍵の有無は decode が道から決め、PBR・頂点の色・絵の上限は project.json の \"gltf\" に書く。Gltf.decodeWith は engine のテストと bench が使う API（engine の docs/migrations/0.114.0.md）"
     },
     {
       "id": "frame-literal",

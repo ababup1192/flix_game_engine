@@ -17,10 +17,10 @@ mod WebMain {
             case None       => Room.loadMeshes() |> Result.map(meshes -> SceneBench.Scene.Room(Room.kitOf(meshes)))
         }
 
-    /// assets/<glb>（既定 props_1f.glb）を解く仕事（keyed=1 なら鍵つきの読み方）。かかった ms を返す。
+    /// assets/<glb>（既定 props_a.glb・props_b.glb と合わせてテンプレートの 1 階の小物の束）を解く仕事（keyed=1 なら鍵つきの読み方）。かかった ms を返す。
     /// warm=1 なら読み込みの時に assets/entrance.glb を 1 回解いておく（ゲームが起動の束を先に解いた後の、wasm のコードが温まった状態で測る）。
     def glbJob(knobs: Map[String, String]): (Unit -> (Float64, Option[Model3d.Model3d]) \ IO) \ (Fs.FileRead + LoadProgress + IO) =
-        let path = "assets/" + (Map.get("glb", knobs) |> Option.getWithDefault("props_1f.glb"));
+        let path = "assets/" + (Map.get("glb", knobs) |> Option.getWithDefault("props_a.glb"));
         let bytes = Fs.FileRead.readBytes(path) |> Result.getWithDefault(Vector.empty());
         let decoder = LoadProgress.imageDecoder();
         let keyed = Map.get("keyed", knobs) == Some("1");

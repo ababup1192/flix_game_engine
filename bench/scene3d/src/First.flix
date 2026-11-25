@@ -2,7 +2,7 @@
 //   first=1     … 物を置かずに回した後、集まりを初めて載せる（区間 first）→ しばらく同じ物（steady）→ 同じ名前の別の値の集まりへ替える（rebuild。形も新しい）
 //   first=skin  … 集まりは頭から載せておき、途中で骨つきの人物を 1 体出す（区間 skin。人物の glb は つまみ person）
 //   first=preload … 集まりを App.withPreload3d で頭から宣言して先に作らせ（区間 ahead）、作り終えた後のコマで初めて載せる（区間 first）
-//   first=glb   … （ブラウザ版）120 コマ目に絵つきの glb（assets/props_1f.glb）を解く（区間 glb。keyed=1 で鍵つきの読み方 = 絵を機種の側に持つ）
+//   first=glb   … （ブラウザ版）120 コマ目に絵つきの glb（assets/props_a.glb）を解く（区間 glb。keyed=1 で鍵つきの読み方 = 絵を機種の側に持つ）
 // 区間ごとに 1 行の JSON（BenchRun.summaryFields に、1 コマの時間と 3D の描き手の CPU の区間の最大を足した物）を出す。起動し直して何回か流し、最悪のコマを見る。
 mod First {
     use fge::{AnimationClip3d, App, Mat4, Mesh3d, Model3d, Pose3d, Render, Scene3d, Skin3d, Vec2, Vec3}

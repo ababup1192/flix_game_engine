@@ -277,3 +277,15 @@ primitive 388・頂点 17,662・絵 46 枚 370 KB）を解き、その後のコ�
 - 解く仕事は 45% 減った。残りの差（ウォームアップ前と後の約 30 ms）は wasm のコードを初めて走らせる時の分。
 - 区間の cpu max には、解いた形を同じコマで描く split（16〜19 ms）と draw（32〜34 ms）が乗る（ゲームでは集まりを 1 コマ 8 ms ずつ作り直す側が受け持つ）。
 - `web-capture --dev capture:150`（WebGPU・WebGL2・keyed=0 と 1）で前と後の絵はバイトまで同じ。
+
+### テンプレートの束を半分に分けた後（`glb=props_a.glb`・`glb=props_b.glb`）
+
+retro3d-horror-starter の `tools/glb_bundle.py` が 1 階の小物を primitive の数で半分ずつ（`props_1f_a` 194・`props_1f_b` 194）に作るようにし、
+`assets/props_a.glb`・`assets/props_b.glb` はその束への symlink にした（`assets/props_1f.glb`（388）は束が無くなったので外した・つまみ `glb` の既定は `props_a.glb`）。3 回ずつ・起動し直して。
+
+| | 解く仕事（work_max）`warm=1` | 同 ウォームアップ前 | 区間の cpu max `warm=1` |
+|---|---|---|---|
+| props_a | 35.3 / 34.3 / 35.9 | 65.5 / 66.5 / 64.4 | 69.5 / 69.8 / 71.5 |
+| props_b | 36.2 / 36.3 / 32.7 | 62.1 / 61.7 / 61.7 | 73.9 / 71.2 / 67.0 |
+
+- 束が届いたコマの解く仕事は 40 ms 以下（M4 Pro Chrome・ウォームアップ後）。区間の cpu max には同じコマで初めて描く split（12〜13 ms）と draw（20〜23 ms）が乗る（初めて描く分は集まりを作り直す側の目標で見る）。

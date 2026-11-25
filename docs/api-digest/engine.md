@@ -640,7 +640,7 @@
   `pub type alias LoadOptions = { limits = TextureLimits, pbr = Bool, vertexColors = Bool }`
 - 上限なし・metallic・roughness を読まない・COLOR_0 を読まない。欄を書き替えて使う: `{ vertexColors = true | Gltf.defaultLoadOptions() }`。
   `pub def defaultLoadOptions(): LoadOptions`
-- .glb のバイトから、絵と材質つきで作る。ゲームは Model3d.loader / load / decode を使う（この口は engine のテストと bench が選択肢を直に渡す時のもの）。
+- .glb のバイトから、絵と材質つきで作る。ゲームは Model3d.loader / load / decode を使う（engine のテストと bench が選択肢を直に渡す時の API）。
   `pub def decodeWith(decoder: ImageData.ImageDecoder, options: LoadOptions, key: Option[String], bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO`
 
 ## GpuHandle — `engine/src/core/GpuHandle.flix`

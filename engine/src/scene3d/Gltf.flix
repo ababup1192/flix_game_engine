@@ -67,7 +67,7 @@ pub mod Gltf {
     /// 上限なし・metallic・roughness を読まない・COLOR_0 を読まない。欄を書き替えて使う: `{ vertexColors = true | Gltf.defaultLoadOptions() }`。
     pub def defaultLoadOptions(): LoadOptions = { limits = noTextureLimits(), pbr = false, vertexColors = false }
 
-    /// .glb のバイトから、絵と材質つきで作る。ゲームは Model3d.loader / load / decode を使う（この口は engine のテストと bench が選択肢を直に渡す時のもの）。
+    /// .glb のバイトから、絵と材質つきで作る。ゲームは Model3d.loader / load / decode を使う（engine のテストと bench が選択肢を直に渡す時の API）。
     /// 壊れている・読まない物を含む時は Err。TEXCOORD_0・TANGENT が読めない（数が頂点の数と違う・NaN か無限）時は、その欄を使わずに読んで 1 行知らせる。
     /// parts に材質（baseColorTexture → Scene3d.texturedMaterial・normalTexture → 法線マップ・emissive → emission・sampler の wrap）、
     /// textures に BIN に埋めた画像（decoder で解く・どの材質からも指されない絵は解かない）。baseColorFactor は頂点の色に書き込んであり、VertexColor で掛かる。
@@ -321,7 +321,7 @@ pub mod Gltf {
     /// emissive の色 c = emissiveFactor。emissiveTexture を指していなければ Solid(c)、指していて読めれば 絵の rgb × c。strength は木に入れない
     /// （線形へ戻した後に掛ける倍率。強さだけ違う材質が同じプログラムを使う）。光るかどうかは emissiveFactor × strength が 0 でないかで決める。
     /// 指しているのに読めない時は付けない（Solid へ倒すと、Blender の書き出しの factor (1, 1, 1) × 強さで物全体が真っ白に光る）。
-    /// linear が真（PBR の口）なら emissiveFactor を線形の値として読み、画面の値へ戻して持つ（baseColorOf と同じ理由）。
+    /// linear が真（LoadOptions の pbr）なら emissiveFactor を線形の値として読み、画面の値へ戻して持つ（baseColorOf と同じ理由）。
     def emissionOf(glb: Glb, images: Vector[Option[Texture3d.Texture3d]], linear: Bool, index: Int32, material: Obj): EmissionOf =
         let raw = emissiveFactorOf(material);
         let screen = (v: Float64) -> if (linear) Texture3d.linearToSrgb(v) else v;

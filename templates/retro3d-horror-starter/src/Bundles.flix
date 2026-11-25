@@ -51,7 +51,7 @@ mod Bundles {
             |> List.flatMap(Option.toList) |> List.head
 
     /// 束と人物の glb を読む Group。read は道とバイトを取るだけ・decode が glb と絵と頂点の色（COLOR_0。Blender でベイクした明るさ・project.json の "gltf"）を解く。
-    /// costMs は 1 鍵を解く見込み（PC で束 1 つ 100 ms 前後。App.withDecodeBudget の Idle では始めず、Covered で解く大きさ）。
+    /// costMs は 1 鍵を解く見込み（束 1 つ primitive 200 個前後で、M4 Pro の Chrome で 35 ms 前後・スマホは 3〜5 倍。Controls.decodeBudget の Idle(45) で 1 コマに 1 束）。
     pub def group(bundles: List[Entry], models: List[String], items: List[String], loader: Model3d.Loader): BackgroundLoad.Group[Result[String, (String, Vector[Int8])], Model3d.Model3d] =
         let keys = List.flatten((bundles |> List.map(b -> b#key)) :: (models |> List.map(personKey)) :: (items |> List.map(itemKey)) :: Nil);
         { name = "school", keys = keys, pathsOf = key -> pathOf(bundles, key) |> Option.toList,
@@ -60,7 +60,7 @@ mod Bundles {
               case None    => Err("${key}: 束の表に無い鍵")
           },
           decode = raw -> raw |> Result.flatMap(pb -> Model3d.decode(loader, fst(pb), snd(pb))),
-          costMs = 120.0 }
+          costMs = 35.0 }
 
     /// 束を根のノードごとの形に切り分ける（根の名前 → その根の下の parts だけを持つ形）。絵は束の全部を持たせる（場面には名前で重ねずに渡る: School.build）。
     pub def roots(model: Model3d.Model3d): Map[String, Model3d.Model3d] =

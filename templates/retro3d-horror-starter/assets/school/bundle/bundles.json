@@ -23,8 +23,8 @@
       "buildings": []
     },
     {
-      "key": "props_1f",
-      "path": "assets/school/bundle/props_1f.glb",
+      "key": "props_1f_a",
+      "path": "assets/school/bundle/props_1f_a.glb",
       "floors": [
         1,
         2,
@@ -33,8 +33,18 @@
       "buildings": []
     },
     {
-      "key": "upper",
-      "path": "assets/school/bundle/upper.glb",
+      "key": "props_1f_b",
+      "path": "assets/school/bundle/props_1f_b.glb",
+      "floors": [
+        1,
+        2,
+        3
+      ],
+      "buildings": []
+    },
+    {
+      "key": "upper_a",
+      "path": "assets/school/bundle/upper_a.glb",
       "floors": [
         2,
         3
@@ -43,6 +53,15 @@
         2,
         3
       ]
+    },
+    {
+      "key": "upper_b",
+      "path": "assets/school/bundle/upper_b.glb",
+      "floors": [
+        2,
+        3
+      ],
+      "buildings": []
     }
   ]
 }

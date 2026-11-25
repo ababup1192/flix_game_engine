@@ -29,10 +29,12 @@ OUT = SCHOOL / "bundle"
 # 束の分け方。起動で読むのは floor1 と entrance（ブラウザ版の後回しは project.json の web.deferred）。
 #   floor1   = 1 階の建物（昇降口から見える面の全部）
 #   entrance = 始まりの場所（layout の spawn）から ENTRANCE_REACH m の内に 1 つでも置く小物（押してすぐの場面に要る物）
-#   props_1f = ほかの 1 階の小物（2・3 階と共通の物も入る）
-#   upper    = 2・3 階の建物と、2・3 階にだけ置く小物（2・3 階の建物は同じ絵を使うので 1 つにまとめる）
+#   props_1f_a・props_1f_b = ほかの 1 階の小物を primitive の数で前と後の半分ずつ（2・3 階と共通の物も入る）
+#   upper_a・upper_b       = 2・3 階の建物と、2・3 階にだけ置く小物を primitive の数で半分ずつ（建物は前の upper_a に入る）
 # 小物は 1 つの束にだけ入る（2 階でも使う小物が entrance にあれば、2 階もその束を使う）。
-# WhyNot: 2 階と 3 階を別の束にしない — 建物どうしで絵の 7 割が同じで、分けるとその分を 2 回配る。
+# WhyNot: 後回しの束を primitive 200 個より大きくしない — 遊んでいる最中に届いた束 1 つを解くコマが止まる（M4 Pro の Chrome で
+#         200 個 35 ms 前後・388 個で 65 ms。engine の docs/startup.md の costMs の目安）。ゲームは 1 コマに 1 束だけ解く（Controls.decodeBudget）。
+# WhyNot: 2 階と 3 階の建物を別の束にしない — 建物どうしで絵の 7 割が同じで、分けるとその分を 2 回配る。
 #         階段を上る前に 1 回だけ解く方が、上の階へ着くたびに待つより短い。
 # WhyNot: 1 階の小物を全部起動に入れない — gzip で 0.9 MB・4G で約 4.5 秒延び、起動の予算（16 秒）を超える。
 #         遠くの小物は押した後の数秒で届いて足される（届くまでは建物だけ）。
@@ -52,13 +54,40 @@ def bundle_plan(layout):
     floors = {f["index"]: f["glb"] for f in layout["floors"]}
     upper_floors = sorted(i for i in floors if i != 1)
     floors_of = lambda names: sorted({f for n in names for f in on[n]})
+    prop_sources = lambda names: [f"prop_{n}.glb" for n in names]
+
+    def entry(key, sources):
+        builds = [i for i in upper_floors if floors[i] in sources]
+        names = [s[len("prop_"):-len(".glb")] for s in sources if s.startswith("prop_")]
+        return {"key": key, "floors": sorted(set(floors_of(names)) | set(builds)), "buildings": builds, "sources": sources}
+
+    first_a, first_b = halves(prop_sources(first))
+    upper_a, upper_b = halves([floors[i] for i in upper_floors] + prop_sources(upper_only))
     return [
         {"key": "floor1", "floors": [1], "buildings": [1], "sources": [floors[1]]},
-        {"key": "entrance", "floors": floors_of(entrance), "buildings": [], "sources": [f"prop_{n}.glb" for n in entrance]},
-        {"key": "props_1f", "floors": floors_of(first), "buildings": [], "sources": [f"prop_{n}.glb" for n in first]},
-        {"key": "upper", "floors": upper_floors, "buildings": upper_floors,
-         "sources": [floors[i] for i in upper_floors] + [f"prop_{n}.glb" for n in upper_only]},
+        {"key": "entrance", "floors": floors_of(entrance), "buildings": [], "sources": prop_sources(entrance)},
+        entry("props_1f_a", first_a),
+        entry("props_1f_b", first_b),
+        entry("upper_a", upper_a),
+        entry("upper_b", upper_b),
     ]
+
+
+def primitive_count(src):
+    js, _ = read_glb(SCHOOL / src)
+    return sum(len(m["primitives"]) for m in js.get("meshes", []))
+
+
+def halves(sources):
+    """sources を並びのまま前と後に分ける（primitive の数の合計が半分に一番近い所で）。"""
+    counts = [primitive_count(s) for s in sources]
+    total, run, best, cut = sum(counts), 0, None, len(sources)
+    for i, c in enumerate(counts):
+        run += c
+        gap = abs(2 * run - total)
+        if best is None or gap < best:
+            best, cut = gap, i + 1
+    return sources[:cut], sources[cut:]
 
 
 # ── glb の読み書き ──
