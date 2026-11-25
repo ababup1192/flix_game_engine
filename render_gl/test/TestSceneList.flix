@@ -237,7 +237,7 @@ mod Render3d.TestSceneList {
     /// 候補 1 つの (頭の形の鍵の字, 描く物の数, 材質の名前と絵の名前)。
     def describe(head: Render3d.MeshDraw, count: Int32): (String, Int32, String) =
         let material = head#fields#material |> Option.map(Scene3d.materialFieldsOf)
-            |> Option.map(m -> m#spec#name + ":" + (ShaderDoc.materialTexReads(m#spec, m#emission, m#metallicRoughnessShade) |> List.map(fst) |> List.join(",")))
+            |> Option.map(m -> m#spec#name + ":" + (Scene3d.materialTexReadsOf(m) |> List.map(fst) |> List.join(",")))
             |> Option.getWithDefault("");
         (Mesh3d.contentHash(head#fields#mesh), count, material)
 
@@ -434,7 +434,7 @@ mod Render3d.TestSceneList {
         };
         let numbered = (p: Render3d.ScenePlan.ScenePlan[SpanBatch]) ->
             { cmd = p#cmd, mainPass = p#mainPass, draws = { plain = List.map(unnumbered, p#draws#plain), skinned = Nil, opaque = Nil, blended = Nil, billboards = Nil }, shadowPlans = Nil };
-        let passes = plans |> List.map(p -> buildScenePasses(freshTables(), numbered(p)) |> List.map(pl -> describe(fst(pl))));
+        let passes = plans |> List.map(p -> buildScenePasses(Render3d.SceneList.contextOf(freshTables(), p#cmd#scene), numbered(p)) |> List.map(pl -> describe(fst(pl))));
         Assert.assertEq(expected = ("color" :: Nil) :: ("depth 0.5 12.0" :: Nil) :: Nil, passes)
 
     // ── 半透明 ──

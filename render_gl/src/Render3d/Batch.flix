@@ -106,7 +106,7 @@ mod Render3d.Batch {
     }
 
     def textureNamesOf(material: Option[Scene3d.MaterialFields]): List[String] =
-        material |> Option.toList |> List.flatMap(m -> ShaderDoc.materialTexReads(m#spec, m#emission, m#metallicRoughnessShade) |> List.map(fst))
+        material |> Option.toList |> List.flatMap(m -> Scene3d.materialTexReadsOf(m) |> List.map(fst))
 
     /// members（来た順）の batch。間引いた物は描かない。
     pub def batchOf(head: MeshDraw, members: List[MeshDraw]): PlannedBatch =

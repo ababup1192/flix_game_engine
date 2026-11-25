@@ -111,6 +111,39 @@ mod Render3d.TestMeshTable {
         let (victims, over) = TextureTable3d.sweep(table, destroyRecorder(log), 10i64, { count = 1, size = 1000i64 }, Set.empty());
         Assert.assertEq(expected = (TextureSlot.Scene("old") :: Nil, false, "destroy 0" :: Nil), (victims, over, Ref.get(log)))
 
+    /// 上限の内で、作っていない古い番号も無ければ、何も捨てず番号も残す。
+    @Test
+    def testTextureSweepUnderBudgetKeepsAll(): Unit \ {Assert, IO} =
+        let log = Ref.fresh(Static, Nil);
+        let table = TextureTable3d.fresh();
+        discard TextureTable3d.ensure(table, destroyRecorder(log), 1i64, TextureSlot.Scene("old"), "", made(1));
+        let result = TextureTable3d.sweep(table, destroyRecorder(log), 10i64, { count = 4, size = 1000i64 }, Set.empty());
+        Assert.assertEq(expected = ((Nil, false), Nil, 1), (result, Ref.get(log), Map.size(TextureTable3d.createdOf(table))))
+
+    /// 上限の内でも、作っていない古い番号は外し、その番号を次の鍵に使い回す。
+    @Test
+    def testTextureSweepUnderBudgetFreesStaleNumber(): Unit \ {Assert, IO} =
+        let table = TextureTable3d.fresh();
+        discard TextureTable3d.numberOf(table, 1i64, TextureSlot.Scene("never-made"));
+        discard TextureTable3d.sweep(table, noDestroy(), 10i64, { count = 4, size = 1000i64 }, Set.empty());
+        Assert.assertEq(expected = 0, TextureTable3d.numberOf(table, 10i64, TextureSlot.Scene("next")))
+
+    /// 同じ鍵を同じコマに何度引いても、使った世代は最後に引いた世代になる（上限を超えた時に捨てる順は、この世代で決まる）。
+    @Test
+    def testTextureTouchKeepsLatestGeneration(): Unit \ {Assert, IO} =
+        let table = TextureTable3d.fresh();
+        let slot = TextureSlot.Scene("k");
+        discard TextureTable3d.ensure(table, noDestroy(), 1i64, slot, "", made(1));
+        discard TextureTable3d.numberOf(table, 5i64, slot);
+        discard TextureTable3d.numberOf(table, 5i64, slot);
+        Assert.assertEq(expected = Some(5i64), Map.get(slot, TextureTable3d.createdOf(table)) |> Option.map(e -> { let (_, _, used) = e; used }))
+
+    /// mip の作り方の鍵の字は Mip.Average の ToString と同じ（先に上げた絵の鍵と合わせる）。
+    @Test
+    def testMipKeyMatchesAverageName(): Unit \ Assert =
+        Assert.assertEq(expected = (ToString.toString(Mip.Average.SrgbCurve), ToString.toString(Mip.Average.Raw), "gpu"),
+                        (TextureTable3d.mipKeyOf(false, Mip.Average.SrgbCurve), TextureTable3d.mipKeyOf(false, Mip.Average.Raw), TextureTable3d.mipKeyOf(true, Mip.Average.Raw)))
+
     // ── 材質の値と版 ──
 
     /// 段の数は 1 × 1 まで半分ずつ（8 × 4 → 8×4・4×2・2×1・1×1 の 4 段）。

@@ -8,7 +8,7 @@ mod Render3d.ShadowMaps {
     use Render3d.{ShadowLight, ShadowPlan, maxShadowMapSize, maxShadowPcfRadius}
     use Render3d.Batch.{MeshBatch}
     use Render3d.ScenePlan.{Planner, ScenePlan, warnShadowOnce}
-    use Render3d.SceneList.{SceneList, Tables}
+    use Render3d.SceneList.{SceneList}
 
     /// 影の地図の描き先 1 枚の鍵: Key(一辺の画素, 同じ prepare の中で同じ一辺の何枚目か)・Atlas(幅, 高さ, 同じ prepare の中で同じ大きさの atlas の何枚目か)
     /// （点光源の影の atlas。Scene3d.PointShadows.Atlas）。作るのは keyOf と atlasKeyOf。
@@ -131,10 +131,9 @@ mod Render3d.ShadowMaps {
         }
 
     /// 1 体ごとの値の番号を振り終えた場面の計画 plan の影の材料を、uses（assign の答えの、その場面の分）の描き先へ描く pass にする（同じ並び）。
-    /// 行の形の番号は tables で振る（GPU には作らない）。
-    pub def buildPasses(tables: Tables, uses: List[ShadowMapUse], plan: ScenePlan[MeshBatch]): List[ShadowPass] \ IO =
+    /// 行の形の番号は ctx（plan の場面の Render3d.SceneList.contextOf）で振る（GPU には作らない）。
+    pub def buildPasses(ctx: Render3d.SceneList.Context, uses: List[ShadowMapUse], plan: ScenePlan[MeshBatch]): List[ShadowPass] \ IO =
         let scene = plan#cmd#scene;
-        let ctx = Render3d.SceneList.contextOf(tables, scene);
         let right = Scene3d.billboardShadowRightOfScene(scene);
         List.zip(uses, plan#shadowPlans) |> List.map(pair -> passOf(ctx, scene, right, pair))
 

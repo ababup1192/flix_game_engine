@@ -52,7 +52,7 @@ pub mod Render3d.WebGpuRenderer {
     use Render3d.InstanceValues.{PackMode, numberSpan}
     use Render3d.Light.{lightDataOf}
     use Render3d.ScenePlan.{Group, GroupedScene, MaterialRequest, PlanCaps, Planner, ScenePassSpec, ScenePlan, freshPlanner, groupScenesWith, isSkinned, planScenes}
-    use Render3d.SceneList.{SceneList, ScenePasses, buildScenePasses}
+    use Render3d.SceneList.{SceneList, ScenePasses, buildScenePasses, contextWith, sourceOf}
     use Render3d.Counts.{Phase, countDrawCallAt, countInstances, noteMaterialBuild, timed}
     use Render3d.MeshTable
     use Render3d.PoseRows.{PoseRows, floatCountOf, packRows, posesInRowOrder}
@@ -643,10 +643,10 @@ pub mod Render3d.WebGpuRenderer {
     def stageScene(r: Renderer, host: Host, target: SceneTarget, inputs: PrepareInputs, plan: ScenePlan[SpanBatch], uses: List[ShadowMapUse],
                    carried: List[Carried]): Staged \ IO =
         let RendererData.RendererData(s) = r;
-        let (passes, shadows, instances) = numberInstances(r, host, inputs#members, plan, uses);
+        let source = sourceOf(host#textureOf, plan#cmd#scene);
+        let (passes, shadows, instances) = numberInstances(r, host, source, inputs#members, plan, uses);
         let gen = Array.get(0, s#gen);
         let allocator = countingAllocator(r);
-        let source = { textureOf = host#textureOf, own = plan#cmd#scene#textures |> List.map(t -> (Texture3d.name(t), t)) |> List.toMap };
         passes |> List.forEach(match (_, list) -> {
             uploadRows(s#meshes, allocator, gen, list);
             WebGpuMaterials.uploadTextures(s#materials, source, registeredOf(r, host), gen, list)
@@ -844,8 +844,8 @@ pub mod Render3d.WebGpuRenderer {
         }
 
     /// 場面の頂点の色の batch・骨つきの batch・材質の batch（半透明も）と、影の地図の batch（world と姿勢の行だけ）に 1 体ごとの値の番号を振って CPU の入れ物へ詰め、
-    /// 計画の pass ごとの行の列と、uses の描き先への影の地図の pass と、詰めた値（送るのは呼ぶ側）を返す。
-    def numberInstances(r: Renderer, host: Host, members: MutList[MeshDraw, Static], plan: ScenePlan[SpanBatch], uses: List[ShadowMapUse]):
+    /// 計画の pass ごとの行の列と、uses の描き先への影の地図の pass と、詰めた値（送るのは呼ぶ側）を返す。source = 場面の絵を引く元（SceneList.sourceOf・host#textureOf）。
+    def numberInstances(r: Renderer, host: Host, source: TextureSource, members: MutList[MeshDraw, Static], plan: ScenePlan[SpanBatch], uses: List[ShadowMapUse]):
             (ScenePasses, List[ShadowPass], { data = ByteBuffer, bytes = Int32 }) \ IO =
         let RendererData.RendererData(s) = r;
         let bytes = Render3d.InstanceValues.countOf(plan) * Render3dWgsl.instanceBytes();
@@ -854,8 +854,8 @@ pub mod Render3d.WebGpuRenderer {
         let next = Array#{0} @ Static;
         let numbered = Render3d.InstanceValues.mapBatches(mode -> numberSpan(out, s#scratch, Int32.maxValue(), next, members, mode), plan);
         let tables = tablesOf(r, host);
-        let passes = buildScenePasses(tables, numbered);
-        (passes, Render3d.ShadowMaps.buildPasses(tables, uses, numbered), { data = raw, bytes = bytes })
+        let ctx = contextWith(tables, source, numbered#cmd#scene);
+        (buildScenePasses(ctx, numbered), Render3d.ShadowMaps.buildPasses(ctx, uses, numbered), { data = raw, bytes = bytes })
 
     /// bytes を書ける 1 体ごとの値の CPU の入れ物（足りなければ要る大きさか倍の大きい方へ作り直す）。
     def cpuInstancesFor(r: Renderer, bytes: Int32): ByteBuffer \ IO =

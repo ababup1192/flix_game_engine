@@ -37,6 +37,7 @@ pub mod Render3d.WebGpuMaterials {
     import fge.webgpu.WebGpu
     import java.nio.ByteBuffer
     import java.nio.ByteOrder
+    import java.util.HashSet
     use Render3d.{MeshDraw, ProgramKind, TextureSlot, TextureSource, materialKey}
     use Render3d.MaterialValues
     use Render3d.ScenePlan.{MaterialRequest}
@@ -282,7 +283,7 @@ pub mod Render3d.WebGpuMaterials {
     /// 行 list の材質の行が読む絵を作る（無ければ）。source = 場面の textures と全体の登録・textureById = 登録の絵の番号 → 2D の描き手の texture・
     /// gen = 今の世代。描き始める前に呼ぶ。
     pub def uploadTextures(m: Materials, source: TextureSource, registered: Registered, gen: Int64, list: SceneList): Unit \ IO =
-        uploadTexturesFrom(m, { source = source, registered = registered, gen = gen }, list, 0, rowCountOf(list))
+        uploadTexturesFrom(m, uploadsOf(source, registered, gen), list, 0, rowCountOf(list))
 
     def uploadTexturesFrom(m: Materials, up: TextureUploads, list: SceneList, row: Int32, n: Int32): Unit \ IO =
         if (row >= n) ()
@@ -294,15 +295,27 @@ pub mod Render3d.WebGpuMaterials {
 
     /// uploadTextures の、行 rows の材質の絵だけを作る形（持ち越した行のうち、値を分け合わない行・Render3d.StaticRows）。
     pub def uploadTexturesAt(m: Materials, source: TextureSource, registered: Registered, gen: Int64, list: SceneList, rows: Vector[Int32]): Unit \ IO =
-        let up = { source = source, registered = registered, gen = gen };
+        let up = uploadsOf(source, registered, gen);
         rows |> Vector.forEach(row -> materialAt(list, row) |> Option.forEach(f -> uploadRowTextures(m, up, list, row, f)))
 
-    /// uploadTextures の 1 回で行をまたいで変わらない物。
-    type alias TextureUploads = { source = TextureSource, registered = Registered, gen = Int64 }
+    /// uploadTextures の 1 回で行をまたいで変わらない物。srgbSeen・linearSeen = この 1 回で作り終えた絵の名前（mip のレベルを平均する色空間ごと。
+    /// 同じ名前で同じ色空間なら表の鍵も同じ）。
+    // WhyNot: 作り終えた名前を回をまたいで控えない — source（場面の textures）は回ごとに違い、別の場面では同じ名前が見つからない事がある。
+    // WhyNot: 控えを Flix の Set にしない — 鍵の比べと木の道で、引くたびに割り当てる。名前の String は材質の値が持つ物で、HashSet は引くだけなら割り当てない。
+    type alias TextureUploads = { source = TextureSource, registered = Registered, gen = Int64, srgbSeen = HashSet[String], linearSeen = HashSet[String] }
 
+    def uploadsOf(source: TextureSource, registered: Registered, gen: Int64): TextureUploads \ IO =
+        { source = source, registered = registered, gen = gen, srgbSeen = new HashSet(), linearSeen = new HashSet() }
+
+    /// 行 row の reads と同じ並び（材質の絵 → 法線マップ → lightmap）で絵を作る。材質の絵の枚数は reads の数から法線マップと lightmap を引いた数。
     def uploadRowTextures(m: Materials, up: TextureUploads, list: SceneList, row: Int32, f: Scene3d.MaterialFields): Unit \ IO =
-        let readsWith = (colorCount: Int32) -> textureReadsOf(f, colorCount, hasFlag(list, row, flagNormalMap()), hasFlag(list, row, flagLightmap()), headAt(list, row));
-        readsWith(readCountAt(list, row) - List.length(readsWith(0))) |> List.forEach(match (name, textureUse) -> ensureTexture(m, up, name, textureUse))
+        let normal = if (hasFlag(list, row, flagNormalMap())) f#normalMap else None;
+        let baked = if (hasFlag(list, row, flagLightmap())) Scene3d.lightmapOfFields(headAt(list, row)#fields) else None;
+        let colorCount = readCountAt(list, row) - (if (Option.isEmpty(normal)) 0 else 1) - (if (Option.isEmpty(baked)) 0 else 1);
+        Scene3d.materialTexReadsOf(f) |> List.forEachWithIndex((k, nf) ->
+            if (k < colorCount) ensureTexture(m, up, fst(nf), Texture3d.TextureUse.MaterialTexture) else ());
+        normal |> Option.forEach(n -> ensureTexture(m, up, n#texture, Texture3d.TextureUse.NormalMap));
+        baked |> Option.forEach(lm -> ensureTexture(m, up, lm#texture, Texture3d.TextureUse.Lightmap(lm#colorSpace)))
 
     /// 材質 f で頭の物 head を描く時に読む絵の (名前, 使い方)（並びは材質の絵 colorCount 枚 → 法線マップ → lightmap。行の reads と同じ）。
     def textureReadsOf(f: Scene3d.MaterialFields, colorCount: Int32, normalMapped: Bool, lightmapped: Bool, head: MeshDraw): List[(String, Texture3d.TextureUse)] =
@@ -310,7 +323,7 @@ pub mod Render3d.WebGpuMaterials {
         let baked = if (lightmapped)
                         Scene3d.lightmapOfFields(head#fields) |> Option.map(lm -> (lm#texture, Texture3d.TextureUse.Lightmap(lm#colorSpace))) |> Option.toList
                     else Nil;
-        let colors = ShaderDoc.materialTexReads(f#spec, f#emission, f#metallicRoughnessShade) |> List.take(colorCount) |> List.map(nf -> (fst(nf), Texture3d.TextureUse.MaterialTexture));
+        let colors = Scene3d.materialTexReadsOf(f) |> List.take(colorCount) |> List.map(nf -> (fst(nf), Texture3d.TextureUse.MaterialTexture));
         List.flatten(colors :: normal :: baked :: Nil)
 
     /// 先に上げる材質 request（頭の物 head・形の buffer mesh）の program を組み、mp の描き先の pipeline を作り、読む絵を作って、絵の置き場の鍵を返す
@@ -324,7 +337,7 @@ pub mod Render3d.WebGpuMaterials {
             mesh |> Option.filter(b -> (not p#kind#skinned or Option.nonEmpty(b#skinAt)) and (not p#kind#lightmap or Option.nonEmpty(b#uv2At)))
                  |> Option.forEach(b -> discard pipelineOf(m, mp, p, b));
             let reads = textureReadsOf(fields, p#texCount, p#kind#normalMap, p#kind#lightmap, head);
-            let up = { source = source, registered = registered, gen = gen };
+            let up = uploadsOf(source, registered, gen);
             reads |> List.forEach(match (name, textureUse) -> ensureTexture(m, up, name, textureUse));
             let found = reads |> List.map(match (name, textureUse) -> (name, TextureTable3d.readOf(false, source, name, textureUse) |> Option.map(fst)));
             found |> List.forEach(match (name, slot) -> if (Option.isEmpty(slot) and String.startsWith(prefix = Texture3d.namePrefix(), name)) missing(name) else ());
@@ -332,11 +345,17 @@ pub mod Render3d.WebGpuMaterials {
         })
 
     /// 絵 name を表の番号で作る。場面の絵は CPU で mip のレベルを作って上げ、全体の登録の絵は 2D の描き手の texture から mip つきの写しを GPU で作る（元の絵が作り直されたら作り直す）。
+    /// up の 1 回で同じ名前と色空間を作り終えていれば何もしない。
     def ensureTexture(m: Materials, up: TextureUploads, name: String, textureUse: Texture3d.TextureUse): Unit \ IO =
+        let space = Texture3d.mipSpaceOf(textureUse);
+        let seen = if (space == Texture3d.ColorSpace.Srgb) up#srgbSeen else up#linearSeen;
+        if (seen.add(name)) ensureTextureNow(m, up, name, textureUse) else ()
+
+    def ensureTextureNow(m: Materials, up: TextureUploads, name: String, textureUse: Texture3d.TextureUse): Unit \ IO =
         let MaterialsData.MaterialsData(s) = m;
         let average = Texture3d.mipAverageOf(Texture3d.mipSpaceOf(textureUse));
         let hit = TextureTable3d.findTexture(up#source, name);
-        match (TextureTable3d.readOf(false, up#source, name, textureUse), hit) {
+        match (hit |> Option.flatMap(TextureTable3d.readOfHit(false, name, textureUse)), hit) {
             case (Some((slot, _)), Some(TextureHit.Own(t))) =>
                 discard TextureTable3d.ensure(s#textures, destroyTexture(s#store), up#gen, slot, "", handle -> { noteTextureMade(m); uploadTexture3d(m, up, handle, average, t) })
             case (Some((slot, _)), Some(TextureHit.Registered(t))) =>
@@ -363,7 +382,7 @@ pub mod Render3d.WebGpuMaterials {
     // WhyNot: 上下を返して読む全体の登録の絵（レンダーターゲット）を借りて貼る道を持たない — 環境マップの絵の名前は Scene3d.environmentMap が Texture3d から作る "tex3d:" の名前だけで、全体の登録の絵は来ない。
     pub def ensureEnvironmentTexture(m: Materials, source: TextureSource, registered: Registered, gen: Int64, name: String): Option[(Texture, Int32)] \ IO =
         let MaterialsData.MaterialsData(s) = m;
-        ensureTexture(m, { source = source, registered = registered, gen = gen }, name, Texture3d.TextureUse.MaterialTexture);
+        ensureTexture(m, uploadsOf(source, registered, gen), name, Texture3d.TextureUse.MaterialTexture);
         TextureTable3d.readOf(false, source, name, Texture3d.TextureUse.MaterialTexture)
             |> Option.flatMap(read -> Map.get(TextureTable3d.numberOf(s#textures, gen, fst(read)), Ref.get(s#store)))
             |> Option.map(g -> (g#texture, g#levels))

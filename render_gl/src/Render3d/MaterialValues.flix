@@ -67,7 +67,7 @@ mod Render3d.MaterialValues {
                 reads: Array[Int32, Static], readAt: Int32): Unit \ IO =
         let m = d#material;
         let wrap = if (m#wrap == Scene3d.Wrap.Clamp) 1 else 0;
-        let names = ShaderDoc.materialTexReads(m#spec, m#emission, m#metallicRoughnessShade) |> List.take(layout#readCount);
+        let names = Scene3d.materialTexReadsOf(m) |> List.take(layout#readCount);
         let sg = at + drawValueFloats();
         Array.put(RenderUtil.f32(time), sg, values);
         names |> List.forEachWithIndex((k, nf) -> {

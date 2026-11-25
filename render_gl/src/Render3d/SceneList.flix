@@ -46,13 +46,21 @@ mod Render3d.SceneList {
     pub type alias Context = { meshes = MeshTable.Table, layouts = MaterialValues.Layouts, naming = MaterialValues.Naming, time = Float64, flipsTargetV = Bool }
 
     /// 1 体ごとの値の番号を振り終えた場面の計画 plan を、pass ごとの行の列にする（今は場面の置いた物を描く pass 1 つ）。
-    /// 行の形と材質の絵の番号は tables で振る（GPU には作らない・lastUsed は tables#gen）。
-    pub def buildScenePasses(tables: Tables, plan: ScenePlan[MeshBatch]): ScenePasses \ IO =
-        (plan#mainPass, buildSceneList(contextOf(tables, plan#cmd#scene), plan#draws)) :: Nil
+    /// 行の形と材質の絵の番号は ctx（plan の場面の contextOf）で振る（GPU には作らない・lastUsed は Tables#gen）。
+    pub def buildScenePasses(ctx: Context, plan: ScenePlan[MeshBatch]): ScenePasses \ IO =
+        (plan#mainPass, buildSceneList(ctx, plan#draws)) :: Nil
 
-    /// 場面 scene の行を tables で作る材料。
+    /// 場面 scene の行を tables で作る材料。同じ場面の行の列と影の pass（Render3d.ShadowMaps.buildPasses）は 1 つを分け合う。
+    // WhyNot: 行の列と影の pass がそれぞれ作らない — 場面の textures の Map を毎コマ 2 回作る。
     pub def contextOf(tables: Tables, scene: Scene3d.Scene3dCmd): Context =
-        let source: TextureSource = { textureOf = tables#textureOf, own = scene#textures |> List.map(t -> (Texture3d.name(t), t)) |> List.toMap };
+        contextWith(tables, sourceOf(tables#textureOf, scene), scene)
+
+    /// 場面 scene の材質の Tex の名前を絵に引く元（textureOf = 全体の登録）。
+    pub def sourceOf(textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO, scene: Scene3d.Scene3dCmd): TextureSource =
+        { textureOf = textureOf, own = scene#textures |> List.map(t -> (Texture3d.name(t), t)) |> List.toMap }
+
+    /// contextOf の、場面の絵を引く元 source を作ってある形（source の textureOf は tables#textureOf と同じ物を渡す）。
+    pub def contextWith(tables: Tables, source: TextureSource, scene: Scene3d.Scene3dCmd): Context =
         { meshes = tables#meshes, layouts = tables#layouts, time = scene#time, flipsTargetV = tables#flipsTargetV,
           naming = { source = source, gpuMip = tables#gpuMip, textures = tables#textures, gen = tables#gen } }
 
@@ -363,7 +371,7 @@ mod Render3d.SceneList {
 
     /// 材質の絵の組（名前と補間。補間は sampler を決める）。
     def textureReadsOf(m: Scene3d.MaterialFields): List[(String, ShaderDoc.FilterMode)] =
-        ShaderDoc.materialTexReads(m#spec, m#emission, m#metallicRoughnessShade)
+        Scene3d.materialTexReadsOf(m)
 
     def putRow(list: SceneList, next: Array[Int32, Static], ctx: Context, kind: SceneRowKind, material: (Int32, Int32), b: MeshBatch, why: Int32,
                flags: Int32): Unit \ IO =

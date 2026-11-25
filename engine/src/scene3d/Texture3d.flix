@@ -15,13 +15,19 @@ pub mod Texture3d {
     }
 
     /// width × height・source = 画素の在りか・hash = 中身の鍵（Argb は寸法と画素の SHA-256・PlatformImage は寸法と key の SHA-256。16 進）。
-    type alias Texture3dRec = { width = Int32, height = Int32, source = Source, hash = String }
+    /// name = name の答え（作る時に 1 回だけ作る）。
+    type alias Texture3dRec = { width = Int32, height = Int32, source = Source, hash = String, name = String }
 
     enum Texture3dData { case Texture3dData(Texture3dRec) }
 
     pub type alias Texture3d = Texture3dData
 
     def recOf(t: Texture3d): Texture3dRec = let Texture3dData.Texture3dData(r) = t; r
+
+    /// 作る口は全部ここを通す（hash から name を作る）。
+    // WhyNot: name を呼ぶたびに字をつながない — 描き手が場面の textures の Map を作るたびに、絵の数だけ作り直す。
+    def made(width: Int32, height: Int32, source: Source, hash: String): Texture3d =
+        Texture3dData.Texture3dData({ width = width, height = height, source = source, hash = hash, name = namePrefix() + String.takeLeft(16, hash) })
 
     /// 辺の上限（GL 3.3 が約束する大きさより大きいが、今の GPU なら作れる）。
     pub def maxSide(): Int32 = 8192
@@ -30,14 +36,13 @@ pub mod Texture3d {
     pub def fromArgb(width: Int32, height: Int32, argb: Vector[Int32]): Result[String, Texture3d] =
         checkSides("Texture3d.fromArgb", width, height) |> Result.flatMap(_ ->
             if (Vector.length(argb) != width * height) Err("Texture3d.fromArgb: argb の数が ${width} × ${height} でない")
-            else Ok(Texture3dData.Texture3dData({ width = width, height = height, source = Source.Argb(argb), hash = hashOf(width, height, argb) })))
+            else Ok(made(width, height, Source.Argb(argb), hashOf(width, height, argb))))
 
     /// 機種の側に解いて持つ絵から作る（ImageData.ImageDecoder の platformImage が返した物）。辺の決まりは fromArgb と同じ。
     /// 画素を読まないので、中身の鍵は key から作る（同じ key なら同じ画素、という機種の約束に頼る）。
     pub def fromPlatformImage(image: ImageData.PlatformImage): Result[String, Texture3d] =
         checkSides("Texture3d.fromPlatformImage", image#width, image#height)
-            |> Result.map(_ -> Texture3dData.Texture3dData({ width = image#width, height = image#height, source = Source.PlatformImage(image#key),
-                                                             hash = keyHashOf(image#width, image#height, image#key) }))
+            |> Result.map(_ -> made(image#width, image#height, Source.PlatformImage(image#key), keyHashOf(image#width, image#height, image#key)))
 
     def checkSides(label: String, width: Int32, height: Int32): Result[String, Unit] =
         if (width <= 0 or height <= 0) Err("${label}: 辺が 0 以下（${width} × ${height}）")
@@ -73,7 +78,7 @@ pub mod Texture3d {
     pub def contentHash(t: Texture3d): String = recOf(t)#hash
 
     /// 材質の Tex の読み先の名前（"tex3d:" + contentHash の頭 16 字）。場面の textures に入れた絵はこの名前で引く。
-    pub def name(t: Texture3d): String = namePrefix() + String.takeLeft(16, contentHash(t))
+    pub def name(t: Texture3d): String = recOf(t)#name
 
     /// 場面の textures から引く名前の頭（GL と CPU が名前の引き分けに使う）。
     pub def namePrefix(): String = "tex3d:"
@@ -88,8 +93,7 @@ pub mod Texture3d {
         else match r#source {
             case Source.Argb(argb) =>
                 let small = Mip.shrinkTo(maxSide, { width = r#width, height = r#height, pixels = argb });
-                Texture3dData.Texture3dData({ width = small#width, height = small#height, source = Source.Argb(small#pixels),
-                                              hash = hashOf(small#width, small#height, small#pixels) })
+                made(small#width, small#height, Source.Argb(small#pixels), hashOf(small#width, small#height, small#pixels))
             case Source.PlatformImage(key) =>
                 Log.warnThen("Texture3d.limitSize: 機種の側の絵 ${key}（${r#width} × ${r#height}）は ${maxSide} へ縮めない", t)
         }

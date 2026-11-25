@@ -173,7 +173,7 @@ mod Render3d.Material {
     def bindMaterialTextures(gl: GlContext, state: State, gen: Int64, source: TextureSource, entry: MaterialEntry, m: Scene3d.MaterialFields): Int32 \ IO =
         if (List.isEmpty(entry#texReads)) 0
         else {
-            let reads = ShaderDoc.materialTexReads(m#spec, m#emission, m#metallicRoughnessShade) |> List.take(Scene3d.maxMaterialTextures());
+            let reads = Scene3d.materialTexReadsOf(m) |> List.take(Scene3d.maxMaterialTextures());
             List.zip(reads, List.zip(entry#locs#texFlips, entry#locs#texLevels)) |> List.forEachWithIndex((unit, pair) -> {
                 let ((name, filter), (flipLoc, levelsLoc)) = pair;
                 // WhyNot: 引いてから unit を選ばない — 初めての絵は引く時に上げて今の unit に貼るので、前の unit に貼った絵を外してしまう。
@@ -492,7 +492,7 @@ mod Render3d.Material {
     def buildMaterial(gl: GlContext, state: State, gen: Int64, m: Scene3d.MaterialFields, kind: ProgramKind,
                       reason: FrameDiagnostics.BuildReason): MaterialEntry \ IO =
         Array.put(1, 2, state#materialStreak);
-        let readCount = List.length(ShaderDoc.materialTexReads(m#spec, m#emission, m#metallicRoughnessShade));
+        let readCount = List.length(Scene3d.materialTexReadsOf(m));
         if (readCount > Scene3d.maxMaterialTextures())
             warnSceneOnce(state, "limit:" + m#spec#name, "scene3d: 材質 '${m#spec#name}' が読む絵の組が ${readCount} 組ある"
                 + " — ${Scene3d.maxMaterialTextures()} 組目より後ろは 0 で描く")

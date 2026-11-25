@@ -30,7 +30,7 @@ mod Render3d {
     use Render3d.Light.{lightDataOf, putLights}
     use Render3d.Batch.{MaterialBatch, MeshBatch}
     use Render3d.ScenePlan.{PlanCaps, ScenePassSpec, coverageOf, groupScenesWith, planScenes}
-    use Render3d.SceneList.{SceneList, billboardAt, buildScenePasses, firstBillboardRowOf, firstBlendedRowOf, valuesAt}
+    use Render3d.SceneList.{SceneList, billboardAt, buildScenePasses, contextOf, firstBillboardRowOf, firstBlendedRowOf, valuesAt}
     use Render3d.GlRows.{SceneInputs, SceneItem, SceneTarget, drawBlendedRows, drawRows, uploadRows}
     use Render3d.Shadow.{bindShadowMap, renderShadows, sweepShadowTargets, unbindShadowMap}
     use Render3d.Material.{MaterialTable, bindEnvironmentMap, releaseEnvironmentMap, blankTextureId, budgetEvictions, resolveMaterials, sweepMaterials, sweepTextures3d}
@@ -449,9 +449,10 @@ mod Render3d {
             let (planned, rows) = planScenes(state#planner, caps, materials#orders, grouped);
             let joints = Render3d.GlRows.JointTexture.upload(gl, state, gen, rows);
             let (numbered, instances) = Render3d.GlRows.Instancing.upload(gl, state, gen, planned, grouped#members);
-            let lists = List.map(buildScenePasses(tables), numbered);
+            let contexts = List.map(plan -> contextOf(tables, plan#cmd#scene), numbered);
+            let lists = List.zip(contexts, numbered) |> List.map(match (ctx, plan) -> buildScenePasses(ctx, plan));
             let shadowUses = Render3d.ShadowMaps.assign(state#planner, List.map(plan -> plan#shadowPlans, numbered));
-            let shadowPasses = List.zip(shadowUses, numbered) |> List.map(match (uses, plan) -> Render3d.ShadowMaps.buildPasses(tables, uses, plan));
+            let shadowPasses = List.zip(List.zip(contexts, shadowUses), numbered) |> List.map(match ((ctx, uses), plan) -> Render3d.ShadowMaps.buildPasses(ctx, uses, plan));
             (numbered, lists, materials, (joints, instances), shadowPasses, carried)
         });
         let (jointTexture, instanceTexture) = textures;
@@ -644,7 +645,7 @@ mod Render3d {
     /// プログラム entry と材質 m で頭の物 head の batch を描く時に貼る絵の (知らせの中の呼び名, 名前, 使い方)（材質の絵・法線マップ・lightmap。描く時の知らせと同じ呼び名・同じ段の鍵）。
     def materialTextureNames(entry: MaterialEntry, m: Scene3d.MaterialFields, head: MeshDraw): List[TextureRead] =
         let reads = if (List.isEmpty(entry#texReads)) Nil
-                    else ShaderDoc.materialTexReads(m#spec, m#emission, m#metallicRoughnessShade) |> List.take(Scene3d.maxMaterialTextures())
+                    else Scene3d.materialTexReadsOf(m) |> List.take(Scene3d.maxMaterialTextures())
                         |> List.map(nf -> ("材質の絵", fst(nf), Texture3d.TextureUse.MaterialTexture));
         let normal = if (entry#normalMapped) m#normalMap |> Option.toList |> List.map(n -> ("材質の絵", n#texture, Texture3d.TextureUse.NormalMap)) else Nil;
         let baked = if (entry#lightmapped) Scene3d.lightmapOfFields(head#fields) |> Option.toList

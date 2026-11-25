@@ -318,7 +318,7 @@ mod Render3d.ScenePlan {
         if (not (g#wants)(m)) plainPlacement(g, d)
         else {
             let kind = kindOf(g#coverage, g#variant, d, m);
-            let names = ShaderDoc.materialTexReads(m#spec, m#emission, m#metallicRoughnessShade) |> List.map(fst);
+            let names = Scene3d.materialTexReadsOf(m) |> List.map(fst);
             { surface = Some((m, kind)), handle = requestOf(g#tables, m, kind), key = keySlotOf(g#tables, batchKeyOf(g#planner#drawMode, d, Some((m, kind)))),
               texture = textureSlotOf(g#tables, names), needsUv = Option.nonEmpty(m#normalMap) }
         }
