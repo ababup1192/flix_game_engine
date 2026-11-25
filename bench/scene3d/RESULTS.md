@@ -181,3 +181,13 @@ split の中（一時的に区間を切って 1 回測った値。ms・PC / ブ�
 
 - 1 コマで全部作るので、PC で 1 体ごとの値・行・形の作成・材質の program が同じコマに重なる。ブラウザは純粋な仕事（中身の鍵の SHA-256 を含む）が半分を超える。
 - 置き場が捨てた回数（`meshEvictions`）はどの区間も 0。
+
+### 段 1 の後（形の中身の鍵を key から作る・`KEYED=1`）
+
+同じつまみに `KEYED=1`（`Mesh3d.withContentKey` = `Gltf.fromGlbTexturedKeyedUsingOptions` で読んだ形と同じ鍵の作り方）。PC・3 回。
+
+| 区間 | KEYED=0 frame max | KEYED=0 split max | KEYED=1 frame max | KEYED=1 split max |
+|---|---|---|---|---|
+| rebuild（新しい形 300 個） | 30.2 / 29.5 / 28.6 | 26.4 / 25.9 / 25.1 | 23.5 / 23.7 / 22.6 | 19.9 / 20.2 / 19.2 |
+
+- 作り直しの split が 6 ms 縮む（新しい形 300 個 × 600 頂点の SHA-256 の分）。first は KEYED=1 の 3 回のうち 2 回が JIT と GC で外れた（113・85 ms）ので比べに使わない。

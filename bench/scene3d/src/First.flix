@@ -3,7 +3,7 @@
 //   first=skin  … 集まりは頭から載せておき、途中で骨つきの人物を 1 体出す（区間 skin。人物の glb は つまみ person）
 // 区間ごとに 1 行の JSON（BenchRun.summaryFields に、1 コマの時間と 3D の描き手の CPU の区間の最大を足した物）を出す。起動し直して何回か流し、最悪のコマを見る。
 mod First {
-    use fge::{AnimationClip3d, App, Mat4, Model3d, Pose3d, Render, Scene3d, Skin3d, Vec2, Vec3}
+    use fge::{AnimationClip3d, App, Mat4, Mesh3d, Model3d, Pose3d, Render, Scene3d, Skin3d, Vec2, Vec3}
 
     pub enum Mode with Eq {
         case Group
@@ -34,17 +34,28 @@ mod First {
     def endAt(): Int32 = 300
 
     /// field の設定を、動く物なし・集まりあり にしたつまみの表から作る。person = 人物の glb（Skin の時だけ読む）。
+    /// つまみ keyed = 1 なら、形の中身の鍵を Mesh3d.withContentKey で作る（glb を Gltf.fromGlbTexturedKeyedUsingOptions で読んだ形と同じく、頂点の SHA-256 を取らない）。
     pub def kitOf(mode: Mode, knobs: Map[String, String], person: Option[Model3d.Model3d]): Kit =
         let config = { staticGroup = true, movingPercent = 0 | Field.configOf(knobs) };
         let field = Field.kitOf(config);
+        let keyed = Map.get("keyed", knobs) == Some("1");
         let resting = Scene3d.groupInstancesOf(field#resting);
+        let first = if (keyed) Scene3d.staticGroup("field", resting |> List.mapWithIndex((i, inst) -> {
+            let f = Scene3d.instanceFieldsOf(inst);
+            (Int32.toString(i), instanceLike(inst, Mesh3d.withContentKey("first:${Mesh3d.contentHash(f#mesh)}", f#mesh)))
+        })) else field#resting;
         // WhyNot: second に first と同じ形を使い回さない — 束が届いた後の階は新しい形を持ち、形を GPU に作る・中身の鍵を取る仕事が作り直しに入る。
         let reshaped = resting |> List.mapWithIndex((i, inst) -> {
-            let f = Scene3d.instanceFieldsOf(inst);
-            let moved = Scene3d.meshInstance(Field.shapeOf(config#faceGrid, i + 100000), f#world);
-            (Int32.toString(i), f#material |> Option.map(m -> Scene3d.withMaterial(m, moved)) |> Option.getWithDefault(moved))
+            let mesh = Field.shapeOf(config#faceGrid, i + 100000);
+            (Int32.toString(i), instanceLike(inst, if (keyed) Mesh3d.withContentKey("second:${i}", mesh) else mesh))
         });
-        { mode = mode, field = field, first = field#resting, second = Scene3d.staticGroup("field", reshaped), person = person }
+        { mode = mode, field = field, first = first, second = Scene3d.staticGroup("field", reshaped), person = person }
+
+    /// inst と同じ置き方と材質で、形を mesh にした物。
+    def instanceLike(inst: Scene3d.Instance3d, mesh: Mesh3d.Mesh3d): Scene3d.Instance3d =
+        let f = Scene3d.instanceFieldsOf(inst);
+        let moved = Scene3d.meshInstance(mesh, f#world);
+        f#material |> Option.map(m -> Scene3d.withMaterial(m, moved)) |> Option.getWithDefault(moved)
 
     /// 1 コマの記録。frame = 今のコマの番号・samples = 今の区間の値・done = 全部の区間を出し終えた。
     pub type alias Run = { frame = Int32, samples = List[BenchRun.Sample], done = Bool }

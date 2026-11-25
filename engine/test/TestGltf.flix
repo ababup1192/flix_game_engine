@@ -397,4 +397,22 @@ mod TestGltf {
     def testFromGlbKeyedKeepsPositions(): Unit \ Assert =
         Assert.assertEq(expected = Gltf.fromGlb(triangleGlb("", "")) |> Result.map(m -> Mesh3d.positions(m#mesh)),
             Gltf.fromGlbKeyed("a.glb@v1", triangleGlb("", "")) |> Result.map(m -> Mesh3d.positions(m#mesh)))
+
+    def texturedBytes(): Vector[Int8] \ Fs.FileRead =
+        Fs.FileRead.readBytes("test/data/textured_two_materials.glb") |> Result.getWithDefault(Vector.empty())
+
+    def texturedKeyed(key: String): Model3d.Model3d \ {Fs.FileRead, IO} =
+        okOrBug(Gltf.fromGlbTexturedKeyedUsingOptions(key, TestDecoder.imageIo(), Gltf.defaultLoadOptions(), texturedBytes()))
+
+    /// fromGlbTexturedKeyedUsingOptions の形の鍵は key だけで決まる（同じ key なら同じ・違う key なら違う）。
+    @Test
+    def testTexturedKeyedHashFollowsKey(): Unit \ {Assert, Fs.FileRead, IO} =
+        Assert.assertEq(expected = (true, false), (partHashes(texturedKeyed("t.glb@v1")) == partHashes(texturedKeyed("t.glb@v1")),
+                                                  partHashes(texturedKeyed("t.glb@v1")) == partHashes(texturedKeyed("t.glb@v2"))))
+
+    /// fromGlbTexturedKeyedUsingOptions は形と材質を変えない（頂点の位置と材質の有無は鍵の無い版と同じ）。
+    @Test
+    def testTexturedKeyedKeepsPartsAndMaterials(): Unit \ {Assert, Fs.FileRead, IO} =
+        let shape = (m: Model3d.Model3d) -> m#parts |> List.map(p -> (Mesh3d.positions(p#mesh), Option.nonEmpty(p#material)));
+        Assert.assertEq(expected = shape(textured()), shape(texturedKeyed("t.glb@v1")))
 }

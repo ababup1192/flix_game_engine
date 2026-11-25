@@ -61,9 +61,9 @@ pub mod Gltf {
     /// key は同じ key なら同じバイトだと呼ぶ側が約束できる字（ImageData.ImageDecoder の versionedKey）。
     // WhyNot: いつも頂点の SHA-256 を取らない — ブラウザでは 1 部屋の形 3 つで 30 ms を超え、部屋を読むたびに積もる。
     pub def fromGlbKeyed(key: String, bytes: Vector[Int8]): Result[String, Model3d.Model3d] =
-        fromGlb(bytes) |> Result.map(model ->
-            { mesh = Mesh3d.withContentKey("${key}#all", model#mesh),
-              parts = model#parts |> List.mapWithIndex((k, part) -> { mesh = Mesh3d.withContentKey("${key}#part${k}", part#mesh) | part }) | model })
+        fromGlb(bytes) |> Result.map(withKeyedMeshes(key))
+    def withKeyedMeshes(key: String, model: Model3d.Model3d): Model3d.Model3d =
+        { mesh = Mesh3d.withContentKey("${key}#all", model#mesh), parts = model#parts |> List.mapWithIndex((k, part) -> { mesh = Mesh3d.withContentKey("${key}#part${k}", part#mesh) | part }) | model }
 
     /// 材質の絵の長い辺の上限（px）。baseColor = baseColorTexture と emissiveTexture（同じ色の絵）・normal = normalTexture。
     /// 上限を超える絵は mip と同じ縮め方で半分にしていく。
@@ -118,6 +118,12 @@ pub mod Gltf {
     /// loadTexturedUsingOptions のバイトの版。
     pub def fromGlbTexturedUsingOptions(decoder: ImageData.ImageDecoder, options: LoadOptions, bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO =
         fromGlbTexturedBy(Texture3d.decodeUsing(decoder), options, bytes)
+
+    /// fromGlbTexturedUsingOptions の、形の中身の鍵を key から作る版（鍵の作り方と key の約束は fromGlbKeyed と同じ・初めて描くコマで頂点の SHA-256 を取らない）。
+    /// key は ImageData.ImageDecoder の versionedKey（道と版）。それが None の時（デスクトップの開発中のファイル）は fromGlbTexturedUsingOptions を呼ぶ。
+    // WhyNot: LoadOptions に鍵の欄を足さない — レコードを全部書いて作ったゲームが、欄が増えると組めなくなる。
+    pub def fromGlbTexturedKeyedUsingOptions(key: String, decoder: ImageData.ImageDecoder, options: LoadOptions, bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO =
+        fromGlbTexturedUsingOptions(decoder, options, bytes) |> Result.map(withKeyedMeshes(key))
 
     def fromGlbTexturedBy(decode: Vector[Int8] -> Result[String, Texture3d.Texture3d] \ IO, options: LoadOptions,
                           bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO =

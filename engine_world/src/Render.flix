@@ -915,13 +915,15 @@ pub mod Render {
 
     /// 描く物が名前で引く絵とフォント（sprite の texture・Shader 面の tex 場・字のフォントのアトラスの texture 名）。
     /// Clipped は中身を見る。3D の場面の中は数えない（BackgroundLoad が受け持つ）。
-    pub def assetNames(items: List[PlacedItem]): Set[String] =
+    pub def assetNames(items: List[PlacedItem]): Set[String] = unsafe IO {
+        let texNamesOf = specTable();
         items |> List.foldLeft((acc, placed) -> match unwrapClip(placed#item, None) {
             case (Item.Sprite(s), _) => Set.insert(s#texture, acc)
             case (Item.Text(t), _)   => Set.insert(t#fontAtlas#textureName, acc)
-            case (Item.Shader(s), _) => List.foldLeft((names, n) -> Set.insert(n, names), acc, ShaderDoc.texNames(s#spec))
+            case (Item.Shader(s), _) => List.foldLeft((names, n) -> Set.insert(n, names), acc, cachedBySpec(texNamesOf, ShaderDoc.texNames, s#spec))
             case _                   => acc
         }, Set.empty())
+    }
 
     /// 描く物のうち、フォントのアトラスにまだ無い字を「テクスチャ名 → 字」で集める。
     /// 起動時に用意するのは「ソースとアセットに書いてある字」なので、実行中に計算で作った字や

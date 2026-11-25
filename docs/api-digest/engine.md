@@ -658,6 +658,8 @@
   `pub def loadTexturedUsingOptions(decoder: ImageData.ImageDecoder, options: LoadOptions, path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO`
 - loadTexturedUsingOptions のバイトの版。
   `pub def fromGlbTexturedUsingOptions(decoder: ImageData.ImageDecoder, options: LoadOptions, bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO`
+- fromGlbTexturedUsingOptions の、形の中身の鍵を key から作る版（鍵の作り方と key の約束は fromGlbKeyed と同じ・初めて描くコマで頂点の SHA-256 を取らない）。
+  `pub def fromGlbTexturedKeyedUsingOptions(key: String, decoder: ImageData.ImageDecoder, options: LoadOptions, bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO`
 
 ## GpuHandle — `engine/src/core/GpuHandle.flix`
 - タイルマップの GPU インスタンスバッファのハンドル（`initTileBuffer` が返す）。

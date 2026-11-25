@@ -108,14 +108,14 @@ pub mod App.Internal.Halt {
     /// 用意の無い字が欠けうる。組み込みフォントは常に全部そろっている。
     def pausedLook(design: Vec2.Vec2, cursor: Vec2.Vec2, historyLen: Int32, anno: Annotate.State): App.Internal.Paint.Look =
         let view = Annotate.viewOf(design, anno);
-        let debugAtlas = BootFont.atlas();
-        let debugSize = debugAtlas#fontSize;
+        // WhyNot: 字を出さないコマにもアトラスを作らない — 止めている間は毎コマ通り、作るたびに字の表を解き直す。
+        let debugAtlas = lazy BootFont.atlas();
         let toast = match anno#toast {
-            case Some(t) => Annotate.toastItems(debugAtlas, debugSize, t#message)
+            case Some(t) => Annotate.toastItems(force debugAtlas, (force debugAtlas)#fontSize, t#message)
             case None    => Nil
         };
         let scrub = if (anno#scrub > 0 and anno#scrubShow > 0)
-                        Annotate.scrubIndicatorItems(debugAtlas, debugSize, design, anno#scrub, historyLen)
+                        Annotate.scrubIndicatorItems(force debugAtlas, (force debugAtlas)#fontSize, design, anno#scrub, historyLen)
                     else Nil;
         { view = view,
           inspected = match anno#dragStart {
@@ -170,14 +170,13 @@ pub mod App.Internal.Halt {
         // デバッグの小物はゲームのフォントを使わない。ゲームのフォントは「出た字から順に用意する」
         // ので、まだ用意されていない字は出せず、しかもこの停止中の経路は追加で作ることを頼まない。
         // 組み込みフォント（常に全部そろっているドット絵の字）を決め打ちで使う。
-        let debugAtlas = BootFont.atlas();
-        let debugSize = debugAtlas#fontSize;
+        let debugAtlas = lazy BootFont.atlas();
         let toastPlaced = match anno#toast {
-            case Some(t) => Annotate.toastItems(debugAtlas, debugSize, t#message)
+            case Some(t) => Annotate.toastItems(force debugAtlas, (force debugAtlas)#fontSize, t#message)
             case None    => Nil
         };
         let scrubPlaced = if (anno#scrub > 0 and anno#scrubShow > 0)
-                              Annotate.scrubIndicatorItems(debugAtlas, debugSize, ctx#design,
+                              Annotate.scrubIndicatorItems(force debugAtlas, (force debugAtlas)#fontSize, ctx#design,
                                                            anno#scrub, ctx#historyLen)
                           else Nil;
         let (fixedSprites, fixedPolygons) = Render.draw(List.append(toastPlaced, scrubPlaced));
