@@ -1738,6 +1738,26 @@
 - 画面の値の色の 1 成分 c（0..1）を、ビット数 bits・ディザの量 d（ditherAt × 強さ。1 段 = 1）で丸めた値（3 つの描き手が同じ式を書く）:
   `pub def quantize(bits: Int32, d: Float64, c: Float64): Float64`
 
+## Scene3d.StaticBatch — `engine/src/scene3d/Scene3d/StaticBatch.flix`
+- つなぐ計画の 1 つ。Single = そのまま描く物・Combine = 1 つの形につなぐ物（2 つ以上・来た順）。
+  `pub enum PlanEntry { case Single(Scene3d.Instance3d) case Combine(List[Scene3d.Instance3d]) }`
+- 置いた物 1 つの鍵（keysOf）。shape = 形の中身の鍵（1 回しか使わないかを数える）・unit = つなぐ単位の鍵（つながない物は None）。
+  `pub type alias ItemKeys = { shape = String, unit = Option[String] }`
+- i をつないでよいか: lightmap・骨の重み・法線マップの無い物。
+  `pub def isCombinable(i: Scene3d.Instance3d): Bool`
+- i の鍵（形の中身の鍵を初めて読む形は、ここで SHA-256 を取る。描き手は 1 つずつ前もって取る）。
+  `pub def keysOf(i: Scene3d.Instance3d): ItemKeys`
+- items（持ち越す物・来た順）をつなぐ計画（planFromKeys に keysOf の鍵を渡す形）。
+  `pub def planOf(items: List[Scene3d.Instance3d]): Vector[PlanEntry]`
+- items をつなぐ計画。keys = items と同じ並びの keysOf の鍵。1 回しか使わない形でつないでよい物を、
+  `pub def planFromKeys(keys: Vector[ItemKeys], items: Vector[Scene3d.Instance3d]): Vector[PlanEntry]`
+- 計画の 1 つの描く物（Combine はここでつなぐ）。
+  `pub def instanceOf(e: PlanEntry): Scene3d.Instance3d`
+- items をつないだ物（planOf の並びのまま instanceOf を当てる。1 回で全部作る形）。
+  `pub def combineAll(items: List[Scene3d.Instance3d]): List[Scene3d.Instance3d]`
+- group（同じ単位の物・2 つ以上）を 1 つの形につないで置いた物。world は単位行列。
+  `pub def combine(group: List[Scene3d.Instance3d]): Scene3d.Instance3d`
+
 ## ShaderDoc — `engine/src/shader/ShaderDoc.flix`
 - 位置 (u,v) のどちらの軸を読むか。
   `pub enum Axis with Eq, ToString { case U case V }`

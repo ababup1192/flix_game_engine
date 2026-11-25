@@ -86,22 +86,24 @@ include $(subst $(fge_space),\$(fge_space),$(ENGINE))/mk/common.mk
 .PHONY: status run debug font-bake test build dist-linux dist-macos dist-windows dist-all check flow flow-vocab render render-all gallery-sounds reference-check reference-update render-budget render-lint lint lint-doc-refs lint-record-wrap lint-flixlint lint-forbid lint-huge-methods lint-rules-link video-entries src check-docs-sync compare agent-eval agent-eval-compare agent-eval-release engine-upgrade web-pages-stage dashboard
 
 ##@ 遊ぶ・確かめる
-# RUN_SECONDS=N を付けると N 秒でゲームを止める（起動して確かめるだけの時。止め忘れでウィンドウが残らない）。
+# RUN_SECONDS=N を付けると N 秒でゲームを止める（run・debug。起動して確かめるだけの時。止め忘れでウィンドウが残らない）。
 # SHOT=<場面> を付けると、ギャラリーの 1 枚（gallery/<場面>.png）と同じ World から DEBUG の起動で開き、F8 で止めた状態でウィンドウが出る
 # （START=shot:<場面>。場面の名前は make render の SHOTS と同じ・App.withShots）。F8 で動き出す。
 # WhyNot: kill でゲームの pid だけを止めない — headless-run が java を子として起こすので、子が残る。プロセスの組ごと止める。
 # run・debug・render・render-all・check・test・flow の中身は bin/fge（Go）が持ち、ここは別名（Windows は make 無しで bin/fge を打つ）。
 # FGE_RUN は、ゲームに配った bin/fge がこれらを持たない古い物なら engine の bin/fge を使う。ENGINE はこの make と同じ engine を渡す。
 FGE_RUN = fge=bin/fge; "$$fge" --list 2>/dev/null | grep -qx headless || fge="$(ENGINE)/bin/fge"; ENGINE="$(ENGINE)" "$$fge"
-run: ## [SHOT=<場面>] [RUN_SECONDS=N] | ゲームを起動する（SHOT はギャラリーの 1 枚と同じ World から F8 で止めた状態で開く）
+# WITH_RUN_SECONDS = 続く sh の 1 行を、RUN_SECONDS が有れば N 秒でプロセスの組ごと止める形で、無ければそのまま流す（run と debug）。
 ifeq ($(RUN_SECONDS),)
-	@$(FGE_RUN) run $(if $(SHOT),SHOT="$(SHOT)")
+WITH_RUN_SECONDS = sh -c
 else
-	@perl -e '$$t = shift; $$p = fork; if (!$$p) { setpgrp(0, 0); exec @ARGV } $$timed = 0; $$SIG{ALRM} = sub { $$timed = 1; kill "TERM", -$$p; sleep 2; kill "KILL", -$$p }; alarm $$t; waitpid($$p, 0); exit($$timed ? 0 : $$? >> 8)' $(RUN_SECONDS) sh -c '$(FGE_RUN) run $(if $(SHOT),SHOT="$(SHOT)")'
+WITH_RUN_SECONDS = perl -e '$$t = shift; $$p = fork; if (!$$p) { setpgrp(0, 0); exec @ARGV } $$timed = 0; $$SIG{ALRM} = sub { $$timed = 1; kill "TERM", -$$p; sleep 2; kill "KILL", -$$p }; alarm $$t; waitpid($$p, 0); exit($$timed ? 0 : $$? >> 8)' $(RUN_SECONDS) sh -c
 endif
+run: ## [SHOT=<場面>] [RUN_SECONDS=N] | ゲームを起動する（SHOT はギャラリーの 1 枚と同じ World から F8 で止めた状態で開く）
+	@$(WITH_RUN_SECONDS) '$(FGE_RUN) run $(if $(SHOT),SHOT="$(SHOT)")'
 
-debug: ## | 保存即反映（watchFile）と F8 を有効にして起動する
-	@$(FGE_RUN) debug
+debug: ## [RUN_SECONDS=N] | 保存即反映（watchFile）と F8 を有効にして起動する
+	@$(WITH_RUN_SECONDS) '$(FGE_RUN) debug'
 
 # 生成したアトラスはデスクトップの起動（glyphs が auto / used の時）とブラウザの書き出しと同じ形。起動はフォント・大きさ・engine が
 # 合う時だけ読み、生成した後に足した字は今まで通り実行中に足す。初回は生成する入口の jar を組むので数分かかる。

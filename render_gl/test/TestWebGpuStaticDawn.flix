@@ -118,7 +118,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuStaticDawn {
 
     /// 形の置き場が上限を超えて形を捨てたコマの後は、持ち越しを全部作り直す（行の形の番号が別の形を指しうる）。
     /// 2・3 コマ目は集まりを描かずに別の四角だけを描き、3 コマ目を締める時に 1 コマ目の集まりの形が捨てられる（今と前のコマで使った形は捨てない）。
-    /// 4 コマ目は作り直すので集まりの形を作り直す（作り直さなければ捨てた形の番号を描き、形を作らない）。
+    /// 4 コマ目は作り直すので集まりの形を作り直す（作り直さなければ捨てた形の番号を描き、形を作らない）。集まりの形は 3 枚をつないだ 1 つ。
     @Test
     def testMeshEvictionDropsCarried(): Unit \ {Assert, IO} = withDawn(gpu -> {
         let g = town();
@@ -126,7 +126,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuStaticDawn {
         let seen = Ref.fresh(Static, Nil);
         discard Render3d.FakeGl.stderrOf(() -> Ref.put(fst(framesOf(gpu, 6, (sceneWith(g) :: Nil) :: (other :: Nil) :: (other :: Nil) :: (sceneWith(g) :: Nil) :: Nil)), seen));
         let uploadsAtEnd = Ref.get(seen) |> List.last |> Option.map(match (_, _, u) -> u) |> Option.getWithDefault(-1);
-        Assert.assertEq(expected = 3, uploadsAtEnd)
+        Assert.assertEq(expected = 1, uploadsAtEnd)
     })
 
     /// 太陽の影のある場面を 3 コマ描いても（色の pass と影の地図の pass の bundle を積んで流す）、device の誤りは出ず、bundle も積み直さない。
@@ -151,7 +151,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuStaticDawn {
         Assert.assertEq(expected = (1 :: 1 :: 1 :: Nil, 7, 0), (cachedOf(seen), recorded, errors))
     })
 
-    /// 持ち越した物も描いた物の数に入る。
+    /// 持ち越した物も描いた物の数に入る（つないで 1 つの形にした物も 1 つずつ数える）。
     @Test
     def testCarriedItemsAreCountedAsDrawn(): Unit \ {Assert, IO} = withDawn(gpu -> {
         let (_, (_, drawn, _)) = framesOf(gpu, 4000000, (sceneWith(town()) :: Nil) :: Nil);

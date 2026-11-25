@@ -224,7 +224,12 @@ mod ParityMain {
             case Some(gl) => OrthoBox.report(gl)
             case None     => true
         };
-        if (List.exists(eo -> { let (exact, o) = eo; failed(exact, o) }, outcomes) or List.exists(c -> not snd(c), counted) or not exprOk or not orthoOk) System.exit(1) else ()
+        let shotNames = scenes |> List.map(sc -> sc#name) |> List.toSet;
+        let pairs = Scenes.glPairs() |> List.filter(match (a, b) -> Set.memberOf(a, shotNames) and Set.memberOf(b, shotNames))
+            |> List.map(match (a, b) -> PixelDiff.compare("${a}=${b}", "debug/gl/${a}.png", "debug/gl/${b}.png", "debug/diff/${a}-${b}.png"));
+        pairs |> List.forEach(o -> println("[parity] ${o#name}  GL どうし  差 ${o#diffPx} px, max ±${o#maxDelta} (許容 0 px)"));
+        let pairsOk = List.forAll(o -> o#diffPx == 0, pairs);
+        if (List.exists(eo -> { let (exact, o) = eo; failed(exact, o) }, outcomes) or List.exists(c -> not snd(c), counted) or not exprOk or not orthoOk or not pairsOk) System.exit(1) else ()
 }
 
 def main(): Unit \ IO =

@@ -43,10 +43,17 @@ pub mod App.Internal.Hitch {
             case None        => None
             case Some(watch) =>
                 let (row, counted) = hitchRow(app, watch, timing, Option.getWithDefault(FrameDiagnostics.empty(), diag), world);
-                let (detector, closed) = App.HitchDetector.step(row, counted#detector);
+                let (afterStep, closed) = App.HitchDetector.step(row, counted#detector);
+                let (detector, startup) = App.HitchDetector.takeStartup(afterStep);
                 let stepped = { detector = detector | counted };
+                startup |> Option.forEach(writeStartup(stepped));
                 Some(closed |> Option.map(hitch -> writeHitch(stepped, recorder, timing#frame, hitch)) |> Option.getWithDefault(stepped))
         }
+
+    /// 起動の区間を startup/hitch.md に書く。
+    def writeStartup(watch: HitchWatch, hitch: App.HitchDetector.Hitch): Unit \ IO =
+        let dir = "${watch#runDir}/startup";
+        if (App.HitchDetector.write(dir, App.HitchDetector.startupReport(watch#config, hitch))) println("[hitch] ${dir}/hitch.md") else ()
 
     /// 閉じた 1 件を書く。単発は置き場の summary.md に数を足すだけ、それ以外は f<コマ>/hitch.md と記録の写し。
     def writeHitch(watch: HitchWatch, recorder: Option[Flow.Record.Recorder], nowFrame: Int64, hitch: App.HitchDetector.Hitch): HitchWatch \ IO =

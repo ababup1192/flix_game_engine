@@ -20,8 +20,12 @@ mod Render3d.TestStaticRows {
         Scene3d.material({ name = "m${red}", cycleRate = 0.0, bindings = Nil,
                            out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Solid({ r = red, g = 0.5, b = 0.5 }), alpha = ShaderDoc.Field.Const(1.0) }) })
 
-    /// 幅 side の三角形に材質（赤の量 0.1）を付けた物。
+    /// 幅 side の三角形に材質（赤の量 0.1）を付けた物。tint は side ごとに違うので、形の違う物どうしでも 1 つの形につながない。
     def boxAt(side: Float64): Scene3d.Instance3d =
+        plainBoxAt(side) |> Scene3d.withTint(Color.rgb(1.0, 1.0 / side, 1.0))
+
+    /// boxAt の tint 白の物（形の違う物どうしは 1 つの形につなぐ）。
+    def plainBoxAt(side: Float64): Scene3d.Instance3d =
         let mesh = Mesh3d.fromPolygons({ points = Vec3.v3(0.0, 0.0, 0.0) :: Vec3.v3(side, 0.0, 0.0) :: Vec3.v3(0.0, side, 0.0) :: Nil,
                                          color = { r = 1.0, g = 1.0, b = 1.0 } } :: Nil);
         Scene3d.meshInstance(mesh, Mat4.translate(Vec3.v3(side, 0.0, 0.0))) |> Scene3d.withMaterial(materialOf(0.1))
@@ -284,10 +288,11 @@ mod Render3d.TestStaticRows {
     def boxes(name: String): Scene3d.StaticGroup =
         Scene3d.staticGroup(name, List.range(1, 21) |> List.map(k -> (Int32.toString(k), boxAt(Int32.toFloat64(k)))))
 
-    /// 予算を使い切ったコマの最低の時間は、そのコマで最初に来た作りかけ 1 つだけが使い、後の作りかけは 1 段だけ進む。
+    /// 予算を使い切ったコマの最低の時間は、そのコマで最初に来た作りかけ 1 つだけが使い、後の作りかけは 1 段だけ進む
+    /// （つなぐ段を通らない DrawMode.OneByOne で、1 段 = 形 1 つ）。
     @Test
     def testMinimumStepGoesToOneWorkPerFrame(): Unit \ {Assert, IO} =
-        let planner = freshPlanner(Render3d.DrawMode.Instanced);
+        let planner = freshPlanner(Render3d.DrawMode.OneByOne);
         let cache = freshCache();
         let made = Ref.fresh(Static, 0);
         let counted = (n: Ref[Int32, Static]) -> { prepareMesh = (_: Mesh3d.Mesh3d) -> { Thread.sleep(1i64); Ref.put(Ref.get(n) + 1, n) } | countingSteps(made, _ -> (), 0i64) };
@@ -299,16 +304,50 @@ mod Render3d.TestStaticRows {
     /// 1 段ずつ何コマもかけて作った行は、1 回で作った行と同じ（行・1 体ごとの値・影の地図の行）。
     @Test
     def testSteppedRowsEqualOneShotRows(): Unit \ {Assert, IO} =
+        let g = city();
+        Assert.assertEq(expected = (true, true), steppedAndOneShotAgree(g))
+
+    /// 1 回しか使わない形をつなぐ集まりも、1 段ずつ作った行は 1 回で作った行と同じ。
+    @Test
+    def testSteppedCombinedRowsEqualOneShotRows(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = (true, true), steppedAndOneShotAgree(cityWithLooseBoxes()))
+
+    /// g を 1 段ずつ作った行と 1 回で作った行の (同じか, 段が Done まで進んだか)。
+    def steppedAndOneShotAgree(g: Scene3d.StaticGroup): (Bool, Bool) \ IO =
         let answer = (requests: Vector[Render3d.ScenePlan.MaterialRequest]) -> Vector.map(_ -> 3, requests);
         let planner = freshPlanner(Render3d.DrawMode.Instanced);
         let steps = { tables = freshTables(), resolve = answer, prepareMesh = _ -> (), prepareMaterial = _ -> (), place = (rows: CarriedRows) -> rows,
                       uploadCount = _ -> 0, uploadAt = (_, _) -> (), retire = _ -> () };
-        let b = startBuild(planner, false, sceneOf(Nil), city());
+        let b = startBuild(planner, false, sceneOf(Nil), g);
         let stepped = stepUntilBuilt(planner, steps, b, 0);
-        let once = build(freshPlanner(Render3d.DrawMode.Instanced), freshTables(), answer, false, sceneOf(Nil), city());
+        let once = build(freshPlanner(Render3d.DrawMode.Instanced), freshTables(), answer, false, sceneOf(Nil), g);
         let shape = (r: CarriedRows) -> (Array.toList(r#list#rows), Array.toList(r#shadowList#rows), r#instanceCount, Array.toList(r#list#values), r#timeAt,
-                                         Vector.length(r#requests), r#placed, List.map(i -> r#instances.get(i), List.range(0, r#instances.capacity())));
-        Assert.assertEq(expected = (shape(once), true), (shape(stepped), Ref.get(b#phase) == Render3d.StaticRows.BuildPhase.Done))
+                                         Vector.length(r#requests), r#placed, r#combinedAway, List.map(i -> r#instances.get(i), List.range(0, r#instances.capacity())));
+        (shape(once) == shape(stepped), Ref.get(b#phase) == Render3d.StaticRows.BuildPhase.Done)
+
+    /// city の後ろに、形の違う tint 白の箱 12 個（1 回しか使わない形）を足した集まり。
+    def cityWithLooseBoxes(): Scene3d.StaticGroup =
+        let loose = List.range(20, 32) |> List.map(k -> ("loose${k}", plainBoxAt(Int32.toFloat64(k))));
+        Scene3d.staticGroup("mixed", List.append(Scene3d.staticGroupFieldsOf(city())#items, loose))
+
+    /// 1 回しか使わない形の物は 1 つの形につなぎ、描く物の数に出ない分を combinedAway に持つ。
+    @Test
+    def testOnceUsedShapesAreCombined(): Unit \ {Assert, IO} =
+        let rows = built(Scene3d.staticGroup("loose", List.range(1, 6) |> List.map(k -> (Int32.toString(k), plainBoxAt(Int32.toFloat64(k))))));
+        Assert.assertEq(expected = (1, 1, 5, 4), (rowCountOf(rows#list), rowCountOf(rows#shadowList), rows#placed, rows#combinedAway))
+
+    /// 2 回以上使う形はつながない（instancing のまま）。
+    @Test
+    def testRepeatedShapesAreNotCombined(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = (0, 80), (built(city())#combinedAway, built(city())#placed))
+
+    /// 1 体ずつ描く描き方（DrawMode.OneByOne）ではつながない。
+    @Test
+    def testOneByOneDoesNotCombine(): Unit \ {Assert, IO} =
+        let answer = (requests: Vector[Render3d.ScenePlan.MaterialRequest]) -> Vector.map(_ -> 3, requests);
+        let g = Scene3d.staticGroup("loose", List.range(1, 6) |> List.map(k -> (Int32.toString(k), plainBoxAt(Int32.toFloat64(k)))));
+        let rows = build(freshPlanner(Render3d.DrawMode.OneByOne), freshTables(), answer, false, sceneOf(Nil), g);
+        Assert.assertEq(expected = 0, rows#combinedAway)
 
     /// 形 7 種・材質 2 種の物 80 個の集まり（候補分けの区切り groupChunk をまたぐ）。
     def city(): Scene3d.StaticGroup =
@@ -327,6 +366,46 @@ mod Render3d.TestStaticRows {
             case Some(rows) => rows
             case None       => if (calls > 1000) bug!("1000 回進めても作り終えない") else stepUntilBuilt(planner, steps, b, calls + 1)
         }
+
+    // ── draw call の知らせ ──
+
+    /// draw call が多く、その半分超が形の違いで分かれた場面を n 回続けた後の、知らせ済みの鍵。
+    def drawCallHintAfter(n: Int32, drawCalls: Int32, meshBreaks: Int32): Bool \ IO =
+        let planner = freshPlanner(Render3d.DrawMode.Instanced);
+        discard stderrOf(() -> List.range(0, n) |> List.forEach(_ -> Render3d.ScenePlan.noteDrawCallHint(planner, drawCalls, meshBreaks)));
+        Set.memberOf("@draw-call-hint", Ref.get(planner#sceneWarnedRef))
+
+    @Test
+    def testDrawCallHintWarnsAfterTheStreak(): Unit \ {Assert, IO} =
+        Assert.assertTrue(drawCallHintAfter(Render3d.ScenePlan.staticHintScenes(), 400, 300))
+
+    @Test
+    def testDrawCallHintWaitsForTheStreak(): Unit \ {Assert, IO} =
+        Assert.assertFalse(drawCallHintAfter(Render3d.ScenePlan.staticHintScenes() - 1, 400, 300))
+
+    @Test
+    def testDrawCallHintIgnoresSplitsByOtherReasons(): Unit \ {Assert, IO} =
+        Assert.assertFalse(drawCallHintAfter(Render3d.ScenePlan.staticHintScenes(), 400, 150))
+
+    @Test
+    def testDrawCallHintIgnoresExactlyHalfMeshSplits(): Unit \ {Assert, IO} =
+        Assert.assertFalse(drawCallHintAfter(Render3d.ScenePlan.staticHintScenes(), 400, 200))
+
+    @Test
+    def testDrawCallHintStreakRestartsAfterAQuietScene(): Unit \ {Assert, IO} =
+        let planner = freshPlanner(Render3d.DrawMode.Instanced);
+        let crowded = () -> Render3d.ScenePlan.noteDrawCallHint(planner, 400, 300);
+        let half = Render3d.ScenePlan.staticHintScenes() / 2;
+        discard stderrOf(() -> {
+            List.range(0, half) |> List.forEach(_ -> crowded());
+            Render3d.ScenePlan.noteDrawCallHint(planner, 10, 0);
+            List.range(0, half + 1) |> List.forEach(_ -> crowded())
+        });
+        Assert.assertFalse(Set.memberOf("@draw-call-hint", Ref.get(planner#sceneWarnedRef)))
+
+    @Test
+    def testDrawCallHintIgnoresFewDrawCalls(): Unit \ {Assert, IO} =
+        Assert.assertFalse(drawCallHintAfter(Render3d.ScenePlan.staticHintScenes(), 300, 300))
 
     // ── 持ち越す物と毎コマの物 ──
 
@@ -437,6 +516,15 @@ mod Render3d.TestStaticRows {
         let scene = { groups = town() :: Nil | sceneOf(Nil) };
         List.range(0, 3) |> List.forEach(_ -> paint(gl, state, cmdOf(scene) :: Nil));
         Assert.assertEq(expected = 1, timesCalled("texSubImageRgba32f", log))
+
+    /// GL の描き手は、つないで 1 つの形にした物も 1 つずつ描いた物に数える（置いた物の数と描いた物の数が合う）。
+    @Test
+    def testGlCountsCombinedItemsAsDrawn(): Unit \ {Assert, IO} =
+        let state = freshState();
+        let loose = Scene3d.staticGroup("loose", List.range(1, 6) |> List.map(k -> (Int32.toString(k), plainBoxAt(Int32.toFloat64(k)))));
+        paint(recordingGl(freshRecorded()), state, cmdOf({ groups = loose :: Nil | sceneOf(Nil) }) :: Nil);
+        let c = Render3d.Counts.takeCounts(state);
+        Assert.assertEq(expected = (5, 5), (c#instances, c#drawn))
 
     /// GL の描き手で同じ集まりを色の場面と奥行きの書き出しの場面で描くと、控えは 2 つ（行の決め方が違う）。
     @Test

@@ -18,7 +18,7 @@ pub mod App.HitchDetector {
         gc = Int32, gcMs = Int64, pressed = String, status = String, reloaded = Bool
     }
 
-    /// 決まり: budgetNs は 1 コマの予算・warmup は数えない起動直後のコマ数・context は前に付けるコマ数・
+    /// 決まり: budgetNs は 1 コマの予算・warmup はヒッチに数えない起動直後のコマ数（その間の重いコマは起動の区間・takeStartup）・context は前に付けるコマ数・
     /// calm は閉じるまでの落ち着いたコマ数・maxRows は 1 件の上限・maxHitches は 1 実行の上限。
     pub type alias Config = { budgetNs = Int64, warmup = Int64, context = Int32, calm = Int32, maxRows = Int32, maxHitches = Int32 }
 
@@ -28,16 +28,17 @@ pub mod App.HitchDetector {
     type alias Open = { rows = List[Row], context = List[Row], calm = Int32 }
 
     /// 見張りの状態（外から作らせない。作る口は fresh）。recent・open#rows は新しい順。
-    enum DetectorState({ config = Config, recent = List[Row], open = Option[Open], written = Int32 })
+    /// startup = 起動直後（warmup より前）の重いコマ（新しい順・maxRows まで）・startupTaken = takeStartup で渡し終えたか。
+    enum DetectorState({ config = Config, recent = List[Row], open = Option[Open], written = Int32, startup = List[Row], startupTaken = Bool })
 
     pub type alias Detector = DetectorState
 
-    /// 60fps の予算で、起動直後の 120 コマは数えず、前 10 コマ・落ち着き 30 コマ・1 件 600 コマ・1 実行 10 件。
+    /// 60fps の予算で、起動直後の 120 コマはヒッチに数えず（起動の区間に出す）、前 10 コマ・落ち着き 30 コマ・1 件 600 コマ・1 実行 10 件。
     pub def defaultConfig(): Config =
         { budgetNs = 16666667i64, warmup = 120i64, context = 10, calm = 30, maxRows = 600, maxHitches = 10 }
 
     pub def fresh(config: Config): Detector =
-        DetectorState.DetectorState({ config = config, recent = Nil, open = None, written = 0 })
+        DetectorState.DetectorState({ config = config, recent = Nil, open = None, written = 0, startup = Nil, startupTaken = false })
 
     /// 組み立て: 描く所から送る・swap を引いた残り（View を組む・シェーダーを作る・字を足す）。
     def buildNs(row: Row): Int64 = Int64.max(0i64, row#renderNs - row#diag#submitNs - row#diag#swapNs)
@@ -57,11 +58,12 @@ pub mod App.HitchDetector {
         let DetectorState.DetectorState(st) = detector;
         let cfg = st#config;
         let recent = List.take(cfg#context, row :: st#recent);
+        let startup = if (row#frame < cfg#warmup and isSlow(cfg, row) and List.length(st#startup) < cfg#maxRows) row :: st#startup else st#startup;
         match st#open {
             case None =>
                 let opens = st#written < cfg#maxHitches and row#frame >= cfg#warmup and isSlow(cfg, row);
                 let opened = if (opens) Some({ rows = row :: Nil, context = List.reverse(st#recent), calm = 0 }) else None;
-                (DetectorState.DetectorState({ recent = recent, open = opened | st }), None)
+                (DetectorState.DetectorState({ recent = recent, open = opened, startup = startup | st }), None)
             case Some(o) =>
                 let next = { rows = row :: o#rows, calm = if (isSlow(cfg, row)) 0 else o#calm + 1 | o };
                 let full = List.length(next#rows) >= cfg#maxRows;
@@ -73,6 +75,23 @@ pub mod App.HitchDetector {
                     (DetectorState.DetectorState({ recent = recent, open = None, written = st#written + counted | st }), Some(hitch))
                 }
         }
+
+    /// 起動の区間: warmup のコマを過ぎた後に 1 回だけ、起動直後の重いコマ（古い順）を 1 件にして返す（重いコマが無ければ None）。
+    /// 起動の区間はヒッチの数（maxHitches）に入れない。
+    // WhyNot: 起動直後のコマを捨てない — 初めて見える集まりの組み立てや最初の材質の組みはここにしか出ず、捨てると直す手掛かりが消える。
+    // WhyNot: 起動直後のコマでヒッチを開かない — 起動は毎回重く、ふだんの止まりと同じ数に入れると上限を起動だけで使い切る。
+    pub def takeStartup(detector: Detector): (Detector, Option[Hitch]) =
+        let DetectorState.DetectorState(st) = detector;
+        let passed = List.head(st#recent) |> Option.exists(r -> r#frame >= st#config#warmup);
+        if (st#startupTaken or not passed) (detector, None)
+        else {
+            let taken = DetectorState.DetectorState({ startupTaken = true, startup = Nil | st });
+            if (List.isEmpty(st#startup)) (taken, None) else (taken, Some({ rows = List.reverse(st#startup), context = Nil }))
+        }
+
+    /// 起動の区間（takeStartup の 1 件）の報告。中身は report と同じ形で、見出しの前に起動の区間だと書く。
+    pub def startupReport(config: Config, hitch: Hitch): String =
+        "# 起動の区間（最初の ${Int64.toString(config#warmup)} コマの重いコマ・ヒッチの数には入れない）\n\n" + report(config, None, hitch)
 
     /// 開いている 1 件があれば今の所で閉じて返す（流し終えた時に使う）。
     pub def finish(detector: Detector): (Detector, Option[Hitch]) =

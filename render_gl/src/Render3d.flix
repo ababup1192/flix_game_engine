@@ -611,9 +611,13 @@ mod Render3d {
         Render3d.GlRows.DataTexture.bind(gl, instanceTextureUnit(), inputs#instanceTexture);
         Render3d.GlStatic.setTime(scene#time, inputs#carried);
         inputs#carried |> List.forEach(c -> uploadRows(gl, state, gen, source, Render3d.GlStatic.inputsOf(inputs, c), 0));
+        Render3d.Counts.countInstances(state, 0, List.sumWith(c -> c#carried#rows#combinedAway, inputs#carried));
         uploadRows(gl, state, gen, source, inputs, List.length(Scene3d.instancesOf(scene)));
         let ctx = { camera = camera, eye = scene#camera#eye, source = source, billboard = Render3d.VariantPrograms.billboardLocsFor(gl, state, variant), scene = scene };
+        let (callsBefore, meshBefore) = Render3d.Counts.drawCallsSoFar(state);
         inputs#passes |> List.forEach(match (spec, list) -> drawPass(gl, state, gen, ctx, inputs, spec, list));
+        let (callsAfter, meshAfter) = Render3d.Counts.drawCallsSoFar(state);
+        Render3d.ScenePlan.noteDrawCallHint(state#planner, callsAfter - callsBefore, meshAfter - meshBefore);
         releaseEnvironmentMap(gl, scene);
         endScene(gl)
 

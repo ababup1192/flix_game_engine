@@ -490,18 +490,22 @@
 ## App.HitchDetector — `engine_world/src/App/HitchDetector.flix`
 - 1 コマの記録。時間はナノ秒。totalNs はループの 1 周（入力の取り込みから描き終わりの swap まで）、
   `pub type alias Row = { frame = Int64, totalNs = Int64, updateNs = Int64, renderNs = Int64, diag = FrameDiagnostics.Diagnostics, gc = Int32, gcMs = Int64, pressed = String, status = String, reloaded = Bool }`
-- 決まり: budgetNs は 1 コマの予算・warmup は数えない起動直後のコマ数・context は前に付けるコマ数・
+- 決まり: budgetNs は 1 コマの予算・warmup はヒッチに数えない起動直後のコマ数（その間の重いコマは起動の区間・takeStartup）・context は前に付けるコマ数・
   `pub type alias Config = { budgetNs = Int64, warmup = Int64, context = Int32, calm = Int32, maxRows = Int32, maxHitches = Int32 }`
 - 切り出した 1 件。rows は古い順（落ち着いた尾は除く）、context はその前の数コマ（古い順）。
   `pub type alias Hitch = { rows = List[Row], context = List[Row] }`
 - `pub type alias Detector = DetectorState`
-- 60fps の予算で、起動直後の 120 コマは数えず、前 10 コマ・落ち着き 30 コマ・1 件 600 コマ・1 実行 10 件。
+- 60fps の予算で、起動直後の 120 コマはヒッチに数えず（起動の区間に出す）、前 10 コマ・落ち着き 30 コマ・1 件 600 コマ・1 実行 10 件。
   `pub def defaultConfig(): Config`
 - `pub def fresh(config: Config): Detector`
 - 重いコマか: 仕事が予算を超えた・swap まで含めて予算の 2 倍を超えた（GPU やドライバで止まった）・シェーダーを作った。
   `pub def isSlow(config: Config, row: Row): Bool`
 - 1 コマ進める。1 件が閉じたらそれを返す。
   `pub def step(row: Row, detector: Detector): (Detector, Option[Hitch])`
+- 起動の区間: warmup のコマを過ぎた後に 1 回だけ、起動直後の重いコマ（古い順）を 1 件にして返す（重いコマが無ければ None）。
+  `pub def takeStartup(detector: Detector): (Detector, Option[Hitch])`
+- 起動の区間（takeStartup の 1 件）の報告。中身は report と同じ形で、見出しの前に起動の区間だと書く。
+  `pub def startupReport(config: Config, hitch: Hitch): String`
 - 開いている 1 件があれば今の所で閉じて返す（流し終えた時に使う）。
   `pub def finish(detector: Detector): (Detector, Option[Hitch])`
 - 単発か: 重いコマが 1 つだけで、その時間の半分以上が GC か swap（シェーダー・字・テクスチャ・Doc の読み直しは無し）。

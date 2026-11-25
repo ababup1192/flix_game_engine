@@ -11,15 +11,16 @@ mod Render3d.ScenePlan {
 
     /// 計画の側の状態（GL の物を持たない）。drawMode = 置いた物の描き方・sceneWarnedRef = 場面について知らせ済みの鍵（見つからない絵・上限を超えた材質と光・
     /// 場面の絵の置き場あふれ・空・lightmap・uv の無い法線マップ）・skinWarnedRef = ジョイントの数の食い違いを知らせた形（contentHash）・shadowWarnedRef = 影について知らせ済みの種類・
-    /// crowdedScenesRef = 置いた物が多いのに staticGroup の無い場面が続いた数（noteStaticGroupHint）。
+    /// crowdedScenesRef = 置いた物が多いのに staticGroup の無い場面が続いた数（noteStaticGroupHint）・
+    /// shapeSplitScenesRef = draw call が多く、その半分超が形の違いで分かれた場面が続いた数（noteDrawCallHint）。
     pub type alias Planner = {
         drawMode = DrawMode, sceneWarnedRef = Ref[Set[String], Static], skinWarnedRef = Ref[Set[String], Static], shadowWarnedRef = Ref[Set[String], Static],
-        crowdedScenesRef = Ref[Int32, Static]
+        crowdedScenesRef = Ref[Int32, Static], shapeSplitScenesRef = Ref[Int32, Static]
     }
 
     pub def freshPlanner(drawMode: DrawMode): Planner \ IO =
         { drawMode = drawMode, sceneWarnedRef = Ref.fresh(Static, Set.empty()), skinWarnedRef = Ref.fresh(Static, Set.empty()),
-          shadowWarnedRef = Ref.fresh(Static, Set.empty()), crowdedScenesRef = Ref.fresh(Static, 0) }
+          shadowWarnedRef = Ref.fresh(Static, Set.empty()), crowdedScenesRef = Ref.fresh(Static, 0), shapeSplitScenesRef = Ref.fresh(Static, 0) }
 
     /// 置いた物が staticHintInstances() 個を超え、staticGroup が 1 つも無い場面が staticHintScenes() 回続いたら、1 回だけ知らせる（GL と WebGPU が場面ごとに呼ぶ）。
     /// placed = 場面の置いた物の数（Scene3dCounts#instances に足す数と同じ）。
@@ -32,6 +33,24 @@ mod Render3d.ScenePlan {
             warnOnce(planner, "@static-group-hint", "scene3d: 置いた物が ${placed} 個あり staticGroup の無い場面が続いている — 動かない物は Scene3d.staticGroup にまとめると"
                 + "計画と 1 体ごとの値を持ち越して CPU が減る（engine の docs/scene3d.md の「動かない物をまとめる（staticGroup）」）")
         else ()
+
+    /// 場面の pass の draw call が drawCallHintCalls() を超え、その半分超が形の違い（Counts.BatchBreak.Mesh）で分かれた場面が staticHintScenes() 回続いたら、1 回だけ知らせる
+    /// （GL と WebGPU が場面ごとに呼ぶ）。drawCalls と meshBreaks = その場面の pass の draw call の数と、そのうち形の違いで分かれた数（影の地図の pass は入れない）。
+    // WhyNot: コマごとにまとめて数えない — 場面ごとに数えるので、1 コマに小さな場面（ミニマップ）が混ざると続いた数が 0 に戻って鳴らない。
+    //   noteStaticGroupHint と同じ作りで、まとめるなら 2 つを一緒に替える。
+    // WhyNot: 置いた物の数で知らせない — 違う形の小物 800 個は置いた物の線（staticHintInstances）に届かないまま、draw call だけが 800 になる。
+    pub def noteDrawCallHint(planner: Planner, drawCalls: Int32, meshBreaks: Int32): Unit \ IO =
+        let split = drawCalls > drawCallHintCalls() and meshBreaks * 2 > drawCalls;
+        let streak = if (split) Ref.get(planner#shapeSplitScenesRef) + 1 else 0;
+        Ref.put(streak, planner#shapeSplitScenesRef);
+        if (streak >= staticHintScenes())
+            warnOnce(planner, "@draw-call-hint", "scene3d: 場面の draw call が ${drawCalls} あり、うち ${meshBreaks} は形が違うので分かれた — 動かない物は Scene3d.staticGroup に入れると"
+                + "1 回しか使わない形を engine が 1 つの形につなぐ。集まりの中の絵つきの小物は tint（色合い）を数種にそろえるとまとまる"
+                + "（engine の docs/scene3d.md の「動かない物をまとめる（staticGroup）」）")
+        else ()
+
+    /// noteDrawCallHint が多いと見る draw call の数。
+    pub def drawCallHintCalls(): Int32 = 300
 
     /// noteStaticGroupHint が多いと見る置いた物の数。
     pub def staticHintInstances(): Int32 = 2000

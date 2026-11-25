@@ -54,23 +54,28 @@ mod Render3d.StaticRows {
     /// 集まり 1 つの持ち越す行。list = 場面の pass の行（頂点の色 → 不透明の材質。ビルボードと半透明の行は無い）・shadowList = 影の地図の行（形だけ・奥行きの書き出しの場面は空）・
     /// instances = 1 体ごとの値（list と shadowList の行の欄 3 が頭からの番号で指す）・instanceCount = その体の数・requests = 行の欄 1 が引く材質の問い合わせ・
     /// timeAt = list の values の中の uTime の位置（値の区画ごとに 1 つ）・time = values に書いた時刻（要素 1 つ）・placed = 持ち越す物の数・
-    /// meshSlots = 行の形の控え（毎コマ使った物にする）・perFrame = 集まりの持ち越さない物（半透明と骨つき。毎コマ場面の計画へ通す）。
+    /// combinedAway = つないで描く物の数に出ない物の数（つないだ物の数 − つないだ形の数。描いた物の数へ足す）・meshSlots = 行の形の控え（毎コマ使った物にする）・perFrame = 集まりの持ち越さない物（半透明と骨つき。毎コマ場面の計画へ通す）。
     pub type alias CarriedRows = {
         list = SceneList, shadowList = SceneList, instances = ByteBuffer, instanceCount = Int32, requests = Vector[MaterialRequest],
-        timeAt = Vector[Int32], time = Array[Float64, Static], placed = Int32, meshSlots = Vector[MeshTable.Slot], perFrame = List[Scene3d.Instance3d]
+        timeAt = Vector[Int32], time = Array[Float64, Static], placed = Int32, combinedAway = Int32, meshSlots = Vector[MeshTable.Slot], perFrame = List[Scene3d.Instance3d]
     }
 
     /// 集まり g の持ち越す物の行を 1 回で作る。resolve = 材質の問い合わせに順の番号で答える（backend。0 なら頂点の色で描く）・
     /// coverage = cutout を alpha to coverage の版にするか（carriedKeyOf に渡す物と同じ）・scene = 行の決め方（Output・変種）と絵の名前と時刻を引く場面。
     /// 形と絵の番号は tables で振る（GPU には作らない）。
+    /// 1 回しか使わない形は 1 つの形につなぐ（Scene3d.StaticBatch・DrawMode.OneByOne ではつながない）。
     pub def build(planner: Planner, tables: Tables, resolve: Vector[MaterialRequest] -> Vector[Int32] \ ef, coverage: Bool, scene: Scene3d.Scene3dCmd,
                   g: Scene3d.StaticGroup): CarriedRows \ ef + IO =
         let (items, perFrame) = Scene3d.groupInstancesOf(g) |> List.partition(isCarriedItem);
-        let (lit, shadow, requests, members) = groupCarried(planner, coverage, scene, items);
-        rowsOf(planner, tables, resolve(requests), scene, List.length(items), perFrame, (lit, shadow, requests, members))
+        let drawn = if (isCombining(planner)) Scene3d.StaticBatch.combineAll(items) else items;
+        let (lit, shadow, requests, members) = groupCarried(planner, coverage, scene, drawn);
+        rowsOf(planner, tables, resolve(requests), scene, { placed = List.length(items), drawn = List.length(drawn) }, perFrame, (lit, shadow, requests, members))
 
-    /// 候補に分けた答え grouped（groupCarried の形）と材質の答え orders から行を作る。placed = 持ち越す物の数。
-    def rowsOf(planner: Planner, tables: Tables, orders: Vector[Int32], scene: Scene3d.Scene3dCmd, placed: Int32, perFrame: List[Scene3d.Instance3d],
+    /// 集まりの 1 回しか使わない形をつなぐか（DrawMode.OneByOne は batch の鍵と順の比べ相手なので、つながずに物ごとに描く）。
+    def isCombining(planner: Planner): Bool = planner#drawMode == Render3d.DrawMode.Instanced
+
+    /// 候補に分けた答え grouped（groupCarried の形）と材質の答え orders から行を作る。counts = 持ち越す物の数（placed）と、つないだ後の描く物の数（drawn）。
+    def rowsOf(planner: Planner, tables: Tables, orders: Vector[Int32], scene: Scene3d.Scene3dCmd, counts: { placed = Int32, drawn = Int32 }, perFrame: List[Scene3d.Instance3d],
                grouped: (List[Render3d.ScenePlan.Group], List[Render3d.Batch.SpanBatch], Vector[MaterialRequest], MutList[Render3d.MeshDraw, Static])): CarriedRows \ IO =
         let (lit, shadow, requests, members) = grouped;
         let (plain, materials) = splitGroups(lit, orders);
@@ -88,7 +93,7 @@ mod Render3d.StaticRows {
         let list = buildSceneList(ctx, { plain = numberedPlain, skinned = Nil, opaque = numberedOpaque, blended = Nil, billboards = Nil });
         let shadowList = buildShadowList(ctx, numberedShadow, Nil, Nil);
         { list = list, shadowList = shadowList, instances = raw, instanceCount = Array.get(0, next), requests = requests, timeAt = shareSameValues(list),
-          time = Array#{scene#time} @ Static, placed = placed, meshSlots = slotsOf(tables, list, shadowList), perFrame = perFrame }
+          time = Array#{scene#time} @ Static, placed = counts#placed, combinedAway = counts#placed - counts#drawn, meshSlots = slotsOf(tables, list, shadowList), perFrame = perFrame }
 
     /// 前の材質の行と同じ付け方（flagSameBinding）の行の値の位置を前の行の値へ向け、残った値の区画の uTime の位置を返す。
     // WhyNot: 同じ付け方の行の値を別々に残さない — 1 棟ずつの都市では行が物の数だけあり、毎コマ時刻を書き直す区画が物の数だけになる。値は前の行と同じ中身。
@@ -145,28 +150,39 @@ mod Render3d.StaticRows {
         retire = a -> Unit \ IO
     }
 
-    /// 作る段。Meshes = 形を GPU に作る（1 つずつ）・Group = 候補に分ける（groupChunk 体ずつ）・Materials = 材質の program を組む（1 つずつ）・
+    /// 作る段。Keys = 持ち越す物の鍵（形の中身の鍵とつなぐ単位の鍵。Scene3d.StaticBatch.keysOf）を取る（1 つずつ。終えたらつなぐ計画を作る）・
+    /// Combine = 計画の描く物を作る（1 つずつ。つなぐ物はここで 1 つの形にする）・
+    /// Meshes = 形を GPU に作る（1 つずつ）・Group = 候補に分ける（groupChunk 体ずつ）・Materials = 材質の program を組む（1 つずつ）・
     /// Place = 行を作って置く（止めない最後の仕事）・Upload = 置いた物の絵を上げる（1 枚ずつ）・Done = 済んだ。
     pub enum BuildPhase with Eq {
-        case Meshes, Group, Materials, Place, Upload, Done
+        case Keys, Combine, Meshes, Group, Materials, Place, Upload, Done
     }
 
-    /// 作りかけの集まり。items = 持ち越す物・meshes = その形（同じ値は 1 つ）・perFrame = 持ち越さない物・grouping = 候補分けの作りかけ・
+    /// 作りかけの集まり。source = 持ち越す物（つなぐ前）・keys = Keys の段で取った source の鍵（来た順）・plan = つなぐ計画（Keys の段を終えて作る）・
+    /// combined = 計画の描く物（頭から順に足す）・coverage = build と同じ・
+    /// items = 描く物（つないだ後。Combine の段を終えて決まる）・meshes = その形（同じ値は 1 つ）・perFrame = 持ち越さない物・grouping = 候補分けの作りかけ・
     /// requests = 分け終えた材質の問い合わせ・phase と next = 今の段とその段の次の番号・made = 置いた物（Place の後）。
     pub type alias Build[a] = {
-        items = Vector[Scene3d.Instance3d], meshes = Vector[Mesh3d.Mesh3d], perFrame = List[Scene3d.Instance3d], scene = Scene3d.Scene3dCmd,
-        grouping = CarriedGrouping, requests = Ref[Vector[MaterialRequest], Static], phase = Ref[BuildPhase, Static], next = Array[Int32, Static],
+        source = Vector[Scene3d.Instance3d], keys = MutList[Scene3d.StaticBatch.ItemKeys, Static], plan = Ref[Vector[Scene3d.StaticBatch.PlanEntry], Static],
+        combined = MutList[Scene3d.Instance3d, Static], coverage = Bool,
+        items = Ref[Vector[Scene3d.Instance3d], Static], meshes = Ref[Vector[Mesh3d.Mesh3d], Static], perFrame = List[Scene3d.Instance3d], scene = Scene3d.Scene3dCmd,
+        grouping = Ref[CarriedGrouping, Static], requests = Ref[Vector[MaterialRequest], Static], phase = Ref[BuildPhase, Static], next = Array[Int32, Static],
         made = Ref[Option[a], Static]
     }
 
-    /// 集まり g を作り始める（まだ何もしない）。coverage と scene は build と同じ。
+    /// 集まり g を作り始める（まだ何もしない）。coverage と scene は build と同じ。つながない描き方（isCombining が偽）は Meshes の段から始める
+    /// （つなぐ描き方の描く物・形・候補分けは Combine の段を終えて入れる）。
     pub def startBuild(planner: Planner, coverage: Bool, scene: Scene3d.Scene3dCmd, g: Scene3d.StaticGroup): Build[a] \ IO =
         let (items, perFrame) = Scene3d.groupInstancesOf(g) |> List.partition(isCarriedItem);
-        { items = List.toVector(items), meshes = distinctMeshesOf(items), perFrame = perFrame, scene = scene, grouping = startCarried(planner, coverage, scene, items),
-          requests = Ref.fresh(Static, Vector.empty()), phase = Ref.fresh(Static, BuildPhase.Meshes), next = Array#{0} @ Static, made = Ref.fresh(Static, None) }
+        let combining = isCombining(planner);
+        let drawn = if (combining) Nil else items;
+        { source = List.toVector(items), keys = MutList.empty(Static), plan = Ref.fresh(Static, Vector.empty()), combined = MutList.empty(Static), coverage = coverage,
+          items = Ref.fresh(Static, List.toVector(drawn)), meshes = Ref.fresh(Static, distinctMeshesOf(drawn)), perFrame = perFrame, scene = scene,
+          grouping = Ref.fresh(Static, startCarried(planner, coverage, scene, drawn)), requests = Ref.fresh(Static, Vector.empty()),
+          phase = Ref.fresh(Static, if (combining) BuildPhase.Keys else BuildPhase.Meshes), next = Array#{0} @ Static, made = Ref.fresh(Static, None) }
 
     /// items の形（同じ値は 1 つ・来た順）。
-    // WhyNot: 中身の鍵で重なりを除かない — 鍵を取るのが形を作る段の仕事（SHA-256）で、ここで取ると 1 コマにまとめて払う。
+    // WhyNot: 中身の鍵で重なりを除かない — 鍵を取るのは Keys と Meshes の段の仕事（SHA-256 を 1 つずつ）で、ここで取ると 1 コマにまとめて払う。
     def distinctMeshesOf(items: List[Scene3d.Instance3d]): Vector[Mesh3d.Mesh3d] \ IO =
         let seen: IdentityHashMap[Object, Object] = new IdentityHashMap();
         let out = MutList.empty(Static);
@@ -217,12 +233,20 @@ mod Render3d.StaticRows {
     def stepOnce(planner: Planner, steps: BuildSteps[a], b: Build[a]): Unit \ IO =
         let i = Array.get(0, b#next);
         match Ref.get(b#phase) {
+            case BuildPhase.Keys =>
+                if (i >= Vector.length(b#source)) enterCombine(b)
+                else stepTo(b, i, () -> MutList.push(Scene3d.StaticBatch.keysOf(Vector.get(i, b#source)), b#keys))
+            case BuildPhase.Combine =>
+                let plan = Ref.get(b#plan);
+                if (i >= Vector.length(plan)) finishCombine(planner, b)
+                else stepTo(b, i, () -> MutList.push(Scene3d.StaticBatch.instanceOf(Vector.get(i, plan)), b#combined))
             case BuildPhase.Meshes =>
-                if (i >= Vector.length(b#meshes)) enter(b, BuildPhase.Group)
-                else stepTo(b, i, () -> steps#prepareMesh(Vector.get(i, b#meshes)))
+                let meshes = Ref.get(b#meshes);
+                if (i >= Vector.length(meshes)) enter(b, BuildPhase.Group)
+                else stepTo(b, i, () -> steps#prepareMesh(Vector.get(i, meshes)))
             case BuildPhase.Group =>
-                if (stepCarried(b#grouping, groupChunk())) {
-                    let (_, _, requests, _) = carriedResultOf(b#grouping);
+                if (stepCarried(Ref.get(b#grouping), groupChunk())) {
+                    let (_, _, requests, _) = carriedResultOf(Ref.get(b#grouping));
                     Ref.put(requests, b#requests);
                     enter(b, BuildPhase.Materials)
                 } else ()
@@ -235,10 +259,24 @@ mod Render3d.StaticRows {
         };
         ()
 
+    /// 取り終えた鍵からつなぐ計画を作り、Combine の段へ。
+    def enterCombine(b: Build[a]): Unit \ IO =
+        Ref.put(Scene3d.StaticBatch.planFromKeys(MutList.toVector(b#keys), b#source), b#plan);
+        enter(b, BuildPhase.Combine)
+
+    /// 計画の描く物を作り終えた b の、描く物・形・候補分けを入れて Meshes の段へ。
+    def finishCombine(planner: Planner, b: Build[a]): Unit \ IO =
+        let drawn = MutList.toList(b#combined);
+        Ref.put(List.toVector(drawn), b#items);
+        Ref.put(distinctMeshesOf(drawn), b#meshes);
+        Ref.put(startCarried(planner, b#coverage, b#scene, drawn), b#grouping);
+        enter(b, BuildPhase.Meshes)
+
+
     /// 分け終えた b の行を作って置き、置いた物を返す（Upload の段へ進む）。
     def placeOf(planner: Planner, steps: BuildSteps[a], b: Build[a]): a \ IO =
-        let grouped = carriedResultOf(b#grouping);
-        let rows = rowsOf(planner, steps#tables, steps#resolve(Ref.get(b#requests)), b#scene, Vector.length(b#items), b#perFrame, grouped);
+        let grouped = carriedResultOf(Ref.get(b#grouping));
+        let rows = rowsOf(planner, steps#tables, steps#resolve(Ref.get(b#requests)), b#scene, { placed = Vector.length(b#source), drawn = Vector.length(Ref.get(b#items)) }, b#perFrame, grouped);
         let made = steps#place(rows);
         Ref.put(Some(made), b#made);
         enter(b, BuildPhase.Upload);

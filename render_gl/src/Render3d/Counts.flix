@@ -152,6 +152,10 @@ mod Render3d.Counts {
                               reason: FrameDiagnostics.BuildReason): Unit \ IO =
         Ref.put({ name = name, reason = reason } :: Ref.get(state#materialBuildsRef), state#materialBuildsRef)
 
+    /// 今までに数えた draw call の数と、そのうち形の違い（BatchBreak.Mesh）で分かれた数（takeCounts で 0 に戻るまでの合計。場面の前後の差で場面 1 つの数にする）。
+    pub def drawCallsSoFar(state: { countsHolder = Array[Int32, Static] | r }): (Int32, Int32) \ IO =
+        (Array.get(slotOf(Counter.DrawCalls), state#countsHolder), Array.get(breakSlotOf(BatchBreak.Mesh), state#countsHolder))
+
     /// 3D の draw call を 1 つ数え、それが 1 つの draw call に分かれた理由 why も 1 つ数える。
     pub def countDrawCall(state: { countsHolder = Array[Int32, Static] | r }, why: BatchBreak): Unit \ IO = countDrawCallAt(state, breakSlotOf(why))
 

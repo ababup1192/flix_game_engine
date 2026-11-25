@@ -59,6 +59,43 @@ mod TestHitchDetector {
         let rows = row(0i64, 300i64) :: calm(1i64, 3i64);
         Assert.assertEq(expected = 0, List.length(detectAll({ warmup = 1i64 | config() }, rows)))
 
+    /// 行を順に流し、takeStartup が返した起動の区間を集める。
+    def startupsOf(cfg: Config, rows: List[Row]): List[App.HitchDetector.Hitch] =
+        let (_, found) = rows |> List.foldLeft((acc, r) -> {
+            let (det, out) = acc;
+            let (stepped, _) = App.HitchDetector.step(r, det);
+            let (next, startup) = App.HitchDetector.takeStartup(stepped);
+            (next, List.append(out, Option.toList(startup)))
+        }, (App.HitchDetector.fresh(cfg), Nil));
+        found
+
+    @Test
+    def testWarmupSlowFramesComeOutOnceAsStartup(): Unit \ Assert =
+        let rows = row(0i64, 300i64) :: row(1i64, 5i64) :: row(2i64, 200i64) :: calm(3i64, 4i64);
+        Assert.assertEq(expected = Some(0i64 :: 2i64 :: Nil),
+            startupsOf({ warmup = 3i64 | config() }, rows) |> List.head |> Option.map(h -> List.map(r -> r#frame, h#rows)))
+
+    @Test
+    def testStartupIsReturnedOnlyOnce(): Unit \ Assert =
+        let rows = row(0i64, 300i64) :: calm(1i64, 6i64);
+        Assert.assertEq(expected = 1, List.length(startupsOf({ warmup = 2i64 | config() }, rows)))
+
+    @Test
+    def testCalmWarmupHasNoStartup(): Unit \ Assert =
+        Assert.assertEq(expected = 0, List.length(startupsOf({ warmup = 2i64 | config() }, calm(0i64, 5i64))))
+
+    @Test
+    def testStartupWaitsUntilWarmupPasses(): Unit \ Assert =
+        let rows = row(0i64, 300i64) :: calm(1i64, 2i64);
+        Assert.assertEq(expected = 0, List.length(startupsOf({ warmup = 10i64 | config() }, rows)))
+
+    @Test
+    def testStartupReportSaysItIsTheStartup(): Unit \ Assert =
+        let rows = row(0i64, 300i64) :: calm(1i64, 4i64);
+        let report = startupsOf({ warmup = 2i64 | config() }, rows) |> List.head
+            |> Option.map(App.HitchDetector.startupReport({ warmup = 2i64 | config() })) |> Option.getWithDefault("");
+        Assert.assertTrue(String.startsWith(prefix = "# 起動の区間", report))
+
     /// 2 コマ続けて重い（単発ではない）件。
     def burst(f: Int64): List[Row] = row(f, 40i64) :: row(f + 1i64, 40i64) :: calm(f + 2i64, 2i64)
 

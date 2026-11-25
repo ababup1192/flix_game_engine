@@ -476,7 +476,7 @@ PNG は git 外・一覧は git 内、という既存の非対称と同型なの
   vsync で待つ分は数えない
 - 数は描く側（render_gl）が `Platform.Diagnostics.setDiagnosticsEnabled` の間だけ集め、App が毎コマ
   `consumeDiagnostics` で引き取る（`FrameDiagnostics`）。切っている本番では数えない
-- 起動直後の 120 コマは数えない。1 実行 10 件まで（単発は数えない）。実行の置き場は新しい 5 つだけ残す
+- 起動直後の 120 コマはヒッチに数えず、その間の重いコマは「起動の区間」として `<置き場>/startup/hitch.md` に 1 回だけ別に出す（初めて見える集まりの組み立て・最初の材質の組みはここに出る）。1 実行 10 件まで（単発は数えない）。実行の置き場は新しい 5 つだけ残す
 
 **直したか確かめる**: 同じ置き場の `record.flow`（ヒッチの最初のコマの手前までの手）を、DEBUG で起動した
 ゲームへ `curl -X POST "http://127.0.0.1:<port>/perf?path=<置き場>/record.flow"` で流す。flow を決まった刻みで

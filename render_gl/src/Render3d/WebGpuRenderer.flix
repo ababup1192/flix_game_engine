@@ -728,11 +728,14 @@ pub mod Render3d.WebGpuRenderer {
         let RendererData.RendererData(s) = r;
         shadows |> List.forEach(p -> discard countRowsOf(s, p#list));
         shadows |> List.forEach(_ -> carried |> List.forEach(c -> WebGpuStatic.addRowCounts(s, c#shadowCounts)));
+        let (callsBefore, meshBefore) = Render3d.Counts.drawCallsSoFar(s);
         carried |> List.forEach(c -> WebGpuStatic.addRowCounts(s, c#litCounts));
-        let drawn = passes |> List.sumWith(match (_, list) -> countRowsOf(s, list)) + List.sumWith(c -> c#litCounts#drawn, carried);
+        let drawn = passes |> List.sumWith(match (_, list) -> countRowsOf(s, list)) + List.sumWith(c -> c#litCounts#drawn + c#rows#combinedAway, carried);
         let placed = StaticRows.placedCountOf(plan#cmd#scene, List.map(c -> c#rows, carried));
         countInstances(s, placed, drawn);
         passes |> List.forEach(pl -> Render3d.Counts.countBillboardRuns(s, snd(pl)));
+        let (callsAfter, meshAfter) = Render3d.Counts.drawCallsSoFar(s);
+        Render3d.ScenePlan.noteDrawCallHint(s#planner, callsAfter - callsBefore, meshAfter - meshBefore);
         Render3d.ScenePlan.noteStaticGroupHint(s#planner, placed, plan#cmd#scene);
         Render3d.Counts.countDroppedLights(s, plan#cmd#scene)
 

@@ -56,7 +56,8 @@ mod Scenes {
             :: billboardShadowOf(BillboardShadowYard.SunSide.Axis, "billboardShadowAxis")
             :: billboardShadowOf(BillboardShadowYard.SunSide.Diagonal, "billboardShadowDiagonal")
             :: billboardShadowOf(BillboardShadowYard.SunSide.Side, "billboardShadowSide")
-            :: PostScenes.postStackLook() :: PostScenes.postStackDepthBand() :: PostScenes.postStackCrt() :: Nil
+            :: PostScenes.postStackLook() :: PostScenes.postStackDepthBand() :: PostScenes.postStackCrt()
+            :: staticBatch3d() :: staticBatchInstances3d() :: Nil
 
     /// B 段階の scene のうち、違う画素の数に上限を置く物（名前 → 許す画素数）。3D の場面は GL と CPU で三角形の縁の
     /// 画素の取り方と浮動小数の丸めが違い、バイトでは一致しない（docs/backend-parity.md の Shader 面と同じ扱い）。
@@ -135,6 +136,8 @@ mod Scenes {
         case "skinCrowdRows"   => Some(100)
         case "instanceRows"    => Some(250)
         case "batchKeys3d"     => Some(100)
+        case "staticBatch3d"   => Some(100)
+        case "staticBatchInstances3d" => Some(100)
         case "sameDepthOrder3d" => Some(400)
         case "pbrSpheres3d"    => Some(200)
         case "pbrNoSky3d"      => Some(100)
@@ -1681,4 +1684,59 @@ mod Scenes {
         let scene = { environmentMap = Some(env) | pbrLit(pbrSphereGrid(), tex :: Nil) };
         { name = "pbrEnvironmentSky3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
             Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
+
+    // ── 動かない物のつなぎ（Scene3d.StaticBatch）。B 段階 ──
+    // staticBatch3d: 形の違う箱 48 個（頂点の色の物と、絵つきで tint 3 種の物）を staticGroup に入れる。GL は 1 回しか使わない形を 1 つの形につなぎ、CPU はつながない。
+    // staticBatchInstances3d: 同じ物を instances に置く（GL もつながない）。2 つの許容差を同じにして、つないでも絵が変わらないことを見る。
+
+    /// 0..1 の決まった数（k 番目・s は種類）。
+    def staticRnd(k: Int32, s: Int32): Float64 =
+        let x = Num.sin(Int32.toFloat64(k) * 12.9898 + Int32.toFloat64(s) * 78.233) * 43758.5453;
+        x - Float64.floor(x)
+
+    /// 幅 w・高さ h・奥行き d の箱（面ごとに色を少し変える。外から見て時計回り）。
+    def staticBox(w: Float64, h: Float64, d: Float64, color: Color): Mesh3d.Mesh3d =
+        let (x, y, z) = (w / 2.0, h / 2.0, d / 2.0);
+        let p = (a: Float64, b: Float64, c: Float64) -> Vec3.v3(a, b, c);
+        let shade = (k: Float64) -> { r = color#r * k, g = color#g * k, b = color#b * k };
+        Mesh3d.fromPolygons(
+            { points = p(-x, -y, -z) :: p(-x, y, -z) :: p(x, y, -z) :: p(x, -y, -z) :: Nil, color = shade(1.0) } ::
+            { points = p(x, -y, z) :: p(x, y, z) :: p(-x, y, z) :: p(-x, -y, z) :: Nil, color = shade(0.9) } ::
+            { points = p(-x, -y, z) :: p(-x, y, z) :: p(-x, y, -z) :: p(-x, -y, -z) :: Nil, color = shade(0.8) } ::
+            { points = p(x, -y, -z) :: p(x, y, -z) :: p(x, y, z) :: p(x, -y, z) :: Nil, color = shade(0.85) } ::
+            { points = p(-x, y, -z) :: p(-x, y, z) :: p(x, y, z) :: p(x, y, -z) :: Nil, color = shade(0.95) } ::
+            { points = p(-x, -y, z) :: p(-x, -y, -z) :: p(x, -y, -z) :: p(x, -y, z) :: Nil, color = shade(0.7) } :: Nil)
+
+    def staticBatchItems(tex: Texture3d.Texture3d): List[Scene3d.Instance3d] =
+        let material = Scene3d.texturedMaterial(Texture3d.name(tex), ShaderDoc.FilterMode.Nearest);
+        let tints = c8(255, 255, 255) :: c8(255, 200, 160) :: c8(170, 210, 255) :: Nil;
+        List.range(0, 48) |> List.map(k -> {
+            let color = { r = 0.35 + 0.6 * staticRnd(k, 1), g = 0.35 + 0.6 * staticRnd(k, 2), b = 0.35 + 0.6 * staticRnd(k, 3) };
+            let mesh = staticBox(0.5 + 0.9 * staticRnd(k, 4), 0.5 + 0.9 * staticRnd(k, 5), 0.5 + 0.9 * staticRnd(k, 6), color);
+            let world = Mat4.mul(Mat4.translate(Vec3.v3(Int32.toFloat64(Int32.remainder(k, 8)) * 1.6 - 5.6, Int32.toFloat64(k / 8) * 1.0 - 2.5, 12.0 + 2.0 * staticRnd(k, 7))),
+                        Mat4.mul(Mat4.rotateY(6.28 * staticRnd(k, 8)), Mat4.rotateX(0.8 * (staticRnd(k, 9) - 0.5))));
+            let tint = List.nth(Int32.remainder(k / 2, 3), tints) |> Option.getWithDefault(c8(255, 255, 255));
+            if (Int32.remainder(k, 2) == 0) Scene3d.meshInstance(mesh, world) |> Scene3d.withTint(tint)
+            else Scene3d.meshInstance(Mesh3d.withBoxUvs(0.5, mesh), world) |> Scene3d.withMaterial(material) |> Scene3d.withTint(tint)
+        })
+
+    def staticBatchScene(grouped: Bool): Scene3d.Scene3dCmd =
+        let tex = parityTexture();
+        let items = staticBatchItems(tex);
+        let base = { textures = tex :: Nil, directionalLight = Some({ intensity = 0.8 | Scene3d.directionalLight(Vec3.v3(-0.4, -1.0, 0.6)) }),
+                     environment = { ambient = c8(110, 110, 120), hemisphere = 0.0, toonSteps = 0, fog = None, background = Some(c8(10, 10, 30)) }
+                     | Scene3d.scene(flatCamera(), { x = 240.0, y = 140.0 }) };
+        if (grouped) { groups = Scene3d.staticGroup("parity:static", List.mapWithIndex((i, it) -> (Int32.toString(i), it), items)) :: Nil, zIndex = 1 | base }
+        else { instances = items, zIndex = 1 | base }
+
+    /// GL の絵どうしを 0 px で比べる場面の組（同じ物を違う道で描いて、GL の中で絵が変わらないことを見る）。
+    pub def glPairs(): List[(String, String)] = ("staticBatch3d", "staticBatchInstances3d") :: Nil
+
+    def staticBatch3d(): Scene =
+        { name = "staticBatch3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, staticBatchScene(true)) :: Nil }
+
+    def staticBatchInstances3d(): Scene =
+        { name = "staticBatchInstances3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, staticBatchScene(false)) :: Nil }
 }
