@@ -224,3 +224,19 @@ ahead = 先に作っている間のコマ・first = 作り終えた後に初め�
 - PC の frame は `frame#dt`（1 コマの間隔。更新・送る・swap の待ちを含む・この窓は 120 Hz に張り付く）。ブラウザの cpu は `fgeStats` の wasm の CPU だけ（rAF の待ちを含まない）で、間隔はいつも 16.7 ms の倍数。
   同じ物差しで並べるなら、3D の描き手の CPU（split・draw）どうしか、間隔どうし（ブラウザの frame_max）で比べる。
 - 作り直しや初めての道は JVM ではその時に初めて通るコード（JIT の前）で、同じ仕事でも wasm より遅く出ることがある。
+
+### 段 4 の後（ブラウザで glb の中の絵を画素を読まずに上げる・`first=glb`）
+
+`make bench-web BENCH=scene3d ARGS='first=glb&keyed=<0|1>&n=300&shapes=137&mats=8&verts=600'`。120 コマ目に `assets/props_1f.glb`（retro3d-horror-starter の束・1.5 MB・
+primitive 388・頂点 17,662・絵 46 枚 370 KB）を解き、その後のコマで描く。keyed=0 は今までの読み方（`fromGlbTexturedUsingOptions`）・keyed=1 は
+`fromGlbTexturedKeyedUsingOptions`（形の鍵を key から・絵は届いた時に JS が解いた ImageBitmap のまま GPU へ）。3 回ずつ。
+
+| | 解く仕事（work_max） | 区間の cpu max | 初めて描いたコマの split max | 同 draw max |
+|---|---|---|---|---|
+| keyed=0 | 229.6 / 230.7 / 231.5 | 353.1 / 355.6 / 356.3 | 37.2 / 37.4 / 38.3 | 84.2 / 84.7 / 85.3 |
+| keyed=1 | 177.4 / 177.5 / 178.5 | 227.7 / 227.9 / 228.7 | 15.7 / 15.9 / 16.2 | 32.2 / 32.3 / 32.7 |
+
+- 絵を wasm へ読み戻す往復（読み戻し・3 回の写し・SHA-256）と、絵 1 枚ごとの createImageBitmap の待ちが消え、解く仕事が 230 → 178 ms。
+  初めて描くコマも、形の SHA-256 と絵の画素の上げが消えて split 37 → 16 ms・draw 84 → 32 ms。
+- 残る 178 ms は glb の構文読み（JSON・accessor・形を組む）で、束が届いたコマの 4 分の 3 を超える（計画の 6 の「① Web Worker は 3 割を超えた時に相談」に当たる）。
+- `web-capture --dev capture:150`（WebGPU と WebGL2）で keyed=0 と keyed=1 の絵はバイトまで同じ。

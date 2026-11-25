@@ -624,7 +624,7 @@ pub mod WebLayer {
         run f() with handler LoadProgress {
             def report(phase, done, total, k) = { report(phase, done, total); k(()) }
             def runTasks(phase, tasks, k) = { LoadProgress.runTasksInOrder(report, phase, tasks); k(()) }
-            def imageDecoder(k) = k({ decode = decodeImage, platformImage = platformImageOf, versionedKey = versionedKeyOf })
+            def imageDecoder(k) = k({ decode = decodeImage, platformImage = platformImageOf, versionedKey = versionedKeyOf, platformImageOfBytes = platformImageOfBytes })
             def downloads(k) = k(downloadsOf(st))
         }
 
@@ -632,6 +632,11 @@ pub mod WebLayer {
     def platformImageOf(path: String): Option[ImageData.PlatformImage] \ IO =
         Browser.noteUsed("file", path);
         if (WebImages.holdPlatformImage(path)) Some({ key = WebImages.platformKey(path), width = WebImages.width(path), height = WebImages.height(path) })
+        else None
+
+    /// バイト bytes を ImageBitmap に解いて JS の側に id で持ち、その絵を返す（解くまでゲームのループごと止まる・画素は wasm へ運ばない）。解けないバイトは None。
+    def platformImageOfBytes(id: String, bytes: Vector[Int8]): Option[ImageData.PlatformImage] \ IO =
+        if (WebImages.holdPlatformBytes(id, unchecked_cast(bytes as Array[Int8, Static]))) Some({ key = WebImages.platformKey(id), width = WebImages.width(id), height = WebImages.height(id) })
         else None
 
     /// 道と書き出しの版の字（束の中身は版ごとに変わらない）。

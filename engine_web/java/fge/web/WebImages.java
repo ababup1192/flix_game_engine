@@ -62,6 +62,26 @@ public final class WebImages {
         return has(path);
     }
 
+    @JSBody(params = {"id", "bytes", "done"}, script = "fgeHoldImageBytes(id, bytes, done);")
+    private static native void startHoldBytes(String id, JSObject bytes, DecodeDone done);
+
+    @Async
+    private static native int waitHoldBytes(String id, JSObject bytes);
+
+    private static void waitHoldBytes(String id, JSObject bytes, AsyncCallback<Integer> callback) {
+        startHoldBytes(id, bytes, () -> callback.complete(0));
+    }
+
+    /**
+     * バイトの画像を ImageBitmap に解いて id で持つ（前に同じ id で持っていればそのまま）。持てたら真。
+     * 解く間はゲームのループごと止まる（待つ間はブラウザへ手を返す）。画素は wasm へ運ばない（glb の中の絵）。
+     */
+    public static boolean holdPlatformBytes(String id, byte[] bytes) {
+        if (has(id)) return true;
+        waitHoldBytes(id, Int8Array.copyFromJavaArray(bytes));
+        return has(id);
+    }
+
     /** 解き終わりの知らせ。 */
     @JSFunctor
     private interface DecodeDone extends JSObject {

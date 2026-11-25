@@ -61,7 +61,8 @@ mod SceneBench {
 
     pub def step(plan: BenchRun.Plan, emit: String -> Unit \ IO, scene: Scene, frame: App.Frame, w: World): World \ IO = match scene {
         case Scene.First(kit) =>
-            let first = First.advance(kit, emit, knobsOf(scene, 0), First.sampleOf(frame), w#first);
+            let (workMs, model) = if (First.isGlbFrame(kit, w#first#frame)) kit#glb() else (0.0, w#first#model);
+            let first = { model = model | First.advance(kit, emit, knobsOf(scene, 0), BenchRun.sampleOf(frame, workMs), w#first) };
             { t = w#t + frame#dt, now = frame#realNow, first = first, progress = { done = first#done | w#progress } | w }
         case _ => stepBench(plan, emit, scene, frame, w)
     }
@@ -77,7 +78,7 @@ mod SceneBench {
         case Scene.Orb        => Orb.items(0.0)
         case Scene.Study(kit) => Study.items(kit)
         case Scene.Lamps(cfg) => Lighting.lampsItems(cfg, w#t)
-        case Scene.First(kit) => First.items(kit, w#first#frame, w#t)
+        case Scene.First(kit) => First.items(kit, w#first#frame, w#first#model, w#t)
     }
 
     /// 夜の街灯の場面のつまみ（shadows = 影を落とす灯りの数・0 で影なし・mapsize・pcf）。

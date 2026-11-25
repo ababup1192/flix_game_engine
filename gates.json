@@ -93,7 +93,7 @@
     {"id": "baseline", "dir": "bench/baseline/", "about": "基準の版の置き場（データ）", "gates": ["gl-capture-check", "baseline-check", "check-external"]},
     {"id": "hd2d_town", "dir": "bench/hd2d_town/", "reads": {"anyOf": [{"prefixes": ["templates/game-starter/assets/"]}, {"prefixes": ["templates/rpg-starter/assets/"], "suffixes": [".ttf", ".otf"]}]}, "test": true, "testTime": "17s", "checkTime": "6s"},
     {"id": "gl_parity", "dir": "bench/gl_parity/", "feeds": ["webgpu_v2"], "check": true, "gates": ["gl-parity", "baseline-check"], "checkTime": "6s"},
-    {"id": "scene3d", "dir": "bench/scene3d/", "reads": {"prefixes": ["templates/game-starter/assets/"]}, "feeds": ["webgpu_v2"], "check": true, "gates": ["gl-capture-check"], "checkTime": "6s"},
+    {"id": "scene3d", "dir": "bench/scene3d/", "reads": {"prefixes": ["templates/game-starter/assets/", "templates/retro3d-horror-starter/assets/"]}, "feeds": ["webgpu_v2"], "check": true, "gates": ["gl-capture-check"], "checkTime": "6s"},
     {"id": "sprite_stress", "dir": "bench/sprite_stress/", "reads": {"prefixes": ["templates/game-starter/assets/"]}, "check": true, "checkTime": "6s"},
     {"id": "crowd2d", "dir": "bench/crowd2d/", "check": true, "checkTime": "6s"},
     {"id": "texture_upload", "dir": "bench/texture_upload/", "check": true, "checkTime": "6s"},

@@ -3,12 +3,13 @@
 // 無ければ部屋を描き続けるだけ（頁の旗 capture:<n> で絵を撮る道）。
 // WhyNot: 撮る道でも測らない — 診断を付けると撮る絵の道が実機の既定と変わる。
 mod WebMain {
-    use fge::{App, LoadProgress, Platform, WebFs, WebLayer}
+    use fge::{App, Gltf, LoadProgress, Model3d, Platform, WebFs, WebLayer}
 
     import fge.web.Browser
 
-    def loadScene(knobs: Map[String, String]): Result[String, SceneBench.Scene] \ Fs.FileRead =
-        if (First.modeOf(knobs) == Some(First.Mode.Group) or First.modeOf(knobs) == Some(First.Mode.Preload))
+    def loadScene(knobs: Map[String, String]): Result[String, SceneBench.Scene] \ Fs.FileRead + LoadProgress =
+        if (First.modeOf(knobs) == Some(First.Mode.Glb)) Ok(SceneBench.Scene.First(First.kitOf(First.Mode.Glb, knobs, None) |> First.withGlb(glbJob(knobs))))
+        else if (First.modeOf(knobs) == Some(First.Mode.Group) or First.modeOf(knobs) == Some(First.Mode.Preload))
             Ok(SceneBench.Scene.First(First.kitOf(First.modeOf(knobs) |> Option.getWithDefault(First.Mode.Group), knobs, None)))
         else if (SceneBench.isField(knobs)) Ok(SceneBench.Scene.Field(Field.kitOf(Field.configOf(knobs))))
         else match Map.get("psx", knobs) {
@@ -16,7 +17,23 @@ mod WebMain {
             case None       => Room.loadMeshes() |> Result.map(meshes -> SceneBench.Scene.Room(Room.kitOf(meshes)))
         }
 
-    def measure(knobs: Map[String, String]): Unit \ (IO + Fs.FileRead + Fs.FileWrite + Platform.Services) =
+    /// assets/props_1f.glb を解く仕事（keyed=1 なら鍵つきの読み方）。かかった ms を返す。
+    def glbJob(knobs: Map[String, String]): (Unit -> (Float64, Option[Model3d.Model3d]) \ IO) \ (Fs.FileRead + LoadProgress) =
+        let path = "assets/props_1f.glb";
+        let bytes = Fs.FileRead.readBytes(path) |> Result.getWithDefault(Vector.empty());
+        let decoder = LoadProgress.imageDecoder();
+        let keyed = Map.get("keyed", knobs) == Some("1");
+        let options = { vertexColors = true | Gltf.defaultLoadOptions() };
+        () -> {
+            let began = Browser.now();
+            let model = if (keyed) Gltf.fromGlbTexturedKeyedUsingOptions((decoder#versionedKey)(path) |> Option.getWithDefault(path), decoder, options, bytes)
+                        else Gltf.fromGlbTexturedUsingOptions(decoder, options, bytes);
+            let ms = Browser.now() - began;
+            println("[scene3d] glb ${if (keyed) "keyed" else "plain"}: ${ms} ms・絵 ${model |> Result.map(m -> List.length(m#textures)) |> Result.getWithDefault(-1)} 枚");
+            (ms, Result.toOption(model))
+        }
+
+    def measure(knobs: Map[String, String]): Unit \ (IO + Fs.FileRead + Fs.FileWrite + Platform.Services + LoadProgress) =
         match loadScene(knobs) {
             case Err(why)  => println("[scene3d] 家具を読めない: ${why}")
             case Ok(scene) =>

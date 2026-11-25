@@ -695,8 +695,8 @@
 - 機種が自分の側に解いて持つ絵（ブラウザの ImageBitmap）。key = 描き手が GPU へ上げる時に渡す字（同じ key なら同じ画素）。
   `pub type alias PlatformImage = { key = String, width = Int32, height = Int32 }`
 - 絵を解く口の組。スレッドをまたいで使える（並列の仕事の中から呼んでよい）。
-  `pub type alias ImageDecoder = { decode = Vector[Int8] -> Result[String, ImageData] \ IO, platformImage = String -> Option[PlatformImage] \ IO, versionedKey = String -> Option[String] \ IO }`
-- decode だけを持つデコーダー（platformImage と versionedKey はいつも None）。デスクトップ・画面なし・テストの handler 用。
+  `pub type alias ImageDecoder = { decode = Vector[Int8] -> Result[String, ImageData] \ IO, platformImage = String -> Option[PlatformImage] \ IO, versionedKey = String -> Option[String] \ IO, platformImageOfBytes = (String, Vector[Int8]) -> Option[PlatformImage] \ IO }`
+- decode だけを持つデコーダー（platformImage・versionedKey・platformImageOfBytes はいつも None）。デスクトップ・画面なし・テストの handler 用。
   `pub def decoderOf(decode: Vector[Int8] -> Result[String, ImageData] \ IO): ImageDecoder`
 - 何も解かず、いつも Err を返すデコーダー（絵を読まないテストの handler 用）。
   `pub def failingDecoder(reason: String): ImageDecoder`

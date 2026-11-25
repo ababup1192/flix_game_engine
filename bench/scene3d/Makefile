@@ -14,6 +14,7 @@
 #   make run FIRST=1 … 初めての 1 回（src/First.flix）: 物を置かずに回した後に集まりを初めて載せるコマ（区間 first）・同じ名前の別の値の集まりへ替えるコマ（rebuild）の
 #                最悪（frame_max・split_max・draw_max）を出す。Field のつまみ（COUNT・SHAPES・MATS・VERTS）が効く。起動し直して 3 回流す
 #   make run FIRST=preload … 集まりを App.withPreload3d の groups・scenes で頭から宣言して先に作らせ（区間 ahead）、120 コマ目に初めて載せる（区間 first）
+#   ブラウザだけ: ARGS='first=glb&keyed=<0|1>' … 120 コマ目に assets/props_1f.glb（retro3d-horror-starter の束）を解いて描く（区間 glb の work_max が解く仕事の ms）
 #   make run FIRST=skin … 集まりを頭から載せ、途中で骨つきの人物（PERSON=<glb>・既定は retro3d-horror-starter の teacher_woman）を出すコマ（区間 skin）の最悪
 #   make run SCENE=orb POST=agx … 光る球の場面（view transform の見比べ。POST は standard / agx / neutral）
 #   make run POST=1 … 同じ場面に画面全体の後がけ（App.withPostStack・夕方の屋外の preset）を掛ける（後がけの重さを POST なしと並べる）

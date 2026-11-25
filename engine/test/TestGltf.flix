@@ -415,4 +415,33 @@ mod TestGltf {
     def testTexturedKeyedKeepsPartsAndMaterials(): Unit \ {Assert, Fs.FileRead, IO} =
         let shape = (m: Model3d.Model3d) -> m#parts |> List.map(p -> (Mesh3d.positions(p#mesh), Option.nonEmpty(p#material)));
         Assert.assertEq(expected = shape(textured()), shape(texturedKeyed("t.glb@v1")))
+
+    /// 機種の側に絵を持てるデコーダーでは、鍵つきで読んだ glb の絵を機種の側の絵にする（id は "key#image<番号>"・画素を読まない）。
+    def platformDecoder(): ImageData.ImageDecoder =
+        { platformImageOfBytes = (id, _) -> checked_ecast(Some({ key = id + "@held", width = 2, height = 2 })) | TestDecoder.imageIo() }
+
+    def sourcesWith(limits: Gltf.TextureLimits): List[Bool] \ {Fs.FileRead, IO} =
+        okOrBug(Gltf.fromGlbTexturedKeyedUsingOptions("t.glb@v1", platformDecoder(), { limits = limits | Gltf.defaultLoadOptions() }, texturedBytes()))#textures
+            |> List.map(t -> not isArgb(Texture3d.sourceOf(t)))
+
+    @Test
+    def testKeyedTexturesStayOnThePlatform(): Unit \ {Assert, Fs.FileRead, IO} =
+        let sources = sourcesWith(Gltf.noTextureLimits());
+        Assert.assertEq(expected = (true, true), (not List.isEmpty(sources), List.forAll(identity, sources)))
+
+    /// 機種の側の絵が上限より大きい時は、画素へ戻して読む（縮められるように）。
+    @Test
+    def testKeyedTexturesOverTheLimitAreDecoded(): Unit \ {Assert, Fs.FileRead, IO} =
+        Assert.assertTrue(List.forAll(s -> not s, sourcesWith({ baseColor = 1, normal = 1 })))
+
+    /// 鍵の無い読み方は、機種の側に持てるデコーダーでも画素を読む（同じ id を約束できない）。
+    @Test
+    def testUnkeyedTexturesAreDecoded(): Unit \ {Assert, Fs.FileRead, IO} =
+        let model = okOrBug(Gltf.fromGlbTexturedUsingOptions(platformDecoder(), Gltf.defaultLoadOptions(), texturedBytes()));
+        Assert.assertTrue(List.forAll(t -> isArgb(Texture3d.sourceOf(t)), model#textures))
+
+    def isArgb(s: Texture3d.Source): Bool = match s {
+        case Texture3d.Source.Argb(_)          => true
+        case Texture3d.Source.PlatformImage(_) => false
+    }
 }

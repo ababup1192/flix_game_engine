@@ -15,13 +15,17 @@ pub mod ImageData {
     /// platformImage = 道の絵を機種の側に解いて持ち、その key を返す。持てない機種（デスクトップ）・道に絵が無い時は None。
     /// versionedKey = 道の中身が変わらない間だけ同じ字を返す鍵（ブラウザは道と書き出しの版）。読み直すと中身が変わりうる機種
     /// （デスクトップの開発中の読み直し）は None。
+    /// platformImageOfBytes = PNG / JPEG のバイトを機種の側に解いて持ち、その絵を返す（id = 同じ id なら同じバイトだと呼ぶ側が約束できる字・
+    /// versionedKey から作る）。画素を wasm へ運ばない。持てない機種（デスクトップ）・解けないバイトは None。
     pub type alias ImageDecoder = { decode = Vector[Int8] -> Result[String, ImageData] \ IO,
                                     platformImage = String -> Option[PlatformImage] \ IO,
-                                    versionedKey = String -> Option[String] \ IO }
+                                    versionedKey = String -> Option[String] \ IO,
+                                    platformImageOfBytes = (String, Vector[Int8]) -> Option[PlatformImage] \ IO }
 
-    /// decode だけを持つデコーダー（platformImage と versionedKey はいつも None）。デスクトップ・画面なし・テストの handler 用。
+    /// decode だけを持つデコーダー（platformImage・versionedKey・platformImageOfBytes はいつも None）。デスクトップ・画面なし・テストの handler 用。
     pub def decoderOf(decode: Vector[Int8] -> Result[String, ImageData] \ IO): ImageDecoder =
-        { decode = decode, platformImage = _ -> checked_ecast(None), versionedKey = _ -> checked_ecast(None) }
+        { decode = decode, platformImage = _ -> checked_ecast(None), versionedKey = _ -> checked_ecast(None),
+          platformImageOfBytes = (_, _) -> checked_ecast(None) }
 
     /// 何も解かず、いつも Err を返すデコーダー（絵を読まないテストの handler 用）。
     pub def failingDecoder(reason: String): ImageDecoder = decoderOf(_ -> checked_ecast(Err(reason)))

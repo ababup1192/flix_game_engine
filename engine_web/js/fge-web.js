@@ -1173,6 +1173,45 @@ function fgeHoldImage(path, done) {
   }, function (e) { console.warn("[fge] 絵 " + p + " を解けない: " + (e && e.message || e)); finish(); });
 }
 
+// バイト bytes（glb の中の絵）を ImageBitmap に解いて id の道で持つ（fgeHoldImage のバイトの版）。done は必ず後から 1 回呼ぶ。
+// WhyNot: 解いた画素を wasm へ読み戻さない — 読み戻しと 3 回の写しと SHA-256 が、束が届いたコマに乗る。描き手は道の絵と同じく ImageBitmap から GPU へ上げる。
+function fgeHoldImageBytes(id, bytes, done) {
+  var p = fgeNormPath(id);
+  var label = "[loadtime] hold " + p + "（" + bytes.length + " バイト）";
+  if (fgeDecodeTimes !== null) console.time(label);
+  var finish = function () { if (fgeDecodeTimes !== null) console.timeEnd(label); done(); };
+  createImageBitmap(new Blob([bytes], { type: fgeImageTypeOfBytes(bytes) }), { premultiplyAlpha: "none", colorSpaceConversion: "none" }).then(function (bitmap) {
+    fgeImages.set(p, bitmap);
+    finish();
+  }, function (e) { console.warn("[fge] 絵 " + p + " を解けない: " + (e && e.message || e)); finish(); });
+}
+
+// 届いた glb（path・bytes）の中の絵を、届いた時に ImageBitmap へ解いておく（id は Gltf.fromGlbTexturedKeyedUsingOptions が
+// versionedKey の key で作る "<fgePlatformKey(path)>#image<番号>"）。待たない。解けない絵は飛ばす（wasm が読む時に解く）。
+// WhyNot: wasm が読む時まで待たない — 絵 1 枚ごとに createImageBitmap を待つ間ゲームのループが止まり、束が届いたコマに絵の枚数だけ乗る。
+function fgePreholdGlbImages(path, bytes) {
+  if (!/\.glb$/i.test(path) || !bytes || bytes.length < 20) return;
+  try {
+    var view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    if (view.getUint32(0, true) !== 0x46546C67) return;
+    var jsonLength = view.getUint32(12, true);
+    var json = JSON.parse(new TextDecoder().decode(bytes.subarray(20, 20 + jsonLength)));
+    var binStart = 20 + jsonLength + 8;
+    var key = fgePlatformKey(path);
+    (json.images || []).forEach(function (image, k) {
+      var bv = image.bufferView === undefined ? null : (json.bufferViews || [])[image.bufferView];
+      if (!bv) return;
+      var start = binStart + (bv.byteOffset || 0);
+      var part = bytes.subarray(start, start + bv.byteLength);
+      var id = fgeNormPath(key + "#image" + k);
+      if (fgeImages.has(id)) return;
+      createImageBitmap(new Blob([part], { type: fgeImageTypeOfBytes(part) }), { premultiplyAlpha: "none", colorSpaceConversion: "none" }).then(function (bitmap) {
+        if (fgeImages.has(id)) bitmap.close(); else fgeImages.set(id, bitmap);
+      }, function () { /* wasm が読む時に解き直して知らせる */ });
+    });
+  } catch (e) { /* 壊れた glb は wasm が読む時に知らせる */ }
+}
+
 // ── 音 ──
 var fgeAudio = {
   ctx: null, master: null, sounds: new Map(), manifestSeconds: new Map(), wasRunning: false, started: false,
@@ -2026,7 +2065,10 @@ async function fgeDeferredReceive(e, gen, signal) {
   var gate = fgeNetGate(e);
   if (gate) await gate;
   if (e.gen !== gen) return;
-  if (e.file) fgeAssets.set(e.path, bytes);
+  if (e.file) {
+    fgeAssets.set(e.path, bytes);
+    fgePreholdGlbImages(e.path, bytes);
+  }
   if (e.image) {
     var bitmap = await fgeBitmapOf(bytes, e.path);
     if (e.gen !== gen) { bitmap.close(); return; }
@@ -2275,7 +2317,11 @@ async function fgeBoot() {
   });
   fgeBootProgressInit(bundle, total);
   var jobs = files.map(function (path) {
-    return async function () { fgeAssets.set(fgeNormPath(path), await fgeFetchAsset(path)); };
+    return async function () {
+      var bytes = await fgeFetchAsset(path);
+      fgeAssets.set(fgeNormPath(path), bytes);
+      fgePreholdGlbImages(fgeNormPath(path), bytes);
+    };
   }).concat(sounds.map(function (s) {
     return async function () {
       var buffer;
