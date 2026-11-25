@@ -88,17 +88,17 @@ mod TestGltf.Uvs2 {
         let normals = if (withNormals) TestGltf.f32s(0.0 :: 0.0 :: 1.0 :: 0.0 :: 0.0 :: 1.0 :: 0.0 :: 0.0 :: 1.0 :: Nil) else Nil;
         TestGltf.glb(json, List.flatten(positions :: normals :: TestGltf.f32s(uv2) :: Nil))
 
-    def firstPartUvs2(bytes: Vector[Int8]): Result[String, Option[Vector[Float64]]] =
-        Gltf.fromGlb(bytes) |> Result.map(m -> List.head(m#parts) |> Option.flatMap(p -> Mesh3d.uvs2(p#mesh)))
+    def firstPartUvs2(bytes: Vector[Int8]): Result[String, Option[Vector[Float64]]] \ IO =
+        TestGltf.decode(bytes) |> Result.map(m -> List.head(m#parts) |> Option.flatMap(p -> Mesh3d.uvs2(p#mesh)))
 
     def threeUvs(): List[Float64] = 0.25 :: 0.5 :: 0.75 :: 0.125 :: 0.375 :: 0.625 :: Nil
 
     @Test
-    def testTexcoord1IsReadAsIs(): Unit \ Assert =
+    def testTexcoord1IsReadAsIs(): Unit \ {Assert, IO} =
         Assert.assertEq(expected = Ok(Some(List.toVector(threeUvs()))), firstPartUvs2(triangleWithUvs2Glb(true, threeUvs())))
 
     @Test
-    def testTexcoord1FollowsCornersWithoutNormals(): Unit \ Assert =
+    def testTexcoord1FollowsCornersWithoutNormals(): Unit \ {Assert, IO} =
         Assert.assertEq(expected = Ok(Some(List.toVector(threeUvs()))), firstPartUvs2(triangleWithUvs2Glb(false, threeUvs())))
 
     /// firstPartUvs2 と、読む間に stderr へ TEXCOORD_1 を名指す 1 行が出たか（TestGltf.firstPartUvsWarned と同じ受け方）。
@@ -115,13 +115,13 @@ mod TestGltf.Uvs2 {
         Assert.assertEq(expected = (Ok(None), true), firstPartUvs2Warned(triangleWithUvs2Glb(true, 0.0 :: 0.0 :: 1.0 :: 1.0 :: Nil)))
 
     @Test
-    def testGlbWithoutTexcoord1HasNoUvs2(): Unit \ Assert =
+    def testGlbWithoutTexcoord1HasNoUvs2(): Unit \ {Assert, IO} =
         Assert.assertEq(expected = Ok(None),
-            Gltf.fromGlb(TestGltf.triangleWithUvsGlb(0.0 :: 0.0 :: 1.0 :: 0.0 :: 0.0 :: 1.0 :: Nil))
+            TestGltf.decode(TestGltf.triangleWithUvsGlb(0.0 :: 0.0 :: 1.0 :: 0.0 :: 0.0 :: 1.0 :: Nil))
                 |> Result.map(m -> List.head(m#parts) |> Option.flatMap(p -> Mesh3d.uvs2(p#mesh))))
 
     @Test
     def testTexcoord1IsReadByLoadTexturedToo(): Unit \ {Assert, IO} =
         Assert.assertEq(expected = Ok(Some(List.toVector(threeUvs()))),
-            Gltf.fromGlbTexturedUsing(TestDecoder.imageIo(), Gltf.noTextureLimits(), triangleWithUvs2Glb(true, threeUvs())) |> Result.map(m -> List.head(m#parts) |> Option.flatMap(p -> Mesh3d.uvs2(p#mesh))))
+            Gltf.decodeWith(TestDecoder.imageIo(), { limits = Gltf.noTextureLimits() | Gltf.defaultLoadOptions() }, None, triangleWithUvs2Glb(true, threeUvs())) |> Result.map(m -> List.head(m#parts) |> Option.flatMap(p -> Mesh3d.uvs2(p#mesh))))
 }

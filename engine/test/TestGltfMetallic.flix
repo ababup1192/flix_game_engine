@@ -1,4 +1,4 @@
-// glb の metallic・roughness（loadTextured）: 付く条件（pbrMetallicRoughness に metallicFactor・roughnessFactor・metallicRoughnessTexture のどれかがある）・
+// glb の metallic・roughness（Gltf.decodeWith）: 付く条件（pbrMetallicRoughness に metallicFactor・roughnessFactor・metallicRoughnessTexture のどれかがある）・
 // 書いていない値の既定（1）・絵の読み方（B = metallic・G = roughness）・読めない絵と uv の無い形での値だけへの倒れ方・GltfMaterial の欄。
 mod TestGltf.Metallic {
     import java.io.ByteArrayOutputStream
@@ -33,7 +33,7 @@ mod TestGltf.Metallic {
     /// pbrMetallicRoughness の欄（materialJson の中身）。
     def pbr(inside: String): String = "{\"pbrMetallicRoughness\":{${inside}}}"
 
-    def read(bytes: Vector[Int8]): Model3d.Model3d \ IO = TestGltf.okOrBug(Gltf.fromGlbTexturedPbrUsing(TestDecoder.imageIo(), Gltf.noTextureLimits(), bytes))
+    def read(bytes: Vector[Int8]): Model3d.Model3d \ IO = TestGltf.okOrBug(Gltf.decodeWith(TestDecoder.imageIo(), { limits = Gltf.noTextureLimits(), pbr = true | Gltf.defaultLoadOptions() }, None, bytes))
 
     def firstPart(m: Model3d.Model3d): Model3d.ModelPart = match List.head(m#parts) {
         case Some(p) => p
@@ -48,20 +48,18 @@ mod TestGltf.Metallic {
 
     def orm(): String = "\"metallicRoughnessTexture\":{\"index\":1}"
 
-    /// 既存の loadTexturedUsing は metallic・roughness を付けず、画像も読まない（0.91.0 と同じ材質）。値は GltfMaterial に載る。
+    /// pbr が偽の読み方 は metallic・roughness を付けず、画像も読まない（0.91.0 と同じ材質）。値は GltfMaterial に載る。
     @Test
     def testPlainLoaderIgnoresMetallicRoughness(): Unit \ {Assert, IO} =
-        let m = TestGltf.okOrBug(Gltf.fromGlbTexturedUsing(TestDecoder.imageIo(), Gltf.noTextureLimits(),
-            glbWith(pbr(base() + "," + orm() + ",\"metallicFactor\":0.25,\"roughnessFactor\":0.75"), true)));
+        let m = TestGltf.okOrBug(Gltf.decodeWith(TestDecoder.imageIo(), { limits = Gltf.noTextureLimits() | Gltf.defaultLoadOptions() }, None, glbWith(pbr(base() + "," + orm() + ",\"metallicFactor\":0.25,\"roughnessFactor\":0.75"), true)));
         Assert.assertEq(expected = (Some(false), 1, Some((0.25, 0.75, false))),
             (firstPart(m)#material |> Option.map(mat -> Option.nonEmpty(Scene3d.metallicRoughnessOf(mat))), List.length(m#textures),
              firstPart(m)#gltfMaterial |> Option.map(g -> (g#metallic, g#roughness, Option.nonEmpty(g#metallicRoughnessTexture)))))
 
-    /// 絵も emissive も無い材質は、既存の loadTexturedUsing では None（頂点の色で描く）のまま。
+    /// 絵も emissive も無い材質は、pbr が偽の読み方 では None（頂点の色で描く）のまま。
     @Test
     def testPlainLoaderKeepsVertexColorOnlyMaterialsNone(): Unit \ {Assert, IO} =
-        let m = TestGltf.okOrBug(Gltf.fromGlbTexturedUsing(TestDecoder.imageIo(), Gltf.noTextureLimits(),
-            glbWith(pbr("\"metallicFactor\":0,\"roughnessFactor\":0.5"), true)));
+        let m = TestGltf.okOrBug(Gltf.decodeWith(TestDecoder.imageIo(), { limits = Gltf.noTextureLimits() | Gltf.defaultLoadOptions() }, None, glbWith(pbr("\"metallicFactor\":0,\"roughnessFactor\":0.5"), true)));
         Assert.assertEq(expected = None, firstPart(m)#material |> Option.map(mat -> Scene3d.materialFieldsOf(mat)#spec#name))
 
     /// baseColorFactor 0.5: 既存の口は画面の値として 0.5 のまま、PBR の口は線形の値として読み、頂点の色（画面の値）へ linearToSrgb(0.5) で戻して書く。
@@ -69,7 +67,7 @@ mod TestGltf.Metallic {
     def testPbrLoaderReadsBaseColorFactorAsLinear(): Unit \ {Assert, IO} =
         let bytes = glbWith(pbr("\"baseColorFactor\":[0.5,0.5,0.5,1],\"metallicFactor\":0.2"), true);
         let redOf = (m: Model3d.Model3d) -> Vector.get(0, Mesh3d.colors(firstPart(m)#mesh));
-        let plain = TestGltf.okOrBug(Gltf.fromGlbTexturedUsing(TestDecoder.imageIo(), Gltf.noTextureLimits(), bytes));
+        let plain = TestGltf.okOrBug(Gltf.decodeWith(TestDecoder.imageIo(), { limits = Gltf.noTextureLimits() | Gltf.defaultLoadOptions() }, None, bytes));
         Assert.assertEq(expected = (0.5, Texture3d.linearToSrgb(0.5)), (redOf(plain), redOf(read(bytes))))
 
     /// pbrMetallicRoughness が無い材質は付かない（材質の無い物は頂点の色のまま）。

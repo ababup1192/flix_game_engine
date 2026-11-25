@@ -54,7 +54,7 @@ mod TestGltf.VertexColor {
     def withVertexColors(): Gltf.LoadOptions = { vertexColors = true | Gltf.defaultLoadOptions() }
 
     def colorsWith(options: Gltf.LoadOptions, bytes: Vector[Int8]): List[Float64] \ IO =
-        Mesh3d.colors(TestGltf.okOrBug(Gltf.fromGlbTexturedUsingOptions(TestDecoder.imageIo(), options, bytes))#mesh) |> Vector.toList
+        Mesh3d.colors(TestGltf.okOrBug(Gltf.decodeWith(TestDecoder.imageIo(), options, None, bytes))#mesh) |> Vector.toList
 
     def colorsOf(bytes: Vector[Int8]): List[Float64] \ IO = colorsWith(withVertexColors(), bytes)
 
@@ -116,22 +116,22 @@ mod TestGltf.VertexColor {
     @Test
     def testTexturedLoaderWithoutVertexColorsKeepsWhite(): Unit \ {Assert, IO} =
         Assert.assertEq(expected = List.repeat(9, 1.0),
-                        Mesh3d.colors(TestGltf.okOrBug(Gltf.fromGlbTexturedUsing(TestDecoder.imageIo(), Gltf.noTextureLimits(), ubyteGlb()))#mesh) |> Vector.toList)
+                        Mesh3d.colors(TestGltf.okOrBug(Gltf.decodeWith(TestDecoder.imageIo(), { limits = Gltf.noTextureLimits() | Gltf.defaultLoadOptions() }, None, ubyteGlb()))#mesh) |> Vector.toList)
 
     @Test
     def testDefaultLoadOptionsKeepWhite(): Unit \ {Assert, IO} =
         Assert.assertEq(expected = List.repeat(9, 1.0), colorsWith(Gltf.defaultLoadOptions(), ubyteGlb()))
 
     @Test
-    def testPlainLoaderKeepsWhite(): Unit \ Assert =
-        Assert.assertEq(expected = List.repeat(9, 1.0), Mesh3d.colors(TestGltf.okOrBug(Gltf.fromGlb(ubyteGlb()))#mesh) |> Vector.toList)
+    def testPlainLoaderKeepsWhite(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = List.repeat(9, 1.0), Mesh3d.colors(TestGltf.okOrBug(TestGltf.decode(ubyteGlb()))#mesh) |> Vector.toList)
 
     @Test
     def testGlbWithoutColorsStaysWhite(): Unit \ {Assert, IO} =
         Assert.assertEq(expected = List.repeat(9, 1.0), colorsOf(TestGltf.triangleGlb("", "")))
 
     def ushortModel(): Model3d.Model3d \ IO =
-        TestGltf.okOrBug(Gltf.fromGlbTexturedUsingOptions(TestDecoder.imageIo(), withVertexColors(), ushortGlb(true)))
+        TestGltf.okOrBug(Gltf.decodeWith(TestDecoder.imageIo(), withVertexColors(), None, ushortGlb(true)))
 
     def partColors(model: Model3d.Model3d): List[Float64] = model#parts |> List.flatMap(p -> Mesh3d.colors(p#mesh) |> Vector.toList)
 

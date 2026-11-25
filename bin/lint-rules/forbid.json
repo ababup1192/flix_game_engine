@@ -353,6 +353,30 @@
       "hint": "数の関数は Num へ移した: Num.sqrt・Num.sin・Num.cos・Num.atan2・Num.pi・Num.tau（引数と値は同じ。mount = \"fge\" のゲームは use fge::{…} に Num も足す）。Vec2 の旧い名前は 0.84.0 で消えた（engine の docs/migrations/0.77.0.md）"
     },
     {
+      "id": "gltf-old-loaders",
+      "suffixes": [
+        ".flix"
+      ],
+      "prefixes": [
+        "src/",
+        "templates/"
+      ],
+      "skip": [
+        "src/engine/",
+        "src/engine_world/",
+        "src/engine_tools/",
+        "src/render_gl/"
+      ],
+      "skipDirs": [
+        "test",
+        "build",
+        "lib"
+      ],
+      "notice": true,
+      "pattern": "\\bGltf\\.(fromGlb\\w*|load\\w*|decodeWith)\\(",
+      "hint": "glb は読み込みの頭で Model3d.loader() を 1 回作り、Model3d.load(loader, 道) か Model3d.decode(loader, 道, バイト)（BackgroundLoad の decode・並列の仕事の中）で読む。鍵の有無は decode が道から決め、PBR・頂点の色・絵の上限は project.json の \"gltf\" に書く。Gltf.decodeWith は engine のテストと bench の口（engine の docs/migrations/0.114.0.md）"
+    },
+    {
       "id": "frame-literal",
       "suffixes": [
         ".flix"

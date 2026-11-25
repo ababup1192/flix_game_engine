@@ -632,34 +632,16 @@
   `pub def defaultDeadzone(): Float64`
 
 ## Gltf — `engine/src/scene3d/Gltf.flix`
-- path の .glb を読む（Fs.FileRead.readBytes）。読めない・壊れている時は Err（パスつき）。
-  `pub def load(path: String): Result[String, Model3d.Model3d] \ Fs.FileRead`
-- .glb のバイトから作る。壊れている・読まない物を含む時は Err。parts は primitive ごと（材質 None・gltfMaterial の絵の名前は None）・textures は空。
-  `pub def fromGlb(bytes: Vector[Int8]): Result[String, Model3d.Model3d]`
-- fromGlb の、形の中身の鍵を key から作る版（part ごとに "key#part<番号>"・まとめた形は "key#all"）。
-  `pub def fromGlbKeyed(key: String, bytes: Vector[Int8]): Result[String, Model3d.Model3d]`
 - 材質の絵の長い辺の上限（px）。baseColor = baseColorTexture と emissiveTexture（同じ色の絵）・normal = normalTexture。
   `pub type alias TextureLimits = { baseColor = Int32, normal = Int32 }`
 - 上限なし。ほかの値は { normal = 1024 | Gltf.noTextureLimits() } の形で替える。
   `pub def noTextureLimits(): TextureLimits`
-- path の .glb を、絵と材質つきで読む。parts に材質（baseColorTexture → Scene3d.texturedMaterial・normalTexture → 法線マップ・
-  `pub def loadTexturedUsing(decoder: ImageData.ImageDecoder, limits: TextureLimits, path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO`
-- loadTexturedUsing のバイトの版。
-  `pub def fromGlbTexturedUsing(decoder: ImageData.ImageDecoder, limits: TextureLimits, bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO`
-- loadTexturedUsing に、材質の metallic・roughness も読んで付ける版（Scene3d.withMetallicRoughness。付く条件・既定値・絵の読み方は materialOf の説明）。
-  `pub def loadTexturedPbrUsing(decoder: ImageData.ImageDecoder, limits: TextureLimits, path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO`
-- loadTexturedPbrUsing のバイトの版。
-  `pub def fromGlbTexturedPbrUsing(decoder: ImageData.ImageDecoder, limits: TextureLimits, bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO`
-- 絵と材質つきの読み込みの選択肢。limits = 材質の絵の大きさの上限（loadTexturedUsing の limits）・
+- 読み方の選択肢。limits = 材質の絵の大きさの上限（場面の絵の上限に収める・近くで見ない法線マップを小さくする）・
   `pub type alias LoadOptions = { limits = TextureLimits, pbr = Bool, vertexColors = Bool }`
-- 上限なし・metallic・roughness を読まない・COLOR_0 を読まない（loadTexturedUsing と同じ）。欄を書き替えて使う:
+- 上限なし・metallic・roughness を読まない・COLOR_0 を読まない。欄を書き替えて使う: `{ vertexColors = true | Gltf.defaultLoadOptions() }`。
   `pub def defaultLoadOptions(): LoadOptions`
-- path の .glb を、選択肢 options で絵と材質つきで読む（読み方は loadTexturedUsing・欄は LoadOptions）。
-  `pub def loadTexturedUsingOptions(decoder: ImageData.ImageDecoder, options: LoadOptions, path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO`
-- loadTexturedUsingOptions のバイトの版。
-  `pub def fromGlbTexturedUsingOptions(decoder: ImageData.ImageDecoder, options: LoadOptions, bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO`
-- fromGlbTexturedUsingOptions の、形の中身の鍵を key から作る版（鍵の作り方と key の約束は fromGlbKeyed と同じ・初めて描くコマで頂点の SHA-256 を取らない）。
-  `pub def fromGlbTexturedKeyedUsingOptions(key: String, decoder: ImageData.ImageDecoder, options: LoadOptions, bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO`
+- .glb のバイトから、絵と材質つきで作る。ゲームは Model3d.loader / load / decode を使う（この口は engine のテストと bench が選択肢を直に渡す時のもの）。
+  `pub def decodeWith(decoder: ImageData.ImageDecoder, options: LoadOptions, key: Option[String], bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO`
 
 ## GpuHandle — `engine/src/core/GpuHandle.flix`
 - タイルマップの GPU インスタンスバッファのハンドル（`initTileBuffer` が返す）。
@@ -1002,6 +984,14 @@
   `pub def nodeOrigin(node: ModelNode): Vec3.Vec3`
 - ノード node から出た parts の形（world をベイクした頂点）を、そのノードの局所の座標へ戻す行列（焼き込みに使った world の逆行列）。
   `pub def partLocalToNode(node: ModelNode, model: Model3d): Option[Mat4.Mat4]`
+- glb の読み方（絵を解くデコーダーと、project.json の "gltf" の選択肢）。作るのは loader() だけ。
+  `pub type alias Loader = LoaderData`
+- 読み込みの頭（ループが回る前）で 1 回作り、並列の仕事や BackgroundLoad の decode へ渡す。
+  `pub def loader(): Loader \ LoadProgress + Fs.FileRead`
+- 道 path の glb を読む（読み込みの頭でも、並列の仕事の中でも呼べる）。読めない・壊れている時は Err（道つき）。
+  `pub def load(loader: Loader, path: String): Result[String, Model3d] \ Fs.FileRead + IO`
+- 読んだバイトから作る（BackgroundLoad.Group の decode など。path は鍵を作るのと Err に付けるのに使う）。
+  `pub def decode(loader: Loader, path: String, bytes: Vector[Int8]): Result[String, Model3d] \ IO`
 
 ## Num — `engine/src/core/Num.flix`
 - 0 以上 1 以下に収める。濃さ・進み具合・混ぜ具合など「0〜1 のはずの値」を
@@ -1192,7 +1182,7 @@
 - project.json から組み立てた、engine 起動に渡すための設定。
   `pub type alias ProjectConfig = { rootDir = String, glyphs = String, designWidth = Int32, designHeight = Int32, windowWidth = Int32, windowHeight = Int32, title = String, textureManifest = List[{name = String, path = String, hasAlpha = Bool}], fontManifest = List[{name = String, path = String, fontSize = Float64}], soundManifest = List[{name = String, path = String, looping = Bool}], clearColor = Color, maxDeltaTime = Float64, scene3dTextureBudgetMB = Int32, scene3dTextureBudgetCount = Int32 }`
 - 読み込み結果。シーンは別途 `findSceneFiles` で列挙する。
-  `pub type alias Project = { rootDir = String, config = ProjectConfig, portraitDesign = Option[PortraitDesign] }`
+  `pub type alias Project = { rootDir = String, config = ProjectConfig, portraitDesign = Option[PortraitDesign], gltf = Gltf.LoadOptions }`
 - 縦の design の決め方（project.json の web.portraitDesign）。幅は width に固定し、高さは開いた画面の縦横の比から決めて
   `pub type alias PortraitDesign = { width = Int32, minHeight = Int32, maxHeight = Int32 }`
 - 縦の design の大きさ（幅, 高さ）。view = 描き先の大きさ（CSS px など。比だけを使う）。view が 0 以下なら高さは minHeight。

@@ -35,7 +35,7 @@ pub def loadDocs(): Res.Docs \ Fs.FileRead + IO + LoadProgress =
   待つ間も 50 ms ごとに知らせるので、1 つが長くてもウィンドウが応答する。仕事が例外を投げたら残りを止めて同じ例外で抜ける。
   渡す関数は `IO` だけ — effect の handler はスレッドをまたがないので、`Fs.FileRead` で読む物は先に読んでおく。
 - 並列の仕事の中で絵（PNG / JPEG・glb の絵）を解くなら、読み込みの関数の頭で `let dec = LoadProgress.imageDecoder();` と受け取り、
-  仕事へ引数で渡す（`Gltf.fromGlbTexturedUsing(dec, limits, bytes)`・`Texture3d.decodeUsing(dec, bytes)`）。仕事の中から op は呼べない。
+  仕事へ引数で渡す（glb は頭で作った `Model3d.loader()` を渡して `Model3d.decode(loader, 道, bytes)`・絵は `Texture3d.decodeUsing(dec, bytes)`）。仕事の中から op は呼べない。
 - 本体のスレッドで、知らせの間が 0.5 秒を超えないように区切る。エンジンは 1 つの区切りの中に割り込めない。
 - 自前の handler（テストで知らせを集める時など）は必ず `k` を呼んで返す。RenderTarget を開いたまま（Pass に描いている途中で）`report` を呼ばない。
   `runTasks` は順に回すなら `LoadProgress.runTasksInOrder`、並列に回す handler を書いたら `LoadProgress.Conformance` で決まりを確かめる。
@@ -170,6 +170,7 @@ App.make(...)
   （1 回の値は見込みの 3 倍で頭打ち）。`Idle` で届いた鍵を 2 秒始めず、見込みが `Group#costMs` の 2 倍を超えていたら、見込みを `Group#costMs` へ戻す（解きはしない）。
   目安は glb と jpg の部屋 1 つで PC 100 ms 前後・スマホはその 3〜5 倍なので、部屋は暗転（`Covered`）で解く形にする。
   タップ待ち・タイトルの間に部屋を解きたいゲームだけが、その間を `Idle(150.0)` などへ上げる。
+  後回しの glb のうち primitive が 200 個を超える束は `bin/fge export-web` が 1 行知らせる（遊んでいる最中に届くと、解くコマがその束 1 つで止まる）。
   ブラウザでは届いた 2D の絵を登録する量も同じ予算に従う（step が毎コマ `AssetDownloads#setBudget` へ渡し、登録に使った ms は
   `AssetDownloads#spentMs` で解く側の ms に足すので、1 コマで予算を 2 回使わない）。グループが複数あっても、前のグループが使った ms を次へ渡すので予算は 1 コマに 1 つ。
 - 解いた鍵の道の生のバイトは捨てる（`AssetDownloads#release`。まだ解いていない鍵も使う道は残す）。捨てた道は `stateOf` が `Queued` と言い、

@@ -1,4 +1,4 @@
-// TestGltf — glTF の読み込み（Gltf.fromGlb / load）。小さな GLB をテストの中でバイトに組んで、
+// TestGltf — glTF の読み込み（Gltf.decodeWith / load）。小さな GLB をテストの中でバイトに組んで、
 // accessor の読み方（byteStride・normalized・UNSIGNED_SHORT）・CUBICSPLINE・読まない物の Err・
 // 右手系 → 左手系の写し方（X の反転・巡りの裏返し）を確かめ、Blender で書き出した two_joints.glb で向きを確かめる。
 mod TestGltf {
@@ -76,9 +76,9 @@ mod TestGltf {
         glb(json, List.flatten(f32s(-1.0 :: 0.0 :: 0.0 :: 1.0 :: 0.0 :: 0.0 :: 0.0 :: 1.0 :: 0.0 :: Nil) ::
                                f32s(0.0 :: 0.0 :: 1.0 :: 0.0 :: 0.0 :: 1.0 :: 0.0 :: 0.0 :: 1.0 :: Nil) :: f32s(uvs) :: Nil))
 
-    /// fromGlb で読んだ最初の part の uv（読めなければ Err のまま）。
-    def firstPartUvs(bytes: Vector[Int8]): Result[String, Option[Vector[Float64]]] =
-        Gltf.fromGlb(bytes) |> Result.map(m -> List.head(m#parts) |> Option.flatMap(p -> Mesh3d.uvs(p#mesh)))
+    /// decodeWith で読んだ最初の part の uv（読めなければ Err のまま）。
+    def firstPartUvs(bytes: Vector[Int8]): Result[String, Option[Vector[Float64]]] \ IO =
+        decode(bytes) |> Result.map(m -> List.head(m#parts) |> Option.flatMap(p -> Mesh3d.uvs(p#mesh)))
 
     /// firstPartUvs と、読む間に stderr へ TEXCOORD_0 を名指す 1 行が出たか。
     /// 差し替えた後に読んだ数（いつも 0）だけバイトを落としてから読む（loadSkinned と同じ理由）。
@@ -137,9 +137,17 @@ mod TestGltf {
         let old = System.err;
         let buf = new ByteArrayOutputStream();
         System.setErr(new PrintStream(buf, true));
-        let model = okOrBug(Gltf.fromGlb(Vector.drop(buf.size(), skinnedGlb())));
+        let model = okOrBug(decode(Vector.drop(buf.size(), skinnedGlb())));
         System.setErr(old);
         (model, buf.toString())
+
+    /// 鍵なし・既定の選択肢・ImageIO で絵を解く読み方。
+    pub def decode(bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO =
+        Gltf.decodeWith(TestDecoder.imageIo(), Gltf.defaultLoadOptions(), None, bytes)
+
+    /// path を読んで鍵なしで解く。
+    pub def loadWith(decoder: ImageData.ImageDecoder, options: Gltf.LoadOptions, path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO =
+        Fs.FileRead.readBytes(path) |> Result.mapErr(e -> "${path}: 読めない（${e}）") |> Result.flatMap(Gltf.decodeWith(decoder, options, None))
 
     def okOrBug(r: Result[String, a]): a = match r {
         case Ok(v) => v
@@ -152,7 +160,7 @@ mod TestGltf {
         Vec3.v3(Vector.get(v * 3, p), Vector.get(v * 3 + 1, p), Vector.get(v * 3 + 2, p))
 
     /// Blender で書き出した資材（テストは engine/ で流れる）。
-    def twoJoints(): Model3d.Model3d \ Fs.FileRead = okOrBug(Gltf.load("test/data/two_joints.glb"))
+    def twoJoints(): Model3d.Model3d \ {Fs.FileRead, IO} = okOrBug(loadWith(TestDecoder.imageIo(), Gltf.defaultLoadOptions(), "test/data/two_joints.glb"))
 
     def skinOf(m: Model3d.Model3d): Skin3d.Skin3d = match m#skin {
         case Some(s) => s
@@ -175,14 +183,14 @@ mod TestGltf {
 
     /// glTF の −X の頂点（頂点 0 の (−1, 0, 0)）は engine の +X（(1, 0, 0)）に来る。
     @Test
-    def testGltfMirrorsMinusXToPlusX(): Unit \ Assert =
-        let p = positionOf(okOrBug(Gltf.fromGlb(triangleGlb("", "")))#mesh, 0);
+    def testGltfMirrorsMinusXToPlusX(): Unit \ {Assert, IO} =
+        let p = positionOf(okOrBug(decode(triangleGlb("", "")))#mesh, 0);
         Assert.assertEq(expected = (1.0, 0.0, 0.0), (p#x, p#y, p#z))
 
     /// glTF の表（+Z から見て反時計回り・法線 +Z）は、巡りを逆にして engine でも表（cross(b − a, c − a) が法線の向き）。
     @Test
-    def testGltfKeepsFrontFaceFront(): Unit \ Assert =
-        let mesh = okOrBug(Gltf.fromGlb(triangleGlb("", "")))#mesh;
+    def testGltfKeepsFrontFaceFront(): Unit \ {Assert, IO} =
+        let mesh = okOrBug(decode(triangleGlb("", "")))#mesh;
         let corner = c -> positionOf(mesh, Vector.get(c, Mesh3d.indices(mesh)));
         let facing = Vec3.cross(Vec3.sub(corner(1), corner(0)), Vec3.sub(corner(2), corner(0)));
         let normal = Vec3.v3(Vector.get(0, Mesh3d.normals(mesh)), Vector.get(1, Mesh3d.normals(mesh)), Vector.get(2, Mesh3d.normals(mesh)));
@@ -194,9 +202,9 @@ mod TestGltf {
 
     /// byteStride 16 の並びから、挟んだ 99 を飛ばして位置を読む（x は反転）。
     @Test
-    def testGltfReadsByteStride(): Unit \ Assert =
+    def testGltfReadsByteStride(): Unit \ {Assert, IO} =
         Assert.assertEq(expected = Ok(Vector#{ 1.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0, 0.0 }),
-                        Gltf.fromGlb(stridedTriangleGlb()) |> Result.map(m -> Mesh3d.positions(m#mesh) |> Vector.map(x -> x + 0.0)))
+                        decode(stridedTriangleGlb()) |> Result.map(m -> Mesh3d.positions(m#mesh) |> Vector.map(x -> x + 0.0)))
 
     /// normalized の UNSIGNED_BYTE の重み 51・204 は 51 / 255 = 0.2・204 / 255 = 0.8。
     @Test
@@ -222,27 +230,27 @@ mod TestGltf {
 
     /// 途中で切れたバイト（最後の 4 バイトが無い）は Err。
     @Test
-    def testGltfRejectsTruncatedBytes(): Unit \ Assert =
+    def testGltfRejectsTruncatedBytes(): Unit \ {Assert, IO} =
         let bytes = triangleGlb("", "");
-        Assert.assertTrue(Result.isErr(Gltf.fromGlb(Vector.take(Vector.length(bytes) - 4, bytes))))
+        Assert.assertTrue(Result.isErr(decode(Vector.take(Vector.length(bytes) - 4, bytes))))
 
     /// mode 1（線）の primitive は Err。
     @Test
-    def testGltfRejectsNonTriangleMode(): Unit \ Assert =
-        Assert.assertTrue(Result.isErr(Gltf.fromGlb(triangleGlb(",\"mode\":1", ""))))
+    def testGltfRejectsNonTriangleMode(): Unit \ {Assert, IO} =
+        Assert.assertTrue(Result.isErr(decode(triangleGlb(",\"mode\":1", ""))))
 
     /// 外の uri を持つバッファは Err。
     @Test
-    def testGltfRejectsExternalUri(): Unit \ Assert =
-        Assert.assertTrue(Result.isErr(Gltf.fromGlb(triangleGlb("", ",\"uri\":\"tri.bin\""))))
+    def testGltfRejectsExternalUri(): Unit \ {Assert, IO} =
+        Assert.assertTrue(Result.isErr(decode(triangleGlb("", ",\"uri\":\"tri.bin\""))))
 
     /// 有限の TEXCOORD_0 は part の uv になる（uv の (0, 0)・(1, 0)・(0, 1) が頂点の並びのまま）。
     @Test
-    def testGltfReadsTexcoordIntoPart(): Unit \ Assert =
+    def testGltfReadsTexcoordIntoPart(): Unit \ {Assert, IO} =
         Assert.assertEq(expected = Ok(Some(Vector#{0.0, 0.0, 1.0, 0.0, 0.0, 1.0})),
                         firstPartUvs(triangleWithUvsGlb(0.0 :: 0.0 :: 1.0 :: 0.0 :: 0.0 :: 1.0 :: Nil)))
 
-    /// NaN のある TEXCOORD_0 は Err にせず、uv なしの part で読んで 1 行知らせる（uv を使わない fromGlb が読めなくならない）。
+    /// NaN のある TEXCOORD_0 は Err にせず、uv なしの part で読んで 1 行知らせる（uv を使わない decodeWith が読めなくならない）。
     @Test
     def testGltfReadsWithoutUvWhenTexcoordHasNaN(): Unit \ {Assert, IO} =
         Assert.assertEq(expected = (Ok(None), true),
@@ -259,19 +267,19 @@ mod TestGltf {
 
     /// ジョイント 3 本（root・tip・side.R）・クリップ bend・板の頂点 4 つ。
     @Test
-    def testTwoJointsHasJointsClipAndVertices(): Unit \ Assert + Fs.FileRead =
+    def testTwoJointsHasJointsClipAndVertices(): Unit \ {Assert, Fs.FileRead, IO} =
         let model = twoJoints();
         Assert.assertEq(expected = (3, "bend" :: Nil, 4),
                         (Skin3d.jointCount(skinOf(model)), Map.keysOf(model#clips) |> Set.toList, Mesh3d.vertexCount(model#mesh)))
 
     /// bend の長さは 24 fps の 1 〜 25 コマ目の最後 = 25 / 24 秒。
     @Test
-    def testTwoJointsBendLastsTwentyFiveFrames(): Unit \ Assert + Fs.FileRead =
+    def testTwoJointsBendLastsTwentyFiveFrames(): Unit \ {Assert, Fs.FileRead, IO} =
         Assert.assertTrue(Float64.abs(AnimationClip3d.duration(clipOf(twoJoints(), "bend")) - 25.0 / 24.0) < 1.0e-6)
 
     /// レストポーズの joint 行列は単位行列（逆バインド行列と rootTransform を同じ写し方で写した）。
     @Test
-    def testTwoJointsRestPoseJointMatricesAreIdentity(): Unit \ Assert + Fs.FileRead =
+    def testTwoJointsRestPoseJointMatricesAreIdentity(): Unit \ {Assert, Fs.FileRead, IO} =
         let skin = skinOf(twoJoints());
         let mats = Pose3d.jointMatrices(Pose3d.compute(skin, Skin3d.restPose(skin)));
         Assert.assertTrue(Vector.forAll(m -> Vector.zip(Mat4.toColumns(m), Mat4.toColumns(Mat4.identity()))
@@ -279,14 +287,14 @@ mod TestGltf {
 
     /// side.R（Blender の −X 0.3 に置いた、キャラの右）は engine の +X 0.3（右が右）。
     @Test
-    def testTwoJointsSideRightIsPlusX(): Unit \ Assert + Fs.FileRead =
+    def testTwoJointsSideRightIsPlusX(): Unit \ {Assert, Fs.FileRead, IO} =
         let skin = skinOf(twoJoints());
         let pose = Pose3d.compute(skin, Skin3d.restPose(skin));
         Assert.assertTrue(Float64.abs(Mat4.apply(Pose3d.jointTransform(pose, jointOf(skin, "side.R")), Vec3.zero())#x - 0.3) < 1.0e-6)
 
     /// bend の終わりでは tip が X 軸まわりに 90 度倒れ、板の上の角 (−0.1, 1, 0) は tip の根元 (0, 0.5, 0) から +Z へ 0.5 の (−0.1, 0.5, 0.5) へ来る。
     @Test
-    def testTwoJointsBendTipsForwardAtEnd(): Unit \ Assert + Fs.FileRead =
+    def testTwoJointsBendTipsForwardAtEnd(): Unit \ {Assert, Fs.FileRead, IO} =
         let model = twoJoints();
         let skin = skinOf(model);
         let clip = clipOf(model, "bend");
@@ -295,11 +303,11 @@ mod TestGltf {
         Assert.assertTrue(Vec3.distanceSquared(moved, Vec3.v3(-0.1, 0.5, 0.5)) < 1.0e-9)
 
     // ════════════════════════════════════════════════════════════════════
-    // 絵と材質（loadTexturedUsing・textured_two_materials.glb）
+    // 絵と材質（絵つきの読み方・textured_two_materials.glb）
     // ════════════════════════════════════════════════════════════════════
     // 板 A は材質 A（4 × 4 の絵・左上が赤・NEAREST と、(128, 255, 128) の法線マップ・scale 0.5）、板 B は材質 B（baseColorFactor だけ）。
 
-    def textured(): Model3d.Model3d \ {Fs.FileRead, IO} = okOrBug(Gltf.loadTexturedUsing(TestDecoder.imageIo(), Gltf.noTextureLimits(), "test/data/textured_two_materials.glb"))
+    def textured(): Model3d.Model3d \ {Fs.FileRead, IO} = okOrBug(loadWith(TestDecoder.imageIo(), { limits = Gltf.noTextureLimits() | Gltf.defaultLoadOptions() }, "test/data/textured_two_materials.glb"))
 
     def partAt(m: Model3d.Model3d, k: Int32): Model3d.ModelPart = match List.nth(k, m#parts) {
         case Some(p) => p
@@ -325,7 +333,7 @@ mod TestGltf {
     /// metallic・roughness を読む口では、材質 B の板も頂点の色の土台（"gltf:vc"）の材質を持ち、metallic 0・roughness 0.5 が付く。
     @Test
     def testPbrLoaderGivesMaterialBMetallicRoughness(): Unit \ {Assert, Fs.FileRead, IO} =
-        let m = okOrBug(Gltf.loadTexturedPbrUsing(TestDecoder.imageIo(), Gltf.noTextureLimits(), "test/data/textured_two_materials.glb"));
+        let m = okOrBug(loadWith(TestDecoder.imageIo(), { limits = Gltf.noTextureLimits(), pbr = true | Gltf.defaultLoadOptions() }, "test/data/textured_two_materials.glb"));
         let b = partAt(m, 1)#material |> Option.map(Scene3d.materialFieldsOf);
         Assert.assertEq(expected = (Some("gltf:vc"), Some(Some((0.0, 0.5)))),
             (b |> Option.map(f -> f#spec#name), b |> Option.map(f -> f#metallicRoughness |> Option.map(mr -> (mr#metallic, mr#roughness)))))
@@ -369,48 +377,40 @@ mod TestGltf {
             |> Option.map(v -> positionOf(mesh, v));
         Assert.assertEq(expected = Some((1.5, 1.0)), Option.map(p -> (p#x, p#y), corner))
 
-    /// 絵を読まない load は、loadTextured と同じ mesh（全部の primitive をつないだ形）を返し、parts の材質は None。
-    @Test
-    def testLoadKeepsMeshAndHasNoMaterials(): Unit \ {Assert, Fs.FileRead, IO} =
-        let plain = okOrBug(Gltf.load("test/data/textured_two_materials.glb"));
-        Assert.assertEq(expected = (true, true, 0),
-            (Mesh3d.contentHash(plain#mesh) == Mesh3d.contentHash(textured()#mesh),
-             List.forAll(p -> Option.isEmpty(p#material), plain#parts), List.length(plain#textures)))
-
     // ── 鍵つきの読み込み ──
 
     def partHashes(model: Model3d.Model3d): List[String] = model#parts |> List.map(p -> Mesh3d.contentHash(p#mesh))
 
-    /// fromGlbKeyed の形の鍵は、同じ key なら同じ。
+    /// 鍵つきの decodeWith の形の鍵は、同じ key なら同じ。
     @Test
-    def testFromGlbKeyedHashFollowsKey(): Unit \ Assert =
-        Assert.assertEq(expected = Gltf.fromGlbKeyed("a.glb@v1", triangleWithUvsGlb(0.0 :: 0.0 :: 1.0 :: 0.0 :: 0.0 :: 1.0 :: Nil)) |> Result.map(partHashes),
-            Gltf.fromGlbKeyed("a.glb@v1", triangleWithUvsGlb(0.0 :: 0.0 :: 1.0 :: 0.0 :: 0.0 :: 1.0 :: Nil)) |> Result.map(partHashes))
+    def testFromGlbKeyedHashFollowsKey(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = Gltf.decodeWith(TestDecoder.imageIo(), Gltf.defaultLoadOptions(), Some("a.glb@v1"), triangleWithUvsGlb(0.0 :: 0.0 :: 1.0 :: 0.0 :: 0.0 :: 1.0 :: Nil)) |> Result.map(partHashes),
+            Gltf.decodeWith(TestDecoder.imageIo(), Gltf.defaultLoadOptions(), Some("a.glb@v1"), triangleWithUvsGlb(0.0 :: 0.0 :: 1.0 :: 0.0 :: 0.0 :: 1.0 :: Nil)) |> Result.map(partHashes))
 
     /// key が違えば、同じバイトでも形の鍵は違う。
     @Test
-    def testFromGlbKeyedHashDiffersByKey(): Unit \ Assert =
-        Assert.assertTrue((Gltf.fromGlbKeyed("a.glb@v1", triangleGlb("", "")) |> Result.map(partHashes)) != (Gltf.fromGlbKeyed("a.glb@v2", triangleGlb("", "")) |> Result.map(partHashes)))
+    def testFromGlbKeyedHashDiffersByKey(): Unit \ {Assert, IO} =
+        Assert.assertTrue((Gltf.decodeWith(TestDecoder.imageIo(), Gltf.defaultLoadOptions(), Some("a.glb@v1"), triangleGlb("", "")) |> Result.map(partHashes)) != (Gltf.decodeWith(TestDecoder.imageIo(), Gltf.defaultLoadOptions(), Some("a.glb@v2"), triangleGlb("", "")) |> Result.map(partHashes)))
 
-    /// fromGlbKeyed は形の中身を変えない（頂点の位置は fromGlb と同じ）。
+    /// 鍵つきの decodeWith は形の中身を変えない（頂点の位置は decodeWith と同じ）。
     @Test
-    def testFromGlbKeyedKeepsPositions(): Unit \ Assert =
-        Assert.assertEq(expected = Gltf.fromGlb(triangleGlb("", "")) |> Result.map(m -> Mesh3d.positions(m#mesh)),
-            Gltf.fromGlbKeyed("a.glb@v1", triangleGlb("", "")) |> Result.map(m -> Mesh3d.positions(m#mesh)))
+    def testFromGlbKeyedKeepsPositions(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = decode(triangleGlb("", "")) |> Result.map(m -> Mesh3d.positions(m#mesh)),
+            Gltf.decodeWith(TestDecoder.imageIo(), Gltf.defaultLoadOptions(), Some("a.glb@v1"), triangleGlb("", "")) |> Result.map(m -> Mesh3d.positions(m#mesh)))
 
     def texturedBytes(): Vector[Int8] \ Fs.FileRead =
         Fs.FileRead.readBytes("test/data/textured_two_materials.glb") |> Result.getWithDefault(Vector.empty())
 
     def texturedKeyed(key: String): Model3d.Model3d \ {Fs.FileRead, IO} =
-        okOrBug(Gltf.fromGlbTexturedKeyedUsingOptions(key, TestDecoder.imageIo(), Gltf.defaultLoadOptions(), texturedBytes()))
+        okOrBug(Gltf.decodeWith(TestDecoder.imageIo(), Gltf.defaultLoadOptions(), Some(key), texturedBytes()))
 
-    /// fromGlbTexturedKeyedUsingOptions の形の鍵は key だけで決まる（同じ key なら同じ・違う key なら違う）。
+    /// 鍵つきの decodeWith の形の鍵は key だけで決まる（同じ key なら同じ・違う key なら違う）。
     @Test
     def testTexturedKeyedHashFollowsKey(): Unit \ {Assert, Fs.FileRead, IO} =
         Assert.assertEq(expected = (true, false), (partHashes(texturedKeyed("t.glb@v1")) == partHashes(texturedKeyed("t.glb@v1")),
                                                   partHashes(texturedKeyed("t.glb@v1")) == partHashes(texturedKeyed("t.glb@v2"))))
 
-    /// fromGlbTexturedKeyedUsingOptions は形と材質を変えない（頂点の位置と材質の有無は鍵の無い版と同じ）。
+    /// 鍵つきの decodeWith は形と材質を変えない（頂点の位置と材質の有無は鍵の無い版と同じ）。
     @Test
     def testTexturedKeyedKeepsPartsAndMaterials(): Unit \ {Assert, Fs.FileRead, IO} =
         let shape = (m: Model3d.Model3d) -> m#parts |> List.map(p -> (Mesh3d.positions(p#mesh), Option.nonEmpty(p#material)));
@@ -421,7 +421,7 @@ mod TestGltf {
         { platformImageOfBytes = (id, _) -> checked_ecast(Some({ key = id + "@held", width = 2, height = 2 })) | TestDecoder.imageIo() }
 
     def sourcesWith(limits: Gltf.TextureLimits): List[Bool] \ {Fs.FileRead, IO} =
-        okOrBug(Gltf.fromGlbTexturedKeyedUsingOptions("t.glb@v1", platformDecoder(), { limits = limits | Gltf.defaultLoadOptions() }, texturedBytes()))#textures
+        okOrBug(Gltf.decodeWith(platformDecoder(), { limits = limits | Gltf.defaultLoadOptions() }, Some("t.glb@v1"), texturedBytes()))#textures
             |> List.map(t -> not isArgb(Texture3d.sourceOf(t)))
 
     @Test
@@ -437,11 +437,47 @@ mod TestGltf {
     /// 鍵の無い読み方は、機種の側に持てるデコーダーでも画素を読む（同じ id を約束できない）。
     @Test
     def testUnkeyedTexturesAreDecoded(): Unit \ {Assert, Fs.FileRead, IO} =
-        let model = okOrBug(Gltf.fromGlbTexturedUsingOptions(platformDecoder(), Gltf.defaultLoadOptions(), texturedBytes()));
+        let model = okOrBug(Gltf.decodeWith(platformDecoder(), Gltf.defaultLoadOptions(), None, texturedBytes()));
         Assert.assertTrue(List.forAll(t -> isArgb(Texture3d.sourceOf(t)), model#textures))
 
     def isArgb(s: Texture3d.Source): Bool = match s {
         case Texture3d.Source.Argb(_)          => true
         case Texture3d.Source.PlatformImage(_) => false
     }
+
+    // ── Model3d の読む口（loader / decode）──
+
+    /// imageDecoder に decoder を返し、project.json の中身を json にして作った loader。
+    def loaderOf(decoder: ImageData.ImageDecoder, json: String): Model3d.Loader =
+        run { Model3d.loader() } with handler LoadProgress {
+            def report(_phase, _done, _total, k) = k(())
+            def runTasks(_phase, _tasks, k)      = k(())
+            def imageDecoder(k)                  = k(decoder)
+            def downloads(k)                     = k(LoadProgress.localDownloads())
+        } with handler Fs.FileRead {
+            def read(_path, k)      = k(Ok(json))
+            def readLines(_path, k) = k(Ok(String.lines(json)))
+            def readBytes(_path, k) = k(Ok(String.toBytes(json)))
+        }
+
+    /// versionedKey が版つきの鍵を返す機種では、decode は道の鍵で形の鍵を作る（鍵つきの decodeWith と同じ）。
+    @Test
+    def testLoaderDecodeKeysByVersionedKey(): Unit \ {Assert, Fs.FileRead, IO} =
+        let decoder = { versionedKey = p -> checked_ecast(Some("${p}@v1")) | TestDecoder.imageIo() };
+        let loader = loaderOf(decoder, TestProjectLoader.projectJson(""));
+        Assert.assertEq(expected = Ok(partHashes(okOrBug(Gltf.decodeWith(decoder, Gltf.defaultLoadOptions(), Some("t.glb@v1"), texturedBytes())))),
+                        Model3d.decode(loader, "t.glb", texturedBytes()) |> Result.map(partHashes))
+
+    /// project.json の "gltf" の pbr を読み、絵の無い材質 B の板にも metallic・roughness の材質が付く。
+    @Test
+    def testLoaderReadsGltfOptionsFromProject(): Unit \ {Assert, Fs.FileRead, IO} =
+        let loader = loaderOf(TestDecoder.imageIo(), TestProjectLoader.projectJson(", \"gltf\": {\"pbr\": true}"));
+        let m = okOrBug(Model3d.decode(loader, "t.glb", texturedBytes()));
+        Assert.assertEq(expected = Some("gltf:vc"), partAt(m, 1)#material |> Option.map(mat -> Scene3d.materialFieldsOf(mat)#spec#name))
+
+    /// 壊れたバイトの Err には道が付く。
+    @Test
+    def testLoaderDecodeErrNamesThePath(): Unit \ {Assert, IO} =
+        let loader = loaderOf(TestDecoder.imageIo(), TestProjectLoader.projectJson(""));
+        Assert.assertTrue(Model3d.decode(loader, "broken.glb", Vector#{1i8, 2i8}) |> Result.map(_ -> ()) |> Result.mapErr(e -> String.startsWith(prefix = "broken.glb: ", e)) == Err(true))
 }

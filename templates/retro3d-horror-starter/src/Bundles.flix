@@ -3,7 +3,7 @@
 // 残りは届いた物から App.withBackgroundLoad がコマの予算の内で解く（Res.withLoaded が校舎を組み直す）。
 // 束の中の根のノードの名前は元の glb の名前（school_floor<n>・prop_<名前>）で、根ごとに 1 つの形へ切り分ける。
 mod Bundles {
-    use fge::{BackgroundLoad, DocJson, Gltf, ImageData, JsonCodec, Log, Model3d}
+    use fge::{BackgroundLoad, DocJson, JsonCodec, Log, Model3d}
     use Util.Json.Json
 
     /// 束 1 つ。floors = 束の物を置く階・buildings = 束に建物が入っている階。
@@ -50,16 +50,16 @@ mod Bundles {
         ((personOf(key) |> Option.map(personPath)) :: itemPath(key) :: (bundles |> List.find(b -> b#key == key) |> Option.map(b -> b#path)) :: Nil)
             |> List.flatMap(Option.toList) |> List.head
 
-    /// 束と人物の glb を読む Group。read はバイトを取るだけ・decode が glb と絵と頂点の色（COLOR_0。Blender でベイクした明るさ）を解く。
+    /// 束と人物の glb を読む Group。read は道とバイトを取るだけ・decode が glb と絵と頂点の色（COLOR_0。Blender でベイクした明るさ・project.json の "gltf"）を解く。
     /// costMs は 1 鍵を解く見込み（PC で束 1 つ 100 ms 前後。App.withDecodeBudget の Idle では始めず、Covered で解く大きさ）。
-    pub def group(bundles: List[Entry], models: List[String], items: List[String], decoder: ImageData.ImageDecoder): BackgroundLoad.Group[Result[String, Vector[Int8]], Model3d.Model3d] =
+    pub def group(bundles: List[Entry], models: List[String], items: List[String], loader: Model3d.Loader): BackgroundLoad.Group[Result[String, (String, Vector[Int8])], Model3d.Model3d] =
         let keys = List.flatten((bundles |> List.map(b -> b#key)) :: (models |> List.map(personKey)) :: (items |> List.map(itemKey)) :: Nil);
         { name = "school", keys = keys, pathsOf = key -> pathOf(bundles, key) |> Option.toList,
           read = key -> match pathOf(bundles, key) {
-              case Some(p) => Fs.FileRead.readBytes(p) |> Result.mapErr(e -> "${p}: 読めない（${e}）")
+              case Some(p) => Fs.FileRead.readBytes(p) |> Result.map(b -> (p, b)) |> Result.mapErr(e -> "${p}: 読めない（${e}）")
               case None    => Err("${key}: 束の表に無い鍵")
           },
-          decode = raw -> raw |> Result.flatMap(Gltf.fromGlbTexturedUsingOptions(decoder, { vertexColors = true | Gltf.defaultLoadOptions() })),
+          decode = raw -> raw |> Result.flatMap(pb -> Model3d.decode(loader, fst(pb), snd(pb))),
           costMs = 120.0 }
 
     /// 束を根のノードごとの形に切り分ける（根の名前 → その根の下の parts だけを持つ形）。絵は束の全部を持たせる（場面には名前で重ねずに渡る: School.build）。

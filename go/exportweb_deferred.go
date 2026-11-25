@@ -1,9 +1,13 @@
 package main
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 	"path"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -347,4 +351,57 @@ func textureNamesByPath(pr exportProject) map[string][]string {
 		}
 	}
 	return out
+}
+
+// webGlbPrimitiveLimit は後回しの glb 1 つの primitive の数の目安（M4 Pro の Chrome で解く仕事 35 ms 前後・engine の docs/startup.md の costMs の目安）。
+const webGlbPrimitiveLimit = 200
+
+// deferredGlbWarnings は web.deferred の glb のうち、primitive が limit 個を超える物を 1 行ずつ知らせる。読めない glb は黙って飛ばす（束を作る時に壊れていれば読み込みが知らせる）。
+// WhyNot: 止めない — 1 つの glb を分けられない物（骨つきの大きなキャラ 1 体など）もあり、届いたコマが止まるだけで遊べなくはならない。
+func deferredGlbWarnings(game string, paths []string, limit int) []string {
+	var out []string
+	for _, rel := range paths {
+		if !strings.EqualFold(path.Ext(rel), ".glb") {
+			continue
+		}
+		n, err := glbPrimitiveCount(filepath.Join(game, filepath.FromSlash(rel)))
+		if err != nil || n <= limit {
+			continue
+		}
+		out = append(out, fmt.Sprintf("web.deferred の %s は primitive が %d 個（目安 %d 個）— 遊んでいる最中に届くと、解くコマがこの束 1 つで止まる（M4 Pro の Chrome で 200 個 35 ms 前後・スマホは 3〜5 倍）。\n  次: 束を分ける（engine の docs/startup.md の costMs の目安）", rel, n, limit))
+	}
+	return out
+}
+
+// glbPrimitiveCount は glb の最初のチャンク（JSON）の meshes[].primitives の数の合計。
+func glbPrimitiveCount(file string) (int, error) {
+	f, err := os.Open(file)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+	var head [20]byte
+	if _, err := io.ReadFull(f, head[:]); err != nil {
+		return 0, err
+	}
+	if binary.LittleEndian.Uint32(head[0:4]) != 0x46546C67 || binary.LittleEndian.Uint32(head[16:20]) != 0x4E4F534A {
+		return 0, fmt.Errorf("%s: glb の頭でない", file)
+	}
+	body := make([]byte, binary.LittleEndian.Uint32(head[12:16]))
+	if _, err := io.ReadFull(f, body); err != nil {
+		return 0, err
+	}
+	var doc struct {
+		Meshes []struct {
+			Primitives []json.RawMessage `json:"primitives"`
+		} `json:"meshes"`
+	}
+	if err := json.Unmarshal(body, &doc); err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, m := range doc.Meshes {
+		n += len(m.Primitives)
+	}
+	return n, nil
 }

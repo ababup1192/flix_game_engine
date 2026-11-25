@@ -49,6 +49,18 @@
       }
     },
 
+    "gltf": {
+      "kind": "record",
+      "label": "glb の読み方（Model3d.loader が読む。無い欄は engine の既定）",
+      "order": 21,
+      "fields": {
+        "vertexColors":   { "type": "bool", "label": "頂点の色 COLOR_0 を読む（Blender でベイクした明るさ）", "order": 1, "default": false },
+        "pbr":            { "type": "bool", "label": "材質の metallic・roughness も読む（色は線形の値として読む）", "order": 2, "default": false },
+        "maxTextureSide": { "type": "int", "label": "材質の絵の長い辺の上限（px）", "order": 3, "min": 1, "max": 8192, "default": 8192 },
+        "maxNormalSide":  { "type": "int", "label": "法線マップの長い辺の上限（px）", "order": 4, "min": 1, "max": 8192, "default": 8192 }
+      }
+    },
+
     "fonts": {
       "kind": "list",
       "label": "フォント（文言を日本語にするならここを差し替える）",

@@ -18,6 +18,8 @@
 //     "sounds":   [{"name": String, "path": String, "looping": Bool}, ...],
 //     "web": { "portraitDesign": {"width": Int, "minHeight": Int, "maxHeight": Int} }
 //                                      （任意。縦に持って開いた時の design。Project#portraitDesign へ。ほかの web の欄は書き出しの道具が読む）
+//     "gltf": {"pbr": Bool, "vertexColors": Bool, "maxTextureSide": Int, "maxNormalSide": Int}
+//                                      （任意。glb の読み方。Project#gltf へ。無い欄は Gltf.defaultLoadOptions）
 //   }
 //
 // 画像・フォント・サウンドのパスは project root からの相対で記述する。
@@ -55,11 +57,13 @@ pub mod ProjectLoader {
     }
 
     /// 読み込み結果。シーンは別途 `findSceneFiles` で列挙する。
-    /// portraitDesign = web.portraitDesign（縦に持って開いた時の design の決め方。書いていなければ None = いつも横の design）。
+    /// portraitDesign = web.portraitDesign（縦に持って開いた時の design の決め方。書いていなければ None = いつも横の design）・
+    /// gltf = glb の読み方（"gltf" の欄。書いていなければ Gltf.defaultLoadOptions）。
     pub type alias Project = {
         rootDir = String,
         config  = ProjectConfig,
-        portraitDesign = Option[PortraitDesign]
+        portraitDesign = Option[PortraitDesign],
+        gltf = Gltf.LoadOptions
     }
 
     /// 縦の design の決め方（project.json の web.portraitDesign）。幅は width に固定し、高さは開いた画面の縦横の比から決めて
@@ -118,7 +122,8 @@ pub mod ProjectLoader {
             fonts      <- readFonts(rootDir, fontJson);
             soundJson  <- getField(root, "sounds");
             sounds     <- readSounds(rootDir, soundJson);
-            portrait   <- readPortraitDesign(root)
+            portrait   <- readPortraitDesign(root);
+            gltf       <- readGltf(root)
         ) yield {
             let config: ProjectConfig = {
                 rootDir         = rootDir,
@@ -136,7 +141,7 @@ pub mod ProjectLoader {
                 scene3dTextureBudgetMB = positiveIntOr("scene3dTextureBudgetMB", GameEngine.defaultScene3dTextureBudgetMB(), root),
                 scene3dTextureBudgetCount = positiveIntOr("scene3dTextureBudgetCount", GameEngine.defaultScene3dTextureBudgetCount(), root)
             };
-            { rootDir = rootDir, config = config, portraitDesign = portrait }
+            { rootDir = rootDir, config = config, portraitDesign = portrait, gltf = gltf }
         }
 
     /// 任意の整数のキー key（scene3dTextureBudgetMB・scene3dTextureBudgetCount）。無い・数でない・1 未満は既定 fallback。
@@ -307,6 +312,25 @@ pub mod ProjectLoader {
             maxH   <- optionalInt(m, "maxHeight", Int32.max(minH, width * 12 / 5));
             spec   <- checkPortraitSpec({ width = width, minHeight = minH, maxHeight = maxH })
         ) yield spec
+
+    /// gltf（任意）。無ければ Gltf.defaultLoadOptions。有るのに形が違えば Err（portraitDesign と同じく起動の時に止める）。
+    def readGltf(root: Map[String, Util.Json.Json]): Result[JsonError, Gltf.LoadOptions] =
+        let base = Gltf.defaultLoadOptions();
+        match Map.get("gltf", root) {
+            case None       => Ok(base)
+            case Some(json) =>
+                forM (
+                    m            <- matchObject(json, "gltf");
+                    pbr          <- optionalBool(m, "pbr", base#pbr);
+                    vertexColors <- optionalBool(m, "vertexColors", base#vertexColors);
+                    baseSide     <- optionalInt(m, "maxTextureSide", base#limits#baseColor);
+                    normalSide   <- optionalInt(m, "maxNormalSide", base#limits#normal);
+                    _            <- if (baseSide >= 1 and normalSide >= 1) Ok(()) else Err(err("gltf の maxTextureSide と maxNormalSide は 1 以上"))
+                ) yield { limits = { baseColor = baseSide, normal = normalSide }, pbr = pbr, vertexColors = vertexColors }
+        }
+
+    def optionalBool(map: Map[String, Util.Json.Json], key: String, fallback: Bool): Result[JsonError, Bool] =
+        if (Map.memberOf(key, map)) getBool(map, key) else Ok(fallback)
 
     def optionalInt(map: Map[String, Util.Json.Json], key: String, fallback: Int32): Result[JsonError, Int32] =
         if (Map.memberOf(key, map)) getInt(map, key) else Ok(fallback)

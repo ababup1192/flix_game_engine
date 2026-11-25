@@ -1038,19 +1038,19 @@ mod Scenes {
     // 板 A（4 × 4 の絵・左上が赤・NEAREST・法線マップ）と板 B（baseColorFactor の水色・材質なし）。glb の板の表は engine の +Z を向くので、
     // Y 軸まわりに半周させて目へ向ける。絵の左上の赤が画面の左上に来れば、uv の向きと X の反転がそろっている。
 
-    /// assets の glb（engine/test/data と同じ物）を loadTexturedUsing で読む。
+    /// assets の glb（engine/test/data と同じ物）を絵つきで読む。
     // WhyNot: Scenes.all を IO にしない — 場面の宣言は GL と SoftRaster と名前の付け替えの 3 か所から何度も引く純粋な列で、
     //   1 枚の資材を読むために全部の呼び手の効果を広げることになる。読むのは小さな glb 1 つで、何度読んでも同じ物になる。
     def texturedModel(path: String): Model3d.Model3d =
-        let loaded = unsafe IO { run Gltf.loadTexturedUsing(HeadlessLoad.imageIoDecoder(), Gltf.noTextureLimits(), path) with Fs.FileRead.runWithIO };
+        let loaded = unsafe IO { run Fs.FileRead.readBytes(path) |> Result.mapErr(e -> "${path}: 読めない（${e}）") |> Result.flatMap(Gltf.decodeWith(HeadlessLoad.imageIoDecoder(), Gltf.defaultLoadOptions(), None)) with Fs.FileRead.runWithIO };
         match loaded {
             case Ok(m)  => m
             case Err(e) => bug!(e)
         }
 
-    /// texturedModel の、metallic・roughness も読む口（loadTexturedPbrUsing）の版。
+    /// texturedModel の、metallic・roughness も読む（pbr = true）版。
     def texturedPbrModel(path: String): Model3d.Model3d =
-        let loaded = unsafe IO { run Gltf.loadTexturedPbrUsing(HeadlessLoad.imageIoDecoder(), Gltf.noTextureLimits(), path) with Fs.FileRead.runWithIO };
+        let loaded = unsafe IO { run Fs.FileRead.readBytes(path) |> Result.mapErr(e -> "${path}: 読めない（${e}）") |> Result.flatMap(Gltf.decodeWith(HeadlessLoad.imageIoDecoder(), { pbr = true | Gltf.defaultLoadOptions() }, None)) with Fs.FileRead.runWithIO };
         match loaded {
             case Ok(m)  => m
             case Err(e) => bug!(e)

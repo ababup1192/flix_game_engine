@@ -150,7 +150,7 @@ mod SceneBench {
         let mode = First.modeOf(knobs) |> Option.getWithDefault(First.Mode.Group);
         if (mode == First.Mode.Skin) {
             let p = Map.getWithDefault("person", "../../templates/retro3d-horror-starter/assets/characters/teacher_woman.glb", knobs);
-            Gltf.loadTexturedUsingOptions(HeadlessLoad.imageIoDecoder(), Gltf.defaultLoadOptions(), p)
+            Fs.FileRead.readBytes(p) |> Result.mapErr(e -> "${p}: 読めない（${e}）") |> Result.flatMap(Gltf.decodeWith(HeadlessLoad.imageIoDecoder(), Gltf.defaultLoadOptions(), None))
                 |> Result.map(model -> Scene.First(First.kitOf(mode, knobs, Some(model))))
         } else Ok(Scene.First(First.kitOf(mode, knobs, None)))
 

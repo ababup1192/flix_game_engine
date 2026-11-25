@@ -29,13 +29,13 @@ mod WebMain {
             let warmPath = "assets/entrance.glb";
             let warm = Fs.FileRead.readBytes(warmPath) |> Result.getWithDefault(Vector.empty());
             let began = Browser.now();
-            let warmed = Gltf.fromGlbTexturedKeyedUsingOptions((decoder#versionedKey)(warmPath) |> Option.getWithDefault(warmPath), decoder, options, warm);
+            let warmed = Gltf.decodeWith(decoder, options, Some((decoder#versionedKey)(warmPath) |> Option.getWithDefault(warmPath)), warm);
             println("[scene3d] warm entrance.glb: ${Browser.now() - began} ms・読めた ${Result.isOk(warmed)}")
         } else ();
         () -> {
             let began = Browser.now();
-            let model = if (keyed) Gltf.fromGlbTexturedKeyedUsingOptions((decoder#versionedKey)(path) |> Option.getWithDefault(path), decoder, options, bytes)
-                        else Gltf.fromGlbTexturedUsingOptions(decoder, options, bytes);
+            let key = if (keyed) Some((decoder#versionedKey)(path) |> Option.getWithDefault(path)) else None;
+            let model = Gltf.decodeWith(decoder, options, key, bytes);
             let ms = Browser.now() - began;
             println("[scene3d] glb ${if (keyed) "keyed" else "plain"}: ${ms} ms・絵 ${model |> Result.map(m -> List.length(m#textures)) |> Result.getWithDefault(-1)} 枚");
             (ms, Result.toOption(model))

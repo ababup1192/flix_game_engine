@@ -10,7 +10,7 @@ mod TestProjectLoader {
         config |> Result.map(p -> p#config#scene3dTextureBudgetCount) |> Result.getWithDefault(-1)
 
     /// 必須のキーだけの project.json に、extra（`, "キー": 値` の形）を足した字。
-    def projectJson(extra: String): String =
+    pub def projectJson(extra: String): String =
         "{\"title\": \"t\", \"designWidth\": 320, \"designHeight\": 180, \"windowWidth\": 640, \"windowHeight\": 360,"
             + " \"clearColor\": {\"r\": 0.0, \"g\": 0.0, \"b\": 0.0}, \"maxDeltaTime\": 0.1,"
             + " \"textures\": [], \"fonts\": [], \"sounds\": []${extra}}"
@@ -100,5 +100,29 @@ mod TestProjectLoader {
         Assert.assertEq(expected = (Ok(Some((540, 1169, 390, 844))), Ok(None)),
                         (withSpec |> Result.map(p -> ProjectLoader.portraitConfigOf(p, view) |> Option.map(shape)),
                          without |> Result.map(p -> ProjectLoader.portraitConfigOf(p, view) |> Option.map(shape))))
+
+    // ── glb の読み方（gltf）──
+
+    def gltfShapeOf(o: Gltf.LoadOptions): (Bool, Bool, Int32, Int32) = (o#pbr, o#vertexColors, o#limits#baseColor, o#limits#normal)
+
+    /// gltf が無ければ Gltf.defaultLoadOptions。
+    @Test
+    def testGltfAbsentIsDefault(): Unit \ Assert =
+        Assert.assertEq(expected = Ok(gltfShapeOf(Gltf.defaultLoadOptions())),
+                        projectOf(projectJson("")) |> Result.map(p -> gltfShapeOf(p#gltf)))
+
+    /// 書いた欄だけが替わり、書かない欄は既定のまま。
+    @Test
+    def testGltfReadsOnlyWrittenFields(): Unit \ Assert =
+        let base = Gltf.defaultLoadOptions();
+        Assert.assertEq(expected = Ok((false, true, 512, base#limits#normal)),
+                        projectOf(projectJson(", \"gltf\": {\"vertexColors\": true, \"maxTextureSide\": 512}")) |> Result.map(p -> gltfShapeOf(p#gltf)))
+
+    /// 型の違う欄・1 未満の上限・オブジェクトでない gltf は読めない。
+    @Test
+    def testGltfRejectsBadShape(): Unit \ Assert =
+        let bad = body -> Result.isErr(projectOf(projectJson(", \"gltf\": ${body}")));
+        Assert.assertEq(expected = (true, true, true),
+                        (bad("{\"pbr\": 1}"), bad("{\"maxNormalSide\": 0}"), bad("true")))
 
 }

@@ -13,7 +13,10 @@ mod Study {
 
     /// dir の .glb を全部読む。読めない物があれば Err（ファイルの名前つき）。
     pub def load(dir: String): Result[String, Kit] \ Fs.FileRead + IO =
-        let model = (name: String) -> Gltf.loadTexturedPbrUsing(HeadlessLoad.imageIoDecoder(), Gltf.noTextureLimits(), "${dir}/${name}.glb");
+        let model = (name: String) -> {
+            let path = "${dir}/${name}.glb";
+            Fs.FileRead.readBytes(path) |> Result.mapErr(e -> "${path}: 読めない（${e}）") |> Result.flatMap(Gltf.decodeWith(HeadlessLoad.imageIoDecoder(), { pbr = true | Gltf.defaultLoadOptions() }, None))
+        };
         forM (table <- model("round_wooden_table_01"); candles <- model("brass_candleholders"); lantern <- model("Lantern_01");
               glass <- model("magnifying_glass_01"); books <- model("book_encyclopedia_set_01"))
         yield { table = table, candles = candles, lantern = lantern, glass = glass, books = books }

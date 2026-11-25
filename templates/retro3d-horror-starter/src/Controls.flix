@@ -4,7 +4,7 @@
 // Doc と校舎の形の読み込み（loadDocs）と、保存即反映（watchFile）・F1 一括リロードの読み直しもここに置く。
 mod Controls {
 
-    use fge::{App, BackgroundLoad, DocTable, GameEngine, LoadProgress, Log, Resources, SortingLayer, Vec2, Yarn}
+    use fge::{App, BackgroundLoad, DocTable, GameEngine, LoadProgress, Log, Model3d, Resources, SortingLayer, Vec2, Yarn}
 
     /// このフレームのキーとマウスを World.Input へ（逆向きが同時なら打ち消して 0）。
     def inputOf(frame: App.Frame, keys: KeysDoc.Doc, captured: Bool): World.Input =
@@ -107,7 +107,7 @@ mod Controls {
         let bundles = Bundles.load(layout#placeholder, Bundles.path());
         let models = CastDoc.rec(cast)#members |> List.map(m -> m#model) |> List.distinct;
         let items = ItemsDoc.load(ItemsDoc.path());
-        let group = Bundles.group(bundles, models, itemGlbs(items), LoadProgress.imageDecoder());
+        let group = Bundles.group(bundles, models, itemGlbs(items), Model3d.loader());
         let (loaded, pending) = BackgroundLoad.start(group);
         let empty = ({ floors = Map.empty(), props = Map.empty(), surfaces = Res.surfaces() }, Map.empty());
         let (assets, people) = loaded |> Map.foldLeftWithKey((acc, key, result) -> match result {

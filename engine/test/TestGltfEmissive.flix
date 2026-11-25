@@ -1,4 +1,4 @@
-// glb の emissive（loadTextured）: 材質の 4 通り（baseColorTexture の有無 × emissive の有無）・emission の値（factor × strength・絵 × 定数）・
+// glb の emissive（Gltf.decodeWith）: 材質の 4 通り（baseColorTexture の有無 × emissive の有無）・emission の値（factor × strength・絵 × 定数）・
 // spec の名前（木の形を変える物で分かれ、絵の名前では分かれない・emissive の無い材質は今の名前）・読めない emissiveTexture・
 // GltfMaterial の欄（alphaMode・alphaCutoff・doubleSided・絵の名前）。
 mod TestGltf.Emissive {
@@ -50,7 +50,7 @@ mod TestGltf.Emissive {
 
     def strength(s: String): String = ",\"extensions\":{\"KHR_materials_emissive_strength\":{\"emissiveStrength\":${s}}}"
 
-    def read(bytes: Vector[Int8]): Model3d.Model3d \ IO = TestGltf.okOrBug(Gltf.fromGlbTexturedUsing(TestDecoder.imageIo(), Gltf.noTextureLimits(), bytes))
+    def read(bytes: Vector[Int8]): Model3d.Model3d \ IO = TestGltf.okOrBug(Gltf.decodeWith(TestDecoder.imageIo(), { limits = Gltf.noTextureLimits() | Gltf.defaultLoadOptions() }, None, bytes))
 
     def firstPart(m: Model3d.Model3d): Model3d.ModelPart = match List.head(m#parts) {
         case Some(p) => p
@@ -193,14 +193,7 @@ mod TestGltf.Emissive {
         Assert.assertEq(expected = Some((List.head(names), None, List.head(List.drop(1, names)), (2.0, 1.0, 0.0))),
             firstPart(m)#gltfMaterial |> Option.map(g -> (g#baseColorTexture, g#normalTexture, g#emissiveTexture, (g#emissive#r, g#emissive#g, g#emissive#b))))
 
-    /// 絵を読まない fromGlb も GltfMaterial を入れ、絵の名前は None・材質は None。
-    @Test
-    def testFromGlbKeepsInfoWithoutTextures(): Unit \ {Assert, IO} =
-        let m = TestGltf.okOrBug(Gltf.fromGlb(glbWith(withBase(",\"emissiveFactor\":[1,1,1]" + glowTexture()), true, red(), green(), linear())));
-        Assert.assertEq(expected = (Some((None, None)), false),
-            (firstPart(m)#gltfMaterial |> Option.map(g -> (g#baseColorTexture, g#emissiveTexture)), Option.nonEmpty(firstPart(m)#material)))
-
-    /// loadTextured は alphaMode を材質に当てる: OPAQUE はそのまま・MASK は cutout・BLEND は半透明。
+    /// Gltf.decodeWith は alphaMode を材質に当てる: OPAQUE はそのまま・MASK は cutout・BLEND は半透明。
     @Test
     def testAlphaModeShapesTheMaterial(): Unit \ {Assert, IO} =
         let flags = (rest: String) -> firstPart(read(glbWith(withBase(rest), true, red(), green(), linear())))#material
@@ -208,7 +201,7 @@ mod TestGltf.Emissive {
         Assert.assertEq(expected = Some((false, false)) :: Some((true, false)) :: Some((false, true)) :: Nil,
             flags("") :: flags(",\"alphaMode\":\"MASK\"") :: flags(",\"alphaMode\":\"BLEND\"") :: Nil)
 
-    /// loadTextured は doubleSided を材質のある部品にそのまま当てる（真・書いていない・偽）。
+    /// Gltf.decodeWith は doubleSided を材質のある部品にそのまま当てる（真・書いていない・偽）。
     @Test
     def testDoubleSidedIsAppliedAsWritten(): Unit \ {Assert, IO} =
         let sides = (rest: String) -> firstPart(read(glbWith(withBase(rest), true, red(), green(), linear())))#material
@@ -256,7 +249,7 @@ mod TestGltf.Emissive {
     /// 板 2 枚と印の点: sign は絵 × emissiveFactor の名前（strength 2 は名前に入らない）・flame（uv なし・絵なし）は頂点の色 + 定数の名前・tip は mesh の無いノード。
     @Test
     def testEmissivePlatesAsset(): Unit \ {Assert, Fs.FileRead, IO} =
-        let m = TestGltf.okOrBug(Gltf.loadTexturedUsing(TestDecoder.imageIo(), Gltf.noTextureLimits(), "test/data/testdata/emissive_plates.glb"));
+        let m = TestGltf.okOrBug(TestGltf.loadWith(TestDecoder.imageIo(), { limits = Gltf.noTextureLimits() | Gltf.defaultLoadOptions() }, "test/data/testdata/emissive_plates.glb"));
         let names = m#parts |> List.map(p -> p#material |> Option.map(mat -> Scene3d.materialFieldsOf(mat)#spec#name));
         Assert.assertEq(expected = (Some("gltf:tex:Nearest:etNearest(1.0,1.0,1.0)") :: Some("gltf:vc:ec(1.0,0.62,0.18)") :: Nil,
                                     "sign" :: "flame" :: "tip" :: Nil, Nil),

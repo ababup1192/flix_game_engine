@@ -88,15 +88,15 @@
 | 3D の形に骨を入れる（関節の並び・頂点ごとの重み） | Skin3d |
 | 骨の動き（キーフレームの並び）を持つ・ある時刻の姿勢を取り出す | AnimationClip3d |
 | 骨ごとの姿勢を混ぜる・Scene3d へ渡す | Pose3d（Scene3d.withPose） |
-| Blender などで書き出した .glb を読む（形・骨・動き） | Gltf（load / fromGlb。X を反転して左手系へ） |
-| .glb の絵と材質（baseColorTexture・normalTexture・emissive）も読んで primitive ごとに置く | Gltf.loadTexturedUsing（デコーダーは LoadProgress の op の imageDecoder で受け取る・Model3d の parts と textures・材質の情報は part#gltfMaterial・止めるなら Scene3d.withoutEmission） |
+| Blender などで書き出した .glb を読む（形・骨・動き・絵・材質） | Model3d.loader（読み込みの頭で 1 回）→ Model3d.load(loader, 道) / decode(loader, 道, バイト)（X を反転して左手系へ・読み方は project.json の "gltf"・中身は Gltf.decodeWith） |
+| .glb の絵と材質（baseColorTexture・normalTexture・emissive）も読んで primitive ごとに置く | Model3d.load / decode（Model3d の parts と textures・材質の情報は part#gltfMaterial・止めるなら Scene3d.withoutEmission） |
 | Blender で名前を付けたノード（扉・当たり判定の箱・印の点）を .glb から名前で引く | Model3d.findNode / nodesWithPrefix / nodesByName（node#world・node#localBounds・docs/scene3d.md） |
 | 3D の当たり判定の形（向きのある箱・球・縦のカプセル）を作る・glb のノードから箱を作る・回す扉の箱 | CollisionShape3d（boxOfNode / boxesOfNodes・transformBox・debugMesh。2D は CollisionShape2D） |
 | 動かない 3D の箱をたくさん持ち、足元の近くの箱だけを引く | CollisionWorld3d（build / boxesNear。歩くのは engine_world の CharacterBody3d） |
 | 一人称で見ている物を調べる（クロスヘアの先の物の名前・壁で遮る）・画面の点から 3D のレイを伸ばす | Ray3d.pickNearest（Camera3d.forwardRay / screenPointToRay・的は Ray3d.boxTargetsOf・docs/scene3d.md の「見ている物を調べる」） |
-| Blender で頂点の色にベイクした明るさ（glTF の COLOR_0）で 3D の部屋を描く・PS1 の頂点の色の 2 倍 | Gltf.loadTexturedUsingOptions の vertexColors = true で COLOR_0 を読む（線形 → 画面の値で baseColorFactor に掛ける・既定は読まない）+ Model3d.scaleVertexColors（docs/scene3d.md の「glb の頂点の色」） |
+| Blender で頂点の色にベイクした明るさ（glTF の COLOR_0）で 3D の部屋を描く・PS1 の頂点の色の 2 倍 | project.json の "gltf": { "vertexColors": true } で COLOR_0 を読む（線形 → 画面の値で baseColorFactor に掛ける・既定は読まない）+ Model3d.scaleVertexColors（docs/scene3d.md の「glb の頂点の色」） |
 | Blender でベイクした光（lightmap と 2 本目の uv）を 3D の部屋に貼る | Scene3d.withLightmap（Gltf の TEXCOORD_1 → Mesh3d.uvs2・docs/lightmap.md） |
-| 3D の絵が場面の絵の上限（256 MB・64 枚）を超える・大きすぎる絵を縮める | Gltf.loadTexturedUsing（limits）・Texture3d.limitSize・project.json の scene3dTextureBudgetMB / scene3dTextureBudgetCount（docs/lightmap.md の「場面の絵の予算」） |
+| 3D の絵が場面の絵の上限（256 MB・64 枚）を超える・大きすぎる絵を縮める | project.json の "gltf" の maxTextureSide / maxNormalSide・Texture3d.limitSize・project.json の scene3dTextureBudgetMB / scene3dTextureBudgetCount（docs/lightmap.md の「場面の絵の予算」） |
 | 8bit の絵の値の意味（sRGB の曲線か線形か）と変換の式 | Texture3d.ColorSpace・srgbToLinear・linearToSrgb |
 | 起動画面（ロゴ+ゲージ）を組み立てたい | Splash |
 | 起動画面の組み込みフォント・ロゴを使いたい | BootFont（素データは BootFontData。生成物なので手で触らない） |

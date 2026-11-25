@@ -394,10 +394,11 @@ mod TestDrawHash {
     def testSceneKeyWithSpotWithoutInnerIsPinned(): Unit \ Assert =
         Assert.assertEq(expected = "079522657a2743ff47948197f16ba251df139c50f19ce24b3a738a6f510c8402", keyWithSpot(None))
 
-    /// engine のテストの資材 textured_two_materials.glb（emissive の無い 2 つの材質）を loadTexturedUsing で読んで並べた場面の鍵。
+    /// engine のテストの資材 textured_two_materials.glb（emissive の無い 2 つの材質）を絵つきで読んで並べた場面の鍵。
     /// テストは .layers/engine_tools で流れる。
     def keyWithTexturedGlb(): String \ IO =
-        let loaded = run Gltf.loadTexturedUsing(HeadlessLoad.imageIoDecoder(), Gltf.noTextureLimits(), "../../engine/test/data/textured_two_materials.glb") with Fs.FileRead.runWithIO;
+        let path = "../../engine/test/data/textured_two_materials.glb";
+        let loaded = run Fs.FileRead.readBytes(path) |> Result.mapErr(e -> "${path}: 読めない（${e}）") |> Result.flatMap(Gltf.decodeWith(HeadlessLoad.imageIoDecoder(), Gltf.defaultLoadOptions(), None)) with Fs.FileRead.runWithIO;
         let model = match loaded {
             case Ok(m)  => m
             case Err(e) => bug!(e)

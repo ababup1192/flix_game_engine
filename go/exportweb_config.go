@@ -207,6 +207,7 @@ func loadExportConfig(o exportWebOptions) (exportConfig, *exportFailure) {
 	if fail := c.planDeferred(&early); fail != nil {
 		return c, fail
 	}
+	c.DeferredPlan.Warnings = append(c.DeferredPlan.Warnings, deferredGlbWarnings(p.Game, c.DeferredPlan.Paths, webGlbPrimitiveLimit)...)
 	for _, line := range c.DeferredPlan.Warnings {
 		ewLogf("知らせ: %s", line)
 	}

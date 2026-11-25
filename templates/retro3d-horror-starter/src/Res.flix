@@ -12,7 +12,7 @@ mod Res {
     pub type alias Docs = { walk = WalkDoc.Doc, keys = KeysDoc.Doc, look = LookDoc.Doc, sound = SoundDoc.Doc, layout = Layout.Layout, assets = School.Assets,
                             items = ItemsDoc.Doc, cast = CastDoc.Doc, people = Map[String, Model3d.Model3d], dialogue = Yarn.Program,
                             bundles = List[Bundles.Entry], pending = BackgroundLoad.Pending,
-                            group = BackgroundLoad.Group[Result[String, Vector[Int8]], Model3d.Model3d], downloads = LoadProgress.AssetDownloads }
+                            group = BackgroundLoad.Group[Result[String, (String, Vector[Int8])], Model3d.Model3d], downloads = LoadProgress.AssetDownloads }
 
     /// 描く元の束。school = layout と assets から組んだ当たり判定と階ごとの集まり（光の Doc のプレートの光り方も入る）。
     /// mapFrame = 紙のマップの縮尺（layout から 1 回だけ）。items = 拾える物と鍵の Doc・doors = 鍵のかかった部屋の戸口（layout と items から）。

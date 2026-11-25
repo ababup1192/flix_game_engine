@@ -1,14 +1,14 @@
 // Gltf — 3D の場面（Scene3d）の部品。座標の約束は scene3d/Scene3d.flix の頭。
 
 /// glTF 2.0 のバイナリ（.glb）を読む: メッシュ・スキン・頂点のジョイントの重み・アニメーション・uv（TEXCOORD_0）とタンジェント（TANGENT）。
-/// loadTextured はさらに、BIN に埋めた画像（PNG / JPEG）と材質（baseColorTexture・normalTexture・emissive・sampler）も読む。
+/// BIN に埋めた画像（PNG / JPEG）と材質（baseColorTexture・normalTexture・emissive・sampler）も読む（ゲームの入口は Model3d.loader / load / decode）。
 /// ノードは全部（mesh の無いノードも）名前・行列・局所の境界つきで Model3d の nodes に入る（Model3d.findNode で引く）。
 /// 右手系の glTF を左手系の engine へ X の反転（S = diag(−1, 1, 1)）で写す。glTF の正面 +Z は engine でも +Z のまま、
 /// キャラの右手（glTF の −X）は engine の +X に来る。位置と法線は x を反転し、三角形の巡りを逆にする。
 /// 回転は (x, −y, −z, w)、倍率はそのまま、行列（逆バインド行列・matrix のノード・rootTransform）は S·M·S。
 /// 読まない物（Err）: 外の uri・data URI・sparse accessor・三角形以外の primitive・1 体 64 本を超えるジョイント。
 /// 捨てて 1 回知らせる物: JOINTS_1 / WEIGHTS_1・ジョイントでないノードを動かす欄・CUBICSPLINE の接線。
-/// 絵（loadTextured）で読み飛ばして 1 行ずつ知らせる物: texCoord ≠ 0・KHR_texture_transform・MIRRORED_REPEAT（REPEAT で読む）・外の uri の画像。
+/// 絵で読み飛ばして 1 行ずつ知らせる物: texCoord ≠ 0・KHR_texture_transform・MIRRORED_REPEAT（REPEAT で読む）・外の uri の画像。
 // WhyNot: Mesh3d.fromObj と同じく反転せずに読まない — 左右の決まったキャラ（右手に剣）が鏡写しになる。
 pub mod Gltf {
     use Util.Json.Json
@@ -43,28 +43,8 @@ pub mod Gltf {
                         joints = Vector[Int32], weights = Vector[Float64], uvs = Option[Vector[Float64]],
                         tangents = Option[Vector[Float64]], uvs2 = Option[Vector[Float64]], material = Option[Int32] }
 
-    /// 組んだ Model3d と、parts の並びの材質の番号（loadTextured が材質を付ける）。
+    /// 組んだ Model3d と、parts の並びの材質の番号（decodeBy が材質を付ける）。
     type alias Built = { model = Model3d.Model3d, jointOfNode = Map[Int32, Int32], partMaterials = List[Option[Int32]] }
-
-    /// path の .glb を読む（Fs.FileRead.readBytes）。読めない・壊れている時は Err（パスつき）。
-    pub def load(path: String): Result[String, Model3d.Model3d] \ Fs.FileRead =
-        loadWith(fromGlb, path)
-
-    /// .glb のバイトから作る。壊れている・読まない物を含む時は Err。parts は primitive ごと（材質 None・gltfMaterial の絵の名前は None）・textures は空。
-    /// TEXCOORD_0・TANGENT が読めない（数が頂点の数と違う・NaN か無限）時は、その欄を使わずに読んで 1 行知らせる。
-    pub def fromGlb(bytes: Vector[Int8]): Result[String, Model3d.Model3d] =
-        parseAndBuild(defaultLoadOptions(), bytes) |> Result.map(gb -> {
-            let (glb, built) = gb;
-            let infoOnly = (material: Obj) -> { withUv = None, withoutUv = None, info = gltfMaterialOf(noTextureNames(), material), lines = Nil, noUvLines = Nil };
-            let (parts, lines) = attachMaterials(built, glb#materials |> Vector.map(infoOnly));
-            Log.warnAllThen(List.append(warningsOf(glb#json, built#jointOfNode), lines), { parts = parts | built#model })
-        })
-
-    /// fromGlb の、形の中身の鍵を key から作る版（part ごとに "key#part<番号>"・まとめた形は "key#all"）。
-    /// key は同じ key なら同じバイトだと呼ぶ側が約束できる字（ImageData.ImageDecoder の versionedKey）。
-    // WhyNot: いつも頂点の SHA-256 を取らない — ブラウザでは 1 部屋の形 3 つで 30 ms を超え、部屋を読むたびに積もる。
-    pub def fromGlbKeyed(key: String, bytes: Vector[Int8]): Result[String, Model3d.Model3d] =
-        fromGlb(bytes) |> Result.map(Gltf.Internal.withKeyedMeshes(key))
 
     /// 材質の絵の長い辺の上限（px）。baseColor = baseColorTexture と emissiveTexture（同じ色の絵）・normal = normalTexture。
     /// 上限を超える絵は mip と同じ縮め方で半分にしていく。
@@ -73,62 +53,41 @@ pub mod Gltf {
     /// 上限なし。ほかの値は { normal = 1024 | Gltf.noTextureLimits() } の形で替える。
     pub def noTextureLimits(): TextureLimits = { baseColor = Texture3d.maxSide(), normal = Texture3d.maxSide() }
 
-    /// path の .glb を、絵と材質つきで読む。parts に材質（baseColorTexture → Scene3d.texturedMaterial・normalTexture → 法線マップ・
-    /// emissive → emission・sampler の wrap）、textures に BIN に埋めた画像（decoder で解く）。baseColorFactor は頂点の色に書き込んであり（COLOR_0 は読まない。読むのは loadTexturedUsingOptions の vertexColors）、VertexColor で掛かる。
-    /// 絵も emissive も無い材質の primitive は材質 None（頂点の色で描く）。読めない・壊れている時は Err（パスつき）。
-    /// emissive（emissiveFactor。emissiveTexture があれば絵 × それ。KHR_materials_emissive_strength は Scene3d.withEmissionIntensity）の付く材質は光る
-    /// （glTF の決まりどおり。止めるなら Scene3d.withoutEmission）。emissive の付く材質の spec の名前は "gltf:" で始まり、
-    /// 木の形を変える物（絵の読み方・emissiveFactor の値・絵の有無）を全部名前に入れる（strength は木の外の倍率なので入れない）。emissive の無い材質は Scene3d.texturedMaterial のまま。
-    /// emissiveTexture を指しているのに読めない時（texCoord ≠ 0・画像が読めない・形に TEXCOORD_0 が無い）は光らせず、材質ごとに 1 行知らせる。
-    /// decoder は読み込みの頭で LoadProgress.imageDecoder() で受け取り、並列の仕事へ渡す。
-    /// limits は材質の絵の大きさの上限（場面の絵の上限に収める・近くで見ない法線マップを小さくする）。上限を掛けないなら noTextureLimits()。
-    pub def loadTexturedUsing(decoder: ImageData.ImageDecoder, limits: TextureLimits, path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO =
-        loadWith(fromGlbTexturedUsing(decoder, limits), path)
-
-    /// loadTexturedUsing のバイトの版。
-    pub def fromGlbTexturedUsing(decoder: ImageData.ImageDecoder, limits: TextureLimits, bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO =
-        fromGlbTexturedUsingOptions(decoder, { limits = limits | defaultLoadOptions() }, bytes)
-
-    /// loadTexturedUsing に、材質の metallic・roughness も読んで付ける版（Scene3d.withMetallicRoughness。付く条件・既定値・絵の読み方は materialOf の説明）。
-    /// metallicRoughnessTexture の画像もデコードする（上限は TextureLimits#baseColor）。引数は loadTexturedUsing と同じ。
-    // WhyNot: loadTexturedUsing が既定で読まない — Blender の書き出しは絵も emissive も無い材質にも metallic・roughness を書くので、読むと今まで頂点の色だけだった
+    /// 読み方の選択肢。limits = 材質の絵の大きさの上限（場面の絵の上限に収める・近くで見ない法線マップを小さくする）・
+    /// pbr = 材質の metallic・roughness も読み、baseColorFactor と emissiveFactor を線形の値として読む（付く条件・既定値・絵の読み方は materialOf の説明。
+    /// metallicRoughnessTexture の画像もデコードする・上限は limits#baseColor）・
+    /// vertexColors = 頂点の色 COLOR_0 を読み、線形の値 → 画面の値にして baseColorFactor に掛ける（Gltf.Internal.colorsOf。白は 1 のまま）。偽なら COLOR_0 は読まない。
+    /// ゲームは project.json の任意キー "gltf" に書く。
+    // WhyNot: pbr を既定で真にしない — Blender の書き出しは絵も emissive も無い材質にも metallic・roughness を書くので、読むと今まで頂点の色だけだった
     //   part が材質を持つ物になり、part を束ねるゲームの条件（material が None）が外れて draw が増える。鏡面のプログラムも使う。ゲームが選んで読む。
-    pub def loadTexturedPbrUsing(decoder: ImageData.ImageDecoder, limits: TextureLimits, path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO =
-        loadWith(fromGlbTexturedPbrUsing(decoder, limits), path)
-
-    /// loadTexturedPbrUsing のバイトの版。
-    pub def fromGlbTexturedPbrUsing(decoder: ImageData.ImageDecoder, limits: TextureLimits, bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO =
-        fromGlbTexturedUsingOptions(decoder, { limits = limits, pbr = true | defaultLoadOptions() }, bytes)
-
-    /// 絵と材質つきの読み込みの選択肢。limits = 材質の絵の大きさの上限（loadTexturedUsing の limits）・
-    /// pbr = 材質の metallic・roughness も読む（loadTexturedPbrUsing と同じ）・
-    /// vertexColors = 頂点の色 COLOR_0 を読み、線形の値 → 画面の値にして baseColorFactor に掛ける（Gltf.Internal.colorsOf。白は 1 のまま）。
-    /// 偽なら COLOR_0 は読まない。
     // WhyNot: vertexColors を既定で真にしない — Blender の書き出しは頂点の色の層があると COLOR_0 を書くので、
     //   今まで捨てていた白でない COLOR_0 を持つゲームの glb の色が engine を上げただけで変わる。読みたいゲームが選ぶ。
     pub type alias LoadOptions = { limits = TextureLimits, pbr = Bool, vertexColors = Bool }
 
-    /// 上限なし・metallic・roughness を読まない・COLOR_0 を読まない（loadTexturedUsing と同じ）。欄を書き替えて使う:
-    /// `{ vertexColors = true | Gltf.defaultLoadOptions() }`。
+    /// 上限なし・metallic・roughness を読まない・COLOR_0 を読まない。欄を書き替えて使う: `{ vertexColors = true | Gltf.defaultLoadOptions() }`。
     pub def defaultLoadOptions(): LoadOptions = { limits = noTextureLimits(), pbr = false, vertexColors = false }
 
-    /// path の .glb を、選択肢 options で絵と材質つきで読む（読み方は loadTexturedUsing・欄は LoadOptions）。
-    pub def loadTexturedUsingOptions(decoder: ImageData.ImageDecoder, options: LoadOptions, path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO =
-        loadWith(fromGlbTexturedUsingOptions(decoder, options), path)
+    /// .glb のバイトから、絵と材質つきで作る。ゲームは Model3d.loader / load / decode を使う（この口は engine のテストと bench が選択肢を直に渡す時のもの）。
+    /// 壊れている・読まない物を含む時は Err。TEXCOORD_0・TANGENT が読めない（数が頂点の数と違う・NaN か無限）時は、その欄を使わずに読んで 1 行知らせる。
+    /// parts に材質（baseColorTexture → Scene3d.texturedMaterial・normalTexture → 法線マップ・emissive → emission・sampler の wrap）、
+    /// textures に BIN に埋めた画像（decoder で解く・どの材質からも指されない絵は解かない）。baseColorFactor は頂点の色に書き込んであり、VertexColor で掛かる。
+    /// 絵も emissive も無い材質の primitive は材質 None（頂点の色で描く）。
+    /// emissive（emissiveFactor。emissiveTexture があれば絵 × それ。KHR_materials_emissive_strength は Scene3d.withEmissionIntensity）の付く材質は光る
+    /// （glTF の決まりどおり。止めるなら Scene3d.withoutEmission）。emissive の付く材質の spec の名前は "gltf:" で始まり、
+    /// 木の形を変える物（絵の読み方・emissiveFactor の値・絵の有無）を全部名前に入れる（strength は木の外の倍率なので入れない）。emissive の無い材質は Scene3d.texturedMaterial のまま。
+    /// emissiveTexture を指しているのに読めない時（texCoord ≠ 0・画像が読めない・形に TEXCOORD_0 が無い）は光らせず、材質ごとに 1 行知らせる。
+    /// key = Some なら、形の中身の鍵を key から作り（part ごとに "key#part<番号>"・まとめた形は "key#all"）、絵は機種が持てるなら機種の側に解いて持つ
+    /// （ImageData.ImageDecoder の platformImageOfBytes・id は "key#image<番号>"。上限より大きい絵は画素へ戻して縮める）。
+    /// key は同じ key なら同じバイトだと呼ぶ側が約束できる字（ImageData.ImageDecoder の versionedKey）。None（デスクトップの開発中のファイル）なら頂点から鍵を作る。
+    // WhyNot: いつも頂点の SHA-256 を取らない — ブラウザでは 1 部屋の形 3 つで 30 ms を超え、部屋を読むたびに積もる。
+    pub def decodeWith(decoder: ImageData.ImageDecoder, options: LoadOptions, key: Option[String], bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO =
+        match key {
+            case Some(k) => decodeBy(Gltf.Internal.keyedImageOf(k, decoder), options, bytes) |> Result.map(Gltf.Internal.withKeyedMeshes(k))
+            case None    => decodeBy((_, _, image) -> Texture3d.decodeUsing(decoder, image), options, bytes)
+        }
 
-    /// loadTexturedUsingOptions のバイトの版。
-    pub def fromGlbTexturedUsingOptions(decoder: ImageData.ImageDecoder, options: LoadOptions, bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO =
-        fromGlbTexturedBy((_, _, image) -> Texture3d.decodeUsing(decoder, image), options, bytes)
-
-    /// fromGlbTexturedUsingOptions の、形の中身の鍵を key から作る版（鍵の作り方と key の約束は fromGlbKeyed と同じ・初めて描くコマで頂点の SHA-256 を取らない）。
-    /// key は ImageData.ImageDecoder の versionedKey（道と版）。それが None の時（デスクトップの開発中のファイル）は fromGlbTexturedUsingOptions を呼ぶ。
-    // WhyNot: LoadOptions に鍵の欄を足さない — レコードを全部書いて作ったゲームが、欄が増えると組めなくなる。
-    /// 絵は機種が持てるなら機種の側に解いて持つ（ImageData.ImageDecoder の platformImageOfBytes・id は "key#image<番号>"）。上限より大きい絵は画素へ戻して縮める。
-    pub def fromGlbTexturedKeyedUsingOptions(key: String, decoder: ImageData.ImageDecoder, options: LoadOptions, bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO =
-        fromGlbTexturedBy(Gltf.Internal.keyedImageOf(key, decoder), options, bytes) |> Result.map(Gltf.Internal.withKeyedMeshes(key))
-
-    def fromGlbTexturedBy(decode: (Int32, Int32, Vector[Int8]) -> Result[String, Texture3d.Texture3d] \ IO, options: LoadOptions,
-                          bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO =
+    def decodeBy(decode: (Int32, Int32, Vector[Int8]) -> Result[String, Texture3d.Texture3d] \ IO, options: LoadOptions,
+                 bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO =
         let pbr = options#pbr;
         match parseAndBuild(options, bytes) {
             case Err(e) => Err(e)
@@ -145,12 +104,6 @@ pub mod Gltf {
                 Ok(Log.warnAllThen(List.append(warningsOf(glb#json, built#jointOfNode), lines),
                                    { parts = parts, textures = Vector.toList(decoded) |> List.filterMap(identity) | built#model }))
         }
-
-    /// path を読んでバイトの版 fromBytes へ渡す（読めない時と Err にパスを付ける）。
-    def loadWith(fromBytes: Vector[Int8] -> Result[String, Model3d.Model3d] \ ef, path: String): Result[String, Model3d.Model3d] \ ef + Fs.FileRead =
-        Fs.FileRead.readBytes(path)
-            |> Result.mapErr(e -> "${path}: 読めない（${e}）")
-            |> Result.flatMap(bytes -> fromBytes(bytes) |> Result.mapErr(e -> "${path}: ${e}"))
 
     /// read の pbr = baseColorFactor を線形の値として読む（偽なら画面の値として読む。baseColorOf の WhyNot）・vertexColors = COLOR_0 を読む。limits は読まない。
     def parseAndBuild(read: LoadOptions, bytes: Vector[Int8]): Result[String, (Glb, Built)] =
@@ -238,7 +191,7 @@ pub mod Gltf {
     /// | 無い | 0 でない | 頂点の色の材質 + emission・spec の名前は "gltf:vc:<emissive>" |
     /// | 無い | 0 | None（頂点の色で描く） |
     ///
-    /// metallic・roughness は、loadTexturedPbrUsing の時だけ読む。pbrMetallicRoughness があり metallicFactor・roughnessFactor・metallicRoughnessTexture のどれかが書いてある材質に
+    /// metallic・roughness は、LoadOptions の pbr が真の時だけ読む。pbrMetallicRoughness があり metallicFactor・roughnessFactor・metallicRoughnessTexture のどれかが書いてある材質に
     /// Scene3d.withMetallicRoughness で付く（書いていない値は glTF の既定の 1。pbrMetallicRoughness が無い・baseColorFactor だけの材質は付けない — 色だけの古い glb が
     /// 全部金属に見えるのを避ける）。絵が無く emissive も無い材質も、付く時は材質になる（"gltf:vc"・頂点の色の土台）。
     /// metallicRoughnessTexture は texCoord が 0 で読めた時だけ Scene3d.withMetallicRoughnessTexture（読めない時は値だけにして知らせる）。
@@ -423,8 +376,6 @@ pub mod Gltf {
 
     /// GltfMaterial の絵の名前の欄（読めた絵の Texture3d.name）。
     type alias TextureNames = { base = Option[String], normal = Option[String], emissive = Option[String], metallicRoughness = Option[String] }
-
-    def noTextureNames(): TextureNames = { base = None, normal = None, emissive = None, metallicRoughness = None }
 
     /// glTF の材質の欄を読む（alphaMode は MASK・BLEND の他は Opaque・alphaCutoff 既定 0.5・doubleSided 既定 偽）。
     def gltfMaterialOf(names: TextureNames, material: Obj): Model3d.GltfMaterial =
@@ -963,7 +914,7 @@ pub mod Gltf {
 
     /// 無くても形は描ける頂点の欄（TEXCOORD_0・TANGENT）を読む。読めない・数が頂点の数と違う・NaN か無限がある時は、
     /// その欄を使わずに続けて 1 行知らせる（None）。
-    // WhyNot: Err にしない — uv を使わない fromGlb まで読めなくなる。形（POSITION・indices）が読めれば描ける。
+    // WhyNot: Err にしない — uv を使わない形（当たり判定の形など）まで読めなくなる。形（POSITION・indices）が読めれば描ける。
     def optionalAttribute(glb: Glb, attributes: Obj, key: String, width: Int32, count: Int32): Option[Accessor] =
         match traverseOpt(intOf(key, attributes), k -> readAccessorWidth(glb, k, width, key)) {
             case Ok(None)    => None
@@ -1017,9 +968,9 @@ pub mod Gltf {
 
     /// baseColorFactor を頂点の色にする。材質や baseColorFactor が無ければ白。linear が偽なら値をそのまま（画面の値として）、
     /// 真なら glTF の決まりどおり線形の値として読み、頂点の色（画面の値）へ戻して書く（描き手は頂点の色を線形へ戻すので、元の線形の値に戻る）。
-    // WhyNot: 既存の口（loadTexturedUsing）は線形として読まない — OBJ の Kd も Blender の値を画面の値（sRGB の値）として読む。
+    // WhyNot: pbr が偽の時は線形として読まない — OBJ の Kd も Blender の値を画面の値（sRGB の値）として読む。
     //   片方だけ直すと同じ Blender の色が形式で違って見え、既存のゲームの色が変わる。emissiveFactor も同じく画面の値として読む（COLOR_0 は Gltf.Internal.colorsOf）。
-    // WhyNot: PBR の口（loadTexturedPbrUsing）は線形として読む — 画面の値として読むと、金・赤が濃く、暗い色が黒く潰れて Blender の手本と合わない。
+    // WhyNot: pbr が真の時は線形として読む — 画面の値として読むと、金・赤が濃く、暗い色が黒く潰れて Blender の手本と合わない。
     def baseColorOf(linear: Bool, glb: Glb, prim: Obj): Result[String, Vector[Float64]] =
         let white = Vector#{ 1.0, 1.0, 1.0 };
         match intOf("material", prim) {

@@ -1,5 +1,5 @@
-// loadTextured は材質の baseColorTexture と normalTexture が指す画像だけを絵に戻す（metallicRoughness の画像は decode しない）。
-// loadTexturedPbr は、metallic・roughness を付ける材質（Gltf.wantsMetallicRoughness）の metallicRoughnessTexture の画像も絵に戻す
+// Gltf.decodeWith は材質の baseColorTexture と normalTexture が指す画像だけを絵に戻す（metallicRoughness の画像は decode しない）。
+// pbr が真の読み方は、metallic・roughness を付ける材質（Gltf.wantsMetallicRoughness）の metallicRoughnessTexture の画像も絵に戻す
 // （occlusion の画像は decode しない。texCoord が 0 でない metallicRoughnessTexture は TestGltf.Metallic）。
 mod TestGltf.UsedImages {
 
@@ -36,25 +36,25 @@ mod TestGltf.UsedImages {
     def testOnlyTheBaseColorImageIsDecoded(): Unit \ {Assert, IO} =
         let red = -65536;
         Assert.assertEq(expected = Ok(Vector#{red} :: Nil),
-            Gltf.fromGlbTexturedUsing(TestDecoder.imageIo(), Gltf.noTextureLimits(), baseAndOrmGlb()) |> Result.map(m -> m#textures |> List.map(TestDecoder.pixelsOf)))
+            Gltf.decodeWith(TestDecoder.imageIo(), { limits = Gltf.noTextureLimits() | Gltf.defaultLoadOptions() }, None, baseAndOrmGlb()) |> Result.map(m -> m#textures |> List.map(TestDecoder.pixelsOf)))
 
     @Test
     def testPbrLoaderDecodesTheMetallicRoughnessImageToo(): Unit \ {Assert, IO} =
         let red = -65536;
         let green = -16711936;
         Assert.assertEq(expected = Ok(Vector#{red} :: Vector#{green} :: Nil),
-            Gltf.fromGlbTexturedPbrUsing(TestDecoder.imageIo(), Gltf.noTextureLimits(), baseAndOrmGlb()) |> Result.map(m -> m#textures |> List.map(TestDecoder.pixelsOf)))
+            Gltf.decodeWith(TestDecoder.imageIo(), { limits = Gltf.noTextureLimits(), pbr = true | Gltf.defaultLoadOptions() }, None, baseAndOrmGlb()) |> Result.map(m -> m#textures |> List.map(TestDecoder.pixelsOf)))
 
     @Test
     def testBaseColorLimitShrinksTheTexture(): Unit \ {Assert, IO} =
         Assert.assertEq(expected = Ok((2, 2) :: Nil),
-            Gltf.fromGlbTexturedUsing(TestDecoder.imageIo(), { baseColor = 2 | Gltf.noTextureLimits() }, baseAndOrmGlbOfSide(4))
+            Gltf.decodeWith(TestDecoder.imageIo(), { limits = { baseColor = 2 | Gltf.noTextureLimits() } | Gltf.defaultLoadOptions() }, None, baseAndOrmGlbOfSide(4))
                 |> Result.map(m -> m#textures |> List.map(t -> (Texture3d.width(t), Texture3d.height(t)))))
 
     @Test
     def testNormalLimitDoesNotTouchTheBaseColor(): Unit \ {Assert, IO} =
         Assert.assertEq(expected = Ok((4, 4) :: Nil),
-            Gltf.fromGlbTexturedUsing(TestDecoder.imageIo(), { normal = 2 | Gltf.noTextureLimits() }, baseAndOrmGlbOfSide(4))
+            Gltf.decodeWith(TestDecoder.imageIo(), { limits = { normal = 2 | Gltf.noTextureLimits() } | Gltf.defaultLoadOptions() }, None, baseAndOrmGlbOfSide(4))
                 |> Result.map(m -> m#textures |> List.map(t -> (Texture3d.width(t), Texture3d.height(t)))))
 
     @Test
@@ -62,5 +62,5 @@ mod TestGltf.UsedImages {
         let green = -16711936;
         let decoder = ImageData.decoderOf(_ -> checked_ecast(Ok({ width = 1, height = 1, argb = Vector#{green} })));
         Assert.assertEq(expected = Ok(Vector#{green} :: Nil),
-            Gltf.fromGlbTexturedUsing(decoder, Gltf.noTextureLimits(), baseAndOrmGlb()) |> Result.map(m -> m#textures |> List.map(TestDecoder.pixelsOf)))
+            Gltf.decodeWith(decoder, { limits = Gltf.noTextureLimits() | Gltf.defaultLoadOptions() }, None, baseAndOrmGlb()) |> Result.map(m -> m#textures |> List.map(TestDecoder.pixelsOf)))
 }

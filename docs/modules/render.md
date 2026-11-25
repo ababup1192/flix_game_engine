@@ -10,7 +10,7 @@
 | 箱や丸を並べて物・キャラを作りたくなった | PxSprite（+PxShade）/ gradPolygon / Terrain。RawDraw は下地とデバッグ用 |
 | 描画物を矩形で切り抜く（スクロールの表示範囲・PiP。スクリーン空間） | Render（clipped / clippedAll）（実例: `templates/sound-novel-starter/src/View.flix`） |
 | 画面を覆う・晴らす切り替え演出（フェード・ワイプ） | Transition |
-| 3D の材質に金属・磨いた石・濡れた床の光沢（鏡面ハイライトと空の映り込み）を付ける | Scene3d（withMetallicRoughness / withMetallicRoughnessTexture / withoutMetallicRoughness）・glb は Gltf.loadTexturedPbrUsing で読んだ時だけ付く（[scene3d.md](../scene3d.md)） |
+| 3D の材質に金属・磨いた石・濡れた床の光沢（鏡面ハイライトと空の映り込み）を付ける | Scene3d（withMetallicRoughness / withMetallicRoughnessTexture / withoutMetallicRoughness）・glb は project.json の "gltf" の pbr を真にした時だけ付く（[scene3d.md](../scene3d.md)） |
 | 3D の金属の映り込みに周りの景色（部屋・空のパノラマの絵）を映す・室内の壁の位置を補正する | Scene3d（environmentMap / withEnvironmentIntensity / withEnvironmentBox。Scene3dCmd の environmentMap 欄）（[scene3d.md](../scene3d.md)） |
 | 画面全体の後がけ（トーンマップ・露出・ブルーム・色の仕上げ・ビネット・奥行きのぼかし・FXAA）を値の束で付ける（HUD には掛けない） | PostStack（`App.withPostStack`・`PostStack.preset` / `with*` / `loadOr`（`assets/post.json`・schema は [post.schema.json](../post.schema.json)）/ `build`） |
 | 画面を時間で揺らがせる（火山の陽炎・水の中・魔法。画面全体・画面の下側の帯・マスクの絵） | PostStack（`withDistortion(Some({ strength, noiseSize, speed, mask }))` + `withTime(遊びの時計)`・post.json の `distortion`・[scene3d.md](../scene3d.md) の「画面の歪み」） |

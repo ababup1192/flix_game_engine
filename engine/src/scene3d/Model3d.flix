@@ -45,12 +45,12 @@ pub mod Model3d {
 
     /// glTF の材質の情報（読むだけ。描き方を決めるのは part#material）。
     /// - name = glTF の材質の name（無ければ ""）
-    /// - alphaMode・alphaCutoff（既定 0.5）・doubleSided = glTF の欄のまま（loadTextured は材質のある部品に alphaMode と doubleSided を当てる — BLEND は半透明・MASK は 0.5 で抜く・doubleSided は glTF の値のまま）
-    /// - baseColorTexture・normalTexture・emissiveTexture = 読めた絵の名前（Texture3d.name。絵を読まない Gltf.load と、読めなかった絵は None）
+    /// - alphaMode・alphaCutoff（既定 0.5）・doubleSided = glTF の欄のまま（glb の読み込みは材質のある部品に alphaMode と doubleSided を当てる — BLEND は半透明・MASK は 0.5 で抜く・doubleSided は glTF の値のまま）
+    /// - baseColorTexture・normalTexture・emissiveTexture = 読めた絵の名前（Texture3d.name。読めなかった絵は None）
     /// - emissive = emissiveFactor × KHR_materials_emissive_strength（既定 0。factor は画面の値〔sRGB の値〕として読み、strength は線形の倍率）
     /// - metallic・roughness = pbrMetallicRoughness の metallicFactor・roughnessFactor（書いていなければ glTF の既定の 1。材質に付いたかは part#material を
     ///   Scene3d.metallicRoughnessOf で見る — pbrMetallicRoughness が無い・baseColorFactor だけの材質は付かない）
-    /// - metallicRoughnessTexture = 読めた metallicRoughnessTexture の絵の名前（Texture3d.name。絵を読まない Gltf.load と、読めなかった絵は None）
+    /// - metallicRoughnessTexture = 読めた metallicRoughnessTexture の絵の名前（Texture3d.name。読めなかった絵は None）
     pub type alias GltfMaterial = { name = String, alphaMode = AlphaMode, alphaCutoff = Float64, doubleSided = Bool,
                                     baseColorTexture = Option[String], normalTexture = Option[String],
                                     emissiveTexture = Option[String], emissive = { r = Float64, g = Float64, b = Float64 },
@@ -104,4 +104,32 @@ pub mod Model3d {
     // WhyNot: 部品の番号で引かない — parts と nodes をそのたびに頭から辿り、全部の部品に回すと二乗になる。部品はノードの parts から引ける。
     pub def partLocalToNode(node: ModelNode, model: Model3d): Option[Mat4.Mat4] =
         if (Option.nonEmpty(model#skin)) None else Mat4.inverse(node#world)
+
+    // ── glb を読む口 ──
+
+    enum LoaderData { case LoaderData(ImageData.ImageDecoder, Gltf.LoadOptions) }
+
+    /// glb の読み方（絵を解くデコーダーと、project.json の "gltf" の選択肢）。作るのは loader() だけ。
+    pub type alias Loader = LoaderData
+
+    /// 読み込みの頭（ループが回る前）で 1 回作り、並列の仕事や BackgroundLoad の decode へ渡す。
+    /// 選択肢は project.json の任意キー "gltf"（{"pbr": Bool, "vertexColors": Bool, "maxTextureSide": Int, "maxNormalSide": Int}・欄の意味は Gltf.LoadOptions・
+    /// 無い欄は Gltf.defaultLoadOptions）。LoadProgress.runNoop の下では imageDecoder で止まるので、画面なしは HeadlessLoad.handle で包む。
+    // WhyNot: 選択肢を引数で受けない — 鍵の有無・PBR・頂点の色を読み込みのたびにゲームが選ぶと、同じ glb の色が場所によって変わる。
+    pub def loader(): Loader \ LoadProgress + Fs.FileRead =
+        let options = match ProjectLoader.loadProject(".") {
+            case Ok(p)  => p#gltf
+            case Err(e) => Log.fellBackThen("scene3d", "Model3d.loader の project.json", "Gltf.defaultLoadOptions()", e, Gltf.defaultLoadOptions())
+        };
+        LoaderData.LoaderData(LoadProgress.imageDecoder(), options)
+
+    /// 道 path の glb を読む（読み込みの頭でも、並列の仕事の中でも呼べる）。読めない・壊れている時は Err（道つき）。
+    pub def load(loader: Loader, path: String): Result[String, Model3d] \ Fs.FileRead + IO =
+        Fs.FileRead.readBytes(path) |> Result.mapErr(e -> "${path}: 読めない（${e}）") |> Result.flatMap(decode(loader, path))
+
+    /// 読んだバイトから作る（BackgroundLoad.Group の decode など。path は鍵を作るのと Err に付けるのに使う）。
+    /// ブラウザ（versionedKey が Some）は形の鍵を道と版から作り、絵を機種の側に持つ。デスクトップは頂点から鍵を作る（読み方は Gltf.decodeWith）。
+    pub def decode(loader: Loader, path: String, bytes: Vector[Int8]): Result[String, Model3d] \ IO =
+        let LoaderData.LoaderData(decoder, options) = loader;
+        Gltf.decodeWith(decoder, options, (decoder#versionedKey)(path), bytes) |> Result.mapErr(e -> "${path}: ${e}")
 }

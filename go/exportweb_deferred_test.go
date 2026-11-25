@@ -549,3 +549,38 @@ func TestArrivalSecondsFollowFontLineOrder(t *testing.T) {
 		t.Errorf("arrivalSeconds は font: の行の位置で積むはず: %+v", b.Deferred)
 	}
 }
+
+// writeGlbWithPrimitives は meshes[0] に primitive を n 個持つ glb（JSON のチャンクだけ）を書く。
+func writeGlbWithPrimitives(t *testing.T, file string, n int) {
+	t.Helper()
+	prims := make([]string, n)
+	for i := range prims {
+		prims[i] = `{"attributes":{"POSITION":0}}`
+	}
+	body := []byte(`{"meshes":[{"primitives":[` + strings.Join(prims, ",") + `]}]}`)
+	for len(body)%4 != 0 {
+		body = append(body, ' ')
+	}
+	le := func(v uint32) []byte { return []byte{byte(v), byte(v >> 8), byte(v >> 16), byte(v >> 24)} }
+	var out []byte
+	out = append(out, le(0x46546C67)...)
+	out = append(out, le(2)...)
+	out = append(out, le(uint32(20+len(body)))...)
+	out = append(out, le(uint32(len(body)))...)
+	out = append(out, le(0x4E4F534A)...)
+	out = append(out, body...)
+	if err := os.WriteFile(file, out, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// 後回しの glb のうち、primitive が上限を超える物だけを知らせる（上限ちょうど・glb でない物・無いファイルは黙る）。
+func TestDeferredGlbWarningsNamesOnlyBundlesOverTheLimit(t *testing.T) {
+	dir := t.TempDir()
+	writeGlbWithPrimitives(t, filepath.Join(dir, "big.glb"), 3)
+	writeGlbWithPrimitives(t, filepath.Join(dir, "edge.glb"), 2)
+	lines := deferredGlbWarnings(dir, []string{"big.glb", "edge.glb", "missing.glb", "music.ogg"}, 2)
+	if len(lines) != 1 || !strings.Contains(lines[0], "big.glb は primitive が 3 個") {
+		t.Fatalf("知らせ = %q", lines)
+	}
+}

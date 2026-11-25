@@ -81,7 +81,7 @@
 | 3D の場面を 2D の画面に置く | `Render.scene3d(at, { .. \| Scene3d.scene(camera, size) })` | 同じ z では ShaderDoc の面と 3D の場面が必ず手前（並べた順は使われない）。上に重ねる物は z を大きくする |
 | 物を置く | `Scene3d.meshInstance(mesh, world)` → `withMaterial` / `withTint` / `withPose` | `instances` は `List`。毎コマ `++` で長い列を組むと重い（作り置きの列を後ろへつなぐ） |
 | material の色・絵 | `Scene3d.material(spec)`・絵 1 枚は `Scene3d.texturedMaterial(名前, filter)` | 絵は場面の `textures` にも渡す（渡さないと黒い）。1 つの material が読める絵は `Scene3d.maxMaterialTextures()` まで |
-| 金属と粗さ（PBR） | `Scene3d.withMetallicRoughness(metallic, roughness, m)`・絵は `withMetallicRoughnessTexture` | 付けない material はマットのまま。glb から読むのは `Gltf.loadTexturedPbrUsing` だけ |
+| 金属と粗さ（PBR） | `Scene3d.withMetallicRoughness(metallic, roughness, m)`・絵は `withMetallicRoughnessTexture` | 付けない material はマットのまま。glb から読むのは project.json の `"gltf": { "pbr": true }` の時だけ |
 | 法線マップ | `Scene3d.withNormalMap({ texture, strength }, m)` | uv つきの形にだけ当たる。OpenGL 流（緑が絵の上） |
 | 切り抜き・半透明・両面 | `Scene3d.withCutout` / `withAlphaBlend` / `withDoubleSided` | 半透明の物は影を落とさず、奥行きの Pass に描かれない。1 つの物の中の三角形は並べ替えない |
 | 光る面 | `Scene3d.withEmission(shade, m)` + `withEmissionIntensity(k, m)` | Spec の emission に 1 を超える色を書かない |

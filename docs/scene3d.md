@@ -261,7 +261,7 @@ let camera = { far = 60.0, lensShift = Vec2.v2(0.0, 0.0 - (ta + tb) / 2.0 / (2.0
 
 ## glb のノードを名前で引く
 
-`Gltf.load` / `loadTexturedUsing` は、glTF のノードを全部（mesh の無い empty・ライト・カメラも）`model#nodes` に入れる。
+glb の読み込み（`Model3d.load` / `decode`）は、glTF のノードを全部（mesh の無い empty・ライト・カメラも）`model#nodes` に入れる。
 Blender で付けた名前で引けば、扉・調べる物・当たり判定の箱・印の点（炎の芯の先など）を、位置や大きさから探さずに済む。
 
 ```flix
@@ -281,7 +281,7 @@ let byName = Model3d.nodesByName(collision);                     // たくさん
 
 ## glb の emissive
 
-`Gltf.loadTexturedUsing` は材質の `emissiveFactor`・`KHR_materials_emissive_strength`・`emissiveTexture` を読み、材質の emission と emissionIntensity にする
+glb の読み込みは材質の `emissiveFactor`・`KHR_materials_emissive_strength`・`emissiveTexture` を読み、材質の emission と emissionIntensity にする
 （glTF の決まりどおり光る。Godot・Unity と同じ）。baseColorTexture の無い emissive だけの材質（炎など）も、頂点の色の材質に emission を付けて光る。
 
 - 止めたい時は `Scene3d.withoutEmission(m)`
@@ -299,13 +299,13 @@ let byName = Model3d.nodesByName(collision);                     // たくさん
 
 ## glb の頂点の色（COLOR_0・Blender でベイクした明るさ）
 
-`Gltf.loadTexturedUsingOptions`（バイトの版は `fromGlbTexturedUsingOptions`）に `vertexColors = true` を渡すと、primitive の `COLOR_0` を頂点の色として読み、baseColorFactor と頂点ごとに掛けて
-形の頂点の色にする。選ばなければ COLOR_0 は読まない（今までと同じ。`load`・`fromGlb`・`loadTexturedUsing`・`loadTexturedPbrUsing` も読まない）。絵つきの材質は「絵 × 頂点の色」なので、Blender で部屋の明るさを頂点の色にベイクした glb は、ベイクした明るさで描かれる（GL・WebGPU・CPU とも同じ式）。
+project.json に `"gltf": { "vertexColors": true }` を書くと、`Model3d.load` / `decode` が primitive の `COLOR_0` を頂点の色として読み、baseColorFactor と頂点ごとに掛けて
+形の頂点の色にする。書かなければ COLOR_0 は読まない。絵つきの材質は「絵 × 頂点の色」なので、Blender で部屋の明るさを頂点の色にベイクした glb は、ベイクした明るさで描かれる（GL・WebGPU・CPU とも同じ式）。
 
 ```flix
 // 読み込みの時に 1 回。PS1 の GPU と同じく頂点の色の 0.5 を 1 倍として扱う（0.5 より明るくベイクした所が絵より明るくなる）
-let model = Gltf.loadTexturedUsingOptions(decoder, { vertexColors = true | Gltf.defaultLoadOptions() }, "assets/room.glb")
-    |> Result.map(Model3d.scaleVertexColors(2.0));
+// project.json に "gltf": { "vertexColors": true }
+let model = Model3d.load(Model3d.loader(), "assets/room.glb") |> Result.map(Model3d.scaleVertexColors(2.0));
 // ベイクした明るさだけで見せる場面: 環境光を白・光なし（かすみは掛かる）
 { environment = { ambient = Color.rgb(1.0, 1.0, 1.0), hemisphere = 0.0 | s#environment } | s }
 ```
@@ -317,7 +317,7 @@ let model = Gltf.loadTexturedUsingOptions(decoder, { vertexColors = true | Gltf.
     暗い所が持ち上がって明るく白っぽく出る（0.5 → 約 0.74）。書き出す前に線形へ直す（スクリプトで数を直に入れる時は sRGB → 線形の式を通す）
 - 選ばなければ COLOR_0 は読まない（今までと同じ。baseColorFactor だけ）。`COLOR_0` の無い glb は選んでも baseColorFactor だけ
   - WhyNot（既定で読まない）: Blender の書き出しは頂点の色の層があると COLOR_0 を書くので、白でない COLOR_0 を持つ既存のゲームの glb の色が engine を上げただけで変わる
-- `LoadOptions` のほかの欄: `limits` = 絵の大きさの上限（`loadTexturedUsing` の limits）・`pbr` = metallic・roughness も読む（`loadTexturedPbrUsing` と同じ）
+- `"gltf"` のほかの欄: `maxTextureSide`・`maxNormalSide` = 絵の大きさの上限・`pbr` = metallic・roughness も読む（欄の意味は `Gltf.LoadOptions`）
 - `Model3d.scaleVertexColors(k, model)` = 形と全部の parts の頂点の色に k を掛ける（`Mesh3d.scaleColors`。既定の読み込みは 1 倍・中身の鍵も変わる）。
   今の色に掛けるので 2 回呼ぶと k × k 倍。k が NaN・負・無限の時は 1 として扱い、1 行知らせる。
   頂点の色の 1 を超える値はそのまま描き手へ渡り、絵 × 頂点の色の後に画面の値で切れる（PS1 の 2 倍の掛け算と同じ）
@@ -339,13 +339,13 @@ Scene3d.metallicRoughnessOf(gold)                                               
 Scene3d.withMetallicRoughnessTexture("tex3d:orm", gold)                              // 絵で決める（B = metallic・G = roughness。値は絵に掛ける係数）
 ```
 
-- **glb は使う時だけ読む**: `Gltf.loadTexturedPbrUsing`（引数は `loadTexturedUsing` と同じ・バイトの版は `fromGlbTexturedPbrUsing`）が、`pbrMetallicRoughness` があり
+- **glb は使う時だけ読む**: project.json に `"gltf": { "pbr": true }` を書くと、`Model3d.load` / `decode` が、`pbrMetallicRoughness` があり
   `metallicFactor`・`roughnessFactor`・`metallicRoughnessTexture` のどれかが書いてある材質に付ける（書いていない値は glTF の既定の 1。Blender は metallic 1 の時に
   `metallicFactor` を書かないので、この扱いで合う）。`pbrMetallicRoughness` が無い材質と baseColor だけの材質には付けない（色だけの古い glb が全部金属に見えるのを避ける）。
-  絵が無く emissive も無い材質も、付く時は頂点の色の材質（`gltf:vc`）になる。既存の `loadTexturedUsing` は読まない（材質・鍵・絵は今までと同じ。
+  絵が無く emissive も無い材質も、付く時は頂点の色の材質（`gltf:vc`）になる。書かなければ読まない（材質・鍵・絵は今までと同じ。
   `part#gltfMaterial` の `metallic`・`roughness` の値だけ載る）。
-  PBR の口は `baseColorFactor` と `emissiveFactor` を glTF の決まりどおり線形の値として読む（`baseColorTexture` の画素は今までどおり sRGB の絵）。
-  // WhyNot: 既存の口は線形として読まない — OBJ の Kd と同じく画面の値として読んでいて、変えると既存のゲームの色が変わる。PBR の口まで画面の値として読むと、
+  `pbr` が真の時は `baseColorFactor` と `emissiveFactor` を glTF の決まりどおり線形の値として読む（`baseColorTexture` の画素は今までどおり sRGB の絵）。
+  // WhyNot: `pbr` が偽の時は線形として読まない — OBJ の Kd と同じく画面の値として読んでいて、変えると既存のゲームの色が変わる。`pbr` が真の時まで画面の値として読むと、
   //   金・赤が濃く、暗い色が黒く潰れて Blender の手本と合わない。
   // WhyNot: 既定で読まない — Blender の書き出しは絵も emissive も無い材質にも metallic 0・roughness 0.5 を書くので、読むと今まで頂点の色だけ（`part#material` が `None`）
   //   だった part が材質を持つ物になり、鏡面のプログラムを使い、part を束ねるゲームの条件も外れる（箱庭の町は 473 → 1283 draw/コマ・1 コマ 5.3 → 13 ms）。使うかはゲームが選ぶ。
@@ -359,7 +359,7 @@ Scene3d.withMetallicRoughnessTexture("tex3d:orm", gold)                         
 - **toon**（`toonSteps`）は拡散の光だけを段にし、鏡面と映り込みは段付けしない（決めた事）
 - **重さ**: 持つ材質だけが別のプログラム（`+mr`）を使い、光に届く 1 本ごとに鏡面の式が増える（届かない光と背を向けた面は式を飛ばす）。値（metallic・roughness）は
   params で渡すので、値だけ違う材質は同じプログラムを使い回す（batch は値ごとに分かれる）。絵の有無は別のプログラム
-- **`loadTexturedPbrUsing` を使うゲームの注意**: 上のとおり `None` だった part が材質を持つ。`None` を目印に part を束ねているなら、束ねる条件を `part#material` が `None` か
+- **`"pbr": true` にするゲームの注意**: 上のとおり `None` だった part が材質を持つ。`None` を目印に part を束ねているなら、束ねる条件を `part#material` が `None` か
   spec の名前が `gltf:vc` の材質まで広げ、`Scene3d.metallicRoughnessOf` の値ごとに束ねる。鏡面が要らない材質は `Scene3d.withoutMetallicRoughness`
 - やらない事: キューブマップ・反射プローブ・スクリーン空間の反射・異方性・クリアコート・occlusionTexture
 
@@ -487,8 +487,8 @@ let glass = Scene3d.material(spec) |> Scene3d.withAlphaBlend(true) |> Scene3d.wi
 - `withCutout(true)` と両方なら、α が 0.5 未満の画素を捨ててから重ねる
 - 半透明の物は影を落とさない・Output.Depth（ピントの Pass）には描かない（ピントはガラスの奥に合う）。lightmap は付けられる
 - `withDoubleSided(true, m)`: 裏の面も描く。裏の面は光の計算の法線を裏返す（spec の Normal は裏返さない）。網・葉・ガラスの板に
-- glb: `Gltf.loadTexturedUsing` は `alphaMode: BLEND` を `withAlphaBlend(true)`・`MASK` を `withCutout(true)`（`alphaCutoff` は 0.5 の固定。
-  ほかの値は 1 回知らせる）にする。**`doubleSided` も材質のある部品にそのまま当てる**（材質の無い・頂点の色で描く部品は片面のまま。`loadTexturedPbrUsing` で metallic・roughness を読んだ頂点の色の材質（`gltf:vc`）は材質があるので両面になる）。
+- glb: 読み込み（`Model3d.load` / `decode`）は `alphaMode: BLEND` を `withAlphaBlend(true)`・`MASK` を `withCutout(true)`（`alphaCutoff` は 0.5 の固定。
+  ほかの値は 1 回知らせる）にする。**`doubleSided` も材質のある部品にそのまま当てる**（材質の無い・頂点の色で描く部品は片面のまま。`"pbr": true` で metallic・roughness を読んだ頂点の色の材質（`gltf:vc`）は材質があるので両面になる）。
   Blender の書き出しは全部の材質を真にするので、閉じた形の裏は表に隠れて見えないが、部屋の外から壁越しに中を覗かせる作り
   （裏の面を描かないで中を見せる壁）は、その壁だけ片面に戻す:
 

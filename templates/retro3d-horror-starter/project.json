@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "gltf": { "vertexColors": true },
   "title": "夜の校舎",
   "designWidth": 320,
   "designHeight": 240,
