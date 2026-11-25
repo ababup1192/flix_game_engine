@@ -252,7 +252,7 @@
       "assets/talk/*.yarn"
     ],
     "keysDoc": "assets/player.keys.json",
-    "// virtualPad": "左の十字キーで歩き・向き、右のボタン。「走る」は指を置いている間だけ走る（十字キーの上と一緒に押す）。",
+    "// virtualPad": "左の十字キーで歩き・向き、右のボタン（2 個ずつで折り返す。上の段が持ち物・地図、親指に近い下の段が調べる・走る）。「走る」は指を置いている間だけ走る（十字キーの上と一緒に押す）。",
     "virtualPad": {
       "dpad": {
         "up": "forward",
@@ -262,16 +262,16 @@
       },
       "buttons": [
         {
-          "label": "調べる",
-          "action": "talk"
-        },
-        {
           "label": "持ち物",
           "action": "items"
         },
         {
           "label": "地図",
           "action": "map"
+        },
+        {
+          "label": "調べる",
+          "action": "talk"
         },
         {
           "label": "走る",
