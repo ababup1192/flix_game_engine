@@ -136,6 +136,7 @@ mod World {
         walkThroughProps() |> List.exists(kind -> String.startsWith(prefix = "prop_${kind}", name))
 
     /// 当たりの箱を置かない小物の種類（机と椅子・カーテン・机の上の物・譜面台など）。机や椅子に当たりを置く校舎へ直したら、ここから外す。
+    /// door = 鍵の無い部屋の戸口の戸（当たりの箱が無く、閉じた絵のまま通り抜ける。鍵のかかった戸は集まりに入らない）。
     def walkThroughProps(): List[String] =
         "desk" :: "chair" :: "stool" :: "officechair" :: "teacherchair" :: "curtain" :: "textbook" :: "pencil_case" :: "musicstand" :: "easel" ::
         "plant" :: "map_roll" :: "light_fixture" :: "globe" :: "screen" :: "scale" :: "notice_board" :: "bucket" :: "door" :: Nil

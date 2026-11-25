@@ -773,7 +773,8 @@ def testRoomHasNoProblem(): Unit \ Assert =
 | `EscapeHole(x, y, z)` | `start` から体の半径の升で歩いて、当たりの箱の集まりの外へ出られる所（絵だけの戸。座標は外へ出る手前） |
 
 - 体は `CharacterBody3d.Settings` をそのまま渡す（歩く時と同じ値）。体が当たりに掛かるかは歩く時と同じ `CharacterBody3d.overlapDepth` で見る
-- 抜け穴は `start` の高さの 1 階分を見る（段の高さを超える所は上らない）。上の階は、階ごとの立ち位置で `check` を呼び直す。`start` が箱に埋まっていると抜け穴を出さない
+- 抜け穴は `start` の高さの 1 階分を見る（段の高さを超える所は上らない）。上の階は、階ごとの立ち位置で `check` を呼び直す。`start` が箱に埋まっていると `EscapeHole(start)`（遊び始めに動けない）
+- 机の上の背の高い物（花瓶・地球儀）は、机の箱の上を床とみなして `PassableVisual` に出ることがある。机の上に置く物は `visible` から外す
 - 通り抜けてよい物（カーテン・当たりを置かない小物）と、当たりを `moveAndSlide` の `moving` で持つ物（回る戸の板）は、`visible` から外して渡す
   （手本は retro3d-horror-starter の `World.collisionProblems`）
 - 屋外の端に見えない壁を置く作りは `InvisibleWall` が必ず出る。その箱だけ結果から外す

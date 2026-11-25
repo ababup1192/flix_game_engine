@@ -89,10 +89,22 @@ mod TestScene3dCheck {
         Assert.assertEq(expected = Problem.EscapeHole(0.0, 0.0, 0.0) :: Nil, checked(visualsOf(room(0.0)), Nil))
 
     @Test
-    def testStartInsideABoxFindsNoEscape(): Unit \ Assert =
+    def testStartInsideABoxIsEscapeHoleAtStart(): Unit \ Assert =
         let pillar = ("pillar", v(-0.5, 0.0, -0.5), v(0.5, 3.0, 0.5));
-        let parts = pillar :: room(1.5);
-        Assert.assertEq(expected = Nil, checked(visualsOf(parts), solidsOf(parts)))
+        let parts = pillar :: room(0.0);
+        Assert.assertEq(expected = Problem.EscapeHole(0.0, 0.0, 0.0) :: Nil, checked(visualsOf(parts), solidsOf(parts)))
+
+    @Test
+    def testTiledFloorOverASunkBoxWithoutVisualIsInvisibleWall(): Unit \ Assert =
+        let tiles = List.range(0, 10) |> List.flatMap(ix -> List.range(0, 10) |> List.map(iz -> {
+            let (x, z) = (Int32.toFloat64(ix) - 5.0, Int32.toFloat64(iz) - 5.0);
+            let top = { points = v(x, 0.0, z) :: v(x, 0.0, z + 1.0) :: v(x + 1.0, 0.0, z + 1.0) :: v(x + 1.0, 0.0, z) :: Nil, color = Color.rgb(0.5, 0.5, 0.5) };
+            Scene3d.meshInstance(Mesh3d.fromPolygons(top :: Nil), Mat4.identity()) |> Scene3d.withName("tile")
+        }));
+        let walls = room(0.0) |> List.drop(1);
+        let sunk = solidBox(v(1.0, -0.1, 1.0), v(3.0, 1.0, 3.0));
+        let solids = solidBox(v(-5.0, -0.2, -5.0), v(5.0, 0.0, 5.0)) :: sunk :: solidsOf(walls);
+        Assert.assertEq(expected = Problem.InvisibleWall(2.0, 0.45, 2.0) :: Nil, checked(List.append(tiles, visualsOf(walls)), solids))
 
     @Test
     def testBoxSunkIntoTheFloorWithoutVisualIsInvisibleWall(): Unit \ Assert =

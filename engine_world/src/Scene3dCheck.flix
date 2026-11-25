@@ -17,7 +17,7 @@ pub mod Scene3dCheck {
 
     /// visible（見た目）と world（当たり）と body（歩く体）と start（体の足の位置）を照らした食い違い。
     /// 並びは InvisibleWall（箱の来た順）→ PassableVisual（物の来た順・同じ名前は 1 つ）→ EscapeHole（最初に見つけた 1 つ）。
-    /// 抜け穴は start の高さの 1 階分を見る（段の高さを超える所は上らない）。start が当たりの箱に埋まっている時は、たどれる所が無いので抜け穴を出さない。
+    /// 抜け穴は start の高さの 1 階分を見る（段の高さを超える所は上らない）。start が当たりの箱に埋まっている時は EscapeHole(start)（遊び始めに動けない配置を緑にしない）。
     pub def check(visible: List[Scene3d.Instance3d], world: CollisionWorld3d.CollisionWorld3d, body: CharacterBody3d.Settings, start: Vec3.Vec3): List[Problem] =
         let boxes = CollisionWorld3d.boxes(world) |> List.map(b -> (b, aabbOfBox(b)));
         if (List.isEmpty(boxes)) (if (List.isEmpty(visible)) Nil else escapeAt(start) :: Nil)
@@ -100,12 +100,11 @@ pub mod Scene3dCheck {
         List.range(cellIndexOf(a#min#x), cellIndexOf(a#max#x) + 1) |> List.flatMap(ix ->
             List.range(cellIndexOf(a#min#z), cellIndexOf(a#max#z) + 1) |> List.map(iz -> (ix, iz)))
 
-    /// t の面が箱 a の中を通るか（a の角が面の両側にある）。床のように横たわり a の xz を広く覆う三角形は数えない。
-    // WhyNot: 横たわって xz を覆う三角形を数えない — 床へ少し沈めて置いた見えない箱を、床の面が横切るので見えると取り違える。
+    /// t の面が箱 a の中を通るか（a の角が面の両側にある）。床のように横たわる三角形は数えない（上と下の面の上で外を向く時だけ isOnOutwardFace で数える）。
+    // WhyNot: 横たわる三角形を数えない — 床へ少し沈めて置いた見えない箱を、床の面（大きな 1 枚でもタイルでも）が横切るので見えると取り違える。
     def crossesInside(t: Triangle, a: Aabb): Bool =
         let empty = a#min#x > a#max#x or a#min#y > a#max#y or a#min#z > a#max#z;
-        let lying = Float64.abs(t#normal#y) > 0.9 and t#bounds#min#x < a#min#x - 0.1 and t#bounds#max#x > a#max#x + 0.1
-                    and t#bounds#min#z < a#min#z - 0.1 and t#bounds#max#z > a#max#z + 0.1;
+        let lying = Float64.abs(t#normal#y) > 0.9;
         let sides = cornersOf(a) |> List.map(p -> Vec3.dot(t#normal, Vec3.sub(p, t#a)));
         not empty and overlaps(t#bounds, a) and not lying and List.exists(s -> s > 0.0, sides) and List.exists(s -> s < 0.0, sides)
 
@@ -198,8 +197,11 @@ pub mod Scene3dCheck {
         let queue: MutDeque[((Int32, Int32), (Int32, Int32)), rc] = MutDeque.empty(rc);
         let first = (cellOf(start#x, g#x0, g#step), cellOf(start#z, g#z0, g#step));
         MutSet.add(first, seen);
-        if (isBlocked(world, body, g#feet, start)) () else MutDeque.pushBack((first, first), queue);
-        floodFrom(world, g, body, seen, queue)
+        if (isBlocked(world, body, g#feet, start)) Some(escapeAt(start))
+        else {
+            MutDeque.pushBack((first, first), queue);
+            floodFrom(world, g, body, seen, queue)
+        }
     }
 
     def floodFrom(world: CollisionWorld3d.CollisionWorld3d, g: Grid, body: CharacterBody3d.Settings,
