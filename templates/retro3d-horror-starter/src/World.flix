@@ -125,17 +125,20 @@ mod World {
         let wk = Res.walkOf(res);
         CharacterBody3d.settings(wk#radius, wk#height)
 
-    /// 校舎の見た目（階ごとの集まり）と当たり判定の箱の食い違いのうち、見えない壁と外へ抜ける穴（Scene3dCheck.check。テストが Nil を求める）。
-    // WhyNot: 見えるのに通れる物（PassableVisual）を数えない — この校舎は机・椅子・カーテンなどの小物に当たりの箱を置かず、通り抜けられる作り。
-    //   小物に当たりを置く校舎へ直したら、ここで PassableVisual も返す。
+    /// 校舎の見た目（階ごとの集まりから、通り抜けられる小物を除いた物）と当たり判定の箱の食い違い（Scene3dCheck.check。テストが Nil を求める）。
     pub def collisionProblems(res: Res.Res): List[Scene3dCheck.Problem] =
-        let visible = res#school#groups |> Map.valuesOf |> List.flatMap(Scene3d.groupInstancesOf);
-        Scene3dCheck.check(visible, res#school#collision, bodySettings(res), res#layout#start#pos) |> List.filter(isBlockingProblem)
+        let visible = res#school#groups |> Map.valuesOf |> List.flatMap(Scene3d.groupInstancesOf) |> List.filter(i -> not isWalkThrough(Scene3d.nameOf(i)));
+        Scene3dCheck.check(visible, res#school#collision, bodySettings(res), res#layout#start#pos)
 
-    def isBlockingProblem(p: Scene3dCheck.Problem): Bool = match p {
-        case Scene3dCheck.Problem.PassableVisual(_) => false
-        case _                                      => true
-    }
+    /// 当たりの箱を置かず、体が通り抜けられる小物か（glb のノードの名前の頭で見る）。
+    // WhyNot: 小物の全部を見た目から外さない — 戸棚や教卓の当たりの箱が、見た目の無い見えない壁に見える。
+    def isWalkThrough(name: String): Bool =
+        walkThroughProps() |> List.exists(kind -> String.startsWith(prefix = "prop_${kind}", name))
+
+    /// 当たりの箱を置かない小物の種類（机と椅子・カーテン・机の上の物・譜面台など）。机や椅子に当たりを置く校舎へ直したら、ここから外す。
+    def walkThroughProps(): List[String] =
+        "desk" :: "chair" :: "stool" :: "officechair" :: "teacherchair" :: "curtain" :: "textbook" :: "pencil_case" :: "musicstand" :: "easel" ::
+        "plant" :: "map_roll" :: "light_fixture" :: "globe" :: "screen" :: "scale" :: "notice_board" :: "bucket" :: "door" :: Nil
 
     /// ゲーム開始時の状態。表の spawn（1 階の昇降口）に立つ。
     pub def initial(res: Res.Res): World =

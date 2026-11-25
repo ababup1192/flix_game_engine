@@ -763,17 +763,21 @@ let next = CharacterBody3d.moveAndSlide(world, doorLeaves, s, motion, Clock.dtOf
 ```flix
 @Test
 def testRoomHasNoProblem(): Unit \ Assert =
-    Assert.assertEq(expected = Nil, Scene3dCheck.check(visible, world, CharacterBody3d.settings(0.22, 1.7), start))
+    Assert.assertEq(expected = Nil, Scene3dCheck.check(visible, world, bodySettings, start))   // bodySettings は歩く時に moveAndSlide へ渡す値
 ```
 
 | `Problem` | 拾う物 |
 |---|---|
 | `InvisibleWall(x, y, z)` | 見た目の三角形がどれも掛からない当たりの箱（見えない壁。座標は箱の真ん中） |
-| `PassableVisual(名前)` | 立つ床の上で体の高さ（段の上から頭まで）に掛かる見た目なのに、足元のどこかに体が当たりに掛からずに立てる物（見えるのに通れる柵。名前は `withName`・無ければ `#<番号>`・同じ名前は 1 つ） |
+| `PassableVisual(名前)` | 立つ床の上で体の高さ（段の上から頭まで）に掛かる見た目なのに、体の高さに三角形がある所のどこかに体が当たりに掛からずに立てる物（見えるのに通れる柵。名前は `withName`・無ければ `#<番号>`・同じ名前は 1 つ） |
 | `EscapeHole(x, y, z)` | `start` から体の半径の升で歩いて、当たりの箱の集まりの外へ出られる所（絵だけの戸。座標は外へ出る手前） |
 
-- 体は `CharacterBody3d.Settings` をそのまま渡す（歩く時と同じ値）。抜け穴は `start` の高さの 1 階分を見る
-- 通り抜けてよい物（カーテン・当たりを置かない小物）は、`visible` から外して渡すか、`PassableVisual` だけ数えない
+- 体は `CharacterBody3d.Settings` をそのまま渡す（歩く時と同じ値）。体が当たりに掛かるかは歩く時と同じ `CharacterBody3d.overlapDepth` で見る
+- 抜け穴は `start` の高さの 1 階分を見る（段の高さを超える所は上らない）。上の階は、階ごとの立ち位置で `check` を呼び直す。`start` が箱に埋まっていると抜け穴を出さない
+- 通り抜けてよい物（カーテン・当たりを置かない小物）と、当たりを `moveAndSlide` の `moving` で持つ物（回る戸の板）は、`visible` から外して渡す
+  （手本は retro3d-horror-starter の `World.collisionProblems`）
+- 屋外の端に見えない壁を置く作りは `InvisibleWall` が必ず出る。その箱だけ結果から外す
+- 当たりの箱が 1 つも無い時は `EscapeHole(start)`（渡し忘れを緑にしない）
 - 重なり・浮きは拾わない（見た目の磨き）
 
 ## 見ている物を調べる（レイ）

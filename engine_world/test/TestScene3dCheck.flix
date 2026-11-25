@@ -78,11 +78,33 @@ mod TestScene3dCheck {
 
     @Test
     def testDoorGapIsEscapeHole(): Unit \ Assert =
-        let found = checked(visualsOf(room(1.5)), solidsOf(room(1.5)));
-        Assert.assertTrue(List.exists(p -> match p {
-            case Problem.EscapeHole(_, _, z) => z > 4.0
-            case _                           => false
-        }, found))
+        Assert.assertEq(expected = Problem.EscapeHole(0.08, 0.0, 5.17) :: Nil, checked(visualsOf(room(1.5)), solidsOf(room(1.5))))
+
+    @Test
+    def testGapABitWiderThanTheBodyIsEscapeHole(): Unit \ Assert =
+        Assert.assertEq(expected = Problem.EscapeHole(0.08, 0.0, 5.17) :: Nil, checked(visualsOf(room(0.8)), solidsOf(room(0.8))))
+
+    @Test
+    def testNoBoxAtAllIsEscapeHoleAtStart(): Unit \ Assert =
+        Assert.assertEq(expected = Problem.EscapeHole(0.0, 0.0, 0.0) :: Nil, checked(visualsOf(room(0.0)), Nil))
+
+    @Test
+    def testStartInsideABoxFindsNoEscape(): Unit \ Assert =
+        let pillar = ("pillar", v(-0.5, 0.0, -0.5), v(0.5, 3.0, 0.5));
+        let parts = pillar :: room(1.5);
+        Assert.assertEq(expected = Nil, checked(visualsOf(parts), solidsOf(parts)))
+
+    @Test
+    def testBoxSunkIntoTheFloorWithoutVisualIsInvisibleWall(): Unit \ Assert =
+        let sunk = solidBox(v(1.0, -0.1, 1.0), v(2.0, 1.0, 2.0));
+        Assert.assertEq(expected = Problem.InvisibleWall(1.5, 0.45, 1.5) :: Nil, checked(visualsOf(room(0.0)), sunk :: solidsOf(room(0.0))))
+
+    @Test
+    def testOneBigFloorOverSplitFloorBoxesIsVisible(): Unit \ Assert =
+        let walls = room(0.0) |> List.drop(1);
+        let floorBoxes = solidBox(v(-5.0, -0.2, -5.0), v(0.0, 0.0, 5.0)) :: solidBox(v(0.0, -0.2, -5.0), v(5.0, 0.0, 5.0)) :: Nil;
+        let bigFloor = visualBox("floor", v(-5.0, -0.2, -5.0), v(5.0, 0.0, 5.0));
+        Assert.assertEq(expected = Nil, checked(bigFloor :: visualsOf(walls), List.append(floorBoxes, solidsOf(walls))))
 
     @Test
     def testGapNarrowerThanTheBodyDoesNotEscape(): Unit \ Assert =

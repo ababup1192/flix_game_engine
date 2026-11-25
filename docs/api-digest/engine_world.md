@@ -2487,7 +2487,7 @@
 ## Scene3dCheck — `engine_world/src/Scene3dCheck.flix`
 - 見つけた食い違い 1 つ（座標は m・0.01 に丸める）。
   `pub enum Problem with Eq, Order, ToString { case InvisibleWall(Float64, Float64, Float64) case PassableVisual(String) case EscapeHole(Float64, Float64, Float64) }`
-- visible（見た目）と world（当たり）と body（歩く体）と start（体の足の位置）を照らした食い違い（InvisibleWall → PassableVisual → EscapeHole の順・それぞれ来た順）。
+- visible（見た目）と world（当たり）と body（歩く体）と start（体の足の位置）を照らした食い違い。
   `pub def check(visible: List[Scene3d.Instance3d], world: CollisionWorld3d.CollisionWorld3d, body: CharacterBody3d.Settings, start: Vec3.Vec3): List[Problem]`
 
 ## SceneSeq — `engine_world/src/SceneSeq.flix`
