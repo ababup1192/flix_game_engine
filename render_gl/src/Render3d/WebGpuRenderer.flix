@@ -476,7 +476,7 @@ pub mod Render3d.WebGpuRenderer {
         let RendererData.RendererData(s) = r;
         { gpu = s#gpu, planner = s#planner, materials = s#materials, allocator = countingAllocator(r),
           noteBuild = name -> noteMaterialBuild(s, name, FrameDiagnostics.BuildReason.First),
-          tables = tablesOf(r, host) }
+          tables = tablesOf(r, host), sourceOf = scene -> sourceOf(host#textureOf, scene), registered = registeredOf(r, host) }
 
     /// 前半の行の番号を振る表（今のコマの世代）。
     def tablesOf(r: Renderer, host: Host): Render3d.SceneList.Tables \ IO =

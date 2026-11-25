@@ -421,7 +421,9 @@ let town = Scene3d.staticGroup("town", buildings |> List.map(b -> (b#id, b#insta
 
 - 描き手は、同じ集まりが続くコマで計画と描く命令を持ち越す。同じ集まりかは、`staticGroup` で作った items の値そのもの・外した鍵・tint で見る
 - **毎コマ `staticGroup` を呼ばない**（絵は同じだが毎コマ作り直しになって遅い）。集まりは Resources に持つ
-- 中の 1 個だけ動かす・色を変える物は `Scene3d.withoutItems(鍵の Set, 集まり)` で外して `instances` に置く。外す物を変えたコマは持ち越しを作り直す
+- 中の 1 個だけ動かす・色を変える物は `Scene3d.withoutItems(鍵の Set, 集まり)` で外して `instances` に置く。外す物を変えたコマは持ち越しを作り直す（そのコマで全部作る）
+- 読み込みの後に `staticGroup` で作り直した集まり（後から届いた束を足した階など）は、同じ名前の前の集まりを描き続けながら 1 コマ数 ms ずつ作り、作り終えたコマで替わる（作り直しで 1 コマが止まらない）。
+  初めて描く集まり（前の物が無い）はそのコマで全部作るので、遊んでいる最中に初めて見せる集まりは先に払う
 - 遠くを描かないなら、区画ごとの集まりに分けて載せ外しする
 - 効き目: スマホのブラウザ（WebGPU）で 12,000 個が 1.6 fps → 60 fps（[performance.md](performance.md) の §12）
 - 奥行きの書き出しの場面（`Output.Depth`。DoF・HeightFog・SceneDepth の Pass が描き直す場面）も持ち越す。色の場面とは別の行を控えるので、同じ集まりを両方で描くと控えは 2 つ

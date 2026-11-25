@@ -148,10 +148,10 @@ mod Render3d.ScenePlan {
 
     /// 材質の値と頂点の形 1 組の分け方。surface = 聞く材質（頂点の色で描くなら None）・handle = その聞いた番号（無ければ -1）・
     /// key = batch の鍵の番号（-1 = batch にしない）・texture = 材質の絵の名前の並びの番号・needsUv = 法線マップを持つ材質（uv の無い形なら知らせる）。
-    type alias Placement = { surface = Option[MaterialRequest], handle = Int32, key = Int32, texture = Int32, needsUv = Bool }
+    pub type alias Placement = { surface = Option[MaterialRequest], handle = Int32, key = Int32, texture = Int32, needsUv = Bool }
 
     /// 候補に分ける時に変わらない物。variant = 場面のシェーダーの変種・cache = 材質の値（同じ 1 つの値）→ 頂点の形の番号 → Placement。
-    type alias Grouping = {
+    pub type alias Grouping = {
         planner = Planner, tables = Tables, outside = Scene3d.Instance3d -> Bool, wants = Scene3d.MaterialFields -> Bool, coverage = Bool,
         variant = ShaderVariant, cache = IdentityHashMap[Object, Object]
     }
@@ -173,15 +173,70 @@ mod Render3d.ScenePlan {
     /// coverage = cutout を alpha to coverage の版にするか（coverageOf。持ち越しの控えの鍵にも入れる）。
     /// 答えは (場面の pass の候補, 影の地図の候補, backend に聞く材質, batch の描く物)。
     pub def groupCarried(planner: Planner, coverage: Bool, scene: Scene3d.Scene3dCmd, items: List[Scene3d.Instance3d]): (List[Group], List[SpanBatch], Vector[MaterialRequest], MutList[MeshDraw, Static]) \ IO =
+        let c = startCarried(planner, coverage, scene, items);
+        stepCarriedToEnd(c);
+        carriedResultOf(c)
+
+    // ── 持ち越す物を少しずつ候補に分ける ──
+
+    /// 作りかけの groupCarried。lit = 場面の pass の分け方・shadow = 影の地図の分け方（奥行きの書き出しの場面は None）・
+    /// litGroups と shadowGroups = 分け終えた候補（分け終えるまで None）。場面の pass を分け終えてから影の地図を分ける（groupCarried と同じ順）。
+    pub type alias CarriedGrouping = {
+        tables = Tables, lit = PlaceWork, shadow = Option[PlaceWork], litGroups = Ref[Option[List[Group]], Static], shadowGroups = Ref[Option[List[SpanBatch]], Static]
+    }
+
+    /// 作りかけの groupWith。next = 次に分ける物の番号。
+    pub type alias PlaceWork = {
+        g = Grouping, split = Split, placed = Array[Scene3d.Instance3d, Static], draws = Array[MeshDraw, Static], placements = Array[Placement, Static],
+        levels = Array[Int32, Static], subs = Array[Int32, Static], next = Array[Int32, Static]
+    }
+
+    /// groupCarried の作りかけを始める（まだ 1 つも分けない）。
+    pub def startCarried(planner: Planner, coverage: Bool, scene: Scene3d.Scene3dCmd, items: List[Scene3d.Instance3d]): CarriedGrouping \ IO =
         let tables = freshTables();
         let spec = passSpecOf(scene#output);
         let variant = Render3d.passVariantOf(scene);
-        let lit = groupWith(grouping(planner, tables, _ -> false, materialWantedIn(spec), coverage, variant), items);
+        let placed = List.toArray(Static, items);
         let shadow = match spec {
-            case ScenePassSpec.Color       => groupWith(grouping(planner, tables, _ -> false, _ -> false, false, variant), items) |> List.map(gr -> gr#batch)
-            case ScenePassSpec.DepthOut(_) => Nil
+            case ScenePassSpec.Color       => Some(placeWorkOf(grouping(planner, tables, _ -> false, _ -> false, false, variant), placed))
+            case ScenePassSpec.DepthOut(_) => None
         };
-        (lit, shadow, MutList.toArray(Static, tables#requests) |> Array.toVector, tables#members)
+        { tables = tables, lit = placeWorkOf(grouping(planner, tables, _ -> false, materialWantedIn(spec), coverage, variant), placed), shadow = shadow,
+          litGroups = Ref.fresh(Static, None), shadowGroups = Ref.fresh(Static, None) }
+
+    /// c の物を count 個まで分け進める。全部を分け終えたら真。
+    pub def stepCarried(c: CarriedGrouping, count: Int32): Bool \ IO =
+        if (Option.isEmpty(Ref.get(c#litGroups))) {
+            if (placeSome(c#lit, count)) {
+                Ref.put(Some(spansOfWork(c#lit)), c#litGroups);
+                if (Option.isEmpty(c#shadow)) Ref.put(Some(Nil), c#shadowGroups) else ()
+            } else ()
+        } else c#shadow |> Option.forEach(w -> if (placeSome(w, count)) Ref.put(Some(spansOfWork(w) |> List.map(gr -> gr#batch)), c#shadowGroups) else ());
+        Option.nonEmpty(Ref.get(c#shadowGroups))
+
+    def stepCarriedToEnd(c: CarriedGrouping): Unit \ IO =
+        if (stepCarried(c, Int32.maxValue())) () else stepCarriedToEnd(c)
+
+    /// 分け終えた c の答え（groupCarried と同じ形）。
+    pub def carriedResultOf(c: CarriedGrouping): (List[Group], List[SpanBatch], Vector[MaterialRequest], MutList[MeshDraw, Static]) \ IO =
+        (Ref.get(c#litGroups) |> Option.getWithDefault(Nil), Ref.get(c#shadowGroups) |> Option.getWithDefault(Nil),
+         MutList.toArray(Static, c#tables#requests) |> Array.toVector, c#tables#members)
+
+    def placeWorkOf(g: Grouping, placed: Array[Scene3d.Instance3d, Static]): PlaceWork \ IO =
+        let n = Array.length(placed);
+        { g = g, split = freshSplit(), placed = placed, draws = Array.empty(Static, n), placements = Array.empty(Static, n),
+          levels = Array.repeat(Static, n, 0), subs = Array.repeat(Static, n, 0), next = Array#{0} @ Static }
+
+    /// w の物を count 個まで分け進める。全部を分け終えたら真。
+    def placeSome(w: PlaceWork, count: Int32): Bool \ IO =
+        let i = Array.get(0, w#next);
+        let n = Array.length(w#placed);
+        let end = if (count >= n - i) n else i + count;
+        placeFrom(w#g, w#split, w#placed, w#draws, w#placements, w#levels, w#subs, i, end);
+        Array.put(end, 0, w#next);
+        end >= n
+
+    def spansOfWork(w: PlaceWork): List[Group] \ IO = spansOf(w#g#tables, w#split, w#draws, w#placements, w#levels, w#subs)
 
     /// pass spec の場面で材質のプログラムを組む材質か（組まない材質の物は頂点の色の道で形だけ描く）。
     // WhyNot: 奥行きの書き出しで cutout でも両面でもない材質に材質のプログラムを組まない — 奥行きは形だけで決まり、色の計算は捨てられる
@@ -230,20 +285,17 @@ mod Render3d.ScenePlan {
     /// instances を候補に分ける。候補の並びは、(形, batch の鍵) が初めて来た順・その中は材質の絵の名前の並びが初めて来た順（Render3d.Batch.groupInOrder と
     /// groupByTextures の並びと同じ）。batch の鍵が無い物は 1 体の候補。
     def groupWith(g: Grouping, instances: List[Scene3d.Instance3d]): List[Group] \ IO =
-        let placed = List.toArray(Static, instances);
-        let n = Array.length(placed);
-        let draws: Array[MeshDraw, Static] = Array.empty(Static, n);
-        let placements: Array[Placement, Static] = Array.empty(Static, n);
-        let levels = Array.repeat(Static, n, 0);
-        let subs = Array.repeat(Static, n, 0);
-        let split = { buckets = (new HashMap(): HashMap[String, Object]), firstTexture = MutList.empty(Static), subCount = MutList.empty(Static),
-                      extraSubs = Ref.fresh(Static, (Map.empty(): Map[(Int32, Int32), Int32])) };
-        placeFrom(g, split, placed, draws, placements, levels, subs, 0, n);
-        spansOf(g#tables, split, draws, placements, levels, subs)
+        let w = placeWorkOf(g, List.toArray(Static, instances));
+        discard placeSome(w, Int32.maxValue());
+        spansOfWork(w)
+
+    def freshSplit(): Split \ IO =
+        { buckets = (new HashMap(): HashMap[String, Object]), firstTexture = MutList.empty(Static), subCount = MutList.empty(Static),
+          extraSubs = Ref.fresh(Static, (Map.empty(): Map[(Int32, Int32), Int32])) }
 
     /// (形, 鍵) の候補の番号を振る控え。buckets = 形の鍵の字 → (batch の鍵の番号 → 候補の番号)・firstTexture = 候補ごとの最初の絵の並びの番号・
     /// subCount = 候補ごとの絵の並びの数・extraSubs = (候補, 2 つ目からの絵の並び) → その中の番号。
-    type alias Split = {
+    pub type alias Split = {
         buckets = HashMap[String, Object], firstTexture = MutList[Int32, Static], subCount = MutList[Int32, Static],
         extraSubs = Ref[Map[(Int32, Int32), Int32], Static]
     }

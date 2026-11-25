@@ -1,18 +1,20 @@
 // Render3d.StaticRows — 動かない物の集まり（Scene3d.staticGroup）の計画と描く行を、コマをまたいで持ち越す所（前半の側。GPU を呼ばない）。
 // 集まりごとに 1 回だけ候補に分け、1 体ごとの値を詰め、場面の pass の行（頂点の色と不透明の材質）と影の地図の行を作る（build）。backend は答えを GPU に置いて毎コマ描く。
 // 同じ集まりかは、名前・staticGroup で作った items の値そのもの（参照）・外した鍵・tint・行の決め方の鍵（色の場面か奥行きの書き出しか・変種・alpha to coverage）で見る（中身は比べない・Cache）。
+// 作る仕事は段（BuildPhase）に分けてあり、staticGroup を作り直した集まりは前の控えを描きながら 1 コマに決まった時間ずつ進める（ensure）。
 // 半透明（目から遠い順に毎コマ並べ直す）と骨つき（姿勢が毎コマ変わる）は持ち越さず、場面の計画へ通す（perFrameOf）。
 // WhyNot: 持ち越す物を視錐台で間引かない — 持ち越した行は目の位置に依らず、間引くと目が動くたびに作り直しになる（遠くを描かないのは、集まりを区画に分けてゲームが載せ外しする）。
 // backend は WebGPU（Render3d.WebGpuStatic）と GL（Render3d.GlStatic）。どちらも持ち越した行を場面の行の前に描く。
 mod Render3d.StaticRows {
     import java.lang.Object
+    import java.lang.System
     import java.nio.ByteBuffer
     import java.nio.ByteOrder
     import java.util.IdentityHashMap
     use Render3d.InstanceValues.{PackMode, floatsPerInstance, numberSpan}
     use Render3d.MaterialValues
     use Render3d.MeshTable
-    use Render3d.ScenePlan.{MaterialRequest, Planner, groupCarried, materialsInOrder, splitGroups, warnOnce}
+    use Render3d.ScenePlan.{CarriedGrouping, MaterialRequest, Planner, carriedResultOf, groupCarried, materialsInOrder, splitGroups, startCarried, stepCarried, warnOnce}
     use Render3d.SceneList.{SceneList, Tables, buildSceneList, buildShadowList, contextOf, flagSameBinding, hasFlag, headAt, rowCountOf, setValuesAt, valuesAt}
 
     // ── 持ち越す物と毎コマの物 ──
@@ -58,14 +60,20 @@ mod Render3d.StaticRows {
         timeAt = Vector[Int32], time = Array[Float64, Static], placed = Int32, meshSlots = Vector[MeshTable.Slot], perFrame = List[Scene3d.Instance3d]
     }
 
-    /// 集まり g の持ち越す物の行を作る。resolve = 材質の問い合わせに順の番号で答える（backend。0 なら頂点の色で描く）・
+    /// 集まり g の持ち越す物の行を 1 回で作る。resolve = 材質の問い合わせに順の番号で答える（backend。0 なら頂点の色で描く）・
     /// coverage = cutout を alpha to coverage の版にするか（carriedKeyOf に渡す物と同じ）・scene = 行の決め方（Output・変種）と絵の名前と時刻を引く場面。
     /// 形と絵の番号は tables で振る（GPU には作らない）。
     pub def build(planner: Planner, tables: Tables, resolve: Vector[MaterialRequest] -> Vector[Int32] \ ef, coverage: Bool, scene: Scene3d.Scene3dCmd,
                   g: Scene3d.StaticGroup): CarriedRows \ ef + IO =
         let (items, perFrame) = Scene3d.groupInstancesOf(g) |> List.partition(isCarriedItem);
         let (lit, shadow, requests, members) = groupCarried(planner, coverage, scene, items);
-        let (plain, materials) = splitGroups(lit, resolve(requests));
+        rowsOf(planner, tables, resolve(requests), scene, List.length(items), perFrame, (lit, shadow, requests, members))
+
+    /// 候補に分けた答え grouped（groupCarried の形）と材質の答え orders から行を作る。placed = 持ち越す物の数。
+    def rowsOf(planner: Planner, tables: Tables, orders: Vector[Int32], scene: Scene3d.Scene3dCmd, placed: Int32, perFrame: List[Scene3d.Instance3d],
+               grouped: (List[Render3d.ScenePlan.Group], List[Render3d.Batch.SpanBatch], Vector[MaterialRequest], MutList[Render3d.MeshDraw, Static])): CarriedRows \ IO =
+        let (lit, shadow, requests, members) = grouped;
+        let (plain, materials) = splitGroups(lit, orders);
         let opaque = materialsInOrder(planner, materials);
         let total = List.sumWith(b -> b#count, plain) + List.sumWith(d -> d#batch#count, opaque) + List.sumWith(b -> b#count, shadow);
         let raw = ByteBuffer.allocateDirect(Int32.max(4, 4 * floatsPerInstance() * total)).order(ByteOrder.LITTLE_ENDIAN);
@@ -80,7 +88,7 @@ mod Render3d.StaticRows {
         let list = buildSceneList(ctx, { plain = numberedPlain, skinned = Nil, opaque = numberedOpaque, blended = Nil, billboards = Nil });
         let shadowList = buildShadowList(ctx, numberedShadow, Nil, Nil);
         { list = list, shadowList = shadowList, instances = raw, instanceCount = Array.get(0, next), requests = requests, timeAt = shareSameValues(list),
-          time = Array#{scene#time} @ Static, placed = List.length(items), meshSlots = slotsOf(tables, list, shadowList), perFrame = perFrame }
+          time = Array#{scene#time} @ Static, placed = placed, meshSlots = slotsOf(tables, list, shadowList), perFrame = perFrame }
 
     /// 前の材質の行と同じ付け方（flagSameBinding）の行の値の位置を前の行の値へ向け、残った値の区画の uTime の位置を返す。
     // WhyNot: 同じ付け方の行の値を別々に残さない — 1 棟ずつの都市では行が物の数だけあり、毎コマ時刻を書き直す区画が物の数だけになる。値は前の行と同じ中身。
@@ -126,6 +134,119 @@ mod Render3d.StaticRows {
             true
         }
 
+    // ── 少しずつ作る ──
+
+    /// 集まりを作る時に backend がする仕事（どれも今のコマの物を渡す）。tables = 前半の行の番号を振る表・resolve = 材質の問い合わせに順の番号で答える（build と同じ）・
+    /// prepareMesh = 形 1 つを GPU に作る（中身の鍵もここで取る）・prepareMaterial = 材質 1 つの program を組む・place = 行を GPU に置く・
+    /// uploadCount と uploadAt = 置いた物を描く前に GPU へ上げる物の数と、その k 番目を上げる仕事（材質の絵）・retire = 置いた物を手放す。
+    pub type alias BuildSteps[a] = {
+        tables = Tables, resolve = Vector[MaterialRequest] -> Vector[Int32] \ IO, prepareMesh = Mesh3d.Mesh3d -> Unit \ IO,
+        prepareMaterial = MaterialRequest -> Unit \ IO, place = CarriedRows -> a \ IO, uploadCount = a -> Int32 \ IO, uploadAt = (a, Int32) -> Unit \ IO,
+        retire = a -> Unit \ IO
+    }
+
+    /// 作る段。Meshes = 形を GPU に作る（1 つずつ）・Group = 候補に分ける（groupChunk 体ずつ）・Materials = 材質の program を組む（1 つずつ）・
+    /// Place = 行を作って置く（止めない最後の仕事）・Upload = 置いた物の絵を上げる（1 枚ずつ）・Done = 済んだ。
+    pub enum BuildPhase with Eq {
+        case Meshes, Group, Materials, Place, Upload, Done
+    }
+
+    /// 作りかけの集まり。items = 持ち越す物・meshes = その形（同じ値は 1 つ）・perFrame = 持ち越さない物・grouping = 候補分けの作りかけ・
+    /// requests = 分け終えた材質の問い合わせ・phase と next = 今の段とその段の次の番号・made = 置いた物（Place の後）。
+    pub type alias Build[a] = {
+        items = Vector[Scene3d.Instance3d], meshes = Vector[Mesh3d.Mesh3d], perFrame = List[Scene3d.Instance3d], scene = Scene3d.Scene3dCmd,
+        grouping = CarriedGrouping, requests = Ref[Vector[MaterialRequest], Static], phase = Ref[BuildPhase, Static], next = Array[Int32, Static],
+        made = Ref[Option[a], Static]
+    }
+
+    /// 集まり g を作り始める（まだ何もしない）。coverage と scene は build と同じ。
+    pub def startBuild(planner: Planner, coverage: Bool, scene: Scene3d.Scene3dCmd, g: Scene3d.StaticGroup): Build[a] \ IO =
+        let (items, perFrame) = Scene3d.groupInstancesOf(g) |> List.partition(isCarriedItem);
+        { items = List.toVector(items), meshes = distinctMeshesOf(items), perFrame = perFrame, scene = scene, grouping = startCarried(planner, coverage, scene, items),
+          requests = Ref.fresh(Static, Vector.empty()), phase = Ref.fresh(Static, BuildPhase.Meshes), next = Array#{0} @ Static, made = Ref.fresh(Static, None) }
+
+    /// items の形（同じ値は 1 つ・来た順）。
+    // WhyNot: 中身の鍵で重なりを除かない — 鍵を取るのが形を作る段の仕事（SHA-256）で、ここで取ると 1 コマにまとめて払う。
+    def distinctMeshesOf(items: List[Scene3d.Instance3d]): Vector[Mesh3d.Mesh3d] \ IO =
+        let seen: IdentityHashMap[Object, Object] = new IdentityHashMap();
+        let out = MutList.empty(Static);
+        items |> List.forEach(i -> {
+            let mesh = Scene3d.instanceFieldsOf(i)#mesh;
+            let key = unchecked_cast(mesh as Object);
+            if (seen.containsKey(key)) () else { discard seen.put(key, key); MutList.push(mesh, out) }
+        });
+        MutList.toArray(Static, out) |> Array.toVector
+
+    /// b を、時計（System.nanoTime）が deadline を過ぎるまで進める（過ぎていても 1 つは進める）。
+    /// 全部の段が済んだら置いた物。
+    pub def stepBuild(planner: Planner, steps: BuildSteps[a], b: Build[a], deadline: Int64): Option[a] \ IO =
+        stepOnce(planner, steps, b);
+        if (Ref.get(b#phase) == BuildPhase.Done) Ref.get(b#made)
+        else if (System.nanoTime() >= deadline) None
+        else stepBuild(planner, steps, b, deadline)
+
+    /// 候補分けで時計を見る間の物の数。
+    def groupChunk(): Int32 = 32
+
+    // WhyNot: 枝を呼び出しで終えない — 1 回しか回らない stepBuild のループが JIT から外れる（docs/performance.md の 13 節）。
+    @DontInline
+    def stepOnce(planner: Planner, steps: BuildSteps[a], b: Build[a]): Unit \ IO =
+        let i = Array.get(0, b#next);
+        match Ref.get(b#phase) {
+            case BuildPhase.Meshes =>
+                if (i >= Vector.length(b#meshes)) enter(b, BuildPhase.Group)
+                else stepTo(b, i, () -> steps#prepareMesh(Vector.get(i, b#meshes)))
+            case BuildPhase.Group =>
+                if (stepCarried(b#grouping, groupChunk())) {
+                    let (_, _, requests, _) = carriedResultOf(b#grouping);
+                    Ref.put(requests, b#requests);
+                    enter(b, BuildPhase.Materials)
+                } else ()
+            case BuildPhase.Materials =>
+                if (i >= Vector.length(Ref.get(b#requests))) enter(b, BuildPhase.Place)
+                else stepTo(b, i, () -> steps#prepareMaterial(Vector.get(i, Ref.get(b#requests))))
+            case BuildPhase.Place  => discard placeOf(planner, steps, b)
+            case BuildPhase.Upload => Ref.get(b#made) |> Option.forEach(uploadOne(steps, b, i))
+            case BuildPhase.Done   => ()
+        };
+        ()
+
+    /// 分け終えた b の行を作って置き、置いた物を返す（Upload の段へ進む）。
+    def placeOf(planner: Planner, steps: BuildSteps[a], b: Build[a]): a \ IO =
+        let grouped = carriedResultOf(b#grouping);
+        let rows = rowsOf(planner, steps#tables, steps#resolve(Ref.get(b#requests)), b#scene, Vector.length(b#items), b#perFrame, grouped);
+        let made = steps#place(rows);
+        Ref.put(Some(made), b#made);
+        enter(b, BuildPhase.Upload);
+        made
+
+    /// b を時計を見ずに全部の段まで進めて、置いた物を返す。
+    def buildAll(planner: Planner, steps: BuildSteps[a], b: Build[a]): a \ IO =
+        stepUntil(planner, steps, b, BuildPhase.Place);
+        let made = placeOf(planner, steps, b);
+        stepUntil(planner, steps, b, BuildPhase.Done);
+        made
+
+    def stepUntil(planner: Planner, steps: BuildSteps[a], b: Build[a], phase: BuildPhase): Unit \ IO =
+        if (Ref.get(b#phase) == phase) ()
+        else {
+            stepOnce(planner, steps, b);
+            stepUntil(planner, steps, b, phase)
+        }
+
+    /// 置いた物 made の i 番目を上げる（残りが無ければ Done へ）。
+    def uploadOne(steps: BuildSteps[a], b: Build[a], i: Int32, made: a): Unit \ IO =
+        if (i >= steps#uploadCount(made)) enter(b, BuildPhase.Done)
+        else stepTo(b, i, () -> steps#uploadAt(made, i))
+
+    def stepTo(b: Build[a], i: Int32, work: Unit -> Unit \ IO): Unit \ IO =
+        work();
+        Array.put(i + 1, 0, b#next)
+
+    def enter(b: Build[a], phase: BuildPhase): Unit \ IO =
+        Ref.put(phase, b#phase);
+        Array.put(0, 0, b#next)
+
     // ── 持ち越しの控え ──
 
     /// 集まり 1 つの控え。items = staticGroup で作った items の値だけを鍵に持つ表（参照で比べる）・removed と tint = 作った時の外した鍵と色・
@@ -134,40 +255,173 @@ mod Render3d.StaticRows {
     /// variant = 作った時の行の決め方の鍵（carriedKeyOf。材質のプログラムの版と、材質を組む物が場面で違う）。
     type alias Entry[a] = { items = IdentityHashMap[Object, Object], removed = Set[String], tint = Color, variant = String, payload = a, lastUsed = Array[Int64, Static] }
 
+    /// 作りかけの集まり 1 つ（作り直しの間は前の控えを描く）。items・removed・tint・variant = 作っている集まり（Entry と同じ）・
+    /// lastStep = 最後に進めたコマの世代（要素 1 つ）。
+    type alias Work[a] = { items = IdentityHashMap[Object, Object], removed = Set[String], tint = Color, variant = String, build = Build[a],
+                           lastStep = Array[Int64, Static] }
+
     /// 持ち越しの控え（a = backend が GPU に置いた物）。entries = 集まりの名前 → 控えの列（同じ名前でも中身の違う集まりを 1 コマに何場面かで描くと 2 つ以上）・
-    /// rebuilds = 名前 → (最後に作り直した世代, 続けて作り直したコマの数)。
-    pub type alias Cache[a] = { entries = Ref[Map[String, List[Entry[a]]], Static], rebuilds = Ref[Map[String, (Int64, Int32)], Static] }
+    /// rebuilds = 名前 → (最後に作り直した世代, 続けて作り直したコマの数)・works = 名前 → 作りかけの列（行の決め方の鍵ごとに 1 つ）・
+    /// remakes = (名前, 行の決め方の鍵) → 作り終える前に別の値へ替わった回数（控えに当たるか作り終えたら 0 に戻す）・
+    /// budget = (予算を決めたコマの世代, そのコマに少しずつ作るのを止める時刻（System.nanoTime）, 予算切れの後の最低の時間を渡したコマの世代)。
+    pub type alias Cache[a] = { entries = Ref[Map[String, List[Entry[a]]], Static], rebuilds = Ref[Map[String, (Int64, Int32)], Static],
+                                works = Ref[Map[String, List[Work[a]]], Static], remakes = Ref[Map[(String, String), Int32], Static], budget = Array[Int64, Static] }
 
     pub def freshCache(): Cache[a] \ IO =
-        { entries = Ref.fresh(Static, Map.empty()), rebuilds = Ref.fresh(Static, Map.empty()) }
+        { entries = Ref.fresh(Static, Map.empty()), rebuilds = Ref.fresh(Static, Map.empty()), works = Ref.fresh(Static, Map.empty()),
+          remakes = Ref.fresh(Static, Map.empty()), budget = Array#{-1i64, 0i64, -1i64} @ Static }
 
     /// この数のコマ続けて同じ名前の集まりを作り直したら、1 回知らせる。
     def rebuildStreakLimit(): Int32 = 30
 
-    /// 集まり g の持ち越した物。名前・items の値・外した鍵・tint・行の決め方の鍵 variant（carriedKeyOf）が同じ控えがあればその物、無ければ build で作る（重い）。gen = 今のコマの世代。
-    /// 作る時は、同じ名前の控えのうち今のコマで使っていない物を retire へ渡す（今のコマで使った物は、ほかの場面が描くので残す）。
-    pub def ensure(planner: Planner, cache: Cache[a], gen: Int64, g: Scene3d.StaticGroup, variant: String, make: Unit -> a \ ef1, retire: a -> Unit \ ef2): a \ ef1 + ef2 + IO =
+    /// 1 コマに少しずつ作る仕事へ使う時間（ns）。コマの初めて集まりを引いた時から数える。
+    // WhyNot: ゲームから渡さない — 渡す口は pub が増え、先に払う宣言（withPreload3d）の形と一緒に決める。
+    // WhyNot: もっと長くしない — 止めない最後の仕事（Place）と、置いた物を初めて描くコマの bundle の積みがこの上に乗る。
+    def frameBudgetNs(): Int64 = 8000000i64
+
+    /// 予算を使い切った後のコマでも、そのコマで最初に来た作りかけ 1 つはこの時間（ns）進める。
+    // WhyNot: 予算を使い切ったら 1 段だけにしない — 形を作る段は 1 段が形 1 つで、同じコマに初めて見えた集まりを作ると、形の多い作り直しが何千コマも止まる。
+    // WhyNot: 作りかけごとに渡さない — 区画に分けた集まりを一度に作り直すと、区画の数だけ予算の上に乗る。
+    def minimumStepNs(): Int64 = 1000000i64
+
+    /// 作り終える前に別の値へ替わるのがこの回数を超えたら、前の控えを描かずに 1 コマで作る（控えに当たるまで続ける）。
+    // WhyNot: 替わるたびに作り直しを始めるだけにしない — 毎コマ新しい値を渡すゲームでは作り終えず、前の絵がいつまでも残る。
+    def restartLimit(): Int32 = 2
+
+    /// gen のコマに少しずつ作るのを止める時刻（そのコマで初めて呼んだ時に決める）。
+    def deadlineOf(cache: Cache[a], gen: Int64): Int64 \ IO =
+        if (Array.get(0, cache#budget) == gen) ()
+        else {
+            Array.put(gen, 0, cache#budget);
+            Array.put(System.nanoTime() + frameBudgetNs(), 1, cache#budget)
+        };
+        Array.get(1, cache#budget)
+
+    /// 集まり g の持ち越した物。名前・items の値・外した鍵・tint・行の決め方の鍵 variant（carriedKeyOf）が同じ控えがあればその物。
+    /// 無ければ steps で作る: 同じ名前・同じ variant の控えがあって items の値だけが違う時（staticGroup を作り直した）は、その控えを描きながら
+    /// 1 コマに frameBudgetNs ずつ作り、作り終えたコマで替える。前の控えが無い時と、同じ items の値で外した鍵か tint だけが違う時は、このコマで全部作る。
+    /// 作る時は、同じ名前の控えのうち今のコマで使っていない物を steps#retire へ渡す（今のコマで使った物は、ほかの場面が描くので残す）。gen = 今のコマの世代。
+    // WhyNot: 外した鍵と tint だけ替わった時に前の控えを描かない — 拾って消した物が作り終えるまで残って見え、手に持った物と二重になる。
+    // WhyNot: 前の控えが無い集まりを分けて作らない — 半分だけ見える集まりは壊れた絵で、何も無いのも物が消えて見える。先に払うのは起動と暗転の間（withPreload3d）。
+    pub def ensure(planner: Planner, cache: Cache[a], gen: Int64, g: Scene3d.StaticGroup, variant: String, coverage: Bool, scene: Scene3d.Scene3dCmd,
+                   steps: BuildSteps[a]): a \ IO =
+        let deadline = deadlineOf(cache, gen);
         let f = Scene3d.staticGroupFieldsOf(g);
         let items = unchecked_cast(f#items as Object);
         let held = Map.getWithDefault(f#name, Nil, Ref.get(cache#entries));
         match List.find(e -> isSameGroup(f, e) and e#variant == variant and e#items.containsKey(items), held) {
             case Some(e) =>
                 Array.put(gen, 0, e#lastUsed);
+                settle(cache, f#name, variant, steps#retire);
                 e#payload
             case None =>
-                let (usedNow, idle) = List.partition(e -> Array.get(0, e#lastUsed) == gen, held);
-                List.forEach(e -> retire(e#payload), idle);
-                noteRebuild(planner, cache, gen, f#name);
+                let shown = shownWhileBuilding(held, variant, items);
+                let work = shown |> Option.flatMap(_ -> workFor(planner, cache, gen, g, variant, coverage, scene, steps#retire));
+                match (shown, work) {
+                    case (Some(e), Some(w)) => stepOrShow(planner, cache, gen, f, variant, steps, deadline, e, w)
+                    case _ =>
+                        dropWork(cache, f#name, variant, steps#retire);
+                        buildNow(planner, cache, gen, g, variant, coverage, scene, steps)
+                }
+        }
+
+    /// 作りかけ w を今のコマの予算まで進め、作り終えたら控えに入れてその物、まだなら前の控え shown の物。
+    def stepOrShow(planner: Planner, cache: Cache[a], gen: Int64, f: Scene3d.StaticGroupFields, variant: String, steps: BuildSteps[a], deadline: Int64,
+                   shown: Entry[a], w: Work[a]): a \ IO =
+        Array.put(gen, 0, w#lastStep);
+        match stepBuild(planner, steps, w#build, deadlineWithMinimum(cache, gen, deadline)) {
+            case Some(made) =>
+                removeWork(cache, f#name, variant);
+                Ref.put(Map.remove((f#name, variant), Ref.get(cache#remakes)), cache#remakes);
+                insertEntry(planner, cache, gen, f, variant, made, steps#retire)
+            case None =>
+                Array.put(gen, 0, shown#lastUsed);
+                shown#payload
+        }
+
+    /// 予算を使い切っていて、このコマにまだ最低の時間を渡していなければ、今から minimumStepNs 後（渡したと控える）。ほかは deadline。
+    def deadlineWithMinimum(cache: Cache[a], gen: Int64, deadline: Int64): Int64 \ IO =
+        let now = System.nanoTime();
+        if (now < deadline or Array.get(2, cache#budget) == gen) deadline
+        else {
+            Array.put(gen, 2, cache#budget);
+            now + minimumStepNs()
+        }
+
+    /// g をこのコマで全部作って控えに入れた物。
+    def buildNow(planner: Planner, cache: Cache[a], gen: Int64, g: Scene3d.StaticGroup, variant: String, coverage: Bool, scene: Scene3d.Scene3dCmd,
+                 steps: BuildSteps[a]): a \ IO =
+        let made = buildAll(planner, steps, startBuild(planner, coverage, scene, g));
+        insertEntry(planner, cache, gen, Scene3d.staticGroupFieldsOf(g), variant, made, steps#retire)
+
+    /// 作り直しの間に描く控え: held のうち variant が同じで items の値が違う物（一番最近描いた物）。items の値が同じ控えがあれば None（外した鍵か tint だけが違う）。
+    def shownWhileBuilding(held: List[Entry[a]], variant: String, items: Object): Option[Entry[a]] \ IO =
+        let same = List.filter(e -> e#variant == variant, held);
+        if (List.exists(e -> e#items.containsKey(items), same)) None
+        else List.foldLeft((acc, e) -> if (Option.exists(best -> Array.get(0, best#lastUsed) >= Array.get(0, e#lastUsed), acc)) acc else Some(e), None, same)
+
+    /// g の作りかけ（同じ集まりの作りかけがあればそれ、無ければ始める）。作り終えていない別の値の作りかけは捨てて始め直し、
+    /// 始め直しが上限を超えた (名前, variant) は None（1 コマで作る。控えに当たるまで続ける）。
+    def workFor(planner: Planner, cache: Cache[a], gen: Int64, g: Scene3d.StaticGroup, variant: String, coverage: Bool, scene: Scene3d.Scene3dCmd,
+                retire: a -> Unit \ IO): Option[Work[a]] \ IO =
+        let f = Scene3d.staticGroupFieldsOf(g);
+        let items = unchecked_cast(f#items as Object);
+        let held = Map.getWithDefault(f#name, Nil, Ref.get(cache#works));
+        let (mine, others) = List.partition(w -> w#variant == variant, held);
+        let same = List.head(mine) |> Option.filter(w -> w#items.containsKey(items) and f#removed == w#removed and isSameTint(f#tint, w#tint));
+        let remakes = Map.getWithDefault((f#name, variant), 0, Ref.get(cache#remakes)) + (if (List.isEmpty(mine)) 0 else 1);
+        if (Option.nonEmpty(same)) same
+        else {
+            mine |> List.forEach(retireWork(retire));
+            Ref.put(Map.insert((f#name, variant), remakes, Ref.get(cache#remakes)), cache#remakes);
+            if (remakes > restartLimit()) {
+                Ref.put(Map.insert(f#name, others, Ref.get(cache#works)), cache#works);
+                None
+            } else {
                 let key: IdentityHashMap[Object, Object] = new IdentityHashMap();
                 discard key.put(items, items);
-                let made = { items = key, removed = f#removed, tint = f#tint, variant = variant, payload = make(), lastUsed = Array#{gen} @ Static };
-                Ref.put(Map.insert(f#name, made :: usedNow, Ref.get(cache#entries)), cache#entries);
-                made#payload
+                let w = { items = key, removed = f#removed, tint = f#tint, variant = variant, build = startBuild(planner, coverage, scene, g), lastStep = Array#{gen} @ Static };
+                Ref.put(Map.insert(f#name, w :: others, Ref.get(cache#works)), cache#works);
+                Some(w)
+            }
         }
+
+    /// (name, variant) の集まりが控えに当たった: 作りかけを捨て（前の値へ戻った）、始め直しの数を 0 に戻す。
+    def settle(cache: Cache[a], name: String, variant: String, retire: a -> Unit \ IO): Unit \ IO =
+        if (Map.memberOf(name, Ref.get(cache#works))) dropWork(cache, name, variant, retire) else ();
+        if (Map.memberOf((name, variant), Ref.get(cache#remakes))) Ref.put(Map.remove((name, variant), Ref.get(cache#remakes)), cache#remakes) else ()
+
+    /// 名前 name・variant の作りかけを外す（置いた物があれば retire へ）。
+    def dropWork(cache: Cache[a], name: String, variant: String, retire: a -> Unit \ IO): Unit \ IO =
+        Map.getWithDefault(name, Nil, Ref.get(cache#works)) |> List.filter(w -> w#variant == variant) |> List.forEach(retireWork(retire));
+        removeWork(cache, name, variant)
+
+    /// 名前 name・variant の作りかけを外す（置いた物は控えへ移したので手放さない）。
+    def removeWork(cache: Cache[a], name: String, variant: String): Unit \ IO =
+        let rest = Map.getWithDefault(name, Nil, Ref.get(cache#works)) |> List.filter(w -> w#variant != variant);
+        Ref.put(if (List.isEmpty(rest)) Map.remove(name, Ref.get(cache#works)) else Map.insert(name, rest, Ref.get(cache#works)), cache#works)
+
+    def retireWork(retire: a -> Unit \ IO, w: Work[a]): Unit \ IO = Ref.get(w#build#made) |> Option.forEach(retire)
+
+    /// 作った物 made を控えに入れて返す。同じ名前・同じ variant の控えのうち今のコマで使っていない物を retire へ渡す。
+    // WhyNot: ほかの variant の控えを手放さない — 同じ集まりの別の場面（奥行きの書き出し）が、まだ作りかけの間に描いている前の控えかもしれない。使わなくなれば sweep が手放す。
+    def insertEntry(planner: Planner, cache: Cache[a], gen: Int64, f: Scene3d.StaticGroupFields, variant: String, made: a, retire: a -> Unit \ IO): a \ IO =
+        let items = unchecked_cast(f#items as Object);
+        let held = Map.getWithDefault(f#name, Nil, Ref.get(cache#entries));
+        let (usedNow, idle) = List.partition(e -> Array.get(0, e#lastUsed) == gen or e#variant != variant, held);
+        List.forEach(e -> retire(e#payload), idle);
+        noteRebuild(planner, cache, gen, f#name);
+        let key: IdentityHashMap[Object, Object] = new IdentityHashMap();
+        discard key.put(items, items);
+        let entry = { items = key, removed = f#removed, tint = f#tint, variant = variant, payload = made, lastUsed = Array#{gen} @ Static };
+        Ref.put(Map.insert(f#name, entry :: usedNow, Ref.get(cache#entries)), cache#entries);
+        made
 
     /// 控え e の外した鍵と色が f と同じか（items の参照は呼ぶ側が比べる）。
     def isSameGroup(f: Scene3d.StaticGroupFields, e: Entry[a]): Bool =
-        f#removed == e#removed and f#tint#r == e#tint#r and f#tint#g == e#tint#g and f#tint#b == e#tint#b
+        f#removed == e#removed and isSameTint(f#tint, e#tint)
+
+    def isSameTint(a: Color, b: Color): Bool = a#r == b#r and a#g == b#g and a#b == b#b
 
     /// name の集まりを gen に作り直したと控え、続けて作り直したコマが上限に届いたら 1 回知らせる。
     def noteRebuild(planner: Planner, cache: Cache[a], gen: Int64, name: String): Unit \ IO =
@@ -183,20 +437,32 @@ mod Render3d.StaticRows {
                 + "（毎コマ staticGroup を呼ぶ・withoutItems や withGroupTint に毎コマ違う値を渡すと持ち越せない・名前が場面の中で重なっていないかも確かめる）")
         else ()
 
-    /// idle のコマより長く描かなかった集まりの物を retire へ渡して控えから外す。
+    /// idle のコマより長く描かなかった集まりの物と、長く進めなかった作りかけを retire へ渡して控えから外す。
     pub def sweep(cache: Cache[a], gen: Int64, idle: Int64, retire: a -> Unit \ ef): Unit \ ef + IO =
         let isStale = (e: Entry[a]) -> Array.get(0, e#lastUsed) + idle < gen;
         let all = Ref.get(cache#entries);
         Map.forEach((_, es) -> List.forEach(e -> if (isStale(e)) retire(e#payload) else (), es), all);
-        Ref.put(all |> Map.map(List.filter(e -> not isStale(e))) |> Map.filter(es -> not List.isEmpty(es)), cache#entries)
+        Ref.put(all |> Map.map(List.filter(e -> not isStale(e))) |> Map.filter(es -> not List.isEmpty(es)), cache#entries);
+        let isStaleWork = (w: Work[a]) -> Array.get(0, w#lastStep) + idle < gen;
+        let works = Ref.get(cache#works);
+        Map.forEach((_, ws) -> List.forEach(w -> if (isStaleWork(w)) Ref.get(w#build#made) |> Option.forEach(retire) else (), ws), works);
+        Ref.put(works |> Map.map(List.filter(w -> not isStaleWork(w))) |> Map.filter(ws -> not List.isEmpty(ws)), cache#works);
+        let live = (name: String) -> Map.memberOf(name, Ref.get(cache#entries)) or Map.memberOf(name, Ref.get(cache#works));
+        Ref.put(Ref.get(cache#remakes) |> Map.filterWithKey((k, _) -> live(fst(k))), cache#remakes)
 
-    /// 控えの物を全部 retire へ渡して外す（持ち越した行の形か絵の番号を置き場が捨てた時・描き手を手放す時）。
+    /// 控えの物と作りかけを全部 retire へ渡して外す（持ち越した行の形か絵の番号を置き場が捨てた時・描き手を手放す時）。
     pub def clear(cache: Cache[a], retire: a -> Unit \ ef): Unit \ ef + IO =
         Map.forEach((_, es) -> List.forEach(e -> retire(e#payload), es), Ref.get(cache#entries));
-        Ref.put(Map.empty(), cache#entries)
+        Ref.put(Map.empty(), cache#entries);
+        Map.forEach((_, ws) -> List.forEach(w -> Ref.get(w#build#made) |> Option.forEach(retire), ws), Ref.get(cache#works));
+        Ref.put(Map.empty(), cache#works);
+        Ref.put(Map.empty(), cache#remakes)
 
     /// 控えにある集まりの物の数。
     pub def sizeOf(cache: Cache[a]): Int32 \ IO = Map.foldLeft((n, es) -> n + List.length(es), 0, Ref.get(cache#entries))
+
+    /// 作りかけの集まりの数。
+    pub def buildingCountOf(cache: Cache[a]): Int32 \ IO = Map.foldLeft((n, ws) -> n + List.length(ws), 0, Ref.get(cache#works))
 
     /// 控えにある物を全部 f に渡す（コマの終わりに backend が中の物を締める）。
     pub def forEachHeld(f: a -> Unit \ ef, cache: Cache[a]): Unit \ ef + IO =

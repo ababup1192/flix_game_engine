@@ -3,7 +3,10 @@ mod Render3d.TestStaticRows {
     use Render3d.FakeGl.{camera, cmdOf, freshRecorded, freshState, paint, plainTriangle, poseAt, recordingGl, sceneOf, skinnedAt, stderrOf, timesCalled}
     use Render3d.SceneList.{countAt, flagSameBinding, hasFlag, rowCountOf, valuesAt}
     use Render3d.ScenePlan.{freshPlanner}
-    use Render3d.StaticRows.{CarriedRows, build, carriedKeyOf, ensure, freshCache, isCarriedItem, perFrameOf, setTime, sizeOf, sweep}
+    use Render3d.StaticRows.{BuildSteps, CarriedRows, build, buildingCountOf, carriedKeyOf, ensure, freshCache, isCarriedItem, perFrameOf, setTime, sizeOf,
+                             startBuild, stepBuild, sweep}
+
+    import java.lang.Thread
 
     def noRegistered(_name: String): Option[Scene3dRenderer.RegisteredTexture] \ IO = checked_ecast(None)
 
@@ -27,12 +30,24 @@ mod Render3d.TestStaticRows {
     def town(): Scene3d.StaticGroup =
         Scene3d.staticGroup("town", ("a", boxAt(1.0)) :: ("b", boxAt(2.0)) :: ("c", boxAt(3.0)) :: Nil)
 
-    /// 集まり g を世代 gens の順に lookup し、作った回数を返す（作るたびに 1 足した数を payload にする）。
+    /// GPU を呼ばない作る仕事: 置くたびに builds へ 1 足し、その数を置いた物にする。手放した物は retire へ。pause = 形 1 つごとに待つ ms（0 で待たない）。
+    def countingSteps(builds: Ref[Int32, Static], retire: Int32 -> Unit \ IO, pause: Int64): BuildSteps[Int32] \ IO =
+        { tables = freshTables(), resolve = requests -> Vector.map(_ -> 0, requests),
+          prepareMesh = _ -> if (pause > 0i64) Thread.sleep(pause) else (), prepareMaterial = _ -> (),
+          place = _ -> { Ref.put(Ref.get(builds) + 1, builds); Ref.get(builds) }, uploadCount = _ -> 0, uploadAt = (_, _) -> (), retire = retire }
+
+    /// 集まり g の持ち越した物（色の場面・GPU を呼ばない仕事）。
+    def ensureWith(planner: Render3d.ScenePlan.Planner, cache: Render3d.StaticRows.Cache[Int32], gen: Int64, g: Scene3d.StaticGroup,
+                   steps: BuildSteps[Int32]): Int32 \ IO =
+        ensure(planner, cache, gen, g, "", false, sceneOf(Nil), steps)
+
+    /// 集まり g を世代 gens の順に lookup し、作った回数を返す。
     def buildsOver(gens: List[(Int64, Scene3d.StaticGroup)]): Int32 \ IO =
         let cache = freshCache();
         let builds = Ref.fresh(Static, 0);
         let planner = freshPlanner(Render3d.DrawMode.Instanced);
-        gens |> List.forEach(match (gen, g) -> discard ensure(planner, cache, gen, g, "", () -> { Ref.put(Ref.get(builds) + 1, builds); Ref.get(builds) }, _ -> ()));
+        let steps = countingSteps(builds, _ -> (), 0i64);
+        gens |> List.forEach(match (gen, g) -> discard ensureWith(planner, cache, gen, g, steps));
         Ref.get(builds)
 
     // ── 前のコマの行を使うか ──
@@ -71,8 +86,8 @@ mod Render3d.TestStaticRows {
         let cache = freshCache();
         let planner = freshPlanner(Render3d.DrawMode.Instanced);
         let builds = Ref.fresh(Static, 0);
-        List.range(1, 4) |> List.forEach(gen -> (g :: tinted :: Nil) |> List.forEach(x ->
-            discard ensure(planner, cache, Int32.toInt64(gen), x, "", () -> { Ref.put(Ref.get(builds) + 1, builds); 0 }, _ -> Ref.put(Ref.get(retired) + 1, retired))));
+        let steps = countingSteps(builds, _ -> Ref.put(Ref.get(retired) + 1, retired), 0i64);
+        List.range(1, 4) |> List.forEach(gen -> (g :: tinted :: Nil) |> List.forEach(x -> discard ensureWith(planner, cache, Int32.toInt64(gen), x, steps)));
         Assert.assertEq(expected = (2, 0, 2), (Ref.get(builds), Ref.get(retired), sizeOf(cache)))
 
     /// 作り直す時は、前の物を destroy に渡す。
@@ -81,9 +96,9 @@ mod Render3d.TestStaticRows {
         let cache = freshCache();
         let planner = freshPlanner(Render3d.DrawMode.Instanced);
         let destroyed = Ref.fresh(Static, Nil);
-        let destroy = (p: Int32) -> Ref.put(p :: Ref.get(destroyed), destroyed);
-        discard ensure(planner, cache, 1i64, town(), "", () -> 1, destroy);
-        discard ensure(planner, cache, 2i64, town(), "", () -> 2, destroy);
+        let steps = countingSteps(Ref.fresh(Static, 0), p -> Ref.put(p :: Ref.get(destroyed), destroyed), 0i64);
+        discard ensureWith(planner, cache, 1i64, town(), steps);
+        discard ensureWith(planner, cache, 2i64, town(), steps);
         Assert.assertEq(expected = 1 :: Nil, Ref.get(destroyed))
 
     /// しばらく描かなかった集まりは sweep が destroy して外し、描いた集まりは残す。
@@ -93,19 +108,21 @@ mod Render3d.TestStaticRows {
         let planner = freshPlanner(Render3d.DrawMode.Instanced);
         let destroyed = Ref.fresh(Static, Nil);
         let destroy = (p: Int32) -> Ref.put(p :: Ref.get(destroyed), destroyed);
+        let steps = countingSteps(Ref.fresh(Static, 0), destroy, 0i64);
         let kept = town();
-        discard ensure(planner, cache, 1i64, Scene3d.staticGroup("gone", ("x", boxAt(1.0)) :: Nil), "", () -> 7, destroy);
-        discard ensure(planner, cache, 1i64, kept, "", () -> 8, destroy);
-        discard ensure(planner, cache, 10i64, kept, "", () -> 9, destroy);
+        discard ensureWith(planner, cache, 1i64, Scene3d.staticGroup("gone", ("x", boxAt(1.0)) :: Nil), steps);
+        discard ensureWith(planner, cache, 1i64, kept, steps);
+        discard ensureWith(planner, cache, 10i64, kept, steps);
         sweep(cache, 10i64, 5i64, destroy);
-        Assert.assertEq(expected = (7 :: Nil, 1), (Ref.get(destroyed), sizeOf(cache)))
+        Assert.assertEq(expected = (1 :: Nil, 1), (Ref.get(destroyed), sizeOf(cache)))
 
     /// 同じ名前の集まりを上限のコマ数続けて作り直すと、名前ごとに 1 回知らせる。
     @Test
     def testRebuildStreakWarnsOnce(): Unit \ {Assert, IO} =
         let cache = freshCache();
         let planner = freshPlanner(Render3d.DrawMode.Instanced);
-        let said = stderrOf(() -> List.range(1, 70) |> List.forEach(gen -> discard ensure(planner, cache, Int32.toInt64(gen), town(), "", () -> gen, _ -> ())));
+        let steps = countingSteps(Ref.fresh(Static, 0), _ -> (), 0i64);
+        let said = stderrOf(() -> List.range(1, 70) |> List.forEach(gen -> discard ensureWith(planner, cache, Int32.toInt64(gen), town(), steps)));
         Assert.assertEq(expected = 2, List.length(String.split(regex = "'town'", said)))
 
     /// 作り直しが続かなければ知らせない。
@@ -114,8 +131,153 @@ mod Render3d.TestStaticRows {
         let cache = freshCache();
         let planner = freshPlanner(Render3d.DrawMode.Instanced);
         let g = town();
-        List.range(1, 40) |> List.forEach(gen -> discard ensure(planner, cache, Int32.toInt64(gen), g, "", () -> gen, _ -> ()));
+        let steps = countingSteps(Ref.fresh(Static, 0), _ -> (), 0i64);
+        List.range(1, 40) |> List.forEach(gen -> discard ensureWith(planner, cache, Int32.toInt64(gen), g, steps));
         Assert.assertFalse(Set.memberOf("@staticGroup:town", Ref.get(planner#sceneWarnedRef)))
+
+    // ── 少しずつ作る ──
+
+    /// steps で集まりを世代 gens の順に引いた答えの並び（色の場面）。
+    def answersOver(steps: BuildSteps[Int32], cache: Render3d.StaticRows.Cache[Int32], gens: List[(Int64, Scene3d.StaticGroup)]): List[Int32] \ IO =
+        let planner = freshPlanner(Render3d.DrawMode.Instanced);
+        gens |> List.map(match (gen, g) -> ensureWith(planner, cache, gen, g, steps))
+
+    /// staticGroup を作り直した集まりは、作り終えるまで前の控えの物を返し、作り終えたコマから新しい物を返す。
+    @Test
+    def testRemadeGroupShowsPreviousUntilBuilt(): Unit \ {Assert, IO} =
+        let steps = countingSteps(Ref.fresh(Static, 0), _ -> (), 4i64);
+        let next = town();
+        let answers = answersOver(steps, freshCache(), (1i64, town()) :: List.map(gen -> (Int32.toInt64(gen), next), List.range(2, 8)));
+        Assert.assertEq(expected = (1, 1, 2), (List.head(answers) |> Option.getWithDefault(0), List.nth(1, answers) |> Option.getWithDefault(0),
+                                               List.last(answers) |> Option.getWithDefault(0)))
+
+    /// 作り直しの間も前の控えを手放さず、作り終えたコマで手放す。
+    @Test
+    def testPreviousIsRetiredWhenRebuildFinishes(): Unit \ {Assert, IO} =
+        let retired = Ref.fresh(Static, Nil);
+        let steps = countingSteps(Ref.fresh(Static, 0), p -> Ref.put(p :: Ref.get(retired), retired), 4i64);
+        let next = town();
+        let cache = freshCache();
+        let answers = answersOver(steps, cache, (1i64, town()) :: (2i64, next) :: Nil);
+        let whileBuilding = Ref.get(retired);
+        discard answersOver(steps, cache, List.map(gen -> (Int32.toInt64(gen), next), List.range(3, 8)));
+        Assert.assertEq(expected = (1 :: 1 :: Nil, Nil, 1 :: Nil, 0), (answers, whileBuilding, Ref.get(retired), buildingCountOf(cache)))
+
+    /// 同じ items の値で外した鍵だけが替わった集まりは、前の控えを描かずにそのコマで作る。
+    @Test
+    def testRemovedKeysBuildInOneFrame(): Unit \ {Assert, IO} =
+        let steps = countingSteps(Ref.fresh(Static, 0), _ -> (), 4i64);
+        let g = town();
+        Assert.assertEq(expected = 1 :: 2 :: Nil, answersOver(steps, freshCache(), (1i64, g) :: (2i64, Scene3d.withoutItems(Set#{"b"}, g)) :: Nil))
+
+    /// 作り終える前に毎コマ別の値へ替わり続けると、始め直しの上限の後はそのコマで作る。
+    @Test
+    def testEndlessRemakesBuildInOneFrame(): Unit \ {Assert, IO} =
+        let steps = countingSteps(Ref.fresh(Static, 0), _ -> (), 4i64);
+        let answers = answersOver(steps, freshCache(), List.range(1, 7) |> List.map(gen -> (Int32.toInt64(gen), town())));
+        Assert.assertEq(expected = 1 :: 1 :: 1 :: 1 :: 2 :: 3 :: Nil, answers)
+
+    /// 作るのが遅くても、毎コマ別の値を渡し続ければ作り直しの知らせが出る。
+    @Test
+    def testSlowEndlessRemakesStillWarn(): Unit \ {Assert, IO} =
+        let planner = freshPlanner(Render3d.DrawMode.Instanced);
+        let steps = countingSteps(Ref.fresh(Static, 0), _ -> (), 4i64);
+        let cache = freshCache();
+        discard stderrOf(() -> List.range(1, 40) |> List.forEach(gen -> discard ensureWith(planner, cache, Int32.toInt64(gen), town(), steps)));
+        Assert.assertTrue(Set.memberOf("@staticGroup:town", Ref.get(planner#sceneWarnedRef)))
+
+    /// 同じ集まりの色の場面の行を作り直しても、奥行きの書き出しの場面の前の控えは手放さない（その場面はまだ前の控えを描く）。
+    @Test
+    def testRebuildKeepsOtherVariantEntry(): Unit \ {Assert, IO} =
+        let planner = freshPlanner(Render3d.DrawMode.Instanced);
+        let retired = Ref.fresh(Static, Nil);
+        let steps = countingSteps(Ref.fresh(Static, 0), p -> Ref.put(p :: Ref.get(retired), retired), 0i64);
+        let cache = freshCache();
+        let g = town();
+        discard ensure(planner, cache, 1i64, g, "color", false, sceneOf(Nil), steps);
+        discard ensure(planner, cache, 1i64, g, "depth", false, sceneOf(Nil), steps);
+        let next = town();
+        discard ensure(planner, cache, 2i64, next, "color", false, sceneOf(Nil), steps);
+        Assert.assertEq(expected = (1 :: Nil, 2), (Ref.get(retired), sizeOf(cache)))
+
+    /// 置き終えて絵を上げている途中の作りかけも、clear が置いた物を 1 回だけ手放して外す。
+    @Test
+    def testClearRetiresPlacedWork(): Unit \ {Assert, IO} =
+        let retired = Ref.fresh(Static, Nil);
+        let retire = (p: Int32) -> Ref.put(p :: Ref.get(retired), retired);
+        let steps = { uploadCount = _ -> 1, uploadAt = (_, _) -> Thread.sleep(20i64) | countingSteps(Ref.fresh(Static, 0), retire, 0i64) };
+        let cache = freshCache();
+        let shown = answersOver(steps, cache, (1i64, town()) :: (2i64, town()) :: Nil);
+        let building = buildingCountOf(cache);
+        Render3d.StaticRows.clear(cache, retire);
+        Assert.assertEq(expected = (1 :: 1 :: Nil, 1, Set#{1, 2}, 2, 0), (shown, building, List.toSet(Ref.get(retired)), List.length(Ref.get(retired)), buildingCountOf(cache)))
+
+    /// 長く進めなかった作りかけは sweep が外す。
+    @Test
+    def testSweepDropsIdleWork(): Unit \ {Assert, IO} =
+        let steps = countingSteps(Ref.fresh(Static, 0), _ -> (), 4i64);
+        let cache = freshCache();
+        discard answersOver(steps, cache, (1i64, town()) :: (2i64, town()) :: Nil);
+        let before = buildingCountOf(cache);
+        sweep(cache, 20i64, 5i64, _ -> ());
+        Assert.assertEq(expected = (1, 0), (before, buildingCountOf(cache)))
+
+    /// 作り直しの途中で前の値へ戻ると、作りかけを捨てる。
+    @Test
+    def testReturningToPreviousDropsWork(): Unit \ {Assert, IO} =
+        let steps = countingSteps(Ref.fresh(Static, 0), _ -> (), 4i64);
+        let cache = freshCache();
+        let g = town();
+        let answers = answersOver(steps, cache, (1i64, g) :: (2i64, town()) :: (3i64, g) :: Nil);
+        Assert.assertEq(expected = (1 :: 1 :: 1 :: Nil, 0), (answers, buildingCountOf(cache)))
+
+    /// 形の違う箱 20 個の集まり name（呼ぶたびに別の値）。
+    def boxes(name: String): Scene3d.StaticGroup =
+        Scene3d.staticGroup(name, List.range(1, 21) |> List.map(k -> (Int32.toString(k), boxAt(Int32.toFloat64(k)))))
+
+    /// 予算を使い切ったコマの最低の時間は、そのコマで最初に来た作りかけ 1 つだけが使い、後の作りかけは 1 段だけ進む。
+    @Test
+    def testMinimumStepGoesToOneWorkPerFrame(): Unit \ {Assert, IO} =
+        let planner = freshPlanner(Render3d.DrawMode.Instanced);
+        let cache = freshCache();
+        let made = Ref.fresh(Static, 0);
+        let counted = (n: Ref[Int32, Static]) -> { prepareMesh = (_: Mesh3d.Mesh3d) -> { Thread.sleep(1i64); Ref.put(Ref.get(n) + 1, n) } | countingSteps(made, _ -> (), 0i64) };
+        let (a, b, c) = (Ref.fresh(Static, 0), Ref.fresh(Static, 0), Ref.fresh(Static, 0));
+        (("a", a) :: ("b", b) :: ("c", c) :: Nil) |> List.forEach(match (name, _) -> discard ensureWith(planner, cache, 1i64, boxes(name), countingSteps(made, _ -> (), 0i64)));
+        (("a", a) :: ("b", b) :: ("c", c) :: Nil) |> List.forEach(match (name, n) -> discard ensureWith(planner, cache, 2i64, boxes(name), counted(n)));
+        Assert.assertEq(expected = (true, 1), (Ref.get(a) > 1, Ref.get(c)))
+
+    /// 1 段ずつ何コマもかけて作った行は、1 回で作った行と同じ（行・1 体ごとの値・影の地図の行）。
+    @Test
+    def testSteppedRowsEqualOneShotRows(): Unit \ {Assert, IO} =
+        let answer = (requests: Vector[Render3d.ScenePlan.MaterialRequest]) -> Vector.map(_ -> 3, requests);
+        let planner = freshPlanner(Render3d.DrawMode.Instanced);
+        let steps = { tables = freshTables(), resolve = answer, prepareMesh = _ -> (), prepareMaterial = _ -> (), place = (rows: CarriedRows) -> rows,
+                      uploadCount = _ -> 0, uploadAt = (_, _) -> (), retire = _ -> () };
+        let b = startBuild(planner, false, sceneOf(Nil), city());
+        let stepped = stepUntilBuilt(planner, steps, b, 0);
+        let once = build(freshPlanner(Render3d.DrawMode.Instanced), freshTables(), answer, false, sceneOf(Nil), city());
+        let shape = (r: CarriedRows) -> (Array.toList(r#list#rows), Array.toList(r#shadowList#rows), r#instanceCount, Array.toList(r#list#values), r#timeAt,
+                                         Vector.length(r#requests), r#placed, List.map(i -> r#instances.get(i), List.range(0, r#instances.capacity())));
+        Assert.assertEq(expected = (shape(once), true), (shape(stepped), Ref.get(b#phase) == Render3d.StaticRows.BuildPhase.Done))
+
+    /// 形 7 種・材質 2 種の物 80 個の集まり（候補分けの区切り groupChunk をまたぐ）。
+    def city(): Scene3d.StaticGroup =
+        let shapes = List.range(1, 8) |> List.map(k -> boxAt(Int32.toFloat64(k)));
+        Scene3d.staticGroup("city", List.range(0, 80) |> List.map(i -> {
+            let base = List.nth(Int32.modulo(i, 7), shapes) |> Option.getWithDefault(boxAt(1.0));
+            let f = Scene3d.instanceFieldsOf(base);
+            let placed = Scene3d.meshInstance(f#mesh, Mat4.translate(Vec3.v3(Int32.toFloat64(i), 0.0, 0.0)))
+                |> Scene3d.withMaterial(materialOf(if (Int32.modulo(i, 3) == 0) 0.3 else 0.1));
+            (Int32.toString(i), placed)
+        }))
+
+    /// b を、毎回時計の限りを過ぎた（1 つずつしか進めない）ことにして作り終えるまで進める（calls = 呼んだ回数・上限 1000 回）。
+    def stepUntilBuilt(planner: Render3d.ScenePlan.Planner, steps: BuildSteps[CarriedRows], b: Render3d.StaticRows.Build[CarriedRows], calls: Int32): CarriedRows \ IO =
+        match stepBuild(planner, steps, b, 0i64) {
+            case Some(rows) => rows
+            case None       => if (calls > 1000) bug!("1000 回進めても作り終えない") else stepUntilBuilt(planner, steps, b, calls + 1)
+        }
 
     // ── 持ち越す物と毎コマの物 ──
 

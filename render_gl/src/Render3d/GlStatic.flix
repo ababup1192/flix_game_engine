@@ -36,7 +36,7 @@ mod Render3d.GlStatic {
     def drawOf(gl: GlContext, state: State, gen: Int64, tables: Render3d.SceneList.Tables, coverage: Bool, scene: Scene3d.Scene3dCmd,
                variant: String, g: Scene3d.StaticGroup): CarriedDraw \ IO =
         let st = state#statics;
-        let ensure = () -> StaticRows.ensure(state#planner, st#cache, gen, g, variant, () -> build(gl, state, gen, tables, coverage, scene, g), retire(st));
+        let ensure = () -> StaticRows.ensure(state#planner, st#cache, gen, g, variant, coverage, scene, stepsOf(gl, state, gen, tables));
         let held = ensure();
         let table = resolveMaterials(gl, state, gen, held#rows#requests);
         if (table#orders == held#orders) { carried = held, materials = table }
@@ -46,15 +46,21 @@ mod Render3d.GlStatic {
             { carried = made, materials = resolveMaterials(gl, state, gen, made#rows#requests) }
         }
 
-    def build(gl: GlContext, state: State, gen: Int64, tables: Render3d.SceneList.Tables, coverage: Bool, scene: Scene3d.Scene3dCmd, g: Scene3d.StaticGroup): Carried \ IO =
+    /// 集まりを作る仕事（StaticRows.BuildSteps）: 形を作る・材質のプログラムを組む・1 体ごとの値のテクスチャを上げる。
+    // WhyNot: 材質の絵を先に上げない — GL は絵を描く時に引き（Render3d.Material）、上げた絵を持ち越した行が持たない。
+    def stepsOf(gl: GlContext, state: State, gen: Int64, tables: Render3d.SceneList.Tables): StaticRows.BuildSteps[Carried] \ IO =
+        let st = state#statics;
         let orders = Ref.fresh(Static, Vector.empty());
         let resolve = (requests: Vector[MaterialRequest]) -> {
             let found = resolveMaterials(gl, state, gen, requests)#orders;
             Ref.put(found, orders);
             found
         };
-        let rows = StaticRows.build(state#planner, tables, resolve, coverage, scene, g);
-        { rows = rows, orders = Ref.get(orders), texture = uploadValues(gl, state, rows) }
+        { tables = tables, resolve = resolve,
+          prepareMesh = mesh -> discard Render3d.meshEntry(gl, state, gen, mesh),
+          prepareMaterial = request -> discard resolveMaterials(gl, state, gen, Vector#{request}),
+          place = rows -> { rows = rows, orders = Ref.get(orders), texture = uploadValues(gl, state, rows) },
+          uploadCount = _ -> 0, uploadAt = (_, _) -> (), retire = retire(st) }
 
     /// rows の 1 体ごとの値を新しいテクスチャへ上げて番号を返す（1 体ごとの値の unit を使い、unit 0 へ戻す）。
     def uploadValues(gl: GlContext, state: State, rows: CarriedRows): Int32 \ IO =

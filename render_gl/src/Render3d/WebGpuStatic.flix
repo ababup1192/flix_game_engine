@@ -57,10 +57,10 @@ mod Render3d.WebGpuStatic {
     pub def fresh(): StaticCache \ IO = { cache = StaticRows.freshCache(), retired = Ref.fresh(Static, Nil), recorded = Array#{0} @ Static }
 
     /// 集まりの行を作る材料（どれも 3D の描き手の持ち物）。tables = 前半の行の番号を振る表・allocator = 形を作る関数の組・
-    /// noteBuild = 材質の program を初めて組んだ知らせ・gen = 今のコマの世代。
+    /// noteBuild = 材質の program を初めて組んだ知らせ・sourceOf = 場面の材質の絵の引き先・registered = 登録の絵の引き先。
     pub type alias Builder = {
         gpu = WebGpu, planner = Planner, materials = WebGpuMaterials.Materials, tables = Render3d.SceneList.Tables, allocator = MeshTable.MeshAllocator,
-        noteBuild = String -> Unit \ IO
+        noteBuild = String -> Unit \ IO, sourceOf = Scene3d.Scene3dCmd -> TextureSource, registered = WebGpuMaterials.Registered
     }
 
     /// この数のコマ描かなかった集まりの持ち越しは手放す（描き先の Render3d.WebGpuRenderer の idleTargetFrames と同じ）。
@@ -70,23 +70,35 @@ mod Render3d.WebGpuStatic {
     // WhyNot: alpha to coverage の版で行を作らない — WebGPU の backend は alpha to one を答えない（Render3d.WebGpuMaterials の頭）。
     pub def carriedOf(st: StaticCache, b: Builder, scene: Scene3d.Scene3dCmd): List[Carried] \ IO =
         let variant = StaticRows.carriedKeyOf(false, scene);
-        scene#groups |> List.map(g -> StaticRows.ensure(b#planner, st#cache, b#tables#gen, g, variant, () -> buildCarried(b, scene, g), retire(st)))
+        let steps = stepsOf(st, b, scene);
+        scene#groups |> List.map(g -> StaticRows.ensure(b#planner, st#cache, b#tables#gen, g, variant, false, scene, steps))
 
-    def buildCarried(b: Builder, scene: Scene3d.Scene3dCmd, g: Scene3d.StaticGroup): Carried \ IO =
+    /// 集まりを作る仕事（StaticRows.BuildSteps）: 形を作る・材質の program を組む・行を置く・材質の絵を 1 枚ずつ上げる。
+    def stepsOf(st: StaticCache, b: Builder, scene: Scene3d.Scene3dCmd): StaticRows.BuildSteps[Carried] \ IO =
         let programs = Ref.fresh(Static, Vector.empty());
         let resolve = (requests: Vector[Render3d.ScenePlan.MaterialRequest]) -> {
             let found = WebGpuMaterials.programsFor(b#materials, b#noteBuild, requests);
             Ref.put(found, programs);
             WebGpuMaterials.ordersOf(found)
         };
-        let rows = StaticRows.build(b#planner, b#tables, resolve, false, scene, g);
+        let source = lazy b#sourceOf(scene);
+        { tables = b#tables, resolve = resolve,
+          prepareMesh = mesh -> discard MeshTable.ensure(b#tables#meshes, b#allocator, b#tables#gen, mesh),
+          prepareMaterial = request -> discard WebGpuMaterials.programsFor(b#materials, b#noteBuild, Vector#{request}),
+          place = rows -> placeCarried(b, Ref.get(programs), rows),
+          uploadCount = c -> Vector.length(c#textureRows),
+          uploadAt = (c, k) -> WebGpuMaterials.uploadTexturesAt(b#materials, force source, b#registered, b#tables#gen, c#rows#list, Vector#{Vector.get(k, c#textureRows)}),
+          retire = retire(st) }
+
+    /// 作った行 rows を GPU に置く（形を作り、1 体ごとの値と材質の値の buffer を作って書く）。programs = 行の欄 1 が引く材質の program。
+    def placeCarried(b: Builder, programs: Vector[Option[WebGpuMaterials.Program]], rows: StaticRows.CarriedRows): Carried \ IO =
         uploadRows(b#tables#meshes, b#allocator, b#tables#gen, rows#list);
         uploadRows(b#tables#meshes, b#allocator, b#tables#gen, rows#shadowList);
         let instanceBytes = rows#instanceCount * Render3dWgsl.instanceBytes();
         let instances = b#gpu.createBuffer("fge scene3d static instances", Int32.toInt64(Int32.max(Render3dWgsl.instanceBytes(), instanceBytes)),
                                            Int32.bitwiseOr(BufferUsage.VERTEX, BufferUsage.COPY_DST));
         if (instanceBytes > 0) b#gpu.writeBuffer(instances, 0i64, rows#instances, 0, instanceBytes) else ();
-        { rows = rows, programs = Ref.get(programs), instances = instances, values = WebGpuMaterials.createValuesOf(b#materials, "fge scene3d static values", rows#list#values),
+        { rows = rows, programs = programs, instances = instances, values = WebGpuMaterials.createValuesOf(b#materials, "fge scene3d static values", rows#list#values),
           textureRows = ownBindingRows(rows#list), bundles = Ref.fresh(Static, Map.empty()), litCounts = rowCountsOf(rows#list), shadowCounts = rowCountsOf(rows#shadowList) }
 
     /// 値を前の行と分け合わない材質の行（材質の絵を作り、使った物にする行）。
