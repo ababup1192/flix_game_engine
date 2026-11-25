@@ -19,6 +19,9 @@ mod Render3d.Preload {
         timed(state, Phase.Preload, () -> prepareGroups(gl, state, gen, textureOf))
 
     /// 宣言 cmd の形と絵と材質のプログラムを上げる。最後に上げた宣言と同じ key なら何もしない（cmd の中身も読まない）。
+    // WhyNot: instances を集まりと同じ 1 コマの予算で分けて上げない — 材質のプログラムを組む所（splitByMaterial）が全部の物を 1 回で候補に分けて組み、
+    //   途中で止めて続きから組む形を持たない。分けるには物を区切って分け直す段と、それを進み具合に数える欄が GL と WebGPU の両方に要る。
+    //   key が替わるのは起動と束が届いた時だけで、その 1 コマは暗転の内（docs/scene3d.md の手本）に払う。
     pub def upload(gl: GlContext, state: State, gen: Int64, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO,
                    cmd: Scene3d.PreloadCmd): Unit \ IO =
         if (Ref.get(state#preloadRef)#builtKey == Some(cmd#key)) ()

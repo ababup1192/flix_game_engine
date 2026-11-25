@@ -937,8 +937,10 @@ mod Render3d {
         sweepTextures3d(gl, state, gen);
         Render3d.GlRows.DataTexture.endFrame(gl, state#joints, gen);
         Render3d.GlRows.DataTexture.endFrame(gl, state#instances, gen);
-        let evicted = trimToBudget(gl, state, gen);
-        Render3d.GlStatic.endFrame(gl, state#statics, gen, evicted)
+        discard trimToBudget(gl, state, gen);
+        // WhyNot: 捨てた絵の番号で持ち越した集まりを外さない — GL は材質の絵を描く時に名前で引き（Render3d.Material）、持ち越した行の絵の番号を読まない。
+        discard Render3d.TextureTable3d.takeDropped(state#textures3d);
+        Render3d.GlStatic.endFrame(gl, state#statics, gen, Render3d.MeshTable.takeDropped(state#meshes))
     })
 
     /// 頂点の合計が上限に収まるまで、形を捨てる（捨てる順は meshEvictions・選ぶのは Render3d.MeshTable.trim）。捨てた形があれば真。

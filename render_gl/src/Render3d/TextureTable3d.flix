@@ -14,9 +14,10 @@ mod Render3d.TextureTable3d {
     pub type alias Entry = { handle = Int32, created = Option[Created], lastUsed = Array[Int64, Static] }
 
     /// 表。entries = 鍵 → 控え・free = 捨てた後に使い回す番号・next = まだ使っていない一番小さい番号（要素 1 つ）・
-    /// retry = 作れなかった鍵 → 最後に試したコマの世代（retryFrames の間は試さない）。
+    /// retry = 作れなかった鍵 → 最後に試したコマの世代（retryFrames の間は試さない）・dropped = 前に takeDropped を呼んでから捨てた番号。
     pub type alias Table = {
-        entries = Ref[Map[TextureSlot, Entry], Static], free = Ref[List[Int32], Static], next = Array[Int32, Static], retry = Ref[Map[TextureSlot, Int64], Static]
+        entries = Ref[Map[TextureSlot, Entry], Static], free = Ref[List[Int32], Static], next = Array[Int32, Static], retry = Ref[Map[TextureSlot, Int64], Static],
+        dropped = Ref[List[Int32], Static]
     }
 
     /// 名前で引いた絵。Own = 場面の textures の絵・Registered = 全体の登録の絵。
@@ -67,7 +68,8 @@ mod Render3d.TextureTable3d {
 
     /// 空の表。
     pub def fresh(): Table \ IO =
-        { entries = Ref.fresh(Static, Map.empty()), free = Ref.fresh(Static, Nil), next = Array#{0} @ Static, retry = Ref.fresh(Static, Map.empty()) }
+        { entries = Ref.fresh(Static, Map.empty()), free = Ref.fresh(Static, Nil), next = Array#{0} @ Static, retry = Ref.fresh(Static, Map.empty()),
+          dropped = Ref.fresh(Static, Nil) }
 
     /// 鍵 slot の番号（無ければ振る。GPU には作らない）。どちらでも lastUsed を gen にする。
     pub def numberOf(table: Table, gen: Int64, slot: TextureSlot): Int32 \ IO = touch(table, gen, slot)#handle
@@ -119,6 +121,17 @@ mod Render3d.TextureTable3d {
                 }
         }
 
+    /// 前に呼んでから捨てた番号（上限で捨てた絵と、番号を振っただけで古くなった物）を返し、控えを空にする。画面のコマの終わりに 1 回呼ぶ。
+    pub def takeDropped(table: Table): Set[Int32] \ IO =
+        let dropped = List.toSet(Ref.get(table#dropped));
+        Ref.put(Nil, table#dropped);
+        dropped
+
+    /// 番号 handles の絵を今のコマ gen で使った物にする（表を一巡する。名前を引き直さずに持ち越した行の絵を使った物にする）。
+    pub def touchHandles(table: Table, gen: Int64, handles: Set[Int32]): Unit \ IO =
+        if (Set.isEmpty(handles)) ()
+        else Ref.get(table#entries) |> Map.forEach((_, e) -> if (Set.memberOf(e#handle, handles)) Array.put(gen, 0, e#lastUsed) else ())
+
     /// 作った絵の鍵 → 控え。
     pub def createdOf(table: Table): Map[TextureSlot, (Int32, Created, Int64)] \ IO =
         Ref.get(table#entries) |> Map.filterMap(e -> e#created |> Option.map(c -> (e#handle, c, Array.get(0, e#lastUsed))))
@@ -163,13 +176,15 @@ mod Render3d.TextureTable3d {
 
     def drop(table: Table, destroy: Int32 -> Unit \ IO, e: Entry): Unit \ IO =
         if (Option.isEmpty(e#created)) () else destroy(e#handle);
-        Ref.put(e#handle :: Ref.get(table#free), table#free)
+        Ref.put(e#handle :: Ref.get(table#free), table#free);
+        Ref.put(e#handle :: Ref.get(table#dropped), table#dropped)
 
     /// 表の絵を全部捨てる。
     pub def release(table: Table, destroy: Int32 -> Unit \ IO): Unit \ IO =
         Ref.get(table#entries) |> Map.forEach((_, e) -> if (Option.isEmpty(e#created)) () else destroy(e#handle));
         Ref.put(Map.empty(), table#entries);
         Ref.put(Nil, table#free);
+        Ref.put(Nil, table#dropped);
         Array.put(0, 0, table#next);
         Ref.put(Map.empty(), table#retry)
 }

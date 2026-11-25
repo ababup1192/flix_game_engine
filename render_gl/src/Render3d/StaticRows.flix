@@ -177,13 +177,37 @@ mod Render3d.StaticRows {
         });
         MutList.toArray(Static, out) |> Array.toVector
 
-    /// b を、時計（System.nanoTime）が deadline を過ぎるまで進める（過ぎていても 1 つは進める）。
+    /// b を、次の仕事に deadline までの時間が残っている間（hasRoomFor）進める（残っていなくても 1 つは進める）。
     /// 全部の段が済んだら置いた物。
     pub def stepBuild(planner: Planner, steps: BuildSteps[a], b: Build[a], deadline: Int64): Option[a] \ IO =
         stepOnce(planner, steps, b);
         if (Ref.get(b#phase) == BuildPhase.Done) Ref.get(b#made)
-        else if (System.nanoTime() >= deadline) None
+        else if (not hasRoomFor(b, deadline)) None
         else stepBuild(planner, steps, b, deadline)
+
+    /// b の次の仕事を deadline までに始めてよいか。重い仕事（Place と、頂点の多い形を作る仕事）は heavyRoomNs 以上残っている時だけ。
+    def hasRoomFor(b: Build[a], deadline: Int64): Bool \ IO =
+        let left = deadline - System.nanoTime();
+        if (isHeavyNext(b)) left >= heavyRoomNs() else left > 0i64
+
+    /// b の次の仕事が重いか: Place（集まり 1 つの行を全部作る）か、heavyVertices 以上の頂点の形を作る仕事。
+    def isHeavyNext(b: Build[a]): Bool \ IO =
+        let i = Array.get(0, b#next);
+        match Ref.get(b#phase) {
+            case BuildPhase.Place  => true
+            case BuildPhase.Meshes => i < Vector.length(b#meshes) and Mesh3d.vertexCount(Vector.get(i, b#meshes)) >= heavyVertices()
+            case _                 => false
+        }
+
+    /// 重い仕事を始めるのに残っていてほしい時間（ns）。
+    // WhyNot: 時計が少しでも残っていれば重い仕事を始める、としない — 形 1 つ・Place 1 回で数十 ms かかる物があり、予算の終わりの近くで始めると 1 コマが予算の何倍にもなる。
+    // WhyNot: 仕事の重さを測って決めない — 重さは形の頂点の数と集まりの物の数で決まり、初めての仕事の前には測れない。
+    def heavyRoomNs(): Int64 = frameBudgetNs() / 2i64
+
+    /// 形を作る仕事を重いとみなす頂点の数。
+    // WhyNot: もっと少なくしない — 小物の形まで重い扱いになり、予算の後半に形を 1 つも作らないコマが増えて作り終えるのが遅れる。
+    // WhyNot: もっと多くしない — 頂点 4 千の形で PC の WebGPU の数 ms かかり、予算の終わりに始めると 1 コマが予算を大きく超える。
+    def heavyVertices(): Int32 = 4000
 
     /// 候補分けで時計を見る間の物の数。
     def groupChunk(): Int32 = 32
@@ -369,33 +393,44 @@ mod Render3d.StaticRows {
         Map.getWithDefault(f#name, Nil, Ref.get(cache#works))
             |> List.find(w -> w#variant == variant and w#items.containsKey(items) and f#removed == w#removed and isSameTint(f#tint, w#tint))
 
-    /// 先に上げる宣言の集まり g を、描かずに variant の行で作る。作り終えていれば真（控えを今のコマで使った物にする）、
-    /// まだならこのコマの予算まで作りかけを進めて偽（作り終えたコマは真）。予算を使い切り、最低の時間もほかの作りかけに渡した後のコマは進めない。
+    /// 先に上げる宣言の集まり g を、描かずに variant の行で作る。作り終えていればその物（控えを今のコマで使った物にする）、
+    /// まだならこのコマの予算まで作りかけを進めて None（作り終えたコマはその物）。次の仕事に予算が残っていないコマは進めない（hasRoomFor）。
+    /// 返した物の形と絵を今のコマで使った物にするのは backend（宣言にある間は置き場の上限で捨てない）。
+    // WhyNot: 予算を使い切った後に最低の時間（minimumStepNs）を渡さない — 宣言の作りかけは急がない。渡すと集まりの数だけ作りかけが同時に進み、1 コマが予算の何倍にもなる。
+    //   進まないコマが続かないのは、描き手がコマの頭（場面を描く前）に呼び、そのコマの予算を最初に決めるのが宣言の側だから（GL の preloadScene3d・WebGPU の Scenes.preload）。
     pub def prepareAhead(planner: Planner, cache: Cache[a], gen: Int64, g: Scene3d.StaticGroup, variant: String, coverage: Bool, scene: Scene3d.Scene3dCmd,
-                         steps: BuildSteps[a]): Bool \ IO =
+                         steps: BuildSteps[a]): Option[a] \ IO =
         let deadline = deadlineOf(cache, gen);
         let f = Scene3d.staticGroupFieldsOf(g);
         let items = unchecked_cast(f#items as Object);
         let held = Map.getWithDefault(f#name, Nil, Ref.get(cache#entries));
-        let over = isOverBudget(cache, gen, deadline);
         match List.find(e -> isSameGroup(f, e) and e#variant == variant and e#items.containsKey(items), held) {
             case Some(e) =>
                 Array.put(gen, 0, e#lastUsed);
-                true
-            case None if over => false
-            case None =>
-                let w = match sameWorkOf(cache, f, variant) {
-                    case Some(found) => found
-                    case None        => startWork(planner, cache, gen, g, variant, coverage, scene, steps#retire)
-                };
+                Some(e#payload)
+            case None => stepAhead(planner, cache, gen, g, variant, coverage, scene, steps, deadline)
+        }
+
+    /// prepareAhead の、控えに無い集まり g の作りかけ（無ければ始める）を deadline まで進める形。
+    def stepAhead(planner: Planner, cache: Cache[a], gen: Int64, g: Scene3d.StaticGroup, variant: String, coverage: Bool, scene: Scene3d.Scene3dCmd,
+                  steps: BuildSteps[a], deadline: Int64): Option[a] \ IO =
+        let f = Scene3d.staticGroupFieldsOf(g);
+        if (System.nanoTime() >= deadline) None
+        else {
+            let w = match sameWorkOf(cache, f, variant) {
+                case Some(work) => work
+                case None       => startWork(planner, cache, gen, g, variant, coverage, scene, steps#retire)
+            };
+            if (not hasRoomFor(w#build, deadline)) None
+            else {
                 Array.put(gen, 0, w#lastStep);
-                match stepBuild(planner, steps, w#build, deadlineWithMinimum(cache, gen, deadline)) {
+                match stepBuild(planner, steps, w#build, deadline) {
                     case Some(made) =>
                         removeWork(cache, f#name, variant);
-                        discard insertEntry(planner, cache, gen, f, variant, made, steps#retire);
-                        true
-                    case None => false
+                        Some(insertEntry(planner, cache, gen, f, variant, made, steps#retire))
+                    case None => None
                 }
+            }
         }
 
     /// g の作りかけを始めて控える（同じ名前・variant の別の作りかけは捨てる）。
@@ -409,10 +444,6 @@ mod Render3d.StaticRows {
         let w = { items = key, removed = f#removed, tint = f#tint, variant = variant, build = startBuild(planner, coverage, scene, g), lastStep = Array#{gen} @ Static };
         Ref.put(Map.insert(f#name, w :: Map.getWithDefault(f#name, Nil, Ref.get(cache#works)), Ref.get(cache#works)), cache#works);
         w
-
-    /// gen のコマの予算を使い切り、予算切れの後の最低の時間も渡した後か。
-    def isOverBudget(cache: Cache[a], gen: Int64, deadline: Int64): Bool \ IO =
-        Array.get(2, cache#budget) == gen and System.nanoTime() >= deadline
 
     /// g をこのコマで全部作って控えに入れた物。
     def buildNow(planner: Planner, cache: Cache[a], gen: Int64, g: Scene3d.StaticGroup, variant: String, coverage: Bool, scene: Scene3d.Scene3dCmd,
@@ -507,13 +538,26 @@ mod Render3d.StaticRows {
         let live = (name: String) -> Map.memberOf(name, Ref.get(cache#entries)) or Map.memberOf(name, Ref.get(cache#works));
         Ref.put(Ref.get(cache#remakes) |> Map.filterWithKey((k, _) -> live(fst(k))), cache#remakes)
 
-    /// 控えの物と作りかけを全部 retire へ渡して外す（持ち越した行の形か絵の番号を置き場が捨てた時・描き手を手放す時）。
+    /// 控えの物と作りかけを全部 retire へ渡して外す（材質の番号が替わった時・描き手を手放す時）。
     pub def clear(cache: Cache[a], retire: a -> Unit \ ef): Unit \ ef + IO =
         Map.forEach((_, es) -> List.forEach(e -> retire(e#payload), es), Ref.get(cache#entries));
         Ref.put(Map.empty(), cache#entries);
         Map.forEach((_, ws) -> List.forEach(w -> Ref.get(w#build#made) |> Option.forEach(retire), ws), Ref.get(cache#works));
         Ref.put(Map.empty(), cache#works);
         Ref.put(Map.empty(), cache#remakes)
+
+    /// 控えの物と、置いた後の作りかけ（上げる段）のうち、置いた物の isBroken が真の物を retire へ渡して外す（置き場が形か絵を捨てた時。isBroken = 捨てた番号を行が持つ）。
+    /// 置く前の作りかけは残す（行と番号は Place で振るので、捨てた番号を持たない）。
+    // WhyNot: 置き場が何か捨てたら控えと作りかけを全部外す、としない — 上限を超えたゲームでは関わりの無い絵が数コマごとに捨てられ、そのたびに描いている集まりと宣言の集まりを全部作り直す。
+    // WhyNot: 始め直しの数（remakes）を消さない — 数は値が替わり続ける集まりを 1 コマで作る道へ移すための物で、置き場の都合で外した作りかけは値が替わったのではない。
+    pub def clearWhere(cache: Cache[a], isBroken: a -> Bool \ ef, retire: a -> Unit \ ef): Unit \ ef + IO =
+        let split = Ref.get(cache#entries) |> Map.map(List.partition(e -> isBroken(e#payload)));
+        Map.forEach((_, parts) -> List.forEach(e -> retire(e#payload), fst(parts)), split);
+        Ref.put(split |> Map.map(snd) |> Map.filter(es -> not List.isEmpty(es)), cache#entries);
+        let isBrokenWork = (w: Work[a]) -> Ref.get(w#build#made) |> Option.exists(isBroken);
+        let works = Ref.get(cache#works) |> Map.map(List.partition(isBrokenWork));
+        Map.forEach((_, parts) -> List.forEach(w -> Ref.get(w#build#made) |> Option.forEach(retire), fst(parts)), works);
+        Ref.put(works |> Map.map(snd) |> Map.filter(ws -> not List.isEmpty(ws)), cache#works)
 
     /// 控えにある集まりの物の数。
     pub def sizeOf(cache: Cache[a]): Int32 \ IO = Map.foldLeft((n, es) -> n + List.length(es), 0, Ref.get(cache#entries))

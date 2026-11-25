@@ -33,9 +33,12 @@ mod Render3d.GlStatic {
         scene#groups |> List.map(g -> drawOf(gl, state, gen, tables, coverage, scene, variant, g))
 
     /// 先に上げる宣言の集まり g を、場面 scene の行で描かずに作る（作り終えていれば真）。coverage は carriedOf と同じ。
+    /// 作り終えた集まりの形は今のコマで使った物にする（描かない間も置き場の上限で捨てない）。
     pub def prepareAhead(gl: GlContext, state: State, gen: Int64, tables: Render3d.SceneList.Tables, coverage: Bool, scene: Scene3d.Scene3dCmd,
                          g: Scene3d.StaticGroup): Bool \ IO =
-        StaticRows.prepareAhead(state#planner, state#statics#cache, gen, g, StaticRows.carriedKeyOf(coverage, scene), coverage, scene, stepsOf(gl, state, gen, tables))
+        let made = StaticRows.prepareAhead(state#planner, state#statics#cache, gen, g, StaticRows.carriedKeyOf(coverage, scene), coverage, scene, stepsOf(gl, state, gen, tables));
+        made |> Option.forEach(c -> Render3d.MeshTable.touchSlots(c#rows#meshSlots, gen));
+        Option.nonEmpty(made)
 
     /// 集まり g の持ち越した物と、このコマの材質の表。表の番号が作った時と違えば（組み直した材質がある）控えを全部捨てて作り直す。
     def drawOf(gl: GlContext, state: State, gen: Int64, tables: Render3d.SceneList.Tables, coverage: Bool, scene: Scene3d.Scene3dCmd,
@@ -105,10 +108,11 @@ mod Render3d.GlStatic {
     pub def setTime(time: Float64, carried: List[CarriedDraw]): Unit \ IO =
         carried |> List.forEach(c -> discard StaticRows.setTime(c#carried#rows, time))
 
-    /// 画面のコマの終わりに呼ぶ。evicted = 形の置き場がこのコマに形を捨てた（持ち越した行の形の番号が別の物を指しうるので全部を作り直す）。
-    /// そうでなければ、しばらく描かなかった集まりを手放す。手放したテクスチャはここで消す。
-    pub def endFrame(gl: GlContext, st: StaticCache, gen: Int64, evicted: Bool): Unit \ IO =
-        if (evicted) StaticRows.clear(st#cache, retire(st)) else StaticRows.sweep(st#cache, gen, idleFrames(), retire(st));
+    /// 画面のコマの終わりに呼ぶ。droppedMeshes = 形の置き場がこのコマに捨てて、使い回しを待っている番号（捨てた物が無いコマは空）。
+    /// 空でなければ、その番号を行が持つ集まりを作り直す（番号が別の形を指しうる）。空なら、しばらく描かなかった集まりを手放す。手放したテクスチャはここで消す。
+    pub def endFrame(gl: GlContext, st: StaticCache, gen: Int64, droppedMeshes: Set[Int32]): Unit \ IO =
+        if (Set.isEmpty(droppedMeshes)) StaticRows.sweep(st#cache, gen, idleFrames(), retire(st))
+        else StaticRows.clearWhere(st#cache, c -> Vector.exists(s -> Set.memberOf(s#handle, droppedMeshes), c#rows#meshSlots), retire(st));
         Ref.get(st#retired) |> List.forEach(tex -> gl.deleteTexture(tex));
         Ref.put(Nil, st#retired)
 

@@ -14,14 +14,17 @@ mod Render3d.MeshTable {
         destroy = Int32 -> Unit \ IO
     }
 
-    /// 表。slots = 鍵 → 控え・free = 捨てた後に使い回す番号・next = まだ使っていない一番小さい番号（要素 1 つ）・vertexTotal = 作った形の頂点の合計（要素 1 つ）。
+    /// 表。slots = 鍵 → 控え・free = 捨てた後に使い回す番号・next = まだ使っていない一番小さい番号（要素 1 つ）・vertexTotal = 作った形の頂点の合計（要素 1 つ）・
+    /// dropped = 前に takeDropped を呼んでから捨てた番号。
     pub type alias Table = {
-        slots = Ref[Map[String, Slot], Static], free = Ref[List[Int32], Static], next = Array[Int32, Static], vertexTotal = Array[Int32, Static]
+        slots = Ref[Map[String, Slot], Static], free = Ref[List[Int32], Static], next = Array[Int32, Static], vertexTotal = Array[Int32, Static],
+        dropped = Ref[List[Int32], Static]
     }
 
     /// 空の表。
     pub def fresh(): Table \ IO =
-        { slots = Ref.fresh(Static, Map.empty()), free = Ref.fresh(Static, Nil), next = Array#{0} @ Static, vertexTotal = Array#{0} @ Static }
+        { slots = Ref.fresh(Static, Map.empty()), free = Ref.fresh(Static, Nil), next = Array#{0} @ Static, vertexTotal = Array#{0} @ Static,
+          dropped = Ref.fresh(Static, Nil) }
 
     /// 形 mesh の番号（無ければ振る。GPU には作らない）。どちらでも lastUsed を gen にする。
     pub def numberOf(table: Table, gen: Int64, mesh: Mesh3d.Mesh3d): Int32 \ IO = (slotOf(table, gen, mesh))#handle
@@ -64,6 +67,12 @@ mod Render3d.MeshTable {
             h
     }
 
+    /// 前に呼んでから捨てた番号（上限で捨てた形と、番号を振っただけで古くなった物）を返し、控えを空にする。画面のコマの終わりに 1 回呼ぶ。
+    pub def takeDropped(table: Table): Set[Int32] \ IO =
+        let dropped = List.toSet(Ref.get(table#dropped));
+        Ref.put(Nil, table#dropped);
+        dropped
+
     /// 作った形の頂点の合計。
     pub def vertexTotalOf(table: Table): Int32 \ IO = Array.get(0, table#vertexTotal)
 
@@ -100,13 +109,15 @@ mod Render3d.MeshTable {
             allocator#destroy(s#handle);
             Array.put(Array.get(0, table#vertexTotal) - n, 0, table#vertexTotal)
         };
-        Ref.put(s#handle :: Ref.get(table#free), table#free)
+        Ref.put(s#handle :: Ref.get(table#free), table#free);
+        Ref.put(s#handle :: Ref.get(table#dropped), table#dropped)
 
     /// 表の形を全部捨てる。
     pub def release(table: Table, allocator: MeshAllocator): Unit \ IO =
         Ref.get(table#slots) |> Map.forEach((_, s) -> if (Array.get(0, s#vertexCount) >= 0) allocator#destroy(s#handle) else ());
         Ref.put(Map.empty(), table#slots);
         Ref.put(Nil, table#free);
+        Ref.put(Nil, table#dropped);
         Array.put(0, 0, table#next);
         Array.put(0, 0, table#vertexTotal)
 }

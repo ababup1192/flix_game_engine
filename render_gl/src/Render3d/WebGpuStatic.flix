@@ -14,13 +14,14 @@ mod Render3d.WebGpuStatic {
     import fge.webgpu.TextureFormat
     import fge.webgpu.WebGpu
     import java.lang.Object
+    import java.lang.System
     import java.util.Objects
     import java.nio.ByteBuffer
     import java.nio.ByteOrder
     use Render3d.{TextureSource}
     use Render3d.MeshTable
     use Render3d.ScenePlan.{Planner}
-    use Render3d.SceneList.{SceneList, SceneRowKind, flagSameBinding, hasFlag, kindAt, rowCountOf, valuesAt}
+    use Render3d.SceneList.{SceneList, SceneRowKind, flagSameBinding, hasFlag, kindAt, readAt, readCountAt, rowCountOf, valuesAt}
     use Render3d.StaticRows
     use Render3d.StaticRows.{CarriedRows}
     use Render3d.WebGpuMaterials
@@ -28,10 +29,11 @@ mod Render3d.WebGpuStatic {
 
     /// 持ち越した集まり 1 つを GPU に置いた物。rows = 前半の行・programs = 行の欄 1 が引く材質の program・instances = 1 体ごとの値の buffer（頭から）・
     /// values = 材質の値の buffer（rows#list#values を頭から）・textureRows = 毎コマ材質の絵を使った物にする行（値を分け合わない材質の行）・
-    /// bundles = 積んだ bundle（鍵 = 描き先・形式・標本・pass の字）・litCounts と shadowCounts = 色の pass の行と影の地図の行の診断の数（作った時に 1 回数える）。
+    /// bundles = 積んだ bundle（鍵 = 描き先・形式・標本・pass の字）・litCounts と shadowCounts = 色の pass の行と影の地図の行の診断の数（作った時に 1 回数える）・
+    /// textureHandles = 行が読む材質の絵の表の番号（作った時に 1 回集める）。
     pub type alias Carried = {
         rows = CarriedRows, programs = Vector[Option[WebGpuMaterials.Program]], instances = Buffer, values = Buffer, textureRows = Vector[Int32],
-        bundles = Ref[Map[String, Bundle], Static], litCounts = RowCounts, shadowCounts = RowCounts
+        bundles = Ref[Map[String, Bundle], Static], litCounts = RowCounts, shadowCounts = RowCounts, textureHandles = Set[Int32]
     }
 
     /// 行の診断の数。counts = Render3d.Counts の入れ物と同じ並びの足す数・drawn = 描く物の数。
@@ -74,8 +76,18 @@ mod Render3d.WebGpuStatic {
         scene#groups |> List.map(g -> StaticRows.ensure(b#planner, st#cache, b#tables#gen, g, variant, false, scene, steps))
 
     /// 先に上げる宣言の集まり g を、場面 scene の行で描かずに作る（作り終えていれば真）。
+    /// 作り終えた集まりの形と材質の絵は今のコマで使った物にする（描かない間も置き場の上限で捨てない）。
+    // WhyNot: 絵を先に上げた物（Preloaded の textures）として後回しにするだけにしない — 宣言の物だけで上限を超えると結局捨て、捨てた絵の番号を持つ集まりを作り直す（endFrame）。
+    //   作り直した集まりがまた絵を作って上限を超え、作り終えた後も数コマごとに作り直しが続く。
     pub def prepareAhead(st: StaticCache, b: Builder, scene: Scene3d.Scene3dCmd, g: Scene3d.StaticGroup): Bool \ IO =
-        StaticRows.prepareAhead(b#planner, st#cache, b#tables#gen, g, StaticRows.carriedKeyOf(false, scene), false, scene, stepsOf(st, b, scene))
+        let made = StaticRows.prepareAhead(b#planner, st#cache, b#tables#gen, g, StaticRows.carriedKeyOf(false, scene), false, scene, stepsOf(st, b, scene));
+        made |> Option.forEach(keep(b, b#tables#gen));
+        Option.nonEmpty(made)
+
+    /// 持ち越した物 c の形と材質の絵を、作り直さずにコマ gen で使った物にする。
+    def keep(b: Builder, gen: Int64, c: Carried): Unit \ IO =
+        MeshTable.touchSlots(c#rows#meshSlots, gen);
+        Render3d.TextureTable3d.touchHandles(WebGpuMaterials.texturesOf(b#materials), gen, c#textureHandles)
 
     /// 集まりを作る仕事（StaticRows.BuildSteps）: 形を作る・材質の program を組む・行を置く・材質の絵を 1 枚ずつ上げる。
     def stepsOf(st: StaticCache, b: Builder, scene: Scene3d.Scene3dCmd): StaticRows.BuildSteps[Carried] \ IO =
@@ -86,12 +98,21 @@ mod Render3d.WebGpuStatic {
             WebGpuMaterials.ordersOf(found)
         };
         let source = lazy b#sourceOf(scene);
+        let kept = Ref.fresh(Static, Set.empty());
+        // WhyNot: 上げ終えた絵を上げる段の間に古いままにしない — 置き場の上限を超えたゲームでは 2 コマ後に捨てられ、その番号を持つ作りかけを外して始め直し、上げる段が数コマかかる集まりは作り終わらない。
+        let keepOnce = (c: Carried) -> {
+            let id = System.identityHashCode(c#instances);
+            if (Set.memberOf(id, Ref.get(kept))) () else { Ref.put(Set.insert(id, Ref.get(kept)), kept); keep(b, b#tables#gen, c) }
+        };
         { tables = b#tables, resolve = resolve,
           prepareMesh = mesh -> discard MeshTable.ensure(b#tables#meshes, b#allocator, b#tables#gen, mesh),
           prepareMaterial = request -> discard WebGpuMaterials.programsFor(b#materials, b#noteBuild, Vector#{request}),
           place = rows -> placeCarried(b, Ref.get(programs), rows),
           uploadCount = c -> Vector.length(c#textureRows),
-          uploadAt = (c, k) -> WebGpuMaterials.uploadTexturesAt(b#materials, force source, b#registered, b#tables#gen, c#rows#list, Vector#{Vector.get(k, c#textureRows)}),
+          uploadAt = (c, k) -> {
+              keepOnce(c);
+              WebGpuMaterials.uploadTexturesAt(b#materials, force source, b#registered, b#tables#gen, c#rows#list, Vector#{Vector.get(k, c#textureRows)})
+          },
           retire = retire(st) }
 
     /// 作った行 rows を GPU に置く（形を作り、1 体ごとの値と材質の値の buffer を作って書く）。programs = 行の欄 1 が引く材質の program。
@@ -103,7 +124,16 @@ mod Render3d.WebGpuStatic {
                                            Int32.bitwiseOr(BufferUsage.VERTEX, BufferUsage.COPY_DST));
         if (instanceBytes > 0) b#gpu.writeBuffer(instances, 0i64, rows#instances, 0, instanceBytes) else ();
         { rows = rows, programs = programs, instances = instances, values = WebGpuMaterials.createValuesOf(b#materials, "fge scene3d static values", rows#list#values),
-          textureRows = ownBindingRows(rows#list), bundles = Ref.fresh(Static, Map.empty()), litCounts = rowCountsOf(rows#list), shadowCounts = rowCountsOf(rows#shadowList) }
+          textureRows = ownBindingRows(rows#list), bundles = Ref.fresh(Static, Map.empty()), litCounts = rowCountsOf(rows#list), shadowCounts = rowCountsOf(rows#shadowList),
+          textureHandles = Set.union(textureHandlesOf(rows#list), textureHandlesOf(rows#shadowList)) }
+
+    /// 行の並び list の材質の絵の表の番号（絵の組の欄 0・無い絵の -1 は除く）。
+    def textureHandlesOf(list: SceneList): Set[Int32] \ IO =
+        Vector.range(0, rowCountOf(list)) |> Vector.foldLeft((acc, row) ->
+            Vector.range(0, readCountAt(list, row)) |> Vector.foldLeft((held, k) -> {
+                let handle = readAt(list, row, k, 0);
+                if (handle >= 0) Set.insert(handle, held) else held
+            }, acc), Set.empty())
 
     /// 値を前の行と分け合わない材質の行（材質の絵を作り、使った物にする行）。
     def ownBindingRows(list: SceneList): Vector[Int32] \ IO =
@@ -169,6 +199,8 @@ mod Render3d.WebGpuStatic {
     pub def stage(gpu: WebGpu, materials: WebGpuMaterials.Materials, source: TextureSource, registered: WebGpuMaterials.Registered, gen: Int64, time: Float64, c: Carried): Unit \ IO =
         MeshTable.touchSlots(c#rows#meshSlots, gen);
         WebGpuMaterials.uploadTexturesAt(materials, source, registered, gen, c#rows#list, c#textureRows);
+        // WhyNot: 上げた絵（textureRows）だけを使った物にして済ませない — 影の地図の行が読む絵の番号も持ち越していて、古いまま捨てられるとその集まりを作り直す（endFrame）。
+        Render3d.TextureTable3d.touchHandles(WebGpuMaterials.texturesOf(materials), gen, c#textureHandles);
         if (StaticRows.setTime(c#rows, time)) {
             let one = ByteBuffer.allocateDirect(4).order(ByteOrder.LITTLE_ENDIAN);
             discard one.putFloat(0, RenderUtil.f32(time));
@@ -185,15 +217,23 @@ mod Render3d.WebGpuStatic {
         Ref.get(st#retired) |> List.forEach(f -> f());
         Ref.put(Nil, st#retired)
 
-    /// 画面のコマを締めて submit した後に呼ぶ。evicted = 形か材質の絵の置き場がこのコマに何かを捨てた（持ち越した行の番号が別の物を指しうるので全部を作り直す）。
-    /// そうでなければ、しばらく描かなかった集まりと bundle を手放す。手放す物はここで手放す（このコマの pass は submit 済み）。
-    pub def endFrame(st: StaticCache, gen: Int64, evicted: Bool): Unit \ IO =
-        if (evicted) StaticRows.clear(st#cache, retire(st))
+    /// 置き場が前のコマの終わりから今までに捨てた番号（takeDropped）。meshes = 形・textures = 材質の絵（どちらも捨てた物が無いコマは空）。
+    pub type alias Dropped = { meshes = Set[Int32], textures = Set[Int32] }
+
+    /// 画面のコマを締めて submit した後に呼ぶ。dropped が空でなければ（形か材質の絵の置き場がこのコマに何かを捨てた）、その番号を行が持つ集まりを
+    /// 作り直す（番号が別の物を指しうる）。空なら、しばらく描かなかった集まりと bundle を手放す。手放す物はここで手放す（このコマの pass は submit 済み）。
+    pub def endFrame(st: StaticCache, gen: Int64, dropped: Dropped): Unit \ IO =
+        if (not Set.isEmpty(dropped#meshes) or not Set.isEmpty(dropped#textures)) StaticRows.clearWhere(st#cache, readsAnyOf(dropped), retire(st))
         else {
             StaticRows.sweep(st#cache, gen, idleFrames(), retire(st));
             StaticRows.forEachHeld(sweepBundles(st, gen, idleFrames()), st#cache)
         };
         releaseRetired(st)
+
+    /// 持ち越した物 c の行が dropped の番号（形か絵）を持つか。
+    def readsAnyOf(dropped: Dropped): Carried -> Bool \ IO = c ->
+        Vector.exists(s -> Set.memberOf(s#handle, dropped#meshes), c#rows#meshSlots) or
+        not Set.isEmpty(Set.intersection(dropped#textures, c#textureHandles))
 
     /// 全部を手放す（描き手を手放す時。encoder は submit 済み）。
     pub def release(st: StaticCache): Unit \ IO =

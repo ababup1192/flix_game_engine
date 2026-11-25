@@ -328,6 +328,73 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
         layout.release();
         found
 
+    /// 絵 1 枚ずつの材質の三角の集まり 4 つ（名前 f1〜f4）と、その絵を載せた場面（集まりは載せない）。
+    def texturedGroups(): (List[Scene3d.StaticGroup], Scene3d.Scene3dCmd) =
+        let texs = List.range(1, 5) |> List.map(k -> match Texture3d.fromArgb(4, 4, Vector.range(0, 16) |> Vector.map(i -> i * k)) {
+            case Ok(t)  => t
+            case Err(e) => bug!(e)
+        });
+        let groups = texs |> List.mapWithIndex((k, tex) -> {
+            let inst = Scene3d.meshInstance(Mesh3d.withBoxUvs(1.0, Render3d.FakeGl.plainTriangle()), Mat4.translate(Vec3.v3(Int32.toFloat64(k), 0.0, 10.0)))
+                |> Scene3d.withMaterial(Scene3d.texturedMaterial(Texture3d.name(tex), ShaderDoc.FilterMode.Linear));
+            Scene3d.staticGroup("f${k + 1}", ("a", inst) :: Nil)
+        });
+        (groups, { textures = texs | Scene3d.scene(camera(), { x = 64.0, y = 64.0 }) })
+
+    /// 宣言の集まり 4 つを作り終えた後は、絵の置き場の上限（2 枚）が集まりの絵（4 枚）より小さくても、どの集まりも読まない絵を置き場が捨てても、
+    /// 同じ key で回すコマで集まりを作り直さない（進み具合も済んだまま）。
+    @Test
+    def testPreloadKeepsGroupsWhenTheirTexturesExceedTheBudget(): Unit \ {Assert, IO} =
+        match WebGpuDevice.runDawn(() -> WebGpuDevice.requestDevice()) {
+            case Err(why) =>
+                if (isSkippable(why)) {
+                    println("[scene3d-dawn] SKIP: Dawn で開かない（${why}）");
+                    Assert.assertEq(expected = 0, 0)
+                } else
+                    Assert.assertEq(expected = "Dawn の device が開ける", why)
+            case Ok(gpu) =>
+                let found = rebuildsAfterSettling(gpu);
+                gpu.destroy();
+                Assert.assertEq(expected = (true, 0, 0, 0), found)
+        }
+
+    /// (済んだ後のコマが 30 を超えるか, 済んだ後に 4 / 4 でなかったコマの数, 済んだ後に控えの集まりが替わったコマの数, Dawn の誤りの数)。宣言を 60 コマ回す。
+    def rebuildsAfterSettling(gpu: WebGpu): (Bool, Int32, Int32, Int32) \ IO =
+        let layout = pasteLayout(gpu);
+        let renderer = Render3d.WebGpuRenderer.create(gpu, layout, imageLayout(gpu));
+        let RendererData.RendererData(s) = renderer;
+        let host = quietHost(gpu);
+        let (groups, scene) = texturedGroups();
+        let cmd = { groups = () -> groups, scenes = () -> scene :: Nil | Scene3d.preloadCmd("k", () -> Nil) };
+        let frames = List.range(0, 60) |> List.map(i -> {
+            if (i == 0 or i == 20) addUnusedTexture(gpu, renderer) else ();
+            let p = Render3d.WebGpuRenderer.preload(renderer, host, cmd);
+            discard stderrOf(() -> endFrameWithin(renderer, { vertices = 100000, textures = { count = 2, size = 1048576i64 } }));
+            (p#done, heldIdentities(s#statics))
+        }) |> List.dropWhile(f -> fst(f) < 4);
+        let changed = List.zip(frames, List.drop(1, frames)) |> List.count(pair -> snd(fst(pair)) != snd(snd(pair)));
+        let found = (List.length(frames) > 30, List.count(f -> fst(f) != 4, frames), changed, gpu.errorCount());
+        Render3d.WebGpuRenderer.release(renderer);
+        layout.release();
+        found
+
+    /// どの集まりも読まない 2 × 2 の絵を今の世代で置き場に作る（次のコマから使わないので、上限を超えた endFrame が捨てる）。
+    def addUnusedTexture(gpu: WebGpu, renderer: Render3d.WebGpuRenderer.Renderer): Unit \ IO =
+        let RendererData.RendererData(s) = renderer;
+        let small = match Texture3d.fromArgb(2, 2, Vector#{-1, -1, -1, -1}) {
+            case Ok(t)  => t
+            case Err(e) => bug!(e)
+        };
+        discard Render3d.WebGpuMaterials.ensureEnvironmentTexture(s#materials, { textureOf = _ -> checked_ecast(None), own = Map#{Texture3d.name(small) => small} },
+                                                                   { textureById = _ -> checked_ecast(None), encoding = { encoder = () -> gpu.createCommandEncoder("unused"), notePass = () -> checked_ecast(()) }, noteCopy = () -> checked_ecast(()) },
+                                                                   Array.get(0, s#gen), Texture3d.name(small))
+
+    /// 控えにある集まりの物の 1 体ごとの値の buffer の参照の番号（作り直すと替わる）。
+    def heldIdentities(st: Render3d.WebGpuStatic.StaticCache): Set[Int32] \ IO =
+        let out = Ref.fresh(Static, Set.empty());
+        Render3d.StaticRows.forEachHeld(c -> Ref.put(Set.insert(System.identityHashCode(c#instances), Ref.get(out)), out), st#cache);
+        Ref.get(out)
+
     /// f を流す間に標準エラーへ出た字（知らせを数える・テストの走り手は標準エラーに出たテストを落とす）。
     def stderrOf(f: Unit -> Unit \ IO): String \ IO =
         let saved = System.err;

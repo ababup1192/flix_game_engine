@@ -6,6 +6,8 @@ mod Render3d.TestStaticRows {
     use Render3d.StaticRows.{BuildSteps, CarriedRows, build, buildingCountOf, carriedKeyOf, ensure, freshCache, isCarriedItem, perFrameOf, setTime, sizeOf,
                              startBuild, stepBuild, sweep}
 
+    import fge.gl.GlContext
+    import java.lang.System
     import java.lang.Thread
 
     def noRegistered(_name: String): Option[Scene3dRenderer.RegisteredTexture] \ IO = checked_ecast(None)
@@ -200,17 +202,64 @@ mod Render3d.TestStaticRows {
         discard ensure(planner, cache, 2i64, next, "color", false, sceneOf(Nil), steps);
         Assert.assertEq(expected = (1 :: Nil, 2), (Ref.get(retired), sizeOf(cache)))
 
+    /// clearWhere は、isBroken が真の控えの物だけを手放して外し、ほかの控えの物は残す。
+    @Test
+    def testClearWhereKeepsUnbrokenEntries(): Unit \ {Assert, IO} =
+        let retired = Ref.fresh(Static, Nil);
+        let retire = (p: Int32) -> Ref.put(p :: Ref.get(retired), retired);
+        let steps = countingSteps(Ref.fresh(Static, 0), retire, 0i64);
+        let planner = freshPlanner(Render3d.DrawMode.Instanced);
+        let cache = freshCache();
+        discard List.map(name -> ensureWith(planner, cache, 1i64, boxes(name), steps), "a" :: "b" :: "c" :: Nil);
+        Render3d.StaticRows.clearWhere(cache, p -> p == 2, retire);
+        Assert.assertEq(expected = (2 :: Nil, 2), (Ref.get(retired), sizeOf(cache)))
+
+    /// clearWhere は、まだ置いていない作りかけ（番号を持たない）を残す。
+    @Test
+    def testClearWhereKeepsWorkBeforePlace(): Unit \ {Assert, IO} =
+        let planner = freshPlanner(Render3d.DrawMode.Instanced);
+        let steps = countingSteps(Ref.fresh(Static, 0), _ -> (), 4i64);
+        let cache = freshCache();
+        discard Render3d.StaticRows.prepareAhead(planner, cache, 1i64, boxes("a"), "", false, sceneOf(Nil), steps);
+        Render3d.StaticRows.clearWhere(cache, _ -> true, _ -> ());
+        Assert.assertEq(expected = 1, buildingCountOf(cache))
+
+    /// 予算の残りが半分に満たない時は、頂点の多い形を作る仕事を次のコマへ回す（頂点の少ない形は作る）。
+    @Test
+    def testHeavyMeshWaitsForTheNextFrameWhenLittleIsLeft(): Unit \ {Assert, IO} =
+        let planner = freshPlanner(Render3d.DrawMode.Instanced);
+        let made = Ref.fresh(Static, 0);
+        let steps = { prepareMesh = (_: Mesh3d.Mesh3d) -> Ref.put(Ref.get(made) + 1, made) | countingSteps(Ref.fresh(Static, 0), _ -> (), 0i64) };
+        let big = Scene3d.meshInstance(Mesh3d.withBoxUvs(1.0, gridMesh(50)), Mat4.identity());
+        let g = Scene3d.staticGroup("g", ("small", boxAt(1.0)) :: ("big", big) :: Nil);
+        let b = startBuild(planner, false, sceneOf(Nil), g);
+        discard stepBuild(planner, steps, b, System.nanoTime() + 2000000i64);
+        Assert.assertEq(expected = 1, Ref.get(made))
+
+    /// 1 辺 n 個の四角を並べた形（頂点 4 × n × n）。
+    def gridMesh(n: Int32): Mesh3d.Mesh3d =
+        let quad = (x: Int32, y: Int32) -> {
+            let (fx, fy) = (Int32.toFloat64(x), Int32.toFloat64(y));
+            { points = Vec3.v3(fx, fy, 0.0) :: Vec3.v3(fx + 1.0, fy, 0.0) :: Vec3.v3(fx + 1.0, fy + 1.0, 0.0) :: Vec3.v3(fx, fy + 1.0, 0.0) :: Nil, color = { r = 1.0, g = 1.0, b = 1.0 } }
+        };
+        Mesh3d.fromPolygons(List.range(0, n) |> List.flatMap(x -> List.range(0, n) |> List.map(y -> quad(x, y))))
+
     /// 置き終えて絵を上げている途中の作りかけも、clear が置いた物を 1 回だけ手放して外す。
     @Test
     def testClearRetiresPlacedWork(): Unit \ {Assert, IO} =
         let retired = Ref.fresh(Static, Nil);
         let retire = (p: Int32) -> Ref.put(p :: Ref.get(retired), retired);
-        let steps = { uploadCount = _ -> 1, uploadAt = (_, _) -> Thread.sleep(20i64) | countingSteps(Ref.fresh(Static, 0), retire, 0i64) };
+        let builds = Ref.fresh(Static, 0);
+        let quick = countingSteps(builds, retire, 0i64);
+        let slow = { uploadCount = _ -> 1000, uploadAt = (_, _) -> Thread.sleep(5i64) | quick };
+        let planner = freshPlanner(Render3d.DrawMode.Instanced);
         let cache = freshCache();
-        let shown = answersOver(steps, cache, (1i64, town()) :: (2i64, town()) :: Nil);
+        discard ensureWith(planner, cache, 1i64, town(), quick);
+        let second = town();
+        List.range(2, 40) |> List.forEach(gen -> if (Ref.get(builds) < 2) discard ensureWith(planner, cache, Int32.toInt64(gen), second, slow) else ());
         let building = buildingCountOf(cache);
         Render3d.StaticRows.clear(cache, retire);
-        Assert.assertEq(expected = (1 :: 1 :: Nil, 1, Set#{1, 2}, 2, 0), (shown, building, List.toSet(Ref.get(retired)), List.length(Ref.get(retired)), buildingCountOf(cache)))
+        Assert.assertEq(expected = (1, Set#{1, 2}, 2, 0), (building, List.toSet(Ref.get(retired)), List.length(Ref.get(retired)), buildingCountOf(cache)))
 
     /// 長く進めなかった作りかけは sweep が外す。
     @Test
@@ -410,7 +459,7 @@ mod Render3d.TestStaticRows {
         let steps = countingSteps(builds, _ -> (), 4i64);
         let cache = freshCache();
         let g = town();
-        let readyAt = List.range(1, 10) |> List.map(gen -> Render3d.StaticRows.prepareAhead(planner, cache, Int32.toInt64(gen), g, "", false, sceneOf(Nil), steps));
+        let readyAt = List.range(1, 10) |> List.map(gen -> Option.nonEmpty(Render3d.StaticRows.prepareAhead(planner, cache, Int32.toInt64(gen), g, "", false, sceneOf(Nil), steps)));
         let drawn = ensureWith(planner, cache, 20i64, g, steps);
         Assert.assertEq(expected = (false, true, 1, 1), (List.head(readyAt) |> Option.getWithDefault(true), List.last(readyAt) |> Option.getWithDefault(false), drawn, Ref.get(builds)))
 
@@ -422,7 +471,7 @@ mod Render3d.TestStaticRows {
         let steps = { prepareMesh = (_: Mesh3d.Mesh3d) -> { Thread.sleep(4i64); Ref.put(Ref.get(meshes) + 1, meshes) } | countingSteps(Ref.fresh(Static, 0), _ -> (), 0i64) };
         let cache = freshCache();
         let g = town();
-        let ready = Render3d.StaticRows.prepareAhead(planner, cache, 1i64, g, "", false, sceneOf(Nil), steps);
+        let ready = Option.nonEmpty(Render3d.StaticRows.prepareAhead(planner, cache, 1i64, g, "", false, sceneOf(Nil), steps));
         discard ensureWith(planner, cache, 2i64, g, steps);
         Assert.assertEq(expected = (false, 3, 0), (ready, Ref.get(meshes), buildingCountOf(cache)))
 
@@ -434,28 +483,43 @@ mod Render3d.TestStaticRows {
         let state = freshState();
         let g = town();
         let cmd = { groups = () -> g :: Nil, scenes = () -> sceneOf(Nil) :: Nil | Scene3d.preloadCmd("k", () -> Nil) };
-        let progress = Render3d.Preload.preload(gl, state, 1i64, noRegistered, cmd);
+        let progress = preloadUntilDone(gl, state, cmd);
         let uploadedAhead = timesCalled("texSubImageRgba32f", log);
         paint(gl, state, cmdOf({ groups = g :: Nil | sceneOf(Nil) }) :: Nil);
         Assert.assertEq(expected = ((1, 1), 1, 1), ((progress#done, progress#total), uploadedAhead, timesCalled("texSubImageRgba32f", log)))
 
-    /// 予算を使い切り、最低の時間もほかの作りかけに渡した後のコマは、宣言の集まりの作りかけを始めない。
+    /// 予算を使い切った後のコマは、ほかの宣言の集まりの作りかけを始めない（最低の時間も渡さない）。
     @Test
     def testPrepareAheadWaitsWhenOverBudget(): Unit \ {Assert, IO} =
         let planner = freshPlanner(Render3d.DrawMode.Instanced);
         let steps = countingSteps(Ref.fresh(Static, 0), _ -> (), 4i64);
         let cache = freshCache();
-        let ahead = (name: String) -> Render3d.StaticRows.prepareAhead(planner, cache, 1i64, boxes(name), "", false, sceneOf(Nil), steps);
+        let ahead = (name: String) -> Option.nonEmpty(Render3d.StaticRows.prepareAhead(planner, cache, 1i64, boxes(name), "", false, sceneOf(Nil), steps));
         let answers = List.map(ahead, "a" :: "b" :: "c" :: Nil);
-        Assert.assertEq(expected = (false :: false :: false :: Nil, 2), (answers, buildingCountOf(cache)))
+        Assert.assertEq(expected = (false :: false :: false :: Nil, 1), (answers, buildingCountOf(cache)))
+
+    /// 予算の残りが半分に満たない時は、行を作って置く段（Place）を次のコマへ回す。
+    @Test
+    def testPlaceWaitsForTheNextFrameWhenLittleIsLeft(): Unit \ {Assert, IO} =
+        let planner = freshPlanner(Render3d.DrawMode.Instanced);
+        let builds = Ref.fresh(Static, 0);
+        let steps = countingSteps(builds, _ -> (), 0i64);
+        let b = startBuild(planner, false, sceneOf(Nil), town());
+        let made = stepBuild(planner, steps, b, System.nanoTime() + 2000000i64);
+        Assert.assertEq(expected = (None, 0), (made, Ref.get(builds)))
 
     /// GL の描き手は作り終えた宣言の集まりの形を、置き場の上限で捨てる候補から外す集合に入れる。
     @Test
     def testGlPreloadKeepsGroupMeshes(): Unit \ {Assert, IO} =
         let state = freshState();
         let cmd = { groups = () -> town() :: Nil, scenes = () -> sceneOf(Nil) :: Nil | Scene3d.preloadCmd("k", () -> Nil) };
-        discard Render3d.Preload.preload(recordingGl(freshRecorded()), state, 1i64, noRegistered, cmd);
+        discard preloadUntilDone(recordingGl(freshRecorded()), state, cmd);
         Assert.assertEq(expected = 3, Set.size(Ref.get(state#preloadRef)#meshes))
+
+    /// 宣言 cmd を世代 1 から済むまで（30 コマまで）上げ、最後の進み具合を返す（1 コマの予算は時計で決まるので、遅い機械では何コマかかかる）。
+    def preloadUntilDone(gl: GlContext, state: Render3d.State, cmd: Scene3d.PreloadCmd): Scene3d.PreloadProgress \ IO =
+        List.range(1, 31) |> List.foldLeft((last, gen) ->
+            if (Scene3d.isPreloaded(last) and last#total > 0) last else Render3d.Preload.preload(gl, state, Int32.toInt64(gen), noRegistered, cmd), { done = 0, total = 0 })
 
     /// 宣言の groups に同じ名前の集まりが 2 つあると、1 回知らせる。
     @Test
@@ -470,4 +534,30 @@ mod Render3d.TestStaticRows {
     def testNoGroupsIsAlreadyPreloaded(): Unit \ {Assert, IO} =
         let progress = Render3d.Preload.preload(recordingGl(freshRecorded()), freshState(), 1i64, noRegistered, Scene3d.preloadCmd("k", () -> Nil));
         Assert.assertEq(expected = (true, true), (Scene3d.isPreloaded(progress), Scene3d.isPreloaded((Scene3dRenderer.none()#preload)(1i64, noRegistered, Scene3d.preloadCmd("k", () -> Nil)))))
+
+    /// GL の描き手は、作り終えた宣言の集まりの形を、描かないコマでも今のコマで使った物にする（置き場の上限で古い物として捨てない）。
+    @Test
+    def testGlPreloadTouchesGroupMeshesEveryFrame(): Unit \ {Assert, IO} =
+        let gl = recordingGl(freshRecorded());
+        let state = freshState();
+        let cmd = { groups = () -> boxes("f1") :: Nil, scenes = () -> sceneOf(Nil) :: Nil | Scene3d.preloadCmd("k", () -> Nil) };
+        List.range(1, 40) |> List.forEach(gen -> {
+            discard Render3d.Preload.preload(gl, state, Int32.toInt64(gen), noRegistered, cmd);
+            Render3d.endFrame(gl, state, Int32.toInt64(gen))
+        });
+        let lastUsed = Render3d.MeshTable.createdOf(state#meshes) |> Map.valuesOf |> List.map(e -> { let (_, _, used) = e; used }) |> List.toSet;
+        Assert.assertEq(expected = Set#{39i64}, lastUsed)
+
+    /// GL のコマの終わりは、形の置き場が捨てた番号を行に持つ集まりだけを外し、ほかの集まりは残す。
+    @Test
+    def testGlEndFrameDropsOnlyGroupsReadingDroppedMeshes(): Unit \ {Assert, IO} =
+        let gl = recordingGl(freshRecorded());
+        let state = freshState();
+        let a = boxes("a");
+        let b = Scene3d.staticGroup("b", ("grid", Scene3d.meshInstance(gridMesh(2), Mat4.identity()) |> Scene3d.withMaterial(materialOf(0.3))) :: Nil);
+        paint(gl, state, cmdOf({ groups = a :: b :: Nil | sceneOf(Nil) }) :: Nil);
+        let firstMesh = Scene3d.groupInstancesOf(a) |> List.head |> Option.map(inst -> Scene3d.instanceFieldsOf(inst)#mesh);
+        let handle = firstMesh |> Option.map(m -> Render3d.MeshTable.numberOf(state#meshes, 1i64, m)) |> Option.getWithDefault(-1);
+        Render3d.GlStatic.endFrame(gl, state#statics, 1i64, Set#{handle});
+        Assert.assertEq(expected = 1, Render3d.GlStatic.sizeOf(state#statics))
 }

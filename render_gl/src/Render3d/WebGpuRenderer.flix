@@ -387,7 +387,7 @@ pub mod Render3d.WebGpuRenderer {
         Ref.put(usedGroups, s#sceneGroups);
         let victims = MeshTable.trim(s#meshes, meshAllocator(s#gpu, s#meshStore), gen, limits#vertices, preloaded#meshes);
         Render3d.warnDroppedMeshes(s#planner, victims, preloaded#meshes);
-        WebGpuStatic.endFrame(s#statics, gen, not List.isEmpty(droppedTextures) or not List.isEmpty(victims));
+        WebGpuStatic.endFrame(s#statics, gen, { meshes = MeshTable.takeDropped(s#meshes), textures = Render3d.TextureTable3d.takeDropped(WebGpuMaterials.texturesOf(s#materials)) });
         let dropped = List.length(victims);
         Render3d.Counts.count(s, Render3d.Counts.Counter.MeshEvictions, dropped);
         // WhyNot: 捨てる物が無いコマで知らせない — 今のコマで使う形だけで上限を超えていると、毎コマ同じ知らせが出る（GL の Render3d.trimToBudget と同じ）。
@@ -406,6 +406,7 @@ pub mod Render3d.WebGpuRenderer {
     /// 最後に上げた宣言と同じ key なら上げ直さず、cmd の中身も読まない）、宣言の集まりをこのコマの予算まで先に作って進み具合を返す。
     // WhyNot: pipeline を場面の描き先の形式ごとに作らない — 描き先の形式と標本は場面ごとに決まり、宣言の時には分からない（GL の coverageVersions と同じ）。
     //   画面へ直に描く場面の形だけを作り、ほかは初めて描くコマで作る。
+    // WhyNot: instances を集まりと同じ 1 コマの予算で分けて上げない — GL の Render3d.Preload.upload と同じ（候補分けと program の組みを途中で止められない）。
     pub def preload(r: Renderer, host: Host, cmd: Scene3d.PreloadCmd): Scene3d.PreloadProgress \ IO =
         let RendererData.RendererData(s) = r;
         let held = Ref.get(s#preloaded);
