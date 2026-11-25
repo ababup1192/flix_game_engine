@@ -13,8 +13,12 @@ mod TestBackgroundLoads {
         CastDoc.fromJson("{\"characters\":[{\"id\":\"g\",\"model\":\"girl_student\",\"node\":\"girl\",\"pos\":[0,0,4],\"yaw\":180}]}")
             |> Option.getWithDefault(CastDoc.defaults())
 
-    /// 1 階の建物の束（道は本物の束。偽の downloads が届いたと答えるだけで、このテストでは解かれない）。
+    /// 1 階の小物の束（建物は持たない。道は本物の束。偽の downloads が届いたと答えるだけで、見込みが高い間は解かれない）。
     def bundles(): List[Bundles.Entry] =
+        { key = "floor1", path = "assets/school/bundle/floor1.glb", floors = 1 :: Nil, buildings = Nil } :: Nil
+
+    /// 1 階の建物の束。
+    def buildingBundles(): List[Bundles.Entry] =
         { key = "floor1", path = "assets/school/bundle/floor1.glb", floors = 1 :: Nil, buildings = 1 :: Nil } :: Nil
 
     def personKey(): String = Bundles.personKey("girl_student")
@@ -65,5 +69,13 @@ mod TestBackgroundLoads {
         let (bundleGroup, modelGroup) = groups();
         let res = resOf(bundleGroup, modelGroup, bundleGroup#costMs, Nil);
         Assert.assertEq(expected = LoadProgress.DecodeBudget.Idle(45.0), Controls.decodeBudget(res, World.initial(res)))
+    } with Fs.FileRead.runWithIO
+
+    /// 立っている階の建物の束が届いて待っていれば、束の見込みが高くても遊んでいる最中の予算は Covered(1)（1 本だけすぐ解く）
+    @Test
+    def testWaitingBuildingIsStartedRegardlessOfEstimate(): Unit \ {Assert, IO} = run {
+        let (bundleGroup, modelGroup) = groups();
+        let res = { bundles = buildingBundles() | resOf(bundleGroup, modelGroup, 180.0, "floor1" :: Nil) };
+        Assert.assertEq(expected = LoadProgress.DecodeBudget.Covered(1.0), Controls.decodeBudget(res, World.initial(res)))
     } with Fs.FileRead.runWithIO
 }

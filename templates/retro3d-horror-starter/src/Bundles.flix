@@ -99,6 +99,10 @@ mod Bundles {
     pub def keysOnFloor(bundles: List[Entry], floor: Int32): List[String] =
         bundles |> List.filter(b -> List.memberOf(floor, b#floors)) |> List.map(b -> b#key)
 
+    /// 階 floor の建物の入った束の鍵。
+    pub def buildingKeysOf(bundles: List[Entry], floor: Int32): List[String] =
+        bundles |> List.filter(b -> List.memberOf(floor, b#buildings)) |> List.map(b -> b#key)
+
     /// 階 floor の建物の入った束の道（ブラウザ版はこの道が届くまでその階へ入らない）。
     pub def buildingPathsOf(bundles: List[Entry], floor: Int32): List[String] =
         bundles |> List.filter(b -> List.memberOf(floor, b#buildings)) |> List.map(b -> b#path)
