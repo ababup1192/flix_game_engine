@@ -243,8 +243,9 @@ pub mod Gltf {
     /// texturedMaterial の絵の読み方は sampler の magFilter（NEAREST なら Nearest・ほかは Linear）、wrapS か wrapT が CLAMP_TO_EDGE なら Clamp。
     /// 法線マップは baseColorTexture のある材質にだけ足す（strength = scale・既定 1）。読み飛ばした物の知らせも返す。
     /// alphaMode（材質のある物だけ）: BLEND → Scene3d.withAlphaBlend(true)・MASK → Scene3d.withCutout(true)（alphaCutoff は 0.5 の固定。
-    /// 0.5 でなければ 1 行知らせる）・OPAQUE → そのまま。doubleSided は当てない（Blender の書き出しは全部の材質を真にするので、
-    /// 両面で描く物はゲームが gltfMaterial を見て Scene3d.withDoubleSided を当てる）。
+    /// 0.5 でなければ 1 行知らせる）・OPAQUE → そのまま。doubleSided は材質のある物にそのまま当てる（Blender の書き出しは全部の材質を真にする。
+    /// 裏を描きたくない物は、ゲームが読んだ model#parts の material を Scene3d.withDoubleSided(false, ..) に替える）。
+    // WhyNot: 材質の無い物（頂点の色で描く）に当てるため材質を作らない — 材質を作ると batch の鍵と tint の掛け方が替わり、絵が変わる。
     def materialOf(glb: Glb, images: Vector[Option[Texture3d.Texture3d]], readPbr: Bool, index: Int32, material: Obj): MaterialBuild =
         let pbr = objectOf("pbrMetallicRoughness", material);
         let base = textureRefOf(glb, images, objectOf("baseColorTexture", pbr));
@@ -274,7 +275,7 @@ pub mod Gltf {
         let usesTexture = Option.nonEmpty(emission#texture);
         let usesMetalTexture = Option.nonEmpty(names#metallicRoughness);
         let info = gltfMaterialOf(names, material);
-        let withAlpha = (m: Option[Scene3d.Material3d]) -> m |> Option.map(withAlphaModeOf(info#alphaMode));
+        let withAlpha = (m: Option[Scene3d.Material3d]) -> m |> Option.map(withAlphaModeOf(info#alphaMode) >> Scene3d.withDoubleSided(info#doubleSided));
         let withUv = withAlpha(lit(emission#build) |> Option.map(withMetallicRoughnessOf(metal, true)));
         // WhyNot: 材質の無い（頂点の色で描く）物の alphaCutoff を知らせない — α を持たないので抜く所が無い。
         let cutoffLine = if (Option.isEmpty(withUv)) Nil else alphaCutoffLine(index, material, info);

@@ -200,14 +200,33 @@ mod TestGltf.Emissive {
         Assert.assertEq(expected = (Some((None, None)), false),
             (firstPart(m)#gltfMaterial |> Option.map(g -> (g#baseColorTexture, g#emissiveTexture)), Option.nonEmpty(firstPart(m)#material)))
 
-    /// loadTextured は alphaMode を材質に当てる: OPAQUE はそのまま・MASK は cutout・BLEND は半透明。doubleSided は当てない。
+    /// loadTextured は alphaMode を材質に当てる: OPAQUE はそのまま・MASK は cutout・BLEND は半透明。
     @Test
     def testAlphaModeShapesTheMaterial(): Unit \ {Assert, IO} =
         let flags = (rest: String) -> firstPart(read(glbWith(withBase(rest), true, red(), green(), linear())))#material
-            |> Option.map(mat -> { let f = Scene3d.materialFieldsOf(mat); (f#cutout, f#blend, f#doubleSided) });
-        Assert.assertEq(expected = Some((false, false, false)) :: Some((true, false, false)) :: Some((false, true, false)) :: Nil,
-            flags(",\"doubleSided\":true") :: flags(",\"alphaMode\":\"MASK\",\"doubleSided\":true")
-                :: flags(",\"alphaMode\":\"BLEND\",\"doubleSided\":true") :: Nil)
+            |> Option.map(mat -> { let f = Scene3d.materialFieldsOf(mat); (f#cutout, f#blend) });
+        Assert.assertEq(expected = Some((false, false)) :: Some((true, false)) :: Some((false, true)) :: Nil,
+            flags("") :: flags(",\"alphaMode\":\"MASK\"") :: flags(",\"alphaMode\":\"BLEND\"") :: Nil)
+
+    /// loadTextured は doubleSided を材質のある部品にそのまま当てる（真・書いていない・偽）。
+    @Test
+    def testDoubleSidedIsAppliedAsWritten(): Unit \ {Assert, IO} =
+        let sides = (rest: String) -> firstPart(read(glbWith(withBase(rest), true, red(), green(), linear())))#material
+            |> Option.map(mat -> Scene3d.materialFieldsOf(mat)#doubleSided);
+        Assert.assertEq(expected = Some(true) :: Some(false) :: Some(false) :: Nil,
+            sides(",\"doubleSided\":true") :: sides("") :: sides(",\"doubleSided\":false") :: Nil)
+
+    /// TEXCOORD_0 の無い形の材質（emissive の頂点の色の材質）にも doubleSided を当てる。
+    @Test
+    def testDoubleSidedIsAppliedWithoutUv(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = Some(true),
+            firstPart(read(glbWith(withoutBase(",\"emissiveFactor\":[1,1,1],\"doubleSided\":true"), false, red(), green(), linear())))#material
+                |> Option.map(mat -> Scene3d.materialFieldsOf(mat)#doubleSided))
+
+    /// 絵も emissive も無い材質の部品は doubleSided が真でも材質を作らない（頂点の色で描く片面のまま）。
+    @Test
+    def testDoubleSidedDoesNotMakeAMaterial(): Unit \ {Assert, IO} =
+        Assert.assertTrue(Option.isEmpty(firstPart(read(glbWith(withoutBase(",\"doubleSided\":true"), true, red(), green(), linear())))#material))
 
     /// MASK の alphaCutoff が 0.5 でなければ、材質を名指して 1 行知らせる（0.5 で抜く）。
     @Test

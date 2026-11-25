@@ -290,8 +290,8 @@ let byName = Model3d.nodesByName(collision);                     // たくさん
 - emission を差し替えた材質（点滅の mask を掛けるなど）は、名前を替えなくてよい。GL は材質のプログラムを spec と emission の中身の鍵
   （`ShaderGen.hashMaterial`・読む絵の名前は入れない）で引くので、名前が同じで木だけ違う材質が並んでも組み直さない。名前は知らせの文面と GL のプログラムの名前に
   出るだけ（替えるなら `Scene3d.withSpecName`）。毎コマ変わる数は木の `Const` に入れず、ShaderDoc の `param` + `Scene3d.withParams` で渡す（木の数が変わると組み直す）
-- 材質の情報（alphaMode・alphaCutoff・doubleSided・絵の名前・emissive の値）は `part#gltfMaterial`。alphaMode は材質に当たる
-  （下の「半透明と両面」）。Blender の書き出しは全部の材質を `doubleSided: true` にするので、両面で描きたい物はゲームが材質の名前で選ぶ
+- 材質の情報（alphaMode・alphaCutoff・doubleSided・絵の名前・emissive の値）は `part#gltfMaterial`。alphaMode と doubleSided は材質に当たる
+  （下の「半透明と両面」）。Blender の書き出しは全部の材質を `doubleSided: true` にするので、片面で描きたい物（壁越しに部屋の中を覗かせる壁など）はゲームが材質の名前で選んで `withDoubleSided(false, ..)` に替える
 - emissiveTexture を指しているのに読めない時（texCoord ≠ 0・画像が読めない・形に TEXCOORD_0 が無い）は光らせず、材質ごとに 1 行知らせる
 - 絵の上限は `TextureLimits#baseColor`（emissive の絵も同じ色の絵）。`emissiveFactor` は emission の色（画面の値として読む）に、
   `KHR_materials_emissive_strength`（Blender の強さ 40 など）は線形の倍率として `emissionIntensity` に入る。spec の名前には factor だけが入る
@@ -488,11 +488,13 @@ let glass = Scene3d.material(spec) |> Scene3d.withAlphaBlend(true) |> Scene3d.wi
 - 半透明の物は影を落とさない・Output.Depth（ピントの Pass）には描かない（ピントはガラスの奥に合う）。lightmap は付けられる
 - `withDoubleSided(true, m)`: 裏の面も描く。裏の面は光の計算の法線を裏返す（spec の Normal は裏返さない）。網・葉・ガラスの板に
 - glb: `Gltf.loadTexturedUsing` は `alphaMode: BLEND` を `withAlphaBlend(true)`・`MASK` を `withCutout(true)`（`alphaCutoff` は 0.5 の固定。
-  ほかの値は 1 回知らせる）にする。**`doubleSided` は当てない**（Blender の書き出しは全部の材質を真にするので、要る物だけゲームが当てる）:
+  ほかの値は 1 回知らせる）にする。**`doubleSided` も材質のある部品にそのまま当てる**（材質の無い・頂点の色で描く部品は片面のまま。`loadTexturedPbrUsing` で metallic・roughness を読んだ頂点の色の材質（`gltf:vc`）は材質があるので両面になる）。
+  Blender の書き出しは全部の材質を真にするので、閉じた形の裏は表に隠れて見えないが、部屋の外から壁越しに中を覗かせる作り
+  （裏の面を描かないで中を見せる壁）は、その壁だけ片面に戻す:
 
   ```flix
   let m = part#material |> Option.map(mat ->
-      if (part#gltfMaterial |> Option.exists(g -> g#doubleSided and String.startsWith(prefix = "net_", g#name))) Scene3d.withDoubleSided(true, mat) else mat);
+      if (part#gltfMaterial |> Option.exists(g -> String.startsWith(prefix = "cutaway_", g#name))) Scene3d.withDoubleSided(false, mat) else mat);
   ```
 - 色の α は材質の spec の α（絵の α）。baseColorFactor の α は読まない（頂点の色に色だけ書き込んである）
 - 半透明の物が 1 つも無い場面は、今までと 1 bit も同じ絵（描く順も GLSL の字も変わらない）

@@ -410,10 +410,10 @@ mod TestDrawHash {
         let f = frame();
         keyOf(inputs(), { req = { scenes = { scene = { instances = instances, textures = model#textures | base#scene } | base } :: Nil | f#req } | f })
 
-    // emissive の無い glb を loadTextured で読んだ場面の鍵は、glb の emissive を読む前の字のまま（材質と spec 名が変わらない。metallic・roughness は既存の口では読まない）。
+    // emissive の無い glb を loadTextured で読んだ場面の鍵は、glb の emissive を読む前の字のまま（spec 名が変わらない。metallic・roughness は既存の口では読まない。doubleSided は glb の値のまま材質に当たる）。
     @Test
     def testSceneKeyWithGlbWithoutEmissiveIsPinned(): Unit \ IO + Assert =
-        Assert.assertEq(expected = "7526b5c5a18093650c60055b2853cf65241680a9253f3465571a88a6e8204ef1", keyWithTexturedGlb())
+        Assert.assertEq(expected = "30b2a03b17d32e9ce8bdb397e08cd07ca69b777d8da1d9d8df75a09ad95ee7ae", keyWithTexturedGlb())
 
     /// 材質 m を付けた赤い三角形 1 つの場面の鍵。
     def keyWithMaterial(m: Scene3d.Material3d): String =
