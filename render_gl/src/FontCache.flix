@@ -17,6 +17,7 @@ mod RenderFontCache {
     import java.lang.Exception
     import java.nio.ByteBuffer
     import java.nio.ByteOrder
+    import java.nio.file.Files
     import java.security.MessageDigest
     import java.util.zip.CRC32
 
@@ -42,10 +43,99 @@ mod RenderFontCache {
         let value = System.getenv("FLIX_GE_NO_FONT_CACHE");
         Object.isNull(value) or value == "0"
 
-    /// 取ってあれば読み、無ければ生成して取っておく。
-    pub def loadOrBake(entry: RenderAsset.FontEntry, wanted: Option[Set[Int32]],
+    /// 起動時のフォントの読み方。生成した .fontatlas（loadBaked）が使えればそれを読み、使えなければ
+    /// project.json の `glyphs` の選び方で loadOrBake する。GL と WebGPU の起動はどちらもこれを通る。
+    /// 出しうる字の走査（glyphs: used）は、生成した物を使えないフォントが出た時に 1 回だけ流す。
+    pub def startupLoader(rootDir: String, glyphs: String): (RenderAsset.FontEntry, (Int32, Int32) -> Unit \ IO) -> RenderFont.BakedFont \ IO \ IO =
+        let mode = RenderFont.glyphModeOf(glyphs);
+        let wantedRef: Ref[Option[Option[Set[Int32]]], Static] = Ref.fresh(Static, None);
+        let wanted = () -> match Ref.get(wantedRef) {
+            case Some(w) => w
+            case None =>
+                let w = RenderFont.startupGlyphs(rootDir, mode);
+                Option.forEach(cps -> println("[RenderFont] このゲームが出しうる字: ${Set.size(cps)} 字"), w);
+                Ref.put(Some(w), wantedRef);
+                w
+        };
+        (entry, onGlyph) -> {
+            let fontBytes = readAllBytes(entry#path);
+            match bakedForStartup(rootDir, mode, entry, fontBytes) {
+                case Some(baked) => baked
+                case None        => loadOrBake(entry, fontBytes, wanted(), onGlyph)
+            }
+        }
+
+    /// 生成した物を起動に使えるなら Some。使わない選び方（glyphs: all・FLIX_GE_BAKED_FONT=0）と、無い時は黙って None。
+    /// 有るのに使えない時は 1 行言って None。
+    def bakedForStartup(rootDir: String, mode: RenderFont.GlyphMode, entry: RenderAsset.FontEntry,
+                        fontBytes: Array[Int8, Static]): Option[RenderFont.BakedFont] \ IO =
+        let skip = match mode {
+            case RenderFont.GlyphMode.All => true
+            case _                        =>
+                let value = System.getenv("FLIX_GE_BAKED_FONT");
+                not Object.isNull(value) and value == "0"
+        };
+        if (skip) None
+        else loadBaked(rootDir, entry, fontBytes) |> Option.flatMap(reportBaked(entry))
+
+    def reportBaked(entry: RenderAsset.FontEntry, loaded: Result[String, RenderFont.BakedFont]): Option[RenderFont.BakedFont] \ IO =
+        match loaded {
+            case Ok(baked) =>
+                println("[RenderFont] '${entry#name}': 生成した .fontatlas を読みました"
+                    + "（${Map.size(baked#atlas#glyphs)} 字・${baked#side}x${baked#side}）");
+                Some(baked)
+            case Err(reason) =>
+                warnBakedUnusable(entry, reason);
+                None
+        }
+
+    def warnBakedUnusable(entry: RenderAsset.FontEntry, reason: String): Unit \ IO =
+        checked_ecast(Log.fellBack("font", "'${entry#name}' の生成した .fontatlas", "起動時の生成（project.json の glyphs）", reason))
+
+    /// 生成した .fontatlas を置く所。開発中は build/font-atlas（bin/fge font-bake の出力）、配った物は font-atlas（fge dist が詰める）。
+    def bakedDirs(rootDir: String): List[String] =
+        "${rootDir}/build/font-atlas" :: "${rootDir}/font-atlas" :: Nil
+
+    /// 生成した .fontatlas の 1 本。無ければ None（正常）。有れば、使える形（字を足せる辺へ移した物）か使えない理由。
+    /// 使えるのは、隣の .key が今の bakedKeyOf と同じで・decode が通り・生成のサイズ（bakeSize）を縮めていない時。
+    // WhyNot: 字の集合が古いかは見ない — 生成した後に足した字は実行中に足される（遅いのはその字だけ）。
+    pub def loadBaked(rootDir: String, entry: RenderAsset.FontEntry,
+                      fontBytes: Array[Int8, Static]): Option[Result[String, RenderFont.BakedFont]] \ IO =
+        bakedDirs(rootDir)
+            |> List.map(dir -> "${dir}/${entry#name}.fontatlas")
+            |> List.find(path -> new File(path).isFile())
+            |> Option.map(path -> readBaked(path, entry, fontBytes))
+
+    def readBaked(path: String, entry: RenderAsset.FontEntry, fontBytes: Array[Int8, Static]): Result[String, RenderFont.BakedFont] \ IO =
+        try {
+            let keyFile = new File("${path}.key");
+            if (not keyFile.isFile())
+                Err("${path}.key が無い（.key を書かない古い engine の font-bake で生成した物）")
+            else if (String.trim(Files.readString(keyFile.toPath())) != bakedKeyOf(fontBytes, entry#fontSize))
+                Err("フォント・fontSize・engine の作り方のどれかが生成した時と違う（make font-bake で作り直す）")
+            else
+                decode(readAllBytes(path), "font_${entry#name}")
+                    |> Option.toOk("${path} が読めない（壊れている）")
+                    |> Result.flatMap(growableOf(entry))
+        } catch {
+            case e: Exception => Err("${path} が読めない: ${e.getMessage()}")
+        }
+
+    def growableOf(entry: RenderAsset.FontEntry, baked: RenderFont.BakedFont): Result[String, RenderFont.BakedFont] \ IO =
+        if (baked#atlas#fontSize < entry#fontSize)
+            Err("bakeSize を ${baked#atlas#fontSize} に縮めて生成した物（字を全部生成した時など）")
+        else
+            RenderFont.growableCopy(baked)
+                |> Option.toOk("字が多く（${baked#side}x${baked#side}）、実行中に字を足す空きが取れない")
+
+    /// 生成した .fontatlas の隣に置く .key の中身: フォントの中身・用意する大きさ・作り方の版。
+    /// font-bake が書き、起動時に同じ関数で作った値と比べる（書く物と読む物がずれない）。
+    pub def bakedKeyOf(fontBytes: Array[Int8, Static], fontSize: Float64): String \ IO =
+        "${fontHash(fontBytes)}_${sanitize(Float64.toString(fontSize))}_${RenderFont.bakeVersion()}"
+
+    /// 取ってあれば読み、無ければ生成して取っておく。fontBytes は entry#path の中身。
+    pub def loadOrBake(entry: RenderAsset.FontEntry, fontBytes: Array[Int8, Static], wanted: Option[Set[Int32]],
                        onGlyph: (Int32, Int32) -> Unit \ IO): RenderFont.BakedFont \ IO =
-        let fontBytes = readAllBytes(entry#path);
         // 用意する字も鍵に混ぜる。混ぜないと、文言を足したのに前に生成した物を読んでしまい、
         // 足したはずの字が出ないまま気付けない。
         let key = keyOf(fontBytes, entry#fontSize, wanted);

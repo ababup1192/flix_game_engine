@@ -87,15 +87,32 @@ func (r Runner) jarKey(toml, lock, src string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
+// jarInputs は jar の指紋の材料（flix.toml・packages.lock・入口のソース）を読む。
+func (r Runner) jarInputs() (tomlBytes, lockBytes []byte, src string, err error) {
+	tomlBytes, err = os.ReadFile(filepath.Join(r.GameDir, "flix.toml"))
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("flix.toml が読めない: %w", err)
+	}
+	lockBytes, _ = os.ReadFile(filepath.Join(r.GameDir, "packages.lock"))
+	return tomlBytes, lockBytes, mainSource(mountOf(string(tomlBytes))), nil
+}
+
+// JarKey は今の jar の指紋（engine・flix.toml・lib が変われば変わる）。生成した物が古いかの材料に使う。
+func (r Runner) JarKey() (string, error) {
+	tomlBytes, lockBytes, src, err := r.jarInputs()
+	if err != nil {
+		return "", err
+	}
+	return r.jarKey(string(tomlBytes), string(lockBytes), src), nil
+}
+
 // EnsureJar は生成する入口の jar を返す（指紋が同じなら前の物・違えば組み直す）。
 func (r Runner) EnsureJar() (string, error) {
-	tomlBytes, err := os.ReadFile(filepath.Join(r.GameDir, "flix.toml"))
+	tomlBytes, lockBytes, src, err := r.jarInputs()
 	if err != nil {
-		return "", fmt.Errorf("flix.toml が読めない: %w", err)
+		return "", err
 	}
 	toml := string(tomlBytes)
-	lockBytes, _ := os.ReadFile(filepath.Join(r.GameDir, "packages.lock"))
-	src := mainSource(mountOf(toml))
 	work := r.workDir()
 	jar := filepath.Join(work, "font-bake.jar")
 	keyFile := filepath.Join(work, "jar.key")

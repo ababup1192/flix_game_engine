@@ -61,6 +61,17 @@ Flix はゲームの .flix の位置（`bug!`・match の網羅漏れ・`???` �
 どのフォントにも無い字は字と出所（ファイル:行）を出して 1 で止まる（ブラウザで字が出ないのを書き出しの前に止める）。
 生成するだけなら Flix から `FontAtlasBake.bakeProject`。字を手で数えて無い字を探さない。
 
+デスクトップも同じ物を読む。ゲームの根で `make font-bake`（`bin/fge font-bake . build/font-atlas --if-stale`）を流すと、
+起動（`glyphs` が auto / used の時）は `build/font-atlas/<名前>.fontatlas` を、隣の `.key`（フォントの中身・fontSize・engine の作り方の印）が
+今と合う時だけ読み、字を足せる辺（4096 か 8192）へ写す（`RenderFontCache.loadBaked`）。初めて出る字を足すヒッチが消える。
+
+- 生成した後に足した文言の字は、今まで通り実行中に足す（遅いのはその字だけ）。字の集合が古いかは起動では見ない
+- `glyphs: used` でも生成した物が勝つ（起動時の字の走査をしない）。生成した後の字まで起動時にそろえたいなら `make font-bake` を流し直す
+- 初回は生成する入口の jar を組むので数分かかる（2 回目からは生成するだけ・新しければ 1 秒かからない）
+- `--if-stale` は `fonts.json` の `inputs`（engine の jar・字の集合・フォントの中身と fontSize）が同じなら作らずに抜ける。字の漏れがあった回（`--no-gate` でも）と `.key` が無い時は新しいと見ない
+- 生成物は `build/` の下（git に入れない）。`make dist-*` は前に `--if-stale --no-gate` で生成し、`game/font-atlas/` へ詰める（起動は `build/font-atlas` → `font-atlas` の順に見る）
+- 読まない時: `glyphs: all`・`FLIX_GE_BAKED_FONT=0`・`.key` が無い / 合わない（1 行言って今まで通りに生成する）
+
 ## URL から決まった場面・台本の行で開く
 
 `web/WebMain.flix` で `App.launchWithDevTools(WebLayer.devTools(), app)` にする。

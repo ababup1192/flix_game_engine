@@ -170,16 +170,15 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
             onProgress(i + 1, total)
         }, manifest)
 
-    /// project.json のフォントを、GL と同じ「出しうる字」で RenderFontCache.loadOrBake から作り、距離場を R8 で上げる。
+    /// project.json のフォントを、GL と同じ RenderFontCache.startupLoader で作り、距離場を R8 で上げる。
     /// 起動の後に出た字は GL と同じ RenderGlyphGrow で作り、R8 の絵の空いた所へ書き足す。
     pub def loadFonts(paint: WebGpuPaint.Paint, config: GameEngine.EngineConfig, progress: (String, Int32, Int32) -> Unit \ IO): RenderPaint.Fonts \ IO =
-        let wanted = RenderFont.startupGlyphs(config#rootDir, config#glyphs);
-        Option.forEach(cps -> println("[RenderFont] このゲームが出しうる字: ${Set.size(cps)} 字"), wanted);
+        let load = RenderFontCache.startupLoader(config#rootDir, config#glyphs);
         println("Baking font atlases...");
         let growTable = RenderGlyphGrow.newTable();
         let atlases = config#fontManifest |> List.foldLeft((acc, entry) -> {
             let phase = "loading font ${entry#name}...";
-            let baked = RenderFontCache.loadOrBake(entry, wanted, (done, total) -> progress(phase, done, total));
+            let baked = load(entry, (done, total) -> progress(phase, done, total));
             let info = WebGpuPaint.uploadR8(paint, baked#side, baked#side, baked#pixels);
             WebGpuPaint.putTexture(baked#atlas#textureName, info, paint);
             RenderGlyphGrow.register(growTable, baked#atlas, { path = entry#path, texId = GpuHandle.textureIdInt(info#id) });

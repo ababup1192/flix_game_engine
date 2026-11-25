@@ -38,22 +38,38 @@ mod RenderFont {
         };
         candidates |> List.filter(cp -> STBTruetype.stbtt_FindGlyphIndex(fontInfo, cp) != 0)
 
-    /// 起動時に用意する字を決める。mode は project.json の `glyphs`（"used" / "all" / "auto"）。
-    /// 環境変数 FLIX_GE_GLYPHS があればそちらが勝つ（作り替えずに試せるように）。
-    /// None を返すと「フォントが持つ字を全部」の意味になる。
-    pub def startupGlyphs(rootDir: String, mode: String): Option[Set[Int32]] \ IO =
+    /// project.json の `glyphs`（起動時に用意する字の選び方）。
+    pub enum GlyphMode {
+        /// 起動時は用意せず、出た字から順に足す。
+        case Auto,
+        /// ソースとアセットにある字（loadUsedGlyphs）を起動時に用意する。
+        case Used,
+        /// フォントが持つ字を全部用意する。
+        case All
+    }
+
+    /// project.json の `glyphs` の字を GlyphMode にする。環境変数 FLIX_GE_GLYPHS があればそちらが勝つ（作り替えずに試せるように）。
+    pub def glyphModeOf(mode: String): GlyphMode \ IO =
         let env = System.getenv("FLIX_GE_GLYPHS");
         let chosen = if (Object.isNull(env)) mode else env;
         match chosen {
-            case "all"  => None
-            case "auto" =>
-                println("[RenderFont] 起動時は用意せず、出た字から順に用意します");
-                Some(Set.empty())
-            case "used" => loadUsedGlyphs(rootDir)
+            case "all"  => GlyphMode.All
+            case "auto" => GlyphMode.Auto
+            case "used" => GlyphMode.Used
             case other  =>
                 println("[RenderFont] glyphs に知らない値 '${other}' が指定されたので "
                     + "'auto'（出た字から順に用意する）として扱います");
+                GlyphMode.Auto
+        }
+
+    /// 起動時に用意する字を決める。None を返すと「フォントが持つ字を全部」の意味になる。
+    pub def startupGlyphs(rootDir: String, mode: GlyphMode): Option[Set[Int32]] \ IO =
+        match mode {
+            case GlyphMode.All  => None
+            case GlyphMode.Auto =>
+                println("[RenderFont] 起動時は用意せず、出た字から順に用意します");
                 Some(Set.empty())
+            case GlyphMode.Used => loadUsedGlyphs(rootDir)
         }
 
     /// このゲームが画面に出しうる字を、プロジェクト配下のソースとアセットから集める。
@@ -344,13 +360,41 @@ mod RenderFont {
     /// ディスクに取っておく（RenderFontCache）のもこの形。
     pub type alias BakedFont = { atlas = FontAtlas, side = Int32, pixels = ByteBuffer }
 
-    /// 1 つの FontEntry をアトラスにベイクして GPU へ載せる。
+    /// Tight の辺 side のアトラスを、実行中に字を足せる辺（4096 か 8192）へ移す時の辺。
+    /// 置いた字の下に max(512, 新しい辺/8) 行残る最小を選ぶ。どちらでも残らなければ None。
+    // WhyNot: 右の空きを数えない — RenderGlyphGrow は置いた字の一番下より下の行しか使わない。
+    pub def growableSideFor(side: Int32): Option[Int32] =
+        atlasSizeCandidates() |> List.find(n -> n - side >= Int32.max(512, n / 8))
+
+    /// Tight で生成したアトラスを growableSideFor の辺の左上へ写し、字の UV を新しい辺で計算し直す。
+    /// atlas#textureSize・side・pixels を一緒に替える（どれか 1 つだけ替えると字の切り出しがずれる）。
+    pub def growableCopy(baked: BakedFont): Option[BakedFont] \ IO =
+        growableSideFor(baked#side) |> Option.map(next -> {
+            let old = baked#side;
+            let pixels = BufferUtils.createByteBuffer(next * next);
+            let srcAddr = MemoryUtil.memAddress(baked#pixels);
+            let dstAddr = MemoryUtil.memAddress(pixels);
+            List.forEach(y ->
+                MemoryUtil.memCopy(srcAddr + Int32.toInt64(y * old), dstAddr + Int32.toInt64(y * next), Int32.toInt64(old)),
+                List.range(0, old));
+            let rescale = (uv: Float64) -> {
+                let px = Float64.round(uv * Int32.toFloat64(old));
+                px / Int32.toFloat64(next)
+            };
+            let glyphs = baked#atlas#glyphs |> Map.map(gm ->
+                { s0 = rescale(gm#s0), t0 = rescale(gm#t0), s1 = rescale(gm#s1), t1 = rescale(gm#t1) | gm });
+            { atlas = { glyphs = glyphs, textureSize = Int32.toFloat64(next) | baked#atlas },
+              side = next, pixels = pixels }
+        })
+
+    /// 1 つの FontEntry をアトラスにして GPU へ載せる。load は起動時の読み方（RenderFontCache.startupLoader）。
     /// 戻り値: (FontAtlas, TextureInfo) — TextureInfo は registry に登録する用。
     /// onGlyph には「焼き終えた字数 / 全字数」を渡す。日本語フォントは 1 本で数千字あり
     /// 起動時間の大半を占めるので、起動画面はここまで細かく進み具合を見せる。
-    pub def bakeFontAtlas(gl: GlContext, entry: RenderAsset.FontEntry, wanted: Option[Set[Int32]],
+    pub def bakeFontAtlas(gl: GlContext, entry: RenderAsset.FontEntry,
+                          load: (RenderAsset.FontEntry, (Int32, Int32) -> Unit \ IO) -> BakedFont \ IO,
                           onGlyph: (Int32, Int32) -> Unit \ IO): (FontAtlas, RenderAsset.TextureInfo) \ IO =
-        let baked = RenderFontCache.loadOrBake(entry, wanted, onGlyph);
+        let baked = load(entry, onGlyph);
         (baked#atlas, RenderTexture.uploadAlphaMask(gl, baked#side, baked#pixels))
 
     /// 全グリフを SDF にして 1 枚へ敷き詰める（GL には一切触らない）。
@@ -519,16 +563,16 @@ mod RenderFont {
 
     /// 全 FontEntry をベイクし、(名前→FontAtlas) と更新済み TextureRegistry を返す。
     /// onProgress には「フォント名・焼き終えた字数・全字数」を渡す。
-    /// wanted は「このゲームが出しうる字」。None なら各フォントが持つ字を全部用意する。
+    /// load は起動時の読み方（RenderFontCache.startupLoader）。
     pub def bakeFontAtlases(gl: GlContext, manifest: List[RenderAsset.FontEntry],
                             registry: RenderAsset.TextureRegistry,
-                            wanted: Option[Set[Int32]],
+                            load: (RenderAsset.FontEntry, (Int32, Int32) -> Unit \ IO) -> BakedFont \ IO,
                             onProgress: (String, Int32, Int32) -> Unit \ IO): (Map[String, FontAtlas], RenderAsset.TextureRegistry) \ IO =
         List.foldLeft((acc, entry) -> {
             let (atlases, reg) = acc;
             // 文言の組み立ては字ごとでなくフォントごとに 1 回。進捗は数千回呼ばれる。
             let report = (done, total) -> onProgress(entry#name, done, total);
-            let (atlas, texInfo) = bakeFontAtlas(gl, entry, wanted, report);
+            let (atlas, texInfo) = bakeFontAtlas(gl, entry, load, report);
             println("  Font '${entry#name}' baked (${atlas#textureName})");
             let newAtlases = Map.insert(entry#name, atlas, atlases);
             let newReg = Map.insert(atlas#textureName, texInfo, reg);

@@ -15,7 +15,7 @@ import (
 	"github.com/ababup1192/flix_game_engine/go/internal/status"
 )
 
-const fontBakeUsage = `使い方: fge font-bake <ゲームのフォルダ> <出力のフォルダ> [--glyphs collected|all|desktop] [--dev-dir <根からの所>]... [--no-gate] [--collect-only]
+const fontBakeUsage = `使い方: fge font-bake <ゲームのフォルダ> <出力のフォルダ> [--glyphs collected|all|desktop] [--dev-dir <根からの所>]... [--no-gate] [--collect-only] [--if-stale]
   ゲームが出しうる字（assets の *.yarn・Doc の文字列の値・*.txt / *.csv と、src の .flix の文字列リテラル）を集め、
   project.json の fonts を 1 本ずつ、デスクトップの起動時と同じ距離場のアトラスに生成して書く:
     <出力>/<fonts[].name>.fontatlas   RenderFontCache の形（デスクトップのキャッシュと同じ形・RenderFontCache.decode で読む）
@@ -23,6 +23,9 @@ const fontBakeUsage = `使い方: fge font-bake <ゲームのフォルダ> <出�
   生成したどのアトラスにも無い字が 1 つでもあれば、字と出所（ファイル:行）を出して 1 で終わる（--no-gate で知らせるだけ）。
   ただし開発の道具の所（src/render・src/sim と --dev-dir・.flix の doc = "..." の行）にしか無い字は、漏れても知らせるだけ。
   --glyphs: collected（既定・集めた字＋ASCII）/ all（フォントが持つ BMP の字を全部）/ desktop（デスクトップの glyphs: used と同じ集め方。突き合わせ用）
+  --if-stale: <出力>/fonts.json の指紋（engine・字の集合・フォント）が今と同じでアトラスが揃っていれば、作らずに 0 で終わる
+              （make font-bake・dist の前。字の漏れがあった回（--no-gate でも）は指紋を書かないので、次も作り直して知らせる）
+  各 .fontatlas の隣に .key（フォントの中身・大きさ・作り方の版の印）も書く。デスクトップの起動はこれが合う時だけ読む。
   --collect-only: 生成せずに、集めた字の数と、実行中に字を作る行の知らせだけ出す（engine の古いゲームでも流せる）
   終わりの番号: 0 漏れ無し・1 漏れか失敗・2 呼び方の誤り`
 
@@ -37,6 +40,7 @@ type fontBakeOpts struct {
 	glyphs      string
 	gate        bool
 	collectOnly bool
+	ifStale     bool
 	devDirs     []string
 }
 
@@ -50,6 +54,8 @@ func parseFontBakeArgs(rest []string) (fontBakeOpts, error) {
 			o.gate = false
 		case a == "--collect-only":
 			o.collectOnly = true
+		case a == "--if-stale":
+			o.ifStale = true
 		case a == "--glyphs" && i+1 < len(rest):
 			o.glyphs = rest[i+1]
 			i++
@@ -118,6 +124,12 @@ func cmdFontBake(out, errOut *strings.Builder, rest []string, _ bool) int {
 		fmt.Fprintf(errOut, "fge font-bake: %v\n", err)
 		return 1
 	}
+	if o.ifStale {
+		if inputs, err := bakeInputs(runner, game, o.glyphs, cs); err == nil && fontbake.IsFresh(outDir, inputs) {
+			fmt.Fprintf(out, "[font-bake] 新しい（engine・字の集合・フォントが前に生成した時と同じ）— 作り直さない: %s\n", outDir)
+			return 0
+		}
+	}
 	glyphsArg := map[string]string{"all": "--all", "desktop": "--used"}[o.glyphs]
 	if glyphsArg == "" {
 		charset := filepath.Join(game, "build", "font-bake", "charset.txt")
@@ -155,16 +167,28 @@ func cmdFontBake(out, errOut *strings.Builder, rest []string, _ bool) int {
 		fmt.Fprintf(out, "[font-bake] %-10s %5d 字  %dx%d  %s（gzip で %s）  集めた字のうち無い字 %d\n",
 			a.Name, len(a.Glyphs), a.Side, a.Side, humanBytes(a.Bytes), humanBytes(gzipSize(a.Path)), fontbake.MissingIn(cs, a))
 	}
-	if err := writeFontsManifest(outDir, atlases, len([]rune(cs.WithASCII()))); err != nil {
-		fmt.Fprintf(errOut, "fge font-bake: fonts.json を書けない: %v\n", err)
-		return 1
-	}
 	var gameLeaks, devLeaks []fontbake.Leak
 	for _, l := range fontbake.FindLeaks(cs, atlases) {
 		if l.Dev {
 			devLeaks = append(devLeaks, l)
 		} else {
 			gameLeaks = append(gameLeaks, l)
+		}
+	}
+	inputs := ""
+	// WhyNot: --no-gate の回でも漏れがあれば指紋を書かない — 書くと、後で門ありの --if-stale が新しいと見て漏れを言わずに抜ける。
+	if len(gameLeaks) == 0 {
+		if inputs, err = bakeInputs(runner, game, o.glyphs, cs); err != nil {
+			fmt.Fprintf(out, "[font-bake] 知らせ: 指紋を作れない（次の --if-stale も作り直す）: %v\n", err)
+		}
+	}
+	if err := writeFontsManifest(outDir, atlases, len([]rune(cs.WithASCII())), inputs); err != nil {
+		fmt.Fprintf(errOut, "fge font-bake: fonts.json を書けない: %v\n", err)
+		return 1
+	}
+	for _, a := range atlases {
+		if !fileExists(a.Path + ".key") {
+			fmt.Fprintf(out, "[font-bake] 知らせ: %s.key が無い — ゲームの engine が古く .key を書かない（ブラウザは読めるが、デスクトップの起動は読まない）\n", a.Path)
 		}
 	}
 	if len(devLeaks) > 0 {
@@ -221,7 +245,17 @@ func newFontBakeRunner(game string) (fontbake.Runner, error) {
 	return fontbake.Runner{GameDir: game, FlixJar: flixJar, Java: java, Log: os.Stderr}, nil
 }
 
-func writeFontsManifest(outDir string, atlases []*fontbake.Atlas, charset int) error {
+// bakeInputs は生成した物が古いかを決める指紋（fontbake.InputsKey）を今の jar の指紋で作る。
+func bakeInputs(runner fontbake.Runner, game, glyphs string, cs *fontbake.Charset) (string, error) {
+	jarKey, err := runner.JarKey()
+	if err != nil {
+		return "", err
+	}
+	return fontbake.InputsKey(game, jarKey, glyphs, cs.WithASCII())
+}
+
+// writeFontsManifest は fonts.json を書く。inputs が空なら指紋を書かない（次の --if-stale は作り直す）。
+func writeFontsManifest(outDir string, atlases []*fontbake.Atlas, charset int, inputs string) error {
 	type entry struct {
 		Name        string `json:"name"`
 		File        string `json:"file"`
@@ -233,7 +267,8 @@ func writeFontsManifest(outDir string, atlases []*fontbake.Atlas, charset int) e
 	m := struct {
 		Fonts   []entry `json:"fonts"`
 		Charset int     `json:"charset"`
-	}{Fonts: []entry{}, Charset: charset}
+		Inputs  string  `json:"inputs,omitempty"`
+	}{Fonts: []entry{}, Charset: charset, Inputs: inputs}
 	for _, a := range atlases {
 		m.Fonts = append(m.Fonts, entry{a.Name, filepath.Base(a.Path), "font_" + a.Name, a.Side, len(a.Glyphs), a.Bytes})
 	}

@@ -6,6 +6,7 @@
 // 配布物は <out>/<name>-<version>-<os>-<arch>.<tar.gz|zip> と .sha256。version の既定はゲームの短いコミット
 // （変更が残っていれば -dirty）。中身の頭のフォルダは拡張子を除いた同じ名前で、その下（macOS は .app の
 // Contents/Resources）に game/（game.jar と include）と jre/ を置く。起動と案内は OS ごとの Target が作る。
+// build/font-atlas に前もって生成したフォントのアトラス（bin/fge font-bake）が揃っていれば game/font-atlas へ詰める。
 package dist
 
 import (
@@ -28,6 +29,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ababup1192/flix_game_engine/go/internal/fontbake"
 	"github.com/ababup1192/flix_game_engine/go/internal/headlessjar"
 )
 
@@ -344,6 +346,12 @@ func writeArchive(dest string, t Target, top, root string, generated []genFile, 
 	w.file(root+"game/game.jar", jar)
 	for _, inc := range include {
 		w.tree(filepath.Join(dir, inc), root+"game/"+filepath.ToSlash(filepath.Clean(inc)))
+	}
+	// WhyNot: build/font-atlas のまま詰めない — 起動は game の上の段をデータの所へ link するので、build が
+	// データの所に入り、実行中に build/ の下へ書く口とぶつかる。起動が読む 2 つ目の置き場 font-atlas へ詰める。
+	atlasDir := filepath.Join(dir, "build", "font-atlas")
+	for _, name := range fontbake.PackFiles(atlasDir) {
+		w.file(root+"game/font-atlas/"+name, filepath.Join(atlasDir, name))
 	}
 	w.jre(jreArchive, jreRoot, root+"jre", t.java)
 	if w.err != nil {

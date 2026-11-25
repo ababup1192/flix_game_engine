@@ -83,7 +83,7 @@ HELP_TAIL = echo ""; echo "make render の場面: $(SHOTS)"; $(if $(RENDER_NOTE)
 fge_space := $(subst ,, )
 include $(subst $(fge_space),\$(fge_space),$(ENGINE))/mk/common.mk
 
-.PHONY: status run debug test build dist-linux dist-macos dist-windows dist-all check flow flow-vocab render render-all gallery-sounds reference-check reference-update render-budget render-lint lint lint-doc-refs lint-record-wrap lint-flixlint lint-forbid lint-huge-methods lint-rules-link video-entries src check-docs-sync compare agent-eval agent-eval-compare agent-eval-release engine-upgrade web-pages-stage dashboard
+.PHONY: status run debug font-bake test build dist-linux dist-macos dist-windows dist-all check flow flow-vocab render render-all gallery-sounds reference-check reference-update render-budget render-lint lint lint-doc-refs lint-record-wrap lint-flixlint lint-forbid lint-huge-methods lint-rules-link video-entries src check-docs-sync compare agent-eval agent-eval-compare agent-eval-release engine-upgrade web-pages-stage dashboard
 
 ##@ 遊ぶ・確かめる
 # RUN_SECONDS=N を付けると N 秒でゲームを止める（起動して確かめるだけの時。止め忘れでウィンドウが残らない）。
@@ -102,6 +102,12 @@ endif
 
 debug: ## | 保存即反映（watchFile）と F8 を有効にして起動する
 	@$(FGE_RUN) debug
+
+# 生成したアトラスはデスクトップの起動（glyphs が auto / used の時）とブラウザの書き出しと同じ形。起動はフォント・大きさ・engine が
+# 合う時だけ読み、生成した後に足した字は今まで通り実行中に足す。初回は生成する入口の jar を組むので数分かかる。
+# WhyNot: run の前に自動で作らない — 文言に 1 字足すたびに全部の字の作り直し（千字で 20 秒ほど）が起動の前に挟まる。
+font-bake: ## | 出しうる字を前もって生成したフォントのアトラスを build/font-atlas/ へ作る（起動で初めて出る字の止まりが消える・新しければ何もしない・初回は数分）
+	@"$(ENGINE)/bin/fge" font-bake . build/font-atlas --if-stale
 
 # 前面でワークスペースのサーバー（127.0.0.1:8790）を立ててこのゲームの頁を開く。既に立っていればブラウザだけ開く。
 # ゲームに配った bin/fge が dashboard --version を持たない古い物（と bin/fge の無い templates/*）なら engine の bin/fge を使う。
@@ -165,6 +171,8 @@ ifeq ($(FGE_NO_BASH),1)
 	@echo "[dist] Windows では作れません（jar を作る headless-run が bash）。macOS か Linux で流してください"; exit 1
 else
 	FLIX_CMD=$(FLIX) "$(ENGINE)/bin/headless-run" --build-only
+	@"$(ENGINE)/bin/fge" font-bake . build/font-atlas --if-stale --no-gate \
+		|| echo "[dist] フォントのアトラスを作れなかった — 作らずに配る（遊ぶ人の起動で初めて出る字が少し止まる）"
 	"$(ENGINE)/bin/fge" dist $(DIST_OS) $(DIST_ARGS)
 endif
 

@@ -51,11 +51,7 @@ mod LwjglAssets {
     /// ゲームのフォントのアトラスを作って上げ、registry に足す。起動時に用意しなかった字を後から足す関数も返す。
     pub def loadFonts(gl: GlContext, request: RenderPaint.FontRequest,
                       progress: (String, Int32, Int32) -> Unit \ IO): RenderPaint.FontsLoaded \ IO =
-        // このゲームが出しうる字を先に集める（数十ミリ秒）。フォントが持つ字を全部用意すると
-        // 日本語 1 本で数千〜2万字になり、起動が数十秒止まる。
-        let wantedGlyphs = RenderFont.startupGlyphs(request#rootDir, request#glyphs);
-        Option.forEach(cps -> println("[RenderFont] このゲームが出しうる字: ${Set.size(cps)} 字"),
-                       wantedGlyphs);
+        let load = RenderFontCache.startupLoader(request#rootDir, request#glyphs);
         println("Baking font atlases...");
         // 文言はフォントごとに 1 回だけ組み立てる（進捗は字ごとに数千回来る）。
         let fontPhases: Ref[Map[String, String], Static] = Ref.fresh(Static, Map.empty());
@@ -67,7 +63,7 @@ mod LwjglAssets {
                 text
         };
         let (atlases, registry) = RenderFont.bakeFontAtlases(gl, request#manifest, request#registry,
-            wantedGlyphs, (name, done, total) -> progress(fontPhaseOf(name), done, total));
+            load, (name, done, total) -> progress(fontPhaseOf(name), done, total));
         let growTable = RenderGlyphGrow.newTable();
         List.forEach(entry -> registerGrowth(growTable, atlases, registry, entry), request#manifest);
         { atlases = atlases, registry = registry,

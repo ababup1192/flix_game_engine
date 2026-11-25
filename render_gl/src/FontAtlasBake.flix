@@ -1,14 +1,17 @@
 // FontAtlasBake — 窓も GL も無しに、project.json のフォントをデスクトップの起動時と同じ距離場のアトラスに生成し、
-// RenderFontCache.encode の形のファイルへ書き出す。stb の無い機種（ブラウザ）へ同梱するための入口。
+// RenderFontCache.encode の形のファイルへ書き出す。stb の無い機種（ブラウザ）へ同梱し、デスクトップの起動でも読む
+// （RenderFontCache.loadBaked・隣の .key で今のフォントと合うかを見る）。
 //
 // 距離場はデスクトップと同じ RenderFont.bakeFontCpuSized・書くのは同じ RenderFontCache.encode。辺だけは
 // AtlasSizing.Tight（用意した字が収まる最小）で、字ごとの距離場の画素はデスクトップのアトラスと同じになる。
 // WhyNot: デスクトップと同じ 4096 の辺にしない — ブラウザは実行中に字を足さないので空きは配る量が増えるだけ。
+// デスクトップは読む時に字を足せる辺へ写す（RenderFont.growableCopy）。
 pub mod FontAtlasBake {
     import java.io.File
     import java.lang.System
     import java.lang.Exception
     import java.nio.file.Files
+    import java.nio.charset.StandardCharsets
 
     /// 書き出した 1 本のフォント。
     pub type alias Written = { name = String, path = String, side = Int32, glyphCount = Int32 }
@@ -52,11 +55,33 @@ pub mod FontAtlasBake {
         let baked = RenderFont.bakeFontCpuSized(RenderFont.AtlasSizing.Tight, entry, fontBytes, wanted, (_, _) -> checked_ecast(()));
         let bytes = RenderFontCache.encode(baked);
         let path = "${outDir}/${entry#name}.fontatlas";
-        RenderFontCache.writeFile(path, bytes);
+        // WhyNot: 前の .key を残したままアトラスを替えない — その間に起動したゲームが新しいアトラスを古いフォントの印で読む。
+        discard new File("${path}.key").delete();
+        writeReplacing(path, bytes);
+        let key = RenderFontCache.bakedKeyOf(fontBytes, entry#fontSize) + "\n";
+        writeReplacing("${path}.key", key.getBytes(StandardCharsets.UTF_8));
         if (Option.isEmpty(RenderFontCache.decode(Files.readAllBytes(new File(path).toPath()), "font_${entry#name}")))
             bug!("${path}: 書いたアトラスを decode が読めない — encode と decode の形がずれている")
         else
             { name = entry#name, path = path, side = baked#side, glyphCount = Map.size(baked#atlas#glyphs) }
+
+    /// 別名で書き終えてから名前を付け替える（起動中のゲームが書きかけを読まない）。
+    def writeReplacing(path: String, bytes: Array[Int8, Static]): Unit \ IO =
+        let tmp = "${path}.${System.nanoTime()}.tmp";
+        RenderFontCache.writeFile(tmp, bytes);
+        let target = new File(path);
+        let tmpFile = new File(tmp);
+        // WhyNot: 付け替えに失敗した時だけ先に消す — Windows は同じ名前があると付け替えられない。
+        // 消しても付け替えられなければ直に書く（書けない時の例外は bakeProject が Err にする）。
+        if (tmpFile.renameTo(target)) ()
+        else {
+            discard target.delete();
+            if (tmpFile.renameTo(target)) ()
+            else {
+                discard tmpFile.delete();
+                RenderFontCache.writeFile(path, bytes)
+            }
+        }
 
     /// 字の集合のファイル（UTF-8 の字を並べただけ・改行も字として読まない）を読む。
     pub def readCharset(path: String): Set[Int32] \ IO =

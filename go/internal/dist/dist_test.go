@@ -187,12 +187,71 @@ func readEntries(t *testing.T, archive string) (map[string]entry, []string) {
 
 func builtEntries(t *testing.T, key string) map[string]entry {
 	t.Helper()
-	res, err := buildFake(t, key, nil)
+	return builtWith(t, key, nil)
+}
+
+func builtWith(t *testing.T, key string, mutate func(*Options)) map[string]entry {
+	t.Helper()
+	res, err := buildFake(t, key, mutate)
 	if err != nil {
 		t.Fatal(err)
 	}
 	got, _ := readEntries(t, res.Archive)
 	return got
+}
+
+// withBakedFonts は buildFake の mutate: ゲームの build/font-atlas へ fonts.json（listed を 1 本載せる）と files を置く。
+func withBakedFonts(t *testing.T, listed string, files ...string) func(*Options) {
+	return func(o *Options) {
+		dir := filepath.Join(o.Dir, "build", "font-atlas")
+		os.MkdirAll(dir, 0o755)
+		manifest := `{"fonts": [{"name": "default", "file": "` + listed + `"}]}`
+		if err := os.WriteFile(filepath.Join(dir, "fonts.json"), []byte(manifest), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range files {
+			if err := os.WriteFile(filepath.Join(dir, f), []byte("atlas"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+}
+
+func TestBakedFontAtlasGoesToGameFontAtlas(t *testing.T) {
+	got := builtWith(t, "linux", withBakedFonts(t, "default.fontatlas", "default.fontatlas", "default.fontatlas.key"))
+	if _, ok := got["my_game-v1-linux-x64/game/font-atlas/default.fontatlas.key"]; !ok {
+		t.Errorf("game/font-atlas/default.fontatlas.key が無い")
+	}
+}
+
+func TestBakedFontAtlasIsNotPackedUnderBuild(t *testing.T) {
+	got := builtWith(t, "linux", withBakedFonts(t, "default.fontatlas", "default.fontatlas", "default.fontatlas.key"))
+	for name := range got {
+		if strings.Contains(name, "/game/build") {
+			t.Errorf("build の下を詰めた: %s", name)
+		}
+	}
+}
+
+func TestLeftoverTmpIsNotPacked(t *testing.T) {
+	got := builtWith(t, "linux", withBakedFonts(t, "default.fontatlas", "default.fontatlas", "default.fontatlas.key", "default.fontatlas.123.tmp"))
+	if _, ok := got["my_game-v1-linux-x64/game/font-atlas/default.fontatlas.123.tmp"]; ok {
+		t.Errorf("書きかけの .tmp を詰めた")
+	}
+}
+
+func TestFontAtlasWithoutKeyIsNotPacked(t *testing.T) {
+	got := builtWith(t, "linux", withBakedFonts(t, "default.fontatlas", "default.fontatlas"))
+	if _, ok := got["my_game-v1-linux-x64/game/font-atlas/default.fontatlas"]; ok {
+		t.Errorf(".key の無いアトラス（起動が読まない）を詰めた")
+	}
+}
+
+func TestFontAtlasWithMissingFileIsNotPacked(t *testing.T) {
+	got := builtWith(t, "linux", withBakedFonts(t, "default.fontatlas"))
+	if _, ok := got["my_game-v1-linux-x64/game/font-atlas"]; ok {
+		t.Errorf("アトラスが欠けているのに game/font-atlas を詰めた")
+	}
 }
 
 func TestEveryTargetHasTheLayout(t *testing.T) {
