@@ -1,4 +1,4 @@
-// Bundles — 校舎の束（tools/glb_bundle.py が作る assets/school/bundle/*.glb）と人物の glb を、鍵ごとに読む（BackgroundLoad の Group）。
+// Bundles — 校舎の束（tools/glb_bundle.py が作る assets/school/bundle/*.glb）と人物・持ち物の glb を、鍵ごとに読む（BackgroundLoad の Group を 2 つ: 束と、人物・持ち物）。
 // デスクトップと画面なしは起動で全部の鍵を読む。ブラウザ版は起動の素材（project.json の web.deferred に無い物）の鍵だけ起動で読み、
 // 残りは届いた物から App.withBackgroundLoad がコマの予算の内で解く（Res.withLoaded が校舎を組み直す）。
 // 束の中の根のノードの名前は元の glb の名前（school_floor<n>・prop_<名前>）で、根ごとに 1 つの形へ切り分ける。
@@ -50,17 +50,30 @@ mod Bundles {
         ((personOf(key) |> Option.map(personPath)) :: itemPath(key) :: (bundles |> List.find(b -> b#key == key) |> Option.map(b -> b#path)) :: Nil)
             |> List.flatMap(Option.toList) |> List.head
 
-    /// 束と人物の glb を読む Group。read は道とバイトを取るだけ・decode が glb と絵と頂点の色（COLOR_0。Blender でベイクした明るさ・project.json の "gltf"）を解く。
-    /// costMs は 1 鍵を解く見込み（束 1 つ primitive 200 個前後で、M4 Pro の Chrome で 35 ms 前後・スマホは 3〜5 倍。Controls.decodeBudget の Idle(45) で 1 コマに 1 束）。
-    pub def group(bundles: List[Entry], models: List[String], items: List[String], loader: Model3d.Loader): BackgroundLoad.Group[Result[String, (String, Vector[Int8])], Model3d.Model3d] =
-        let keys = List.flatten((bundles |> List.map(b -> b#key)) :: (models |> List.map(personKey)) :: (items |> List.map(itemKey)) :: Nil);
-        { name = "school", keys = keys, pathsOf = key -> pathOf(bundles, key) |> Option.toList,
+    /// 束・人物・持ち物の glb を読む Group の型。read は道とバイトを取るだけ・decode が glb と絵と頂点の色（COLOR_0。Blender でベイクした明るさ・project.json の "gltf"）を解く。
+    pub type alias Group = BackgroundLoad.Group[Result[String, (String, Vector[Int8])], Model3d.Model3d]
+
+    /// 校舎の束を読む Group。costMs は 1 束を解く見込み（束 1 つ primitive 200 個前後で、M4 Pro の Chrome で 35 ms 前後・スマホは 3〜5 倍。Controls.decodeBudget の Idle(45) で 1 コマに 1 束）。
+    pub def schoolGroup(bundles: List[Entry], loader: Model3d.Loader): Group =
+        groupOf("school", bundles, bundles |> List.map(b -> b#key), loader, 35.0)
+
+    /// 人物（personKey）と持ち物（itemKey）の glb を読む Group。
+    // WhyNot: 校舎の束と同じ Group に入れない — 見込み（costMs）は Group に 1 つで、スマホで束が 100〜180 ms かかると見込みがそこまで上がり、
+    // Idle(45) の間は estimateResetMs（2 秒）待って戻るまで次を始めない。180 KB ほどの人物もその間待たされ、遊び始めてから何秒も出ない。
+    // WhyNot: costMs を束の 35 のままにしない — 測ると人物 1 体は束の 1/5 ほど（JVM で 1 階の束 22〜26 ms・人物 5 ms・持ち物 1 ms）で、
+    // スマホの束 100〜180 ms から人物は 20〜36 ms。小さい側の 25 なら、Idle(45) で前の仕事が 20 ms までのコマに人物を 1 体始められる
+    // （大きい側の 36 で書くと、絵の登録が 9 ms を超えたコマでは始めない）。
+    pub def modelGroup(models: List[String], items: List[String], loader: Model3d.Loader): Group =
+        groupOf("models", Nil, List.append(models |> List.map(personKey), items |> List.map(itemKey)), loader, 25.0)
+
+    def groupOf(name: String, bundles: List[Entry], keys: List[String], loader: Model3d.Loader, costMs: Float64): Group =
+        { name = name, keys = keys, pathsOf = key -> pathOf(bundles, key) |> Option.toList,
           read = key -> match pathOf(bundles, key) {
               case Some(p) => Fs.FileRead.readBytes(p) |> Result.map(b -> (p, b)) |> Result.mapErr(e -> "${p}: 読めない（${e}）")
               case None    => Err("${key}: 束の表に無い鍵")
           },
           decode = raw -> raw |> Result.flatMap(pb -> Model3d.decode(loader, fst(pb), snd(pb))),
-          costMs = 35.0 }
+          costMs = costMs }
 
     /// 束を根のノードごとの形に切り分ける（根の名前 → その根の下の parts だけを持つ形）。絵は束の全部を持たせる（場面には名前で重ねずに渡る: School.build）。
     pub def roots(model: Model3d.Model3d): Map[String, Model3d.Model3d] =

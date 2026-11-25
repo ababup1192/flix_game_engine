@@ -7,28 +7,28 @@ mod Res {
 
     /// 起動と描き出しが同じ形で読む物の束（Controls.loadDocs）。
     /// cast = 人物の置き場所と話し方・people = 人物の形（model の名前 → 骨つきの glb）・dialogue = 会話の台詞（assets/talk/dialogue.json）。
-    /// bundles = 校舎の束の表・pending = まだ解いていない束と人物の鍵（ブラウザ版の後回し。デスクトップは全部 Loaded）・
-    /// group と downloads = 残りの鍵をループの中で解く口（App.withBackgroundLoad へ渡す）。
+    /// bundles = 校舎の束の表・bundlePending = まだ解いていない束の鍵・modelPending = まだ解いていない人物と持ち物の鍵（ブラウザ版の後回し。デスクトップは全部 Loaded）・
+    /// bundleGroup・modelGroup と downloads = 残りの鍵をループの中で解く口（Controls.withBackgroundLoads が App.withBackgroundLoad へ渡す）。
     pub type alias Docs = { walk = WalkDoc.Doc, keys = KeysDoc.Doc, look = LookDoc.Doc, sound = SoundDoc.Doc, layout = Layout.Layout, assets = School.Assets,
                             items = ItemsDoc.Doc, cast = CastDoc.Doc, people = Map[String, Model3d.Model3d], dialogue = Yarn.Program,
-                            bundles = List[Bundles.Entry], pending = BackgroundLoad.Pending,
-                            group = BackgroundLoad.Group[Result[String, (String, Vector[Int8])], Model3d.Model3d], downloads = LoadProgress.AssetDownloads }
+                            bundles = List[Bundles.Entry], bundlePending = BackgroundLoad.Pending, modelPending = BackgroundLoad.Pending,
+                            bundleGroup = Bundles.Group, modelGroup = Bundles.Group, downloads = LoadProgress.AssetDownloads }
 
     /// 描く元の束。school = layout と assets から組んだ当たり判定と階ごとの集まり（光の Doc のプレートの光り方も入る）。
     /// mapFrame = 紙のマップの縮尺（layout から 1 回だけ）。items = 拾える物と鍵の Doc・doors = 鍵のかかった部屋の戸口（layout と items から）。
     /// 持ち物の形は小物と同じ assets#props に入る（根の名前 prop_item_<id> → item_<id>。itemModelKey）。
     pub type alias Res = { walk = WalkDoc.Doc, keys = KeysDoc.Doc, look = LookDoc.Doc, sound = SoundDoc.Doc, layout = Layout.Layout, assets = School.Assets, school = School.School,
                            items = ItemsDoc.Doc, doors = List[Items.Door], mapFrame = PaperMap.Frame, cast = CastDoc.Doc, people = Map[String, Model3d.Model3d], dialogue = Yarn.Program,
-                           bundles = List[Bundles.Entry], pending = BackgroundLoad.Pending }
+                           bundles = List[Bundles.Entry], bundlePending = BackgroundLoad.Pending, modelPending = BackgroundLoad.Pending }
 
-    /// docs の group と downloads は読まないので、それの無い束からも組める（テスト）。
+    /// docs の bundleGroup・modelGroup と downloads は読まないので、それの無い束からも組める（テスト）。
     pub def build(docs: { walk = WalkDoc.Doc, keys = KeysDoc.Doc, look = LookDoc.Doc, sound = SoundDoc.Doc, layout = Layout.Layout, assets = School.Assets,
                           items = ItemsDoc.Doc, cast = CastDoc.Doc, people = Map[String, Model3d.Model3d], dialogue = Yarn.Program,
-                          bundles = List[Bundles.Entry], pending = BackgroundLoad.Pending | r }): Res =
+                          bundles = List[Bundles.Entry], bundlePending = BackgroundLoad.Pending, modelPending = BackgroundLoad.Pending | r }): Res =
         let doors = Items.doorsOf(docs#layout, docs#items);
         { walk = docs#walk, keys = docs#keys, look = docs#look, sound = docs#sound, layout = docs#layout, assets = docs#assets,
           school = School.build(docs#layout, docs#assets, glowOf(docs#look), movedOf(doors)), items = docs#items, doors = doors, mapFrame = PaperMap.frameOf(docs#layout),
-          cast = docs#cast, people = docs#people, dialogue = docs#dialogue, bundles = docs#bundles, pending = docs#pending }
+          cast = docs#cast, people = docs#people, dialogue = docs#dialogue, bundles = docs#bundles, bundlePending = docs#bundlePending, modelPending = docs#modelPending }
 
     // ── 束と人物の glb（起動の読み込みと、ブラウザ版で後から届いた鍵） ──
 
@@ -60,7 +60,9 @@ mod Res {
     /// 待つ鍵の無い表（束の無い校舎・テスト）。
     pub def nothingPending(): BackgroundLoad.Pending = { group = "school", states = Map.empty(), sentPriority = Nil, costMs = 0.0, idleSinceMs = -1.0 }
 
-    pub def withPending(pending: BackgroundLoad.Pending, res: Res): Res = { pending = pending | res }
+    pub def withBundlePending(pending: BackgroundLoad.Pending, res: Res): Res = { bundlePending = pending | res }
+
+    pub def withModelPending(pending: BackgroundLoad.Pending, res: Res): Res = { modelPending = pending | res }
 
     /// コードで作る絵（仮の建物と非常口のプレート）。
     pub def surfaces(): Map[Surface, Texture3d.Texture3d] =

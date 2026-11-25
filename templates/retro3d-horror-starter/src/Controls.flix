@@ -95,8 +95,8 @@ mod Controls {
     // ── Doc と形の読み込み・読み直し（watchFile / F1） ──
 
     /// 起動時と描き出しが同じ形で読む物の束。配置の表が読めなければ止める（校舎が組めない: 起動時の必須入力）。
-    /// 校舎の束と人物の glb は BackgroundLoad で読む: デスクトップと描き出しは全部をここで読み、ブラウザ版は起動の素材の鍵だけを読んで
-    /// 残りを待ちの表（pending）に載せる（届いたら Game.app の withBackgroundLoad が解く）。読めない鍵はその物なしで続ける（理由を 1 行）。
+    /// 校舎の束と人物・持ち物の glb は BackgroundLoad の 2 つの Group で読む: デスクトップと描き出しは全部をここで読み、ブラウザ版は起動の素材の鍵だけを読んで
+    /// 残りを待ちの表（pending）に載せる（届いたら withBackgroundLoads が足した step が解く）。読めない鍵はその物なしで続ける（理由を 1 行）。
     pub def loadDocs(): Res.Docs \ Fs.FileRead + IO + LoadProgress =
         LoadProgress.report("reading docs...", 0, 0);
         let layout = match Layout.load(Layout.path()) {
@@ -107,8 +107,12 @@ mod Controls {
         let bundles = Bundles.load(layout#placeholder, Bundles.path());
         let models = CastDoc.rec(cast)#members |> List.map(m -> m#model) |> List.distinct;
         let items = ItemsDoc.load(ItemsDoc.path());
-        let group = Bundles.group(bundles, models, itemGlbs(items), Model3d.loader());
-        let (loaded, pending) = BackgroundLoad.start(group);
+        let loader = Model3d.loader();
+        let bundleGroup = Bundles.schoolGroup(bundles, loader);
+        let modelGroup = Bundles.modelGroup(models, itemGlbs(items), loader);
+        let (bundlesLoaded, bundlePending) = BackgroundLoad.start(bundleGroup);
+        let (modelsLoaded, modelPending) = BackgroundLoad.start(modelGroup);
+        let loaded = Map.union(bundlesLoaded, modelsLoaded);
         let empty = ({ floors = Map.empty(), props = Map.empty(), surfaces = Res.surfaces() }, Map.empty());
         let (assets, people) = loaded |> Map.foldLeftWithKey((acc, key, result) -> match result {
             case Ok(model) => Res.placeModel(layout, key, model, acc)
@@ -116,7 +120,25 @@ mod Controls {
         }, empty);
         { walk = WalkDoc.load(WalkDoc.path()), keys = KeysDoc.load(KeysDoc.path()), look = LookDoc.load(LookDoc.path()),
           sound = SoundDoc.load(SoundDoc.path()), layout = layout, assets = assets, items = items, cast = cast, people = people, dialogue = loadDialogue(),
-          bundles = bundles, pending = pending, group = group, downloads = LoadProgress.downloads() }
+          bundles = bundles, bundlePending = bundlePending, modelPending = modelPending,
+          bundleGroup = bundleGroup, modelGroup = modelGroup, downloads = LoadProgress.downloads() }
+
+    /// 後から届く鍵を解く 2 つの Group（人物と持ち物・校舎の束）を app へ足す。待ちの表はどちらも Res に持ち、解けた鍵は Res.withLoaded が置く。
+    /// 今要る鍵（wantedKeys）はどちらにも渡す（その Group に無い鍵は engine が読み飛ばす）。
+    // WhyNot: 校舎の束を先に足さない — 前の step が使った ms は次の step の予算から引かれるので、束（スマホで 100〜180 ms）を解いたコマには
+    // 人物が始まらず、小さい人物が大きい束の後ろへ回る。
+    pub def withBackgroundLoads(docs: { bundleGroup = Bundles.Group, modelGroup = Bundles.Group, downloads = LoadProgress.AssetDownloads | r },
+                                app: App.App[Resources.With[Res.Res, World.World], ef]): App.App[Resources.With[Res.Res, World.World], ef] =
+        let store = (key, result, h) -> Resources.of(Res.withLoaded(key, result, h#resources), h#world);
+        app
+            |> App.withBackgroundLoad({ group = docs#modelGroup, downloads = docs#downloads,
+                                        pendingOf = h -> h#resources#modelPending,
+                                        withPending = (p, h) -> Resources.of(Res.withModelPending(p, h#resources), h#world),
+                                        store = store, priority = Resources.read(wantedKeys) })
+            |> App.withBackgroundLoad({ group = docs#bundleGroup, downloads = docs#downloads,
+                                        pendingOf = h -> h#resources#bundlePending,
+                                        withPending = (p, h) -> Resources.of(Res.withBundlePending(p, h#resources), h#world),
+                                        store = store, priority = Resources.read(wantedKeys) })
 
     // ── ブラウザ版で後から届く束と人物（デスクトップは全部 Loaded なので、どれも何もしない） ──
 
@@ -124,7 +146,7 @@ mod Controls {
     def itemGlbs(items: ItemsDoc.Doc): List[String] = ItemsDoc.rec(items)#items |> List.map(i -> i#glb) |> List.distinct
 
     /// 今要る鍵: 描く階（School.visibleFloors）に物を置く束と、描く階にいる人物と、持ち物（小さいので全部）。解く順の頭へ回し、届いていれば待たずに解く。
-    pub def wantedKeys(res: Res.Res, w: World.World): List[String] =
+    def wantedKeys(res: Res.Res, w: World.World): List[String] =
         let floors = School.visibleFloors(res#layout, World.feetOf(w));
         let bundleKeys = floors |> List.flatMap(Bundles.keysOnFloor(res#bundles));
         let personKeys = CastDoc.rec(res#cast)#members
@@ -137,7 +159,8 @@ mod Controls {
     // WhyNot: 遊んでいる最中に Covered を使わない — 1 本目の後も 40 ms に満たない間 2 本目を始め、半分に分けた束 2 つが同じコマで解かれて約 70 ms 止まる。
     // WhyNot: 届いた鍵を全部すぐ解かない — 束 1 本はスマホで 100〜180 ms 止まる。2・3 階の束は階段の近くかマップの間まで解かない。
     pub def decodeBudget(res: Res.Res, w: World.World): LoadProgress.DecodeBudget =
-        let downloaded = key -> BackgroundLoad.stateOf(key, res#pending) == LoadProgress.LoadState.Downloaded;
+        let downloaded = key -> BackgroundLoad.stateOf(key, res#modelPending) == LoadProgress.LoadState.Downloaded
+            or BackgroundLoad.stateOf(key, res#bundlePending) == LoadProgress.LoadState.Downloaded;
         if (World.isMapOpen(w) or World.isItemsOpen(w)) LoadProgress.DecodeBudget.Covered(40.0)
         else if (List.exists(downloaded, wantedKeys(res, w))) LoadProgress.DecodeBudget.Idle(45.0)
         else LoadProgress.DecodeBudget.Idle(4.0)

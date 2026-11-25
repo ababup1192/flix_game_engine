@@ -27,7 +27,7 @@ mod TestRules {
     def res(): Res.Res =
         Res.build({ walk = WalkDoc.defaults(), keys = KeysDoc.defaults(), look = LookDoc.defaults(), sound = SoundDoc.defaults(), layout = layout(),
                     assets = { floors = Map.empty(), props = Map.empty(), surfaces = Res.surfaces() }, items = ItemsDoc.defaults(),
-                    cast = cast(), people = Map#{"girl_student" => person()}, dialogue = dialogue(), bundles = Nil, pending = Res.nothingPending() })
+                    cast = cast(), people = Map#{"girl_student" => person()}, dialogue = dialogue(), bundles = Nil, bundlePending = Res.nothingPending(), modelPending = Res.nothingPending() })
 
     /// 人物の形の代わり（形の無い模型）。話しかけられるのは形の読めた人物だけなので、cast の model の名前で置く。
     def person(): Model3d.Model3d =

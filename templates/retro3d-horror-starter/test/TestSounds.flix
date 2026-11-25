@@ -11,7 +11,7 @@ mod TestSounds {
     def res(): Res.Res =
         Res.build({ walk = WalkDoc.defaults(), keys = KeysDoc.defaults(), look = LookDoc.defaults(), sound = SoundDoc.defaults(), layout = layout(),
                     assets = { floors = Map.empty(), props = Map.empty(), surfaces = Map.empty() }, items = ItemsDoc.defaults(),
-                    cast = CastDoc.defaults(), people = Map.empty(), dialogue = Yarn.empty(), bundles = Nil, pending = Res.nothingPending() })
+                    cast = CastDoc.defaults(), people = Map.empty(), dialogue = Yarn.empty(), bundles = Nil, bundlePending = Res.nothingPending(), modelPending = Res.nothingPending() })
 
     def doc(): SoundDoc.Rec = SoundDoc.rec(SoundDoc.defaults())
 

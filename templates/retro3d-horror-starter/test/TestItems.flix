@@ -31,7 +31,7 @@ mod TestItems {
     def resWith(cast: CastDoc.Doc): Res.Res =
         Res.build({ walk = WalkDoc.defaults(), keys = KeysDoc.defaults(), look = LookDoc.defaults(), sound = SoundDoc.defaults(), layout = layout(),
                     assets = { floors = Map.empty(), props = Map#{"item_key" => blank(), "item_tag" => blank(), "door-0" => blank()}, surfaces = Map.empty() },
-                    items = items(), cast = cast, people = Map#{"girl_student" => blank()}, dialogue = Yarn.empty(), bundles = Nil, pending = Res.nothingPending() })
+                    items = items(), cast = cast, people = Map#{"girl_student" => blank()}, dialogue = Yarn.empty(), bundles = Nil, bundlePending = Res.nothingPending(), modelPending = Res.nothingPending() })
 
     def res(): Res.Res = resWith(CastDoc.defaults())
 

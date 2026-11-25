@@ -50,6 +50,8 @@ mod GameLint {
                 |> allowIn(Fn.TestRules_cast, "テストの中に書いた人物の Doc を読むだけ。読めない時の受け皿は人物の居ない既定で、それを使うテストは赤くなる")
                 |> allowIn(Fn.TestRules_layout, "テストの中に書いた配置の表を読むだけ。読めない時の受け皿は階の無い表で、それを使うテストは全部赤くなる")
                 |> allowIn(Fn.TestItems_layout, "テストの中に書いた配置の表を読むだけ。読めない時の受け皿は階の無い表で、それを使うテストは全部赤くなる")
+                |> allowIn(Fn.TestBackgroundLoads_layout, "テストの中に書いた配置の表を読むだけ。読めない時の受け皿は階の無い表で、描く階が無く人物を待たないのでテストは赤くなる")
+                |> allowIn(Fn.TestBackgroundLoads_cast, "テストの中に書いた人物の Doc を読むだけ。読めない時の受け皿は人物の居ない既定で、予算が上がらずテストは赤くなる")
                 |> allowIn(Fn.TestItems_items, "テストの中に書いた持ち物の Doc を読むだけ。読めない時の受け皿は物の無い既定で、それを使うテストは赤くなる")
                 |> allowIn(Fn.TestItems_standing, "持ち物を持たせる口（World.withItems）は知らない id で Err。テストの Doc の id だけを渡すので、受け皿の持たない World を使うテストは赤くなる")
                 |> allowIn(Fn.TestItems_castNearTheTag, "テストの中に書いた人物の Doc を読むだけ。読めない時の受け皿は人物の居ない既定で、それを使うテストは赤くなる")

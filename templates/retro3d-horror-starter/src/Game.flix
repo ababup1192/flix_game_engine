@@ -47,12 +47,8 @@ mod Game {
             |> App.withStatusLine(Resources.read(E2e.statusLine))
             // クリックでマウスを視点に取り込み、マウスの動き（frame#mouseDelta）で見回す（Esc で放す）。
             |> App.withMouseCapture(Resources.read((_, w) -> World.wantsMouseCapture(w)))
-            // ブラウザ版で後から届く校舎の束と人物を、届いた物から解いて校舎を組み直す（デスクトップは起動で全部読んであるので何もしない）。
+            // ブラウザ版で後から届く校舎の束と人物・持ち物を、届いた物から解いて校舎を組み直す（デスクトップは起動で全部読んであるので何もしない）。
             |> App.withDecodeBudget(Resources.read(Controls.decodeBudget))
-            |> App.withBackgroundLoad({ group = docs#group, downloads = docs#downloads,
-                                        pendingOf = h -> h#resources#pending,
-                                        withPending = (p, h) -> Resources.of(Res.withPending(p, h#resources), h#world),
-                                        store = (key, result, h) -> Resources.of(Res.withLoaded(key, result, h#resources), h#world),
-                                        priority = Resources.read(Controls.wantedKeys) })
+            |> Controls.withBackgroundLoads(docs)
             |> App.withLoadGate(Resources.read(Controls.loadGate))
 }
