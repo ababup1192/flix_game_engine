@@ -95,7 +95,7 @@ pub mod Render3dGlsl {
     def surfaceDeclarations(psx: Bool): String =
         "layout (location = 5) in vec2 aUv;\n" +
         "layout (location = 6) in vec4 aTangent;\n" +
-        (if (psx) "out vec2 vUvPerspective;\nnoperspective out vec2 vUvAffine;\n" else "out vec2 vUv;\n") +
+        (if (psx) "out vec2 vUvPerspective;\nout vec3 vUvAffine;\n" else "out vec2 vUv;\n") +
         "out vec4 vTangent;\n"
 
     /// PS1 風の変種の頂点を丸める式 r3d_vertexSnap(clip の位置)（CPU の描き手は SoftRaster3d.Psx.snapVertex）。uPsxTarget.zw = 場面の描き先の幅と高さ（画素）・
@@ -175,10 +175,16 @@ pub mod Render3dGlsl {
     // WhyNot: タンジェントを normalMatrix で写さない — 法線の行列は面に垂直な向きを保つための物で、面の上の向きは model のまま写る。
     def meshVertexSourceOf(parts: { declarations = String, prelude = String, position = String, normal = String,
                                     tangent = Option[String], uv2 = Bool, vertexColorToLinear = Bool, psx = Bool }): String =
+        // WhyNot: 画面の上でまっすぐつなぐ uv を noperspective で出さない — GLSL ES 3.00（WebGL2）には無い語で、スマホの GL ES の上の ANGLE ではコンパイルが落ちる。
+        // uv と w を掛けて遠近で補正する普通の varying で送り、フラグメントで w で割り戻すと同じ値になる（gl_Position が決まった後に書く）。
+        let affineUv = match parts#tangent {
+            case Some(_) if parts#psx => "    vUvAffine = vec3(aUv * gl_Position.w, gl_Position.w);\n"
+            case _                    => ""
+        };
         let surfaceBody = match parts#tangent {
             case None    => ""
             case Some(t) =>
-                (if (parts#psx) "    vUvPerspective = aUv;\n    vUvAffine = aUv;\n" else "    vUv = aUv;\n") +
+                (if (parts#psx) "    vUvPerspective = aUv;\n" else "    vUv = aUv;\n") +
                 "    mat3 modelLinear = mat3(model);\n" +
                 "    vTangent = vec4(modelLinear * (" + t + "), aTangent.w * sign(determinant(modelLinear)));\n"
         };
@@ -204,6 +210,7 @@ pub mod Render3dGlsl {
         surfaceBody +
         (if (parts#uv2) "    vUv2 = aUv2;\n" else "") +
         (if (parts#psx) "    gl_Position = r3d_vertexSnap(uProj * uView * world);\n" else "    gl_Position = uProj * uView * world;\n") +
+        affineUv +
         "}\n"
 
     /// 光の uniform と、光の式（lightAt）・かすみ（fogged）。式は LightModel3d の木から作る（CPU の描き手と同じ木）。
@@ -400,7 +407,7 @@ pub mod Render3dGlsl {
         "in vec3 vColor;\n" +
         "flat in vec3 vTint;\n" +
         "flat in float vEmissionIntensity;\n" +
-        (if (surface#uv and v#psx) "in vec2 vUvPerspective;\nnoperspective in vec2 vUvAffine;\nvec2 vUv;\n"
+        (if (surface#uv and v#psx) "in vec2 vUvPerspective;\nin vec3 vUvAffine;\nvec2 vUv;\n"
          else if (surface#uv) "in vec2 vUv;\n" else "const vec2 vUv = vec2(0.0, 0.0);\n") +
         (if (surface#lightmap) "in vec2 vUv2;\n" else "") +
         "out vec4 fragColor;\n" +
@@ -416,7 +423,7 @@ pub mod Render3dGlsl {
         (if (surface#lightmap) lightmapSource(v) else "") +
         (if (surface#metallicRoughness) metallicRoughnessSourceFor(v) else "") +
         "void main() {\n" +
-        (if (surface#uv and v#psx) "    vUv = mix(vUvPerspective, vUvAffine, uPsx.w);\n" else "") +
+        (if (surface#uv and v#psx) "    vUv = mix(vUvPerspective, vUvAffine.xy / vUvAffine.z, uPsx.w);\n" else "") +
         "    vec4 albedo;\n" +
         "    vec3 emission;\n" +
         (if (surface#metallicRoughness) "    vec2 metalRough;\n    materialEval(albedo, emission, metalRough);\n" else "    materialEval(albedo, emission);\n") +

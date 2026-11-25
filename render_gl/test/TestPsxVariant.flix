@@ -68,12 +68,19 @@ mod Render3d.TestPsxVariant {
 
     @Test
     def testGlslMaterialVertexSendsAffineUv(): Unit \ Assert =
-        Assert.assertTrue(has("noperspective out vec2 vUvAffine;", Render3dGlsl.materialVertexSourceFor({ skinned = false, uv = true, lightmap = false }, true)))
+        Assert.assertTrue(has("    vUvAffine = vec3(aUv * gl_Position.w, gl_Position.w);\n", Render3dGlsl.materialVertexSourceFor({ skinned = false, uv = true, lightmap = false }, true)))
+
+    @Test
+    def testGlslMaterialVertexWritesAffineUvAfterPosition(): Unit \ Assert =
+        let source = Render3dGlsl.materialVertexSourceFor({ skinned = false, uv = true, lightmap = false }, true);
+        let position = String.indexOf(substr = "    gl_Position = ", source) |> Option.getWithDefault(-1);
+        let affine = String.indexOf(substr = "    vUvAffine = ", source) |> Option.getWithDefault(-1);
+        Assert.assertTrue(position >= 0 and position < affine)
 
     @Test
     def testGlslMaterialFragmentMixesUvBeforeEval(): Unit \ Assert =
         let source = Render3dGlsl.materialFragmentSource(solidGlsl(), kind(true));
-        let mix = String.indexOf(substr = "    vUv = mix(vUvPerspective, vUvAffine, uPsx.w);\n", source) |> Option.getWithDefault(-1);
+        let mix = String.indexOf(substr = "    vUv = mix(vUvPerspective, vUvAffine.xy / vUvAffine.z, uPsx.w);\n", source) |> Option.getWithDefault(-1);
         let eval = String.indexOf(substr = "    materialEval(albedo, emission);\n", source) |> Option.getWithDefault(-1);
         Assert.assertTrue(mix >= 0 and mix < eval)
 
