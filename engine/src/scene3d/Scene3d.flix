@@ -1159,13 +1159,24 @@ pub mod Scene3d {
 
     /// 描き手へ渡す、先に GPU へ上げる物の宣言（App.withPreload3d）。key = 中身を決める全入力をまとめた字・
     /// instances・textures = 上げる物と、その材質が "tex3d:" の名前で読む絵の作り方（key が変わった時だけ呼ばれる）・
-    /// variants = 既定の版に足して組むシェーダーの変種（preloadVariantOf）。
+    /// variants = 既定の版に足して組むシェーダーの変種（preloadVariantOf）・groups と scenes = 先に計画を作る動かない物の集まりと、それを描く場面
+    /// （集まりごと・場面ごとに、描き手が描く時と同じ持ち越しの行を作る。key が変わった時だけ呼ばれる）。
     pub type alias PreloadCmd = { key = DrawCmd.StaticKey, instances = Unit -> List[Instance3d], textures = Unit -> List[Texture3d.Texture3d],
-                                  variants = List[PreloadVariant] }
+                                  variants = List[PreloadVariant], groups = Unit -> List[StaticGroup], scenes = Unit -> List[Scene3dCmd] }
 
-    /// textures が空・variants が空の宣言（`{ textures = () -> .. | Scene3d.preloadCmd(key, instances) }` で替える）。
+    /// textures・variants・groups・scenes が空の宣言（`{ textures = () -> .. | Scene3d.preloadCmd(key, instances) }` で替える）。
     pub def preloadCmd(key: DrawCmd.StaticKey, instances: Unit -> List[Instance3d]): PreloadCmd =
-        { key = key, instances = instances, textures = () -> Nil, variants = Nil }
+        { key = key, instances = instances, textures = () -> Nil, variants = Nil, groups = () -> Nil, scenes = () -> Nil }
+
+    /// 先に上げる宣言の進み具合。total = 作る物の数（集まり × 場面）・done = そのうち作り終えた数。全部済めば done == total
+    /// （計画を持たない描き手と、集まりを宣言しないゲームはいつも 0 と 0）。
+    pub type alias PreloadProgress = { done = Int32, total = Int32 }
+
+    /// 作る物の無い進み具合（0 と 0。済んでいる）。
+    pub def noPreload(): PreloadProgress = { done = 0, total = 0 }
+
+    /// 進み具合 p が全部済んでいるか。
+    pub def isPreloaded(p: PreloadProgress): Bool = p#done >= p#total
 
     /// 先に組むシェーダーの変種（場面の設定で決まる版）。pointShadows = 点光源の影を引く版（場面の pointShadows が Some・描き手の鍵の +ps）・
     /// physicalUnits = Physical の光の版（場面の lightUnits が Physical・+pu）・psx = PS1 風の版（場面の psx が Scene3d.Psx.isOn・+psx）。どれも偽なら既定の版（いつも組む）。

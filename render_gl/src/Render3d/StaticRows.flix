@@ -222,8 +222,12 @@ mod Render3d.StaticRows {
 
     /// b を時計を見ずに全部の段まで進めて、置いた物を返す。
     def buildAll(planner: Planner, steps: BuildSteps[a], b: Build[a]): a \ IO =
-        stepUntil(planner, steps, b, BuildPhase.Place);
-        let made = placeOf(planner, steps, b);
+        let made = match Ref.get(b#made) {
+            case Some(placed) => placed
+            case None         =>
+                stepUntil(planner, steps, b, BuildPhase.Place);
+                placeOf(planner, steps, b)
+        };
         stepUntil(planner, steps, b, BuildPhase.Done);
         made
 
@@ -319,9 +323,7 @@ mod Render3d.StaticRows {
                 let work = shown |> Option.flatMap(_ -> workFor(planner, cache, gen, g, variant, coverage, scene, steps#retire));
                 match (shown, work) {
                     case (Some(e), Some(w)) => stepOrShow(planner, cache, gen, f, variant, steps, deadline, e, w)
-                    case _ =>
-                        dropWork(cache, f#name, variant, steps#retire);
-                        buildNow(planner, cache, gen, g, variant, coverage, scene, steps)
+                    case _ => finishNow(planner, cache, gen, g, variant, coverage, scene, steps)
                 }
         }
 
@@ -348,6 +350,70 @@ mod Render3d.StaticRows {
             now + minimumStepNs()
         }
 
+    /// g をこのコマで作り終えて控えに入れた物（先に上げる宣言の作りかけがあれば、その続きから）。
+    def finishNow(planner: Planner, cache: Cache[a], gen: Int64, g: Scene3d.StaticGroup, variant: String, coverage: Bool, scene: Scene3d.Scene3dCmd,
+                  steps: BuildSteps[a]): a \ IO =
+        let f = Scene3d.staticGroupFieldsOf(g);
+        match sameWorkOf(cache, f, variant) {
+            case Some(w) =>
+                removeWork(cache, f#name, variant);
+                insertEntry(planner, cache, gen, f, variant, buildAll(planner, steps, w#build), steps#retire)
+            case None =>
+                dropWork(cache, f#name, variant, steps#retire);
+                buildNow(planner, cache, gen, g, variant, coverage, scene, steps)
+        }
+
+    /// f と同じ集まり（items の値・外した鍵・tint）を variant で作っている作りかけ。
+    def sameWorkOf(cache: Cache[a], f: Scene3d.StaticGroupFields, variant: String): Option[Work[a]] \ IO =
+        let items = unchecked_cast(f#items as Object);
+        Map.getWithDefault(f#name, Nil, Ref.get(cache#works))
+            |> List.find(w -> w#variant == variant and w#items.containsKey(items) and f#removed == w#removed and isSameTint(f#tint, w#tint))
+
+    /// 先に上げる宣言の集まり g を、描かずに variant の行で作る。作り終えていれば真（控えを今のコマで使った物にする）、
+    /// まだならこのコマの予算まで作りかけを進めて偽（作り終えたコマは真）。予算を使い切り、最低の時間もほかの作りかけに渡した後のコマは進めない。
+    pub def prepareAhead(planner: Planner, cache: Cache[a], gen: Int64, g: Scene3d.StaticGroup, variant: String, coverage: Bool, scene: Scene3d.Scene3dCmd,
+                         steps: BuildSteps[a]): Bool \ IO =
+        let deadline = deadlineOf(cache, gen);
+        let f = Scene3d.staticGroupFieldsOf(g);
+        let items = unchecked_cast(f#items as Object);
+        let held = Map.getWithDefault(f#name, Nil, Ref.get(cache#entries));
+        let over = isOverBudget(cache, gen, deadline);
+        match List.find(e -> isSameGroup(f, e) and e#variant == variant and e#items.containsKey(items), held) {
+            case Some(e) =>
+                Array.put(gen, 0, e#lastUsed);
+                true
+            case None if over => false
+            case None =>
+                let w = match sameWorkOf(cache, f, variant) {
+                    case Some(found) => found
+                    case None        => startWork(planner, cache, gen, g, variant, coverage, scene, steps#retire)
+                };
+                Array.put(gen, 0, w#lastStep);
+                match stepBuild(planner, steps, w#build, deadlineWithMinimum(cache, gen, deadline)) {
+                    case Some(made) =>
+                        removeWork(cache, f#name, variant);
+                        discard insertEntry(planner, cache, gen, f, variant, made, steps#retire);
+                        true
+                    case None => false
+                }
+        }
+
+    /// g の作りかけを始めて控える（同じ名前・variant の別の作りかけは捨てる）。
+    def startWork(planner: Planner, cache: Cache[a], gen: Int64, g: Scene3d.StaticGroup, variant: String, coverage: Bool, scene: Scene3d.Scene3dCmd,
+                  retire: a -> Unit \ IO): Work[a] \ IO =
+        let f = Scene3d.staticGroupFieldsOf(g);
+        let items = unchecked_cast(f#items as Object);
+        dropWork(cache, f#name, variant, retire);
+        let key: IdentityHashMap[Object, Object] = new IdentityHashMap();
+        discard key.put(items, items);
+        let w = { items = key, removed = f#removed, tint = f#tint, variant = variant, build = startBuild(planner, coverage, scene, g), lastStep = Array#{gen} @ Static };
+        Ref.put(Map.insert(f#name, w :: Map.getWithDefault(f#name, Nil, Ref.get(cache#works)), Ref.get(cache#works)), cache#works);
+        w
+
+    /// gen のコマの予算を使い切り、予算切れの後の最低の時間も渡した後か。
+    def isOverBudget(cache: Cache[a], gen: Int64, deadline: Int64): Bool \ IO =
+        Array.get(2, cache#budget) == gen and System.nanoTime() >= deadline
+
     /// g をこのコマで全部作って控えに入れた物。
     def buildNow(planner: Planner, cache: Cache[a], gen: Int64, g: Scene3d.StaticGroup, variant: String, coverage: Bool, scene: Scene3d.Scene3dCmd,
                  steps: BuildSteps[a]): a \ IO =
@@ -365,25 +431,16 @@ mod Render3d.StaticRows {
     def workFor(planner: Planner, cache: Cache[a], gen: Int64, g: Scene3d.StaticGroup, variant: String, coverage: Bool, scene: Scene3d.Scene3dCmd,
                 retire: a -> Unit \ IO): Option[Work[a]] \ IO =
         let f = Scene3d.staticGroupFieldsOf(g);
-        let items = unchecked_cast(f#items as Object);
-        let held = Map.getWithDefault(f#name, Nil, Ref.get(cache#works));
-        let (mine, others) = List.partition(w -> w#variant == variant, held);
-        let same = List.head(mine) |> Option.filter(w -> w#items.containsKey(items) and f#removed == w#removed and isSameTint(f#tint, w#tint));
-        let remakes = Map.getWithDefault((f#name, variant), 0, Ref.get(cache#remakes)) + (if (List.isEmpty(mine)) 0 else 1);
+        let same = sameWorkOf(cache, f, variant);
+        let building = Map.getWithDefault(f#name, Nil, Ref.get(cache#works)) |> List.exists(w -> w#variant == variant);
+        let remakes = Map.getWithDefault((f#name, variant), 0, Ref.get(cache#remakes)) + (if (building) 1 else 0);
         if (Option.nonEmpty(same)) same
         else {
-            mine |> List.forEach(retireWork(retire));
             Ref.put(Map.insert((f#name, variant), remakes, Ref.get(cache#remakes)), cache#remakes);
             if (remakes > restartLimit()) {
-                Ref.put(Map.insert(f#name, others, Ref.get(cache#works)), cache#works);
+                dropWork(cache, f#name, variant, retire);
                 None
-            } else {
-                let key: IdentityHashMap[Object, Object] = new IdentityHashMap();
-                discard key.put(items, items);
-                let w = { items = key, removed = f#removed, tint = f#tint, variant = variant, build = startBuild(planner, coverage, scene, g), lastStep = Array#{gen} @ Static };
-                Ref.put(Map.insert(f#name, w :: others, Ref.get(cache#works)), cache#works);
-                Some(w)
-            }
+            } else Some(startWork(planner, cache, gen, g, variant, coverage, scene, retire))
         }
 
     /// (name, variant) の集まりが控えに当たった: 作りかけを捨て（前の値へ戻った）、始め直しの数を 0 に戻す。

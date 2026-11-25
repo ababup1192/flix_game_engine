@@ -754,8 +754,9 @@ mod RenderPaint {
 
     /// Platform.Draw3d.preload3d の中身。
     // WhyNot: queueScene3d のように溜めない — 溜めると、同じコマの Pass の場面が上がる前に描かれる。
-    pub def preloadScene3d(paint: Paint, cmd: Scene3d.PreloadCmd): Unit \ IO =
-        paint#scene3d#preload(Array.get(0, paint#frameGenHolder), registeredTexture(paint#registryRef, paint#targets, paint#textureKeyRef), cmd)
+    pub def preloadScene3d(paint: Paint, cmd: Scene3d.PreloadCmd): Scene3d.PreloadProgress \ IO =
+        // WhyNot: 今の世代で呼ばない — 世代は画面を描く直前に進み、今の世代のまま作ると前のコマの切れた予算で進め、作った控えを画面のコマが使っていない物とみなす。
+        paint#scene3d#preload(Array.get(0, paint#frameGenHolder) + 1i64, registeredTexture(paint#registryRef, paint#targets, paint#textureKeyRef), cmd)
 
     /// 使わなくなったシェーダープログラムを LRU で追い出す。
     def evictShaderPrograms(gl: GlContext, paint: Paint): Unit \ IO =

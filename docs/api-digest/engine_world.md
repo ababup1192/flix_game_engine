@@ -131,7 +131,7 @@
 - 負方向・正方向のキーの押し下げを -1 / 0 / +1 にまとめる（両押しは打ち消して 0）。
   `pub def axis(negative: {negative = GameEngine.Key}, positive: {positive = GameEngine.Key}, frame: Frame): Float64`
 - view / hudView が受け取る「この 1 フレームの見え方」。atlas は文字描画用の既定フォント、
-  `pub type alias ViewCtx = { atlas = FontAtlas, fontOf = String -> FontAtlas, visible = Rect2.Rect2, warnOnce = String -> Unit, diagnostics = Option[FrameDiagnostics.Diagnostics], display = Display.Display }`
+  `pub type alias ViewCtx = { atlas = FontAtlas, fontOf = String -> FontAtlas, visible = Rect2.Rect2, warnOnce = String -> Unit, diagnostics = Option[FrameDiagnostics.Diagnostics], display = Display.Display, preload3d = Scene3d.PreloadProgress }`
 - ヘッドレス描き出しから view を呼ぶときの ViewCtx。画面全体が見えている扱いにする。
   `pub def viewCtxOf(atlas: FontAtlas, design: Vec2.Vec2): ViewCtx`
 - viewCtxOf の複数フォント版。fontOf には実機と同じ名前で引ける関数を渡す
@@ -181,7 +181,7 @@
 - 遊びの途中で初めて出る物（形・絵・材質のプログラム）を GPU へ先に上げる宣言。初めて出るコマに mipmap 作りとプログラムの組み立てが乗って
   `pub def withPreload3d(plan: Preload3d[w], app: App[w, ef]): App[w, ef]`
 - withPreload3d の宣言（欄の意味は withPreload3d の doc）。preload3d は textures と variants を空にして作る。
-  `pub type alias Preload3d[w] = { key = w -> GameEngine.StaticKey, instances = w -> List[Scene3d.Instance3d], textures = w -> List[Texture3d.Texture3d], variants = w -> List[Scene3d.PreloadVariant] }`
+  `pub type alias Preload3d[w] = { key = w -> GameEngine.StaticKey, instances = w -> List[Scene3d.Instance3d], textures = w -> List[Texture3d.Texture3d], variants = w -> List[Scene3d.PreloadVariant], groups = w -> List[Scene3d.StaticGroup], scenes = w -> List[Scene3d.Scene3dCmd] }`
 - `pub def preload3d(key: w -> GameEngine.StaticKey, instances: w -> List[Scene3d.Instance3d]): Preload3d[w]`
 - タイルの層（床・壁 1 行目など、格子に敷く静的な絵）を宣言する。エンジンが Spec ごとに
   `pub def withTileLayers(f: w -> List[TileLayerSpec], app: App[w, ef]): App[w, ef]`

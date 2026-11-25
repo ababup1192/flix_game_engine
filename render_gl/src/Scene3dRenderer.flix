@@ -7,14 +7,15 @@ mod Scene3dRenderer {
     /// prepare の引数 = (画面のコマの世代, 2D の絵の登録を名前で引く関数, 描き終えた後に戻す描き先, 積んだ順の場面)。
     /// endFrame の引数 = 世代。takeCounts = 前に呼んでからの 3D の数を返して 0 に戻す。
     /// readsTexture(isName, scenes) = 場面のどれかのビルボードが、名前が isName に当たる絵を貼るか（材質の Tex は数えない。Pass が自分の前のコマの写しを読むかを決める）。
-    /// preload の引数 = (世代, 2D の絵の登録を名前で引く関数, 先に上げる物の宣言)。その場で上げる（前と同じ key なら何もしない）。コマの描き始めの前に呼ぶ。
+    /// preload の引数 = (世代, 2D の絵の登録を名前で引く関数, 先に上げる物の宣言)。その場で上げ（前と同じ key なら上げ直さない）、集まりの作りかけを進めて
+    /// 進み具合を返す。コマの描き始めの前に呼ぶ。
     /// 置き場と世代を持つので、1 つの値は 1 つの RenderPaint にだけ渡す（Render3d.makeRenderer を RenderPaint ごとに呼ぶ）。
     pub type alias Renderer = {
         prepare = (Int64, String -> Option[RegisteredTexture] \ IO, Dest, List[Scene3d.RenderCmd]) -> Prepared \ IO,
         endFrame = Int64 -> Unit \ IO,
         takeCounts = Unit -> FrameDiagnostics.Scene3dCounts \ IO,
         readsTexture = (String -> Bool, List[Scene3d.RenderCmd]) -> Bool,
-        preload = (Int64, String -> Option[RegisteredTexture] \ IO, Scene3d.PreloadCmd) -> Unit \ IO
+        preload = (Int64, String -> Option[RegisteredTexture] \ IO, Scene3d.PreloadCmd) -> Scene3d.PreloadProgress \ IO
     }
 
     /// そのコマ（か Pass）に準備した場面の並び。zIndexes の i 番目 = 番号 i の場面の z。
@@ -38,7 +39,7 @@ mod Scene3dRenderer {
           endFrame = _ -> checked_ecast(()),
           takeCounts = () -> checked_ecast(FrameDiagnostics.emptyScene3dCounts()),
           readsTexture = (_, _) -> false,
-          preload = (_, _, _) -> checked_ecast(()) }
+          preload = (_, _, _) -> checked_ecast(Scene3d.noPreload()) }
 
     /// renderer の、先に上げる物の宣言を捨てる版。
     pub def withoutPreload(renderer: Renderer): Renderer =

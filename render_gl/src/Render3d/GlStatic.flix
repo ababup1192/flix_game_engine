@@ -32,6 +32,11 @@ mod Render3d.GlStatic {
         let variant = StaticRows.carriedKeyOf(coverage, scene);
         scene#groups |> List.map(g -> drawOf(gl, state, gen, tables, coverage, scene, variant, g))
 
+    /// 先に上げる宣言の集まり g を、場面 scene の行で描かずに作る（作り終えていれば真）。coverage は carriedOf と同じ。
+    pub def prepareAhead(gl: GlContext, state: State, gen: Int64, tables: Render3d.SceneList.Tables, coverage: Bool, scene: Scene3d.Scene3dCmd,
+                         g: Scene3d.StaticGroup): Bool \ IO =
+        StaticRows.prepareAhead(state#planner, state#statics#cache, gen, g, StaticRows.carriedKeyOf(coverage, scene), coverage, scene, stepsOf(gl, state, gen, tables))
+
     /// 集まり g の持ち越した物と、このコマの材質の表。表の番号が作った時と違えば（組み直した材質がある）控えを全部捨てて作り直す。
     def drawOf(gl: GlContext, state: State, gen: Int64, tables: Render3d.SceneList.Tables, coverage: Bool, scene: Scene3d.Scene3dCmd,
                variant: String, g: Scene3d.StaticGroup): CarriedDraw \ IO =

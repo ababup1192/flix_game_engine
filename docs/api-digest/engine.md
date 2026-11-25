@@ -1097,8 +1097,8 @@
   `pub eff Draw3d`
 - 3D の場面 1 つを、次の Draw2d.renderCommands の列へ積む（深度で前後を決め、2D の並びの中では cmd#scene#zIndex の 1 点に入る）。
   `pub eff Draw3d { def drawScene3d(cmd: Scene3d.RenderCmd): Unit }`
-- 遊びの途中で初めて出る物を GPU へ先に上げる。前と同じ cmd#key なら何もしない。
-  `pub eff Draw3d { def preload3d(cmd: Scene3d.PreloadCmd): Unit }`
+- 遊びの途中で初めて出る物を GPU へ先に上げる。前と同じ cmd#key なら形と絵と材質は上げ直さず、集まり（cmd#groups）の作りかけだけを
+  `pub eff Draw3d { def preload3d(cmd: Scene3d.PreloadCmd): Scene3d.PreloadProgress }`
 - 描くのと重ねて進める仕事を 1 つずつ預ける口。
   `pub eff Tasks`
 - `pub eff Tasks { def startTask(task: Unit -> JObject \ IO): Unit }`
@@ -1678,9 +1678,15 @@
 - Shader 効果へ渡す場面 1 つ。at = 描き物の左上（画面の px）・clip = 切り抜く矩形（画面の px）。
   `pub type alias RenderCmd = { at = Vec2.Vec2, clip = Option[Rect2.Rect2], scene = Scene3dCmd }`
 - 描き手へ渡す、先に GPU へ上げる物の宣言（App.withPreload3d）。key = 中身を決める全入力をまとめた字・
-  `pub type alias PreloadCmd = { key = DrawCmd.StaticKey, instances = Unit -> List[Instance3d], textures = Unit -> List[Texture3d.Texture3d], variants = List[PreloadVariant] }`
-- textures が空・variants が空の宣言（`{ textures = () -> .. | Scene3d.preloadCmd(key, instances) }` で替える）。
+  `pub type alias PreloadCmd = { key = DrawCmd.StaticKey, instances = Unit -> List[Instance3d], textures = Unit -> List[Texture3d.Texture3d], variants = List[PreloadVariant], groups = Unit -> List[StaticGroup], scenes = Unit -> List[Scene3dCmd] }`
+- textures・variants・groups・scenes が空の宣言（`{ textures = () -> .. | Scene3d.preloadCmd(key, instances) }` で替える）。
   `pub def preloadCmd(key: DrawCmd.StaticKey, instances: Unit -> List[Instance3d]): PreloadCmd`
+- 先に上げる宣言の進み具合。total = 作る物の数（集まり × 場面）・done = そのうち作り終えた数。全部済めば done == total
+  `pub type alias PreloadProgress = { done = Int32, total = Int32 }`
+- 作る物の無い進み具合（0 と 0。済んでいる）。
+  `pub def noPreload(): PreloadProgress`
+- 進み具合 p が全部済んでいるか。
+  `pub def isPreloaded(p: PreloadProgress): Bool`
 - 先に組むシェーダーの変種（場面の設定で決まる版）。pointShadows = 点光源の影を引く版（場面の pointShadows が Some・描き手の鍵の +ps）・
   `pub type alias PreloadVariant = { pointShadows = Bool, physicalUnits = Bool, psx = Bool }`
 - 場面 scene を描く時に描き手が組む変種（先に上げる宣言に、遊びで出す場面の設定から渡す）。

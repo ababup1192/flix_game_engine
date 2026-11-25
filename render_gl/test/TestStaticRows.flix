@@ -399,4 +399,75 @@ mod Render3d.TestStaticRows {
         let depth = { groups = g :: Nil | depthScene() };
         paint(gl, state, cmdOf(color) :: cmdOf(depth) :: Nil);
         Assert.assertEq(expected = 2, Render3d.GlStatic.sizeOf(state#statics))
+
+    // ── 先に上げる宣言の集まり ──
+
+    /// 宣言の集まりを先に作る（予算を超える遅い仕事でも何コマかで済む）と、その後に描く時は作らない。
+    @Test
+    def testPreparedAheadIsNotBuiltAgain(): Unit \ {Assert, IO} =
+        let planner = freshPlanner(Render3d.DrawMode.Instanced);
+        let builds = Ref.fresh(Static, 0);
+        let steps = countingSteps(builds, _ -> (), 4i64);
+        let cache = freshCache();
+        let g = town();
+        let readyAt = List.range(1, 10) |> List.map(gen -> Render3d.StaticRows.prepareAhead(planner, cache, Int32.toInt64(gen), g, "", false, sceneOf(Nil), steps));
+        let drawn = ensureWith(planner, cache, 20i64, g, steps);
+        Assert.assertEq(expected = (false, true, 1, 1), (List.head(readyAt) |> Option.getWithDefault(true), List.last(readyAt) |> Option.getWithDefault(false), drawn, Ref.get(builds)))
+
+    /// 先に作り終える前に描くコマが来ると、その作りかけの続きから作り終える（始め直さない）。
+    @Test
+    def testDrawingFinishesTheAheadWork(): Unit \ {Assert, IO} =
+        let planner = freshPlanner(Render3d.DrawMode.Instanced);
+        let meshes = Ref.fresh(Static, 0);
+        let steps = { prepareMesh = (_: Mesh3d.Mesh3d) -> { Thread.sleep(4i64); Ref.put(Ref.get(meshes) + 1, meshes) } | countingSteps(Ref.fresh(Static, 0), _ -> (), 0i64) };
+        let cache = freshCache();
+        let g = town();
+        let ready = Render3d.StaticRows.prepareAhead(planner, cache, 1i64, g, "", false, sceneOf(Nil), steps);
+        discard ensureWith(planner, cache, 2i64, g, steps);
+        Assert.assertEq(expected = (false, 3, 0), (ready, Ref.get(meshes), buildingCountOf(cache)))
+
+    /// GL の描き手は宣言の集まりを先に作り（1 体ごとの値のテクスチャもそこで上げる）、進み具合を 1 / 1 にし、描くコマでは上げ直さない。
+    @Test
+    def testGlPreloadBuildsGroupsBeforeDrawing(): Unit \ {Assert, IO} =
+        let log = freshRecorded();
+        let gl = recordingGl(log);
+        let state = freshState();
+        let g = town();
+        let cmd = { groups = () -> g :: Nil, scenes = () -> sceneOf(Nil) :: Nil | Scene3d.preloadCmd("k", () -> Nil) };
+        let progress = Render3d.Preload.preload(gl, state, 1i64, noRegistered, cmd);
+        let uploadedAhead = timesCalled("texSubImageRgba32f", log);
+        paint(gl, state, cmdOf({ groups = g :: Nil | sceneOf(Nil) }) :: Nil);
+        Assert.assertEq(expected = ((1, 1), 1, 1), ((progress#done, progress#total), uploadedAhead, timesCalled("texSubImageRgba32f", log)))
+
+    /// 予算を使い切り、最低の時間もほかの作りかけに渡した後のコマは、宣言の集まりの作りかけを始めない。
+    @Test
+    def testPrepareAheadWaitsWhenOverBudget(): Unit \ {Assert, IO} =
+        let planner = freshPlanner(Render3d.DrawMode.Instanced);
+        let steps = countingSteps(Ref.fresh(Static, 0), _ -> (), 4i64);
+        let cache = freshCache();
+        let ahead = (name: String) -> Render3d.StaticRows.prepareAhead(planner, cache, 1i64, boxes(name), "", false, sceneOf(Nil), steps);
+        let answers = List.map(ahead, "a" :: "b" :: "c" :: Nil);
+        Assert.assertEq(expected = (false :: false :: false :: Nil, 2), (answers, buildingCountOf(cache)))
+
+    /// GL の描き手は作り終えた宣言の集まりの形を、置き場の上限で捨てる候補から外す集合に入れる。
+    @Test
+    def testGlPreloadKeepsGroupMeshes(): Unit \ {Assert, IO} =
+        let state = freshState();
+        let cmd = { groups = () -> town() :: Nil, scenes = () -> sceneOf(Nil) :: Nil | Scene3d.preloadCmd("k", () -> Nil) };
+        discard Render3d.Preload.preload(recordingGl(freshRecorded()), state, 1i64, noRegistered, cmd);
+        Assert.assertEq(expected = 3, Set.size(Ref.get(state#preloadRef)#meshes))
+
+    /// 宣言の groups に同じ名前の集まりが 2 つあると、1 回知らせる。
+    @Test
+    def testDuplicateGroupNamesWarn(): Unit \ {Assert, IO} =
+        let state = freshState();
+        let cmd = { groups = () -> town() :: town() :: Nil, scenes = () -> sceneOf(Nil) :: Nil | Scene3d.preloadCmd("k", () -> Nil) };
+        let said = stderrOf(() -> discard Render3d.Preload.preload(recordingGl(freshRecorded()), state, 1i64, noRegistered, cmd));
+        Assert.assertTrue(String.contains(substr = "同じ名前の集まり", said))
+
+    /// 集まりを宣言しない描き手の進み具合は、はじめから済んでいる（0 / 0）。
+    @Test
+    def testNoGroupsIsAlreadyPreloaded(): Unit \ {Assert, IO} =
+        let progress = Render3d.Preload.preload(recordingGl(freshRecorded()), freshState(), 1i64, noRegistered, Scene3d.preloadCmd("k", () -> Nil));
+        Assert.assertEq(expected = (true, true), (Scene3d.isPreloaded(progress), Scene3d.isPreloaded((Scene3dRenderer.none()#preload)(1i64, noRegistered, Scene3d.preloadCmd("k", () -> Nil)))))
 }

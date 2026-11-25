@@ -254,7 +254,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
         let encoder = gpu.createCommandEncoder("test");
         let host: Host = { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> checked_ecast(()), skip = (_, _) -> checked_ecast(()), textureOf = _ -> checked_ecast(None), textureById = _ -> checked_ecast(None), groupById = _ -> checked_ecast(None) };
         let variants = { pointShadows = true, physicalUnits = false, psx = false } :: { pointShadows = false, physicalUnits = true, psx = false } :: Nil;
-        Render3d.WebGpuRenderer.preload(renderer, host, { variants = variants | preloadCmd("v") });
+        discard Render3d.WebGpuRenderer.preload(renderer, host, { variants = variants | preloadCmd("v") });
         let built = not Map.isEmpty(Ref.get(s#variantFragments));
         discard encoder.finish();
         let errors = gpu.errorCount();
@@ -271,13 +271,13 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
         let encoder = gpu.createCommandEncoder("test");
         let flushes = Ref.fresh(Static, 0);
         let host: Host = { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> Ref.put(Ref.get(flushes) + 1, flushes), skip = (_, _) -> checked_ecast(()), textureOf = _ -> checked_ecast(None), textureById = _ -> checked_ecast(None), groupById = _ -> checked_ecast(None) };
-        Render3d.WebGpuRenderer.preload(renderer, host, preloadCmd("k"));
+        discard Render3d.WebGpuRenderer.preload(renderer, host, preloadCmd("k"));
         let meshes = Map.size(Render3d.MeshTable.createdOf(s#meshes));
         let slots = Ref.get(s#preloaded)#textures |> Set.size;
         let levels = Render3d.TextureTable3d.createdOf(Render3d.WebGpuMaterials.texturesOf(s#materials)) |> Map.toList |> List.map(kv -> { let (_, (_, c, _)) = kv; c#levels }) |> List.sum;
         let firstFlushes = Ref.get(flushes);
         List.range(0, 200) |> List.forEach(_ -> Render3d.WebGpuRenderer.endFrame(renderer));
-        Render3d.WebGpuRenderer.preload(renderer, host, preloadCmd("k"));
+        discard Render3d.WebGpuRenderer.preload(renderer, host, preloadCmd("k"));
         let kept = Map.size(Render3d.MeshTable.createdOf(s#meshes));
         discard encoder.finish();
         let errors = gpu.errorCount();
@@ -308,7 +308,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
         let renderer = Render3d.WebGpuRenderer.create(gpu, layout, imageLayout(gpu));
         let RendererData.RendererData(s) = renderer;
         let host = quietHost(gpu);
-        Render3d.WebGpuRenderer.preload(renderer, host, preloadCmd("k"));
+        discard Render3d.WebGpuRenderer.preload(renderer, host, preloadCmd("k"));
         Render3d.WebGpuRenderer.endFrame(renderer);
         let later = Array.get(0, s#gen);
         let quad = Mesh3d.fromPolygons({ points = Vec3.v3(0.0, 0.0, 1.0) :: Vec3.v3(0.0, 1.0, 1.0) :: Vec3.v3(1.0, 1.0, 1.0) :: Vec3.v3(1.0, 0.0, 1.0) :: Nil, color = Color.rgb(1.0, 1.0, 1.0) } :: Nil);

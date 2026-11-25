@@ -73,6 +73,10 @@ mod Render3d.WebGpuStatic {
         let steps = stepsOf(st, b, scene);
         scene#groups |> List.map(g -> StaticRows.ensure(b#planner, st#cache, b#tables#gen, g, variant, false, scene, steps))
 
+    /// 先に上げる宣言の集まり g を、場面 scene の行で描かずに作る（作り終えていれば真）。
+    pub def prepareAhead(st: StaticCache, b: Builder, scene: Scene3d.Scene3dCmd, g: Scene3d.StaticGroup): Bool \ IO =
+        StaticRows.prepareAhead(b#planner, st#cache, b#tables#gen, g, StaticRows.carriedKeyOf(false, scene), false, scene, stepsOf(st, b, scene))
+
     /// 集まりを作る仕事（StaticRows.BuildSteps）: 形を作る・材質の program を組む・行を置く・材質の絵を 1 枚ずつ上げる。
     def stepsOf(st: StaticCache, b: Builder, scene: Scene3d.Scene3dCmd): StaticRows.BuildSteps[Carried] \ IO =
         let programs = Ref.fresh(Static, Vector.empty());

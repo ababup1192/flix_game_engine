@@ -1133,10 +1133,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
                 Array.put(cmd :: Array.get(0, p#pendingScenes), 0, p#pendingScenes);
                 k(())
             }
-            def preload3d(cmd, k) = {
-                Scenes.preload(paint, cmd);
-                k(())
-            }
+            def preload3d(cmd, k) = k(Scenes.preload(paint, cmd))
         }
 
     /// 1 コマごとの描く側の診断を paint で集める。

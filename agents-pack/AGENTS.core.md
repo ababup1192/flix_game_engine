@@ -82,6 +82,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | たくさんの物から近くの物だけを引く（群れの押し合い・範囲の当たり） | `SpatialGrid.buildBy` + `foldNearIndex`（`f` はその場のラムダ） |
 | 群れが同じ相手を追う・共有の歩数の地図（塗り直しは秒で間引く） | `FlowField.build` + `downhill` / `stepsAt`・間引きは `Clock.tick` |
 | 3D で初めて出る物のコマが跳ねる（形・絵・材質のプログラムを先に GPU へ上げる） | `App.withPreload3d({ textures = .., variants = .. \| App.preload3d(key, instances) })`（点光源の影・Physical の場面は `variants` に `Scene3d.preloadVariantOf(場面)`・engine の `docs/scene3d.md` の「初めて出る物を先に上げる」） |
+| 3D の動かない物の集まり（staticGroup・校舎の階）を初めて見せるコマが止まる・作り終えるまで暗転を明けたくない | `App.withPreload3d({ groups = .., scenes = .. \| App.preload3d(key, instances) })` で先に作らせ、View で `ctx#preload3d`（`Scene3d.isPreloaded`）が済むまでその集まりを場面の groups に載せずに暗転を描く（載せるとそのコマで全部作る・進み具合を系で読まない・engine の `docs/scene3d.md` の「動かない物の集まりを先に作る」） |
 | ブラウザで後から届いた絵つきの glb の形を初めて描くコマが重い（形の頂点を全部 SHA-256 に通す） | `Gltf.fromGlbTexturedKeyedUsingOptions(key, decoder, options, bytes)`・key は `decoder#versionedKey(道)`（None の時は `Gltf.fromGlbTexturedUsingOptions`。同じ key に違うバイトを渡さない） |
 | 3D で動かない物（町の建物・木・家具）が数千〜1 万個あって毎コマ重い | 読み込みで 1 回 `Scene3d.staticGroup` を作って Resources に持ち、毎コマ `groups` に載せる（毎コマ staticGroup を呼ばない・動かす物は `Scene3d.withoutItems` で外す・engine の `docs/scene3d.md` の「動かない物をまとめる（staticGroup）」） |
 | 2D の動かない絵（影・壁・地形の多角形）の一部だけが変わる（置き物を壊す・掘る）たびにコマが止まる | `App.withStaticLayers(w -> 区画ごとの { id, key, items = () -> .. })`（key が変わった区画だけ GPU へ上げ直す・区画は 16〜32 マス角・key は World に持つ区画ごとの世代番号・items はサンク。全体の key を変えて `withStaticLayer` 1 枚を作り直さない・engine の `docs/performance.md` の「静的層を区画に分ける」） |

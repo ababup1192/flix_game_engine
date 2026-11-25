@@ -3,7 +3,7 @@
 //   物を並べた場面（SCENE=field）… Field のつまみ（Makefile の頭）で物の数・形・材質・動く割合・半透明・影を替える
 //   書斎の場面（SCENE=study）… 実写スキャンの家具（Poly Haven の glb。MODELS=<フォルダ>・既定 ../../build/polyhaven-glb・git に入れない）の卓に光る球・燭台・ランタン（src/Study.flix）
 //   夜の街灯の場面（SCENE=lamps）… 街灯 8 本・SHADOWS=n で影を落とす灯りの数（0 = 影なし）・MAPSIZE・PCF（src/Lighting.flix）
-//   初めての 1 回（FIRST=1 / FIRST=skin）… Field の場面で、集まりを初めて載せる・別の値へ替える・骨つきの人物を出すコマの最悪を測る（src/First.flix）
+//   初めての 1 回（FIRST=1 / FIRST=skin / FIRST=preload）… Field の場面で、集まりを初めて載せる・別の値へ替える・骨つきの人物を出すコマの最悪を測る（src/First.flix）
 //   光る球の場面（SCENE=orb）… 暗い部屋に強く光る緑の球・ろうそく・赤い瓶・本（src/Orb.flix。view transform の見比べ用）
 // PSX=dither|full で部屋を PS1 風の描き方（Scene3d.PsxLook・src/PsxRoom.flix）で描く（Design の解像度・板目の床。PSX=off は同じ場面を切って描く）。
 // POST=1 で画面全体の後がけ（App.withPostStack の夕方の屋外の preset）を掛ける（後がけの重さを前後で比べる・PostStack の手本）。
@@ -118,8 +118,14 @@ mod SceneBench {
     pub def app(plan: BenchRun.Plan, emit: String -> Unit \ IO, scene: Scene): App.App[World, IO] =
         App.make(initialWorld())
             |> App.addSystem(step(plan, emit, scene))
+            |> withFirstPreload(scene)
             |> BenchRun.withDiagnostics(plan)
             |> App.withView((_ctx, w) -> checked_ecast(items(scene, w)))
+
+    def withFirstPreload(scene: Scene, app0: App.App[World, IO]): App.App[World, IO] = match scene {
+        case Scene.First(kit) => First.withPreload(kit, app0)
+        case _                => app0
+    }
 
     /// 後がけの手本: View は場面を返すだけで、トーンマップ・ブルーム・ビネット・FXAA の Pass は PostStack が組む。
     pub def withPost(post: Option[PostStack.Stack], app0: App.App[World, IO]): App.App[World, IO] = match post {

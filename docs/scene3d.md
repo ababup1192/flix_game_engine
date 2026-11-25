@@ -678,6 +678,30 @@ GL・WebGPU・CPU は同じ式を書く（GLSL の `r3d_colorDepth`・`r3d_verte
 - `key` には中身を決める入力だけを入れる。300 コマの内に 30 回変わると、組み直してばかりだと知らせる。
 - 上げた形と絵は、置き場の上限でほかの物より後に捨てる。足りなければそれらも捨てて 1 回知らせる。材質のプログラムは捨てない。
 
+### 動かない物の集まりを先に作る（groups と scenes）と、作り終えるまで暗転を明けない
+
+`staticGroup` の集まりは、初めて描くコマに計画・形の作成・材質のプログラムをまとめて払う（遊んでいる最中に初めて見せると、そのコマが数十 ms 止まる）。
+宣言の `groups` と、それを描く `scenes`（描く時と同じ Output・変種の場面）を渡すと、描き手は 1 コマ数 ms ずつ先に作る（描かない）。
+進み具合は View の `ctx#preload3d`（`{ done, total }`・前のコマの値）で読む。**済むまでは、その集まりを場面の `groups` に載せずに**暗転を描き続ける
+（載せると、描いたコマで残りを全部作って止まる）:
+
+```flix
+App.withPreload3d({ groups = w -> floorsOf(w#res), scenes = w -> SchoolView.sceneOf(w) :: Nil | App.preload3d(w -> keyOf(w#res), _ -> Nil) })
+// View: 済むまで集まりを載せず、黒を重ねる（暗転の長さは進み具合で決まる）
+let ready = Scene3d.isPreloaded(ctx#preload3d);
+let scene = { groups = if (ready) floorsOf(w#res) else Nil | SchoolView.sceneOf(w) };
+let dark = if (ready) Nil else 画面いっぱいの黒の板 :: Nil
+```
+
+- 進み具合は View だけで読む（`Frame` に無い）。描き手の実時間で決まる値で、World を変えると遊んだ記録と再生（いつも済んでいる）がずれる
+- 作った集まりは宣言にある間は手放さず、その形を置き場の上限で捨てる候補から外す
+- 計画を持たない描き手（CPU の描き出し・窓の無い描き手）と、集まりを宣言しないゲームは、最初のコマと `key` が替わったコマを除いて `{ done = 0, total = 0 }`（済んでいる）
+- 作り終える前にその集まりを描くと、作りかけの続きをそのコマで作り終える
+- 最初のコマと `key` が替わったコマは、まだ済んでいない値（0 / 1）。後から届いた束で集まりを作り直したら `key` も替える（groups と scenes は key が替わった時だけ読む）
+- `groups` の集まりの名前は別々にする（同じ名前の物は作りかけを捨て合う。宣言の時に 1 回知らせる）
+- 形か絵の置き場が上限で何かを捨てたコマは、作った集まりも捨てて作り直すので、進み具合が下がりうる
+- Doc の読み直しでも `key` が替わる（Studio で保存すると作り直して暗転する）
+
 ## 一人称の視点
 
 マウスで視点を回す（カーソルを窓にキャプチャする）のは 2D と 3D で共通の入力の口: `App.withMouseCapture` + `frame#mouseDelta`。

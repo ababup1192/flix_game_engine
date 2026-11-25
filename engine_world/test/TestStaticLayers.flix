@@ -36,7 +36,7 @@ mod TestStaticLayers {
             def fillLetterbox(_texture, k) = k(())
         } with handler Platform.Draw3d {
             def drawScene3d(_cmd, k) = k(())
-            def preload3d(_cmd, k) = k(())
+            def preload3d(_cmd, k) = k(Scene3d.noPreload())
         } with handler Platform.GpuResources {
             def initTileBuffer(_instances, _k) = bug!("unused")
             def updateTileBuffer(_vaoId, _instances, _k) = bug!("unused")

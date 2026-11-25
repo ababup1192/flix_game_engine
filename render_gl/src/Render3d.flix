@@ -251,9 +251,11 @@ mod Render3d {
     pub type alias TextureRead = (String, String, Texture3d.TextureUse)
 
     /// 先に上げた物の控え。builtKey = 最後に上げた宣言の key・meshes・programs・textures = 上げた物（置き場の鍵か、材質のプログラムの番号）・
-    /// rebuilds = 組み直した世代（新しい物が頭・rebuildStreakLimit() 個まで）。
+    /// rebuilds = 組み直した世代（新しい物が頭・rebuildStreakLimit() 個まで）・pairs = 先に作る集まりと場面の組・settled = 作り終えた組の番号
+    /// （その組の形を meshes に足した物）。
     pub type alias PreloadState = {
-        builtKey = Option[DrawCmd.StaticKey], meshes = Set[String], programs = Set[Int32], textures = Set[TextureSlot], rebuilds = List[Int64]
+        builtKey = Option[DrawCmd.StaticKey], meshes = Set[String], programs = Set[Int32], textures = Set[TextureSlot], rebuilds = List[Int64],
+        pairs = Vector[(Scene3d.StaticGroup, Scene3d.Scene3dCmd)], settled = Set[Int32]
     }
 
     /// 1 つの場面の光を uniform へ渡す形にした物（点光源・スポットは Scene3d.pickLights で選んだ後）。
@@ -414,7 +416,7 @@ mod Render3d {
           endFrame = gen -> endFrame(gl, state, gen),
           takeCounts = () -> takeCounts(state),
           readsTexture = readsTexture,
-          preload = (gen, textureOf, cmd) -> Render3d.Preload.upload(gl, state, gen, textureOf, cmd) }
+          preload = (gen, textureOf, cmd) -> Render3d.Preload.preload(gl, state, gen, textureOf, cmd) }
 
     /// 場面のどれかのビルボードが、名前が isName に当たる絵を貼るか（材質の Tex は数えない）。
     pub def readsTexture(isName: String -> Bool, scenes: List[Scene3d.RenderCmd]): Bool =
@@ -441,7 +443,7 @@ mod Render3d {
         // 影の地図は全部の場面の姿勢を上げた後に描く — 影の道も同じ行を読む。
         let (plans, lists, materials, textures, shadowPasses, carried) = timed(state, Phase.Split, () -> {
             let caps = planCapsOf(gl, state);
-            let tables = { meshes = state#meshes, textures = state#textures3d, layouts = state#layoutsRef, gen = gen, gpuMip = gl.prefersGpuMipmap(), textureOf = textureOf, flipsTargetV = true };
+            let tables = tablesOf(gl, state, gen, textureOf);
             let carried = cmds |> List.map(cmd -> Render3d.GlStatic.carriedOf(gl, state, gen, tables, coverageOf(caps, dest#samples, cmd#scene), cmd#scene));
             let perFrame = List.zip(cmds, carried) |> List.map(match (cmd, cs) -> (cmd, Render3d.StaticRows.perFrameOf(cmd#scene, List.map(c -> c#carried#rows, cs))));
             let grouped = groupScenesWith(state#planner, caps, dest#samples, perFrame);
@@ -475,6 +477,10 @@ mod Render3d {
         let movedTarget = Array.get(0, designCount) > 0 or List.exists(s -> Option.nonEmpty(s#spot) or Option.nonEmpty(s#sun) or Option.nonEmpty(s#point), shadows);
         if (movedTarget) gl.bindFramebuffer(GlConst.FRAMEBUFFER, dest#framebuffer) else ();
         items
+
+    /// 前半の行の番号を振る表（世代 gen）。
+    def tablesOf(gl: GlContext, state: State, gen: Int64, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO): Render3d.SceneList.Tables \ IO =
+        { meshes = state#meshes, textures = state#textures3d, layouts = state#layoutsRef, gen = gen, gpuMip = gl.prefersGpuMipmap(), textureOf = textureOf, flipsTargetV = true }
 
     /// 計画が backend に聞く描き先の能力。
     def planCapsOf(gl: GlContext, state: State): PlanCaps \ IO =

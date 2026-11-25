@@ -21,11 +21,20 @@ pub mod App.Internal.Paint {
             List[Render.PlacedItem] \ (ef + Platform.GpuResources) =
         App.buildSceneItems(app, design, baseCtx(app, design, display, atlas, warnOnce, diagnostics), world, toItems)
 
+    /// このコマの View に渡す進み具合: 前のコマに描き手が返した値。宣言の key がそれと違えば（最初のコマ・key が替わったコマ）まだ済んでいない値。
+    // WhyNot: key が替わったコマに前の値を渡さない — 前の宣言の「済んだ」を見て集まりを載せると、そのコマで全部作って止まる。
+    def progressFor(app: App[w, ef], tileCache: TileCache, world: w): Scene3d.PreloadProgress =
+        let (key, progress) = tileCache#preload3d;
+        match preloadCmd(app, tileCache#gen, world) {
+            case Some(cmd) if Some(cmd#key) != key => { done = 0, total = 1 }
+            case _                                 => progress
+        }
+
     /// view・hudView に渡す ViewCtx の元（visible は層ごとに置き換わる）。
     def baseCtx(app: App[w, ef], design: Vec2.Vec2, display: Display.Display, atlas: FontAtlas, warnOnce: String -> Unit,
                 diagnostics: Option[FrameDiagnostics.Diagnostics]): App.ViewCtx \ Platform.GpuResources =
         { atlas = atlas, fontOf = fontResolver(App.rec(app), atlas),
-          visible = App.visibleOf(None, 1.0, design), warnOnce = warnOnce, diagnostics = diagnostics, display = display }
+          visible = App.visibleOf(None, 1.0, design), warnOnce = warnOnce, diagnostics = diagnostics, display = display, preload3d = Scene3d.noPreload() }
 
     /// view・視差レイヤの絵に camera を掛けた物（world）と、HUD の範囲へ持ち上げた hudView の絵（hud）。
     /// base の visible は層ごとに見えている矩形へ置き換わり、ほかの欄（字・知らせ・診断）はどの層にも同じ値で渡る。
@@ -196,11 +205,13 @@ pub mod App.Internal.Paint {
     /// VAO は 1 層に 1 本のまま — 作り直しは updateTileBuffer の入れ直しで済む。
     /// passTargets はこれまでに Pass として描いたターゲットの名前（GPU に残っている物。増えるだけ）—
     /// Pass の中で、このコマで宣言していない古いターゲットを読んだのを見分ける（Render.resolvePassReads）。
+    /// preload3d = 前のコマに描き手が返した、先に上げる集まりの進み具合と、その宣言の key（次のコマの ViewCtx#preload3d）。
     pub type alias TileCache =
-        { gen = Int32, entries = Map[String, (Int32, String, GpuHandle.TileVao, Int32)], passTargets = Set[String] }
+        { gen = Int32, entries = Map[String, (Int32, String, GpuHandle.TileVao, Int32)], passTargets = Set[String],
+          preload3d = (Option[GameEngine.StaticKey], Scene3d.PreloadProgress) }
 
     /// まだ何も生成していない起動時の持ち回し。
-    pub def freshTileCache(): TileCache = { gen = 0, entries = Map.empty(), passTargets = Set.empty() }
+    pub def freshTileCache(): TileCache = { gen = 0, entries = Map.empty(), passTargets = Set.empty(), preload3d = (None, Scene3d.noPreload()) }
 
     /// camera 無しでも zoom があれば「画面中央の world 点 = design/2」を軸に据える正規化。
     /// App.composeScene・App.visibleOf・resolvedCamera が同じ規則を共有するための 1 点
@@ -218,7 +229,7 @@ pub mod App.Internal.Paint {
             let variants = (plan#variants)(world);
             let variantKey = if (List.isEmpty(variants)) "" else (variants |> List.map(Scene3d.preloadVariantKey) |> String.intercalate(",")) + ":";
             { key = "${docGen}:${variantKey}" + (plan#key)(world), instances = () -> (plan#instances)(world), textures = () -> (plan#textures)(world),
-              variants = variants }
+              variants = variants, groups = () -> (plan#groups)(world), scenes = () -> (plan#scenes)(world) }
         })
 
     /// Doc の読み直しが起きたフレームで世代を進める。ゲームの書く key は素のまま、
@@ -422,7 +433,7 @@ pub mod App.Internal.Paint {
         let r = App.rec(app);
         r#view |> Option.map(toItems -> {
             let atlas = Platform.GpuResources.getFontAtlas("default");
-            let ctx = baseCtx(app, design, display, atlas, warnOnce, diagnostics);
+            let ctx = { preload3d = progressFor(app, tileCache, world) | baseCtx(app, design, display, atlas, warnOnce, diagnostics) };
             let frame = buildFrame(app, design, ctx, world, toItems);
             let plan = notePassIssues(warnOnce, Render.resolvePassReads(tileCache#passTargets, frame#plan));
             let letterboxItems = letterboxItemsOf(app, design, ctx, world);
@@ -451,13 +462,14 @@ pub mod App.Internal.Paint {
             case None        => (tileCache, glyphSeen, budgetWarned)
             case Some(frame) =>
                 uploadAtlases((r#spriteAtlases)(world));
-                preloadCmd(app, tileCache#gen, world) |> Option.forEach(cmd -> Platform.Draw3d.preload3d(cmd));
+                let preloaded = preloadCmd(app, tileCache#gen, world) |> Option.map(cmd -> (Some(cmd#key), Platform.Draw3d.preload3d(cmd)))
+                                |> Option.getWithDefault((None, Scene3d.noPreload()));
                 let passList = frame#plan#passes;
                 renderPasses(warnOnce, design, frame#plan);
                 Option.forEach(drawLetterbox(warnOnce, design), frame#letterbox);
                 let letterboxItems = Option.getWithDefault(Nil, frame#letterbox);
                 let cacheSeen = { passTargets = passList |> List.foldLeft((acc, p) -> Set.insert(p#name, acc), tileCache#passTargets)
-                                  | tileCache };
+                                  | { preload3d = preloaded | tileCache } };
                 let retained = frame#retained;
                 let items = frame#items;
                 // 字の欠け照合はレンダーターゲットの中の字も一緒に見る（ターゲットも本編と

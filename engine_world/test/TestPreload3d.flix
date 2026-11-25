@@ -71,7 +71,7 @@ mod TestPreload3d {
             def fillLetterbox(_texture, k) = k(())
         } with handler Platform.Draw3d {
             def drawScene3d(_cmd, k) = k(())
-            def preload3d(cmd, k) = { Ref.put(cmd#key :: Ref.get(log), log); k(()) }
+            def preload3d(cmd, k) = { Ref.put(cmd#key :: Ref.get(log), log); k(Scene3d.noPreload()) }
         } with handler Platform.GpuResources {
             def initTileBuffer(_instances, _k) = bug!("unused")
             def updateTileBuffer(_vaoId, _instances, _k) = bug!("unused")
@@ -100,6 +100,43 @@ mod TestPreload3d {
     @Test
     def testNoPlanSendsNoRequest(): Unit \ {Assert, IO} =
         Assert.assertEq(expected = "render" :: "render" :: Nil, opsOf(App.make(0) |> drawing |> withOnePass))
+
+    /// 頼みの groups と scenes は、その時の World でゲームの groups と scenes を読む。
+    @Test
+    def testGroupsAndScenesReadTheWorld(): Unit \ Assert =
+        let group = Scene3d.staticGroup("floor", Nil);
+        let scene = Scene3d.scene({ eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 10.0, lensShift = Vec2.zero() }, design());
+        let app = App.make(0) |> App.withPreload3d({ groups = world -> List.repeat(world, group), scenes = _ -> scene :: Nil | App.preload3d(_ -> "k", _ -> Nil) });
+        let counts = App.Internal.Paint.preloadCmd(app, 0, 2) |> Option.map(cmd -> (List.length((cmd#groups)()), List.length((cmd#scenes)())));
+        Assert.assertEq(expected = Some((2, 1)), counts)
+
+    /// 描き手が返した進み具合は、次のコマの ViewCtx#preload3d に入る（最初のコマは、まだ済んでいない 0 / 1）。
+    @Test
+    def testProgressReachesTheNextViewCtx(): Unit \ {Assert, IO} =
+        let seen = Ref.fresh(Static, Nil);
+        let app = App.make(0) |> App.withView((ctx, _world) -> unsafe IO { Ref.put(ctx#preload3d :: Ref.get(seen), seen); Nil }) |> planned;
+        let once = (cache: App.Internal.Paint.TileCache) -> RenderTarget.runNoop(() -> run {
+            let (next, _, _) = App.Internal.Paint.renderFrame(app, _ -> (), None, design(), Display.desktop(design()), 0,
+                                                              App.Internal.Paint.plainLook(Nil), cache, None, false);
+            next
+        } with handler Platform.Draw2d {
+            def renderCommands(_sprites, _tileMaps, _polygons, _staticLayers, k) = k(())
+            def drawSurface(_cmd, k) = k(())
+            def fillLetterbox(_texture, k) = k(())
+        } with handler Platform.Draw3d {
+            def drawScene3d(_cmd, k) = k(())
+            def preload3d(_cmd, k) = k({ done = 1, total = 2 })
+        } with handler Platform.GpuResources {
+            def initTileBuffer(_instances, _k) = bug!("unused")
+            def updateTileBuffer(_vaoId, _instances, _k) = bug!("unused")
+            def ensureTexture(_name, _key, _w, _h, _argb, k) = k(())
+            def ensureGlyphs(_textureName, _codepoints, k) = k(())
+            def getFontAtlas(_name, k) = k(atlas())
+            def getTextureInfo(_name, k) = k(None)
+            def buildProgram(_spec, k) = k(GpuHandle.wrapShaderProgram(0))
+        });
+        discard once(once(App.Internal.Paint.freshTileCache()));
+        Assert.assertEq(expected = (1, 2) :: (0, 1) :: Nil, Ref.get(seen) |> List.map(p -> (p#done, p#total)))
 
     /// view の無い App は描かないので、宣言があっても頼みを出さない。
     @Test

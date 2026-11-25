@@ -96,10 +96,11 @@ pub mod App {
     /// display は今の画面の情報（大きさ・倍率・最後の pointer・端末の区分）。小さい画面（sizeClass が Small）だけ字とボタンを
     /// 大きくする・指の時だけ案内を「タップ」にする、のように使う。当たりの並べ方を替えるなら、入力の側は Frame#sizeClass で
     /// 同じ並べ方を引く。画面なしの描き出しと pickCtx では Display.desktop(design)（Large・Mouse）で、小さい画面を描き出すなら
-    /// `{ display = { sizeClass = Display.SizeClass.Small | ctx#display } | ctx }` で差し替える。
+    /// `{ display = { sizeClass = Display.SizeClass.Small | ctx#display } | ctx }` で差し替える。preload3d は withPreload3d の集まりの進み具合（前のコマの値。済むまで View が暗転を描く）。最初のコマと key が替わったコマは 0 / 1・描き出しと pickCtx は Scene3d.noPreload()。
+    // WhyNot: 進み具合を Frame に置かない — 描き手の実時間で決まる値で、系が読むと遊んだ記録と再生（済んでいる）で World が食い違う。
     pub type alias ViewCtx = { atlas = FontAtlas, fontOf = String -> FontAtlas, visible = Rect2.Rect2,
                                warnOnce = String -> Unit, diagnostics = Option[FrameDiagnostics.Diagnostics],
-                               display = Display.Display }
+                               display = Display.Display, preload3d = Scene3d.PreloadProgress }
 
     /// ヘッドレス描き出しから view を呼ぶときの ViewCtx。画面全体が見えている扱いにする。
     /// フォント 1 本だけの版 — どの名前で引いても同じ本が返る。
@@ -113,7 +114,7 @@ pub mod App {
     pub def viewCtxOfFonts(atlas: FontAtlas, fontOf: String -> FontAtlas, design: Vec2.Vec2): ViewCtx =
         { atlas = atlas, fontOf = fontOf,
           visible = { position = { x = 0.0, y = 0.0 }, size = design },
-          warnOnce = Log.warn, diagnostics = None, display = Display.desktop(design) }
+          warnOnce = Log.warn, diagnostics = None, display = Display.desktop(design), preload3d = Scene3d.noPreload() }
 
     /// 入力の側（update・テスト）で、押せる物の当たりを出すために View の木を組むときの ViewCtx
     /// （`SortingLayer.pickFrom(点, View.layers(App.pickCtx(design), w))`）。字の形を持たないフォントで、
@@ -123,7 +124,7 @@ pub mod App {
                       lineGap = 0.0, glyphs = Map.empty() };
         { atlas = blank, fontOf = _ -> blank,
           visible = { position = { x = 0.0, y = 0.0 }, size = design },
-          warnOnce = _ -> (), diagnostics = None, display = Display.desktop(design) }
+          warnOnce = _ -> (), diagnostics = None, display = Display.desktop(design), preload3d = Scene3d.noPreload() }
 
     /// 見た文面を seen に覚え、初めての文面だけ Log.warn する口（ViewCtx#warnOnce の実機の形）。
     /// View は純粋なので、効果は Log.warn と同じく `unsafe IO` で隠す。
@@ -454,12 +455,12 @@ pub mod App {
     /// 上げた物は置き場の上限で捨てられにくくなる。形と絵は上限に足りなければ捨て、1 回知らせる。
     /// 描き手が GPU の 3D を持たない時（CPU の描き手・窓の無い描き手・WebLayer.withProject）は何もしない。view = None のゲームでは効かない。
     /// variants = 足して組むシェーダーの変種（点光源の影・Physical の光の場面は `Scene3d.preloadVariantOf(場面)` を渡すと +ps・+pu の版も先に組む）。
-    /// 字で全部の欄を書かず、`{ textures = .., variants = .. | App.preload3d(key, instances) }` の形で書く。
+    /// groups と scenes = 先に作る動かない物の集まりと、それを描く場面（集まり × 場面ごとに 1 コマ数 ms ずつ作る・key が変わった時だけ読む・進み具合は ViewCtx#preload3d・docs/scene3d.md）。字で全部の欄を書かず、`{ textures = .., variants = .. | App.preload3d(key, instances) }` の形で書く。
     pub def withPreload3d(plan: Preload3d[w], app: App[w, ef]): App[w, ef] = App.App({ preload3d = Some(plan) | rec(app) })
 
     /// withPreload3d の宣言（欄の意味は withPreload3d の doc）。preload3d は textures と variants を空にして作る。
-    pub type alias Preload3d[w] = { key = w -> GameEngine.StaticKey, instances = w -> List[Scene3d.Instance3d], textures = w -> List[Texture3d.Texture3d], variants = w -> List[Scene3d.PreloadVariant] }
-    pub def preload3d(key: w -> GameEngine.StaticKey, instances: w -> List[Scene3d.Instance3d]): Preload3d[w] = { key = key, instances = instances, textures = _ -> Nil, variants = _ -> Nil }
+    pub type alias Preload3d[w] = { key = w -> GameEngine.StaticKey, instances = w -> List[Scene3d.Instance3d], textures = w -> List[Texture3d.Texture3d], variants = w -> List[Scene3d.PreloadVariant], groups = w -> List[Scene3d.StaticGroup], scenes = w -> List[Scene3d.Scene3dCmd] }
+    pub def preload3d(key: w -> GameEngine.StaticKey, instances: w -> List[Scene3d.Instance3d]): Preload3d[w] = { key = key, instances = instances, textures = _ -> Nil, variants = _ -> Nil, groups = _ -> Nil, scenes = _ -> Nil }
 
     /// タイルの層（床・壁 1 行目など、格子に敷く静的な絵）を宣言する。エンジンが Spec ごとに
     /// 1 度だけ GPU に生成し、以後は毎フレーム 1 draw call で敷く（数百〜千マスでも軽い）。

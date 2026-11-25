@@ -1,8 +1,8 @@
 // Render3d.Preload — 3D の描き手（Render3d）の、遊びの途中で初めて出る物（形・絵・材質のプログラム）を描く前に GPU へ上げる所。約束は Render3d.flix の頭。
 mod Render3d.Preload {
     import fge.gl.GlContext
-    use Render3d.{PreloadState, State, TextureRead, TextureSlot, TextureSource, materialTextureNames, meshEntry, programsOf, rebuildStreakLimit,
-                  skinnedProgramsOf, warnSceneOnce}
+    use Render3d.{PreloadState, State, TextureRead, TextureSlot, TextureSource, materialTextureNames, meshEntry, planCapsOf, programsOf, rebuildStreakLimit,
+                  skinnedProgramsOf, tablesOf, warnSceneOnce}
     use Render3d.Batch.{MaterialBatch, SpanBatch}
     use Render3d.Counts.{Phase, timed}
     use Render3d.Material.{MaterialTable, entryAt, resolveMaterials, resolveTextureAs, splitByMaterial, textureSlotOf}
@@ -10,7 +10,13 @@ mod Render3d.Preload {
 
     /// 何も上げていない状態。
     pub def empty(): PreloadState =
-        { builtKey = None, meshes = Set.empty(), programs = Set.empty(), textures = Set.empty(), rebuilds = Nil }
+        { builtKey = None, meshes = Set.empty(), programs = Set.empty(), textures = Set.empty(), rebuilds = Nil, pairs = Vector.empty(), settled = Set.empty() }
+
+    /// 宣言 cmd の形と絵と材質のプログラムを上げ（upload）、宣言の集まりをこのコマの予算まで先に作って進み具合を返す。gen = これから描く画面のコマの世代。
+    pub def preload(gl: GlContext, state: State, gen: Int64, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO,
+                    cmd: Scene3d.PreloadCmd): Scene3d.PreloadProgress \ IO =
+        upload(gl, state, gen, textureOf, cmd);
+        timed(state, Phase.Preload, () -> prepareGroups(gl, state, gen, textureOf))
 
     /// 宣言 cmd の形と絵と材質のプログラムを上げる。最後に上げた宣言と同じ key なら何もしない（cmd の中身も読まない）。
     pub def upload(gl: GlContext, state: State, gen: Int64, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO,
@@ -21,6 +27,43 @@ mod Render3d.Preload {
             let uploaded = timed(state, Phase.Preload, () -> uploadCmd(gl, state, gen, textureOf, cmd));
             Ref.put({ rebuilds = rebuilds | uploaded }, state#preloadRef)
         }
+
+    /// 宣言の集まりを場面ごとに GL の持ち越しの行で先に作り、進み具合を返す。
+    def prepareGroups(gl: GlContext, state: State, gen: Int64, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO): Scene3d.PreloadProgress \ IO =
+        let held = Ref.get(state#preloadRef);
+        if (Vector.isEmpty(held#pairs)) Scene3d.noPreload()
+        else {
+            let caps = planCapsOf(gl, state);
+            let tables = tablesOf(gl, state, gen, textureOf);
+            // WhyNot: 描き先の標本の数から版を 1 つに決めない — 描き先（画面か MSAA の Pass か）は場面を描くコマまで分からず、外すと先に作った物を使わない。
+            let prepare = (g: Scene3d.StaticGroup, scene: Scene3d.Scene3dCmd) -> {
+                let plain = Render3d.GlStatic.prepareAhead(gl, state, gen, tables, false, scene, g);
+                let covered = if (Render3d.ScenePlan.coverageOf(caps, 4, scene)) Render3d.GlStatic.prepareAhead(gl, state, gen, tables, true, scene, g) else true;
+                plain and covered
+            };
+            let (progress, settled, meshes) = stepGroups(held#pairs, held#settled, prepare);
+            Ref.put({ settled = settled, meshes = Set.union(held#meshes, meshes) | held }, state#preloadRef);
+            progress
+        }
+
+    /// 宣言 cmd の集まり × 場面の組（groups と scenes をここで 1 回読む）。同じ名前の集まりが 2 つ以上あれば planner で 1 回知らせる。
+    pub def groupPairsOf(planner: Render3d.ScenePlan.Planner, cmd: Scene3d.PreloadCmd): Vector[(Scene3d.StaticGroup, Scene3d.Scene3dCmd)] \ IO =
+        let scenes = (cmd#scenes)();
+        let groups = (cmd#groups)();
+        let names = groups |> List.map(g -> Scene3d.staticGroupFieldsOf(g)#name);
+        if (List.length(names) != Set.size(List.toSet(names)))
+            Render3d.ScenePlan.warnOnce(planner, "@preload-group-names", "scene3d: withPreload3d の groups に同じ名前の集まりがある — 作りかけを捨て合って作り終えない（集まりの名前は別々に）")
+        else ();
+        groups |> List.flatMap(g -> List.map(scene -> (g, scene), scenes)) |> List.toVector
+
+    /// 組 pairs を prepare（作り終えていれば真）で 1 つずつ進め、進み具合と、作り終えた組の番号（settled に足した物）と、
+    /// このコマで初めて作り終えた組の形の中身の鍵（置き場の上限で捨てる候補から外す）を返す（GL と WebGPU の両方が呼ぶ）。
+    pub def stepGroups(pairs: Vector[(Scene3d.StaticGroup, Scene3d.Scene3dCmd)], settled: Set[Int32],
+                       prepare: (Scene3d.StaticGroup, Scene3d.Scene3dCmd) -> Bool \ IO): (Scene3d.PreloadProgress, Set[Int32], Set[String]) \ IO =
+        let done = pairs |> Vector.mapWithIndex((i, pair) -> (i, prepare(fst(pair), snd(pair)))) |> Vector.filter(snd) |> Vector.map(fst);
+        let fresh = done |> Vector.filter(i -> not Set.memberOf(i, settled)) |> Vector.toList;
+        let meshes = fresh |> List.flatMap(i -> Scene3d.groupInstancesOf(fst(Vector.get(i, pairs))) |> List.map(inst -> Mesh3d.contentHash(Scene3d.instanceFieldsOf(inst)#mesh)));
+        ({ done = Vector.length(done), total = Vector.length(pairs) }, Set.union(settled, List.toSet(fresh)), List.toSet(meshes))
 
     /// 先に上げる物の材質が読む "tex3d:" の絵 name が宣言の textures に無い時の知らせの文（GL と WebGPU の両方が出す）。
     pub def missingTextureLine(name: String): String =
@@ -57,6 +100,7 @@ mod Render3d.Preload {
         let allMaterials = List.append(List.map(d -> (table, d), materials), List.append(coverageVersions(gl, state, gen, instances), extra));
         let source = { textureOf = textureOf, own = (cmd#textures)() |> List.map(t -> (Texture3d.name(t), t)) |> List.toMap };
         { builtKey = Some(cmd#key), rebuilds = Nil, meshes = draws |> List.map(d -> Mesh3d.contentHash(d#fields#mesh)) |> List.toSet,
+          pairs = groupPairsOf(state#planner, cmd), settled = Set.empty(),
           programs = allMaterials |> List.map(td -> { let (t, d) = td; entryAt(t, d#handle)#locs#mesh#program }) |> List.toSet,
           textures = allMaterials |> List.flatMap(td -> { let (t, d) = td; materialTextureNames(entryAt(t, d#handle), d#material, d#batch#head) })
               |> List.toSet |> Set.toList |> uploadTextures(gl, state, gen, source) }

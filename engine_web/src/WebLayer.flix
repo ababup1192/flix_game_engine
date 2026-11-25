@@ -105,7 +105,7 @@ pub mod WebLayer {
                 Platform.Draw3d.drawScene3d(cmd);
                 k(())
             }
-            def preload3d(cmd, k) = { Platform.Draw3d.preload3d(cmd); k(()) }
+            def preload3d(cmd, k) = k(Platform.Draw3d.preload3d(cmd))
         }
 
     def sceneTextureNamesOf(scene: Scene3d.Scene3dCmd): List[String] =

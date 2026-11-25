@@ -106,7 +106,7 @@ pub mod Render3d.WebGpuRenderer {
     // WhyNot: 2D の描き手に Renderer を直に持たせない — 3D を描かないゲームのブラウザ版の wasm にも、この mod と計画（Render3d.ScenePlan）と式の組み立てが全部入る。
     pub type alias Scenes = {
         prepare = (Host, Dest, List[Scene3d.RenderCmd]) -> Prepared \ IO,
-        preload = (Host, Scene3d.PreloadCmd) -> Unit \ IO,
+        preload = (Host, Scene3d.PreloadCmd) -> Scene3d.PreloadProgress \ IO,
         notePasted = Paste -> Unit \ IO,
         afterSubmit = Unit -> Unit \ IO,
         endFrame = Unit -> Unit \ IO,
@@ -133,7 +133,7 @@ pub mod Render3d.WebGpuRenderer {
 
     /// 場面を描かない描き手（どの場面も貼る物なし・数は 0）。
     pub def none(): Scenes =
-        { prepare = (_, _, cmds) -> List.toVector(List.map(_ -> (None: Option[Paste]), cmds)), preload = (_, _) -> (),
+        { prepare = (_, _, cmds) -> List.toVector(List.map(_ -> (None: Option[Paste]), cmds)), preload = (_, _) -> Scene3d.noPreload(),
           notePasted = _ -> (),
           afterSubmit = () -> (), endFrame = () -> (), takeCounts = () -> FrameDiagnostics.emptyScene3dCounts(), release = () -> () }
 
@@ -261,7 +261,8 @@ pub mod Render3d.WebGpuRenderer {
             poses = Array#{createPoseBuffer(gpu, initialPoseBytes())} @ Static, posesUsed = Array#{0} @ Static,
             poseGroups = Ref.fresh(Static, Nil), sceneGroups = Ref.fresh(Static, Nil), shadows = WebGpuShadows.create(gpu), sky = WebGpuSky.create(gpu, sceneLayout),
             billboards = WebGpuBillboards.create(gpu, sceneLayout, imageLayout),
-            preloaded = Ref.fresh(Static, { builtKey = None, meshes = Set.empty(), textures = Set.empty(), rebuilds = Nil }), epoch = Array#{0i64} @ Static,
+            preloaded = Ref.fresh(Static, { builtKey = None, meshes = Set.empty(), textures = Set.empty(), rebuilds = Nil, pairs = Vector.empty(), settled = Set.empty() }),
+            epoch = Array#{0i64} @ Static,
             cpuInstances = Array#{directBytes(initialInstances() * Render3dWgsl.instanceBytes())} @ Static,
             cpuPoses = Array#{directBytes(initialPoseBytes())} @ Static,
             cpuScene = directBytes(WebGpuSceneValues.sceneValueBytes()), cpuCamera = directBytes(Render3dWgsl.cameraBytes()), cpuPaste = directBytes(16),
@@ -397,13 +398,15 @@ pub mod Render3d.WebGpuRenderer {
 
     /// 先に上げた物の控え（GL の Render3d.PreloadState の WebGPU の分。材質の program は捨てないので控えない）。builtKey = 最後に上げた宣言の key・
     /// meshes = 上げた形の鍵（Mesh3d.contentHash）・textures = 上げた絵の置き場の鍵・rebuilds = 組み直した世代（Render3d.Preload.noteRebuild）。
-    type alias Preloaded = { builtKey = Option[DrawCmd.StaticKey], meshes = Set[String], textures = Set[TextureSlot], rebuilds = List[Int64] }
+    /// pairs = 先に作る集まりと場面の組・settled = 作り終えた組の番号（その組の形を meshes に足した物）。
+    type alias Preloaded = { builtKey = Option[DrawCmd.StaticKey], meshes = Set[String], textures = Set[TextureSlot], rebuilds = List[Int64],
+                             pairs = Vector[(Scene3d.StaticGroup, Scene3d.Scene3dCmd)], settled = Set[Int32] }
 
-    /// 宣言 cmd の形と絵と材質の program と、画面の形式（RGBA8・標本 1）の pipeline を上げる（GL の Render3d.Preload.upload と同じ約束）。
-    /// 最後に上げた宣言と同じ key なら何もしない（cmd の中身も読まない）。
+    /// 宣言 cmd の形と絵と材質の program と、画面の形式（RGBA8・標本 1）の pipeline を上げ（GL の Render3d.Preload.upload と同じ約束。
+    /// 最後に上げた宣言と同じ key なら上げ直さず、cmd の中身も読まない）、宣言の集まりをこのコマの予算まで先に作って進み具合を返す。
     // WhyNot: pipeline を場面の描き先の形式ごとに作らない — 描き先の形式と標本は場面ごとに決まり、宣言の時には分からない（GL の coverageVersions と同じ）。
     //   画面へ直に描く場面の形だけを作り、ほかは初めて描くコマで作る。
-    pub def preload(r: Renderer, host: Host, cmd: Scene3d.PreloadCmd): Unit \ IO =
+    pub def preload(r: Renderer, host: Host, cmd: Scene3d.PreloadCmd): Scene3d.PreloadProgress \ IO =
         let RendererData.RendererData(s) = r;
         let held = Ref.get(s#preloaded);
         if (held#builtKey == Some(cmd#key)) ()
@@ -412,6 +415,19 @@ pub mod Render3d.WebGpuRenderer {
             let rebuilds = Render3d.Preload.noteRebuild(s#planner, gen, held#rebuilds);
             let uploaded = timed(s, Phase.Preload, () -> preloadCmd(r, host, gen, cmd));
             Ref.put({ rebuilds = rebuilds | uploaded }, s#preloaded)
+        };
+        timed(s, Phase.Preload, () -> prepareGroups(r, host))
+
+    /// 宣言の集まりを場面ごとに持ち越しの行で先に作り（描かない・このコマの予算まで）、進み具合を返す。
+    def prepareGroups(r: Renderer, host: Host): Scene3d.PreloadProgress \ IO =
+        let RendererData.RendererData(s) = r;
+        let held = Ref.get(s#preloaded);
+        if (Vector.isEmpty(held#pairs)) Scene3d.noPreload()
+        else {
+            let builder = staticBuilderOf(r, host);
+            let (progress, settled, meshes) = Render3d.Preload.stepGroups(held#pairs, held#settled, (g, scene) -> WebGpuStatic.prepareAhead(s#statics, builder, scene, g));
+            Ref.put({ settled = settled, meshes = Set.union(held#meshes, meshes) | held }, s#preloaded);
+            progress
         }
 
     /// cmd の置いた物を、既定の版と cmd#variants の版ごとに候補に分け、候補ごとに形と、材質の program と絵か頂点の色の pipeline を上げて、上げた物の控えを返す。
@@ -441,7 +457,7 @@ pub mod Render3d.WebGpuRenderer {
             }
         });
         { builtKey = Some(cmd#key), rebuilds = Nil, meshes = groups |> List.map(vg -> Mesh3d.contentHash(snd(vg)#batch#head#fields#mesh)) |> List.toSet,
-          textures = List.toSet(textures) }
+          textures = List.toSet(textures), pairs = Render3d.Preload.groupPairsOf(s#planner, cmd), settled = Set.empty() }
 
     /// 形 mesh の頂点の色の pipeline（画面の形式・標本 1・色の pass）を作る。骨つきの物は形にジョイントがある時だけ。
     def preloadShape(r: Renderer, mesh: MeshBuffers, skinned: Bool, variant: ShaderVariant): Unit \ IO =

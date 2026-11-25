@@ -8,7 +8,8 @@ mod WebMain {
     import fge.web.Browser
 
     def loadScene(knobs: Map[String, String]): Result[String, SceneBench.Scene] \ Fs.FileRead =
-        if (First.modeOf(knobs) == Some(First.Mode.Group)) Ok(SceneBench.Scene.First(First.kitOf(First.Mode.Group, knobs, None)))
+        if (First.modeOf(knobs) == Some(First.Mode.Group) or First.modeOf(knobs) == Some(First.Mode.Preload))
+            Ok(SceneBench.Scene.First(First.kitOf(First.modeOf(knobs) |> Option.getWithDefault(First.Mode.Group), knobs, None)))
         else if (SceneBench.isField(knobs)) Ok(SceneBench.Scene.Field(Field.kitOf(Field.configOf(knobs))))
         else match Map.get("psx", knobs) {
             case Some(look) => Room.loadMeshes() |> Result.map(meshes -> SceneBench.Scene.PsxRoom(PsxRoom.kitOf(Room.kitOf(meshes)), look))

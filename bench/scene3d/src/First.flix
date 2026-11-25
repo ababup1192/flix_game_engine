@@ -1,6 +1,7 @@
 // First — 「初めての 1 回」の止まりを測る区間（つまみ first。Field の場面を動かない物の集まりで描く）。
 //   first=1     … 物を置かずに回した後、集まりを初めて載せる（区間 first）→ しばらく同じ物（steady）→ 同じ名前の別の値の集まりへ替える（rebuild。形も新しい）
 //   first=skin  … 集まりは頭から載せておき、途中で骨つきの人物を 1 体出す（区間 skin。人物の glb は つまみ person）
+//   first=preload … 集まりを App.withPreload3d で頭から宣言して先に作らせ（区間 ahead）、作り終えた後のコマで初めて載せる（区間 first）
 // 区間ごとに 1 行の JSON（BenchRun.summaryFields に、1 コマの時間と 3D の描き手の CPU の区間の最大を足した物）を出す。起動し直して何回か流し、最悪のコマを見る。
 mod First {
     use fge::{AnimationClip3d, App, Mat4, Mesh3d, Model3d, Pose3d, Render, Scene3d, Skin3d, Vec2, Vec3}
@@ -8,12 +9,14 @@ mod First {
     pub enum Mode with Eq {
         case Group
         case Skin
+        case Preload
     }
 
     /// つまみの表の first（無ければ None）。
     pub def modeOf(knobs: Map[String, String]): Option[Mode] = match Map.get("first", knobs) {
         case Some("1")    => Some(Mode.Group)
         case Some("skin") => Some(Mode.Skin)
+        case Some("preload") => Some(Mode.Preload)
         case _            => None
     }
 
@@ -21,12 +24,23 @@ mod First {
     pub type alias Kit = { mode = Mode, field = Field.Kit, first = Scene3d.StaticGroup, second = Scene3d.StaticGroup, person = Option[Model3d.Model3d] }
 
     /// 測る区間の名前と、始めるコマ・終えるコマ（終えるコマは含まない）。
-    def segments(mode: Mode): List[(String, Int32, Int32)] =
-        let late = if (mode == Mode.Group) "rebuild" else "skin";
-        ("first", 28, 90) :: ("steady", 90, swapAt() - 2) :: (late, swapAt() - 2, endAt()) :: Nil
+    def segments(mode: Mode): List[(String, Int32, Int32)] = match mode {
+        case Mode.Group   => ("first", 28, 90) :: ("steady", 90, swapAt() - 2) :: ("rebuild", swapAt() - 2, endAt()) :: Nil
+        case Mode.Skin    => ("first", 28, 90) :: ("steady", 90, swapAt() - 2) :: ("skin", swapAt() - 2, endAt()) :: Nil
+        case Mode.Preload => ("ahead", 2, swapAt() - 2) :: ("first", swapAt() - 2, endAt()) :: Nil
+    }
 
-    /// 集まりを初めて載せるコマ（Skin では頭から載せる）。
-    def showAt(mode: Mode): Int32 = if (mode == Mode.Group) 30 else 0
+    /// 集まりを初めて載せるコマ（Skin では頭から載せる・Preload は先に作らせてから）。
+    def showAt(mode: Mode): Int32 = match mode {
+        case Mode.Group   => 30
+        case Mode.Skin    => 0
+        case Mode.Preload => swapAt()
+    }
+
+    /// Preload の時、first の集まりを Field の場面で先に作らせる宣言を足す。
+    pub def withPreload(kit: Kit, app: App.App[w, ef]): App.App[w, ef] =
+        if (kit#mode != Mode.Preload) app
+        else app |> App.withPreload3d({ groups = _ -> kit#first :: Nil, scenes = _ -> Field.scene(kit#field, 0.0) :: Nil | App.preload3d(_ -> "first", _ -> Nil) })
 
     /// 別の値の集まりへ替える・人物を出すコマ。
     def swapAt(): Int32 = 120
