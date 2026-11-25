@@ -69,9 +69,10 @@ pub mod DrawHash {
         let fromBillboards = frame#req#scenes
             |> List.flatMap(c -> c#scene#billboards |> List.map(b -> Scene3d.billboardFieldsOf(b)#texture))
             |> List.toSet;
-        let fromMaterials = frame#req#scenes |> List.flatMap(c -> Scene3d.instancesOf(c#scene) |> List.flatMap(Scene3d.textureNamesOf)) |> List.toSet;
+        let fromMaterials = frame#req#scenes |> List.flatMap(c -> Scene3d.instancesOf({ multiMeshes = Nil | c#scene }) |> List.flatMap(Scene3d.textureNamesOf)) |> List.toSet;
+        let fromMultiMeshes = frame#req#scenes |> List.flatMap(c -> c#scene#multiMeshes |> List.flatMap(MultiMesh3d.textureNamesOf)) |> List.toSet;
         let fromEnvironment = frame#req#scenes |> List.flatMap(c -> Scene3d.environmentTextureNamesOf(c#scene)) |> List.toSet;
-        Set.union(fromDrawables, Set.union(fromSurfaces, Set.union(fromBillboards, Set.union(fromMaterials, fromEnvironment))))
+        Set.union(fromDrawables, Set.union(fromSurfaces, Set.union(fromBillboards, Set.union(fromMaterials, Set.union(fromMultiMeshes, fromEnvironment)))))
 
     /// 鍵を作るのに中身の指紋が要るファイル（引く絵・既定の TTF・追加の TTF）。
     pub def filesOf(frame: Frame): List[String] =
@@ -191,16 +192,22 @@ pub mod DrawHash {
     def putSceneCmd(out: DataOutputStream, scene: Scene3d.Scene3dCmd): Unit \ IO = match scene {
         // WhyNot: Legacy の光で unitsPerMeter を鍵に入れない — 描き方を変えない値（m で受ける後がけが読むだけ）で、同じ絵が別の鍵になる。Physical の光では逆二乗が読むので入れる。
         // WhyNot: 集まりを別の印で書かない — 集まりは instances と同じ絵なので、中の物を instances の後ろに並べた場面と同じ鍵にする。
-        case { size = size, camera = camera, instances = _, groups = _, billboards = billboards,
+        // WhyNot: MultiMesh を 1 体ずつに開いて書かない — 撮りの毎コマに全部の体の Instance3d を作ることになる。鍵は instances に開いた場面と別の値になるが、比べるのは同じ版どうし。
+        case { size = size, camera = camera, instances = _, groups = _, multiMeshes = multiMeshes, billboards = billboards,
                pointLights = pointLights, spotLights = spotLights, directionalLight = _, environment = environment,
                resolution = resolution, output = output, zIndex = zIndex, time = time, textures = textures, sky = sky, environmentMap = environmentMap, unitsPerMeter = unitsPerMeter,
                pointShadows = pointShadows, lightUnits = lightUnits, psx = psx } =>
             out.writeDouble(time);
             putVec2(out, size);
             putCamera(out, camera);
-            let instances = Scene3d.instancesOf(scene);
+            let instances = Scene3d.instancesOf({ multiMeshes = Nil | scene });
             putSize(out, List.length(instances));
             instances |> List.forEach(i -> putInstance(out, Scene3d.instanceFieldsOf(i)));
+            // WhyNot: MultiMesh の無い場面に数（0）を書かない — 今までの場面の鍵が全部変わり、前の版と比べる撮り（テープ）が全部食い違う。
+            if (List.isEmpty(multiMeshes)) () else {
+                putSize(out, List.length(multiMeshes));
+                multiMeshes |> List.forEach(mm -> putMultiMesh(out, MultiMesh3d.fieldsOf(mm)))
+            };
             putSize(out, List.length(billboards));
             billboards |> List.forEach(b -> putBillboard(out, Scene3d.billboardFieldsOf(b)));
             putSize(out, List.length(pointLights));
@@ -313,6 +320,19 @@ pub mod DrawHash {
 
     // WhyNot: メッシュの頂点を畳まない — 作る時に中身から求めた contentHash が中身の代わりになる（GL が頂点バッファを引く鍵と同じ）。
     // WhyNot: 置いた物の名前（Scene3d.withName）を鍵に書かない — 絵に出ず、名前を付けただけで 3D の描き出しのキャッシュが全部描き直しになる。
+    def putMultiMesh(out: DataOutputStream, r: MultiMesh3d.MultiMeshFields): Unit \ IO =
+        putStr(out, Mesh3d.contentHash(r#mesh));
+        putSize(out, Vector.length(r#transforms));
+        r#transforms |> Vector.forEach(putF(out));
+        match r#colors {
+            case None    => out.writeByte(0i32)
+            case Some(c) => out.writeByte(1i32); putSize(out, Vector.length(c)); c |> Vector.forEach(putF(out))
+        };
+        match r#material {
+            case None    => out.writeByte(0i32)
+            case Some(m) => out.writeByte(1i32); putMaterial(out, m)
+        }
+
     def putInstance(out: DataOutputStream, i: Scene3d.InstanceFields): Unit \ IO = match i {
         case { mesh = mesh, world = world, tint = tint, material = material, pose = pose, lightmap = _, name = _ } =>
             putStr(out, Mesh3d.contentHash(mesh));

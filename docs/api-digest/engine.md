@@ -993,6 +993,29 @@
 - 読んだバイトから作る（BackgroundLoad.Group の decode など。path は鍵を作るのと Err に付けるのに使う）。
   `pub def decode(loader: Loader, path: String, bytes: Vector[Int8]): Result[String, Model3d] \ IO`
 
+## MultiMesh3d — `engine/src/scene3d/MultiMesh3d.flix`
+- 中身（描き手と engine_tools 専用。ゲームは build・withColors・withMaterial で作る）。
+  `pub type alias MultiMeshFields = { mesh = Mesh3d.Mesh3d, transforms = Vector[Float64], colors = Option[Vector[Float64]], material = Option[Scene3d.Material3d], blendRequested = Bool, bounds = Option[Mesh3d.Bounds] }`
+- `pub type alias MultiMesh3d = MultiMeshData`
+- mesh を n 体、i 体目を worldOf(i) の行列で置く（行列の下の行は読まない）。群れ全体の境界もここで出す。
+  `pub def build(mesh: Mesh3d.Mesh3d, n: Int32, worldOf: Int32 -> Mat4.Mat4): MultiMesh3d`
+- i 体目の色を colorOf(i) にする（sRGB。頂点の色に掛ける。instances の withTint と同じ意味）。
+  `pub def withColors(colorOf: Int32 -> Color, mm: MultiMesh3d): MultiMesh3d`
+- 材質を付ける。半透明の材質は不透明として描く（中の 1 体ずつを奥から手前に並べられないため）。描き手は初めて描くコマに 1 回知らせる。
+  `pub def withMaterial(m: Scene3d.Material3d, mm: MultiMesh3d): MultiMesh3d`
+- 中身を読む（描き手と engine_tools 専用）。
+  `pub def fieldsOf(mm: MultiMesh3d): MultiMeshFields`
+- 置く体の数。
+  `pub def countOf(mm: MultiMesh3d): Int32`
+- i 体目の色（colors が無いか足りなければ白・描き手と engine_tools 専用）。
+  `pub def colorAt(colors: Option[Vector[Float64]], i: Int32): Color`
+- 体を原点に置いた 1 体（描き手と engine_tools 専用。材質のプログラム・絵の名前・先に用意する物を 1 体で決める時に使う）。
+  `pub def headOf(mm: MultiMesh3d): Scene3d.Instance3d`
+- 材質が読む絵の名前（体は同じ材質なので headOf の 1 体で数える・描き手と engine_tools 専用）。
+  `pub def textureNamesOf(mm: MultiMesh3d): List[String]`
+- 1 体ずつの置いた物に作り直した並び（CPU の描き手と描き出しの鍵が使う。来た順）。全部の体を作るので、毎コマ呼ぶ道（GL・WebGPU の描き手）では使わない。
+  `pub def toInstances(mm: MultiMesh3d): List[Scene3d.Instance3d]`
+
 ## Num — `engine/src/core/Num.flix`
 - 0 以上 1 以下に収める。濃さ・進み具合・混ぜ具合など「0〜1 のはずの値」を
   `pub def clamp01(x: Float64): Float64`
@@ -1576,7 +1599,7 @@
 - ビルボードの中身を読む（GL・CPU・鍵が使う）。
   `pub def billboardFieldsOf(b: Billboard3d): BillboardFields`
 - 場面 1 つ。size = 描き物の大きさ（位置は PlacedItem の at。Shader 面と同じ決まり）・zIndex = 2D の並びの中の重なり順・
-  `pub type alias Scene3dCmd = { size = Vec2.Vec2, camera = Camera3d.Camera3d, instances = List[Instance3d], groups = List[StaticGroup], billboards = List[Billboard3d], pointLights = List[PointLight], spotLights = List[SpotLight], directionalLight = Option[DirectionalLight], environment = Environment3d, resolution = Resolution, output = Output, zIndex = Int32, time = Float64, textures = List[Texture3d.Texture3d], sky = Option[Sky3d], environmentMap = Option[EnvironmentMap], unitsPerMeter = Float64, pointShadows = Option[PointShadowMap], lightUnits = LightUnits, psx = PsxLook }`
+  `pub type alias Scene3dCmd = { size = Vec2.Vec2, camera = Camera3d.Camera3d, instances = List[Instance3d], groups = List[StaticGroup], multiMeshes = List[MultiMesh3d.MultiMesh3d], billboards = List[Billboard3d], pointLights = List[PointLight], spotLights = List[SpotLight], directionalLight = Option[DirectionalLight], environment = Environment3d, resolution = Resolution, output = Output, zIndex = Int32, time = Float64, textures = List[Texture3d.Texture3d], sky = Option[Sky3d], environmentMap = Option[EnvironmentMap], unitsPerMeter = Float64, pointShadows = Option[PointShadowMap], lightUnits = LightUnits, psx = PsxLook }`
 - 空の場面（環境光は白・光なし・かすみなし・地の色なし・Native・色を書き出す・zIndex 0・時刻 0・絵なし・空なし・1 m = 1・点光源の影なし・Legacy の光・PS1 風は切る）。
   `pub def scene(camera: Camera3d.Camera3d, size: Vec2.Vec2): Scene3dCmd`
 - 1 m が場面の長さのいくつかを言う（既定 1 = glTF・Blender と同じ）。Blender の 1 m を 16 で置いた場面は 16。
@@ -1595,7 +1618,9 @@
   `pub def staticGroupFieldsOf(g: StaticGroup): StaticGroupFields`
 - 集まりの描く物（外した鍵の物を除き、tint を掛けた物・来た順）。
   `pub def groupInstancesOf(g: StaticGroup): List[Instance3d]`
-- 場面の描く物の全部（instances の後ろに groups の物を集まりの順に）。描き手が groups を持ち越さない所はこれを描く。
+- 場面に描く物が 1 つでもあるか（集まりは外していない鍵が 1 つでもあるか・MultiMesh は 1 体でもあるか。先頭で止まり、描く物の列を作らない。描き手が影を落とすかを決める）。
+  `pub def hasDrawnInstance(scene: Scene3dCmd): Bool`
+- 場面の描く物の全部（instances の後ろに groups の物を集まりの順に、その後ろに multiMeshes の物を 1 体ずつ）。CPU の描き手と描き出しが描く（GL と WebGPU は groups と multiMeshes を別に持つ）。
   `pub def instancesOf(scene: Scene3dCmd): List[Instance3d]`
 - 環境マップの箱。室内の壁の位置（world）。min・max = 箱の対角の 2 点・center = 絵を撮った点（景色の向きの中心）。
   `pub type alias EnvironmentBox = { min = Vec3.Vec3, max = Vec3.Vec3, center = Vec3.Vec3 }`

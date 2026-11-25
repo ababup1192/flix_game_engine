@@ -96,8 +96,9 @@ mod Render3d.ScenePlan {
         case Scene3d.Output.Depth(r) => ScenePassSpec.DepthOut(r)
     }
 
-    /// prepare の中で分け終えた場面 1 つ。mainPass = 場面の置いた物を場面の描き先へ描く pass（影の地図の pass は含まない）・shadowPlans = 影の地図を描く材料（影を落とす光ごとに 1 つ。無ければ空。スポットの次に太陽）。
-    pub type alias ScenePlan[b] = { cmd = Scene3d.RenderCmd, mainPass = ScenePassSpec, draws = SceneDraws[b], shadowPlans = List[ShadowPlan[b]] }
+    /// prepare の中で分け終えた場面 1 つ。mainPass = 場面の置いた物を場面の描き先へ描く pass（影の地図の pass は含まない）・shadowPlans = 影の地図を描く材料（影を落とす光ごとに 1 つ。無ければ空。スポットの次に太陽）・
+    /// multis = 場面の multiMeshes（1 つにつき 1 本の draw。番号を振る時に場面の pass と影の地図の pass へ足す・Render3d.InstanceValues.mapBatchesWithMultiMeshes）。
+    pub type alias ScenePlan[b] = { cmd = Scene3d.RenderCmd, mainPass = ScenePassSpec, draws = SceneDraws[b], shadowPlans = List[ShadowPlan[b]], multis = List[Render3d.MultiMeshPlan.Planned] }
 
     /// 材質を backend に聞く 1 つ（材質とプログラムの版）。聞く並びの番号が、そのまま材質の表の番号（MaterialBatch#handle）になる。
     pub type alias MaterialRequest = (Scene3d.MaterialFields, ProgramKind)
@@ -105,8 +106,8 @@ mod Render3d.ScenePlan {
     /// batch の候補 1 つ。surface = 頭の物の材質とプログラムの版（無ければ頂点の色で描く）・handle = surface を聞いた番号（surface が無ければ -1）。
     pub type alias Group = { batch = SpanBatch, surface = Option[MaterialRequest], handle = Int32 }
 
-    /// 置いた物を batch の候補に分け終えた場面 1 つ。shadowPlans = 影の地図の batch（姿勢の行はまだ振っていない）。
-    pub type alias GroupedScene = { cmd = Scene3d.RenderCmd, mainPass = ScenePassSpec, groups = List[Group], shadowPlans = List[ShadowPlan[SpanBatch]] }
+    /// 置いた物を batch の候補に分け終えた場面 1 つ。shadowPlans = 影の地図の batch（姿勢の行はまだ振っていない）・multis = 場面の multiMeshes の材質を聞いた物。
+    pub type alias GroupedScene = { cmd = Scene3d.RenderCmd, mainPass = ScenePassSpec, groups = List[Group], shadowPlans = List[ShadowPlan[SpanBatch]], multis = List[Render3d.MultiMeshPlan.Grouped] }
 
     /// 1 回の prepare の計画の答え。members = batch の描く物（batch ごとに続けて並ぶ・SpanBatch の start が指す）・requests = backend に聞く材質（聞いた順）。
     pub type alias Grouped = { scenes = List[GroupedScene], requests = Vector[MaterialRequest], members = MutList[MeshDraw, Static] }
@@ -179,7 +180,7 @@ mod Render3d.ScenePlan {
     /// 1 回の prepare の場面を候補に分け、backend に聞く材質を、その材質の物が初めて来た順に並べる。samples = 描き先の標本の数。
     /// 同じプログラム（版と材質の木の鍵が同じで、同じ GLSL を生む）の材質は 1 回だけ聞く（requestOf）。
     pub def groupScenes(planner: Planner, caps: PlanCaps, samples: Int32, cmds: List[Scene3d.RenderCmd]): Grouped \ IO =
-        groupScenesWith(planner, caps, samples, cmds |> List.map(c -> (c, Scene3d.instancesOf(c#scene))))
+        groupScenesWith(planner, caps, samples, cmds |> List.map(c -> (c, Scene3d.instancesOf({ multiMeshes = Nil | c#scene }))))
 
     /// groupScenes の、場面ごとに計画へ通す置いた物を場面と組で渡す形（組の外の集まりの物は backend が持ち越した行で描く・Render3d.StaticRows）。
     /// 影を落とす光があるかは組の物でなく場面の全部の物で決める。
@@ -300,7 +301,8 @@ mod Render3d.ScenePlan {
                 let solidInstances = List.filter(i -> not Scene3d.isBlendedFields(Scene3d.instanceFieldsOf(i)), drawn);
                 groupWith(grouping(planner, tables, outside, materialWantedIn(mainPass), false, variant), solidInstances)
         };
-        { cmd = cmd, mainPass = mainPass, groups = groups, shadowPlans = shadowPlansOf(planner, tables, scene, drawn) }
+        let multis = Render3d.MultiMeshPlan.groupedOf(planner, tables, materialWantedIn(mainPass), coverage, variant, scene#multiMeshes);
+        { cmd = cmd, mainPass = mainPass, groups = groups, shadowPlans = shadowPlansOf(planner, tables, scene, drawn), multis = multis }
 
     /// instances を候補に分ける。候補の並びは、(形, batch の鍵) が初めて来た順・その中は材質の絵の名前の並びが初めて来た順（Render3d.Batch.groupInOrder と
     /// groupByTextures の並びと同じ）。batch の鍵が無い物は 1 体の候補。
@@ -655,7 +657,7 @@ mod Render3d.ScenePlan {
     def spotCasterOf(planner: Planner, scene: Scene3d.Scene3dCmd): Option[(Int32, ShadowCaster)] \ IO =
         match scene#output {
             case Scene3d.Output.Depth(_) => None
-            case Scene3d.Output.Color if not Render3d.StaticRows.hasDrawnItem(scene) => None
+            case Scene3d.Output.Color if not Scene3d.hasDrawnInstance(scene) => None
             case Scene3d.Output.Color =>
                 let casters = Scene3d.pickLights(scene)#spotLights
                     |> List.mapWithIndex((i, spot) -> spot#shadow |> Option.filter(m -> m#mapSize > 0)
@@ -682,7 +684,7 @@ mod Render3d.ScenePlan {
             let draws = sceneDrawsOf(planner, orders, s);
             withPoseRows(rows, grouped#members, draws);
             s#shadowPlans |> List.forEach(sp -> sp#skinned |> List.forEach(spanPoseRows(rows, grouped#members)));
-            { cmd = s#cmd, mainPass = s#mainPass, draws = draws, shadowPlans = s#shadowPlans }
+            { cmd = s#cmd, mainPass = s#mainPass, draws = draws, shadowPlans = s#shadowPlans, multis = List.map(Render3d.MultiMeshPlan.plannedOf(orders), s#multis) }
         });
         (plans, Ref.get(rows))
 

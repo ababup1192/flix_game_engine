@@ -109,7 +109,8 @@ pub mod WebLayer {
         }
 
     def sceneTextureNamesOf(scene: Scene3d.Scene3dCmd): List[String] =
-        List.flatMap(Scene3d.textureNamesOf, Scene3d.instancesOf(scene))
+        List.flatMap(Scene3d.textureNamesOf, Scene3d.instancesOf({ multiMeshes = Nil | scene }))
+            ::: List.flatMap(MultiMesh3d.textureNamesOf, scene#multiMeshes)
             ::: List.map(b -> Scene3d.billboardFieldsOf(b)#texture, scene#billboards)
             ::: Scene3d.environmentTextureNamesOf(scene)
 

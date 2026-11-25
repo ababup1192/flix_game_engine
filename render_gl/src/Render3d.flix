@@ -337,7 +337,9 @@ mod Render3d {
         // 計画の側の状態（置いた物の描き方と知らせ済みの鍵。GL の物を持たない）。
         planner = Render3d.ScenePlan.Planner,
         // 動かない物の集まりの持ち越し（Render3d.GlStatic）。
-        statics = Render3d.GlStatic.StaticCache
+        statics = Render3d.GlStatic.StaticCache,
+        // 続けて描く MultiMesh の詰めた並びの控え（Render3d.InstanceValues.MultiCarry）。
+        multiCarry = Render3d.InstanceValues.MultiCarry
     }
 
     // ── 決まりの数 ──
@@ -407,7 +409,7 @@ mod Render3d {
           phaseNsHolder = Array.repeat(Static, Render3d.Counts.phaseSlots(), 0i64), materialBuildsRef = Ref.fresh(Static, Nil),
           preloadRef = Ref.fresh(Static, Render3d.Preload.empty()),
           joints = Render3d.GlRows.DataTexture.freshTextures(), instances = Render3d.GlRows.DataTexture.freshTextures(),
-          planner = Render3d.ScenePlan.freshPlanner(drawMode), statics = Render3d.GlStatic.fresh() }
+          planner = Render3d.ScenePlan.freshPlanner(drawMode), statics = Render3d.GlStatic.fresh(), multiCarry = Render3d.InstanceValues.freshMultiCarry() }
 
     /// 2D の描き手へ渡す 3D の描き手を、空の置き場で作る。場面の絵の置き場の上限は config（project.json）から読む。
     pub def makeRenderer(gl: GlContext, config: GameEngine.EngineConfig, drawMode: DrawMode): Scene3dRenderer.Renderer \ IO =
@@ -600,7 +602,7 @@ mod Render3d {
         if (area#fillBackground) drawSky(gl, state, area#viewport, scene) else ();
         let picked = Scene3d.pickLights(scene);
         noteDroppedLights(state, scene);
-        Render3d.ScenePlan.noteStaticGroupHint(state#planner, Scene3d.instancesOf(scene) |> List.length, scene);
+        Render3d.ScenePlan.noteStaticGroupHint(state#planner, Render3d.StaticRows.itemCountOf(scene), scene);
         let lights = withPsxTarget(area#viewport, lightDataOf(picked, environmentLevels));
         let view = matrixArray(Camera3d.viewMatrix(scene#camera));
         let proj = matrixArray(Camera3d.projectionMatrix(scene#camera, Scene3d.aspectOf(scene)));
@@ -612,7 +614,7 @@ mod Render3d {
         Render3d.GlStatic.setTime(scene#time, inputs#carried);
         inputs#carried |> List.forEach(c -> uploadRows(gl, state, gen, source, Render3d.GlStatic.inputsOf(inputs, c), 0));
         Render3d.Counts.countInstances(state, 0, List.sumWith(c -> c#carried#rows#combinedAway, inputs#carried));
-        uploadRows(gl, state, gen, source, inputs, List.length(Scene3d.instancesOf(scene)));
+        uploadRows(gl, state, gen, source, inputs, Render3d.StaticRows.itemCountOf(scene) + Render3d.StaticRows.multiMeshCountOf(scene));
         let ctx = { camera = camera, eye = scene#camera#eye, source = source, billboard = Render3d.VariantPrograms.billboardLocsFor(gl, state, variant), scene = scene };
         let (callsBefore, meshBefore) = Render3d.Counts.drawCallsSoFar(state);
         inputs#passes |> List.forEach(match (spec, list) -> drawPass(gl, state, gen, ctx, inputs, spec, list));

@@ -77,4 +77,15 @@ mod TestHeadlessRenderSilhouette {
             (List.head(drawables) |> Option.map(d -> (Color.channels(DrawCmd.colorOf(d)), DrawCmd.alphaOf(d), DrawCmd.blendOf(d))),
              List.head(polygons)  |> Option.map(p ->
                  (Color.channels(p#color), p#alpha, p#blend, Option.isEmpty(p#grad)))))
+
+    /// 3D の場面の MultiMesh は、影絵の色の 1 体ずつに開いて描き（体の数だけ）、MultiMesh のまま残して二重に描かない。
+    @Test
+    def testSilhouetteSceneDrawsMultiMeshOnce(): Unit \ Assert =
+        let tri = Mesh3d.fromPolygons({ points = Vec3.v3(0.0, 0.0, 0.0) :: Vec3.v3(1.0, 0.0, 0.0) :: Vec3.v3(0.0, 1.0, 0.0) :: Nil, color = Color.rgb(1.0, 0.0, 0.0) } :: Nil);
+        let crowd = MultiMesh3d.build(tri, 4, i -> Mat4.translate(Vec3.v3(Int32.toFloat64(i), 0.0, 0.0)));
+        let camera = { eye = Vec3.v3(0.0, 0.0, -5.0), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 100.0, lensShift = Vec2.zero() };
+        let cmd = { scene = { multiMeshes = crowd :: Nil | Scene3d.scene(camera, Vec2.v2(32.0, 32.0)) }, at = Vec2.zero(), clip = None };
+        let out = HeadlessRender.silhouetteScenes(HeadlessRender.SilhouetteScope.WorldBand, cmd :: Nil);
+        let drawn = out |> List.map(c -> (List.length(c#scene#instances), List.length(c#scene#multiMeshes)));
+        Assert.assertEq(expected = (4, 0) :: Nil, drawn)
 }

@@ -287,6 +287,15 @@ mod TestDrawHash {
         let at = (s: Option[Scene3d.Sky3d]) -> keyOf(inputs(), { req = { scenes = { scene = { sky = s | base#scene } | base } :: Nil | f#req } | f });
         Assert.assertTrue(at(None) != at(Some(sky)) and at(Some(sky)) != at(Some(Scene3d.withSkyCurve(2.0, sky))))
 
+    // MultiMesh の体の行列が 1 つ違えば鍵が変わり、同じ並びなら作り直しても同じ鍵になる。
+    @Test
+    def testMultiMeshTransformsChangeKey(): Unit \ Assert =
+        let f = frame();
+        let base = sceneAt(Mat4.identity());
+        let crowd = (x: Float64) -> MultiMesh3d.build(redTriangle(), 3, i -> Mat4.translate(Vec3.v3(Int32.toFloat64(i) + x, 0.0, 2.0)));
+        let at = (mm: MultiMesh3d.MultiMesh3d) -> keyOf(inputs(), { req = { scenes = { scene = { multiMeshes = mm :: Nil | base#scene } | base } :: Nil | f#req } | f });
+        Assert.assertEq(expected = (true, false), (at(crowd(0.0)) == at(crowd(0.0)), at(crowd(0.0)) == at(crowd(0.5))))
+
     // 環境マップを付けると鍵が変わり、強さ・箱・絵が違っても鍵が変わる。None の鍵が付ける前と同じ字のままなのは、下の固定の鍵の比べ（Pinned）が守る。
     @Test
     def testEnvironmentMapChangesKey(): Unit \ Assert =

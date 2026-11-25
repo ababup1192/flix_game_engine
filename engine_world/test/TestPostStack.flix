@@ -547,3 +547,20 @@ mod TestPostStack {
     def testDocReadsCrt(): Unit \ Assert =
         Assert.assertEq(expected = Some(Some(2.5)), parsed("{\"crt\": {\"compositeBlur\": 2.5}}") |> Result.toOption |> Option.map(x -> PostStack.crtOf(x) |> Option.map(c -> c#compositeBlur)))
 }
+
+// 奥行きのぼかしの奥行きの絵（PostStack.Internal.Passes.depthItemOf）が、場面の描く物を全部写すか。
+mod PostStack.Internal.Passes.TestDepthItem {
+
+    /// 奥行きの絵の場面は、元の場面の MultiMesh を持つ（落とすと奥行きのぼかしで MultiMesh の物が消える）。
+    @Test
+    def testDepthSceneKeepsMultiMeshes(): Unit \ Assert =
+        let tri = Mesh3d.fromPolygons({ points = Vec3.v3(0.0, 0.0, 0.0) :: Vec3.v3(1.0, 0.0, 0.0) :: Vec3.v3(0.0, 1.0, 0.0) :: Nil, color = Color.rgb(1.0, 1.0, 1.0) } :: Nil);
+        let crowd = MultiMesh3d.build(tri, 3, i -> Mat4.translate(Vec3.v3(Int32.toFloat64(i), 0.0, 0.0)));
+        let camera = { eye = Vec3.v3(0.0, 0.0, -5.0), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 100.0, lensShift = Vec2.zero() };
+        let scene = { multiMeshes = crowd :: Nil | Scene3d.scene(camera, Vec2.v2(32.0, 32.0)) };
+        let kept = match PostStack.Internal.Passes.depthItemOf((Vec2.zero(), scene), 0.5, 10.0)#item {
+            case Render.Item.Scene3d(cmd) => List.sumWith(MultiMesh3d.countOf, cmd#multiMeshes)
+            case _                        => -1
+        };
+        Assert.assertEq(expected = 3, kept)
+}

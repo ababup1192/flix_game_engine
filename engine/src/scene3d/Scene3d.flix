@@ -796,11 +796,11 @@ pub mod Scene3d {
     /// sky = 何も描かれない画素に描く空（gradientSky。Some なら environment の background は使わない）・
     /// environmentMap = metallic と roughness を持つ材質の映り込みが読む周りの景色（environmentMap。None なら空のグラデーションを映す）・
     /// directionalLight = 太陽（1 つまで。None なら無し。使うかどうかは directionalLightOf で決める）・
-    /// groups = 動かない物の集まり（staticGroup。中の物は instances と同じに描かれる。読むのは instancesOf）・
+    /// groups = 動かない物の集まり（staticGroup。中の物は instances と同じに描かれる。読むのは instancesOf）・multiMeshes = 同じ形をたくさん（MultiMesh3d.build。既定 Nil）・
     /// unitsPerMeter = 1 m が場面の長さのいくつか（withUnitsPerMeter。Legacy の光では描き方は変えず、m で受ける値（PostStack の奥行きのぼかし）と Physical の光の逆二乗が読む）・
     /// pointShadows = 点光源の影（withPointShadows。None なら影なし）・lightUnits = 光の量の読み方（withLightUnits。既定 Legacy）・
     /// psx = PS1 風の描き方（withPsx。既定 psxOff = 全部切る）。
-    pub type alias Scene3dCmd = { size = Vec2.Vec2, camera = Camera3d.Camera3d, instances = List[Instance3d], groups = List[StaticGroup], billboards = List[Billboard3d],
+    pub type alias Scene3dCmd = { size = Vec2.Vec2, camera = Camera3d.Camera3d, instances = List[Instance3d], groups = List[StaticGroup], multiMeshes = List[MultiMesh3d.MultiMesh3d], billboards = List[Billboard3d],
                                   pointLights = List[PointLight], spotLights = List[SpotLight], directionalLight = Option[DirectionalLight], environment = Environment3d,
                                   resolution = Resolution, output = Output, zIndex = Int32, time = Float64,
                                   textures = List[Texture3d.Texture3d], sky = Option[Sky3d], environmentMap = Option[EnvironmentMap], unitsPerMeter = Float64,
@@ -811,7 +811,7 @@ pub mod Scene3d {
     /// Scene3dCmd は開いたレコードなので `{ instances = … | s }` で足す。
     // WhyNot: 環境光を黒にしない — 光を置く前の場面が真っ黒になり、形を置いたのに何も出ないように見える。
     pub def scene(camera: Camera3d.Camera3d, size: Vec2.Vec2): Scene3dCmd =
-        { size = size, camera = camera, instances = Nil, groups = Nil, billboards = Nil, pointLights = Nil, spotLights = Nil, directionalLight = None,
+        { size = size, camera = camera, instances = Nil, groups = Nil, multiMeshes = Nil, billboards = Nil, pointLights = Nil, spotLights = Nil, directionalLight = None,
           environment = { ambient = Color.rgb(1.0, 1.0, 1.0), hemisphere = 0.0, toonSteps = 0, fog = None, background = None },
           resolution = Resolution.Native, output = Output.Color, zIndex = 0, time = 0.0, textures = Nil, sky = None, environmentMap = None,
           unitsPerMeter = 1.0, pointShadows = None, lightUnits = LightUnits.Legacy, psx = psxOff() }
@@ -866,14 +866,14 @@ pub mod Scene3d {
         let InstanceData.InstanceData(f) = i;
         InstanceData.InstanceData({ tint = Color.rgb(f#tint#r * c#r, f#tint#g * c#g, f#tint#b * c#b) | f })
 
-    /// 場面に描く物が 1 つでもあるか（集まりは外していない鍵が 1 つでもあるか。先頭で止まり、描く物の列を作らない）。
-    def hasDrawnInstance(scene: Scene3dCmd): Bool =
-        not List.isEmpty(scene#instances) or List.exists(g -> { let r = staticGroupFieldsOf(g); List.exists(kv -> not Set.memberOf(fst(kv), r#removed), r#items) }, scene#groups)
+    /// 場面に描く物が 1 つでもあるか（集まりは外していない鍵が 1 つでもあるか・MultiMesh は 1 体でもあるか。先頭で止まり、描く物の列を作らない。描き手が影を落とすかを決める）。
+    pub def hasDrawnInstance(scene: Scene3dCmd): Bool =
+        not List.isEmpty(scene#instances) or List.exists(g -> { let r = staticGroupFieldsOf(g); List.exists(kv -> not Set.memberOf(fst(kv), r#removed), r#items) }, scene#groups) or List.exists(mm -> MultiMesh3d.countOf(mm) > 0, scene#multiMeshes)
 
-    /// 場面の描く物の全部（instances の後ろに groups の物を集まりの順に）。描き手が groups を持ち越さない所はこれを描く。
+    /// 場面の描く物の全部（instances の後ろに groups の物を集まりの順に、その後ろに multiMeshes の物を 1 体ずつ）。CPU の描き手と描き出しが描く（GL と WebGPU は groups と multiMeshes を別に持つ）。
     pub def instancesOf(scene: Scene3dCmd): List[Instance3d] =
-        if (List.isEmpty(scene#groups)) scene#instances
-        else List.append(scene#instances, List.flatMap(groupInstancesOf, scene#groups))
+        let base = if (List.isEmpty(scene#groups)) scene#instances else List.append(scene#instances, List.flatMap(groupInstancesOf, scene#groups));
+        if (List.isEmpty(scene#multiMeshes)) base else List.append(base, List.flatMap(MultiMesh3d.toInstances, scene#multiMeshes))
 
     // ── 環境マップ ──
 
