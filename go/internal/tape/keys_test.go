@@ -496,21 +496,37 @@ var keyboardCases = []uiCase{
 		check: `(() => { const r = $("noteSave").getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight - 300; })()`},
 }
 
-func TestWideKeys(t *testing.T)     { runUICases(t, buildSite(t).tapeURL, keyCases) }
-func TestSheetButtons(t *testing.T) { runUICases(t, buildSite(t).tapeURL, buttonCases) }
-func TestSaveRoute(t *testing.T)    { runUICases(t, buildSite(t).tapeURL, saveCases) }
+func TestWideKeys(t *testing.T) { skipWithoutChrome(t); runUICases(t, buildSite(t).tapeURL, keyCases) }
+func TestSheetButtons(t *testing.T) {
+	skipWithoutChrome(t)
+	runUICases(t, buildSite(t).tapeURL, buttonCases)
+}
+func TestSaveRoute(t *testing.T) {
+	skipWithoutChrome(t)
+	runUICases(t, buildSite(t).tapeURL, saveCases)
+}
 func TestFormChangeKeepsDraftsAndClosesTheRest(t *testing.T) {
+	skipWithoutChrome(t)
 	runUICases(t, buildSite(t).tapeURL, formChangeCases)
 }
 func TestSoundNoteSelectsTheNearestSound(t *testing.T) {
+	skipWithoutChrome(t)
 	runUICases(t, buildSite(t).tapeURL, soundNoteCases)
 }
-func TestZoomAndMouseExtras(t *testing.T)      { runUICases(t, buildSite(t).tapeURL, zoomCases) }
-func TestTimelineScrollsToTheEnd(t *testing.T) { runUICases(t, buildSite(t).tapeURL, scrollEndCases()) }
+func TestZoomAndMouseExtras(t *testing.T) {
+	skipWithoutChrome(t)
+	runUICases(t, buildSite(t).tapeURL, zoomCases)
+}
+func TestTimelineScrollsToTheEnd(t *testing.T) {
+	skipWithoutChrome(t)
+	runUICases(t, buildSite(t).tapeURL, scrollEndCases())
+}
 func TestShortTimelineScrollsToTheEnd(t *testing.T) {
+	skipWithoutChrome(t)
 	runUICases(t, buildSite(t).otherURL, scrollEndCases())
 }
 func TestKeyboardKeepsSheetConfirmVisible(t *testing.T) {
+	skipWithoutChrome(t)
 	runUICases(t, buildSite(t).tapeURL, keyboardCases)
 }
 

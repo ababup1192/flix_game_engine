@@ -645,6 +645,10 @@ go-test: ### [PKG=<名前>,…] [FRESH=<名前>,…] | go/ のテスト（PKG �
 	$(if $(PKG),&& CGO_ENABLED=0 go test $(call GO_PKG_PATHS,$(PKG))) \
 	$(if $(FRESH),&& CGO_ENABLED=0 go test -count=1 $(call GO_PKG_PATHS,$(FRESH)))
 
+.PHONY: go-test-full
+go-test-full: ### | go/ のテストの全部を cache なし（-count=1）で 1 回（リリースの門。作業中の go-test が cache に任せる tape の Chrome・ffmpeg の版の変化もここで拾う）
+	@cd go && CGO_ENABLED=0 go test -count=1 ./...
+
 # arm64 の Mac で x86-64 の結果を確かめる（Rosetta）。arm64 は a*b+c を FMA にまとめることがあり、
 # 包み忘れると境目の画素だけが Mac と Windows でずれる（px の積は float64(…) か dot で包む）。
 .PHONY: go-test-amd64
@@ -1082,7 +1086,7 @@ studio-parity: ### [STUDIO=<パス>|none] | Studio の check-agents-parity を�
 	   || { echo "[release] sync-agents の出力が Studio の server/src/NewGame.flix とずれています。Studio 側も同じ変更を入れて main へ push してから公開してください"; exit 1; }
 # gl-parity も全量ゲートの一員 — GL と SoftRaster の絵の退行はテストに出ないため。
 # WhyNot: studio-parity を門に入れない — Studio は凍結中（plans/dashboard.md の 7 節）。凍結を解いたら戻す。
-RELEASE_GATES := release-guard sync $(RELEASE_TEST) gl-parity
+RELEASE_GATES := release-guard sync $(RELEASE_TEST) gl-parity go-test-full
 .PHONY: release
 release: release-verify ### [JOBS=1] | release-verify と同じ
 

@@ -171,7 +171,7 @@ git log 掘りやテスト回し直しから始めない。
 `test` = テンプレートを含む全部のテスト／`release` = リリースの門／`gui` = 画面を開く門（release の前に手元で）。`SUITE` 無しで一覧・`DRY=1` で何を流すかだけ）。
 作業中の確かめは `make verify SUITE=affected` を既定にしてよい（絞るのはパッケージの単位だけ・release の全量の門は絞らない）。答え合わせは薄く済ませてあり、
 外れ（選ばなかった門で赤）に気づいたら、そのコミットを `make test-select-replay COMMITS=<sha>` で流して台に足し、gates.json の表を直す（plans/test-selection.md の 12 節）。
-テストの口は `make test`（`ALL=1` でテンプレートとテストを持つ bench（bench/hd2d_town）も・`JOBS=<数>` で並べて流す）。絞る旗は `make gl-capture-check SCENES=<テンプレートか場面>`・`make go-test PKG=<名前>`。
+テストの口は `make test`（`ALL=1` でテンプレートとテストを持つ bench（bench/hd2d_town）も・`JOBS=<数>` で並べて流す）。絞る旗は `make gl-capture-check SCENES=<テンプレートか場面>`・`make go-test PKG=<名前>`。go のテストの全部を cache なしで 1 回流すのは `make go-test-full`（リリースの門。作業中の go-test は tape を cache に任せる）。
 テストの範囲・書き方は `/quality-assurance`、リリース手順は `/release`。
 
 ## Doc（`*.kind.json`）の流儀

@@ -172,7 +172,7 @@ func TestEngineWorldSrcSkipsOtherLayers(t *testing.T) {
 		"make render-all",
 		"make sync-engine-full",
 		"make sync-engine-full-web",
-		"make test JOBS=6 PKGS='engine_world hd2d-starter hd2d_town rpg-starter sound-novel-starter tidepool-starter'",
+		"make test JOBS=6 PKGS='engine_world hd2d-starter hd2d_town retro3d-horror-starter rpg-starter sound-novel-starter tidepool-starter'",
 	})
 }
 
@@ -185,7 +185,7 @@ func TestEngineWorldSrcHoldsExternalGates(t *testing.T) {
 // T4 render_gl の WGSL を持つ src は、render_gl のテストと下流（T3 の engine_world を render_gl に替えた形）。
 func TestRenderGlWgslRunsRenderGlAndDownstream(t *testing.T) {
 	p := plan(t, env, Options{}, files("render_gl/src/Render3dWgsl.flix")...)
-	if !hasVar(p, "test", "PKGS", "hd2d-starter hd2d_town render_gl rpg-starter sound-novel-starter tidepool-starter") || !has(runIDs(p), "gl-parity", "sync-engine-full") {
+	if !hasVar(p, "test", "PKGS", "hd2d-starter hd2d_town render_gl retro3d-horror-starter rpg-starter sound-novel-starter tidepool-starter") || !has(runIDs(p), "gl-parity", "sync-engine-full") {
 		t.Errorf("run %v", lines(p))
 	}
 }
@@ -222,7 +222,7 @@ func TestRunIsOrderedPrereqFirst(t *testing.T) {
 func TestRootWiringSelectsEverything(t *testing.T) {
 	for _, f := range []string{"Makefile", "mk/game.mk", "bin/determinism.sh", "bin/fge", ".github/workflows/release.yml", "lib/x.jar", "devbox.json", "flix.toml"} {
 		p := plan(t, env, Options{}, files(f)...)
-		if len(p.AllBecause) == 0 || !has(runIDs(p), "test", "check-pkgs", "go-test", "go-build", "render-all", "gl-parity", "new-game-check") || !hasVar(p, "go-test", "PKG", "gates,px") {
+		if len(p.AllBecause) == 0 || !has(runIDs(p), "test", "check-pkgs", "go-test", "go-build", "render-all", "gl-parity", "new-game-check") || !hasVar(p, "go-test", "PKG", "gates,px,tape") {
 			t.Errorf("%s: all=%v run=%v", f, p.AllBecause, runIDs(p))
 		}
 	}
@@ -231,7 +231,7 @@ func TestRootWiringSelectsEverything(t *testing.T) {
 // 安全側: 全部の時のテストは全パッケージ。
 func TestEverythingTestsAllPackages(t *testing.T) {
 	p := plan(t, env, Options{}, files("Makefile")...)
-	if !hasVar(p, "test", "PKGS", "engine engine_tools engine_world hd2d-starter hd2d_town render_gl rpg-starter sound-novel-starter tidepool-starter") {
+	if !hasVar(p, "test", "PKGS", "engine engine_tools engine_world hd2d-starter hd2d_town render_gl retro3d-horror-starter rpg-starter sound-novel-starter tidepool-starter") {
 		t.Errorf("run %v", lines(p))
 	}
 }
@@ -263,7 +263,7 @@ func TestVersionOnlyTomlRunsSyncOnly(t *testing.T) {
 // flix.toml の version 以外の差（--files で見えない時も）はそのパッケージと下流の全部。
 func TestTomlOtherThanVersionRunsDownstream(t *testing.T) {
 	p := plan(t, env, Options{}, files("engine/flix.toml")...)
-	if !hasVar(p, "test", "PKGS", "engine engine_tools engine_world hd2d-starter hd2d_town render_gl rpg-starter sound-novel-starter tidepool-starter") {
+	if !hasVar(p, "test", "PKGS", "engine engine_tools engine_world hd2d-starter hd2d_town render_gl retro3d-horror-starter rpg-starter sound-novel-starter tidepool-starter") {
 		t.Errorf("run %v", lines(p))
 	}
 }
@@ -316,10 +316,18 @@ func TestDocsSchemaRunsPxTest(t *testing.T) {
 	}
 }
 
-// plans/tape の .md は tape の go のテストだけを流す。
-func TestTapePlanMarkdownRunsTapeTest(t *testing.T) {
-	p := plan(t, env, Options{}, files("plans/tape/spec-wide.md")...)
-	if !hasVar(p, "go-test", "PKG", "") || !hasVar(p, "go-test", "FRESH", "tape") {
+// plans/tape の雛形（mock.html）は tape の go のテストだけを流す。tape は exec を持つが cache で足りる（cacheSafeExecPkgs）。
+func TestTapeMockRunsTapeTest(t *testing.T) {
+	p := plan(t, env, Options{}, files("plans/tape/mock.html")...)
+	if !hasVar(p, "go-test", "PKG", "tape") || !hasVar(p, "go-test", "FRESH", "") {
+		t.Errorf("run %v", lines(p))
+	}
+}
+
+// plans/tape の決まりの .md と絵は tape のテストが読まないので go のテストを流さない。
+func TestTapePlanNotesDoNotRunTapeTest(t *testing.T) {
+	p := plan(t, env, Options{}, files("plans/tape/spec-wide.md", "plans/tape/strip.jpg")...)
+	if has(runIDs(p), "go-test") {
 		t.Errorf("run %v", lines(p))
 	}
 }
@@ -330,10 +338,10 @@ func TestDebugIsInert(t *testing.T) {
 	eq(t, runIDs(p), []string{"check-docs-sync", "lint", "precommit-dry"})
 }
 
-// go.mod は go のテストの全部（PKG を付けず、exec を持つ物は全部 FRESH）。
+// go.mod は go のテストの全部（exec を持つ物は FRESH・cache で足りる tape は PKG）。
 func TestGoModRunsAllGoTests(t *testing.T) {
 	p := plan(t, env, Options{}, files("go/go.mod")...)
-	if !hasVar(p, "go-test", "PKG", "gates,px") || !hasVar(p, "go-test", "FRESH", ".,precommit,tape") {
+	if !hasVar(p, "go-test", "PKG", "gates,px,tape") || !hasVar(p, "go-test", "FRESH", ".,precommit") {
 		t.Errorf("run %v", lines(p))
 	}
 }
@@ -341,7 +349,7 @@ func TestGoModRunsAllGoTests(t *testing.T) {
 // go:embed の素材は置き場のパッケージのテストを流す。
 func TestGoEmbedAssetRunsItsPackage(t *testing.T) {
 	p := plan(t, env, Options{}, files("go/internal/tape/template.html")...)
-	if !hasVar(p, "go-test", "FRESH", "tape") {
+	if !hasVar(p, "go-test", "PKG", "tape") {
 		t.Errorf("run %v", lines(p))
 	}
 }

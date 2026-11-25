@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/fgehome"
+	"github.com/ababup1192/flix_game_engine/go/internal/posts"
 )
 
 const testPort = 8790
@@ -324,7 +325,7 @@ func TestRunInGameFolderAddsTheGameAndOpensItsPageOnTheRunningServer(t *testing.
 	os.MkdirAll(f.wd, 0o755)
 	code, log := runDashboard(t, f, "--port", "8790")
 	ws, _ := fgehome.ReadWorkspace()
-	if code != 0 || f.served || len(ws.Games) != 1 || ws.Games[0].Dir != game ||
+	if code != 0 || f.served || len(ws.Games) != 1 || ws.Games[0].Dir != posts.RealPath(game) ||
 		len(f.opened) != 1 || f.opened[0] != "http://127.0.0.1:8790/tide-pool/" {
 		t.Fatalf("code=%d served=%v games=%+v opened=%v log=%s", code, f.served, ws.Games, f.opened, log)
 	}

@@ -99,6 +99,22 @@
         }
       ],
       "avoid": []
+    },
+    {
+      "id": "go-test-full",
+      "prompt": "Chrome を上げたので、go のテストを cache を使わずに全部 1 回流し直したい。作業中の確かめでは tape のテストが cache で済まされているので、それも含めて本当に流し直す口を知りたい",
+      "expect": [
+        {
+          "re": "make go-test-full",
+          "why": "go のテストの全部を cache なしで流すのは make go-test-full"
+        }
+      ],
+      "avoid": [
+        {
+          "re": "go clean -testcache",
+          "why": "cache を全部消すと他の作業の cache まで捨てる。make の口がある"
+        }
+      ]
     }
   ]
 }

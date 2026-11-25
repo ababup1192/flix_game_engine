@@ -678,7 +678,7 @@ func goTestLine(t *Table, pkgs map[string]bool, src []string, all bool, env Env)
 	// WhyNot: PKG と FRESH を重ねない — 重ねると exec を持つ重いパッケージを cache ありと -count=1 で 2 回流す。
 	var run, fresh []string
 	for n := range names {
-		if isExec[n] {
+		if isExec[n] && !cacheSafeExecPkgs[n] {
 			fresh = append(fresh, n)
 		} else {
 			run = append(run, n)
@@ -697,6 +697,11 @@ func goTestLine(t *Table, pkgs map[string]bool, src []string, all bool, env Env)
 	g := t.gates["go-test"]
 	return &Line{ID: "go-test", Make: "go-test", Vars: vars, About: g.About, Time: g.Time, Why: why}, nil
 }
+
+// cacheSafeExecPkgs は exec を持っても cache で足りる go のパッケージ。子（Chrome・ffmpeg・git）が読むのはテストが作った一時フォルダの物だけで、
+// リポの中の物はテストのプロセスが自分で開く（go の cache が追う）。
+// WhyNot: Chrome や ffmpeg の版が変わっても流し直さない — それは make release の go-test-full（-count=1 の全量）が拾う。
+var cacheSafeExecPkgs = map[string]bool{"tape": true}
 
 // testTimeOf は make test の目安（並べた中で一番長い 1 本）。目安を持たないパッケージがあれば門の文のまま。
 func testTimeOf(t *Table, ids []string, fallback string) string {

@@ -13,6 +13,7 @@
     {"id": "sync", "about": "層の作業場を張り、engine_full と engine_full_web を build-pkg して templates / bench と置き場に配る（全パッケージのコンパイル）", "make": "sync", "select": "never", "input": {"anyOf": [{"prefixes": ["engine/src/", "engine_world/src/", "engine_tools/src/", "render_gl/src/", "render_gl/java/", "engine_web/"]}, {"basenames": ["flix.toml"]}]}, "runs": ["release"], "time": "40s", "prereq": true},
     {"id": "test-release", "about": "全パッケージの flix test（テンプレートとテストを持つ bench を含む・6 並列。make test ALL=1 JOBS=6 と同じ）", "make": "test-release", "select": "never", "runs": ["release"], "time": "2m"},
     {"id": "gl-parity", "about": "GL と SoftRaster の絵の一致・式の差の上限", "make": "gl-parity", "select": "package", "runs": ["release"], "time": "18s"},
+    {"id": "go-test-full", "about": "go/ のテストの全部を cache なし（-count=1）で 1 回（作業中の go-test が cache に任せる tape の子（Chrome・ffmpeg）の版の変化も拾う）", "make": "go-test-full", "select": "never", "runs": ["release"], "time": "4〜5m"},
     {"id": "release-verify", "about": "リリースの門（上の runs: release の 4 本）を通し、通した commit を release/verified.txt に書く", "make": "release-verify", "select": "never", "runs": ["manual"], "time": "3m"},
     {"id": "sync-engine-full", "about": "engine_full の fpkg を作り置き場へ（テンプレート・bench が読む束を新しくする）", "make": "sync-engine-full", "select": "package", "runs": ["manual"], "time": "14s", "prereq": true},
     {"id": "check", "about": "根の 4 パッケージを 1 本の木で型検査", "make": "check", "select": "package", "runs": ["manual"], "time": "10s"},
@@ -116,14 +117,14 @@
   "inert": {"anyOf": [{"prefixes": ["plans/", "spikes/", "release/", ".vscode/", "debug/"]}, {"prefixes": ["docs/"], "exceptPrefixes": []}]},
   "goReads": [
     {"about": "engine 側の src を読む go のテスト（api-digest・doc の参照・fallback・forbid・precommit ほか）", "reads": {"prefixes": ["engine/src/", "engine_world/src/", "engine_tools/src/", "render_gl/src/"]}, "pkgs": ["apidigest", "apiindex", "apireleased", "docrefs", "f32", "fallback", "flixdecl", "forbid", "headlessrun", "precommit", "quadratic", "."]},
-    {"about": "templates/ の本物を読む go のテスト（yarn の template_vocab が sound-novel-starter の語彙・tape の shrink が同じ Makefile。ほかの go のテストの templates/ は一時フォルダの作り物）", "reads": {"prefixes": ["templates/sound-novel-starter/"]}, "pkgs": ["tape", "yarn"]},
+    {"about": "templates/ の本物を読む go のテスト（yarn の template_vocab が sound-novel-starter の語彙。tape の shrink が読むのは mk/tape.mk で wiring が拾う。ほかの go のテストの templates/ は一時フォルダの作り物）", "reads": {"prefixes": ["templates/sound-novel-starter/"]}, "pkgs": ["yarn"]},
     {"about": "ブラウザ版のキーの突き合わせ（exportweb_touch_test が templates の project.json・keys.schema.json と engine_web の WebLayer.flix を読む）", "reads": {"anyOf": [{"prefixes": ["templates/"], "basenames": ["project.json", "keys.schema.json"]}, {"prefixes": ["engine_web/src/"]}]}, "pkgs": ["."]},
     {"about": "docs の schema（px の op の表と比べる）", "reads": {"prefixes": ["docs/"], "suffixes": [".schema.json"]}, "pkgs": ["px", "apidigest", "hooks"]},
     {"about": "音の op の表（snd の TestDocsAreInSync が docs/snd-ops.md を生成物と比べる。docs-sync に snd の検査は無い）", "reads": {"basenames": ["snd-ops.md"]}, "docs": true, "pkgs": ["snd"]},
     {"about": "agents-pack と .claude の json（manifest・codex-hooks ほか）", "reads": {"prefixes": ["agents-pack/", ".claude/"]}, "pkgs": ["genrules", "hooks", "prunetools", "status", "syncagents"]},
     {"about": "lint/ の doc の参照の表", "reads": {"prefixes": ["lint/"]}, "pkgs": ["docrefs", "gates"]},
     {"about": "門の表（gates.json）", "reads": {"basenames": ["gates.json"]}, "pkgs": ["gates", "testselect", "."]},
-    {"about": "tape の頁の雛形と決まり（.md も読む）", "reads": {"prefixes": ["plans/tape/"]}, "docs": true, "pkgs": ["tape"]},
+    {"about": "tape の頁の雛形と見本（tape_test.go の samplePath・mockPath。plans/tape/ のほかの絵やメモは読まない）", "reads": {"prefixes": ["plans/tape/"], "basenames": ["mock.html", "tape.sample.json"]}, "pkgs": ["tape"]},
     {"about": "規約の表と testdata（どの go のテストが読むか決めきれないので全部）", "reads": {"prefixes": ["bin/lint-rules/", "testdata/"]}, "pkgs": ["*"]}
   ]
 }

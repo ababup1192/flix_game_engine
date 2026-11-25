@@ -544,18 +544,26 @@ func makeVideo(t *testing.T, path string, secs float64) {
 }
 
 // makeVideoSized は size（"幅x高さ"）の試験の動画を作る。
+// 同じ (秒, 大きさ) の動画は 1 回だけ作り、videoCacheDir の物を複製する。
 func makeVideoSized(t *testing.T, path string, secs float64, size string) {
 	t.Helper()
 	ff, err := exec.LookPath("ffmpeg")
 	if err != nil {
 		t.Skip("ffmpeg が無い")
 	}
-	out, err := exec.Command(ff, "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi",
-		"-i", fmt.Sprintf("testsrc2=size=%s:rate=30:duration=%g", size, secs),
-		"-pix_fmt", "yuv420p", path).CombinedOutput()
-	if err != nil {
-		t.Fatalf("試験の動画を作れない: %v\n%s", err, out)
+	cached := filepath.Join(videoCacheDir, fmt.Sprintf("%g-%s.mp4", secs, size))
+	videoCacheMu.Lock()
+	defer videoCacheMu.Unlock()
+	if _, err := os.Stat(cached); err != nil {
+		out, err := exec.Command(ff, "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi",
+			"-i", fmt.Sprintf("testsrc2=size=%s:rate=30:duration=%g", size, secs),
+			"-pix_fmt", "yuv420p", cached).CombinedOutput()
+		if err != nil {
+			os.Remove(cached)
+			t.Fatalf("試験の動画を作れない: %v\n%s", err, out)
+		}
 	}
+	copyFile(t, cached, path)
 }
 
 func TestBuildWritesStripAndIndex(t *testing.T) {
