@@ -17,9 +17,9 @@ mod Field {
     }
 
     /// つまみ。count = 物の数・materials = 材質の種類・movingPercent = 毎コマ位置と向きを変える物の割合（%）・
-    /// translucentPercent = 半透明の物の割合（%）・sunShadow = 太陽の影を落とすか・cutout = 材質を cutout にするか・delivery = 物の渡し方（Delivery）・
+    /// translucentPercent = 半透明の物の割合（%）・sunShadow = 太陽の影を落とすか・cutout = 材質を cutout にするか・lamps = 影を落とす点光源の数（格子の上に並べる）・delivery = 物の渡し方（Delivery）・
     /// faceGrid = 箱の面 1 つを何 × 何の四角に割るか（1 = 割らない。形ごとの頂点の数を寄せる）。
-    pub type alias Config = { count = Int32, shapes = Shapes, materials = Int32, movingPercent = Int32, translucentPercent = Int32, sunShadow = Bool, cutout = Bool, delivery = Delivery,
+    pub type alias Config = { count = Int32, shapes = Shapes, materials = Int32, movingPercent = Int32, translucentPercent = Int32, sunShadow = Bool, cutout = Bool, lamps = Int32, delivery = Delivery,
                               faceGrid = Int32 }
 
     /// つまみの表（n・shapes = 数か each・mats・moving・alpha・shadow = 1 で影あり・group = 1 で動かない物を集まりに・verts = 形ごとの頂点の数の目安）を読む。
@@ -31,6 +31,7 @@ mod Field {
           translucentPercent = BenchRun.intKnob("alpha", 0, knobs),
           sunShadow = Map.get("shadow", knobs) == Some("1"),
           cutout = Map.get("cutout", knobs) == Some("1"),
+          lamps = Int32.max(0, BenchRun.intKnob("lamps", 0, knobs)),
           delivery = if (Map.get("multi", knobs) == Some("1")) Delivery.Multi else if (Map.get("group", knobs) == Some("1")) Delivery.Grouped else Delivery.PerFrame,
           faceGrid = faceGridOf(BenchRun.intKnob("verts", 24, knobs)) }
 
@@ -46,7 +47,7 @@ mod Field {
         };
         ("n", Int32.toString(c#count)) :: ("shapes", shapes) :: ("mats", Int32.toString(c#materials)) ::
         ("moving", Int32.toString(c#movingPercent)) :: ("alpha", Int32.toString(c#translucentPercent)) ::
-        ("shadow", if (c#sunShadow) "1" else "0") :: ("group", if (c#delivery == Delivery.Grouped) "1" else "0") :: ("multi", if (c#delivery == Delivery.Multi) "1" else "0") :: ("cutout", if (c#cutout) "1" else "0") :: ("verts", Int32.toString(24 * c#faceGrid * c#faceGrid)) :: Nil
+        ("shadow", if (c#sunShadow) "1" else "0") :: ("group", if (c#delivery == Delivery.Grouped) "1" else "0") :: ("multi", if (c#delivery == Delivery.Multi) "1" else "0") :: ("cutout", if (c#cutout) "1" else "0") :: ("lamps", Int32.toString(c#lamps)) :: ("verts", Int32.toString(24 * c#faceGrid * c#faceGrid)) :: Nil
 
     /// 描き物の大きさ（design px）。
     pub def design(): Vec2.Vec2 = { x = 320.0, y = 180.0 }
@@ -210,7 +211,17 @@ mod Field {
           directionalLight = Some(sun(kit#config, kit#extent)),
           environment = { ambient = Color.rgb(0.38, 0.40, 0.46), hemisphere = 0.3, toonSteps = 0, fog = None,
                           background = Some(Color.rgb(0.55, 0.68, 0.82)) }
-          | Scene3d.scene(camera(kit#extent), design()) }
+          | Scene3d.scene(camera(kit#extent), design()) } |> withLamps(kit)
+
+    // つまみ lamps: 影を落とす点光源を格子の真ん中の上に lamps 本並べる（0 なら何もしない）。
+    def withLamps(kit: Kit, scene: Scene3d.Scene3dCmd): Scene3d.Scene3dCmd =
+        let n = kit#config#lamps;
+        if (n <= 0) scene
+        else {
+            let lampAt = (k: Int32) -> { position = Vec3.v3(kit#extent * (Int32.toFloat64(k) + 0.5) / Int32.toFloat64(n) - kit#extent / 2.0, 3.0, kit#extent / 2.0),
+                                          color = Color.rgb(1.0, 0.9, 0.7), intensity = 2.0, range = kit#extent };
+            { pointLights = List.range(0, n) |> List.map(lampAt) | scene } |> Scene3d.withPointShadows({ maxShadowedLights = n, mapSize = 256 | Scene3d.pointShadowMap() })
+        }
 
     /// 画面全体に場面を 1 つ置いた描き物の列。
     pub def items(kit: Kit, t: Float64): List[Render.PlacedItem] =
