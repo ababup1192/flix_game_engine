@@ -115,7 +115,6 @@ func TestPlayRecordsShaderVariantsOnlyForWebGames(t *testing.T) {
 }
 
 func TestDebugSetsDebugTrue(t *testing.T) {
-
 	l, calls, _ := newTestLauncher(t, "")
 	l.Play("", true, nil)
 	if got := readCalls(t, calls); len(got) != 1 || !strings.Contains(got[0], "DEBUG=true") {

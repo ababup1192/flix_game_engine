@@ -46,11 +46,13 @@ pub mod Render3d.ShaderLibrary {
 
     // ── 引く ──
 
-    /// 描き手が持つ API。provider = 字を引く・record = 使った論理の鍵を記録する（PC で記録の旗が立っている時だけ書く。ほかは何もしない）。
-    pub type alias ShaderSources = { provider = ShaderSourceProvider, record = CollectionKeys -> Unit \ IO }
+    /// 描き手が持つ API。provider = 字を引く・record = 使った論理の鍵を記録する（PC で記録の旗が立っている時だけ書く。ほかは何もしない）・
+    /// missed = 無いと知らせた鍵の字（鍵ごとに 1 回だけ知らせる）。
+    pub type alias ShaderSources = { provider = ShaderSourceProvider, record = CollectionKeys -> Unit \ IO, missed = Ref[Set[String], Static] }
 
     /// 記録しない ShaderSources。
-    pub def withoutRecording(provider: ShaderSourceProvider): ShaderSources = { provider = provider, record = _ -> () }
+    pub def withoutRecording(provider: ShaderSourceProvider): ShaderSources \ IO =
+        { provider = provider, record = _ -> (), missed = Ref.fresh(Static, Set.empty()) }
 
     /// 既定の一式（requiredKeysOf の「いつも」）の GLSL の字。無いのは同じ engine の版の表の約束が破れた所なので止める。
     pub def glslOrBug(s: ShaderSources, key: ShaderSourceKey): String = match s#provider#glsl(key) {
@@ -60,22 +62,35 @@ pub mod Render3d.ShaderLibrary {
 
     /// glslOrBug の WGSL の版。
     pub def wgslOrBug(s: ShaderSources, key: ShaderSourceKey): String = match s#provider#wgsl(key) {
-
         case Some(text) => text
         case None       => bug!("Render3d.ShaderLibrary: WGSL の字 ${Render3d.ShaderSourceKey.toKeyString(key)} が無い")
     }
 
-    /// 記録に依る鍵（既定でない変種・材質の形）の GLSL の字。無ければ 1 行知らせて None（呼ぶ側はその描き物を描かず、答えを控えて同じ鍵で 2 度引かない）。
-    pub def optionalGlsl(s: ShaderSources, key: ShaderSourceKey): Option[String] = s#provider#glsl(key) |> noteIfMissing(key)
+    /// 記録に依る鍵（既定でない変種・材質の形・+ao の pass）の GLSL の字。無ければ鍵ごとに 1 回知らせて None
+    /// （頂点の色とビルボードは描かない・材質は頂点の色で描く・画面の上の pass は SSAO なしで描く）。
+    pub def optionalGlsl(s: ShaderSources, key: ShaderSourceKey): Option[String] \ IO = s#provider#glsl(key) |> noteIfMissing(s, key)
 
     /// optionalGlsl の WGSL の版。
-    pub def optionalWgsl(s: ShaderSources, key: ShaderSourceKey): Option[String] = s#provider#wgsl(key) |> noteIfMissing(key)
+    pub def optionalWgsl(s: ShaderSources, key: ShaderSourceKey): Option[String] \ IO = s#provider#wgsl(key) |> noteIfMissing(s, key)
 
-    def noteIfMissing(key: ShaderSourceKey, found: Option[String]): Option[String] = match found {
+    def noteIfMissing(s: ShaderSources, key: ShaderSourceKey, found: Option[String]): Option[String] \ IO = match found {
         case Some(text) => Some(text)
         case None       =>
-            Log.fellBackThen("shader", Render3d.ShaderSourceKey.toKeyString(key), "描かない",
-                             "web/shader-variants.json に無い。PC で fge run してその場面を一度通してから書き出し直す", None)
+            let name = Render3d.ShaderSourceKey.toKeyString(key);
+            if (Set.memberOf(name, Ref.get(s#missed))) None
+            else {
+                Ref.put(Set.insert(name, Ref.get(s#missed)), s#missed);
+                Log.fellBackThen("shader", name, fallbackOf(key),
+                                 "web/shader-variants.json に無い。PC で fge run してその場面を一度通してから書き出し直す", None)
+            }
+    }
+
+    /// 鍵 key の字が無い時に代わりに描く物の名前（知らせの字）。
+    def fallbackOf(key: ShaderSourceKey): String = match key {
+        case ShaderSourceKey.MaterialFragmentTemplate(_, _) => "頂点の色"
+        case ShaderSourceKey.MaterialVertex(_)              => "頂点の色"
+        case ShaderSourceKey.ScreenPassFragment(_)          => "SSAO なし"
+        case _                                              => "描かない"
     }
 
     /// 材質 m（cutout = 材質の cutout）を形 kind で描く GLSL の frag（無ければ None）。使った変種と材質の形を記録する。
@@ -192,6 +207,7 @@ pub mod Render3d.ShaderLibrary {
         let coverages = if (s#cutout and not s#blend) true :: false :: Nil else false :: Nil;
         let kindOf = (coverage: Bool) -> { skinned = s#skinned, uv = s#uv, normalMap = s#normalMap, lightmap = s#lightmap, blend = s#blend,
                                            doubleSided = s#doubleSided, coverage = coverage, metallicRoughness = s#metallicRoughness, variant = v };
+        // WhyNot: 材質の頂点の鍵を 1 本にしない — GL は lightmap をそのまま読み、WebGPU は骨つきでない時だけ読むので、骨つきの lightmap の形で鍵が分かれる。
         let vertex = ShaderSourceKey.MaterialVertex({ skinned = s#skinned, uv = s#uv, lightmap = s#lightmap, psx = v#psx });
         let bakedVertex = ShaderSourceKey.MaterialVertex({ skinned = s#skinned, uv = s#uv, lightmap = s#lightmap and not s#skinned, psx = v#psx });
         vertex :: bakedVertex :: (coverages |> List.map(c -> ShaderSourceKey.MaterialFragmentTemplate(kindOf(c), s#readsTextures)))
@@ -307,23 +323,29 @@ pub mod Render3d.ShaderLibrary {
             case Some(path) => recordingTo(path, provider)
         }
 
-    /// provider に、path の記録へ足していく記録を足した ShaderSources（始めに path を読み、新しい鍵を見た時だけ書く）。
-    pub def recordingTo(path: String, provider: ShaderSourceProvider): ShaderSources \ IO =
-        let start = match loadCollection(path) {
-            case Ok(c)  => c
-            case Err(e) => Log.fellBackThen("shader", path, "空の記録", e, emptyCollection())
-        };
-        let held = Ref.fresh(Static, start);
-        { provider = provider, record = keys -> {
-            let before = Ref.get(held);
-            if (coversCollection(before, keys)) ()
-            else {
-                let after = unionCollection(before, keys);
-                Ref.put(after, held);
-                match saveCollection(path, after) {
-                    case Ok(_)  => ()
+    /// provider に、path の記録へ足していく記録を足した ShaderSources（新しい鍵を見た時だけ、ファイルを読み直して合わせてから書く）。
+    /// 記録のファイルがあるのに読めない（壊れた・この engine より新しい版）時は記録しない。
+    // WhyNot: 読めない時に空から書き始めない — 競合の印の入った記録や新しい版の記録を、そのセッションで見た鍵だけのファイルに置き換えて消す。
+    // WhyNot: 書く時に控えだけを書かない — 同じプロセスの GL と WebGPU の描き手（と別のプロセス）がそれぞれ控えを持ち、片方の書き足しを消す。
+    pub def recordingTo(path: String, provider: ShaderSourceProvider): ShaderSources \ IO = match loadCollection(path) {
+        case Err(e) =>
+            let quiet = withoutRecording(provider);
+            Log.fellBackThen("shader", path, "記録しない", e, quiet)
+
+        case Ok(start) =>
+            let held = Ref.fresh(Static, start);
+            { provider = provider, missed = Ref.fresh(Static, Set.empty()), record = keys ->
+                if (coversCollection(Ref.get(held), keys)) ()
+                else match loadCollection(path) {
                     case Err(e) => Log.fellBack("shader", path, "書かない", e)
-                }
-            }
-        } }
+                    case Ok(onDisk) =>
+                        let after = unionCollection(unionCollection(onDisk, Ref.get(held)), keys);
+                        Ref.put(after, held);
+                        match saveCollection(path, after) {
+                            case Ok(_)  => ()
+                            case Err(e) => Log.fellBack("shader", path, "書かない", e)
+                        }
+                } }
+    }
+
 }

@@ -25,7 +25,6 @@ mod Render3d.WebGpuSky {
         { gpu = gpu, sceneLayout = sceneLayout,
           vertexModule = gpu.createShaderModule("fge scene3d sky vs", Render3d.ShaderLibrary.wgslOrBug(shaders, Render3d.ShaderSourceKey.SkyVertex)),
           fragmentModule = gpu.createShaderModule("fge scene3d sky fs", Render3d.ShaderLibrary.wgslOrBug(shaders, Render3d.ShaderSourceKey.SkyFragment)),
-
           pipelines = Ref.fresh(Static, Map.empty()) }
 
     /// device の上に作った物を全部手放す（sceneLayout は持ち主が）。この後 sky は使えない。

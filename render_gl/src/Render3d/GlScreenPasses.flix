@@ -154,7 +154,6 @@ pub mod Render3d.GlScreenPasses {
                     case Some(fragment) => Render3d.compile(gl, vertex, fragment, "scene3d:screen:" + key)
                     case None           => 0
                 };
-
                 let names = Render3d.ScreenPasses.depthName() :: Render3d.ScreenPasses.maskName() :: Render3d.ScreenPasses.uniformNames();
                 let locs = if (program == 0) Map.empty()
                            else names |> List.foldLeft((acc, n) -> {

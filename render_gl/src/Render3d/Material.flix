@@ -548,7 +548,6 @@ mod Render3d.Material {
             case _ => (0, Nil)
         };
         let uniforms = programUniformsOf(gl, program, sources);
-
         bindDataTextureUnits(gl, uniforms);
         bindTextureUnits(gl, uniforms, List.length(glsl#texReads), kind#normalMap, kind#lightmap, kind#metallicRoughness);
         { spec = m#spec, emission = m#emission, metallicRoughness = m#metallicRoughnessShade,

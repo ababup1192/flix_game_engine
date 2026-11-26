@@ -40,7 +40,7 @@ mod Render3d {
     // ── 型 ──
 
     /// シェーダーの字の種類（言語を持たない鍵・鍵の字は Render3d.ShaderSourceKey.toKeyString）。新しい pass のシェーダーは case を足し、
-    /// 字を引く APIの 2 つの実体（Render3dShaders.makeRuntimeProvider と書き出しの表）の match に足す。LitVertex(骨つきか, PS1 風か)・LitFragment(場面の変種)・BillboardVertex(変種, 板の横の向き)・BillboardFragment(ビルボードの変種)・
+    /// 字を引く API の 2 つの実体（Render3dShaders.makeRuntimeProvider と書き出しの表）の match に足す。LitVertex(骨つきか, PS1 風か)・LitFragment(場面の変種)・BillboardVertex(変種, 板の横の向き)・BillboardFragment(ビルボードの変種)・
     /// MeshVertex(骨つきか)・MaterialVertex(材質の頂点の形)・MaterialFragmentTemplate(材質の形, 材質が絵を読むか)・ScreenPassFragment(画面の上の pass)。
     /// MaterialFragmentTemplate の字は材質の部品の所が空いた物（Render3d.ShaderLibrary.withMaterialPart で埋める）。
     pub enum ShaderSourceKey {
@@ -1054,7 +1054,6 @@ mod Render3d {
         let glsl = glslOrBug(shaders);
         let lit = compileProgram(gl, glsl(ShaderSourceKey.LitVertex(true, false)), glsl(ShaderSourceKey.LitFragment(defaultShaderVariant())), "scene3d:lit:skin");
         let depth = compileProgram(gl, glsl(ShaderSourceKey.MeshVertex(true)), glsl(ShaderSourceKey.DepthFragment), "scene3d:depth:skin");
-
         bindDataTextureUnits(gl, lit);
         bindDataTextureUnits(gl, depth);
         { lit = lit, depth = depth }

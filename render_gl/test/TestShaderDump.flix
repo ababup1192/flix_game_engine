@@ -68,7 +68,6 @@ mod TestShaderDump {
                  Render3d.ShaderLibrary.withMaterialPart(glslTemplate, Render3d.ShaderLibrary.glslPartText(glsl), glsl#cutoutAlpha)) ::
                 ("wgsl/frag-material-${name}-${kindLabel(k)}.wgsl",
                  Render3d.ShaderLibrary.withMaterialPart(wgslTemplate, Render3d.ShaderLibrary.wgslPartText(wgsl), wgsl#cutoutAlpha)) :: Nil
-
             })
         })
 

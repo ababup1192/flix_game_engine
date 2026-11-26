@@ -6,9 +6,10 @@ mod Render3d.TestShaderLibrary {
     import java.io.ByteArrayOutputStream
     import java.io.PrintStream
     import java.io.File
+    import java.nio.file.Files
+    import java.nio.file.Path
 
-
-    use Render3d.FakeGl.{cmdOf, dest, freshRecorded, passDest, paintTo, plainTriangle, recordingGl, sceneOf, shadowSpot, skinnedAt, poseAt, stderrOf}
+    use Render3d.FakeGl.{cmdOf, dest, freshRecorded, passDest, paintTo, plainTriangle, recordingGl, sceneOf, shadowSpot, skinnedAt, poseAt, stderrOf, timesCalled}
     use Render3d.ShaderLibrary.{CollectionKeys, collectionKeysOf, collectionOfJson, collectionToJson, emptyCollection, unionCollection, variantKeys}
     use ShaderDoc.{Field, Shade, TexChan, BinOp}
 
@@ -135,7 +136,6 @@ mod Render3d.TestShaderLibrary {
 
     // ── 記録から広げた表だけで描ける ──
 
-
     def textured(): Scene3d.Material3d = Scene3d.texturedMaterial("tex3d:a", ShaderDoc.FilterMode.Linear)
 
     def at(m: Scene3d.Material3d): Scene3d.Instance3d = Scene3d.meshInstance(plainTriangle(), Mat4.identity()) |> Scene3d.withMaterial(m)
@@ -145,26 +145,43 @@ mod Render3d.TestShaderLibrary {
     def board(): Scene3d.Billboard3d =
         Scene3d.billboard("chars", { position = { x = 0.0, y = 0.0 }, size = { x = 16.0, y = 16.0 } }, Vec3.v3(0.0, 0.0, 0.0), { x = 1.0, y = 2.0 })
 
-    /// 材質の形・変種・奥行きの場面・動かない物の集まり・MultiMesh・影を落とす灯り・骨つきを全部通す場面。
-    def scenes(): List[Scene3d.Scene3dCmd] =
+    def uvTriangle(): Mesh3d.Mesh3d = match Mesh3d.withUvs(Vector#{ 0.0, 0.0, 1.0, 0.0, 0.0, 1.0 }, plainTriangle()) |> Result.flatMap(Mesh3d.withUvs2(Vector#{ 0.0, 0.0, 1.0, 0.0, 0.0, 1.0 })) {
+        case Ok(m)  => m
+        case Err(e) => bug!(e)
+    }
+
+    def uvAt(m: Scene3d.Material3d): Scene3d.Instance3d = Scene3d.meshInstance(uvTriangle(), Mat4.identity()) |> Scene3d.withMaterial(m)
+
+    /// 材質の形・変種・奥行きの場面・動かない物の集まり・MultiMesh・影を落とす灯り・骨つき・法線マップ・lightmap・+ao を全部通す場面。
+    pub def scenes(): List[Scene3d.Scene3dCmd] =
         let lit = Scene3d.meshInstance(plainTriangle(), Mat4.identity());
+        let bumped = textured() |> Scene3d.withNormalMap({ texture = "tex3d:b", strength = 1.0 });
         let mixed = sceneOf(lit :: at(textured() |> Scene3d.withCutout(true)) :: at(textured() |> Scene3d.withAlphaBlend(true)) ::
-                            at(textured() |> Scene3d.withDoubleSided(true)) :: at(textured() |> Scene3d.withMetallicRoughness(0.5, 0.5)) :: skinnedAt(poseAt(0.2)) :: Nil);
+                            at(textured() |> Scene3d.withDoubleSided(true)) :: at(textured() |> Scene3d.withMetallicRoughness(0.5, 0.5)) :: skinnedAt(poseAt(0.2)) ::
+                            uvAt(bumped |> Scene3d.withCutout(true)) :: (uvAt(textured()) |> Scene3d.withLightmap(Scene3d.lightmap("tex3d:c"))) ::
+                            (skinnedAt(poseAt(0.1)) |> Scene3d.withMaterial(textured())) :: Nil);
         let grouped = { groups = Scene3d.staticGroup("g", ("a", at(textured() |> Scene3d.withCutout(true) |> Scene3d.withDoubleSided(true))) :: Nil) :: Nil,
                         multiMeshes = MultiMesh3d.build(plainTriangle(), 3, _ -> Mat4.identity()) |> MultiMesh3d.withMaterial(textured()) |> (mm -> mm :: Nil),
                         billboards = board() :: Nil, spotLights = shadowSpot() :: Nil | mixed };
         let lamp = { position = Vec3.v3(0.0, 1.0, 0.0), color = { r = 1.0, g = 1.0, b = 1.0 }, intensity = 1.0, range = 10.0 };
         let shadowed = { pointLights = lamp :: Nil | grouped } |> Scene3d.withPointShadows({ maxShadowedLights = 1, mapSize = 32 | Scene3d.pointShadowMap() });
-        grouped :: Scene3d.withPsx(Scene3d.psxPreset(), grouped) :: shadowed :: depth(grouped) :: Nil
+        let ao = { screenInputs = Some(Scene3d.screenInputs({ depth = "d", depthRange = 10.0, ambientOcclusion = Some(ScreenEffects3d.ambientOcclusion()), show = None })) | grouped };
+        grouped :: Scene3d.withPsx(Scene3d.psxPreset(), grouped) :: shadowed :: depth(grouped) :: ao :: Nil
 
-    /// 場面 all を、記録から広げた表だけを引く描き手で描いた時の標準エラー。
-    def paintedFromTable(target: Scene3dRenderer.Dest, all: List[Scene3d.Scene3dCmd]): String \ IO =
-        let collection = all |> List.foldLeft((acc, s) -> unionCollection(acc, collectionKeysOf(s)), emptyCollection());
-        let table = Render3d.ShaderLibrary.bakeTableOf(Render3dShaders.makeRuntimeProvider(), collection) |> List.toMap;
+    /// 表 table だけを引く描き手で場面 all を target へ描いた時の (標準エラー, instanced の draw の数)。
+    def paintWith(table: Map[String, String], target: Scene3dRenderer.Dest, all: List[Scene3d.Scene3dCmd]): (String, Int32) \ IO =
         let shaders = Render3d.ShaderLibrary.withoutRecording(Render3d.ShaderLibrary.providerOfTable(table));
         let state = Render3d.fresh({ megabytes = 64, count = 64 }, Render3d.DrawMode.Instanced, shaders);
-        let gl = recordingGl(freshRecorded());
-        stderrOf(() -> paintTo(gl, state, target, all |> List.map(cmdOf)))
+        let log = freshRecorded();
+        let said = stderrOf(() -> paintTo(recordingGl(log), state, target, all |> List.map(cmdOf)));
+        (said, timesCalled("drawElementsInstanced", log))
+
+    pub def tableOf(c: CollectionKeys): Map[String, String] = Render3d.ShaderLibrary.bakeTableOf(Render3dShaders.makeRuntimeProvider(), c) |> List.toMap
+
+    /// 場面 all を、collectionKeysOf から広げた表だけを引く描き手で描いた時の標準エラー。
+    def paintedFromTable(target: Scene3dRenderer.Dest, all: List[Scene3d.Scene3dCmd]): String \ IO =
+        let collection = all |> List.foldLeft((acc, s) -> unionCollection(acc, collectionKeysOf(s)), emptyCollection());
+        fst(paintWith(tableOf(collection), target, all))
 
     @Test
     def testRendererFindsEverySourceInTheTable(): Unit \ {Assert, IO} =
@@ -175,10 +192,42 @@ mod Render3d.TestShaderLibrary {
         Assert.assertFalse(String.contains(substr = "shader-variants.json", paintedFromTable(passDest(), scenes())))
 
     @Test
-    def testMissingVariantIsReportedNotDrawn(): Unit \ {Assert, IO} =
-        let table = Render3d.ShaderLibrary.bakeTableOf(Render3dShaders.makeRuntimeProvider(), emptyCollection()) |> List.toMap;
-        let state = Render3d.fresh({ megabytes = 64, count = 64 }, Render3d.DrawMode.Instanced,
-                                   Render3d.ShaderLibrary.withoutRecording(Render3d.ShaderLibrary.providerOfTable(table)));
-        let said = stderrOf(() -> paintTo(recordingGl(freshRecorded()), state, dest(), cmdOf(Scene3d.withPsx(Scene3d.psxPreset(), sceneOf(Scene3d.meshInstance(plainTriangle(), Mat4.identity()) :: Nil))) :: Nil));
-        Assert.assertTrue(String.contains(substr = "lit.fs+psx", said))
+    def testKeysRecordedByOneRendererCoverAnother(): Unit \ {Assert, IO} =
+        let path = tempPath("recorded.json");
+        let state = Render3d.fresh({ megabytes = 64, count = 64 }, Render3d.DrawMode.Instanced, Render3d.ShaderLibrary.recordingTo(path, Render3dShaders.makeRuntimeProvider()));
+        discard stderrOf(() -> paintTo(recordingGl(freshRecorded()), state, passDest(), scenes() |> List.map(cmdOf)));
+        let recorded = Render3d.ShaderLibrary.loadCollection(path) |> Result.getWithDefault(emptyCollection());
+        Assert.assertFalse(String.contains(substr = "shader-variants.json", fst(paintWith(tableOf(recorded), dest(), scenes()))))
+
+    def psxLit(): Scene3d.Scene3dCmd = Scene3d.withPsx(Scene3d.psxPreset(), sceneOf(Scene3d.meshInstance(plainTriangle(), Mat4.identity()) :: Nil))
+
+    @Test
+    def testMissingVariantIsReported(): Unit \ {Assert, IO} =
+        Assert.assertTrue(String.contains(substr = "lit.fs+psx", fst(paintWith(tableOf(emptyCollection()), dest(), psxLit() :: Nil))))
+
+    @Test
+    def testMissingVariantIsNotDrawn(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = (1, 0), (snd(paintWith(tableOf(collectionKeysOf(psxLit())), dest(), psxLit() :: Nil)),
+                                            snd(paintWith(tableOf(emptyCollection()), dest(), psxLit() :: Nil))))
+
+    @Test
+    def testMissingVariantIsReportedOnce(): Unit \ {Assert, IO} =
+        let said = fst(paintWith(tableOf(emptyCollection()), dest(), psxLit() :: psxLit() :: Nil));
+        Assert.assertEq(expected = 2, List.length(String.splitOn({ substr = "lit.fs+psx" }, said)))
+
+    @Test
+    def testUnreadableRecordIsNotRewritten(): Unit \ {Assert, IO} =
+        let path = tempPath("broken.json");
+        discard Files.writeString(Path.of(path), "<<<<<<< HEAD");
+        let said = stderrOf(() -> Render3d.ShaderLibrary.recordingTo(path, Render3dShaders.makeRuntimeProvider())#record(sampleCollection()));
+        Assert.assertEq(expected = (true, "<<<<<<< HEAD"), (String.contains(substr = "記録しない", said), Files.readString(Path.of(path))))
+
+    @Test
+    def testTwoRecordersKeepEachOthersKeys(): Unit \ {Assert, IO} =
+        let path = tempPath("shared.json");
+        let a = Render3d.ShaderLibrary.recordingTo(path, Render3dShaders.makeRuntimeProvider());
+        let b = Render3d.ShaderLibrary.recordingTo(path, Render3dShaders.makeRuntimeProvider());
+        a#record(variantKeys({ psx = true | Render3d.ProgramKey.defaultShaderVariant() }));
+        b#record(variantKeys({ ambientOcclusion = true | Render3d.ProgramKey.defaultShaderVariant() }));
+        Assert.assertEq(expected = Ok(Set#{ "+ao", "+psx" }), Render3d.ShaderLibrary.loadCollection(path) |> Result.map(c -> fst(keysOf(c))))
 }

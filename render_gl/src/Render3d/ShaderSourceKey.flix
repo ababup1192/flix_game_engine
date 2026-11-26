@@ -23,7 +23,14 @@ mod Render3d.ShaderSourceKey {
             "material.fs" + flag(kind#skinned, "+skin") + flag(kind#uv, "+uv") + flag(kind#normalMap, "+nm") + flag(kind#lightmap, "+lm")
                 + flag(kind#blend, "+bl") + flag(kind#doubleSided, "+ds") + flag(kind#coverage, "+cov") + flag(kind#metallicRoughness, "+mr")
                 + flag(readsTextures, "+tex") + "/" + variantKeyOf(kind#variant)
-        case ShaderSourceKey.ScreenPassFragment(kind)       => "screen.fs." + ToString.toString(kind)
+        case ShaderSourceKey.ScreenPassFragment(kind)       => "screen.fs." + screenPassName(kind)
+    }
+
+    def screenPassName(kind: Render3d.ScreenPasses.ScreenPassKind): String = match kind {
+        case Render3d.ScreenPasses.ScreenPassKind.AoMask  => "ao-mask"
+        case Render3d.ScreenPasses.ScreenPassKind.AoBlurH => "ao-blur-h"
+        case Render3d.ScreenPasses.ScreenPassKind.AoBlurV => "ao-blur-v"
+        case Render3d.ScreenPasses.ScreenPassKind.ShowAo  => "show-ao"
     }
 
     def flag(on: Bool, text: String): String = if (on) text else ""

@@ -153,7 +153,6 @@ func (l *Launcher) shaderVariantsPath() (string, bool) {
 	return abs, true
 }
 
-
 // Render は場面を 1 枚ずつ debug/<場面>.png へ描き出す（make render SHOT=）。
 func (l *Launcher) Render(shots []string, vars map[string]string) int {
 	if code := l.RunPrebuild(); code != 0 {

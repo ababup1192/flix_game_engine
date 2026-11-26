@@ -148,7 +148,6 @@ mod Render3d.WebGpuBillboards {
                 made
         }
 
-
     /// ビルボードの値 1 つのバイト数（頂点の buffer 0 に渡す大きさ）。
     pub def valueBytes(): Int64 = Int32.toInt64(valueStride())
 

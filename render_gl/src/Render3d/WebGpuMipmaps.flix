@@ -57,7 +57,6 @@ mod Render3d.WebGpuMipmaps {
         discard layoutDesc.texture(0, ShaderStage.FRAGMENT, TextureSampleType.FLOAT);
         { gpu = gpu, layout = gpu.createBindGroupLayout(layoutDesc),
           vertexModule = gpu.createShaderModule("fge mip copy vs", Render3d.ShaderLibrary.wgslOrBug(shaders, Render3d.ShaderSourceKey.SkyVertex)),
-
           fragmentModule = gpu.createShaderModule("fge mip copy fs", fragmentSource()),
           pipelines = Ref.fresh(Static, Map.empty()), views = Ref.fresh(Static, Nil), groups = Ref.fresh(Static, Nil) }
 

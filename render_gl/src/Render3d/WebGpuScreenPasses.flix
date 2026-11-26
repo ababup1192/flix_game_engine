@@ -202,7 +202,6 @@ pub mod Render3d.WebGpuScreenPasses {
         Map.forEach((_, m) -> destroyMasks(m), Ref.get(sp#masks));
         Map.forEach((_, p) -> p.release(), Ref.get(sp#pipelines));
         Map.forEach((_, m) -> m |> Option.forEach(found -> found.release()), Ref.get(sp#modules));
-
         sp#vertexModule.release();
         sp#layout.release();
         sp#blankMask.destroy()

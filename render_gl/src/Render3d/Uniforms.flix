@@ -1,6 +1,7 @@
 // Render3d.Uniforms — 3D の描き手の uniform の handle の表（GLSL の宣言の字・GL の location を引く名前・WGSL の読む字を 1 か所に）。
 // GL の location は、プログラムを組んだ時に、そのプログラムの GLSL が宣言した uniform だけを引いて UniformLocations（handle → location）に持つ。
 // 値を差す所は handle を渡す（名前の字を書かない）。宣言していない handle に差すと何も呼ばない。
+// handle を足す時は、location を引く表（rowOf）と木で読む表（treeRowOf）の 2 か所に行を足す。
 pub mod Render3d.Uniforms {
     import fge.gl.GlContext
     use ShaderAst.Ty
@@ -343,7 +344,6 @@ pub mod Render3d.Uniforms {
             case R3dUniform.Viewport        => (Ty.Vec4, None)
             case R3dUniform.Forward         => (Ty.Vec3, None)
         }
-
 
     /// handle u を木で読む uniform（GLSL の名前・型・言語ごとの読む字・GLSL の宣言の型と長さ）。PointShadow(i) は読めない（止める）。
     pub def refOf(u: R3dUniform): ShaderAst.UniformRef = match u {
