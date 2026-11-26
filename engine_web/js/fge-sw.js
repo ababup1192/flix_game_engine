@@ -91,7 +91,8 @@ function fgeOwnClient(event) {
     if (!c) return true;
     var u = new URL(c.url);
     if (fgeNoServiceWorker(u.search)) return false;
-    return u.pathname === FGE_SCOPE_PATH || u.pathname === FGE_SCOPE_PATH + "index.html";
+    // WhyNot: glb を解く Worker（頁が起こす fge-glb-worker.js）の取る物を素のネットへ回さない — iOS の Safari で 1.3 MB の .br を回線で取り直す。
+    return u.pathname === FGE_SCOPE_PATH || u.pathname === FGE_SCOPE_PATH + "index.html" || u.pathname === FGE_SCOPE_PATH + "fge-glb-worker.js";
   }, function () { return true; });
 }
 

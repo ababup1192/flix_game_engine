@@ -411,6 +411,23 @@ GitHub Pages は全部のファイルに `max-age=600` を付けるので、Serv
 - 同じドメインのゲームはオリジンの保存量を分け合う（iOS の Safari は特に少ない）。キャッシュは版ごとに 1 組だけ残る
 - iOS の Safari は、しばらく操作の無いサイトの Service Worker とキャッシュを消すことがある（Safari の 7 日の決まり。localStorage のセーブも同じ決まりの内）。消された後は初めての時と同じに取る
 
+### 後回しの glb を Web Worker で解く（`fge-glb-worker.js`）
+
+`web.deferred` の glb は、届いた時に頁が Web Worker（`engine_web/js/fge-glb-worker.js`・書き出しが根に置く）で解き、解き終えてから「届いた」と言う。
+Worker はゲームと同じ wasm を起こし、`WebLayer.withProject3d` の入口で頼みを待つ輪へ入る（ゲームの `Main` は流さない）。
+メインの wasm は `Model3d.decode` で Worker の結果を引いて、絵と材質を付けるだけにする（値は Worker を通らない時と同じ）。
+
+- 状態は `downloading` → `parsing`（Worker で解いている。engine は `Downloading` と読む）→ `downloaded`。取る枠は `parsing` の間に次の素材へ回す
+- Worker は 1 本で、頼みは届いた順に解く。頼みが 10 秒無ければ止め、次の glb が届いたら起こし直す（2 つ目の wasm の instance をメモリに置き続けない）
+- Worker を使えない時は前の道（メインで解く・止まりが出る）で動く: `?fge=noworker`・sandbox の iframe（`allow-same-origin` 無し）や CSP の `worker-src` で Worker を作れない・
+  Worker の中で wasm を起こせない・30 秒返らない（console に 1 回 `[fge] glb を Web Worker で解けない` を出し、その頁ではもう使わない）。解けない glb は Worker の失敗にせず、メインで読み直して誤りを出す
+- Worker の中の知らせ（`console.warn`・`console.error`）は頁へ送り、`[glb-worker]` を頭に付けて出す（`?fge=errors` に載る）
+- Worker は wasm を自分で取る（gzip の道は同じ `classes.wasm?v=` でブラウザのコンパイル済みのコードを使い回す・brotli の道は `.br` を取って Worker の中で解く）。
+  頁が先に取っているので HTTP のキャッシュか Service Worker から来る（Service Worker は Worker の取る物も受け持つ）。COOP / COEP は要らない（SharedArrayBuffer を使わない）
+- 起動の束（`web.deferred` に入れない glb）と、ゲームが自分で作るバイトは今まで通りメインで解く
+- `WebLayer.withProject`（2D の入口）のゲームは Worker を持たない（頁は Worker の失敗を受けてメインで解く）
+- メモリ: 2 つ目の wasm の instance（Worker）と、Worker の結果（頂点は Float64 で glb の倍ほど）を頁が持つ。結果は鍵を解いた後の `AssetDownloads#release`（BackgroundLoad が呼ぶ）で捨てるので、release を呼ばずに読むゲームでは glb のバイトと二重に残る
+
 ## ブラウザで重さを測る
 
 ### 頁の旗（どのゲームの書き出しでも同じに使える）
@@ -438,6 +455,7 @@ GitHub Pages は全部のファイルに `max-age=600` を付けるので、Serv
 | `usedAssets` | `usedassets` | 使った素材を `window.fgeUsedAssets` に記録する（書き出しの確かめ ⑨ が後回しの候補に使う） |
 | `webgpuFail` | `webgpufail:prepare` / `webgpufail:canvas` | WebGPU の準備で落ちる道・canvas の描き先を作った後に落ちる道を起こす（WebGL2 へ落ちる道を手で確かめる時） |
 | `errors` | `errors` | console の誤りと知らせ・止まった理由・シェーダーが組めなかった行・描き手の行（`[webgpu]`・`[backend]`）を画面の下に重ね、一番上に GPU の名前と上限（WebGL2 の絵の枚数・頂点の uniform の数・WebGPU の storage buffer の数など）を出す。コンソールを開けないスマホで確かめる時に使う（欄は指を受けない・新しい行が上） |
+| `noworker` | `noworker` | 後回しの glb を Web Worker で解かず、メインで解く（上の「後回しの glb を Web Worker で解く」の前の道。止まりを比べる時と、Worker が悪さをする時の逃げ道） |
 
 `WebLayer.devTools()` で起こすゲームは、クエリの最初の鍵を Start の名前・全部の鍵と値を引数にする（知らない名前なら先頭の始まりで開いて console.error に 1 行）。
 頁が読む鍵 `fge` と `sw`（`App.DevTools.pageQueryKeys`）は外すので、Start と旗の順を気にしなくてよい。ゲームの Start の名前に `fge` と `sw` は使えない。

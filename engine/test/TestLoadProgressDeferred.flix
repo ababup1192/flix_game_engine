@@ -12,6 +12,11 @@ mod TestLoadProgressDeferred {
         Assert.assertEq(expected = LoadProgress.LoadState.Queued :: LoadProgress.LoadState.Downloading :: LoadProgress.LoadState.Downloaded :: LoadProgress.LoadState.Loaded :: Nil,
                         List.map(LoadProgress.Deferred.loadStateOfText, "queued" :: "downloading" :: "downloaded" :: "loaded" :: Nil))
 
+    /// "parsing"（届いた glb を Web Worker で解いている）は、解き終えるまで届いていない Downloading
+    @Test
+    def testParsingTextIsDownloading(): Unit \ Assert =
+        Assert.assertEq(expected = LoadProgress.LoadState.Downloading, LoadProgress.Deferred.loadStateOfText("parsing"))
+
     /// "failed:理由" は理由を持った Failed
     @Test
     def testFailedTextKeepsTheReason(): Unit \ Assert =

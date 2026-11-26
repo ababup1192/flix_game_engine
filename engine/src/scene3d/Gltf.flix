@@ -45,7 +45,7 @@ pub mod Gltf {
     /// key = Some なら、形の中身の鍵を key から作り（part ごとに "key#part<番号>"・まとめた形は "key#all"）、絵は機種が持てるなら機種の側に解いて持つ
     /// （ImageData.ImageDecoder の platformImageOfBytes・id は "key#image<番号>"。上限より大きい絵は画素へ戻して縮める）。
     /// key は同じ key なら同じバイトだと呼ぶ側が約束できる字（ImageData.ImageDecoder の versionedKey）。None（デスクトップの開発中のファイル）なら頂点から鍵を作る。
-    /// 読み方は 2 段: parse（Gltf.Internal.Parse.parse。絵を使わない）と assemble（Gltf.Internal.assemble。絵と材質と鍵）。
+    /// 読み方は 2 つの手順（絵を使わずに形・ノード・骨・アニメ・材質の記述を読む ／ 絵を解いて材質と形の鍵を付ける）。
     pub def decodeWith(decoder: ImageData.ImageDecoder, options: LoadOptions, key: Option[String], bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO =
         Gltf.Internal.Parse.parse(Gltf.Internal.Parse.readOptionsOf(options), bytes) |> Result.map(Gltf.Internal.assemble(decoder, options, key, bytes))
 
@@ -104,7 +104,7 @@ pub mod Gltf {
     /// （2 つ以上から指されたら大きい方）。
     // WhyNot: 全部の画像を decode しない — occlusion の絵は描くのに使わず、2048² なら 1 枚 16 MB をヒープに持つ。metallicRoughnessTexture は
     //   metallic・roughness を付ける材質（wantsMetallicRoughness）だけ読む。
-    pub def usedImages(limits: TextureLimits, pbr: Bool, materials: Vector[Gltf.Internal.Parse.MaterialSpec]): Map[Int32, Int32] =
+    def usedImages(limits: TextureLimits, pbr: Bool, materials: Vector[Gltf.Internal.Parse.MaterialSpec]): Map[Int32, Int32] =
         materials |> Vector.toList
             |> List.flatMap(material -> (material#base, limits#baseColor)
                                         :: (material#normal, limits#normal)
@@ -114,17 +114,18 @@ pub mod Gltf {
 
     /// images[k] を絵に戻す（BIN の bufferView の PNG / JPEG）。外の uri・読めない画像は None と知らせる 1 行。
     def decodeImage(decode: Vector[Int8] -> Result[String, Texture3d.Texture3d] \ IO, bytes: Vector[Int8], source: Gltf.Internal.Parse.ImageSource): (Option[Texture3d.Texture3d], List[String]) \ IO =
-        let unreadable = (e: String) -> (None, "glTF: 画像が読めないので、その絵の材質は頂点の色で描く（${e}）" :: Nil);
         match source {
-            case Gltf.Internal.Parse.ImageSource.InBin(start, length) =>
-                match decode(Gltf.Internal.copyRange(start, start + length, bytes)) {
-                    case Ok(t)  => (Some(t), Nil)
-                    case Err(e) => unreadable(e)
-                }
-            case Gltf.Internal.Parse.ImageSource.Unreadable(e) => unreadable(e)
+            case Gltf.Internal.Parse.ImageSource.InBin(start, length) => decode(Gltf.Internal.copyRange(start, start + length, bytes)) |> decodedImage
+            case Gltf.Internal.Parse.ImageSource.Unreadable(e) => decodedImage(Err(e))
             case Gltf.Internal.Parse.ImageSource.ExternalUri   => (None, "glTF: 外の uri の画像は読まない — その絵の材質は頂点の色で描く（画像は .glb に埋める）" :: Nil)
             case Gltf.Internal.Parse.ImageSource.NoSource      => (None, "glTF: bufferView も uri も無い画像を読み飛ばした" :: Nil)
         }
+
+    /// 解いた絵と、解けなかった時の知らせ。
+    def decodedImage(r: Result[String, Texture3d.Texture3d]): (Option[Texture3d.Texture3d], List[String]) = match r {
+        case Ok(t)  => (Some(t), Nil)
+        case Err(e) => (None, "glTF: 画像が読めないので、その絵の材質は頂点の色で描く（${e}）" :: Nil)
+    }
 
     /// 材質 index 1 つ（材質の番号ごとに 1 回）:
     ///

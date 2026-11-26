@@ -84,8 +84,13 @@ pub mod Gltf.Internal {
 
     /// v の [start, end) を写す。
     // WhyNot: Vector.slice・take・drop を使わない — 標準の版は v 全体を配列へ写してから切るので、1.5 MB の束から絵 46 枚を切ると 70 MB 写す。
+    // WhyNot: 1 つずつ Vector.get で写さない — 絵のバイトを切り出すたびに要素ごとの呼び出しが乗り、Worker の結果を組むコマで目立つ。
     pub def copyRange(start: Int32, end: Int32, v: Vector[a]): Vector[a] =
-        Vector.range(start, end) |> Vector.map(i -> Vector.get(i, v))
+        if (end <= start) Vector.empty()
+        else region rc {
+            let src: Array[a, rc] = unchecked_cast(v as Array[a, rc]);
+            unchecked_cast(Array.copyOfRange(rc, start, end, src) as Vector[a])
+        }
 
     /// IEEE 754 の単精度のビットから組む。
     pub def float32OfBits(bits: Int32): Float64 = Float32.toFloat64(Float.intBitsToFloat(bits))
@@ -106,6 +111,69 @@ pub mod Gltf.Internal {
             case Some(k) => Gltf.assembleBy(keyedImageOf(k, decoder), options, bytes, parsed) |> withKeyedMeshes(k)
             case None    => Gltf.assembleBy((_, _, image) -> Texture3d.decodeUsing(decoder, image), options, bytes, parsed)
         }
+
+    /// 機種がメインの外で解いた結果を戻す。戻せない時と、解いた時の選択肢が options と違う時は 1 行知らせて None（呼ぶ側はバイトから読み直す）。
+    pub def toParsed(options: Gltf.LoadOptions, path: String, preparsed: LoadProgress.Preparsed): Option[Gltf.Internal.Parse.Parsed] =
+        match Gltf.Internal.Codec.deserialize(LoadProgress.Internal.partsOf(preparsed)) {
+            case Err(e) => Log.fellBackThen("scene3d", "${path} の Worker で解いた結果", "メインで読み直す", e, None)
+            case Ok(parsed) =>
+                let wanted = Gltf.Internal.Parse.readOptionsOf(options);
+                if (parsed#read#pbr == wanted#pbr and parsed#read#vertexColors == wanted#vertexColors) Some(parsed)
+                else Log.fellBackThen("scene3d", "${path} の Worker で解いた結果", "メインで読み直す", "読んだ時の gltf の選択肢が違う", None)
+        }
+
+    /// Worker が解く仕事: project.json の "gltf" の値の字 gltfText で bytes を parse して並びにする。
+    /// 並びと、使う絵（Gltf.decodeWith が解く絵）の (画像の番号, バイトの中の始まり, 長さ) を返す。
+    pub def preparse(gltfText: String, bytes: Vector[Int8]): Result[String, (LoadProgress.Internal.PreparsedParts, List[(Int32, Int32, Int32)])] =
+        forM (
+            options <- ProjectLoader.Internal.gltfOptionsOf(gltfText);
+            parsed <- Gltf.Internal.Parse.parse(Gltf.Internal.Parse.readOptionsOf(options), bytes)
+        ) yield {
+            let used = Gltf.usedImages(options#limits, options#pbr, parsed#materials);
+            let ranges = parsed#images |> Vector.toList |> List.zipWithIndex |> List.filterMap(entry -> match entry {
+                case (k, Gltf.Internal.Parse.ImageSource.InBin(start, length)) if Map.memberOf(k, used) => Some((k, start, length))
+                case _ => None
+            });
+            (Gltf.Internal.Codec.serialize(parsed), ranges)
+        }
+
+    /// 小さな parse の結果（形・骨・アニメ・ノード・材質・画像を 1 つずつ）の並び。
+    /// ブラウザで後回しの glb を Worker で解くゲームが、読み込みの間に 1 回、機種の受け渡しと warmUpCodec を通す（戻す関数をメインのスレッドで 1 度走らせておく）。
+    // WhyNot: 初めて Worker の結果が届いたコマで初めて戻さない — wasm の関数は初めて呼ぶ時に組まれ、束の大きさによらず 4 倍の絞りで 20 ms ほどがそのコマに乗る。
+    pub def warmUpWire(): Result[String, LoadProgress.Internal.PreparsedParts] =
+        let tri = Mesh3d.fromArrays({ positions = Vector#{ 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0 },
+                                      normals = Vector#{ 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0 },
+                                      colors = Vector.repeat(9, 1.0), indices = Vector#{ 0, 1, 2 },
+                                      skin = Some({ joints = Vector.repeat(12, 0), weights = Vector#{ 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0 } }) })
+            |> Result.flatMap(Mesh3d.withUvs(Vector#{ 0.0, 0.0, 1.0, 0.0, 0.0, 1.0 }))
+            |> Result.flatMap(Mesh3d.withTangents(Vector#{ 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0 }))
+            |> Result.flatMap(Mesh3d.withUvs2(Vector#{ 0.0, 0.0, 1.0, 0.0, 0.0, 1.0 }));
+        let spec = { names = Vector#{ "j" }, parents = Vector#{ -1 }, rest = Vector#{ { translation = Vec3.zero(), rotation = Quat.identity(), scale = Vec3.one() } },
+                     inverseBinds = Some(Vector#{ Mat4.identity() }), rootTransform = Mat4.identity() };
+        let clip = { name = "a", channels = { joint = 0, path = AnimationClip3d.Path.Rotation, times = Vector#{ 0.0, 1.0 },
+                                              values = Vector#{ 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0 }, interpolation = AnimationClip3d.Interpolation.Linear } :: Nil };
+        let info = { index = Some(0), texCoord = 0, transform = false, source = Some(0), nearest = false, clamp = false, mirrored = false };
+        let material = { name = Some("m"), alphaMode = Model3d.AlphaMode.Mask, alphaCutoff = 0.5, doubleSided = true, base = info, normal = info, normalScale = Some(1.0),
+                         emissive = info, emissiveFactor = { r = 1.0, g = 1.0, b = 1.0 }, emissiveFactorError = Some("e"), emissiveStrength = 1.0, metalRough = info,
+                         hasPbr = true, hasMetallic = true, hasRoughness = true, metallicFactor = Some(1.0), roughnessFactor = Some(1.0) };
+        let built = forM (
+            mesh <- tri;
+            skin <- Skin3d.make(spec);
+            made <- Gltf.Internal.Parse.makeClip(clip)
+        ) yield {
+            mesh = mesh, skin = Some(skin), skinSpec = Some(spec), clips = Gltf.Internal.Parse.clipsByName(made :: Nil), clipSpecs = clip :: Nil,
+            parts = { mesh = mesh, node = 0, material = Some(0), givenTangents = true } :: Nil,
+            nodes = { name = "n", parent = None, local = Mat4.identity(), world = Mat4.identity(), localBounds = Some(Mesh3d.bounds(mesh)), parts = 0 :: Nil } :: Nil,
+            materials = Vector#{ material },
+            images = Vector#{ Gltf.Internal.Parse.ImageSource.InBin(0, 0), Gltf.Internal.Parse.ImageSource.Unreadable("u"),
+                              Gltf.Internal.Parse.ImageSource.ExternalUri, Gltf.Internal.Parse.ImageSource.NoSource },
+            lines = "l" :: Nil, droppedLines = "d" :: Nil, read = { pbr = true, vertexColors = true }
+        };
+        built |> Result.map(Gltf.Internal.Codec.serialize)
+
+    /// warmUpWire の並びを戻せたか（戻す関数を 1 度走らせる）。
+    pub def warmUpCodec(wire: LoadProgress.Internal.PreparsedParts): Bool =
+        Gltf.Internal.Codec.deserialize(wire) |> Result.map(p -> Vector.length(Mesh3d.positions(p#mesh)) == 9) |> Result.getWithDefault(false)
 
     /// 鍵つきの読み方の、images[k] のバイト image の絵（上限 maxSide）。機種の側に持てて（id は "key#image<番号>"）上限の内なら画素を読まず、ほかは画素へ戻す。
     // WhyNot: 上限より大きい機種の側の絵を使わない — Texture3d.limitSize は機種の側の絵を縮めず、場面の絵の置き場を上限の外の大きさで食う。

@@ -7,4 +7,10 @@ pub mod LoadProgress.Internal {
     /// 何をどの順に書くかは書く側が決める（glb は Gltf.Internal.Codec）。
     pub type alias PreparsedParts = { strings = Vector[String], ints = Vector[Int32], floats = Vector[Float64],
                                       f64s = Vector[Vector[Float64]], i32s = Vector[Vector[Int32]] }
+
+    /// 機種が受け取った並びを AssetDownloads#preparsedOf で渡せる形に包む。
+    pub def makePreparsed(parts: PreparsedParts): LoadProgress.Preparsed = LoadProgress.PreparsedData.PreparsedData(parts)
+
+    /// makePreparsed の逆。
+    pub def partsOf(p: LoadProgress.Preparsed): PreparsedParts = let LoadProgress.PreparsedData.PreparsedData(parts) = p; parts
 }

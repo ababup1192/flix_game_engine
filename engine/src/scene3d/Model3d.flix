@@ -107,9 +107,9 @@ pub mod Model3d {
 
     // ── glb を読む口 ──
 
-    enum LoaderData { case LoaderData(ImageData.ImageDecoder, Gltf.LoadOptions) }
+    enum LoaderData { case LoaderData(ImageData.ImageDecoder, Gltf.LoadOptions, String -> Option[LoadProgress.Preparsed] \ IO) }
 
-    /// glb の読み方（絵を解くデコーダーと、project.json の "gltf" の選択肢）。作るのは loader() だけ。
+    /// glb の読み方（絵を解くデコーダーと、project.json の "gltf" の選択肢と、機種がメインの外で解いた結果の引き方）。作るのは loader() だけ。
     pub type alias Loader = LoaderData
 
     /// 読み込みの頭（ループが回る前）で 1 回作り、並列の仕事や BackgroundLoad の decode へ渡す。
@@ -121,7 +121,7 @@ pub mod Model3d {
             case Ok(p)  => p#gltf
             case Err(e) => Log.fellBackThen("scene3d", "Model3d.loader の project.json", "Gltf.defaultLoadOptions()", e, Gltf.defaultLoadOptions())
         };
-        LoaderData.LoaderData(LoadProgress.imageDecoder(), options)
+        LoaderData.LoaderData(LoadProgress.imageDecoder(), options, LoadProgress.downloads()#preparsedOf)
 
     /// 道 path の glb を読む（読み込みの頭でも、並列の仕事の中でも呼べる）。読めない・壊れている時は Err（道つき）。
     pub def load(loader: Loader, path: String): Result[String, Model3d] \ Fs.FileRead + IO =
@@ -129,7 +129,13 @@ pub mod Model3d {
 
     /// 読んだバイトから作る（BackgroundLoad.Group の decode など。path は鍵を作るのと Err に付けるのに使う）。
     /// ブラウザ（versionedKey が Some）は形の鍵を道と版から作り、絵を機種の側に持つ。デスクトップは頂点から鍵を作る（読み方は Gltf.decodeWith）。
+    /// 機種がメインの外で解いた結果（LoadProgress.AssetDownloads#preparsedOf）があれば、バイトを読み直さずに絵と材質を付けるだけにする（値は同じ）。
     pub def decode(loader: Loader, path: String, bytes: Vector[Int8]): Result[String, Model3d] \ IO =
-        let LoaderData.LoaderData(decoder, options) = loader;
-        Gltf.decodeWith(decoder, options, (decoder#versionedKey)(path), bytes) |> Result.mapErr(e -> "${path}: ${e}")
+        let LoaderData.LoaderData(decoder, options, preparsedOf) = loader;
+        let key = (decoder#versionedKey)(path);
+        let carried = key |> Option.flatMap(preparsedOf) |> Option.flatMap(Gltf.Internal.toParsed(options, path));
+        match carried {
+            case Some(parsed) => Ok(Gltf.Internal.assemble(decoder, options, key, bytes, parsed))
+            case None         => Gltf.decodeWith(decoder, options, key, bytes) |> Result.mapErr(e -> "${path}: ${e}")
+        }
 }

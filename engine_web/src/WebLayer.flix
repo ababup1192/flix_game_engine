@@ -54,14 +54,25 @@ pub mod WebLayer {
     /// 2D のゲームの入口。3D の描き手を持たないので、Scene3d の場面は描かず初回に 1 回知らせる。
     // WhyNot: 2D の入口を withProject3d に寄せて 1 本にしない — ここから Render3d へ届くと、3D を使わないゲームの wasm まで太る。
     /// 既定は WebGPU で描く（使えなければ理由を console に出して WebGL2 で描く）。頁が ?fge=webgl2 で開かれていれば WebGL2 で描く。
+    // WhyNot: 2D の入口で glb の Worker の輪へ入らない — glb の読み手まで 3D を使わないゲームの wasm に入る。頁は Worker の失敗を受けてメインで読む。
     pub def withProject(rootDir: String, f: Unit -> a \ ef): a \ ef - Platform.Services - LoadProgress + IO + Fs.FileRead =
+        if (WebLayer.Internal.GlbWorker.isWorker()) bug!("[glb-worker] WebLayer.withProject（2D の入口）は glb を Worker で解かない")
+        else withProject2d(rootDir, f)
+
+    def withProject2d(rootDir: String, f: Unit -> a \ ef): a \ ef - Platform.Services - LoadProgress + IO + Fs.FileRead =
         let config = loadBootConfigOrBug(rootDir);
         let g = () -> recordDrawnTextures(f);
         if (Browser.backendRequest() == "webgpu") withWebGpuOrGl((_, _) -> makeWarningRenderer(), (_, _, _) -> makeWarningScenes(), config, g)
         else withWeb((_, _) -> makeWarningRenderer(), config, g)
 
     /// Scene3d を描くゲームの入口。既定は 3D も WebGPU で描く（使えなければ理由を console に出して WebGL2 で描く）。頁が ?fge=webgl2 で開かれていれば WebGL2 で描く。
+    /// 後から届く glb を解く Web Worker の中では、f を流さずに頼みを待つ輪へ入る（WebLayer.Internal.GlbWorker.serve）。
     pub def withProject3d(rootDir: String, f: Unit -> a \ ef): a \ ef - Platform.Services - LoadProgress + IO + Fs.FileRead =
+        if (WebLayer.Internal.GlbWorker.isWorker()) WebLayer.Internal.GlbWorker.serve()
+        else withProject3dPage(rootDir, f)
+
+    def withProject3dPage(rootDir: String, f: Unit -> a \ ef): a \ ef - Platform.Services - LoadProgress + IO + Fs.FileRead =
+        WebLayer.Internal.GlbWorker.warmUp();
         let config = loadBootConfigOrBug(rootDir);
         let makeRenderer = (gl, cfg) -> Render3d.makeRenderer(gl, cfg, Render3d.DrawMode.Instanced);
         let g = () -> recordSceneTextures(() -> recordDrawnTextures(f));
@@ -573,7 +584,8 @@ pub mod WebLayer {
           policyOf = name -> policyOfText(Deferred.policy(name)),
           getCodeLoadState = () -> codeStateOfText(Deferred.codeState()),
           isSplashShowing = () -> Deferred.isSplashShowing(),
-          setLoadWait = noticeLoadWait }
+          setLoadWait = noticeLoadWait,
+          preparsedOf = WebLayer.Internal.GlbWorker.preparsedOf }
 
     /// 頁の扱いの字（"onMissing\ngroup"・無い欄は空）を MissingPolicy へ。知らない onMissing は種類の既定。
     def policyOfText(text: String): LoadProgress.MissingPolicy =

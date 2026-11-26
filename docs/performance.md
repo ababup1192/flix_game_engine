@@ -36,6 +36,9 @@ engine / engine_world の `pub` は、このリポジトリの外にある独立
 | **遊ぶ人が払う** | 最優先。予算は R3（動的 PlacedItem < 2000 個/フレーム・avg < 8ms / p99 < 12ms） | 場面の切り替わり・セーブ / 読み込み・`Audio.reloadAudio`。1 フレームぶんを丸ごと使ってよいが、超えるならフレームを分けて分割する |
 | **作る人が払う** | 該当なし | headless の描き出し（ルートの `make render-all` = 全テンプレ）・Studio のプレビュー・CI・コミット前の lint。合否線は**実時間の背中合わせで 1 割** |
 
+右上のマスで、遊んでいる最中に起きる物（ブラウザで後から届く glb の束を解く）は、フレームを分けるより**メインのスレッドの外へ出す**方が効く。
+後回しの glb は頁が Web Worker で解き、メインは組むだけにしてある（[web-export.md](web-export.md) の「後回しの glb を Web Worker で解く」・`?fge=noworker` で前の道と比べる）。
+
 右下のマスは、速くするより**払う回数を減らす**方が効く。全テンプレの描き出しは実時間 150 秒だが、
 触ったテンプレ 1 本なら 20〜40 秒で、`make render-changed` がその 1 本だけを選ぶ。
 
@@ -183,7 +186,7 @@ engine / engine_world の `pub` は、このリポジトリの外にある独立
 
 `lint-quadratic` はループの中に書いた字を見るので、呼んだ関数の中の二乗とコピーは拾えない。glb の読み込み（`Gltf`）で 1 束 78 ms を食っていた 2 つ:
 
-- **番号で引く関数が、呼ぶたびに配列を作り直す**: `objectAt(kind, i, json)` が `objectsOf(kind, json)` で accessor 1,915 個の Vector をそのたびに作っていた。配列は読んだ時に 1 回だけ取り出して型に持たせる（`Gltf.Glb` の `accessors` など）
+- **番号で引く関数が、呼ぶたびに配列を作り直す**: `objectAt(kind, i, json)` が `objectsOf(kind, json)` で accessor 1,915 個の Vector をそのたびに作っていた。配列は読んだ時に 1 回だけ取り出して型に持たせる（`Gltf.Internal.Parse.Glb` の `accessors` など）
 - **標準の `Vector.slice`・`take`・`drop`・`splitAt` は Vector 全体を配列へコピーしてから切る**（flix.jar の `Vector.flix`）。大きな Vector から何度も切ると、切る回数 × 全体の長さだけ写す（1.5 MB の束から絵 46 枚で 70 MB）。切る分だけ写す関数（`Gltf.Internal.copyRange`）を使う。短い Vector の `take` は害が無いので止めない
 
 ### 時間で測るとき

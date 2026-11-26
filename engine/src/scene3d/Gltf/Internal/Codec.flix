@@ -92,10 +92,15 @@ pub mod Gltf.Internal.Codec {
         putList(w, ch -> {
             putInt(w, ch#joint);
             putInt(w, pathCode(ch#path));
-            putBool(w, ch#interpolation == AnimationClip3d.Interpolation.Step);
+            putInt(w, interpolationCode(ch#interpolation));
             putF64s(w, ch#times);
             putF64s(w, ch#values)
         }, spec#channels)
+
+    def interpolationCode(i: AnimationClip3d.Interpolation): Int32 = match i {
+        case AnimationClip3d.Interpolation.Linear => 0
+        case AnimationClip3d.Interpolation.Step   => 1
+    }
 
     def pathCode(p: AnimationClip3d.Path): Int32 = match p {
         case AnimationClip3d.Path.Translation => 0
@@ -198,28 +203,39 @@ pub mod Gltf.Internal.Codec {
         case None    => Ok(None)
     }
 
-    /// 並び k（0 = ints …）の次の番号を返して 1 つ進める。並びの外なら broken を立てる。
-    def advance(rd: Reader[r], k: Int32, length: Int32): Option[Int32] \ r =
+    /// 並び k（0 = ints …）の次の番号を返して 1 つ進める。並びの外なら broken を立てて -1。
+    // WhyNot: Option で返さない — 1 つの束で数万回呼ばれ、読むたびの Option の割り当てがメインのスレッドに乗る。
+    def advance(rd: Reader[r], k: Int32, length: Int32): Int32 \ r =
         let at = Array.get(k, rd#cursors);
         Array.put(at + 1, k, rd#cursors);
-        if (at < length) Some(at) else { Array.put(true, 0, rd#broken); None }
+        if (at < length) at else { Array.put(true, 0, rd#broken); -1 }
 
     def getInt(rd: Reader[r]): Int32 \ r =
-        advance(rd, 0, Vector.length(rd#wire#ints)) |> Option.map(i -> Vector.get(i, rd#wire#ints)) |> Option.getWithDefault(0)
+        let i = advance(rd, 0, Vector.length(rd#wire#ints));
+        if (i >= 0) Vector.get(i, rd#wire#ints) else 0
 
     def getBool(rd: Reader[r]): Bool \ r = getInt(rd) == 1
 
+    /// 0 から count − 1 までの番号を読む。外なら broken を立てて 0。
+    def getCode(rd: Reader[r], count: Int32): Int32 \ r =
+        let code = getInt(rd);
+        if (code >= 0 and code < count) code else { Array.put(true, 0, rd#broken); 0 }
+
     def getFloat(rd: Reader[r]): Float64 \ r =
-        advance(rd, 1, Vector.length(rd#wire#floats)) |> Option.map(i -> Vector.get(i, rd#wire#floats)) |> Option.getWithDefault(0.0)
+        let i = advance(rd, 1, Vector.length(rd#wire#floats));
+        if (i >= 0) Vector.get(i, rd#wire#floats) else 0.0
 
     def getString(rd: Reader[r]): String \ r =
-        advance(rd, 2, Vector.length(rd#wire#strings)) |> Option.map(i -> Vector.get(i, rd#wire#strings)) |> Option.getWithDefault("")
+        let i = advance(rd, 2, Vector.length(rd#wire#strings));
+        if (i >= 0) Vector.get(i, rd#wire#strings) else ""
 
     def getF64s(rd: Reader[r]): Vector[Float64] \ r =
-        advance(rd, 3, Vector.length(rd#wire#f64s)) |> Option.map(i -> Vector.get(i, rd#wire#f64s)) |> Option.getWithDefault(Vector.empty())
+        let i = advance(rd, 3, Vector.length(rd#wire#f64s));
+        if (i >= 0) Vector.get(i, rd#wire#f64s) else Vector.empty()
 
     def getI32s(rd: Reader[r]): Vector[Int32] \ r =
-        advance(rd, 4, Vector.length(rd#wire#i32s)) |> Option.map(i -> Vector.get(i, rd#wire#i32s)) |> Option.getWithDefault(Vector.empty())
+        let i = advance(rd, 4, Vector.length(rd#wire#i32s));
+        if (i >= 0) Vector.get(i, rd#wire#i32s) else Vector.empty()
 
     /// 数を読み、その数だけ get で読む。負の数は 0 個として broken を立てる。
     def getList(rd: Reader[r], get: Unit -> a \ r): List[a] \ r =
@@ -288,14 +304,17 @@ pub mod Gltf.Internal.Codec {
         let name = getString(rd);
         let channels = getList(rd, () -> {
             let joint = getInt(rd);
-            let path = pathOfCode(getInt(rd));
-            let step = getBool(rd);
+            let path = pathOfCode(getCode(rd, 3));
+            let interpolation = interpolationOfCode(getCode(rd, 2));
             let times = getF64s(rd);
             let values = getF64s(rd);
             { joint = joint, path = path, times = times, values = values,
-              interpolation = if (step) AnimationClip3d.Interpolation.Step else AnimationClip3d.Interpolation.Linear }
+              interpolation = interpolation }
         });
         { name = name, channels = channels }
+
+    def interpolationOfCode(code: Int32): AnimationClip3d.Interpolation =
+        if (code == 1) AnimationClip3d.Interpolation.Step else AnimationClip3d.Interpolation.Linear
 
     def pathOfCode(code: Int32): AnimationClip3d.Path =
         if (code == 1) AnimationClip3d.Path.Rotation else if (code == 2) AnimationClip3d.Path.Scale else AnimationClip3d.Path.Translation
@@ -321,7 +340,7 @@ pub mod Gltf.Internal.Codec {
 
     def getMaterial(rd: Reader[r]): MaterialSpec \ r =
         let name = getOption(rd, () -> getString(rd));
-        let alphaMode = alphaOfCode(getInt(rd));
+        let alphaMode = alphaOfCode(getCode(rd, 3));
         let alphaCutoff = getFloat(rd);
         let doubleSided = getBool(rd);
         let base = getTextureInfo(rd);
@@ -349,7 +368,7 @@ pub mod Gltf.Internal.Codec {
         if (code == 1) Model3d.AlphaMode.Mask else if (code == 2) Model3d.AlphaMode.Blend else Model3d.AlphaMode.Opaque
 
     def getImage(rd: Reader[r]): ImageSource \ r =
-        let tag = getInt(rd);
+        let tag = getCode(rd, 4);
         if (tag == 0) { let start = getInt(rd); ImageSource.InBin(start, getInt(rd)) }
         else if (tag == 1) ImageSource.Unreadable(getString(rd))
         else if (tag == 2) ImageSource.ExternalUri

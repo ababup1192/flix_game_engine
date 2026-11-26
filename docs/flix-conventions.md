@@ -207,6 +207,8 @@ World に Doc・アトラス・シェーダーの Spec・音の Mixer を平ら�
   その機種の GPU の API で行を流す backend を 1 本足す）。入力・音・窓・ファイルは 1 行目の handler 一式の高さ（`Platform.Services` と Fs と
   `LoadProgress` の handler を自分で書く）。GL の無い機種のために `GlContext` を広げない。
   - 後回しの素材（`web.deferred`）を受ける handler を書く時の、機種に依らない部品（道の状態の字を `LoadState` へ・道ごとのまとめ・届く前の音への呼び出しの覚え書き）は `LoadProgress.Deferred`（`engine/src/platform/LoadProgress/Deferred.flix`・ゲームからは呼ばない。素材を後から取る決まりは [startup.md](startup.md) の「ブラウザで素材を後から取る」）
+  - メインの外で素材を解く道（ブラウザの glb の Web Worker）は機種の handler（engine_web の `WebLayer.Internal.GlbWorker` と頁の JS）の中に閉じ、
+    engine は `LoadProgress.AssetDownloads#preparsedOf` で結果を引くだけにする（`Model3d.decode`。無い機種はいつも `None`）。解き方そのもの（`Gltf.Internal.Parse`）は 1 本で、Worker も同じ wasm の同じ関数を走らせる
   - WebGPU の backend が読むシェーダーの字（WGSL）は `ShaderGen.Wgsl`（`engine/src/shader/ShaderGen/Wgsl.flix`）が ShaderDoc の Spec から作る。GL の GLSL と同じ式の組み立てを使い、文の形が違う所だけをここに置く
 - 機種の差を、ビルドの時に同じ名前の **Flix のモジュール**を束ごとに差し替えて吸収しない（束ごとに別のファイルを組む手間が増え、片方の版は普段の型検査を通らない）。
   JVM のバイトコードを訳して動かす機種（ブラウザの TeaVM など）で足りない Java の部品は、訳す前の付け替えの道具で手当てする。

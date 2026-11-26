@@ -65,7 +65,9 @@ pub mod LoadProgress {
     /// missingGen = missing が変わるたびに増える数（App のループが毎コマ集まりを作り直さないための目印）・
     /// policyOf = 名前の扱い（project.json の web.deferredPolicy の onMissing と group。表に無い名前は両方 None = 種類の既定）・
     /// getCodeLoadState = 後から取る wasm の状態（分けていない束とデスクトップはいつも Loaded）・
-    /// isSplashShowing = 頁が押した後のロゴを出している間か・setLoadWait = 今の待ちを機種へ知らせる（App のループが変わった時だけ呼ぶ）。
+    /// isSplashShowing = 頁が押した後のロゴを出している間か・setLoadWait = 今の待ちを機種へ知らせる（App のループが変わった時だけ呼ぶ）・
+    /// preparsedOf = 鍵（ImageData.ImageDecoder の versionedKey）の素材を、機種がメインの外で解いた結果（ブラウザの glb の Web Worker。
+    /// 無い・まだ・解けなかった時と、デスクトップはいつも None。Model3d.decode が開ける）。
     pub type alias AssetDownloads = {
         stateOf = String -> LoadState \ IO,
         missing = Unit -> Set[String] \ IO,
@@ -77,8 +79,14 @@ pub mod LoadProgress {
         policyOf = String -> MissingPolicy \ IO,
         getCodeLoadState = Unit -> LoadState \ IO,
         isSplashShowing = Unit -> Bool \ IO,
-        setLoadWait = Option[LoadWait] -> Unit \ IO
+        setLoadWait = Option[LoadWait] -> Unit \ IO,
+        preparsedOf = String -> Option[Preparsed] \ IO
     }
+
+    enum PreparsedData { case PreparsedData(LoadProgress.Internal.PreparsedParts) }
+
+    /// 機種がメインの外で解いた結果の入れ物（作るのは機種の handler だけ・ゲームは作らない）。
+    pub type alias Preparsed = PreparsedData
 
     /// 届いていない素材を使おうとした時の扱い。Wait = 届くまで待つ・Placeholder = 描かずに（フォントは先頭のフォントで）進む・Skip = 鳴らさずに進む。
     /// 絵とフォントは Wait と Placeholder、音は Wait と Skip を使う（Placeholder と Skip はどちらも「待たない」と読む）。
@@ -106,13 +114,13 @@ pub mod LoadProgress {
     pub type alias LoadWait = { reason = LoadWaitReason, names = List[String], waited = Float64, progress = Float64, pressed = Bool }
 
     /// 後回しの無い機種の組: stateOf と getCodeLoadState はいつも Loaded・missing はいつも空・missingGen と spentMs はいつも 0・
-    /// policyOf はいつも defaultPolicy・isSplashShowing はいつも偽・request と release と setBudget と setLoadWait は何もしない。
+    /// policyOf はいつも defaultPolicy・isSplashShowing はいつも偽・preparsedOf はいつも None・request と release と setBudget と setLoadWait は何もしない。
     pub def localDownloads(): AssetDownloads =
         { stateOf = _ -> checked_ecast(LoadState.Loaded), missing = () -> checked_ecast(Set.empty()),
           request = _ -> checked_ecast(()), release = _ -> checked_ecast(()), setBudget = _ -> checked_ecast(()),
           spentMs = () -> checked_ecast(0.0), missingGen = () -> checked_ecast(0),
           policyOf = _ -> checked_ecast(defaultPolicy()), getCodeLoadState = () -> checked_ecast(LoadState.Loaded),
-          isSplashShowing = () -> checked_ecast(false), setLoadWait = _ -> checked_ecast(()) }
+          isSplashShowing = () -> checked_ecast(false), setLoadWait = _ -> checked_ecast(()), preparsedOf = _ -> checked_ecast(None) }
 
     /// 知らせを捨て、仕事を順に回す handler（headless の描き出し・動画・テスト・flow の再生）。
     /// imageDecoder を受け取ると止まる（絵を解くなら HeadlessLoad.handle）。

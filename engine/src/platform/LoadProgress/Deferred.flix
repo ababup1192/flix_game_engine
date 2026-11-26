@@ -3,10 +3,12 @@
 /// 後回しの素材を受ける機種の handler の、機種に依らない部品。ゲームからは呼ばない。
 pub mod LoadProgress.Deferred {
 
-    /// 機種が返す道の状態の字（"queued" / "downloading" / "downloaded" / "loaded" / "failed:理由"）を LoadState へ。知らない字は Failed。
+    /// 機種が返す道の状態の字（"queued" / "downloading" / "parsing" / "downloaded" / "loaded" / "failed:理由"）を LoadState へ。知らない字は Failed。
+    /// parsing（届いたバイトをメインの外で解いている）は Downloading と読む（解き終えるまで鍵を解かせない）。
     pub def loadStateOfText(text: String): LoadProgress.LoadState = match text {
         case "queued"      => LoadProgress.LoadState.Queued
         case "downloading" => LoadProgress.LoadState.Downloading
+        case "parsing"     => LoadProgress.LoadState.Downloading
         case "downloaded"  => LoadProgress.LoadState.Downloaded
         case "loaded"      => LoadProgress.LoadState.Loaded
         case other         => LoadProgress.LoadState.Failed(String.stripPrefix(substr = "failed:", other) |> Option.getWithDefault(other))

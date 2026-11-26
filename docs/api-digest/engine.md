@@ -642,8 +642,6 @@
   `pub def defaultLoadOptions(): LoadOptions`
 - .glb のバイトから、絵と材質つきで作る。ゲームは Model3d.loader / load / decode を使う（engine のテストと bench が選択肢を直に渡す時の API）。
   `pub def decodeWith(decoder: ImageData.ImageDecoder, options: LoadOptions, key: Option[String], bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO`
-- 材質の baseColorTexture・normalTexture・emissiveTexture（emissive が 0 でない材質だけ）・metallicRoughnessTexture（metallic・roughness を付ける材質だけ）が指す画像の番号 → その絵の長い辺の上限
-  `pub def usedImages(limits: TextureLimits, pbr: Bool, materials: Vector[Gltf.Internal.Parse.MaterialSpec]): Map[Int32, Int32]`
 
 ## GpuHandle — `engine/src/core/GpuHandle.flix`
 - タイルマップの GPU インスタンスバッファのハンドル（`initTileBuffer` が返す）。
@@ -785,7 +783,9 @@
 - 1 コマに解いてよい量（Unity の backgroundLoadingPriority）。Paused = 解かない（文字送り中など画面が動いていて止まりが見える）・
   `pub enum DecodeBudget with Eq, ToString { case Paused case Idle(Float64) case Covered(Float64) }`
 - 後回しの素材を引く関数の組（どれもループの中で呼べる）。
-  `pub type alias AssetDownloads = { stateOf = String -> LoadState \ IO, missing = Unit -> Set[String] \ IO, request = List[String] -> Unit \ IO, release = List[String] -> Unit \ IO, setBudget = DecodeBudget -> Unit \ IO, spentMs = Unit -> Float64 \ IO, missingGen = Unit -> Int32 \ IO, policyOf = String -> MissingPolicy \ IO, getCodeLoadState = Unit -> LoadState \ IO, isSplashShowing = Unit -> Bool \ IO, setLoadWait = Option[LoadWait] -> Unit \ IO }`
+  `pub type alias AssetDownloads = { stateOf = String -> LoadState \ IO, missing = Unit -> Set[String] \ IO, request = List[String] -> Unit \ IO, release = List[String] -> Unit \ IO, setBudget = DecodeBudget -> Unit \ IO, spentMs = Unit -> Float64 \ IO, missingGen = Unit -> Int32 \ IO, policyOf = String -> MissingPolicy \ IO, getCodeLoadState = Unit -> LoadState \ IO, isSplashShowing = Unit -> Bool \ IO, setLoadWait = Option[LoadWait] -> Unit \ IO, preparsedOf = String -> Option[Preparsed] \ IO }`
+- 機種がメインの外で解いた結果の入れ物（作るのは機種の handler だけ・ゲームは作らない）。
+  `pub type alias Preparsed = PreparsedData`
 - 届いていない素材を使おうとした時の扱い。Wait = 届くまで待つ・Placeholder = 描かずに（フォントは先頭のフォントで）進む・Skip = 鳴らさずに進む。
   `pub enum OnMissing with Eq, ToString { case Wait case Placeholder case Skip }`
 - 名前 1 つの扱い。onMissing = None は種類の既定（絵は待つ・一発の音は鳴らさず進む・ループの音は待たずに届いたら鳴る。ブラウザ版はフォントに placeholder を渡す）・
@@ -820,7 +820,7 @@
   `pub def failureViolations(harness: Harness): List[String] \ IO`
 
 ## LoadProgress.Deferred — `engine/src/platform/LoadProgress/Deferred.flix`
-- 機種が返す道の状態の字（"queued" / "downloading" / "downloaded" / "loaded" / "failed:理由"）を LoadState へ。知らない字は Failed。
+- 機種が返す道の状態の字（"queued" / "downloading" / "parsing" / "downloaded" / "loaded" / "failed:理由"）を LoadState へ。知らない字は Failed。
   `pub def loadStateOfText(text: String): LoadProgress.LoadState`
 - items を道ごとにまとめる。道の並びは最初に出た順・道の中は元の順。
   `pub def groupByPath(pathOf: a -> String, items: List[a]): List[(String, List[a])]`
@@ -986,7 +986,7 @@
   `pub def nodeOrigin(node: ModelNode): Vec3.Vec3`
 - ノード node から出た parts の形（world をベイクした頂点）を、そのノードの局所の座標へ戻す行列（焼き込みに使った world の逆行列）。
   `pub def partLocalToNode(node: ModelNode, model: Model3d): Option[Mat4.Mat4]`
-- glb の読み方（絵を解くデコーダーと、project.json の "gltf" の選択肢）。作るのは loader() だけ。
+- glb の読み方（絵を解くデコーダーと、project.json の "gltf" の選択肢と、機種がメインの外で解いた結果の引き方）。作るのは loader() だけ。
   `pub type alias Loader = LoaderData`
 - 読み込みの頭（ループが回る前）で 1 回作り、並列の仕事や BackgroundLoad の decode へ渡す。
   `pub def loader(): Loader \ LoadProgress + Fs.FileRead`

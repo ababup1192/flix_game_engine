@@ -135,6 +135,15 @@
       "hint": "奥でプロセスを終えない（常駐の /run から呼ばれると常駐ごと落ちる）。奥は終了コード（Int32）を返し、入口の頭の 1 行で App.Headless.exitWith(xJob(App.Headless.requestFromProcess())) か ProcessEnv.exitWith(コード) に渡す。例外は skip に並べたファイルだけ（ProcessEnv が終える 1 か所。理由はその行の WhyNot）（engine の docs/design/render-speed.md 2.5 節）"
     },
     {
+      "id": "gltf-parse-no-log",
+      "suffixes": [".flix"],
+      "prefixes": ["engine/src/scene3d/Gltf/Internal/Parse.flix", "engine/src/scene3d/Gltf/Internal/Codec.flix"],
+      "skip": [],
+      "skipDirs": ["test", "build", "lib"],
+      "pattern": "\\bLog\\.",
+      "hint": "glb の parse（Gltf.Internal.Parse）と並びにする所（Gltf.Internal.Codec）は Log を呼ばず、知らせを Parsed の lines（捨てた物は droppedLines）に積んで返す。ブラウザでは parse を Web Worker で回すので、ここで出した知らせはメインの ?fge=errors に載らない。出すのは assemble（Gltf.assembleBy）"
+    },
+    {
       "id": "engine-contract-import",
       "suffixes": [".flix"],
       "prefixes": ["engine/src/"],
@@ -398,8 +407,8 @@
       "suffixes": [".flix"],
       "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "render_gl/", "engine_web/", "bench/", "src/engine/", "src/engine_world/", "src/engine_tools/", "src/render_gl/", "src/engine_web/", "lib/", "build/"],
       "skipDirs": ["build", "lib"],
-      "pattern": "\\b(?:App|Render|RenderFrame|RenderPaint|LwjglLayer|WebLayer|SoftRaster|BackgroundLoad|PostStack)\\.Internal\\b",
-      "hint": "App.Internal・Render.Internal・RenderFrame.Internal・RenderPaint.Internal・LwjglLayer.Internal・WebLayer.Internal・SoftRaster.Internal・BackgroundLoad.Internal・PostStack.Internal は engine のそのモジュールの中身でゲームからは呼ばない（版を上げると名前も形も黙って変わる）。ゲームが使う関数は親のモジュールにある（App.launch・App.trace・App.traceFrame・App.frameOf・App.composeScene・App.withBackgroundLoad など。bin/fge api App.）。足りない関数があれば engine に足すよう相談する"
+      "pattern": "\\b(?:App|Render|RenderFrame|RenderPaint|LwjglLayer|WebLayer|SoftRaster|BackgroundLoad|PostStack|LoadProgress|Gltf|Mesh3d|ProjectLoader)\\.Internal\\b",
+      "hint": "App.Internal・Render.Internal・RenderFrame.Internal・RenderPaint.Internal・LwjglLayer.Internal・WebLayer.Internal・SoftRaster.Internal・BackgroundLoad.Internal・PostStack.Internal・LoadProgress.Internal・Gltf.Internal・Mesh3d.Internal・ProjectLoader.Internal は engine のそのモジュールの中身でゲームからは呼ばない（版を上げると名前も形も黙って変わる。Mesh3d.Internal.fromTrusted は範囲の外の頂点の番号を持つ形も作れる）。glb はゲームから Model3d.loader / load / decode で読む。ゲームが使う関数は親のモジュールにある（App.launch・App.trace・App.traceFrame・App.frameOf・App.composeScene・App.withBackgroundLoad など。bin/fge api App.）。足りない関数があれば engine に足すよう相談する"
     },
     {
       "id": "dev-request-outside-main",

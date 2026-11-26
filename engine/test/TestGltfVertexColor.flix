@@ -1,4 +1,4 @@
-// glb の頂点の色 COLOR_0（Gltf.readPrimitive）: 選んだ時（LoadOptions の vertexColors）だけ、FLOAT と正規化した整数を線形の値として読んで画面の値へ戻す・
+// glb の頂点の色 COLOR_0（Gltf.Internal.Parse.readPrimitive）: 選んだ時（LoadOptions の vertexColors）だけ、FLOAT と正規化した整数を線形の値として読んで画面の値へ戻す・
 // baseColorFactor と掛ける・1 を超える値は 1 に切る・読めない型と幅は使わずに白・選ばない時と COLOR_0 の無い glb は今までの色・
 // Model3d.scaleVertexColors の掛け算と中身の鍵と、掛けられない k。
 mod TestGltf.VertexColor {

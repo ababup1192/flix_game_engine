@@ -71,7 +71,8 @@ pub mod WebFs {
         if (isEmbedded(embedded, path)) Result.map(Array.toVector, embeddedBytes(embedded, path))
         else {
             let bytes = AssetTable.bytes(normalize(path));
-            if (Object.isNull(bytes)) Err(notFound(path)) else Ok(Array.toVector(bytes))
+            // WhyNot: Array.toVector で写し直さない — AssetTable.bytes が JS から写したばかりの配列で、誰も持ち続けない。2.6 MB の glb の束で 4 倍の絞りの数 ms がそのコマに乗る。
+            if (Object.isNull(bytes)) Err(notFound(path)) else Ok(unchecked_cast(bytes as Vector[Int8]))
         }
 
     /// EmbeddedData.table（[道, 切れ端の数, 切れ端…] の繰り返し）から道ごとの位置を引く。

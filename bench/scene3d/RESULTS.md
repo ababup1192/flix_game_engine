@@ -343,3 +343,22 @@ instances は段 1（分け方の使い回し）の入った engine・MultiMesh 
 |---|---|---|---|
 | 太陽の影（`SHADOW=1`） | 1.24 / 1.25 / 1.24 | 1.01 / 1.04 / 1.00 | 4 |
 | 点光源の影 2 本（`LAMPS=2`・面 12） | 4.34 / 4.34 / 4.36 | 1.22 / 1.23 / 1.21 | 22 |
+
+### 後回しの glb を Web Worker で解く（`first=glb&deferred=1`・plans/engine-web-glb-worker.md の段 2）
+
+`make bench-web BENCH=scene3d ARGS='first=glb&deferred=1&warm=1&glb=<束>&n=300&shapes=137&mats=8&verts=600&fge=deferred:all' CPU=<倍>`。
+`assets/deferred/<束>`（テンプレートの束への symlink・`web.deferred`）を頁が Worker で解き、120 コマ目にゲームと同じく読んで `Model3d.decode` で組む。
+「メイン」は同じ書き出しに `&fge=deferred:all,noworker`（Worker を使わずメインで parse する前の道）。区間 glb の解く仕事（work_max・読むのを含む）・M4 Pro Chrome 156 ヘッドレス・起動し直して 3 回。
+CPU の絞りは Worker に掛からない（Worker の parse の時間は 1 倍のまま）。
+
+| 束 | CPU 1 倍 Worker / メイン | 4 倍 Worker / メイン | 6 倍 Worker / メイン |
+|---|---|---|---|
+| props_a（primitive 194・頂点 9,876） | 3.8 / 3.4 / 3.5 ・ 40.4 / 41.8 / 39.4 | 15.3 / 19.0 / 19.1 ・ 155.8 / 145.8 / 145.9 | 25.0 / 25.6 / 27.3 ・ 229.4 / 224.6 / 248.5 |
+| upper_a（primitive 197・頂点 51,851） | 6.7 / 7.0 / 6.6 ・ 112.0 / 111.1 / 110.7 | 28.1 / 30.2 / 31.6 ・ 467.4 / 503.1 / 597.9 | 58.4 / 43.1 / 47.6 ・ 738.7 / 706.0 / 736.1 |
+| girl_student（骨・アニメ 8） | 1.9 / 2.0 / 2.0 ・ 19.6 / 19.7 / 19.2 | 9.2 / 8.5 / 9.9 ・ 86.0 / 96.7 / 96.1 | 14.0 / 12.0 / 12.6 ・ 127.9 / 151.9 / 132.1 |
+
+- `phases=1` の 2 回目の内訳（4 倍・upper_a）: 読む 4〜5 ms・Worker の結果を JS から写す 5〜7・戻す 9（そのうち part をつなぐ形 4）・組む 4。props_a は 1.5・1.5・5〜9・5
+- 初めの段（配列を 1 本ずつ写し・読み込みの間に戻す関数を走らせていなかった版）は 4 倍で props_a 41〜43・upper_a 61〜63・girl 28〜31 だった。
+  wasm の関数は初めて呼ぶ時に組まれ、束の大きさによらず 4 倍で 20 ms ほどが初めの束に乗っていた（WebLayer が読み込みの間に小さな結果で 1 度走らせる）
+- 画素: 同じ書き出しの Worker あり・なしを `web-capture --dev capture:200,deferred:all[,noworker]` で撮って 3 つの束とも差 0 px（バイトも同じ）
+- 頁から `fge-glb-worker.js` を消した書き出しでは Worker を作れずメインで解く（props_a 1 倍 39.3 ms・描いた数は同じ 495）

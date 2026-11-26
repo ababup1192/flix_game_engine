@@ -17,5 +17,10 @@
     }
   ],
   "fonts": [],
-  "sounds": []
+  "sounds": [],
+  "gltf": { "vertexColors": true },
+  "web": {
+    "// deferred": "first=glb&deferred=1 が解く束（テンプレートの束への symlink）。押してから取り、頁は glb を Web Worker で解いてから届いたと言う。",
+    "deferred": ["assets/deferred/*.glb"]
+  }
 }

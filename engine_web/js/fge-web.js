@@ -1439,7 +1439,7 @@ function fgeSplashDeferredRatio() {
   var all = 0, got = 0;
   fgeDeferred.entries.forEach(function (e) {
     all += e.bytes;
-    if (e.state === "downloaded" || e.state === "loaded" || e.state === "released") got += e.bytes;
+    if (e.state === "parsing" || e.state === "downloaded" || e.state === "loaded" || e.state === "released") got += e.bytes;
   });
   return all > 0 ? got / all : null;
 }
@@ -1565,8 +1565,9 @@ function fgeAfterTapMarkSeen() {
   try { window.localStorage.setItem(fgeAfterTapSeenKey(), "1"); } catch (e) { /* 持てない頁は次も待つ物が残る時だけ出す */ }
 }
 // WhyNot: fgeDeferredArrived（絵は上げ終えて loaded）で切らない — main が動く前は誰も上げないので、ロゴが上限まで残る。バイトが手元に来たら切る。
+// parsing（glb を Worker で解いている）もバイトは手元にあるので切る（数えないと Worker の起動と parse の分だけロゴが長く出る）。
 function fgeAfterTapSettled(e) {
-  return e.state === "downloaded" || e.state === "loaded" || e.state === "released" || (e.state === "failed" && e.permanent);
+  return e.state === "parsing" || e.state === "downloaded" || e.state === "loaded" || e.state === "released" || (e.state === "failed" && e.permanent);
 }
 function fgeAfterTapPending(cfg) {
   var groups = cfg.waitFor || [];
@@ -1847,6 +1848,7 @@ window.addEventListener("unhandledrejection", function (e) { fgeError("止まり
 
 // ── 起動 ──
 var fgeGameId = "game";
+var fgeBundle = null;
 // WhyNot: 取った物の記録を 250 本（ブラウザの既定）で止めない — 素材の多いゲームは起動の前に超え、Service Worker へ送る URL（fgeServiceWorkerReport）が欠ける。
 try { performance.setResourceTimingBufferSize(4000); } catch (e) { /* 決められない版 */ }
 // WhyNot: 素材と wasm を版なしの URL で取らない — 置き先のキャッシュで、古い wasm と新しい素材が混ざる。版は index.html が付けた ?v= を使う。
@@ -1959,7 +1961,7 @@ function fgeBitmapOf(bytes, path) {
 }
 
 // ── 後回しの素材（bundle.json の deferred）──
-// 状態は queued → downloading → downloaded（files は素材の表・絵は ImageBitmap にある）→ loaded（絵は WebLayer が登録した・音は解いた）。
+// 状態は queued → downloading →（glb を Web Worker で解く間は parsing →）downloaded（files は素材の表・絵は ImageBitmap にある）→ loaded（絵は WebLayer が登録した・音は解いた）。
 // 取れなければ failed。failed は間を置いて queued へ戻す（4xx は戻さない）。
 // 解き終えて生のバイトを捨てた files は released（stateOf は queued と言い、頼まれたら取り直す）。
 var fgeDeferred = { entries: [], byPath: new Map(), byName: new Map(), queue: [], running: 0, started: false, wasmReady: false, bootReady: false, hiddenAt: -1 };
@@ -2078,8 +2080,9 @@ function fgeDeferredRelease(joined) {
   String(joined).split("\n").forEach(function (path) {
     var p = fgeNormPath(path);
     var e = fgeDeferred.byPath.get(p);
-    if (!e || fgeHeldImages.has(p) || !fgeAssets.has(p)) return;
+    if (!e || e.state === "parsing" || fgeHeldImages.has(p) || !fgeAssets.has(p)) return;
     fgeAssets.delete(p);
+    fgeGlbParsed.delete(fgePlatformKey(p));
     if (e.state === "downloaded" || e.state === "loaded") {
       e.arrivedAtRelease = fgeDeferredArrived(e);
       e.state = "released";
@@ -2097,6 +2100,7 @@ function fgeDeferredStart() {
   if (fgeDeferred.started || !fgeDeferred.wasmReady || !fgeDeferred.bootReady) return;
   fgeDeferred.started = true;
   fgeDeferred.queue = fgeDeferred.entries.filter(function (e) { return e.state === "queued"; });
+  if (fgeDeferred.entries.some(fgeGlbWorkerWants)) fgeGlbWorkerEnsure();
   fgeDeferredPump();
 }
 function fgeDeferredPump() {
@@ -2154,6 +2158,8 @@ async function fgeDeferredReceive(e, gen, signal) {
   if (e.gen !== gen) return;
   if (e.file) {
     fgeAssets.set(e.path, bytes);
+    // WhyNot: Worker の parse を待ってから取る枠を返さない — 枠をふさぐと、後ろの素材の取り始めが parse の分だけ遅れる。
+    if (!e.image && fgeGlbWorkerParse(e, gen, bytes)) return;
     fgePreholdGlbImages(e.path, bytes);
   }
   if (e.image) {
@@ -2162,6 +2168,170 @@ async function fgeDeferredReceive(e, gen, signal) {
     fgeImages.set(e.path, bitmap);
   }
   e.state = "downloaded";
+}
+
+// ── 後回しの glb を Web Worker で解く（解く側は fge-glb-worker.js・wasm の側は WebLayer.Internal.GlbWorker）──
+// 届いた glb を Worker で parse し終えてから downloaded にする。メインの wasm は Model3d.decode で結果を引いて組むだけ。
+// Worker を使えない時（?fge=noworker・sandbox の iframe や CSP で作れない・落ちた・返らない）は今の道（メインで parse）で読む。
+// WhyNot: Worker を常に起こしておかない — 2 つ目の wasm の instance がメモリを持ち続ける。頼みが 10 秒無ければ止め、次の glb で起こし直す。
+var fgeGlbParsed = new Map();
+var fgeGlbWorker = { worker: null, state: "off", nextId: 1, pending: new Map(), idleTimer: null, gltf: null, warned: false };
+var fgeGlbWorkerIdleMs = 10000;
+var fgeGlbWorkerTimeoutMs = 30000;
+
+function fgeGlbWorkerExpected() { return fgeDeferred.entries.some(fgeGlbWorkerWants); }
+
+// 頁の wasm が読み込みの間に 1 度、受け渡しの道（積む → つなぐ → 表から写す）を通す時の入れ物（Worker の中の物と同じ形）。
+var fgeGlbWorkerResult = null;
+function fgeGlbLocalBegin() { fgeGlbWorkerResult = { strings: [], ints: null, floats: null, f64s: [], i32s: [], images: [] }; }
+function fgeGlbLocalStore(key) {
+  var r = fgeGlbWorkerResult;
+  fgeGlbWorkerResult = null;
+  var f64 = fgeGlbJoin(r.f64s, Float64Array);
+  var i32 = fgeGlbJoin(r.i32s, Int32Array);
+  fgeGlbParsed.set(fgeNormPath(key), { text: r.strings.join(""), strLens: new Int32Array(r.strings.map(function (s) { return s.length; })),
+                                       ints: r.ints, floats: r.floats, f64: f64.all, f64Lens: f64.lens, i32: i32.all, i32Lens: i32.lens });
+}
+// 配列の並びを 1 本につなぎ、長さの並びを添える（fge-glb-worker.js の同じ名前の関数と同じ形）。
+// WhyNot: Worker の JS と 1 つのファイルに寄せない — Worker は頁の fge-web.js を読めない（頭で window と document に触る）。
+function fgeGlbJoin(arrays, Kind) {
+  var lens = new Int32Array(arrays.length);
+  var total = 0;
+  arrays.forEach(function (a, i) { lens[i] = a.length; total += a.length; });
+  var all = new Kind(total);
+  var at = 0;
+  arrays.forEach(function (a) { all.set(a, at); at += a.length; });
+  return { all: all, lens: lens };
+}
+function fgeGlbParsedHas(key) { return fgeGlbParsed.has(fgeNormPath(key)); }
+function fgeGlbParsedOf(key) { return fgeGlbParsed.get(fgeNormPath(key)); }
+
+function fgeGlbWorkerWants(e) {
+  return e.file && !e.image && /\.glb$/i.test(e.path) && !fgeSwitches.noworker && fgeGlbWorker.state !== "broken" && typeof Worker === "function";
+}
+
+// project.json の "gltf" の値の字（Worker の wasm が Model3d.loader と同じ読み方で選択肢にする）。
+function fgeGlbWorkerGltf() {
+  if (fgeGlbWorker.gltf !== null) return fgeGlbWorker.gltf;
+  var text = "";
+  try {
+    var b = fgeAssets.get("project.json");
+    var gltf = b === undefined ? undefined : JSON.parse(fgeDecoder.decode(b)).gltf;
+    text = gltf === undefined ? "" : JSON.stringify(gltf);
+  } catch (err) { text = ""; }
+  fgeGlbWorker.gltf = text;
+  return text;
+}
+
+function fgeGlbWorkerWarn(why) {
+  if (fgeGlbWorker.warned) return;
+  fgeGlbWorker.warned = true;
+  console.warn("[fge] glb を Web Worker で解けない — メインで解く（止まりが出る）: " + why);
+}
+
+function fgeGlbWorkerEnsure() {
+  var w = fgeGlbWorker;
+  if (w.worker !== null || w.state === "broken") return;
+  try {
+    // WhyNot: ?sw=0（?fge=nosw）の頁の Worker の道に旗を付けずに起こさない — Service Worker が Worker の取る物を壊れたキャッシュから返す。
+    var url = fgeVersioned("fge-glb-worker.js");
+    w.worker = new Worker(fgeSwitches.sw === false ? url + (url.indexOf("?") >= 0 ? "&" : "?") + "sw=0" : url);
+  } catch (err) {
+    w.state = "broken";
+    fgeGlbWorkerWarn("Worker を作れない（" + (err && err.message || err) + "）");
+    return;
+  }
+  w.state = "starting";
+  w.worker.onmessage = fgeGlbWorkerOnMessage;
+  w.worker.onerror = function (ev) { ev.preventDefault(); fgeGlbWorkerBreak("Worker の誤り: " + (ev.message || ev)); };
+  var bundle = fgeBundle || {};
+  w.worker.postMessage({ type: "init", runtimeUrl: fgeVersioned("wasm-gc-runtime.js"), wasmUrl: fgeVersioned("classes.wasm"),
+                         brotliUrl: bundle.wasmBrotli ? fgeVersioned(bundle.wasmBrotli) : null, brotliDecoderUrl: fgeVersioned("brotli-decode.js") });
+  fgeGlbWorkerIdle();
+}
+
+// 頼む。頼めたら e を parsing にして真（届いた結果か失敗で downloaded へ移す）。
+function fgeGlbWorkerParse(e, gen, bytes) {
+  if (!fgeGlbWorkerWants(e)) return false;
+  fgeGlbWorkerEnsure();
+  var w = fgeGlbWorker;
+  if (w.worker === null) return false;
+  var id = w.nextId++;
+  var copy = bytes.slice();
+  var timer = setTimeout(function () { fgeGlbWorkerBreak(fgeGlbWorkerTimeoutMs / 1000 + " 秒返らない（" + e.path + "）"); }, fgeGlbWorkerTimeoutMs);
+  e.state = "parsing";
+  w.pending.set(id, { e: e, gen: gen, bytes: bytes, timer: timer });
+  if (w.idleTimer !== null) { clearTimeout(w.idleTimer); w.idleTimer = null; }
+  w.worker.postMessage({ type: "parse", id: id, bytes: copy.buffer, gltf: fgeGlbWorkerGltf() }, [copy.buffer]);
+  return true;
+}
+
+// 頼み p を今の道（メインで parse）へ戻す。
+function fgeGlbWorkerFallBack(p) {
+  clearTimeout(p.timer);
+  if (p.e.gen !== p.gen || p.e.state !== "parsing") return;
+  fgePreholdGlbImages(p.e.path, p.bytes);
+  p.e.state = "downloaded";
+  fgeDeferredNote(p.e);
+}
+
+// Worker を止め、残りの頼みを全部メインへ戻す（この頁ではもう Worker を使わない）。
+function fgeGlbWorkerBreak(why) {
+  var w = fgeGlbWorker;
+  fgeGlbWorkerWarn(why);
+  w.state = "broken";
+  if (w.worker !== null) { w.worker.terminate(); w.worker = null; }
+  if (w.idleTimer !== null) { clearTimeout(w.idleTimer); w.idleTimer = null; }
+  var pending = Array.from(w.pending.values());
+  w.pending.clear();
+  pending.forEach(fgeGlbWorkerFallBack);
+}
+
+function fgeGlbWorkerIdle() {
+  var w = fgeGlbWorker;
+  if (w.pending.size > 0 || w.worker === null) return;
+  if (w.idleTimer !== null) clearTimeout(w.idleTimer);
+  w.idleTimer = setTimeout(function () {
+    w.idleTimer = null;
+    if (w.pending.size > 0 || w.worker === null) return;
+    // WhyNot: まだ取っている glb がある間は止めない — 4G で 10 秒より後に届くと、起こしたばかりの Worker を止めて wasm を起こし直す。
+    if (fgeDeferred.entries.some(function (e) { return fgeGlbWorkerWants(e) && (e.state === "queued" || e.state === "downloading"); })) { fgeGlbWorkerIdle(); return; }
+    w.worker.terminate();
+    w.worker = null;
+    if (w.state !== "broken") w.state = "off";
+  }, fgeGlbWorkerIdleMs);
+}
+
+function fgeGlbWorkerCloseImages(m) {
+  (m.images || []).forEach(function (g) { g.bitmap.close(); });
+}
+
+function fgeGlbWorkerOnMessage(ev) {
+  var m = ev.data;
+  var w = fgeGlbWorker;
+  if (m.type === "log") { (m.level === "error" ? console.error : console.warn)("[glb-worker] " + m.text); return; }
+  if (m.type === "ready") { if (w.state === "starting") w.state = "ready"; return; }
+  if (m.type === "broken") { fgeGlbWorkerBreak("wasm を起こせない（" + m.why + "）"); return; }
+  var p = w.pending.get(m.id);
+  if (!p) { fgeGlbWorkerCloseImages(m); return; }
+  w.pending.delete(m.id);
+  if (m.type === "failed") {
+    fgeGlbWorkerFallBack(p);
+  } else if (p.e.gen === p.gen && p.e.state === "parsing") {
+    clearTimeout(p.timer);
+    var key = fgePlatformKey(p.e.path);
+    fgeGlbParsed.set(key, { text: m.text, strLens: m.strLens, ints: m.ints, floats: m.floats, f64: m.f64, f64Lens: m.f64Lens, i32: m.i32, i32Lens: m.i32Lens });
+    m.images.forEach(function (g) {
+      var id = fgeNormPath(key + "#image" + g.index);
+      if (fgeImages.has(id)) g.bitmap.close(); else fgeImages.set(id, g.bitmap);
+    });
+    p.e.state = "downloaded";
+    fgeDeferredNote(p.e);
+  } else {
+    clearTimeout(p.timer);
+    fgeGlbWorkerCloseImages(m);
+  }
+  fgeGlbWorkerIdle();
 }
 function fgeDeferredRestart(e) {
   e.gen++;
@@ -2353,6 +2523,7 @@ function fgeNameWasmFrames(text) {
 async function fgeBoot() {
   fgeCanvas = document.getElementById("fge-canvas");
   var bundle = JSON.parse(fgeDecoder.decode(await fgeFetchBytes("bundle.json")));
+  fgeBundle = bundle;
   document.title = bundle.title || document.title;
   fgeGameId = bundle.id || "game";
   fgeWeb.virtualPad = bundle.virtualPad || null;
@@ -2566,7 +2737,7 @@ function fgeNoteTapTime(e) {
 function fgeNoteTap() {
   if (fgeDecodeTimes === null || fgeLoadLog.tapped) return;
   fgeLoadLog.tapped = true;
-  var got = fgeDeferred.entries.filter(function (e) { return e.state === "downloaded" || e.state === "loaded"; });
+  var got = fgeDeferred.entries.filter(function (e) { return e.state === "parsing" || e.state === "downloaded" || e.state === "loaded"; });
   var deferredBytes = got.reduce(function (a, e) { return a + e.bytes; }, 0);
   console.log("[loadtime] 押すまでに取った量 " + fgeLoadLog.bytes + " B（起動の素材 " + (fgeLoadLog.bytes - deferredBytes) + " B・後回し " + got.length + "/" +
     fgeDeferred.entries.length + " 本 " + deferredBytes + " B・wasm は別）at " + performance.now().toFixed(0) + " ms");

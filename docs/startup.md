@@ -173,6 +173,9 @@ App.make(...)
   **glb の束を遊んでいる最中に解く**なら、束 1 つを primitive 200 個前後にする（M4 Pro の Chrome で 1 束 35 ms 前後・ウォームアップ前は 1.8 倍・スマホは 3〜5 倍。
   200 個を超える後回しの束は `bin/fge export-web` が 1 行知らせる）。予算は遊んでいる最中を `Idle(45)`・`costMs` を測った値（35 前後）にすると 1 コマに 1 束になる。
   `Covered` は 1 本目の後も ms に満たない間 2 本目を始めるので（2 束で約 70 ms）、暗転中とマップを開いている間だけにする（手本は retro3d-horror-starter の `Controls.decodeBudget`）。
+  ブラウザの後回しの glb は、頁が Web Worker で先に解いてから「届いた」と言い、`Model3d.decode` は組むだけになる（M4 Pro の Chrome で primitive 200 個前後の束 1 つが
+  4 ms 前後・頂点 5 万の束で 7 ms 前後・CPU 4 倍の絞りで 15〜20 ms / 28〜32 ms。[web-export.md](web-export.md) の「後回しの glb を Web Worker で解く」）。上の 35 ms 前後と `costMs` の目安は
+  Worker を使わない道（`?fge=noworker`・Worker を作れない頁）と、起動の束（後回しにしない glb）の値。
   ブラウザでは届いた 2D の絵を登録する量も同じ予算に従う（step が毎コマ `AssetDownloads#setBudget` へ渡し、登録に使った ms は
   `AssetDownloads#spentMs` で解く側の ms に足すので、1 コマで予算を 2 回使わない）。グループが複数あっても、前のグループが使った ms を次へ渡すので予算は 1 コマに 1 つ。
 - 解いた鍵の道の生のバイトは捨てる（`AssetDownloads#release`。まだ解いていない鍵も使う道は残す）。捨てた道は `stateOf` が `Queued` と言い、

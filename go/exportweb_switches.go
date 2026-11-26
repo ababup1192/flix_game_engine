@@ -27,6 +27,7 @@ type webPageSwitches struct {
 	UsedAssets  bool   `json:"usedAssets,omitempty"`
 	WebgpuFail  string `json:"webgpuFail,omitempty"`
 	Errors      bool   `json:"errors,omitempty"`
+	NoWorker    bool   `json:"noworker,omitempty"`
 }
 
 // initScript は頁のどの script より先に流す、window.fgeDev を置く script。
@@ -54,7 +55,7 @@ var webLegacyPageKeys = []struct{ Field, Key string }{
 }
 
 // webSwitchesWithoutLegacy は ?fge= の後に足した旗（前の鍵を持たない）。
-var webSwitchesWithoutLegacy = []string{"errors"}
+var webSwitchesWithoutLegacy = []string{"errors", "noworker"}
 
 // legacyQuery は旗を前の鍵の URL のクエリ（? を除く）にする。前の鍵を持たない欄があれば誤り。
 func (s webPageSwitches) legacyQuery() (string, error) {
@@ -179,6 +180,8 @@ func (s *webPageSwitches) applyBare(w string) bool {
 		s.Loadtime = true
 	case "errors":
 		s.Errors = true
+	case "noworker":
+		s.NoWorker = true
 	case "usedassets":
 		s.UsedAssets = true
 	case "webgl2", "gl", "webgpu":

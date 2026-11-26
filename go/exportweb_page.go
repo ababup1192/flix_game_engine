@@ -295,6 +295,9 @@ func writeWebPageMeta(p exportWebPaths, b webBundle, teavmCore string) (string, 
 	if err := copyFile(p.WebJS, filepath.Join(p.Out, "fge-web.js")); err != nil {
 		return "", err
 	}
+	if err := copyWebGlbWorker(filepath.Dir(p.WebJS), p.Out); err != nil {
+		return "", err
+	}
 	runtime, err := readZipEntry(teavmCore, "org/teavm/backend/wasm/wasm-gc-runtime.js")
 	if err != nil {
 		return "", err
@@ -347,6 +350,19 @@ func writeWebWasm(wasm, out string) error {
 		return nil
 	}
 	return os.WriteFile(filepath.Join(out, webWasmNamesFile), names, 0o644)
+}
+
+// webGlbWorkerFile は、後から届く glb を解く Web Worker の道（頁の fge-web.js が起こす）。
+const webGlbWorkerFile = "fge-glb-worker.js"
+
+// copyWebGlbWorker は engine_web/js の glb の Worker を out に置く。
+// WhyNot: 無い時に止めない — Worker を持たない前の engine の書き出しでも、頁はメインで glb を解いて動く。
+func copyWebGlbWorker(jsDir, out string) error {
+	src := filepath.Join(jsDir, webGlbWorkerFile)
+	if _, err := os.Stat(src); err != nil {
+		return nil
+	}
+	return copyFile(src, filepath.Join(out, webGlbWorkerFile))
 }
 
 // webWasmBrotliFile と webBrotliDecoderFile は、wasm を brotli にした物と、頁がそれを戻す解き手の道。

@@ -16,6 +16,8 @@
 #   make run FIRST=preload … 集まりを App.withPreload3d の groups・scenes で頭から宣言して先に作らせ（区間 ahead）、120 コマ目に初めて載せる（区間 first）
 #   make run FIRST=auto [GROUPS=50] … FIRST=1 と同じ場面を、engine が自動で先に作って黒で覆う形で測る（FIRST=1 は自動を切る）。GROUPS で集まりを n 個に分ける
 #   ブラウザだけ: ARGS='first=glb&keyed=<0|1>' … 120 コマ目に assets/props_a.glb（retro3d-horror-starter の束 props_1f_a・glb=props_b.glb で後半）を解いて描く（区間 glb の work_max が解く仕事の ms）
+#   ブラウザだけ: ARGS='first=glb&deferred=1&warm=1&glb=<props_a|upper_a|girl_student>.glb&fge=deferred:all' … 後回し（web.deferred）の assets/deferred/<glb> を
+#                頁が Web Worker で解き、120 コマ目にゲームと同じく読んで Model3d.decode で組む（&fge=deferred:all,noworker でメインで解く前の道・phases=1 で 2 回目の内訳）
 #   make run FIRST=skin … 集まりを頭から載せ、途中で骨つきの人物（PERSON=<glb>・既定は retro3d-horror-starter の teacher_woman）を出すコマ（区間 skin）の最悪
 #   make run SCENE=orb POST=agx … 光る球の場面（view transform の見比べ。POST は standard / agx / neutral）
 #   make run POST=1 … 同じ場面に画面全体の後がけ（App.withPostStack・夕方の屋外の preset）を掛ける（後がけの重さを POST なしと並べる）

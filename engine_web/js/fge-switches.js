@@ -20,13 +20,14 @@ var FGE_SWITCHES = [
   { field: "deferred", name: "deferred", values: ["all"], short: [], legacy: "deferred" },
   { field: "usedAssets", name: "usedassets", legacy: "usedAssets" },
   { field: "webgpuFail", name: "webgpufail", values: ["prepare", "canvas"], short: [], legacy: "webgpuFail" },
-  { field: "errors", name: "errors" }
+  { field: "errors", name: "errors" },
+  { field: "noworker", name: "noworker" }
 ];
 
 // 何も頼まれていない時の値。backend の "" は既定（WebGPU を使えれば WebGPU）。
 function fgeSwitchDefaults() {
   return { fps: false, backend: "", net: "", sw: true, input: "", orientation: "", size: "", glcheck: false, loadtime: false,
-           capture: 0, deferred: "", usedAssets: false, webgpuFail: "", errors: false };
+           capture: 0, deferred: "", usedAssets: false, webgpuFail: "", errors: false, noworker: false };
 }
 
 // 旗 s の字の値 raw を欄の値にする（読めなければ undefined）。前の鍵の真偽は "1" だけを真と読む。

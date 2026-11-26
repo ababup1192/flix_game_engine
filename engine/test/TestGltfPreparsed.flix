@@ -185,6 +185,10 @@ mod TestGltfPreparsed {
         Assert.assertEq(expected = Nil, assembledDifferences(None, TestGltf.skinnedGlb()))
 
     @Test
+    def testWarmUpCodecRoundTrips(): Unit \ Assert =
+        Assert.assertTrue(Gltf.Internal.warmUpWire() |> Result.map(Gltf.Internal.warmUpCodec) |> Result.getWithDefault(false))
+
+    @Test
     def testBrokenWireIsErr(): Unit \ Assert =
         let wire = Gltf.Internal.Codec.serialize(parsedOf(TestGltf.skinnedGlb()));
         Assert.assertTrue(Result.isErr(Gltf.Internal.Codec.deserialize({ ints = Vector.drop(1, wire#ints) | wire })))

@@ -248,7 +248,7 @@ func checkWebSums(dir string, b *webBundle) webSumsReport {
 
 // webServedPaths は頁が取る物の道（書き出し先から・/ 区切り）。
 func webServedPaths(b *webBundle) map[string]bool {
-	used := map[string]bool{"bundle.json": true, "fge-web.js": true, "wasm-gc-runtime.js": true}
+	used := map[string]bool{"bundle.json": true, "fge-web.js": true, "wasm-gc-runtime.js": true, webGlbWorkerFile: true}
 	if b.WasmBrotli != "" {
 		used[b.WasmBrotli] = true
 		used[webBrotliDecoderFile] = true

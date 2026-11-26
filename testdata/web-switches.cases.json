@@ -10,6 +10,7 @@
     { "name": "名前:値", "search": "?fge=backend:webgl2,net:4g,input:touch,size:small,orientation:portrait", "switches": { "backend": "webgl2", "net": "4g", "input": "touch", "size": "small", "orientation": "portrait" } },
     { "name": "指と縦を短く", "search": "?fge=small,touch,portrait", "switches": { "size": "small", "input": "touch", "orientation": "portrait" } },
     { "name": "誤りを画面に出す", "search": "?fge=errors,webgl2", "switches": { "errors": true, "backend": "webgl2" } },
+    { "name": "glb を Worker で解かない", "search": "?fge=noworker", "switches": { "noworker": true } },
     { "name": "道具の旗", "search": "?fge=capture:120,usedassets,deferred:all,glcheck,loadtime,webgpufail:canvas", "switches": { "capture": 120, "usedAssets": true, "deferred": "all", "glcheck": true, "loadtime": true, "webgpuFail": "canvas" } },
     { "name": "大文字を許す", "search": "?fge=FPS,WebGL2,Size:Small", "switches": { "fps": true, "backend": "webgl2", "size": "small" } },
     { "name": "nosw", "search": "?fge=nosw", "switches": { "sw": false } },

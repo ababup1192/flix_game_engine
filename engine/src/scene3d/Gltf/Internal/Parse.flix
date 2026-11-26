@@ -107,13 +107,15 @@ pub mod Gltf.Internal.Parse {
     /// images[k] の在りか（BIN の bufferView・外の uri・どちらも無い）。
     def imageSourceOf(glb: Glb, image: Obj): ImageSource =
         match (intOf("bufferView", image), stringOf("uri", image)) {
-            case (Some(view), _) => match viewRange(glb, view) {
-                case Ok((start, length)) => ImageSource.InBin(start, length)
-                case Err(e)              => ImageSource.Unreadable(e)
-            }
+            case (Some(view), _) => binSourceOf(glb, view)
             case (None, Some(_)) => ImageSource.ExternalUri
             case (None, None)    => ImageSource.NoSource
         }
+
+    def binSourceOf(glb: Glb, view: Int32): ImageSource = match viewRange(glb, view) {
+        case Ok((start, length)) => ImageSource.InBin(start, length)
+        case Err(e)              => ImageSource.Unreadable(e)
+    }
 
     /// bufferView の元のバイトの中の場所（BIN の中）。
     def viewRange(glb: Glb, viewIndex: Int32): Result[String, (Int32, Int32)] =
