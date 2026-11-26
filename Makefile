@@ -467,7 +467,9 @@ webgpu-v1-check-web: ### [WEB_EXPORT=off] | 同じ門のブラウザ版（rpg-st
 # 作業フォルダは門の置き場の中（--work）。テンプレートの build/web-export を使う別の書き出しとぶつからない。
 # WhyNot: gui にしない（webgpu-v1-check-web は gui） — 事故は engine を触った作業中に起きるので、affected で拾う。窓は開かない。
 # WhyNot: export-web の ⑨ に任せない — ⑨ は Chrome が無いと黙って飛ばし、console.error（engine の Log.warn・Worker から送り直した行）を数えない。
-# WhyNot: 書き出しの門（遊べるまでの予算）で止めない（--draft） — 予算は cwebp の有無で機械ごとに揺れ、この門の見たい事ではない。
+# 書き出しは --draft（予算で書き出しを消さない）にして、ログの「遊べるまで … 約 X 秒 / 予算 Y 秒」を bin/web-budget-check.sh が読む。
+# 予算を超えたら止め、余裕が 1 秒を切ったら知らせる（engine の wasm が 200 KB 増えると 4G で約 1 秒延びる）。
+# WhyNot: 書き出しそのもの（--draft なし）で止めない — 止まると書き出しが消え、頁が描けるかの確かめまで進めない。
 # wasm の大きさ（classes.wasm.br）も書き出したゲームごとに testdata/web-size.tsv の記録と比べ、WEB_SIZE_GROWTH（既定 3）% を超えて増えたら止める
 # （bin/web-size-check.sh）。増えを受け入れるのは make web-size-update。2D（rpg-starter）は web-load-check-2d でリリースの門にだけ流す。
 # WhyNot: 前の版の Release の wasm と比べない — 版を跨いだ取り物が要り、手元で作業中に差を見られない。記録はコミットの差で追える。
@@ -484,6 +486,7 @@ web-load-check: ### [WEB_LOAD_GAMES=<ゲーム…>] [WEB_EXPORT=off] | 3D のテ
 		if [ "$(WEB_EXPORT)" != off ]; then \
 			bin/fge export-web $$game --out $$dir --work $(CURDIR)/$(WEB_LOAD_OUT)/$$name-work --draft --no-browser-check > $(WEB_LOAD_OUT)/$$name-export.log 2>&1 \
 				|| { tail -30 $(WEB_LOAD_OUT)/$$name-export.log; echo "[web-load-check] $$name をブラウザ版へ書き出せない ($(WEB_LOAD_OUT)/$$name-export.log)"; exit 1; }; \
+			bin/web-budget-check.sh $$name $(WEB_LOAD_OUT)/$$name-export.log; \
 		fi; \
 		for backend in webgpu webgl2; do \
 			dev=capture:$(WEB_LOAD_FRAMES); [ $$backend = webgl2 ] && dev=$$dev,webgl2; \
