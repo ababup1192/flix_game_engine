@@ -1497,6 +1497,8 @@
   `pub def withMetallicRoughness(metallic: Float64, roughness: Float64, m: Material3d): Material3d`
 - metallic と roughness を絵 texture から読む（glTF の metallicRoughnessTexture と同じ決まり: B = metallic・G = roughness）。
   `pub def withMetallicRoughnessTexture(texture: String, m: Material3d): Material3d`
+- metallic と roughness を色の場 shade で付ける（r = metallic・g = roughness・b は使わない。Godot の ShaderMaterial で METALLIC・ROUGHNESS を書くのに当たる）。
+  `pub def withMetallicRoughnessShade(shade: ShaderDoc.Shade, m: Material3d): Material3d`
 - metallic と roughness を外す（glb の材質を今までのマットな絵に戻す時）。
   `pub def withoutMetallicRoughness(m: Material3d): Material3d`
 - 付いている metallic と roughness（無ければ None）。

@@ -231,4 +231,13 @@ mod TestSoftRaster3dLinear {
         let img = render(sceneOf(gray(1.0), Nil, (plate(gray(0.5)) |> Scene3d.withMaterial(m)) :: Nil));
         Assert.assertTrue(isNear(screen(lin(0.5)), redAt(img, 4, 4)))
 
+    /// 割合（Blend の by）だけに使った頂点の色は色に掛からない（0.2 と 0.8 を頂点の色 0.5 で混ぜた 0.5 のまま。掛かると 0.25 になる）。
+    @Test
+    def testVertexColorUsedAsBlendDoesNotTint(): Unit \ {Assert, IO} =
+        let mix = ShaderDoc.Field.Blend({ a = ShaderDoc.Field.Const(0.2), b = ShaderDoc.Field.Const(0.8), by = ShaderDoc.Field.VertexColor({ chan = ShaderDoc.TexChan.G }) });
+        let m = Scene3d.material({ name = "linear:blend", cycleRate = 0.0, bindings = Nil,
+                                   out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Rgb({ r = mix, g = mix, b = mix }), alpha = ShaderDoc.Field.Const(1.0) }) });
+        let img = render(sceneOf(gray(1.0), Nil, (plate(gray(0.5)) |> Scene3d.withMaterial(m)) :: Nil));
+        Assert.assertTrue(isNear(screen(lin(0.5)), redAt(img, 4, 4)))
+
 }

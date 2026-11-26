@@ -25,6 +25,7 @@ GL と WebGPU（窓・ブラウザ）と CPU（画面なしの描き出し・テ
 - [金属っぽさと粗さ（鏡面ハイライトと空の映り込み）](#金属っぽさと粗さ鏡面ハイライトと空の映り込み)
 - [周りの景色を映す（環境マップと箱の補正）](#周りの景色を映す環境マップと箱の補正)
 - [環境マップから拡散の光（SH）](#環境マップから拡散の光sh)
+- [頂点の色で地面の絵を混ぜる](#頂点の色で地面の絵を混ぜる)
 - [描く量（視錐台の外を間引く）](#描く量視錐台の外を間引く)
   - [物の置き方を選ぶ（instances / staticGroup / MultiMesh3d）](#物の置き方を選ぶinstances--staticgroup--multimesh3d)
   - [同じ形の動く物をたくさん（MultiMesh3d）](#同じ形の動く物をたくさんmultimesh3d)
@@ -421,6 +422,31 @@ let env = Scene3d.environmentMap(sky) |> Scene3d.withSkyContribution(1.0);
 - **向き**: 環境マップと同じ（Blender・Poly Haven のパノラマは左右を反転してから渡す。渡さないと東西の色が逆になる）
 - **知らせ**: 機種の側の絵で求められない時は ambient のまま描いて `@sky-irradiance-unavailable`・hemisphere も 0 より大きいと `@sky-irradiance-double`（どちらも 1 回）
 - **重さ**: k > 0 の場面だけシェーダーの変種 `+sh`（uniform 28 個）。k = 0 の場面はプログラムの字も CPU の絵も今と同じ
+
+## 頂点の色で地面の絵を混ぜる
+
+Blender で頂点の色を塗った地面の glb を、土・草・石の絵に塗り分ける（Godot の地面の ShaderMaterial で COLOR を割合に使うのと同じ）。
+形を色ごとに分けて材質を替えない。材質の Spec の中で、頂点の色を割合にして絵を混ぜる（project.json に `"gltf": { "vertexColors": true }`）。
+
+```flix
+let tex = (name: String, chan: ShaderDoc.TexChan) -> ShaderDoc.Field.Sampler({ filter = ShaderDoc.FilterMode.Linear, of = ShaderDoc.Field.Tex({ name = name, chan = chan }) });
+let mix = (chan: ShaderDoc.TexChan) -> ShaderDoc.Field.Blend({ a = tex(dirt, chan), b = tex(grass, chan), by = ShaderDoc.Field.VertexColor({ chan = ShaderDoc.TexChan.G }) });
+let ground = Scene3d.material({ name = "ground", cycleRate = 0.0, bindings = Nil,
+                                out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Rgb({ r = mix(ShaderDoc.TexChan.R), g = mix(ShaderDoc.TexChan.G), b = mix(ShaderDoc.TexChan.B) }),
+                                                           alpha = ShaderDoc.Field.Const(1.0) }) })
+    |> Scene3d.withMetallicRoughnessShade(ShaderDoc.Shade.Rgb({ r = ShaderDoc.Field.Const(0.0),
+                                                               g = ShaderDoc.Field.Blend({ a = tex(dirtOrm, ShaderDoc.TexChan.G), b = tex(grassOrm, ShaderDoc.TexChan.G),
+                                                                                           by = ShaderDoc.Field.VertexColor({ chan = ShaderDoc.TexChan.G }) }),
+                                                               b = ShaderDoc.Field.Const(0.0) }))
+```
+
+- **metallic と roughness**: `Scene3d.withMetallicRoughnessShade(shade, m)` の shade の r = metallic・g = roughness（b は使わない）。
+  `withMetallicRoughness`・`withMetallicRoughnessTexture` とは後に呼んだ物が勝つ（どれも同じ欄を書き替える）
+- **3 枚**: `Blend` は入れ子にできる（R・G・B の割合で 3 枚）。絵の組は (名前, 補間) で数え、albedo 3 枚 + ORM 3 枚の 6 組が上限（`Scene3d.maxMaterialTextures()`）
+- **高さで境目を尖らせる**: 高さは albedo の α に詰めて `Tex({ chan = A })` で読む（組の数が増えない）。式は `Smoothstep`・`Bin(Max)`・`Bin(Sub)` で書ける
+- **割合の値**: engine は頂点の色（COLOR_0）を画面の値（sRGB）へ戻して持つので、線形 0.5 の割合は 0.735 として読む。線形の割合にそろえるなら `Pow({ p = 2.2 })` を挟む
+- **混ぜる空間**: Spec の中の足し算は画面の値で混ぜる（Godot は線形）。境目の帯がわずかに明るくなる
+- **法線マップ**: 材質に 1 枚だけで、割合では混ぜられない。(a) 付けない（地面は lightmap の陰影で足りる）・(b) 一番広い層の法線マップだけ付ける・(c) 外の道具で混ぜた法線マップを作る
 
 ## 描く量（視錐台の外を間引く）
 

@@ -104,6 +104,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 3D の金属（クロム・鏡）に周りの景色（部屋のパノラマの絵）を映す・室内の壁に近い物でも景色の位置がずれないようにする | `Scene3d.environmentMap(Texture3d)` を場面の `environmentMap = Some(..)`（絵は `textures` にも載せる・正距円筒 2:1・強さは `withEnvironmentIntensity`・室内は `withEnvironmentBox({ min, max, center })` で壁の補正・center は絵を撮った点）。空のグラデーションを自前の絵で偽装しない |
 | 3D の陰の中が空の青と地面の照り返しの色を拾う（環境マップから拡散の光） | `Scene3d.withSkyContribution(1.0, env)`（hemisphere は 0・環境マップは `Texture3d.decodeHdr` か `decodeUsing` で読み、読み込みで `SphericalHarmonics.fromEquirectangular(t)` を 1 回呼ぶ）。hemisphere を上げて足さない |
 | .hdr のパノラマ（Poly Haven など）で空と太陽の明るさのまま映す・空の拡散の元にする | `Texture3d.decodeHdr(bytes)` → `Scene3d.environmentMap`（強さで戻す 8 bit の PNG にしない・EXR は oiiotool で .hdr に替える・左右の鏡は `oiiotool in.hdr --flop -o out.hdr`） |
+| 3D の地面を頂点の色で土・草・石の絵に塗り分ける（濡れた所だけ roughness を下げる） | 材質の Spec で `Blend({ a = Tex(土), b = Tex(草), by = VertexColor({ chan = G }) })`・roughness も混ぜるなら `Scene3d.withMetallicRoughnessShade(shade, m)`（`"gltf": { "vertexColors": true }`・高さは albedo の α・形を色ごとに分けない・法線マップは混ぜられない） |
 | 3D の看板・溶岩・glb の emissive を強く光らせる（1 を超える明るさ） | `Scene3d.withEmissionIntensity(k, 材質)`（線形の倍率。Spec の emission に 1 を超える色を書かない・glb の emissive_strength は glb の読み込みがここへ入れる） |
 | 3D の手すり・金網・電線のような細い物が欠ける・ちらつく | 場面の Pass を `RenderTarget.withMsaa(4, RenderTarget.windowDescriptor() \|> RenderTarget.withHdr)`（cutout の縁も alpha to coverage でなめらかになる・画面なしの描き出しには掛からない）・それでも残る縁は `PostProcess.fxaaSpec` |
 | 灯りの反対の地面へ倒した影（ドット絵の走りから） | `Shadow.projectedRuns`（`PxSprite.runs` を渡す） |

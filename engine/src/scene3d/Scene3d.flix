@@ -426,6 +426,7 @@ pub mod Scene3d {
     /// 金属っぽさ metallic と粗さ roughness を付ける（Unity の Standard・Godot の StandardMaterial3D と同じ 2 つの値。どちらも 0..1 に丸める）。
     /// 鏡面ハイライトと空の映り込みが付き、拡散光は (1 − metallic) 倍になる。付けない材質の絵は変わらない。
     /// 絵（withMetallicRoughnessTexture）が付いていれば、絵の値に掛ける係数になる。毎コマ変えてもプログラムを組み直さない（params の値）。
+    /// withMetallicRoughnessShade の後に呼ぶと shade を値で書き替える（後に呼んだ物が勝つ）。
     /// glb の材質は、pbrMetallicRoughness に metallicFactor・roughnessFactor・metallicRoughnessTexture のどれかがあれば読み込む時に付く。
     // WhyNot: 場面の環境（Environment3d）に metallic を置かない — 材質ごとの値で、同じ場面に金属と木が並ぶ。
     pub def withMetallicRoughness(metallic: Float64, roughness: Float64, m: Material3d): Material3d =
@@ -436,10 +437,19 @@ pub mod Scene3d {
     /// metallic と roughness を絵 texture から読む（glTF の metallicRoughnessTexture と同じ決まり: B = metallic・G = roughness）。
     /// 付いている metallic・roughness は絵の値に掛ける係数のまま残り、まだ無ければ 1・1（glTF の既定）。名前の決まりは Texture の Tex と同じ
     /// （"tex3d:" で始まれば場面の textures）。絵は材質の絵の上限（maxMaterialTextures）の 1 組に数える。
+    /// withMetallicRoughness・withMetallicRoughnessShade とは後に呼んだ物が勝つ（どれも同じ欄を書き替える）。
     pub def withMetallicRoughnessTexture(texture: String, m: Material3d): Material3d =
         let MaterialData.MaterialData(r) = m;
         let (metallic, roughness) = r#metallicRoughness |> Option.map(mr -> (mr#metallic, mr#roughness)) |> Option.getWithDefault((1.0, 1.0));
         withMetallicRoughnessOf({ metallic = metallic, roughness = roughness, texture = Some(texture) }, r)
+
+    /// metallic と roughness を色の場 shade で付ける（r = metallic・g = roughness・b は使わない。Godot の ShaderMaterial で METALLIC・ROUGHNESS を書くのに当たる）。
+    /// 頂点の色で 2 枚の絵の roughness を混ぜる地面のように、値 1 つや絵 1 枚で書けない時に使う（docs/scene3d.md の「頂点の色で地面の絵を混ぜる」）。
+    /// shade の場は材質の Spec と同じ物が書け、絵は材質の絵の上限（maxMaterialTextures）に数える。metallicRoughnessOf は None になる。
+    /// withMetallicRoughness・withMetallicRoughnessTexture とは後に呼んだ物が勝つ（どれも同じ欄を書き替える）。
+    pub def withMetallicRoughnessShade(shade: ShaderDoc.Shade, m: Material3d): Material3d =
+        let MaterialData.MaterialData(r) = m;
+        MaterialData.MaterialData(withShaderKeys({ metallicRoughness = None, metallicRoughnessShade = Some(shade), params = withoutPbrParams(r#params) | r }))
 
     /// metallic と roughness を外す（glb の材質を今までのマットな絵に戻す時）。
     pub def withoutMetallicRoughness(m: Material3d): Material3d =
