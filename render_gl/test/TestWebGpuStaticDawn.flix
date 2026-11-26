@@ -64,7 +64,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuStaticDawn {
             let encoder = gpu.createCommandEncoder("test");
             let host: Host = { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> checked_ecast(()),
                                skip = (_, _) -> checked_ecast(()), textureOf = _ -> checked_ecast(None), textureById = _ -> checked_ecast(None),
-                               groupById = _ -> checked_ecast(None) };
+                               groupById = _ -> checked_ecast(None), stamp = (_, _) -> checked_ecast(()) };
             discard prepare(renderer, host, dest(), cmds);
             let cached = Render3d.StaticRows.sizeOf(s#statics#cache);
             let retired = Render3d.WebGpuStatic.retiredCountOf(s#statics);

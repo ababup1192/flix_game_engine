@@ -26,7 +26,8 @@ mod Render3d.Shadow {
     /// ビルボードの行は行に入れた絵の番号（行を作る時に全体の登録から引いた物）で描く。
     /// 点光源の影の atlas は鍵ごとに初めの面の前に 1 回だけ全体を消し、面ごとに viewport と scissor を面の塊に置いて描く。
     /// passes の組の 2 つ目 = 場面の持ち越した集まり（影の行を場面の行の後に描く）・instanceTexture = その prepare の 1 体ごとの値のテクスチャ（集まりの行を描いた後に貼り直す）。
-    pub def renderShadows(gl: GlContext, state: State, gen: Int64, instanceTexture: Option[Int32],
+    /// measure = 地図 1 枚（atlas は面 1 つ）を描く GPU の時間を光の種類の区間（Render3d.GpuSpans.shadowSpanOf）として測る関数（Scene3dRenderer.Dest#measure）。
+    pub def renderShadows(gl: GlContext, state: State, gen: Int64, instanceTexture: Option[Int32], measure: (String, Unit -> Unit \ IO) -> Unit \ IO,
                           passes: List[(List[ShadowPass], List[Render3d.GlStatic.CarriedDraw])]): List[SceneShadows] \ IO =
         let cleared = Ref.fresh(Static, (Set.empty(): Set[Key]));
         let shadows = passes |> List.map(pc -> {
@@ -34,7 +35,8 @@ mod Render3d.Shadow {
             let casts = scenePasses |> List.filterMap(pass -> shadowTarget(gl, state, gen, pass#map#key) |> Option.map(target -> {
                 let first = not Set.memberOf(pass#map#key, Ref.get(cleared));
                 Ref.put(Set.insert(pass#map#key, Ref.get(cleared)), cleared);
-                renderShadowMap(gl, state, gen, target, pass, first, { carried = carried, restore = instanceTexture });
+                measure(Render3d.GpuSpans.shadowSpanOf(pass#map#sampling), () ->
+                    renderShadowMap(gl, state, gen, target, pass, first, { carried = carried, restore = instanceTexture }));
                 castOf(target, pass#map#sampling)
             }));
             { spot = List.findMap(spotOf, casts), sun = List.findMap(sunOf, casts), point = List.findMap(pointOf, casts) }
@@ -136,7 +138,7 @@ mod Render3d.Shadow {
             case None    => clearWholeTarget(gl, target)
             case Some(t) => beginTile(gl, t, first)
         };
-        if (locs#mesh#program == 0) ()
+        if (locs#mesh#program == 0 or Render3d.GpuSpans.skipsShadowDraws()) ()
         else {
             gl.enable(GlConst.DEPTH_TEST);
             gl.depthFunc(GlConst.LESS);

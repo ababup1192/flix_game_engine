@@ -93,15 +93,17 @@ mod RenderPaint {
 
     /// GPU の時間を測る口。measure(name, f) = f の中の GL の仕事の時間を描き先 name の分として測る（測るコマを間引いてよい）・
     /// endFrame() = 画面のコマの終わりに、最後に結果を読めたコマの GPU の時間（まだ無ければ None）。
+    /// takeSamples() = 前に呼んでから読めたコマの時間（古い順。FrameStats の行が中央値を出す）。
     /// 3D の描き手と同じく作る側が渡す（測る GL の関数は GL 3.3 と WebGL2 で持ち方が違う）。
     pub type alias FrameTimer = {
         measure = (String, Unit -> Unit \ IO) -> Unit \ IO,
-        endFrame = Unit -> Option[{ gpuNs = Int64, passes = List[(String, Int64)] }] \ IO
+        endFrame = Unit -> Option[{ gpuNs = Int64, passes = List[(String, Int64)] }] \ IO,
+        takeSamples = Unit -> List[{ gpuNs = Int64, passes = List[(String, Int64)] }] \ IO
     }
 
     /// 測らない口（f をそのまま呼び、時間は出さない）。
     pub def noFrameTimer(): FrameTimer =
-        { measure = (_, f) -> f(), endFrame = () -> checked_ecast(None) }
+        { measure = (_, f) -> f(), endFrame = () -> checked_ecast(None), takeSamples = () -> checked_ecast(Nil) }
 
     /// 空のコマ。
     pub def emptyFrame(): Frame =
@@ -263,7 +265,8 @@ mod RenderPaint {
         ensureRadialBuiltins(gl, paint, frame#sprites, frame#surfaces, frame#scenes, frame#letterbox);
         let staticRanges = RenderStatic.resolve(glStaticAllocator(gl, paint), paint#staticCache, frame#staticLayers);
         // WhyNot: 画面に標本の数を問わない — 窓は GLFW_SAMPLES を頼まずに作る（窓の MSAA は 2D の縁も変える）。
-        let prepared = prepareScenes(paint, { framebuffer = paint#screenFramebuffer, format = RenderTarget.Format.Rgba8Unorm, samples = 1 }, frame#scenes);
+        let prepared = prepareScenes(paint, { framebuffer = paint#screenFramebuffer, format = RenderTarget.Format.Rgba8Unorm, samples = 1,
+                                              measure = timedSpan(paint) }, frame#scenes);
         let args = {
             registry = Ref.get(paint#registryRef),
             fbW = fbW, fbH = fbH,
@@ -335,7 +338,7 @@ mod RenderPaint {
         gl.bindTexture(GlConst.TEXTURE_2D, paint#blankTexture);
         let framebuffer = entry |> Option.map(RenderTargetGl.drawFramebuffer) |> Option.getWithDefault(paint#screenFramebuffer);
         let samples = entry |> Option.map(RenderTargetGl.drawSamples) |> Option.getWithDefault(1);
-        let prepared = prepareScenes(paint, { framebuffer = framebuffer, format = target#format, samples = samples }, scenes);
+        let prepared = prepareScenes(paint, { framebuffer = framebuffer, format = target#format, samples = samples, measure = timedSpan(paint) }, scenes);
         let args = {
             registry = Ref.get(paint#registryRef),
             designW = paint#screenW, designH = paint#screenH,

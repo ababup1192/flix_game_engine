@@ -133,7 +133,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
         Array.put(createPoseBuffer(gpu, 336), 0, s#poses);
         let encoder = gpu.createCommandEncoder("test");
         let flushes = Ref.fresh(Static, 0);
-        let host: Host = { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> Ref.put(Ref.get(flushes) + 1, flushes), skip = (_, _) -> checked_ecast(()), textureOf = _ -> checked_ecast(None), textureById = _ -> checked_ecast(None), groupById = _ -> checked_ecast(None) };
+        let host: Host = { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> Ref.put(Ref.get(flushes) + 1, flushes), skip = (_, _) -> checked_ecast(()), textureOf = _ -> checked_ecast(None), textureById = _ -> checked_ecast(None), groupById = _ -> checked_ecast(None), stamp = (_, _) -> checked_ecast(()) };
         discard prepare(renderer, host, dest(), skinnedScene() :: skinnedScene() :: Nil);
         let found = (Ref.get(flushes), List.length(Ref.get(s#poseGroups)));
         discard encoder.finish();
@@ -146,7 +146,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
         let renderer = Render3d.WebGpuRenderer.create(gpu, layout, imageLayout(gpu));
         let encoder = gpu.createCommandEncoder("test");
         let flushes = Ref.fresh(Static, 0);
-        let host: Host = { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> Ref.put(Ref.get(flushes) + 1, flushes), skip = (_, _) -> checked_ecast(()), textureOf = _ -> checked_ecast(None), textureById = _ -> checked_ecast(None), groupById = _ -> checked_ecast(None) };
+        let host: Host = { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> Ref.put(Ref.get(flushes) + 1, flushes), skip = (_, _) -> checked_ecast(()), textureOf = _ -> checked_ecast(None), textureById = _ -> checked_ecast(None), groupById = _ -> checked_ecast(None), stamp = (_, _) -> checked_ecast(()) };
         let first: Prepared = prepare(renderer, host, dest(), scene() :: Nil);
         afterSubmit(renderer);
         Vector.forEach(found -> Option.forEach(notePasted(renderer), found), first);
@@ -189,7 +189,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
         let RendererData.RendererData(s) = renderer;
         let encoder = gpu.createCommandEncoder("test");
         let flushes = Ref.fresh(Static, 0);
-        let host: Host = { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> Ref.put(Ref.get(flushes) + 1, flushes), skip = (_, _) -> checked_ecast(()), textureOf = _ -> checked_ecast(None), textureById = _ -> checked_ecast(None), groupById = _ -> checked_ecast(None) };
+        let host: Host = { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> Ref.put(Ref.get(flushes) + 1, flushes), skip = (_, _) -> checked_ecast(()), textureOf = _ -> checked_ecast(None), textureById = _ -> checked_ecast(None), groupById = _ -> checked_ecast(None), stamp = (_, _) -> checked_ecast(()) };
         discard prepare(renderer, host, dest(), spotScene(shadowed) :: Nil);
         discard prepare(renderer, host, { key = 1 | dest() }, spotScene(shadowed) :: Nil);
         let found = (Ref.get(flushes), List.length(Ref.get(s#poseGroups)), List.length(Ref.get(s#sceneGroups)));
@@ -252,7 +252,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
         let renderer = Render3d.WebGpuRenderer.create(gpu, layout, imageLayout(gpu));
         let RendererData.RendererData(s) = renderer;
         let encoder = gpu.createCommandEncoder("test");
-        let host: Host = { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> checked_ecast(()), skip = (_, _) -> checked_ecast(()), textureOf = _ -> checked_ecast(None), textureById = _ -> checked_ecast(None), groupById = _ -> checked_ecast(None) };
+        let host: Host = { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> checked_ecast(()), skip = (_, _) -> checked_ecast(()), textureOf = _ -> checked_ecast(None), textureById = _ -> checked_ecast(None), groupById = _ -> checked_ecast(None), stamp = (_, _) -> checked_ecast(()) };
         let variants = { pointShadows = true, physicalUnits = false, psx = false } :: { pointShadows = false, physicalUnits = true, psx = false } :: Nil;
         discard Render3d.WebGpuRenderer.preload(renderer, host, { variants = variants | preloadCmd("v") });
         let built = not Map.isEmpty(Ref.get(s#variantFragments));
@@ -270,7 +270,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
         let RendererData.RendererData(s) = renderer;
         let encoder = gpu.createCommandEncoder("test");
         let flushes = Ref.fresh(Static, 0);
-        let host: Host = { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> Ref.put(Ref.get(flushes) + 1, flushes), skip = (_, _) -> checked_ecast(()), textureOf = _ -> checked_ecast(None), textureById = _ -> checked_ecast(None), groupById = _ -> checked_ecast(None) };
+        let host: Host = { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> Ref.put(Ref.get(flushes) + 1, flushes), skip = (_, _) -> checked_ecast(()), textureOf = _ -> checked_ecast(None), textureById = _ -> checked_ecast(None), groupById = _ -> checked_ecast(None), stamp = (_, _) -> checked_ecast(()) };
         discard Render3d.WebGpuRenderer.preload(renderer, host, preloadCmd("k"));
         let meshes = Map.size(Render3d.MeshTable.createdOf(s#meshes));
         let slots = Ref.get(s#preloaded)#textures |> Set.size;
@@ -407,7 +407,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
 
     def quietHost(gpu: WebGpu): Host \ IO =
         let encoder = gpu.createCommandEncoder("test");
-        { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> checked_ecast(()), skip = (_, _) -> checked_ecast(()), textureOf = _ -> checked_ecast(None), textureById = _ -> checked_ecast(None), groupById = _ -> checked_ecast(None) }
+        { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> checked_ecast(()), skip = (_, _) -> checked_ecast(()), textureOf = _ -> checked_ecast(None), textureById = _ -> checked_ecast(None), groupById = _ -> checked_ecast(None), stamp = (_, _) -> checked_ecast(()) }
 
     /// 環境マップの絵が場面の textures に無い場面は、代わりの絵を mip のレベル 1 つで読む（GL の bindEnvironmentMap と同じ）。環境マップの無い場面は None。
     @Test

@@ -61,4 +61,53 @@ mod TestGpuTimer {
     @Test
     def testSummarizeEmptyFrameIsNone(): Unit \ Assert =
         Assert.assertEq(expected = None, GpuTimer.summarize(_ -> 0i64, Nil) |> Option.map(t -> t#gpuNs))
+
+    // ── 同じ名前の切れ端を足す ──
+
+    // 画面の中で 3D の場面を測ると、画面の時間は場面の前と後の 2 つの切れ端になる: 足して 1 行（並びは初めて出た順）。
+    @Test
+    def testSummarizeMergesSplitSpans(): Unit \ Assert =
+        let times = Map#{1 => 100i64, 2 => 700i64, 3 => 50i64};
+        let frame = span("screen", 1) :: span("scene3d", 2) :: span("screen", 3) :: Nil;
+        Assert.assertEq(expected = Some((850i64, ("screen", 150i64) :: ("scene3d", 700i64) :: Nil)),
+                        GpuTimer.summarize(id -> Map.getWithDefault(id, 0i64, times), frame) |> Option.map(t -> (t#gpuNs, t#passes)))
+
+    // 点光源の影の面ごとの pass（同じ名前が 3 つ）は 1 行に足す。
+    @Test
+    def testMergeByNameSumsSameName(): Unit \ Assert =
+        Assert.assertEq(expected = ("shadow:point", 60i64) :: ("scene3d", 5i64) :: Nil,
+                        GpuTimer.mergeByName(("shadow:point", 10i64) :: ("shadow:point", 20i64) :: ("scene3d", 5i64) :: ("shadow:point", 30i64) :: Nil))
+
+    // 重なって流れた pass（影 0〜10・場面 2〜15）は、場面を影の終わり 10 から数える。離れた pass（20〜25）は始めから数える。
+    @Test
+    def testExclusiveTimesCountFromPreviousEnd(): Unit \ Assert =
+        Assert.assertEq(expected = ("shadow:point", 10i64) :: ("scene3d", 5i64) :: ("screen", 5i64) :: Nil,
+                        GpuTimer.exclusiveTimes(("shadow:point", 0i64, 10i64) :: ("scene3d", 2i64, 15i64) :: ("screen", 20i64, 25i64) :: Nil))
+
+    // 前のコマの最後の pass が 6 で終わったなら、最初の pass（始め 0）は 6 から数える（前のコマの残りを入れない）。
+    @Test
+    def testExclusiveTimesFromPreviousFrameEnd(): Unit \ Assert =
+        Assert.assertEq(expected = ("shadow:point", 4i64) :: ("scene3d", 5i64) :: Nil,
+                        GpuTimer.exclusiveTimesFrom(Some(6i64), ("shadow:point", 0i64, 10i64) :: ("scene3d", 2i64, 15i64) :: Nil))
+
+    // 前の pass の中で終わった pass は 0。
+    @Test
+    def testExclusiveTimesInsidePreviousIsZero(): Unit \ Assert =
+        Assert.assertEq(expected = ("a", 10i64) :: ("b", 0i64) :: Nil,
+                        GpuTimer.exclusiveTimes(("a", 0i64, 10i64) :: ("b", 3i64, 8i64) :: Nil))
+
+    // ── 読めたコマの中央値 ──
+
+    // 3 コマの中央値: 全体も名前ごとも真ん中の値。
+    @Test
+    def testMedianOfTakesMiddleValues(): Unit \ Assert =
+        let t = (a: Int64, b: Int64) -> { gpuNs = a + b, passes = ("shadow:sun", a) :: ("scene3d", b) :: Nil };
+        let samples = t(1i64, 10i64) :: t(3i64, 30i64) :: t(2i64, 20i64) :: Nil;
+        Assert.assertEq(expected = Some((22i64, ("shadow:sun", 2i64) :: ("scene3d", 20i64) :: Nil)),
+                        GpuTimer.medianOf(samples) |> Option.map(m -> (m#gpuNs, m#passes)))
+
+    // 読めたコマが無ければ FrameStats の行に何も足さない。
+    @Test
+    def testSamplesTextIsEmptyWithoutSamples(): Unit \ Assert =
+        Assert.assertEq(expected = "", GpuTimer.samplesText(Nil))
 }

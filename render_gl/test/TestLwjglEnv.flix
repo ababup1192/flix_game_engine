@@ -121,4 +121,10 @@ mod TestLwjglEnv {
         Assert.assertEq(expected = (LwjglEnv.Backend.Gl, LwjglEnv.Backend.WebGpu),
                         (read(Map#{"FLIX_GE_GL_LOG" => "debug/gl.log"}),
                          read(Map#{"FLIX_GE_GL_LOG" => "debug/gl.log", "FLIX_GE_BACKEND" => "webgpu"})))
+
+    /// FLIX_GE_WINDOW_SIZE は "<幅>x<高さ>" の正の 2 つの数だけを受ける。
+    @Test
+    def testWindowSizeOfReadsWidthByHeight(): Unit \ Assert =
+        Assert.assertEq(expected = (Some((960, 540)), None, None),
+                        (LwjglEnv.windowSizeOf(" 960x540 "), LwjglEnv.windowSizeOf("0x540"), LwjglEnv.windowSizeOf("960")))
 }

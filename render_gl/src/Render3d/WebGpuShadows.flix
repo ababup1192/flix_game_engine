@@ -53,8 +53,9 @@ mod Render3d.WebGpuShadows {
     /// vertexModule と skinnedModule = 頂点の色の頂点シェーダー（骨の無い版と骨つきの版）・emptyLayout と emptyGroup = 空の group 1・poseLayout = group 2 の layout・
     /// created = 描き先を作った知らせ（診断の数）・unbound = 付けられずに飛ばした行の物の数の知らせ・
     /// carried = 場面の持ち越した集まりの影の地図の行を流す関数（pass, 地図の鍵の字, 地図の group 0, 行を積む関数 (積み先, 行, 1 体ごとの値の buffer)）（Render3d.WebGpuStatic.shadowRunnerOf）。
+    /// stamp = 開く pass の GPU の時間を区間として測る関数（Render3d.WebGpuRenderer.Host#stamp）。
     pub type alias ShadowDraw = {
-        encoder = CommandEncoder, notePass = Unit -> Unit \ IO, meshStore = MeshStore, instances = Buffer, instanceBase = Int32, poseGroup = Option[BindGroup],
+        encoder = CommandEncoder, notePass = Unit -> Unit \ IO, stamp = (RenderPassDesc, String) -> Unit \ IO, meshStore = MeshStore, instances = Buffer, instanceBase = Int32, poseGroup = Option[BindGroup],
         vertexModule = ShaderModule, skinnedModule = ShaderModule, emptyLayout = BindGroupLayout, emptyGroup = BindGroup, poseLayout = BindGroupLayout,
         created = Unit -> Unit \ IO, unbound = Int32 -> Unit \ IO,
         carried = List[(RenderPass, String, BindGroup, (RenderCommands, SceneList, Buffer) -> Unit \ IO) -> Unit \ IO],
@@ -165,6 +166,7 @@ mod Render3d.WebGpuShadows {
             };
             let desc = new RenderPassDesc("fge scene3d shadow map");
             if (first) discard desc.clearDepth(target#depth.defaultView(), 1.0) else discard desc.loadDepthStencil(target#depth.defaultView(), false);
+            draw#stamp(desc, Render3d.GpuSpans.shadowSpanOf(pass#map#sampling));
             let rp = draw#encoder.beginRenderPass(desc);
             draw#notePass();
             rp.setViewport(Int32.toFloat64(vx), Int32.toFloat64(vy), Int32.toFloat64(vw), Int32.toFloat64(vh), 0.0, 1.0);
@@ -172,13 +174,14 @@ mod Render3d.WebGpuShadows {
             rp.setBindGroup(0, group);
             Option.forEach(g -> rp.setBindGroup(2, g), draw#poseGroup);
             rp.setVertexBuffer(1, draw#instances, 0i64, draw#instances.size());
-            drawRows(checked_cast(rp), draw#meshStore, drawerOf(sh, draw, staged#valuesBase, pass#rightPerBillboard), pass#list, draw#instanceBase);
+            let skipped = Render3d.GpuSpans.skipsShadowDraws();
+            if (skipped) () else drawRows(checked_cast(rp), draw#meshStore, drawerOf(sh, draw, staged#valuesBase, pass#rightPerBillboard), pass#list, draw#instanceBase);
             let drawCarried = (commands: RenderCommands, list: SceneList, instances: Buffer) -> {
                 commands.setVertexBuffer(1, instances, 0i64, instances.size());
                 drawRows(commands, draw#meshStore, drawerOf(sh, draw, -1, false), list, 0)
             };
             let bundleKey = ToString.toString(key) + (pass#map#tile |> Option.map(t -> ":${t#x}:${t#y}") |> Option.getWithDefault(""));
-            draw#carried |> List.forEach(runCarried -> runCarried(rp, bundleKey, group, drawCarried));
+            if (skipped) () else draw#carried |> List.forEach(runCarried -> runCarried(rp, bundleKey, group, drawCarried));
             rp.end()
         })
 

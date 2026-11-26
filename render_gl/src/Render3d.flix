@@ -431,7 +431,7 @@ mod Render3d {
         else {
             let items = List.toVector(prepareScenes(gl, state, gen, textureOf, dest, cmds));
             { zIndexes = Vector.map(item -> item#cmd#scene#zIndex, items),
-              draw = (vp, index) -> drawItem(gl, state, gen, textureOf, vp, Vector.get(index, items)) }
+              draw = (vp, index) -> { let item = Vector.get(index, items); dest#measure(Render3d.GpuSpans.sceneSpanOf(item#cmd#scene), () -> drawItem(gl, state, gen, textureOf, vp, item)) } }
         }
 
     // ── 場面を描く（2D の並びの中から）──
@@ -461,7 +461,7 @@ mod Render3d {
         });
         let (jointTexture, instanceTexture) = textures;
         // 影の地図は Design の場面より先に描く — Design の場面の塗りがその地図を読む。
-        let shadows = timed(state, Phase.Shadows, () -> renderShadows(gl, state, gen, instanceTexture, List.zip(shadowPasses, carried)));
+        let shadows = timed(state, Phase.Shadows, () -> renderShadows(gl, state, gen, instanceTexture, dest#measure, List.zip(shadowPasses, carried)));
         let designCount = Array#{0} @ Static;
         let items = List.zip(List.zip(plans, lists), List.zip(shadows, carried)) |> List.map(pls -> {
             let ((plan, passes), (shadow, cs)) = pls;
@@ -617,7 +617,7 @@ mod Render3d {
         uploadRows(gl, state, gen, source, inputs, Render3d.StaticRows.itemCountOf(scene) + Render3d.StaticRows.multiMeshCountOf(scene));
         let ctx = { camera = camera, eye = scene#camera#eye, source = source, billboard = Render3d.VariantPrograms.billboardLocsFor(gl, state, variant), scene = scene };
         let (callsBefore, meshBefore) = Render3d.Counts.drawCallsSoFar(state);
-        inputs#passes |> List.forEach(match (spec, list) -> drawPass(gl, state, gen, ctx, inputs, spec, list));
+        if (Render3d.GpuSpans.skipsColorDraws()) () else inputs#passes |> List.forEach(match (spec, list) -> drawPass(gl, state, gen, ctx, inputs, spec, list));
         let (callsAfter, meshAfter) = Render3d.Counts.drawCallsSoFar(state);
         Render3d.ScenePlan.noteDrawCallHint(state#planner, callsAfter - callsBefore, meshAfter - meshBefore);
         releaseEnvironmentMap(gl, scene);
