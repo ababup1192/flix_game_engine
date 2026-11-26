@@ -1007,7 +1007,8 @@ function fgeRequestMouseCapture() {
 function fgeSetMouseCaptured(on) {
   var c = fgeMouseCapture;
   c.wanted = on;
-  if (on) { fgeRequestMouseCapture(); return; }
+  // WhyNot: 最後の操作が指なら宣言の所で頼まない — 直前のタップの許しが残っていて Android の Chrome は lock を掛け、指が全部 canvas へ吸われて画面のパッドに届かない。
+  if (on) { if (!fgePointer.touch) fgeRequestMouseCapture(); return; }
   if (document.pointerLockElement === fgeCanvas) { c.releasing = true; document.exitPointerLock(); }
 }
 function fgeWireMouseCapture() {
