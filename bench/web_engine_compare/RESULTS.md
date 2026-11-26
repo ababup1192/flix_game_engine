@@ -78,7 +78,7 @@ engine_web に口を足す案 a は要らない。
 
 ## S2: 配る大きさ（Footprint）
 
-`make footprint`: `../web_engine_compare_footprint` の 2 つの app を本番で書き出し（`--draft` でない）、brotli の quality 11 で数える（比べる相手の `bundle-size` と同じ quality。比べる相手は JS だけを数える）。
+`make footprint`: `../web_engine_compare_minimal`・`../web_engine_compare_featured` の 2 つの app を本番で書き出し（`--draft` でない）、brotli の quality 11 で数える（比べる相手の `bundle-size` と同じ quality。比べる相手は JS だけを数える）。
 
 | app | classes.wasm | glue の JS（fge-web.js・wasm-gc-runtime.js・index.html の script） | brotli-decode.js | 最初に要る分 | 後で読む分（sw.js・glb の Worker） | 合計 |
 |---|---:|---:|---:|---:|---:|---:|
@@ -88,3 +88,36 @@ engine_web に口を足す案 a は要らない。
 - 比べる相手（README・M1 Pro の表）: 最小 44〜422 KB・glTF＋影＋bloom 192〜864 KB。**最小で 3.4〜32 倍・featured で 1.7〜7.6 倍の大きさで負ける**。
 - minimal と featured の差は 34 KB だけ。大きさの大半は TeaVM の classlib・Flix の runtime・3D の描き手（GL・WebGPU の 2 つ）で、使う機能ではほとんど減らない。
 - `brotli-decode.js`（61.5 KB）は置き場が `Content-Encoding: br` で配らない時に `.br` を JS で解くための物。置き場が br で配れば要らない（その時 1,368 KB・1,401 KB）。
+
+## S3: 比べる相手の harness に flix の adapter を足す（案 A）
+
+`make compare ONLY='engine=flix,three;scenario=k1'`（`PROFILE=smoke|quick|full`）: `harness/upstream.patch` を当て、`harness/flix-adapter.ts` を写し、本番で書き出して `public/flix/` へ写してから回す。
+
+- **adapter**（`harness/flix-adapter.ts`・engine は無改修）: 書き出しの頁の部品と script を harness の頁に載せ、harness の canvas を `fge-canvas` にする（WebGL2 もこの canvas の `getContext('webgl2')` を取るので probe が数える）。
+  rAF を包んで engine の callback を溜め、`frame()` の中で呼ぶ。場面の時刻 t は頁の `fgeQueryPairs` を包んで渡す。押して始める画面は keydown で通す。
+  `load()` は 60 コマ回して pipeline と形の初めての上げを済ませる。
+- **patch**（自分で書いた 4 行の組・`harness/upstream.patch`）: `EngineId`・`ENGINES`（types と matrix と run の表）に flix を足す。
+  場面の更新の時間を外すために、adapter が `takeSimMs()` を持つ時は CPU 時間から差し引いて sim に足し、差し引く前の値を `frames.cpuRaw` に残す（他の adapter は持たないので何も変わらない）。
+- **場面の更新の ms**: Flix の側で物ごとの行列を作る区間を測り、console の 1 行（`[wec] sim <ms>`）で返す。adapter が `console.log` を包んで受ける（console へは出さない）。
+- **確かめ**（smoke・counters の回）: WebGPU と WebGL2 の両方で K1・K2 が通る。K2 の描いた三角形は期待の数と一致（render guard を通る）。
+- **絵**: K1 の frame 60 の箱の向きは three.js と同じ（t の受け渡しが効いている）。
+  - 初めは裏の面が描かれた。Z を裏返しただけでは engine の表の向きと合わず、三角形の 2 番目と 3 番目を入れ替えて直した。
+  - 光の倍率は three.js と同じ π にした（1 では手前の面が暗い。π で手前の明るい面がほぼ合う）。
+  - 背景と影の側の面は three.js より明るい。AcesNarkowicz が画面の値に掛かり、暗い所を持ち上げるため（X2 を待つ）。
+
+smoke（1 回・M4 Pro・Chrome 156）の flix の値:
+
+| backend | variant | 物の数 | CPU p95（差し引いた後）| CPU p95（差し引く前）| 場面の更新 p50 | interval p50 | GPU p95 | draw |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| WebGPU | naive | 500 | 3.6 | 4.2 | 0.6 | 3.8 | 2.3 | 127 |
+| WebGPU | naive | 4,000 | 9.2 | 16.9 | 7.8 | 15.5 | 4.5 | 131 |
+| WebGPU | optimized | 4,000 | 4.6 | 9.5 | 4.9 | 8.9 | 3.3 | 131 |
+| WebGPU | optimized | 32,000 | 9.4 | 47.4 | 37.6 | 47.0 | 7.1 | 131 |
+| WebGL2 | naive | 4,000 | 8.5 | 16.5 | 7.9 | 14.9 | — | 129 |
+| WebGL2 | optimized | 32,000 | 10.6 | 50.3 | 38.8 | 48.8 | — | 129 |
+
+- optimized は形と材質の組ごとに `MultiMesh3d.build` を毎コマ組む（組の数 = 8 形 × 16 材質のうち出た物）。
+- **frame cost は差し引きの効きが小さい**: frame cost = max(CPU p95, GPU p95, interval p50) で、interval（コマの間隔）は場面の更新を含む。
+  他の engine の場面の更新は 0.01〜0.06 ms なので、K2 の 32,000 の差（9.4 ms と 47 ms）はほぼ Flix の側の行列づくりの値段。
+- 場面の更新が重い所は bench の Flix のコード（物ごとに Vector を作る `Scenes.worldColumns`）で、engine の外。S4 の前に軽くする余地がある。
+- 4,000 個の naive では engine が console に staticGroup と MultiMesh3d を勧める 1 行を出す（report の consoleErrors に 1 件と数えられる）。

@@ -1,0 +1,61 @@
+diff --git a/src/harness/matrix.ts b/src/harness/matrix.ts
+index 29b4d90..936dd33 100644
+--- a/src/harness/matrix.ts
++++ b/src/harness/matrix.ts
+@@ -25,7 +25,7 @@ export interface ScenarioDef {
+ const BOTH: Backend[] = ['webgpu', 'webgl2'];
+ const x2 = (from: number, steps: number) => Array.from({ length: steps }, (_, i) => from * 2 ** i);
+ 
+-export const ENGINES: EngineId[] = ['three', 'three-classic', 'playcanvas', 'babylon', 'babylon-lite', 'pixi3d'];
++export const ENGINES: EngineId[] = ['three', 'three-classic', 'playcanvas', 'babylon', 'babylon-lite', 'pixi3d', 'flix'];
+ 
+ export const SCENARIOS: ScenarioDef[] = [
+   { id: 'k1', key: 'K1', title: 'Startup: minimal lit cube', levels: [1], levelLabel: 'objects', variants: ['naive'], backends: BOTH },
+diff --git a/src/harness/run.ts b/src/harness/run.ts
+index eba9111..ed27d31 100644
+--- a/src/harness/run.ts
++++ b/src/harness/run.ts
+@@ -51,6 +51,7 @@ const ENGINES: Record<EngineId, () => Promise<{ createAdapter(): EngineAdapter }
+   babylon: () => import('../engines/babylon/index'),
+   'babylon-lite': () => import('../engines/babylon-lite/index'),
+   pixi3d: () => import('../engines/pixi3d/index'),
++  flix: () => import('../engines/flix/index'),
+ };
+ 
+ const consoleErrors: string[] = [];
+@@ -123,6 +124,7 @@ interface FrameRec {
+   ts: number;
+   sim: number;
+   cpu: number;
++  cpuRaw?: number;
+   counters?: FrameCounters;
+ }
+ 
+@@ -192,7 +194,8 @@ async function main() {
+       wgpu?.takeFrame();
+       wgl?.takeFrame();
+     }
+-    return { i, ts: 0, sim: b - a, cpu: c - b, counters };
++    const inner = (adapter as { takeSimMs?: () => number }).takeSimMs?.() ?? 0;
++    return { i, ts: 0, sim: b - a + inner, cpu: c - b - inner, cpuRaw: c - b, counters };
+   };
+ 
+   // First frame, synchronously after load: TTFF includes any first-draw pipeline compilation.
+@@ -376,6 +379,7 @@ async function main() {
+       count: recs.length,
+       interval: summarize(intervals),
+       cpu: summarize(recs.map((r) => r.cpu)),
++      cpuRaw: summarize(recs.map((r) => r.cpuRaw ?? r.cpu)),
+       sim: summarize(recs.map((r) => r.sim)),
+       gpu: summarize(gpuSpan),
+       gpuSum: summarize(gpuSum),
+diff --git a/src/harness/types.ts b/src/harness/types.ts
+index cc55072..8c998d6 100644
+--- a/src/harness/types.ts
++++ b/src/harness/types.ts
+@@ -1,4 +1,4 @@
+-export type EngineId = 'three' | 'three-classic' | 'playcanvas' | 'babylon' | 'babylon-lite' | 'pixi3d';
++export type EngineId = 'three' | 'three-classic' | 'playcanvas' | 'babylon' | 'babylon-lite' | 'pixi3d' | 'flix';
+ export type Backend = 'webgpu' | 'webgl2';
+ export type Variant = 'naive' | 'optimized';
+ export type Mode = 'timing' | 'counters';
