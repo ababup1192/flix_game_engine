@@ -388,6 +388,13 @@ bench: ### B=<名前>[,<名前>…] | bench へ渡すだけのターゲット（
 gl-parity:
 	@$(call bench_sh,gl-parity)
 
+# 3D のシェーダーの字を全部の版で build/shader-dump/<OUT> へ書き出す（render_gl の TestShaderDump。直す前と後を diff -r で比べる）。
+shader-dump: sync-layers ## OUT=<名前> | 3D のシェーダーの字を全部の版で build/shader-dump/<OUT> へ書き出す（既定 after。before と diff -r で比べる）
+	@out="$(CURDIR)/build/shader-dump/$(or $(OUT),after)"; rm -rf "$$out"; mkdir -p "$$out"; \
+	(cd $(LAYER_ROOT)/render_gl && FLIX_GE_SHADER_DUMP="$$out" "$(CURDIR)/bin/with-sample-tests" . "$(FLIX_TEST)" test) > build/shader-dump/$(or $(OUT),after).log 2>&1 \
+		|| { tail -30 build/shader-dump/$(or $(OUT),after).log; exit 1; }; \
+	grep -a "\[shader-dump\]" build/shader-dump/$(or $(OUT),after).log
+
 ##> make gl-parity | GL と SoftRaster が同じ絵を出すかを隠しウィンドウで突き合わせ（不一致で exit 1。make bench B=gl-parity と同じ）
 
 # WebGPU の 2D の描き手 (V1・plans/webgpu-v1.md の 8.1) の PC の門。順に:
