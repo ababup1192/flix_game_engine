@@ -28,6 +28,7 @@ mod Render3d {
     use Render3dGlsl.{meshVertexSource, skinnedMeshVertexSource, litVertexSource, litFragmentSource,
                        depthFragmentSource, billboardVertexSource, billboardFragmentSource, skyFragmentSource, blitVertexSource, blitFragmentSource}
     use Render3d.Light.{lightDataOf, putLights}
+    use Render3d.ProgramKey.{ProgramKind, ShaderVariant, defaultShaderVariant, shaderVariantOf, passVariantOf, shaderVariantOfKind, billboardVariantOf, lightVariantOf, variantKeyOf, materialKey}
     use Render3d.Batch.{MaterialBatch, MeshBatch}
     use Render3d.ScenePlan.{PlanCaps, ScenePassSpec, coverageOf, groupScenesWith, planScenes}
     use Render3d.SceneList.{SceneList, billboardAt, buildScenePasses, contextOf, firstBillboardRowOf, firstBlendedRowOf, valuesAt}
@@ -182,59 +183,6 @@ mod Render3d {
         case Color
         case Depth({ near = Float64, range = Float64 })
     }
-
-    /// 材質のプログラムを分ける形。skinned = 骨つき・uv = uv とタンジェントを持つ・normalMap = 法線マップを当てる（uv つきの時だけ真）・
-    /// lightmap = ベイクした光を 2 本目の uv で読む（Scene3d.lightmapOfFields が Some の時だけ真。骨つきには付かない）・
-    /// blend = 半透明（出す α を材質の α に）・doubleSided = 裏の面の光の法線を裏返す・
-    /// coverage = cutout を discard でなく alpha to coverage で抜く（isCoverageCutout が真の時だけ）・
-    /// metallicRoughness = metallic と roughness を持つ材質（鏡面ハイライトと空の映り込みを足す式のプログラム。持たない材質の GLSL は変わらない）・
-    /// pointShadows と physicalUnits と psx と skyIrradiance = 場面のシェーダーの変種（ShaderVariant。点光源の影を引く・Physical の光・PS1 風・景色の拡散の光）。
-    // WhyNot: blend・doubleSided・coverage・metallicRoughness・pointShadows・physicalUnits・psx を uniform で切り替えない — 使わない材質の GLSL の字が変わり、
-    //   どの GPU でも同じ絵になる保証が崩れる。どれも偽の版は、それらを足す前と 1 字も同じ GLSL を組む。
-    pub type alias ProgramKind = { skinned = Bool, uv = Bool, normalMap = Bool, lightmap = Bool, blend = Bool, doubleSided = Bool, coverage = Bool,
-                                   metallicRoughness = Bool, pointShadows = Bool, physicalUnits = Bool, psx = Bool, skyIrradiance = Bool }
-
-    /// 場面ごとのシェーダーの変種（Unity の shader variant に当たる）。pointShadows = 点光源の影を引く（鍵の +ps）・physicalUnits = Physical の光（鍵の +pu）・
-    /// psx = PS1 風の描き方（Scene3d.Psx.isOn。鍵の +psx。色の丸めとディザ・頂点の揺れ・アフィンの uv を uniform で渡す）。
-    /// skyIrradiance = ambient に景色の拡散の光を混ぜる（Scene3d.withSkyContribution。鍵の +sh）。
-    /// どれも偽なら既定のプログラム（変種を足す前と同じ字）。先に組む宣言の Scene3d.PreloadVariant と同じ形。
-    pub type alias ShaderVariant = Scene3d.PreloadVariant
-
-    /// 点光源の影なし・Legacy の光・PS1 風なしの変種。
-    pub def defaultShaderVariant(): ShaderVariant = { pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false }
-
-    /// 場面 scene の変種（pointShadows が Some なら +ps — このコマで影を落とす灯りが 0 本でも +ps のまま・Physical なら +pu）。
-    // WhyNot: このコマで影を落とす灯りの数で +ps を決めない — 灯りが画面に出入りするたびにシェーダーを組み直す。
-    pub def shaderVariantOf(scene: Scene3d.Scene3dCmd): ShaderVariant = Scene3d.preloadVariantOf(scene)
-
-    /// 場面 scene の pass のプログラムの変種（色の場面は shaderVariantOf・奥行きの書き出しは既定。Render3d.ScenePlan の groupScene と同じ決め方）。
-    pub def passVariantOf(scene: Scene3d.Scene3dCmd): ShaderVariant = match scene#output {
-        case Scene3d.Output.Color    => shaderVariantOf(scene)
-        case Scene3d.Output.Depth(_) => defaultShaderVariant()
-    }
-
-    /// 材質のプログラムの版 kind の変種。
-    pub def shaderVariantOfKind(kind: ProgramKind): ShaderVariant = { pointShadows = kind#pointShadows, physicalUnits = kind#physicalUnits, psx = kind#psx, skyIrradiance = kind#skyIrradiance }
-
-    /// ビルボードのプログラムの変種（点光源の影を受けないので +ps を落とす）。
-    pub def billboardVariantOf(v: ShaderVariant): ShaderVariant = { pointShadows = false, physicalUnits = v#physicalUnits, psx = v#psx, skyIrradiance = v#skyIrradiance }
-
-    /// 変種 v の光の式の木の変種（LightModel3d.lightingModelFor などへ渡す）。
-    pub def lightVariantOf(v: ShaderVariant): LightModel3d.LightVariant =
-        { pointShadows = v#pointShadows, lightUnits = Some(if (v#physicalUnits) Scene3d.LightUnits.Physical else Scene3d.LightUnits.Legacy),
-          skyIrradiance = v#skyIrradiance }
-
-    /// 変種 v の鍵の字（+ps・+pu・+psx。既定は空）。
-    pub def variantKeyOf(v: ShaderVariant): String = Scene3d.preloadVariantKey(v)
-
-    /// 材質のプログラムの鍵（2D の Shader 面の鍵 = spec の名前 と重ならない）。骨つき・uv つき・法線マップつき・lightmap つきの版は GLSL が違うので別の鍵。
-    /// 材質の側は spec と emission の中身の鍵（MaterialFields#shaderHash）なので、同じ名前で木の違う材質が並んでも組み直さず、ゲームは名前を分けなくてよい。
-    /// cutout・params・wrap は uniform と sampler で渡すので鍵に入れない（blend・doubleSided・法線マップ・coverage は kind の側）。
-    pub def materialKey(m: Scene3d.MaterialFields, kind: ProgramKind): String =
-        "3d" + (if (kind#skinned) "+skin" else "") + (if (kind#uv) "+uv" else "") + (if (kind#normalMap) "+nm" else "") + (if (kind#lightmap) "+lm" else "")
-            + (if (kind#blend) "+bl" else "") + (if (kind#doubleSided) "+ds" else "") + (if (kind#coverage) "+cov" else "")
-            + (if (kind#metallicRoughness) "+mr" else "") + variantKeyOf(shaderVariantOfKind(kind))
-            + ":" + Int64.toString(force m#shaderHash)
 
     /// 置いた物をどう描くか。Instanced = batch にして 1 回の instanced draw・OneByOne = 全部の物を batch にせず、物ごとの材質で来た順に描く（batch の鍵と順の確かめの比べ相手）。
     pub enum DrawMode with Eq {

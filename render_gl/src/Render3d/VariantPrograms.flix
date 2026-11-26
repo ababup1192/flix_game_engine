@@ -1,9 +1,9 @@
-// Render3d.VariantPrograms — 3D の描き手（Render3d）の、場面のシェーダーの変種（Render3d.ShaderVariant の +ps・+pu・+psx）の頂点の色とビルボードのプログラム。
+// Render3d.VariantPrograms — 3D の描き手（Render3d）の、場面のシェーダーの変種（Render3d.ProgramKey.ShaderVariant の +ps・+pu・+psx）の頂点の色とビルボードのプログラム。
 // 既定の変種は Render3d.programsOf・skinnedProgramsOf の物を返し、ほかはその変種の場面を初めて描く時に組んで State の表に持つ。材質のプログラムの変種は ProgramKind の欄（Render3d.Material）。
 mod Render3d.VariantPrograms {
     import fge.gl.GlContext
-    use Render3d.{BillboardLocs, LightLocs, LitLocs, PointShadowLocs, ShaderVariant, State, billboardLocsOf, billboardVariantOf, bindDataTextureUnits, compile, litLocsOf, loc,
-                  programsOf, skinnedProgramsOf, variantKeyOf}
+    use Render3d.{BillboardLocs, LightLocs, LitLocs, PointShadowLocs, State, billboardLocsOf, bindDataTextureUnits, compile, litLocsOf, loc, programsOf, skinnedProgramsOf}
+    use Render3d.ProgramKey.{ShaderVariant, billboardVariantOf, variantKeyOf}
     use Render3dGlsl.{billboardFragmentSourceFor, billboardVertexSourceFor, litFragmentSourceFor, litVertexSourceFor}
 
     /// 変種 v の頂点の色の（skinned なら骨つきの版の）プログラム。

@@ -23,10 +23,10 @@ pub mod Render3dGlsl {
     /// 頂点の色のプログラム（lit）の頂点シェーダー。頂点の色を線形の量へ戻してから渡す（三角形の中は線形の量でつなぐ）。
     /// skinned なら骨つきの版。
     // WhyNot: meshVertexSource と共有しない — uv の無い材質の Spec の VertexColor まで線形の値になり、出口でもう一度戻して暗くなる。
-    pub def litVertexSource(skinned: Bool): String = litVertexSourceFor(skinned, Render3d.defaultShaderVariant())
+    pub def litVertexSource(skinned: Bool): String = litVertexSourceFor(skinned, Render3d.ProgramKey.defaultShaderVariant())
 
     /// 変種 v の litVertexSource（v#psx なら頂点を丸める）。
-    pub def litVertexSourceFor(skinned: Bool, v: Render3d.ShaderVariant): String =
+    pub def litVertexSourceFor(skinned: Bool, v: Render3d.ProgramKey.ShaderVariant): String =
         if (skinned)
             meshVertexSourceOf({ declarations = skinDeclarations() + colorSpaceSource(), prelude = skinPrelude(), position = "skin * vec4(aPos, 1.0)",
                                  normal = "mat3(skin) * aNormal", tangent = None, uv2 = false, vertexColorToLinear = true, psx = v#psx })
@@ -116,7 +116,7 @@ pub mod Render3dGlsl {
         ShaderAst.Glsl.print(Render3dShaders.colorDepth() :: Nil)
 
     /// 変種 v の frag の色の出口: v#psx なら r3d_colorDepth に通した式、ほかは c のまま。
-    def colorOut(v: Render3d.ShaderVariant, c: String): String = if (v#psx) "r3d_colorDepth(" + c + ")" else c
+    def colorOut(v: Render3d.ProgramKey.ShaderVariant, c: String): String = if (v#psx) "r3d_colorDepth(" + c + ")" else c
 
     /// 頂点シェーダーへ数を渡すテクスチャの幅（texel）。
     pub def dataTextureWidth(): Int32 = Skin3d.maxJoints() * 4
@@ -195,11 +195,11 @@ pub mod Render3dGlsl {
         "}\n"
 
     /// 光の uniform と、光の式（lightAt）・かすみ（fogged）。式は LightModel3d の木から作る（CPU の描き手と同じ木）。
-    pub def lightSource(): String = lightSourceFor(Render3d.defaultShaderVariant())
+    pub def lightSource(): String = lightSourceFor(Render3d.ProgramKey.defaultShaderVariant())
 
     /// 変種 v の lightSource。v#pointShadows なら点光源の影の uniform と r3d_pointShadowsAt（pointShadowSource）・
     /// v#physicalUnits なら uInverseUnitsPerMeterSquared を・v#skyIrradiance なら景色の拡散の光の uSh・uSkyContribution を、光の式の前に置く（どれも偽なら lightSource と同じ字）。
-    pub def lightSourceFor(v: Render3d.ShaderVariant): String =
+    pub def lightSourceFor(v: Render3d.ProgramKey.ShaderVariant): String =
         "uniform vec3 uAmbient;\n" +
         "uniform float uHemisphere;\n" +
         "uniform int uToonSteps;\n" +
@@ -222,7 +222,7 @@ pub mod Render3dGlsl {
         (if (v#physicalUnits) "uniform float uInverseUnitsPerMeterSquared;\n" else "") +
         (if (v#psx) colorDepthSource() else "") +
         (if (v#skyIrradiance) "uniform vec3 uSh[9];\nuniform float uSkyContribution;\n" else "") +
-        LightModel3d.Codegen.toGlsl("lightAt", Vec3Input.Position :: Vec3Input.Normal :: Nil, LightModel3d.lightingModelFor(Render3d.lightVariantOf(v))) +
+        LightModel3d.Codegen.toGlsl("lightAt", Vec3Input.Position :: Vec3Input.Normal :: Nil, LightModel3d.lightingModelFor(Render3d.ProgramKey.lightVariantOf(v))) +
         LightModel3d.Codegen.toGlsl("fogAt", Vec3Input.Position :: Vec3Input.Color :: Nil, LightModel3d.fogModel()) +
         "vec3 fogged(vec3 c, vec3 p) {\n" +
         "    if (uFogOn == 0) return c;\n" +
@@ -329,10 +329,10 @@ pub mod Render3dGlsl {
         ShaderAst.Glsl.printOnly(Render3dShaders.depthGray() :: Nil)
 
     /// 頂点の色のプログラムの frag（vColor は litVertexSource が線形へ戻し済み）。
-    pub def litFragmentSource(): String = litFragmentSourceFor(Render3d.defaultShaderVariant())
+    pub def litFragmentSource(): String = litFragmentSourceFor(Render3d.ProgramKey.defaultShaderVariant())
 
     /// 変種 v の litFragmentSource。
-    pub def litFragmentSourceFor(v: Render3d.ShaderVariant): String =
+    pub def litFragmentSourceFor(v: Render3d.ProgramKey.ShaderVariant): String =
         "#version 330 core\n" +
         "in vec3 vWorld;\n" +
         "in vec3 vNormal;\n" +
@@ -356,8 +356,8 @@ pub mod Render3dGlsl {
     /// surface#blend = 出す α を材質の α に（半透明）・surface#doubleSided = 裏の面（!gl_FrontFacing）は光の計算の法線を裏返す・
     /// surface#coverage = cutout を discard でなく alpha to coverage の α で抜く。3 つとも偽なら、足す前と同じ字。
     // WhyNot: 欄を 1 つずつ並べた引数にしない — ProgramKind に欄が増えるたびに、呼び手とテストの字が全部書き換わる。skinned は頂点の側だけが読む。
-    pub def materialFragmentSource(glsl: ShaderGen.MaterialGlsl, surface: Render3d.ProgramKind): String =
-        let v = Render3d.shaderVariantOfKind(surface);
+    pub def materialFragmentSource(glsl: ShaderGen.MaterialGlsl, surface: Render3d.ProgramKey.ProgramKind): String =
+        let v = Render3d.ProgramKey.shaderVariantOfKind(surface);
         let normalMapped = surface#uv and surface#normalMap;
         // WhyNot: sg_texMip を足すかを normalMapSource と lightmapSource の中で別々に決めない — 両方を使う版で 2 回定義され、コンパイルが落ちる。
         let needsMip = (normalMapped or surface#lightmap) and not String.contains(substr = "vec4 sg_texMip(", glsl#functions);
@@ -425,10 +425,10 @@ pub mod Render3dGlsl {
     /// （CPU の描き手は SoftRaster3d.materialPixel と materialColor）。lightSource と colorSpaceSource() の後に置く。
     // WhyNot: r3d_surfaceOut を使い回さない — あちらは albedo × tint × light を中で掛けるので、鏡面を足すには掛け算の前後を別に書く必要があり、
     //   持たない材質の GLSL の字を変えることになる。
-    pub def metallicRoughnessSource(): String = metallicRoughnessSourceFor(Render3d.defaultShaderVariant())
+    pub def metallicRoughnessSource(): String = metallicRoughnessSourceFor(Render3d.ProgramKey.defaultShaderVariant())
 
     /// 変種 v の metallicRoughnessSource（lightSourceFor(v) の後に置く）。
-    pub def metallicRoughnessSourceFor(v: Render3d.ShaderVariant): String =
+    pub def metallicRoughnessSourceFor(v: Render3d.ProgramKey.ShaderVariant): String =
         "uniform vec3 uZenith;\n" +
         "uniform vec3 uHorizon;\n" +
         "uniform vec3 uGround;\n" +
@@ -436,7 +436,7 @@ pub mod Render3dGlsl {
         environmentSource() +
         LightModel3d.Codegen.toGlsl("pbrAt", Vec3Input.Position :: Vec3Input.Normal :: Vec3Input.Albedo :: Vec3Input.Light :: Vec3Input.MetallicRoughness ::
                                              Vec3Input.EnvironmentColor :: Nil,
-                                    LightModel3d.pbrModelFor(Render3d.lightVariantOf(v))) +
+                                    LightModel3d.pbrModelFor(Render3d.ProgramKey.lightVariantOf(v))) +
         ShaderAst.Glsl.printOnly(Render3dShaders.surfaceOutLit() :: Nil)
 
     /// 環境マップの uniform と、跳ね返りの向き（LightModel3d.environmentDirection の木から作る environmentDirectionAt）で絵を読む
@@ -472,7 +472,7 @@ pub mod Render3dGlsl {
     /// 段つきの Linear で読む（sg_texMip。段は Lightmap の maxLevels まで）。2 本目の uv の絵は場面の textures だけから引くので上下の反転は無い。
     /// 読む uv = 2 本目の uv × uLightmapUvRect.zw + uLightmapUvRect.xy（Lightmap の uvRect）。
     // WhyNot: 矩形を頂点の式で当てない — WebGPU の物ごとの値（R3dDraw）は FRAGMENT からだけ見え、頂点で読むと layout の可視範囲と全部の材質の WGSL が変わる。GL も同じ所で当ててそろえる。
-    def lightmapSource(v: Render3d.ShaderVariant): String =
+    def lightmapSource(v: Render3d.ProgramKey.ShaderVariant): String =
         "uniform sampler2D uLightmap;\n" +
         "uniform float uLightmapLevels;\n" +
         "uniform vec4 uLightmapUvRect;\n" +
@@ -483,14 +483,14 @@ pub mod Render3dGlsl {
 
     /// lightmap のある面の光の式 lightmapLightAt(p, n, lightmap の色)（LightModel3d の木から作る）と、それが読む uniform。
     /// colorSpaceSource()（色の空間の関数）と lightSource の後に置く（光の uniform と spotShadow を読む）。
-    pub def lightmapLightSource(): String = lightmapLightSourceFor(Render3d.defaultShaderVariant())
+    pub def lightmapLightSource(): String = lightmapLightSourceFor(Render3d.ProgramKey.defaultShaderVariant())
 
     /// 変種 v の lightmapLightSource（lightSourceFor(v) の後に置く）。
-    pub def lightmapLightSourceFor(v: Render3d.ShaderVariant): String =
+    pub def lightmapLightSourceFor(v: Render3d.ProgramKey.ShaderVariant): String =
         "uniform int uLightmapSrgb;\n" +
         "uniform float uLightmapIntensity;\n" +
         LightModel3d.Codegen.toGlsl("lightmapLightAt", Vec3Input.Position :: Vec3Input.Normal :: Vec3Input.LightmapColor :: Nil,
-                                    LightModel3d.lightmapLightingModelFor(Render3d.lightVariantOf(v)))
+                                    LightModel3d.lightmapLightingModelFor(Render3d.ProgramKey.lightVariantOf(v)))
 
     /// 法線マップの uniform と、外向きの法線 n を法線マップで傾けた n'（normalMapped）。
     /// uNormalFlip = 1 はレンダーターゲット（行 0 が下）で、v を上下反転して読む。
@@ -529,10 +529,10 @@ pub mod Render3dGlsl {
     /// ビルボードの頂点シェーダー: カメラの right / up で四角を立てる（aCorner は 0〜1・y は下向き）。板ごとの値は instance の attribute（location 1〜4・
     /// 並びは Render3d.SceneList.billboardValueFloats: 点と光の当て方・anchor と size・貼る範囲の uv・tint と影を受ける点を離す長さ）。
     /// uRightPerBillboard = 1 なら板の横の向きを tint の欄から読む（影の地図の点光源の面）。
-    pub def billboardVertexSource(): String = billboardVertexSourceFor(Render3d.defaultShaderVariant())
+    pub def billboardVertexSource(): String = billboardVertexSourceFor(Render3d.ProgramKey.defaultShaderVariant())
 
     /// 変種 v の billboardVertexSource（v#psx なら四角の角を丸める）。
-    pub def billboardVertexSourceFor(v: Render3d.ShaderVariant): String =
+    pub def billboardVertexSourceFor(v: Render3d.ProgramKey.ShaderVariant): String =
         "#version 330 core\n" +
         "layout (location = 0) in vec2 aCorner;\n" +
         "layout (location = 1) in vec4 aCenterLit;\n" +
@@ -569,10 +569,10 @@ pub mod Render3dGlsl {
 
     /// vLit（光の当て方）が 2 なら太陽の影を受ける。受ける点は vShadowBase（Scene3d.billboardShadowPointOf の太陽の方へ進める前の点）を
     /// 太陽の方へ vShadowOffset / max(太陽への向きの水平の長さ, Scene3d.billboardShadowMinFlat()) だけ進めた点。影の地図に描く時（Render3d.Shadow）は uDepthOut = 1 で、α で捨てた後に色を出さずに返る。
-    pub def billboardFragmentSource(): String = billboardFragmentSourceFor(Render3d.defaultShaderVariant())
+    pub def billboardFragmentSource(): String = billboardFragmentSourceFor(Render3d.ProgramKey.defaultShaderVariant())
 
     /// 変種 v の billboardFragmentSource。ビルボードは点光源の影を受けないので v#pointShadows は読まない（Physical の光だけを変える）。
-    pub def billboardFragmentSourceFor(v: Render3d.ShaderVariant): String =
+    pub def billboardFragmentSourceFor(v: Render3d.ProgramKey.ShaderVariant): String =
         "#version 330 core\n" +
         "in vec3 vWorld;\n" +
         "in vec2 vUv;\n" +
@@ -585,7 +585,7 @@ pub mod Render3dGlsl {
         "uniform vec3 uFacing;\n" +
         "uniform int uDepthOut;\n" +
         colorSpaceSource() +
-        lightSourceFor(Render3d.billboardVariantOf(v)) +
+        lightSourceFor(Render3d.ProgramKey.billboardVariantOf(v)) +
         depthGraySource() +
         "void main() {\n" +
         "    vec4 texel = texture(uImage, vUv);\n" +

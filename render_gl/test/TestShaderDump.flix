@@ -9,30 +9,29 @@ mod TestShaderDump {
 
     def flags(): List[Bool] = false :: true :: Nil
 
-    def allVariants(): List[Render3d.ShaderVariant] =
+    def allVariants(): List[Render3d.ProgramKey.ShaderVariant] =
         flags() |> List.flatMap(ps -> flags() |> List.flatMap(pu -> flags() |> List.flatMap(psx -> flags() |> List.map(sh ->
             { pointShadows = ps, physicalUnits = pu, psx = psx, skyIrradiance = sh }))))
 
-    def variantLabel(v: Render3d.ShaderVariant): String =
+    def variantLabel(v: Render3d.ProgramKey.ShaderVariant): String =
         let bit = (b: Bool, ch: String) -> if (b) ch else "-";
         bit(v#pointShadows, "s") + bit(v#physicalUnits, "p") + bit(v#psx, "x") + bit(v#skyIrradiance, "h")
 
     /// 材質の frag の字を変える ProgramKind の正しい組（skinned は頂点だけ・法線マップは uv つきの時だけ）。変種は v。
-    def surfaceKinds(v: Render3d.ShaderVariant): List[Render3d.ProgramKind] =
+    def surfaceKinds(v: Render3d.ProgramKey.ShaderVariant): List[Render3d.ProgramKey.ProgramKind] =
         let surfaces = (false, false) :: (true, false) :: (true, true) :: Nil;
         surfaces |> List.flatMap(un -> {
             let (uv, normalMap) = un;
             flags() |> List.flatMap(lightmap -> flags() |> List.flatMap(blend -> flags() |> List.flatMap(doubleSided ->
                 flags() |> List.flatMap(coverage -> flags() |> List.map(metallic ->
                     { skinned = false, uv = uv, normalMap = normalMap, lightmap = lightmap, blend = blend, doubleSided = doubleSided,
-                      coverage = coverage, metallicRoughness = metallic, pointShadows = v#pointShadows, physicalUnits = v#physicalUnits,
-                      psx = v#psx, skyIrradiance = v#skyIrradiance })))))
+                      coverage = coverage, metallicRoughness = metallic, variant = { pointShadows = v#pointShadows, physicalUnits = v#physicalUnits, psx = v#psx, skyIrradiance = v#skyIrradiance } })))))
         })
 
-    def kindLabel(k: Render3d.ProgramKind): String =
+    def kindLabel(k: Render3d.ProgramKey.ProgramKind): String =
         let bit = (b: Bool, ch: String) -> if (b) ch else "-";
         bit(k#uv, "u") + bit(k#normalMap, "n") + bit(k#lightmap, "l") + bit(k#blend, "b") + bit(k#doubleSided, "d") + bit(k#coverage, "c")
-            + bit(k#metallicRoughness, "m") + "_" + variantLabel(Render3d.shaderVariantOfKind(k))
+            + bit(k#metallicRoughness, "m") + "_" + variantLabel(Render3d.ProgramKey.shaderVariantOfKind(k))
 
     def fill(name: String, shade: Shade, alpha: Field): ShaderDoc.Spec =
         { name = name, cycleRate = 0.0, bindings = Nil, out = ShaderDoc.Out.Fill({ shade = shade, alpha = alpha }) }
@@ -44,18 +43,18 @@ mod TestShaderDump {
         ("field", fill("field", Shade.Rgb({ r = tint(TexChan.R, "r"), g = tint(TexChan.G, "g"), b = tint(TexChan.B, "b") }), Field.Param({ name = "a" }))) ::
         ("textured", fill("textured", Shade.Rgb({ r = tex(TexChan.R), g = tex(TexChan.G), b = tex(TexChan.B) }), tex(TexChan.A))) :: Nil
 
-    def metalOf(k: Render3d.ProgramKind): Option[Shade] =
+    def metalOf(k: Render3d.ProgramKey.ProgramKind): Option[Shade] =
         if (k#metallicRoughness) Some(Shade.Rgb({ r = Field.Param({ name = "metal" }), g = Field.Param({ name = "rough" }), b = Field.Const(0.0) })) else None
 
     def glowOf(): Option[Shade] = Some(Shade.Rgb({ r = Field.Param({ name = "glow" }), g = Field.Const(0.0), b = Field.Const(0.0) }))
 
     /// 全部の変種を回す時の材質の組（全部の組 × 全部の変種は数千になるので、代表の 8 組）。
-    def representativeKinds(v: Render3d.ShaderVariant): List[Render3d.ProgramKind] =
+    def representativeKinds(v: Render3d.ProgramKey.ShaderVariant): List[Render3d.ProgramKey.ProgramKind] =
         surfaceKinds(v) |> List.filter(k ->
             (not k#blend and not k#coverage and not k#doubleSided) or (k#uv and k#normalMap and k#lightmap and k#doubleSided and k#metallicRoughness and not k#coverage))
 
     def materialFragments(): List[(String, String)] =
-        let d = Render3d.defaultShaderVariant();
+        let d = Render3d.ProgramKey.defaultShaderVariant();
         let kinds = surfaceKinds(d) ::: (allVariants() |> List.filter(v -> variantLabel(v) != variantLabel(d)) |> List.flatMap(representativeKinds));
         materials() |> List.flatMap(nm -> {
             let (name, spec) = nm;

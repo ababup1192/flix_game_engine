@@ -2,7 +2,8 @@
 // 材質は置いた物と同じく backend に聞く。並びを詰めて場面の pass と影の地図の pass へ足すのは Render3d.InstanceValues.mapBatchesWithMultiMeshes。
 // WhyNot: 置いた物の計画（Render3d.ScenePlan.groupWith）へ 1 体ずつ通さない — 1 体ごとの分け方・視錐台・詰めの仕事を消すための口で、体はみな同じ形と材質。
 pub mod Render3d.MultiMeshPlan {
-    use Render3d.{MeshDraw, ProgramKind, ShaderVariant}
+    use Render3d.{MeshDraw}
+    use Render3d.ProgramKey.{ProgramKind, ShaderVariant}
     use Render3d.ScenePlan.{MaterialRequest, Planner, Tables, kindOf, requestOf, verifiedHandle, warnOnce}
 
     /// 材質を聞いた MultiMesh 1 つ。head = 形を原点に置いた 1 体（行の形と材質の版を決める）・surface = 聞いた材質と版（頂点の色で描くなら None）・handle = 聞いた番号（無ければ -1）。

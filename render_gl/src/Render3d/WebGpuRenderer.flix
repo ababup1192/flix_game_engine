@@ -47,7 +47,8 @@ pub mod Render3d.WebGpuRenderer {
     import java.nio.FloatBuffer
     import java.lang.Object
     import java.util.Objects
-    use Render3d.{LightData, MeshDraw, PixelBox, ShaderVariant, TextureSlot, TextureSource, clipBox, defaultShaderVariant, matrixArray, passVariantOf, sceneRect, variantKeyOf}
+    use Render3d.{LightData, MeshDraw, PixelBox, TextureSlot, TextureSource, clipBox, matrixArray, sceneRect}
+    use Render3d.ProgramKey.{ShaderVariant, defaultShaderVariant, passVariantOf, variantKeyOf}
     use Render3d.Batch.{MeshBatch, SpanBatch}
     use Render3d.InstanceValues.{PackMode, numberSpan}
     use Render3d.Light.{lightDataOf}
@@ -141,7 +142,7 @@ pub mod Render3d.WebGpuRenderer {
     /// vertexModule と skinnedModule = 頂点の色の頂点シェーダー（骨の無い版と骨つきの版）・poseLayout = group 2（姿勢）の layout・
     /// emptyLayout と emptyGroup = 骨つきの頂点の色の pipeline の group 1（材質を読まない版で、group 2 の前を埋める）・
     /// lightLayout と atlasLayout = 変種の場面の group 0 の layout（sceneLayout に R3dLight を足した物・さらに点光源の影の atlas を足した物。layoutCodeOf）・
-    /// variantFragments = 変種の鍵（Render3d.variantKeyOf）→ 頂点の色の frag・cpuLight = R3dLight を詰める入れ物・sceneOffsets = R3dScene の欄の位置（作る時に 1 回求める）・
+    /// variantFragments = 変種の鍵（Render3d.ProgramKey.variantKeyOf）→ 頂点の色の frag・cpuLight = R3dLight を詰める入れ物・sceneOffsets = R3dScene の欄の位置（作る時に 1 回求める）・
     /// pipelines = LitPipelineKey → 頂点の色の pipeline・depthModule = 奥行きの書き出しの frag・blankDepth と blankImage = 影の地図と環境マップの代わり（影は場面の値が切るので読まれない・環境マップは絵が見つからない時に透明な黒として読む）・
     /// written = 今の encoder（submit まで）で値を書いたか、貼る pass を積んだ描き先の鍵・instances = 1 体ごとの値の buffer（頂点の buffer の 1 番）・
     /// instanceUsed = 今の encoder で使ったそのバイト数・poses = 姿勢の storage の buffer・posesUsed = 今の encoder で使ったそのバイト数・
@@ -290,7 +291,9 @@ pub mod Render3d.WebGpuRenderer {
         desc
 
     /// 変種 v の場面の group 0 の形の番号（0 = 既定・1 = +pu か +psx か +sh だけ・2 = +ps がある。ビルボード・空も同じ場面の pass ではこの layout で作る）。
-    pub def layoutCodeOf(v: ShaderVariant): Int32 = if (v#pointShadows) 2 else if (v#physicalUnits or v#psx or v#skyIrradiance) 1 else 0
+    pub def layoutCodeOf(v: ShaderVariant): Int32 =
+        let rows = Render3d.ProgramKey.rowsOf(v);
+        if (rows |> List.exists(row -> row#pointShadowAtlas)) 2 else if (rows |> List.exists(row -> row#lightBuffer)) 1 else 0
 
     /// 形の番号 code の group 0 の layout。
     def sceneLayoutOf(r: Renderer, code: Int32): BindGroupLayout =
@@ -439,7 +442,7 @@ pub mod Render3d.WebGpuRenderer {
     def preloadCmd(r: Renderer, host: Host, gen: Int64, cmd: Scene3d.PreloadCmd): Preloaded \ IO =
         let RendererData.RendererData(s) = r;
         let instances = (cmd#instances)();
-        let groups = (Render3d.defaultShaderVariant() :: Render3d.Preload.extraVariantsOf(cmd))
+        let groups = (Render3d.ProgramKey.defaultShaderVariant() :: Render3d.Preload.extraVariantsOf(cmd))
             |> List.flatMap(v -> Render3d.ScenePlan.groupInstances(s#planner, v, _ -> true, _ -> true, false, instances) |> fst |> List.map(g -> (v, g)));
         let source = { textureOf = host#textureOf, own = (cmd#textures)() |> List.map(t -> (Texture3d.name(t), t)) |> List.toMap };
         let allocator = countingAllocator(r);

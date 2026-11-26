@@ -233,7 +233,7 @@ mod TestWgslDawn {
             "}\n"
 
     /// 材質の frag の字を変える ProgramKind の欄の組（skinned は頂点シェーダーだけを変えるので偽のまま。法線マップは uv つきの時だけ）。
-    def programKinds(): List[Render3d.ProgramKind] =
+    def programKinds(): List[Render3d.ProgramKey.ProgramKind] =
         let flags = true :: false :: Nil;
         let surfaces = (false, false) :: (true, false) :: (true, true) :: Nil;
         surfaces |> List.flatMap(un -> {
@@ -241,13 +241,13 @@ mod TestWgslDawn {
             flags |> List.flatMap(lightmap -> flags |> List.flatMap(blend -> flags |> List.flatMap(doubleSided ->
                 flags |> List.flatMap(coverage -> flags |> List.map(metallic ->
                     { skinned = false, uv = uv, normalMap = normalMap, lightmap = lightmap, blend = blend, doubleSided = doubleSided,
-                      coverage = coverage, metallicRoughness = metallic, pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false })))))
+                      coverage = coverage, metallicRoughness = metallic, variant = { pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false } })))))
         })
 
-    def kindLabel(k: Render3d.ProgramKind): String =
+    def kindLabel(k: Render3d.ProgramKey.ProgramKind): String =
         let bit = (b: Bool, ch: String) -> if (b) ch else "-";
         bit(k#uv, "u") + bit(k#normalMap, "n") + bit(k#lightmap, "l") + bit(k#blend, "b") + bit(k#doubleSided, "d") + bit(k#coverage, "c") + bit(k#metallicRoughness, "m")
-            + bit(k#pointShadows, "s") + bit(k#physicalUnits, "p") + bit(k#psx, "x")
+            + bit(k#variant#pointShadows, "s") + bit(k#variant#physicalUnits, "p") + bit(k#variant#psx, "x")
 
     /// 3D の材質の frag の変種: 絵を読む材質と読まない材質は ProgramKind の全部の組・ほかの材質は 2 つの組。
     def materialFragments(): List[(String, String)] =
@@ -257,7 +257,7 @@ mod TestWgslDawn {
             let (name, spec, glow, metal) = v;
             let m = ShaderGen.Wgsl.compile3d(spec, glow, metal, 1);
             let chosen = if (name == "scene3d-field" or name == "textured-metal") kinds else few;
-            let variants = if (name == "textured-metal") few |> List.flatMap(k -> { pointShadows = true | k } :: { physicalUnits = true | k } :: { pointShadows = true, physicalUnits = true | k } :: { psx = true | k } :: { pointShadows = true, psx = true | k } :: Nil) else Nil;
+            let variants = if (name == "textured-metal") few |> List.flatMap(k -> { variant = { pointShadows = true | k#variant } | k } :: { variant = { physicalUnits = true | k#variant } | k } :: { variant = { pointShadows = true, physicalUnits = true | k#variant } | k } :: { variant = { psx = true | k#variant } | k } :: { variant = { pointShadows = true, psx = true | k#variant } | k } :: Nil) else Nil;
             (chosen ::: variants) |> List.map(k -> ("frag ${name} ${kindLabel(k)}", Render3dWgsl.materialFragmentSource(m, k)))
         })
 
@@ -388,6 +388,6 @@ mod TestWgslDawn {
     @Test
     def testNormalMappedFragmentDoesNotFlipRows(): Unit \ Assert =
         let textured = fill("textured", 0.0, Nil, Shade.Solid(red()), Field.Tex({ name = "albedo", chan = TexChan.A }));
-        let kind = { skinned = false, uv = true, normalMap = true, lightmap = true, blend = false, doubleSided = false, coverage = false, metallicRoughness = false, pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false };
+        let kind = { skinned = false, uv = true, normalMap = true, lightmap = true, blend = false, doubleSided = false, coverage = false, metallicRoughness = false, variant = { pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false } };
         Assert.assertFalse(String.contains(substr = "Flip", Render3dWgsl.materialFragmentSource(ShaderGen.Wgsl.compile3d(textured, None, None, 1), kind)))
 }

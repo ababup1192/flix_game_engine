@@ -4,7 +4,8 @@ mod Render3d.Batch {
     import java.lang.Object
     import java.util.HashMap
     import java.util.Objects
-    use Render3d.{DrawMode, MeshDraw, ProgramKind}
+    use Render3d.{DrawMode, MeshDraw}
+    use Render3d.ProgramKey.{ProgramKind}
     use Render3d.ScenePlan.{isSkinned}
 
     /// 答え合わせの見本の batch（描く物を列で持つ形・batchOf と shapeBatches が返す）。head = 頭の物・draws = 描く物（間引いた物を除く・来た順）・count = 描く物の数。

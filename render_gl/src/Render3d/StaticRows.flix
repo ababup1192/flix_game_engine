@@ -41,7 +41,7 @@ mod Render3d.StaticRows {
     /// 場面の MultiMesh の体の数（診断の置いた物の数に足す）。
     pub def multiMeshCountOf(scene: Scene3d.Scene3dCmd): Int32 = List.sumWith(MultiMesh3d.countOf, scene#multiMeshes)
 
-    /// 場面 scene の持ち越した行の決め方の鍵（ensure の variant）。色の場面か奥行きの書き出しか・場面の pass の変種（Render3d.passVariantOf）・
+    /// 場面 scene の持ち越した行の決め方の鍵（ensure の variant）。色の場面か奥行きの書き出しか・場面の pass の変種（Render3d.ProgramKey.passVariantOf）・
     /// coverage = cutout を alpha to coverage の版にするか（Render3d.ScenePlan.coverageOf）。
     // WhyNot: 奥行きの書き出しの場面で色の場面の行を使わない — 奥行きの書き出しは cutout でも両面でもない材質を頂点の色の道で描き、変種も既定で、行が違う。
     // WhyNot: 奥行きの書き出しの near と range を鍵に入れない — 行には入らず、場面の値で渡す。
@@ -50,7 +50,7 @@ mod Render3d.StaticRows {
             case Scene3d.Output.Color    => "color"
             case Scene3d.Output.Depth(_) => "depth"
         };
-        output + Render3d.variantKeyOf(Render3d.passVariantOf(scene)) + (if (coverage) "+a2c" else "")
+        output + Render3d.ProgramKey.variantKeyOf(Render3d.ProgramKey.passVariantOf(scene)) + (if (coverage) "+a2c" else "")
 
     // ── 行を作る ──
 

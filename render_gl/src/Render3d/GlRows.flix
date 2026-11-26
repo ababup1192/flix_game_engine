@@ -4,8 +4,8 @@
 mod Render3d.GlRows {
     import fge.gl.GlConst
     import fge.gl.GlContext
-    use Render3d.{CameraData, DepthLocs, LitLocs, MaterialEntry, MaterialPass, MeshDraw, MeshLocs, SceneShadows, ShaderVariant, State, TextureSource,
-                  Programs, drawMeshRange, ensureTangents, materialTextureNames, meshEntry, meshEntryAt, programsOf, putDepthRange, skinnedProgramsOf, useMeshProgram, warnMissingTexture}
+    use Render3d.{CameraData, DepthLocs, LitLocs, MaterialEntry, MaterialPass, MeshDraw, MeshLocs, SceneShadows, State, TextureSource, Programs, drawMeshRange, ensureTangents, materialTextureNames, meshEntry, meshEntryAt, programsOf, putDepthRange, skinnedProgramsOf, useMeshProgram, warnMissingTexture}
+    use Render3d.ProgramKey.{ShaderVariant}
     use Render3d.Batch.{MaterialBatch, MeshBatch}
     use Render3d.Counts.{BatchBreak, countBillboardRuns, countDrawCall, countInstances}
     use Render3d.Light.{putLights}

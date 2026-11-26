@@ -28,21 +28,21 @@ mod Render3d.TestGlslEsKeywords {
     def flagsName(flags: List[(String, Bool)]): String =
         flags |> List.filter(snd) |> List.map(fst) |> List.join("+")
 
-    def variantName(v: Render3d.ShaderVariant): String =
+    def variantName(v: Render3d.ProgramKey.ShaderVariant): String =
         "[" + flagsName(("pointShadows", v#pointShadows) :: ("physicalUnits", v#physicalUnits) :: ("psx", v#psx) :: Nil) + "]"
 
-    def kindName(k: Render3d.ProgramKind): String =
+    def kindName(k: Render3d.ProgramKey.ProgramKind): String =
         "[" + flagsName(("skinned", k#skinned) :: ("uv", k#uv) :: ("normalMap", k#normalMap) :: ("lightmap", k#lightmap) :: ("blend", k#blend) ::
                         ("doubleSided", k#doubleSided) :: ("coverage", k#coverage) :: ("metallicRoughness", k#metallicRoughness) ::
-                        ("pointShadows", k#pointShadows) :: ("physicalUnits", k#physicalUnits) :: ("psx", k#psx) :: Nil) + "]"
+                        ("pointShadows", k#variant#pointShadows) :: ("physicalUnits", k#variant#physicalUnits) :: ("psx", k#variant#psx) :: Nil) + "]"
 
-    def variants(): List[Render3d.ShaderVariant] =
+    def variants(): List[Render3d.ProgramKey.ShaderVariant] =
         List.flatMap(ps -> List.flatMap(pu -> List.map(px -> { pointShadows = ps, physicalUnits = pu, psx = px, skyIrradiance = false }, bools()), bools()), bools())
 
-    def kindsOf(v: Render3d.ShaderVariant): List[Render3d.ProgramKind] =
+    def kindsOf(v: Render3d.ProgramKey.ShaderVariant): List[Render3d.ProgramKey.ProgramKind] =
         List.flatMap(sk -> List.flatMap(uv -> List.flatMap(nm -> List.flatMap(lm -> List.flatMap(bl -> List.flatMap(ds -> List.flatMap(cv -> List.map(mr ->
             { skinned = sk, uv = uv, normalMap = nm, lightmap = lm, blend = bl, doubleSided = ds, coverage = cv, metallicRoughness = mr,
-              pointShadows = v#pointShadows, physicalUnits = v#physicalUnits, psx = v#psx, skyIrradiance = false },
+              variant = { skyIrradiance = false | v } },
             bools()), bools()), bools()), bools()), bools()), bools()), bools()), bools())
 
     def solidGlsl(): ShaderGen.MaterialGlsl =

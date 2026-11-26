@@ -20,10 +20,10 @@ mod Render3d.TestPointShadowVariants {
         if (n <= 0) Nil :: Nil
         else bits(n - 1) |> List.flatMap(rest -> (false :: rest) :: (true :: rest) :: Nil)
 
-    def kindOf(b: List[Bool]): Render3d.ProgramKind =
+    def kindOf(b: List[Bool]): Render3d.ProgramKey.ProgramKind =
         let at = (i: Int32) -> List.nth(i, b) |> Option.getWithDefault(false);
         { skinned = false, uv = at(0), normalMap = at(1), lightmap = at(2), blend = at(3), doubleSided = at(4), coverage = at(5),
-          metallicRoughness = at(6), pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false }
+          metallicRoughness = at(6), variant = { pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false } }
 
     def defaultGlsl(): String =
         Render3dGlsl.lightSource() + Render3dGlsl.litFragmentSource() + Render3dGlsl.billboardFragmentSource() +
@@ -47,25 +47,25 @@ mod Render3d.TestPointShadowVariants {
 
     def has(part: String, s: String): Bool = String.contains(substr = part, s)
 
-    def shadowed(): Render3d.ShaderVariant = { pointShadows = true, physicalUnits = false, psx = false, skyIrradiance = false }
+    def shadowed(): Render3d.ProgramKey.ShaderVariant = { pointShadows = true, physicalUnits = false, psx = false, skyIrradiance = false }
 
-    def physical(): Render3d.ShaderVariant = { pointShadows = false, physicalUnits = true, psx = false, skyIrradiance = false }
+    def physical(): Render3d.ProgramKey.ShaderVariant = { pointShadows = false, physicalUnits = true, psx = false, skyIrradiance = false }
 
-    def plainKind(): Render3d.ProgramKind = kindOf(Nil)
+    def plainKind(): Render3d.ProgramKey.ProgramKind = kindOf(Nil)
 
-    def keyPrefix(kind: Render3d.ProgramKind): String =
-        let key = Render3d.materialKey(Scene3d.materialFieldsOf(Scene3d.texturedMaterial("tex3d:a", ShaderDoc.FilterMode.Linear)), kind);
+    def keyPrefix(kind: Render3d.ProgramKey.ProgramKind): String =
+        let key = Render3d.ProgramKey.materialKey(Scene3d.materialFieldsOf(Scene3d.texturedMaterial("tex3d:a", ShaderDoc.FilterMode.Linear)), kind);
         String.takeWhile(c -> c != ':', key)
 
     @Test
     def testVariantKeysAppendPsAndPu(): Unit \ Assert =
         Assert.assertEq(expected = "3d" :: "3d+ps" :: "3d+pu" :: "3d+ps+pu" :: Nil,
-            keyPrefix(plainKind()) :: keyPrefix({ pointShadows = true | plainKind() }) :: keyPrefix({ physicalUnits = true | plainKind() })
-                :: keyPrefix({ pointShadows = true, physicalUnits = true | plainKind() }) :: Nil)
+            keyPrefix(plainKind()) :: keyPrefix({ variant = { pointShadows = true | plainKind()#variant } | plainKind() }) :: keyPrefix({ variant = { physicalUnits = true | plainKind()#variant } | plainKind() })
+                :: keyPrefix({ variant = { pointShadows = true, physicalUnits = true | plainKind()#variant } | plainKind() }) :: Nil)
 
     @Test
     def testPointShadowMaterialFillsPointLitBeforeLight(): Unit \ Assert =
-        let source = Render3dGlsl.materialFragmentSource(solidGlsl(), { pointShadows = true | plainKind() });
+        let source = Render3dGlsl.materialFragmentSource(solidGlsl(), { variant = { pointShadows = true | plainKind()#variant } | plainKind() });
         let fill = String.indexOf(substr = "    r3d_pointShadowsAt(vWorld, normalize(vNormal), n);\n", source) |> Option.getWithDefault(-1);
         let light = String.indexOf(substr = "    vec3 light = lightAt(vWorld, n);\n", source) |> Option.getWithDefault(-1);
         Assert.assertTrue(fill >= 0 and fill < light)
@@ -112,7 +112,7 @@ mod Render3d.TestPointShadowVariants {
 
     @Test
     def testWgslPointShadowFillsPointLitBeforeLight(): Unit \ Assert =
-        let source = Render3dWgsl.materialFragmentSource(solidWgsl(), { pointShadows = true | plainKind() });
+        let source = Render3dWgsl.materialFragmentSource(solidWgsl(), { variant = { pointShadows = true | plainKind()#variant } | plainKind() });
         let fill = String.indexOf(substr = "    r3d_pointShadowsAt(vWorld, normalize(vNormal), n);\n", source) |> Option.getWithDefault(-1);
         let light = String.indexOf(substr = "    let light = lightAt(vWorld, n);\n", source) |> Option.getWithDefault(-1);
         Assert.assertTrue(fill >= 0 and fill < light)
@@ -141,20 +141,20 @@ mod Render3d.TestPointShadowVariants {
     /// +sh の GLSL だけが景色の拡散の光の uniform を持つ（既定の字には無い）。
     @Test
     def testShVariantDeclaresShUniforms(): Unit \ Assert =
-        let sky = { skyIrradiance = true | Render3d.defaultShaderVariant() };
+        let sky = { skyIrradiance = true | Render3d.ProgramKey.defaultShaderVariant() };
         let has = (s: String) -> String.contains(substr = "uniform vec3 uSh[9];", s);
         Assert.assertEq(expected = (true, false), (has(Render3dGlsl.lightSourceFor(sky)), has(Render3dGlsl.lightSource())))
 
     /// +sh の WGSL は R3dLight を binding 6 で宣言する。
     @Test
     def testShVariantDeclaresLightBuffer(): Unit \ Assert =
-        Assert.assertTrue(String.contains(substr = "var<uniform> r3dLight: R3dLight;", Render3dWgsl.variantDeclarations({ skyIrradiance = true | Render3d.defaultShaderVariant() })))
+        Assert.assertTrue(String.contains(substr = "var<uniform> r3dLight: R3dLight;", Render3dWgsl.variantDeclarations({ skyIrradiance = true | Render3d.ProgramKey.defaultShaderVariant() })))
 
     @Test
     def testLayoutCodesAreDefaultLightAtlas(): Unit \ Assert =
         Assert.assertEq(expected = 0 :: 1 :: 1 :: 2 :: 2 :: Nil,
-            Render3d.WebGpuRenderer.layoutCodeOf(Render3d.defaultShaderVariant()) :: Render3d.WebGpuRenderer.layoutCodeOf(physical())
-                :: Render3d.WebGpuRenderer.layoutCodeOf({ skyIrradiance = true | Render3d.defaultShaderVariant() })
+            Render3d.WebGpuRenderer.layoutCodeOf(Render3d.ProgramKey.defaultShaderVariant()) :: Render3d.WebGpuRenderer.layoutCodeOf(physical())
+                :: Render3d.WebGpuRenderer.layoutCodeOf({ skyIrradiance = true | Render3d.ProgramKey.defaultShaderVariant() })
                 :: Render3d.WebGpuRenderer.layoutCodeOf(shadowed()) :: Render3d.WebGpuRenderer.layoutCodeOf({ pointShadows = true, physicalUnits = true, psx = false, skyIrradiance = false }) :: Nil)
 
     // ── 場面の変種 ──
@@ -170,15 +170,15 @@ mod Render3d.TestPointShadowVariants {
 
     @Test
     def testSceneWithoutShadowedLampsKeepsPs(): Unit \ Assert =
-        Assert.assertTrue(Render3d.shaderVariantOf(lampScene(Nil))#pointShadows)
+        Assert.assertTrue(Render3d.ProgramKey.shaderVariantOf(lampScene(Nil))#pointShadows)
 
     @Test
     def testDefaultSceneIsDefaultVariant(): Unit \ Assert =
-        Assert.assertEq(expected = "", Render3d.variantKeyOf(Render3d.shaderVariantOf(sceneOf(triangle() :: Nil))))
+        Assert.assertEq(expected = "", Render3d.ProgramKey.variantKeyOf(Render3d.ProgramKey.shaderVariantOf(sceneOf(triangle() :: Nil))))
 
     @Test
     def testPhysicalSceneIsPu(): Unit \ Assert =
-        Assert.assertEq(expected = "+pu", Render3d.variantKeyOf(Render3d.shaderVariantOf(Scene3d.withLightUnits(Scene3d.LightUnits.Physical, sceneOf(triangle() :: Nil)))))
+        Assert.assertEq(expected = "+pu", Render3d.ProgramKey.variantKeyOf(Render3d.ProgramKey.shaderVariantOf(Scene3d.withLightUnits(Scene3d.LightUnits.Physical, sceneOf(triangle() :: Nil)))))
 
     // ── uniform の値 ──
 

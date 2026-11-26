@@ -10,11 +10,11 @@ mod Render3d.TestPsxVariant {
 
     def psxScene(): Scene3d.Scene3dCmd = Scene3d.withPsx(Scene3d.psxPreset(), plain())
 
-    def psx(): Render3d.ShaderVariant = { pointShadows = false, physicalUnits = false, psx = true, skyIrradiance = false }
+    def psx(): Render3d.ProgramKey.ShaderVariant = { pointShadows = false, physicalUnits = false, psx = true, skyIrradiance = false }
 
-    def kind(uv: Bool): Render3d.ProgramKind =
+    def kind(uv: Bool): Render3d.ProgramKey.ProgramKind =
         { skinned = false, uv = uv, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false,
-          metallicRoughness = false, pointShadows = false, physicalUnits = false, psx = true, skyIrradiance = false }
+          metallicRoughness = false, variant = { pointShadows = false, physicalUnits = false, psx = true, skyIrradiance = false } }
 
     def solidGlsl(): ShaderGen.MaterialGlsl =
         { uniforms = "uniform float uTime;\n", functions = "void materialEval(out vec4 albedo, out vec3 emission) {}\n",
@@ -28,20 +28,20 @@ mod Render3d.TestPsxVariant {
 
     @Test
     def testPlainSceneIsDefaultVariant(): Unit \ Assert =
-        Assert.assertEq(expected = "", Render3d.variantKeyOf(Render3d.shaderVariantOf(plain())))
+        Assert.assertEq(expected = "", Render3d.ProgramKey.variantKeyOf(Render3d.ProgramKey.shaderVariantOf(plain())))
 
     @Test
     def testPsxSceneKeyIsPsx(): Unit \ Assert =
-        Assert.assertEq(expected = "+psx", Render3d.variantKeyOf(Render3d.shaderVariantOf(psxScene())))
+        Assert.assertEq(expected = "+psx", Render3d.ProgramKey.variantKeyOf(Render3d.ProgramKey.shaderVariantOf(psxScene())))
 
     @Test
     def testDepthOutputDropsPsx(): Unit \ Assert =
         let depth = { output = Scene3d.Output.Depth({ near = 0.0, range = 10.0 }) | psxScene() };
-        Assert.assertFalse(Render3d.passVariantOf(depth)#psx)
+        Assert.assertFalse(Render3d.ProgramKey.passVariantOf(depth)#psx)
 
     @Test
     def testBillboardKeepsPsx(): Unit \ Assert =
-        Assert.assertTrue(Render3d.billboardVariantOf({ pointShadows = true | psx() })#psx)
+        Assert.assertTrue(Render3d.ProgramKey.billboardVariantOf({ pointShadows = true | psx() })#psx)
 
     @Test
     def testPsxUsesLightLayout(): Unit \ Assert =

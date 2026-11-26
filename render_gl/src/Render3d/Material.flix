@@ -6,7 +6,8 @@ mod Render3d.Material {
     use Render3d.Shadow.{putPointShadow, putShadow, putSunShadow, shadowLocsOf, sunShadowLocsOf}
     use Render3dGlsl.{materialFragmentSource, materialVertexSourceFor}
     use Render3d.Light.{lightLocsOf, putLights}
-    use Render3d.{materialKey, ProgramKind, BoundTexture, CameraData, MaterialEntry, MaterialLocs, MaterialPass, MeshDraw, State, TextureSlot, TextureSource, bindDataTextureUnits, ensureTangents, environmentTextureUnit, lightmapTextureUnit, loc, meshLocsOf, normalMapTextureUnit, putDepthRange, useMeshProgram, warnDroppedTextures, warnSceneOnce}
+    use Render3d.{BoundTexture, CameraData, MaterialEntry, MaterialLocs, MaterialPass, MeshDraw, State, TextureSlot, TextureSource, bindDataTextureUnits, ensureTangents, environmentTextureUnit, lightmapTextureUnit, loc, meshLocsOf, normalMapTextureUnit, putDepthRange, useMeshProgram, warnDroppedTextures, warnSceneOnce}
+    use Render3d.ProgramKey.{materialKey, ProgramKind}
     use Render3d.Batch.{MaterialBatch, SpanBatch}
     use Scene3dRenderer.{RegisteredTexture}
     use Render3d.Counts.{Counter, Phase, count, noteMaterialBuild, timed}
@@ -36,7 +37,7 @@ mod Render3d.Material {
     pub def splitByMaterial(gl: GlContext, state: State, gen: Int64, outside: Scene3d.Instance3d -> Bool, wants: Scene3d.MaterialFields -> Bool, coverage: Bool,
                             instances: List[Scene3d.Instance3d]): ((List[SpanBatch], List[MaterialBatch[SpanBatch]]), MaterialTable) \ IO =
         timed(state, Phase.Split, () -> {
-            let (groups, requests) = groupInstances(state#planner, Render3d.defaultShaderVariant(), outside, wants, coverage, instances);
+            let (groups, requests) = groupInstances(state#planner, Render3d.ProgramKey.defaultShaderVariant(), outside, wants, coverage, instances);
             let table = resolveMaterials(gl, state, gen, requests);
             (splitGroups(groups, table#orders), table)
         })
@@ -530,9 +531,9 @@ mod Render3d.Material {
         let label = "scene3d:material" + (if (kind#skinned) ":skin" else "") + (if (kind#uv) ":uv" else "")
             + (if (kind#normalMap) ":nm" else "") + (if (kind#lightmap) ":lm" else "") + (if (kind#blend) ":bl" else "")
             + (if (kind#doubleSided) ":ds" else "") + (if (kind#coverage) ":cov" else "") + (if (kind#metallicRoughness) ":mr" else "")
-            + String.replace(src = "+", dst = ":", Render3d.variantKeyOf(Render3d.shaderVariantOfKind(kind))) + ":${m#spec#name}";
+            + String.replace(src = "+", dst = ":", Render3d.ProgramKey.variantKeyOf(Render3d.ProgramKey.shaderVariantOfKind(kind))) + ":${m#spec#name}";
         noteMaterialBuild(state, label, reason);
-        let vertex = materialVertexSourceFor({ skinned = kind#skinned, uv = kind#uv, lightmap = kind#lightmap }, kind#psx);
+        let vertex = materialVertexSourceFor({ skinned = kind#skinned, uv = kind#uv, lightmap = kind#lightmap }, kind#variant#psx);
         let fragment = materialFragmentSource(glsl, kind);
         let program = match RenderShader.tryCreateProgram(gl, vertex, fragment, label) {
             case Some(p) => p
@@ -540,7 +541,7 @@ mod Render3d.Material {
                 Log.warnThen("scene3d: 材質 '${m#spec#name}' のプログラムが組めなかった — この材質の物は頂点の色で描く", 0)
         };
         let base = materialLocsOf(gl, program, glsl#paramNames, List.length(glsl#texReads));
-        let (light, point) = Render3d.VariantPrograms.variantLocsOf(gl, program, Render3d.shaderVariantOfKind(kind), base#light);
+        let (light, point) = Render3d.VariantPrograms.variantLocsOf(gl, program, Render3d.ProgramKey.shaderVariantOfKind(kind), base#light);
         bindDataTextureUnits(gl, program);
         bindTextureUnits(gl, program, List.length(glsl#texReads), kind#normalMap, kind#lightmap, kind#metallicRoughness);
         { spec = m#spec, emission = m#emission, metallicRoughness = m#metallicRoughnessShade,

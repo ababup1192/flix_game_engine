@@ -109,11 +109,11 @@ mod Render3d.Preload {
               |> List.toSet |> Set.toList |> uploadTextures(gl, state, gen, source) }
 
     /// cmd#variants のうち既定でない変種（字が重なる物は 1 つ）。
-    pub def extraVariantsOf(cmd: Scene3d.PreloadCmd): List[Render3d.ShaderVariant] =
+    pub def extraVariantsOf(cmd: Scene3d.PreloadCmd): List[Render3d.ProgramKey.ShaderVariant] =
         cmd#variants |> List.filter(v -> Scene3d.preloadVariantKey(v) != "") |> List.map(v -> (Scene3d.preloadVariantKey(v), v)) |> List.toMap |> Map.valuesOf
 
     /// 変種 v の材質のプログラムを組み、その batch を引いた表と組にして返す。shapes・skinned = 頂点の色の物（骨の無い物・骨つきの物）があれば、その版の頂点の色のプログラムも組む。
-    def variantVersions(gl: GlContext, state: State, gen: Int64, v: Render3d.ShaderVariant, shapes: Bool, skinned: Bool,
+    def variantVersions(gl: GlContext, state: State, gen: Int64, v: Render3d.ProgramKey.ShaderVariant, shapes: Bool, skinned: Bool,
                         instances: List[Scene3d.Instance3d]): List[(MaterialTable, MaterialBatch[SpanBatch])] \ IO =
         if (shapes) discard Render3d.VariantPrograms.litLocsOfVariant(gl, state, v, false) else ();
         if (skinned) discard Render3d.VariantPrograms.litLocsOfVariant(gl, state, v, true) else ();

@@ -157,8 +157,8 @@ mod Render3d.TestMeshTable {
         let size = (reads, params) -> Render3d.MaterialValues.valueSizeOf({ readCount = reads, paramNames = List.range(0, params) |> List.map(Int32.toString) });
         Assert.assertEq(expected = (128, 128, 192), (size(0, 0), size(6, 57), size(6, 58)))
 
-    def plainKind(): Render3d.ProgramKind =
-        { skinned = false, uv = true, normalMap = true, lightmap = false, blend = false, doubleSided = true, coverage = false, metallicRoughness = true, pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false }
+    def plainKind(): Render3d.ProgramKey.ProgramKind =
+        { skinned = false, uv = true, normalMap = true, lightmap = false, blend = false, doubleSided = true, coverage = false, metallicRoughness = true, variant = { pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false } }
 
     /// WebGPU が描く版は alpha to coverage の無い版（骨つき・uv・法線マップ・lightmap・半透明・両面・metallic と roughness は描く）。
     @Test
