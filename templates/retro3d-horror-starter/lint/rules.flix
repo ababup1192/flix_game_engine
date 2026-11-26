@@ -28,7 +28,8 @@ mod GameLint {
         Flixlint.customs(List#{
             customRule({ id = "view-no-world", check = viewNoWorld })
                 |> allowIn(Fn.View_frame, "描く入口（App の view が World を渡す）。View.inputOf で In を組んで部品へ渡す")
-                |> allowIn(Fn.View_inputOf, "World から 3D の場面の In を組む口（View の中で World を読むのは入口とここだけ）")
+                |> allowIn(Fn.View_preloadScenes, "先に作る宣言の場面の入口（App の withPreload3d が World を渡す）。View.inputOf で In を組んで SchoolView へ渡す")
+                |> allowIn(Fn.View_inputOf,"World から 3D の場面の In を組む口（View の中で World を読むのは入口とここだけ）")
                 |> allowIn(Fn.View_hudOf, "World から HUD の値を組む口")
                 |> allowIn(Fn.View_hud, "HUD の描く入口（App の withHudView が World を渡す）。View.hudOf で値を組んで部品へ渡す")
                 |> allowIn(Fn.View_promptOf, "World から終了の確認の窓の値を組む口（Controls も押し所を選ぶのに呼ぶ）"),

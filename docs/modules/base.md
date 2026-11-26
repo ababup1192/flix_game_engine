@@ -28,6 +28,7 @@
 | 動かない背景を毎フレーム作り直している | App.withStaticLayer（鍵が同じ間は GPU バッファを使い回す） |
 | 動かない絵の一部だけ変わる（壊す・掘る）たびに静的層の作り直しでコマが止まる | App.withStaticLayers（区画ごとに id と鍵・鍵が変わった区画だけ作り直す。docs/performance.md の「静的層を区画に分ける」） |
 | 3D で初めて出る物のコマだけ跳ねる | App.withPreload3d（形・絵・材質のプログラムを先に GPU へ上げる。`key` が同じ間は組み直さない） |
+| 3D で区画の staticGroup が見えるたびに画面が黒くなる・黒くしたくない | App.withAutoPreload3d（既定 Cover は作り終えるまで外して黒・PopIn は外すだけ・Off は描いたコマで作る） |
 | タイルが多い・タイル宣言の組み立てが毎フレーム走る | App.withTileLayers（tiles はサンク — 鍵が変わるまで評価されない） |
 | 遠くで 1px を切る物まで組み立てている | 倍率の床で place ごと切る |
 | 1 マスを画素ぶんの box で組んでいる（絵は同じでも桁が違う） | PxSprite.drawQuad（1 コマ = 1 クアッド）。アトラスは PxSpriteAtlas.bake + App.withSpriteAtlases |
