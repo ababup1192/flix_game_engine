@@ -167,22 +167,57 @@ mod TestAutoPreload3d {
         let (shots, _) = runFrames(showing(g), plain(1, notYet()) :: plain(0, notYet()) :: plain(1, notYet()) :: Nil);
         Assert.assertEq(expected = true :: true :: true :: Nil, coveredOf(shots))
 
-    /// 作り終えた名前で items の参照だけ替わった集まりは、外さず・黒にせず・宣言に足さない。
+    /// 作り終えた名前で値が替わった集まりは、新しい値のまま場面に渡し（外さず・黒にせず）、新しい値を宣言に載せて key を替える。
     @Test
-    def testReadyNameWithANewValueIsLeftToTheRenderer(): Unit \ {Assert, IO} =
+    def testReadyNameWithANewValueIsDrawnAndDeclared(): Unit \ {Assert, IO} =
         let first = Scene3d.staticGroup("a", Nil);
-        let second = Scene3d.staticGroup("a", Nil);
+        let second = Scene3d.staticGroup("a", Nil) |> Scene3d.withGroupTint(Color.rgb(1.0, 0.0, 0.0));
         let app = viewing(world -> if (world == 1) placed(first :: Nil) :: Nil else placed(second :: Nil) :: Nil);
-        let (shots, _) = runFrames(app, plain(1, finished()) :: plain(2, notYet()) :: Nil);
-        Assert.assertEq(expected = Some((None, ("a" :: Nil) :: Nil, false)), shots |> List.last |> Option.map(s -> (s#preloaded, s#drawn, s#covered)))
+        let (shots, _) = runFrames(app, plain(1, finished()) :: plain(2, notYet()) :: plain(2, notYet()) :: Nil);
+        let keys = shots |> List.map(s -> s#key);
+        Assert.assertEq(expected = (Some((Some("a" :: Nil), ("a" :: Nil) :: Nil, false)), true),
+                        (shots |> List.last |> Option.map(s -> (s#preloaded, s#drawn, s#covered)), List.head(keys) != List.last(keys)))
 
-    /// 作り終えた名前が 120 コマ出ず、また出た時は作っている名前に戻り、描き手がそのコマで済んだと返せば黒を出さない。
+    /// PopIn でも、作り終えた名前の値替わりは外さない。
     @Test
-    def testForgottenNameIsRequestedAgainWithoutCover(): Unit \ {Assert, IO} =
+    def testPopInReadyNameWithANewValueIsDrawn(): Unit \ {Assert, IO} =
+        let first = Scene3d.staticGroup("a", Nil);
+        let second = Scene3d.staticGroup("a", Nil) |> Scene3d.withGroupTint(Color.rgb(1.0, 0.0, 0.0));
+        let app = viewing(world -> if (world == 1) placed(first :: Nil) :: Nil else placed(second :: Nil) :: Nil) |> App.withAutoPreload3d(App.AutoPreload3d.PopIn);
+        let (shots, _) = runFrames(app, plain(1, finished()) :: plain(2, notYet()) :: Nil);
+        Assert.assertEq(expected = Some((("a" :: Nil) :: Nil, false)), shots |> List.last |> Option.map(s -> (s#drawn, s#covered)))
+
+    /// 作り終えた名前は View から消えても宣言に載り続け、1,700 コマ（約 28 秒）ぶりに戻っても外れず黒にならない（描き手が済んでいなくても）。
+    @Test
+    def testReturnWithinTheKeepWindowNeitherStripsNorCovers(): Unit \ {Assert, IO} =
         let g = Scene3d.staticGroup("a", Nil);
-        let away = List.repeat(120, plain(0, finished()));
-        let (shots, _) = runFrames(showing(g), plain(1, finished()) :: List.append(away, plain(1, finished()) :: Nil));
-        Assert.assertEq(expected = Some((Some("a" :: Nil), false)), shots |> List.last |> Option.map(s -> (s#preloaded, s#covered)))
+        let away = List.repeat(1700, plain(0, finished()));
+        let (shots, _) = runFrames(showing(g), plain(1, finished()) :: List.append(away, plain(1, notYet()) :: Nil));
+        Assert.assertEq(expected = (Some(Some("a" :: Nil)), Some((("a" :: Nil) :: Nil, false))),
+                        (shots |> List.drop(1000) |> List.head |> Option.map(s -> s#preloaded), shots |> List.last |> Option.map(s -> (s#drawn, s#covered))))
+
+    /// 1,800 コマ（30 秒）を過ぎて戻った名前は、宣言から外れていて、済むまで外すが黒にはしない。
+    @Test
+    def testReturnAfterTheKeepWindowStripsWithoutCover(): Unit \ {Assert, IO} =
+        let g = Scene3d.staticGroup("a", Nil);
+        let away = List.repeat(1800, plain(0, finished()));
+        let (shots, _) = runFrames(showing(g), plain(1, finished()) :: List.append(away, plain(1, notYet()) :: Nil));
+        let beforeReturn = shots |> List.reverse |> List.drop(1) |> List.head |> Option.map(s -> s#preloaded);
+        Assert.assertEq(expected = (Some(None), Some((Some("a" :: Nil), Nil :: Nil, false))),
+                        (beforeReturn, shots |> List.last |> Option.map(s -> (s#preloaded, s#drawn, s#covered))))
+
+    def namesUpTo(lo: Int32, hi: Int32): List[Scene3d.StaticGroup] = List.range(lo, hi + 1) |> List.map(i -> Scene3d.staticGroup("n${i}", Nil))
+
+    /// 作り終えた名前が 64 を超えると、View に出ていない物から宣言を外し、外した名前が戻った時は外すだけで黒にしない。
+    @Test
+    def testKeepLimitForgetsTheAwayNameFirst(): Unit \ {Assert, IO} =
+        let all = namesUpTo(1, 65);
+        let rest = namesUpTo(2, 65);
+        let app = viewing(world -> if (world == 2) placed(rest) :: Nil else placed(all) :: Nil);
+        let (shots, _) = runFrames(app, plain(1, finished()) :: plain(2, finished()) :: plain(3, notYet()) :: Nil);
+        let declaredAt2 = shots |> List.drop(1) |> List.head |> Option.flatMap(s -> s#preloaded) |> Option.map(ns -> (List.length(ns), List.memberOf("n1", ns)));
+        let drawnAt3 = shots |> List.last |> Option.map(s -> (s#drawn |> List.flatten |> List.memberOf("n1"), s#covered));
+        Assert.assertEq(expected = (Some((64, false)), Some((false, false))), (declaredAt2, drawnAt3))
 
     /// 作っている間に値が替われば、宣言に足すのは最新の値 1 つで、宣言の key が替わる。
     @Test

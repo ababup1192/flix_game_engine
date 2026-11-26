@@ -15,6 +15,7 @@
 #                最悪（frame_max・split_max・draw_max）を出す。Field のつまみ（COUNT・SHAPES・MATS・VERTS）が効く。起動し直して 3 回流す
 #   make run FIRST=preload … 集まりを App.withPreload3d の groups・scenes で頭から宣言して先に作らせ（区間 ahead）、120 コマ目に初めて載せる（区間 first）
 #   make run FIRST=auto [GROUPS=50] … FIRST=1 と同じ場面を、engine が自動で先に作って黒で覆う形で測る（FIRST=1 は自動を切る）。GROUPS で集まりを n 個に分ける
+#   make run FIRST=away [AWAY=600] … FIRST=auto と同じ場面で、90 コマ目に集まりを外して AWAY コマの後に同じ値で戻す（区間 return の preload_frames が先に作ったコマ数）
 #   ブラウザだけ: ARGS='first=glb&keyed=<0|1>' … 120 コマ目に assets/props_a.glb（retro3d-horror-starter の束 props_1f_a・glb=props_b.glb で後半）を解いて描く（区間 glb の work_max が解く仕事の ms）
 #   make run FIRST=skin … 集まりを頭から載せ、途中で骨つきの人物（PERSON=<glb>・既定は retro3d-horror-starter の teacher_woman）を出すコマ（区間 skin）の最悪
 #   make run SCENE=orb POST=agx … 光る球の場面（view transform の見比べ。POST は standard / agx / neutral）
