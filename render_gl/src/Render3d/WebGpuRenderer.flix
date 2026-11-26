@@ -146,7 +146,7 @@ pub mod Render3d.WebGpuRenderer {
     /// written = 今の encoder（submit まで）で値を書いたか、貼る pass を積んだ描き先の鍵・instances = 1 体ごとの値の buffer（頂点の buffer の 1 番）・
     /// instanceUsed = 今の encoder で使ったそのバイト数・poses = 姿勢の storage の buffer・posesUsed = 今の encoder で使ったそのバイト数・
     /// poseGroups = 今の encoder の group 2（submit の後に手放す）・sceneGroups = 影の地図か環境マップを読む場面の group 0 の控え（描き先と読む絵が同じなら使い回し、コマの間に使わなかった物を手放す）・shadows = 影の地図の描き先と pass・epoch = submit の数（姿勢をこの encoder で書いたかを見る）・
-    /// cpuInstances・cpuPoses・cpuScene・cpuCamera・cpuPaste・scratch = 毎回作らずに使い回す CPU の入れ物
+    /// multiCarry = 続けて描く MultiMesh の詰めた並びの控え（Render3d.InstanceValues.MultiCarry）・cpuInstances・cpuPoses・cpuScene・cpuCamera・cpuPaste・scratch = 毎回作らずに使い回す CPU の入れ物
     /// （cpuInstances と cpuPoses は足りなければ倍に作り直す）・gen = 画面のコマの世代（endFrame で進む）。
     enum RendererData {
         case RendererData({
@@ -197,6 +197,7 @@ pub mod Render3d.WebGpuRenderer {
             cpuCamera = ByteBuffer,
             cpuPaste = ByteBuffer,
             scratch = Array[Float32, Static],
+            multiCarry = Render3d.InstanceValues.MultiCarry,
             statics = WebGpuStatic.StaticCache,
             gen = Array[Int64, Static]
         })
@@ -267,6 +268,7 @@ pub mod Render3d.WebGpuRenderer {
             cpuPoses = Array#{directBytes(initialPoseBytes())} @ Static,
             cpuScene = directBytes(WebGpuSceneValues.sceneValueBytes()), cpuCamera = directBytes(Render3dWgsl.cameraBytes()), cpuPaste = directBytes(16),
             scratch = Array.repeat(Static, Render3dWgsl.instanceBytes() / 4, 0.0f32),
+            multiCarry = Render3d.InstanceValues.freshMultiCarry(),
             statics = WebGpuStatic.fresh(),
             gen = Array#{1i64} @ Static
         });
@@ -732,7 +734,7 @@ pub mod Render3d.WebGpuRenderer {
         carried |> List.forEach(c -> WebGpuStatic.addRowCounts(s, c#litCounts));
         let drawn = passes |> List.sumWith(match (_, list) -> countRowsOf(s, list)) + List.sumWith(c -> c#litCounts#drawn + c#rows#combinedAway, carried);
         let placed = StaticRows.placedCountOf(plan#cmd#scene, List.map(c -> c#rows, carried));
-        countInstances(s, placed, drawn);
+        countInstances(s, placed + StaticRows.multiMeshCountOf(plan#cmd#scene), drawn);
         passes |> List.forEach(pl -> Render3d.Counts.countBillboardRuns(s, snd(pl)));
         let (callsAfter, meshAfter) = Render3d.Counts.drawCallsSoFar(s);
         Render3d.ScenePlan.noteDrawCallHint(s#planner, callsAfter - callsBefore, meshAfter - meshBefore);
@@ -872,7 +874,8 @@ pub mod Render3d.WebGpuRenderer {
         let raw = cpuInstancesFor(r, bytes);
         let out = raw.asFloatBuffer();
         let next = Array#{0} @ Static;
-        let numbered = Render3d.InstanceValues.mapBatches(mode -> numberSpan(out, s#scratch, Int32.maxValue(), next, members, mode), plan);
+        let numbered = Render3d.InstanceValues.mapBatchesWithMultiMeshes(mode -> numberSpan(out, s#scratch, Int32.maxValue(), next, members, mode),
+            Render3d.InstanceValues.numberMultiMesh(out, s#scratch, Int32.maxValue(), next, s#multiCarry, Array.get(0, s#gen)), plan);
         let tables = tablesOf(r, host);
         let ctx = contextWith(tables, source, numbered#cmd#scene);
         (buildScenePasses(ctx, numbered), Render3d.ShadowMaps.buildPasses(ctx, uses, numbered), { data = raw, bytes = bytes })

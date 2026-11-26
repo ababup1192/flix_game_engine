@@ -71,6 +71,7 @@
 | 3D の物の置き場所（位置・回転・拡大）を 1 つの値で持ちたい | Transform3d |
 | 3D の回転を四元数で持つ・2 つの向きの間をなめらかにつなぐ | Quat |
 | 3D の形（頂点・法線・色・三角形）を作る・箱や板を組む・uv を付ける（withUvs・withBoxUvs） | Mesh3d |
+| 同じ形の動く物をたくさん（群れ・弾・草）1 回の instanced draw で描く（Godot の MultiMesh。動かない物は Scene3d.staticGroup） | MultiMesh3d.build（Scene3d の multiMeshes に載せる） |
 | 3D の材質に貼る絵を場面に持たせる（PNG / JPEG を読む・中身のハッシュの名前） | Texture3d（Scene3d.texturedMaterial と組む） |
 | 絵の縮小の段（mip）を作る・3D の絵を読む段を選ぶ（GPU と CPU で同じ式） | Mip（build / lodOf） |
 | 3D の視点（位置・向き・画角）を持ちたい | Camera3d |

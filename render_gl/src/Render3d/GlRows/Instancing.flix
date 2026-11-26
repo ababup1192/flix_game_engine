@@ -8,7 +8,7 @@ pub mod Render3d.GlRows.Instancing {
     use Render3d.{MeshDraw, State, instanceTextureUnit, warnSceneOnce}
     use Render3d.Batch.{MeshBatch, SpanBatch}
     use Render3d.GlRows.DataTexture.{bufferFor, heightFor, rowLimit, takeTexture, textureWidth}
-    use Render3d.InstanceValues.{countOf, mapBatches, numberSpan}
+    use Render3d.InstanceValues.{countOf, mapBatches, mapBatchesWithMultiMeshes, numberMultiMesh, numberSpan}
     use Render3dGlsl.{instancesPerRow, texelsPerInstance}
     use Render3d.ScenePlan.{ScenePlan}
 
@@ -34,7 +34,7 @@ pub mod Render3d.GlRows.Instancing {
             discard out.clear();
             let scratch = Array.repeat(Static, texelsPerInstance() * 4, 0.0f32);
             let next = Array#{0} @ Static;
-            let numbered = plans |> List.map(mapBatches(numberSpan(out, scratch, capacity, next, members)));
+            let numbered = plans |> List.map(mapBatchesWithMultiMeshes(numberSpan(out, scratch, capacity, next, members), numberMultiMesh(out, scratch, capacity, next, state#multiCarry, gen)));
             discard out.position(0);
             discard out.limit(rows * width * 4);
             gl.activeTexture(GlConst.TEXTURE0 + instanceTextureUnit());

@@ -204,7 +204,7 @@ pub mod PostStack.Internal.Passes {
     /// 場面 s の奥行きの絵（目からの距離が near で黒・near + range で白）。光・空・景色は持たない（奥行きに要らない）。
     def depthItemOf(s: (Vec2.Vec2, Scene3d.Scene3dCmd), near: Float64, range: Float64): Render.PlacedItem =
         let (at, cmd) = s;
-        Render.scene3d(at, { instances = cmd#instances, groups = cmd#groups, billboards = cmd#billboards, textures = cmd#textures,
+        Render.scene3d(at, { instances = cmd#instances, groups = cmd#groups, multiMeshes = cmd#multiMeshes, billboards = cmd#billboards, textures = cmd#textures,
                              time = cmd#time, resolution = cmd#resolution, zIndex = cmd#zIndex, unitsPerMeter = cmd#unitsPerMeter,
                              output = Scene3d.Output.Depth({ near = near, range = range }) | Scene3d.scene(cmd#camera, cmd#size) })
 

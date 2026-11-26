@@ -27,16 +27,19 @@ mod Render3d.StaticRows {
     pub def perFrameOf(scene: Scene3d.Scene3dCmd, carried: List[CarriedRows]): List[Scene3d.Instance3d] =
         List.foldRight((c, acc) -> List.append(c#perFrame, acc), Nil, carried) |> List.append(scene#instances)
 
-    /// 場面に描く物が 1 つでもあるか（集まりは外していない鍵が 1 つでもあるか。先頭で止まり、描く物の列を作らない）。
-    pub def hasDrawnItem(scene: Scene3d.Scene3dCmd): Bool =
-        not List.isEmpty(scene#instances) or List.exists(g -> {
-            let r = Scene3d.staticGroupFieldsOf(g);
-            List.exists(kv -> not Set.memberOf(fst(kv), r#removed), r#items)
-        }, scene#groups)
-
-    /// 場面の置いた物の数（診断）。carried = 場面の持ち越した集まり。
+    /// 場面の置いた物の数（instances と持ち越した集まりの物。MultiMesh の体は入れない・staticGroup を勧める知らせが数える数）。carried = 場面の持ち越した集まり。
     pub def placedCountOf(scene: Scene3d.Scene3dCmd, carried: List[CarriedRows]): Int32 =
         List.length(scene#instances) + List.sumWith(c -> c#placed + List.length(c#perFrame), carried)
+
+    /// 場面の instances と groups の外していない物の数（並びを作らずに数える。MultiMesh の体は入れない）。
+    pub def itemCountOf(scene: Scene3d.Scene3dCmd): Int32 =
+        List.length(scene#instances) + List.sumWith(g -> {
+            let r = Scene3d.staticGroupFieldsOf(g);
+            List.count(kv -> not Set.memberOf(fst(kv), r#removed), r#items)
+        }, scene#groups)
+
+    /// 場面の MultiMesh の体の数（診断の置いた物の数に足す）。
+    pub def multiMeshCountOf(scene: Scene3d.Scene3dCmd): Int32 = List.sumWith(MultiMesh3d.countOf, scene#multiMeshes)
 
     /// 場面 scene の持ち越した行の決め方の鍵（ensure の variant）。色の場面か奥行きの書き出しか・場面の pass の変種（Render3d.passVariantOf）・
     /// coverage = cutout を alpha to coverage の版にするか（Render3d.ScenePlan.coverageOf）。

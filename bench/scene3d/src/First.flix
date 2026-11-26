@@ -63,7 +63,7 @@ mod First {
     /// field の設定を、動く物なし・集まりあり にしたつまみの表から作る。person = 人物の glb（Skin の時だけ読む）。
     /// つまみ keyed = 1 なら、形の中身の鍵を Mesh3d.withContentKey で作る（glb を鍵つきの Gltf.decodeWith で読んだ形と同じく、頂点の SHA-256 を取らない）。
     pub def kitOf(mode: Mode, knobs: Map[String, String], person: Option[Model3d.Model3d]): Kit =
-        let config = { staticGroup = true, movingPercent = 0 | Field.configOf(knobs) };
+        let config = { delivery = Field.Delivery.Grouped, movingPercent = 0 | Field.configOf(knobs) };
         let field = Field.kitOf(config);
         let keyed = Map.get("keyed", knobs) == Some("1");
         let resting = Scene3d.groupInstancesOf(field#resting);

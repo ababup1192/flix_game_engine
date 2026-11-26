@@ -1,7 +1,7 @@
 // Field — 小さな箱と柱を格子に並べた 3D の場面。物の数・形の種類・材質の種類・動く割合・半透明の割合・太陽の影をつまみで替える。
 // 物は全部カメラに入る（数を増やした分だけ描く物が増える）。座標は engine の Scene3d の約束（左手系・X = 東・Y = 上・Z = 北）。
 mod Field {
-    use fge::{Camera3d, Color, Mat4, Mesh3d, Num, Render, Scene3d, ShaderDoc, Vec2, Vec3}
+    use fge::{Camera3d, Color, Mat4, Mesh3d, MultiMesh3d, Num, Render, Scene3d, ShaderDoc, Vec2, Vec3}
 
     /// 形の種類。Shared(k) = k 種類を順に使う・PerObject = 物ごとに違う形。
     pub enum Shapes with Eq {
@@ -9,10 +9,17 @@ mod Field {
         case PerObject
     }
 
+    /// 物の渡し方。PerFrame = 毎コマ全部を instances へ・Grouped = 動かない物を Scene3d.staticGroup の集まり 1 つで・Multi = 全部を毎コマ動かして MultiMesh3d 1 つで。
+    pub enum Delivery with Eq {
+        case PerFrame
+        case Grouped
+        case Multi
+    }
+
     /// つまみ。count = 物の数・materials = 材質の種類・movingPercent = 毎コマ位置と向きを変える物の割合（%）・
-    /// translucentPercent = 半透明の物の割合（%）・sunShadow = 太陽の影を落とすか・staticGroup = 動かない物を Scene3d.staticGroup の集まり 1 つで渡すか・
+    /// translucentPercent = 半透明の物の割合（%）・sunShadow = 太陽の影を落とすか・cutout = 材質を cutout にするか・lamps = 影を落とす点光源の数（格子の上に並べる）・delivery = 物の渡し方（Delivery）・
     /// faceGrid = 箱の面 1 つを何 × 何の四角に割るか（1 = 割らない。形ごとの頂点の数を寄せる）。
-    pub type alias Config = { count = Int32, shapes = Shapes, materials = Int32, movingPercent = Int32, translucentPercent = Int32, sunShadow = Bool, staticGroup = Bool,
+    pub type alias Config = { count = Int32, shapes = Shapes, materials = Int32, movingPercent = Int32, translucentPercent = Int32, sunShadow = Bool, cutout = Bool, lamps = Int32, delivery = Delivery,
                               faceGrid = Int32 }
 
     /// つまみの表（n・shapes = 数か each・mats・moving・alpha・shadow = 1 で影あり・group = 1 で動かない物を集まりに・verts = 形ごとの頂点の数の目安）を読む。
@@ -23,7 +30,9 @@ mod Field {
           movingPercent = BenchRun.intKnob("moving", 100, knobs),
           translucentPercent = BenchRun.intKnob("alpha", 0, knobs),
           sunShadow = Map.get("shadow", knobs) == Some("1"),
-          staticGroup = Map.get("group", knobs) == Some("1"),
+          cutout = Map.get("cutout", knobs) == Some("1"),
+          lamps = Int32.max(0, BenchRun.intKnob("lamps", 0, knobs)),
+          delivery = if (Map.get("multi", knobs) == Some("1")) Delivery.Multi else if (Map.get("group", knobs) == Some("1")) Delivery.Grouped else Delivery.PerFrame,
           faceGrid = faceGridOf(BenchRun.intKnob("verts", 24, knobs)) }
 
     /// 頂点の数の目安 verts に近づく面の割り方（箱は 6 面 × 割った四角 × 4 頂点）。
@@ -38,7 +47,7 @@ mod Field {
         };
         ("n", Int32.toString(c#count)) :: ("shapes", shapes) :: ("mats", Int32.toString(c#materials)) ::
         ("moving", Int32.toString(c#movingPercent)) :: ("alpha", Int32.toString(c#translucentPercent)) ::
-        ("shadow", if (c#sunShadow) "1" else "0") :: ("group", if (c#staticGroup) "1" else "0") :: ("verts", Int32.toString(24 * c#faceGrid * c#faceGrid)) :: Nil
+        ("shadow", if (c#sunShadow) "1" else "0") :: ("group", if (c#delivery == Delivery.Grouped) "1" else "0") :: ("multi", if (c#delivery == Delivery.Multi) "1" else "0") :: ("cutout", if (c#cutout) "1" else "0") :: ("lamps", Int32.toString(c#lamps)) :: ("verts", Int32.toString(24 * c#faceGrid * c#faceGrid)) :: Nil
 
     /// 描き物の大きさ（design px）。
     pub def design(): Vec2.Vec2 = { x = 320.0, y = 180.0 }
@@ -116,7 +125,7 @@ mod Field {
     /// 場面の作り置き。allResting = 全部が動かない時の物の列（動く割合 0% のコマはこれをそのまま渡す）・
     /// resting = 動かない物の集まり（つまみ group の時に毎コマ渡す）・movers = 動く物（つまみ group の時に毎コマ instances へ置く）。
     pub type alias Kit = { config = Config, extent = Float64, ground = Scene3d.Instance3d, placed = List[Placed], allResting = List[Scene3d.Instance3d],
-                           resting = Scene3d.StaticGroup, movers = List[Placed] }
+                           resting = Scene3d.StaticGroup, movers = List[Placed], placedVec = Vector[Placed] }
 
     /// 格子の 1 辺の物の数。
     def sideOf(count: Int32): Int32 =
@@ -129,7 +138,7 @@ mod Field {
         let side = sideOf(c#count);
         let extent = Int32.toFloat64(side) * spacing();
         let shapes = Vector.range(0, shapeCount(c)) |> Vector.map(shapeOf(c#faceGrid));
-        let opaque = Vector.range(0, c#materials) |> Vector.map(materialOf(false));
+        let opaque = Vector.range(0, c#materials) |> Vector.map(k -> Scene3d.withCutout(c#cutout, materialOf(false, k)));
         let translucent = Vector.range(0, c#materials) |> Vector.map(materialOf(true));
         let placed = List.range(0, c#count) |> List.map(i -> {
             let at = Vec3.v3((Int32.toFloat64(Int32.modulo(i, side)) + 0.5) * spacing() - extent / 2.0, 0.0, (Int32.toFloat64(i / side) + 0.5) * spacing());
@@ -146,7 +155,7 @@ mod Field {
         { config = c, extent = extent, ground = Scene3d.meshInstance(groundMesh, Mat4.identity()), placed = placed,
           allResting = placed |> List.map(p -> p#resting),
           resting = Scene3d.staticGroup("field", placed |> List.filter(p -> not p#moves) |> List.mapWithIndex((i, p) -> (Int32.toString(i), p#resting))),
-          movers = placed |> List.filter(p -> p#moves) }
+          movers = placed |> List.filter(p -> p#moves), placedVec = List.toVector(placed) }
 
     /// 動く物の t 秒の姿（その場で回りながら上下する）。
     def movedInstance(p: Placed, t: Float64): Scene3d.Instance3d =
@@ -154,7 +163,7 @@ mod Field {
         instanceOf(p#mesh, p#material, Mat4.mul(Mat4.translate(Vec3.add(p#at, Vec3.v3(0.0, lift, 0.0))), Mat4.rotateY(t * 1.5 + p#phase)))
 
     def instancesAt(kit: Kit, t: Float64): List[Scene3d.Instance3d] =
-        if (kit#config#staticGroup) kit#movers |> List.map(instanceAt(t))
+        if (kit#config#delivery == Delivery.Grouped) kit#movers |> List.map(instanceAt(t))
         else if (kit#config#movingPercent <= 0) kit#allResting
         else kit#placed |> List.map(instanceAt(t))
 
@@ -169,6 +178,21 @@ mod Field {
             case None        => p#resting
         }
 
+    /// つまみ multi: 全部の物を、1 つ目の物の形と材質の MultiMesh3d 1 つで描く（動く物は movedInstance と同じ行列・形と材質の種類は 1 として測る）。
+    /// MATS=1 SHAPES=1 ALPHA=0 なら、multi=0 の instances と同じ絵になる（描き手ごとの自分自身との比べ・bench/scene3d/multi-parity.sh）。
+    def multiMeshesAt(kit: Kit, t: Float64): List[MultiMesh3d.MultiMesh3d] =
+        match List.head(kit#placed) {
+            case Some(p0) =>
+                MultiMesh3d.build(p0#mesh, Vector.length(kit#placedVec), i -> worldAt(t, Vector.get(i, kit#placedVec)))
+                    |> MultiMesh3d.withMaterial(p0#material) :: Nil
+            case None => Nil
+        }
+
+    // p の t 秒の行列（instanceAt と同じ。動かない物は置いた時の行列）。
+    @DontInline
+    def worldAt(t: Float64, p: Placed): Mat4.Mat4 =
+        Scene3d.instanceFieldsOf(instanceAt(t, p))#world
+
     // ── 場面 ──
 
     /// 格子の全部が入る高さと引きのカメラ（南の外から北を見下ろす）。
@@ -181,12 +205,23 @@ mod Field {
         else light
 
     pub def scene(kit: Kit, t: Float64): Scene3d.Scene3dCmd =
-        { instances = kit#ground :: instancesAt(kit, t),
-          groups = if (kit#config#staticGroup) kit#resting :: Nil else Nil,
+        { instances = kit#ground :: (if (kit#config#delivery == Delivery.Multi) Nil else instancesAt(kit, t)),
+          multiMeshes = if (kit#config#delivery == Delivery.Multi) multiMeshesAt(kit, t) else Nil,
+          groups = if (kit#config#delivery == Delivery.Grouped) kit#resting :: Nil else Nil,
           directionalLight = Some(sun(kit#config, kit#extent)),
           environment = { ambient = Color.rgb(0.38, 0.40, 0.46), hemisphere = 0.3, toonSteps = 0, fog = None,
                           background = Some(Color.rgb(0.55, 0.68, 0.82)) }
-          | Scene3d.scene(camera(kit#extent), design()) }
+          | Scene3d.scene(camera(kit#extent), design()) } |> withLamps(kit)
+
+    // つまみ lamps: 影を落とす点光源を格子の真ん中の上に lamps 本並べる（0 なら何もしない）。
+    def withLamps(kit: Kit, scene: Scene3d.Scene3dCmd): Scene3d.Scene3dCmd =
+        let n = kit#config#lamps;
+        if (n <= 0) scene
+        else {
+            let lampAt = (k: Int32) -> { position = Vec3.v3(kit#extent * (Int32.toFloat64(k) + 0.5) / Int32.toFloat64(n) - kit#extent / 2.0, 3.0, kit#extent / 2.0),
+                                          color = Color.rgb(1.0, 0.9, 0.7), intensity = 2.0, range = kit#extent };
+            { pointLights = List.range(0, n) |> List.map(lampAt) | scene } |> Scene3d.withPointShadows({ maxShadowedLights = n, mapSize = 256 | Scene3d.pointShadowMap() })
+        }
 
     /// 画面全体に場面を 1 つ置いた描き物の列。
     pub def items(kit: Kit, t: Float64): List[Render.PlacedItem] =

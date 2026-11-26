@@ -13,18 +13,21 @@ mod Render3d.ScenePlan {
     /// 計画の側の状態（GL の物を持たない）。drawMode = 置いた物の描き方・sceneWarnedRef = 場面について知らせ済みの鍵（見つからない絵・上限を超えた材質と光・
     /// 場面の絵の置き場あふれ・空・lightmap・uv の無い法線マップ）・skinWarnedRef = ジョイントの数の食い違いを知らせた形（contentHash）・shadowWarnedRef = 影について知らせ済みの種類・
     /// crowdedScenesRef = 置いた物が多いのに staticGroup の無い場面が続いた数（noteStaticGroupHint）・
-    /// shapeSplitScenesRef = draw call が多く、その半分超が形の違いで分かれた場面が続いた数（noteDrawCallHint）。
+    /// shapeSplitScenesRef = draw call が多く、その半分超が形の違いで分かれた場面が続いた数（noteDrawCallHint）・
+    /// sameShapeScenesRef = instances に同じ形と材質の物が多い場面が続いた数（noteSameShapeHint）・
+    /// spreadScenesRef = 散らばりすぎた MultiMesh のある場面が続いた数（Render3d.MultiMeshPlan.noteSpreadHint）。
     pub type alias Planner = {
         drawMode = DrawMode, sceneWarnedRef = Ref[Set[String], Static], skinWarnedRef = Ref[Set[String], Static], shadowWarnedRef = Ref[Set[String], Static],
-        crowdedScenesRef = Ref[Int32, Static], shapeSplitScenesRef = Ref[Int32, Static]
+        crowdedScenesRef = Ref[Int32, Static], shapeSplitScenesRef = Ref[Int32, Static], sameShapeScenesRef = Ref[Int32, Static], spreadScenesRef = Ref[Int32, Static]
     }
 
     pub def freshPlanner(drawMode: DrawMode): Planner \ IO =
         { drawMode = drawMode, sceneWarnedRef = Ref.fresh(Static, Set.empty()), skinWarnedRef = Ref.fresh(Static, Set.empty()),
-          shadowWarnedRef = Ref.fresh(Static, Set.empty()), crowdedScenesRef = Ref.fresh(Static, 0), shapeSplitScenesRef = Ref.fresh(Static, 0) }
+          shadowWarnedRef = Ref.fresh(Static, Set.empty()), crowdedScenesRef = Ref.fresh(Static, 0), shapeSplitScenesRef = Ref.fresh(Static, 0),
+          sameShapeScenesRef = Ref.fresh(Static, 0), spreadScenesRef = Ref.fresh(Static, 0) }
 
     /// 置いた物が staticHintInstances() 個を超え、staticGroup が 1 つも無い場面が staticHintScenes() 回続いたら、1 回だけ知らせる（GL と WebGPU が場面ごとに呼ぶ）。
-    /// placed = 場面の置いた物の数（Scene3dCounts#instances に足す数と同じ）。
+    /// placed = 場面の instances と集まりの物の数（MultiMesh の体は入れない・Render3d.StaticRows.placedCountOf / itemCountOf）。
     // WhyNot: 1 回超えただけで知らせない — 人の多い場面を一瞬通るだけのゲームにまで、まとめ直しを勧めることになる。
     pub def noteStaticGroupHint(planner: Planner, placed: Int32, scene: Scene3d.Scene3dCmd): Unit \ IO =
         let crowded = placed > staticHintInstances() and List.isEmpty(scene#groups);
@@ -32,8 +35,24 @@ mod Render3d.ScenePlan {
         Ref.put(streak, planner#crowdedScenesRef);
         if (streak >= staticHintScenes())
             warnOnce(planner, "@static-group-hint", "scene3d: 置いた物が ${placed} 個あり staticGroup の無い場面が続いている — 動かない物は Scene3d.staticGroup にまとめると"
-                + "計画と 1 体ごとの値を持ち越して CPU が減る（engine の docs/scene3d.md の「動かない物をまとめる（staticGroup）」）")
+                + "計画と 1 体ごとの値を持ち越して CPU が減る。同じ形で毎コマ動く物は MultiMesh3d.build で 1 つにする（engine の docs/scene3d.md の「描く量」の質問の木）")
         else ()
+
+    /// instances の中の同じ形と材質の物（1 つの候補にまとまった物）が sameShapeHintCount() 体以上ある場面が staticHintScenes() 回続いたら、1 回だけ知らせる
+    /// （groupScenesWith が場面ごとに呼ぶ）。largest = 場面の候補の描く物の数の一番大きい物（間引いた物と集まりの物は入らない）。
+    // WhyNot: noteStaticGroupHint に足して 1 つの文にしない — あちらは置いた物の数だけで鳴り、形の違う町（30 種 × 数百）でも鳴る。こちらは同じ形が多い時だけで、勧める口が違う。
+    // WhyNot: 材質を中身で比べて数えない — 候補は材質の値と形でまとまった物で、毎コマ材質を作り直すゲームでは分かれて鳴らないが、その時は noteStaticGroupHint が数だけで鳴る。
+    pub def noteSameShapeHint(planner: Planner, largest: Int32): Unit \ IO =
+        let crowded = largest >= sameShapeHintCount();
+        let streak = if (crowded) Ref.get(planner#sameShapeScenesRef) + 1 else 0;
+        Ref.put(streak, planner#sameShapeScenesRef);
+        if (streak >= staticHintScenes())
+            warnOnce(planner, "@same-shape-hint", "scene3d: 同じ形と材質の物が ${largest} 体 instances にある — 毎コマ動くなら MultiMesh3d.build で 1 つにする（1 体ずつの計画と詰めが消える）。"
+                + "動かないなら Scene3d.staticGroup にまとめる（engine の docs/scene3d.md の「描く量」の質問の木）")
+        else ()
+
+    /// noteSameShapeHint が多いと見る同じ形の物の数（docs/scene3d.md の目安と同じ数。ブラウザで MultiMesh3d が 1 コマ 1 ms 以上縮める境目）。
+    pub def sameShapeHintCount(): Int32 = 2000
 
     /// 場面の pass の draw call が drawCallHintCalls() を超え、その半分超が形の違い（Counts.BatchBreak.Mesh）で分かれた場面が staticHintScenes() 回続いたら、1 回だけ知らせる
     /// （GL と WebGPU が場面ごとに呼ぶ）。drawCalls と meshBreaks = その場面の pass の draw call の数と、そのうち形の違いで分かれた数（影の地図の pass は入れない）。
@@ -96,8 +115,9 @@ mod Render3d.ScenePlan {
         case Scene3d.Output.Depth(r) => ScenePassSpec.DepthOut(r)
     }
 
-    /// prepare の中で分け終えた場面 1 つ。mainPass = 場面の置いた物を場面の描き先へ描く pass（影の地図の pass は含まない）・shadowPlans = 影の地図を描く材料（影を落とす光ごとに 1 つ。無ければ空。スポットの次に太陽）。
-    pub type alias ScenePlan[b] = { cmd = Scene3d.RenderCmd, mainPass = ScenePassSpec, draws = SceneDraws[b], shadowPlans = List[ShadowPlan[b]] }
+    /// prepare の中で分け終えた場面 1 つ。mainPass = 場面の置いた物を場面の描き先へ描く pass（影の地図の pass は含まない）・shadowPlans = 影の地図を描く材料（影を落とす光ごとに 1 つ。無ければ空。スポットの次に太陽）・
+    /// multis = 場面の multiMeshes（1 つにつき 1 本の draw。番号を振る時に場面の pass と影の地図の pass へ足す・Render3d.InstanceValues.mapBatchesWithMultiMeshes）。
+    pub type alias ScenePlan[b] = { cmd = Scene3d.RenderCmd, mainPass = ScenePassSpec, draws = SceneDraws[b], shadowPlans = List[ShadowPlan[b]], multis = List[Render3d.MultiMeshPlan.Planned] }
 
     /// 材質を backend に聞く 1 つ（材質とプログラムの版）。聞く並びの番号が、そのまま材質の表の番号（MaterialBatch#handle）になる。
     pub type alias MaterialRequest = (Scene3d.MaterialFields, ProgramKind)
@@ -105,8 +125,8 @@ mod Render3d.ScenePlan {
     /// batch の候補 1 つ。surface = 頭の物の材質とプログラムの版（無ければ頂点の色で描く）・handle = surface を聞いた番号（surface が無ければ -1）。
     pub type alias Group = { batch = SpanBatch, surface = Option[MaterialRequest], handle = Int32 }
 
-    /// 置いた物を batch の候補に分け終えた場面 1 つ。shadowPlans = 影の地図の batch（姿勢の行はまだ振っていない）。
-    pub type alias GroupedScene = { cmd = Scene3d.RenderCmd, mainPass = ScenePassSpec, groups = List[Group], shadowPlans = List[ShadowPlan[SpanBatch]] }
+    /// 置いた物を batch の候補に分け終えた場面 1 つ。shadowPlans = 影の地図の batch（姿勢の行はまだ振っていない）・multis = 場面の multiMeshes の材質を聞いた物。
+    pub type alias GroupedScene = { cmd = Scene3d.RenderCmd, mainPass = ScenePassSpec, groups = List[Group], shadowPlans = List[ShadowPlan[SpanBatch]], multis = List[Render3d.MultiMeshPlan.Grouped] }
 
     /// 1 回の prepare の計画の答え。members = batch の描く物（batch ごとに続けて並ぶ・SpanBatch の start が指す）・requests = backend に聞く材質（聞いた順）。
     pub type alias Grouped = { scenes = List[GroupedScene], requests = Vector[MaterialRequest], members = MutList[MeshDraw, Static] }
@@ -179,13 +199,14 @@ mod Render3d.ScenePlan {
     /// 1 回の prepare の場面を候補に分け、backend に聞く材質を、その材質の物が初めて来た順に並べる。samples = 描き先の標本の数。
     /// 同じプログラム（版と材質の木の鍵が同じで、同じ GLSL を生む）の材質は 1 回だけ聞く（requestOf）。
     pub def groupScenes(planner: Planner, caps: PlanCaps, samples: Int32, cmds: List[Scene3d.RenderCmd]): Grouped \ IO =
-        groupScenesWith(planner, caps, samples, cmds |> List.map(c -> (c, Scene3d.instancesOf(c#scene))))
+        groupScenesWith(planner, caps, samples, cmds |> List.map(c -> (c, Scene3d.instancesOf({ multiMeshes = Nil | c#scene }))))
 
     /// groupScenes の、場面ごとに計画へ通す置いた物を場面と組で渡す形（組の外の集まりの物は backend が持ち越した行で描く・Render3d.StaticRows）。
     /// 影を落とす光があるかは組の物でなく場面の全部の物で決める。
     pub def groupScenesWith(planner: Planner, caps: PlanCaps, samples: Int32, cmds: List[(Scene3d.RenderCmd, List[Scene3d.Instance3d])]): Grouped \ IO =
         let tables = freshTables();
         let scenes = cmds |> List.map(groupScene(planner, tables, caps, samples));
+        scenes |> List.forEach(s -> noteSameShapeHint(planner, List.foldLeft((acc, g) -> Int32.max(acc, g#batch#count), 0, s#groups)));
         { scenes = scenes, requests = MutList.toArray(Static, tables#requests) |> Array.toVector, members = tables#members }
 
     /// 場面 scene の持ち越す物 items を、視錐台で間引かずに候補に分ける（場面の pass の候補と、影の地図の形だけの候補）。
@@ -300,7 +321,9 @@ mod Render3d.ScenePlan {
                 let solidInstances = List.filter(i -> not Scene3d.isBlendedFields(Scene3d.instanceFieldsOf(i)), drawn);
                 groupWith(grouping(planner, tables, outside, materialWantedIn(mainPass), false, variant), solidInstances)
         };
-        { cmd = cmd, mainPass = mainPass, groups = groups, shadowPlans = shadowPlansOf(planner, tables, scene, drawn) }
+        let multis = Render3d.MultiMeshPlan.groupedOf(planner, tables, materialWantedIn(mainPass), coverage, variant, scene#multiMeshes);
+        Render3d.MultiMeshPlan.noteSpreadHint(planner, scene);
+        { cmd = cmd, mainPass = mainPass, groups = groups, shadowPlans = shadowPlansOf(planner, tables, scene, drawn), multis = multis }
 
     /// instances を候補に分ける。候補の並びは、(形, batch の鍵) が初めて来た順・その中は材質の絵の名前の並びが初めて来た順（Render3d.Batch.groupInOrder と
     /// groupByTextures の並びと同じ）。batch の鍵が無い物は 1 体の候補。
@@ -655,7 +678,7 @@ mod Render3d.ScenePlan {
     def spotCasterOf(planner: Planner, scene: Scene3d.Scene3dCmd): Option[(Int32, ShadowCaster)] \ IO =
         match scene#output {
             case Scene3d.Output.Depth(_) => None
-            case Scene3d.Output.Color if not Render3d.StaticRows.hasDrawnItem(scene) => None
+            case Scene3d.Output.Color if not Scene3d.hasDrawnInstance(scene) => None
             case Scene3d.Output.Color =>
                 let casters = Scene3d.pickLights(scene)#spotLights
                     |> List.mapWithIndex((i, spot) -> spot#shadow |> Option.filter(m -> m#mapSize > 0)
@@ -682,7 +705,7 @@ mod Render3d.ScenePlan {
             let draws = sceneDrawsOf(planner, orders, s);
             withPoseRows(rows, grouped#members, draws);
             s#shadowPlans |> List.forEach(sp -> sp#skinned |> List.forEach(spanPoseRows(rows, grouped#members)));
-            { cmd = s#cmd, mainPass = s#mainPass, draws = draws, shadowPlans = s#shadowPlans }
+            { cmd = s#cmd, mainPass = s#mainPass, draws = draws, shadowPlans = s#shadowPlans, multis = List.map(Render3d.MultiMeshPlan.plannedOf(orders), s#multis) }
         });
         (plans, Ref.get(rows))
 

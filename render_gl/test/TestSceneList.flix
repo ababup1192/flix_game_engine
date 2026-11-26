@@ -477,7 +477,7 @@ mod Render3d.TestSceneList {
             case ScenePassSpec.DepthOut(dr) => "depth ${dr#near} ${dr#range}"
         };
         let numbered = (p: Render3d.ScenePlan.ScenePlan[SpanBatch]) ->
-            { cmd = p#cmd, mainPass = p#mainPass, draws = { plain = List.map(unnumbered, p#draws#plain), skinned = Nil, opaque = Nil, blended = Nil, billboards = Nil }, shadowPlans = Nil };
+            { cmd = p#cmd, mainPass = p#mainPass, draws = { plain = List.map(unnumbered, p#draws#plain), skinned = Nil, opaque = Nil, blended = Nil, billboards = Nil }, shadowPlans = Nil, multis = Nil };
         let passes = plans |> List.map(p -> buildScenePasses(Render3d.SceneList.contextOf(freshTables(), p#cmd#scene), numbered(p)) |> List.map(pl -> describe(fst(pl))));
         Assert.assertEq(expected = ("color" :: Nil) :: ("depth 0.5 12.0" :: Nil) :: Nil, passes)
 
