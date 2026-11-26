@@ -1,11 +1,11 @@
 // CompareBench — 場面を毎コマ描き、区間ごとに 1 行の JSON（BenchRun）を出す。
 // 2 つの回し方が同じ App を使う: engine の口（make bench-web）と、比べる相手の harness の adapter（harness/flix-adapter.ts）。
-// つまみ: scenario=k1|k2|k5|k7|k8・variant=naive|optimized・level=<物の数>・frames=<1 区間のコマ数>・repeat=<区間の数>・diag=0。
+// つまみ: scenario=k1|k2|k3|k5|k7|k8・variant=naive|optimized・level=<物の数>・frames=<1 区間のコマ数>・repeat=<区間の数>・diag=0。
 mod CompareBench {
-    use fge::{App, Render}
+    use fge::{App, Num, Render}
 
-    /// pickSeq = 最後に答えた pick の頼みの番号。
-    pub type alias World = { t = Float64, progress = BenchRun.Run, pickSeq = Int32 }
+    /// pickSeq = 最後に答えた pick の頼みの番号・churn = K3 の作り直しの状態（ほかの場面は None）。
+    pub type alias World = { t = Float64, progress = BenchRun.Run, pickSeq = Int32, churn = Option[Draw.Churn] }
 
     /// pick の頼み（番号と canvas の画素）。
     pub type alias PickRequest = { seq = Int32, x = Float64, y = Float64 }
@@ -54,27 +54,42 @@ mod CompareBench {
             case _ => w
         }
 
+    /// K3: 場面の時刻のコマ（round(t × 60)）が進んでいれば、そのコマの 20 個を作り直す。
+    /// 場面の写しと絵の画素を作る所は比べる相手の scene.update に当たるので場面の更新として知らせ、絵と材質を作る所は engine の仕事として CPU に残す。
+    def churnStep(hooks: Hooks, w: World): World \ IO =
+        match w#churn {
+            case Some(c) =>
+                let frame = Num.roundInt((hooks#sceneTime)(w#t) * 60.0);
+                if (frame == 0 or frame == c#frame) w
+                else {
+                    let ((field, pixels), ms) = BenchRun.timed(hooks#now, () -> (Scenes.churnAt(frame, c#field), Scenes.churnPixels(frame)));
+                    (hooks#noteSim)(ms);
+                    { churn = Some(Draw.respawn(frame, field, pixels, c)) | w }
+                }
+            case None => w
+        }
+
     def step(plan: BenchRun.Plan, emit: String -> Unit \ IO, hooks: Hooks, kit: Draw.Kit, scenario: Scenes.Scenario, frame: App.Frame, w0: World): World \ IO =
-        let w = answerPick(hooks, kit, w0);
+        let w = churnStep(hooks, answerPick(hooks, kit, w0));
         if (w#progress#done) { t = w#t + frame#dt | w }
         else { t = w#t + frame#dt, progress = BenchRun.advance(plan, emit, knobsOf(kit, scenario), BenchRun.sampleOf(frame, 0.0), w#progress) | w }
 
     /// 場面の更新（物ごとの行列を作る）だけを測って知らせる。
     def timedItems(hooks: Hooks, kit: Draw.Kit, w: World): List[Render.PlacedItem] \ IO =
         let t = (hooks#sceneTime)(w#t);
-        let (items, ms) = BenchRun.timed(hooks#now, () -> Draw.items(kit, t));
+        let (items, ms) = BenchRun.timed(hooks#now, () -> Draw.items(kit, w#churn, t));
         (hooks#noteSim)(ms);
         items
 
     /// 区画の staticGroup を全部、起動の時に先に作らせる（見える区画を出し入れしても、初めて出るコマで作らない）。
     def withChunkPreload(kit: Draw.Kit, app0: App.App[World, IO]): App.App[World, IO] =
         if (kit#path == Draw.Path.Chunks)
-            app0 |> App.withPreload3d({ groups = _ -> kit#chunks |> List.map(c -> c#group), scenes = _ -> Draw.scene(kit, 0.0) :: Nil | App.preload3d(_ -> "wec_chunks", _ -> Nil) })
+            app0 |> App.withPreload3d({ groups = _ -> kit#chunks |> List.map(c -> c#group), scenes = _ -> Draw.scene(kit, None, 0.0) :: Nil | App.preload3d(_ -> "wec_chunks", _ -> Nil) })
         else app0
 
     /// デスクトップとブラウザの入口が同じ App を組む。
     pub def app(plan: BenchRun.Plan, emit: String -> Unit \ IO, hooks: Hooks, kit: Draw.Kit, scenario: Scenes.Scenario): App.App[World, IO] =
-        App.make({ t = 0.0, progress = BenchRun.start(), pickSeq = 0 })
+        App.make({ t = 0.0, progress = BenchRun.start(), pickSeq = 0, churn = if (scenario == Scenes.Scenario.K3) Some(Draw.churnOf(kit)) else None })
             |> App.addSystem(step(plan, emit, hooks, kit, scenario))
             |> BenchRun.withDiagnostics(plan)
             |> withChunkPreload(kit)

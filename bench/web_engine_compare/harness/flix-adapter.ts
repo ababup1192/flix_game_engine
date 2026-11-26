@@ -70,7 +70,7 @@ class FlixAdapter implements EngineAdapter {
     await this.runFrames(LOAD_FRAMES, BOOT_TIMEOUT_MS, false);
     this.capturing = false;
     this.simMs = 0;
-    return { path: variant === 'optimized' ? 'MultiMesh3d.build per (geometry, material)・毎コマ組み直す' : 'Scene3d.meshInstance per object（同じ形と材質は engine が自動でまとめる）', notes: ['場面は Flix の側で同じ乱数から作る（bench/web_engine_compare/src/Scenes.flix）'] };
+    return { path: pathOf(scenario, variant), notes: ['場面は Flix の側で同じ乱数から作る（bench/web_engine_compare/src/Scenes.flix）'] };
   }
 
   frame(t: number, _dt: number) {
@@ -152,8 +152,10 @@ class FlixAdapter implements EngineAdapter {
 
   private wrapPage() {
     const self = this;
+    // engine の wasm が await（材質の WGSL の getCompilationInfo など）から pump の外で戻って次のコマを待つ時も溜める。
+    // WhyNot: pump の外の予約を全部 harness の物として本物の rAF へ渡さない — 1 回でも外で戻ると engine が本物の rAF で回り続け、frame() の中で 1 コマも回らなくなる（K3 の初めての絵の材質で起きた）。
     window.requestAnimationFrame = (cb: FrameRequestCallback) => {
-      if (!self.capturing) return realRaf(cb);
+      if (!self.capturing && !calledFromWasm()) return realRaf(cb);
       self.queue.push(cb);
       return self.queue.length;
     };
@@ -210,6 +212,19 @@ class FlixAdapter implements EngineAdapter {
     }
     this.pairs = pairs;
   }
+}
+
+/** 物の置き方の名前（report の path）。 */
+function pathOf(scenario: string | null, variant: Variant) {
+  if (scenario === 'k5') return variant === 'optimized' ? '区画ごとの Scene3d.staticGroup（起動の時に先に作る）・見える区画をゲームの側で選ぶ' : 'Scene3d.meshInstance per object（物の列は読み込みで 1 回作る）';
+  if (variant === 'optimized') return 'MultiMesh3d.build per (geometry, material)・毎コマ組み直す';
+  if (scenario === 'k3') return 'Scene3d.meshInstance per object・作り直した組は Texture3d.fromArgb（128×128）＋ texturedMaterial と withMetallicRoughness と tint';
+  return 'Scene3d.meshInstance per object（同じ形と材質は engine が自動でまとめる）';
+}
+
+/** 呼び手の stack に wasm の関数があるか（engine の予約か、harness の予約か）。 */
+function calledFromWasm() {
+  return (new Error().stack ?? '').includes('wasm://');
 }
 
 const realRaf: (cb: FrameRequestCallback) => number = window.requestAnimationFrame.bind(window);

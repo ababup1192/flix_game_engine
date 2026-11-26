@@ -41,4 +41,17 @@ mod TestScenes {
         let f = Scenes.build(Scenes.Scenario.K2, 500);
         let flipped = Scenes.worldColumns(f, 1.25, 37) |> Vector.mapWithIndex((i, x) -> if ((Int32.remainder(i, 4) == 2) != (i / 4 == 2)) 0.0 - x else x);
         Assert.assertEq(expected = flipped, Scenes.mirroredWorldColumns(f, 1.25, 37))
+
+    /// K3 のコマ 101 は組 1（物 20..39）だけを作り直す。
+    @Test
+    def testK3Frame101RebuildsOnlyBatchOne(): Unit \ Assert =
+        let f = Scenes.build(Scenes.Scenario.K3, 2000);
+        let g = Scenes.churnAt(101, f);
+        let changed = Vector.range(0, 2000) |> Vector.filter(i -> Vector.get(i, f#scale) != Vector.get(i, g#scale));
+        Assert.assertEq(expected = Vector.range(20, 40), changed)
+
+    /// K3 の絵は一辺 128 の画素の数。
+    @Test
+    def testK3PixelsAre128Square(): Unit \ Assert =
+        Assert.assertEq(expected = 16384, Vector.length(Scenes.churnPixels(7)))
 }

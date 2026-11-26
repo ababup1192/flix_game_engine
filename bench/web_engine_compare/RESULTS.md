@@ -184,3 +184,27 @@ smoke（1 回・WebGPU）:
 
 - K8 の pick は、比べる相手の M4 Pro（1 万の中 0.2〜14 ms・1M 三角形 0.8〜36 ms）より 1 桁以上遅い。BVH が無く、物ごとに境界の箱を見て三角形を全部当てる（計画の「今は足さない物」の BVH の相談の候補）。
 - K5 optimized の hints は先に作る宣言の後も 1（draw call の助言の行）。
+
+## S4（続き）: K3（churn）
+
+- 場面は状態を持つ: コマ f（= round(t × 60)）で組 f % 100 の 20 個を、種 300000 + f の乱数で作り直す（位置に 60 個、続けて 1 個につき形・材質・大きさの 3 個）。
+  Flix では World に場面の写しと、組の番号 → 絵と材質の Map（`Draw.Churn`）を持ち、1 コマに 20 個ずつ差し替える。
+- 絵は `Texture3d.fromArgb` の 128×128（模様は比べる相手の churnField と同じ式）、材質は `texturedMaterial`（Linear）＋ `withMetallicRoughness`、色は `withTint`。
+  場面の textures には生きている 100 枚を渡し、絵の枚数の予算を project.json の `scene3dTextureBudgetCount` で 64 → 128 に上げた。
+- `make scene-compare` に K3 の 2 場面（t = 0 と t = 2.5 = コマ 150・組が 1 周半回った後）を足した。比べる側はコマ 0 から順に update を回し、コマ 150 の絵の画素（RGBA）も完全一致で比べる。
+  **10 場面・415 の配列が一致**。
+- 場面の更新として差し引くのは、場面の写しと絵の画素を作る所（比べる相手の scene.update に当たる）と、物ごとの行列を作る所。`fromArgb`（16,384 画素の hash）と材質を作る所は engine の仕事として CPU に残す。
+- **adapter の直し**: 初めて出る絵の材質で engine が WGSL の `getCompilationInfo` を await し、pump の外で戻って本物の rAF で回り続けた（frame() の中の CPU が 0・差し引くと負）。
+  pump の外の rAF の予約でも、呼び手の stack に wasm の関数があれば engine の物として溜めるようにした（harness の予約は今までどおり本物の rAF へ）。
+
+smoke（1 回・counters の回・WebGPU・2,000 個）:
+
+| engine | CPU p50 / p95（差し引いた後）| CPU p50（差し引く前）| 場面の更新 p50 | interval p50 | GPU p95 | draw |
+|---|---:|---:|---:|---:|---:|---:|
+| flix | 44.5 / 51.7 | 47.2 | 2.3 | 47.5 | 5.1 | 1,726 |
+| three | 10.1 / 11.3 | 10.1 | 0.05 | 10.4 | 11.1 | 2,008 |
+
+- 絵（frame 60）は three.js と物の置き方・作り直した物の市松の絵まで同じ（明るさの差は X2 の既知の差）。
+- **重い所は engine の 3D の描き手**（`make bench-web` の cpu_phases で split 17.5 ms・draw 17.3 ms。K2 の 2,000 個は 2.5 / 2.2 ms）。
+  作り直した物はどれも絵と材質が違うので draw が約 1,700 本に分かれ（draw3d_breaks の material 1,662）、1 本につき CPU 約 20 µs（three.js は 2,000 本で約 5 µs）。
+  counters の `createBindGroup` が 1 コマ 1,721 回で、絵の bind group を draw ごとに毎コマ作っている見込み（three.js は 27 回）。→ 相談の候補。

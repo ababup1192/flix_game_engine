@@ -58,6 +58,8 @@ const lines = readFileSync(process.argv[2], 'utf8').split('\n').filter((l) => l.
 for (const line of lines) {
   const ours = JSON.parse(line);
   const theirs = buildScene(ours.scenario, ours.level, null) as FieldScene;
+  // K3 は状態を持つ（コマごとに 20 個を作り直す）ので、harness と同じくコマ 0 から順に update を回す。
+  if (theirs.churn) for (let k = 0; k < Math.round(ours.t * 60); k++) theirs.update(k / 60);
   theirs.update(ours.t);
   const tag = `${ours.scenario}@${ours.level} t=${ours.t}`;
   floats(`${tag} camera.position`, ours.camera.position, theirs.camera.position);
@@ -77,6 +79,11 @@ for (const line of lines) {
     exact(`${tag} groups.parent`, ours.groups.parent, theirs.groups.parent);
     floats(`${tag} groups.position`, ours.groups.position, theirs.groups.position);
     floats(`${tag} groups.quat`, ours.groups.quat, theirs.groups.quat);
+  }
+  if (theirs.churn && theirs.churn.n > 0) {
+    const argb: number[] = ours.texture ?? [];
+    const rgba = argb.flatMap((v) => [(v >>> 16) & 255, (v >>> 8) & 255, v & 255, (v >>> 24) & 255]);
+    exact(`${tag} churn.texture`, rgba, theirs.churn.texture.pixels);
   }
   if (theirs.pick) floats(`${tag} pick.points`, ours.pickPoints, theirs.pick.points);
   if (ours.worldColumns) {

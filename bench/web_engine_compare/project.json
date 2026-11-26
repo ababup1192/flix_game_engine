@@ -3,9 +3,14 @@
   "designWidth": 1920,
   "designHeight": 1080,
   "windowScale": 1,
-  "clearColor": { "r": 0.0, "g": 0.0, "b": 0.0 },
+  "clearColor": {
+    "r": 0.0,
+    "g": 0.0,
+    "b": 0.0
+  },
   "maxDeltaTime": 10.0,
   "textures": [],
   "fonts": [],
-  "sounds": []
+  "sounds": [],
+  "scene3dTextureBudgetCount": 128
 }

@@ -1,11 +1,13 @@
 // SceneDump — Scenes が作った場面の値を 1 場面 1 行の JSON で標準出力へ出す（比べる相手の場面と harness/compare-scenes.ts で比べる）。
 // 出す場面の組は cases（harness/compare-scenes.ts の CASES と同じ並び）。
 mod SceneDump {
+    use fge::Num
 
     /// (場面, 段, 時刻) の組。
     pub def cases(): List[(Scenes.Scenario, Int32, Float64)] =
         (Scenes.Scenario.K1, 1, 0.0) :: (Scenes.Scenario.K1, 1, 1.25) ::
         (Scenes.Scenario.K2, 500, 0.0) :: (Scenes.Scenario.K2, 500, 1.25) :: (Scenes.Scenario.K2, 4000, 0.7) ::
+        (Scenes.Scenario.K3, 2000, 0.0) :: (Scenes.Scenario.K3, 2000, 2.5) ::
         (Scenes.Scenario.K5, 20000, 3.0) :: (Scenes.Scenario.K7, 500, 0.8) :: (Scenes.Scenario.K8, 10000, 0.0) :: Nil
 
     def numbers(v: Vector[Float64]): String = "[${v |> Vector.map(Float64.toString) |> Vector.join(",")}]"
@@ -19,7 +21,11 @@ mod SceneDump {
 
     /// 場面 1 つの JSON（欄の名前は比べる相手の FieldScene と同じ）。
     pub def jsonOf(scenario: Scenes.Scenario, level: Int32, t: Float64): String =
-        let f = Scenes.build(scenario, level);
+        let frame = Num.roundInt(t * 60.0);
+        let seeded = Scenes.build(scenario, level);
+        let churned = scenario == Scenes.Scenario.K3;
+        let f = if (churned) Scenes.churnedUpTo(frame, seeded) else seeded;
+        let texture = if (churned and frame > 0) ints(Scenes.churnPixels(frame)) else "null";
         let camera = Scenes.cameraAt(f, t);
         let spinT = if (f#animated) t else 0.0;
         let materials = f#materials |> Vector.map(m -> "{\"color\":${v3(m#color)},\"roughness\":${m#roughness},\"metalness\":${m#metalness},\"opacity\":${m#opacity}}") |> Vector.join(",");
@@ -33,7 +39,7 @@ mod SceneDump {
         "\"count\":${f#count},\"geom\":${ints(f#geom)},\"material\":${ints(f#material)},\"position\":${numbers(f#position)}," +
         "\"scale\":${numbers(f#scale)},\"quat\":${numbers(quats(f#spin, spinT, f#count))},\"materials\":[${materials}],\"groups\":${groups}," +
         "\"worldColumns\":${numbers(Vector.range(0, f#count) |> Vector.flatMap(i -> Scenes.worldColumns(f, t, i)))}," +
-        "\"pickPoints\":${numbers(f#pickPoints)},\"shapes\":[${Scenes.shapesOf(f#shapes) |> Vector.map(shapeJson) |> Vector.join(",")}]}"
+        "\"pickPoints\":${numbers(f#pickPoints)},\"texture\":${texture},\"shapes\":[${Scenes.shapesOf(f#shapes) |> Vector.map(shapeJson) |> Vector.join(",")}]}"
 
     def shapeJson(s: Geometry.Shape): String =
         "{\"name\":\"${s#name}\",\"positions\":${numbers(s#positions)},\"normals\":${numbers(s#normals)},\"uvs\":${numbers(s#uvs)},\"indices\":${ints(s#indices)}}"

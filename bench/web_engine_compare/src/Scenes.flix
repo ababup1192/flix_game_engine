@@ -1,4 +1,4 @@
-// Scenes — 比べる相手のベンチの場面のデータを、同じ種の乱数から同じ並びで作る（K1・K2）。
+// Scenes — 比べる相手のベンチの場面のデータを、同じ種の乱数から同じ並びで作る。
 // 値は比べる相手と同じ右手系・Y が上・m・色は線形。時刻 t の動く値は t だけから出す（前のコマを足し上げない）。
 mod Scenes {
     use fge::Num
@@ -44,6 +44,7 @@ mod Scenes {
     pub enum Scenario with Eq, ToString {
         case K1
         case K2
+        case K3
         case K5
         case K7
         case K8
@@ -52,6 +53,7 @@ mod Scenes {
     pub def scenarioOf(name: String): Option[Scenario] = match name {
         case "k1" => Some(Scenario.K1)
         case "k2" => Some(Scenario.K2)
+        case "k3" => Some(Scenario.K3)
         case "k5" => Some(Scenario.K5)
         case "k7" => Some(Scenario.K7)
         case "k8" => Some(Scenario.K8)
@@ -62,6 +64,7 @@ mod Scenes {
     pub def build(scenario: Scenario, level: Int32): Field = match scenario {
         case Scenario.K1 => startup()
         case Scenario.K2 => hierarchyField(level)
+        case Scenario.K3 => frustumField(3, level, palette(2300, 8, 1.0))
         case Scenario.K5 => worldField(level)
         case Scenario.K7 => frustumField(7, level, palette(2700, 16, 0.5))
         case Scenario.K8 => pickField(level)
@@ -160,6 +163,46 @@ mod Scenes {
           materials = Vector#{{ color = (0.8, 0.3, 0.1), roughness = 0.4, metalness = 0.0, opacity = 1.0 }},
           count = 1, geom = Vector#{0}, material = Vector#{0}, position = Vector#{0.0, 0.0, 0.0}, scale = Vector#{1.0},
           spin = spinner(1, 0, 1), groups = None, animated = true, turn = None, shapes = ShapeSet.Field, pickPoints = Vector.empty() }
+
+    /// K3 で 1 コマに作り直す物の数。
+    pub def churnPerFrame(): Int32 = 20
+
+    /// K3 の絵の一辺（画素）。
+    pub def churnTextureSize(): Int32 = 128
+
+    /// K3 のコマ frame が作り直す組の番号（組 b は物 b × 20 .. b × 20 + 19）。
+    pub def churnBatchOf(f: Field, frame: Int32): Int32 = Int32.remainder(frame, f#count / churnPerFrame())
+
+    /// K3: コマ frame（1 以上）の作り直しをした後の場面。組の 20 個の位置・形・材質・大きさを種 300000 + frame の乱数で引き直す
+    /// （位置に 60 個、続けて 1 個につき形・材質・大きさの 3 個）。回り方はそのまま。
+    pub def churnAt(frame: Int32, f: Field): Field =
+        let seed = 300000 + frame;
+        let per = churnPerFrame();
+        let s = coverageScale(f#count);
+        let first = churnBatchOf(f, frame) * per;
+        let fresh = scatterInFrustum(seed, 0, fieldCamera(), per, { near = 25.0, far = 55.0, margin = s });
+        let inBatch = i -> i >= first and i < first + per;
+        let at = (i, j) -> per * 3 + (i - first) * 3 + j;
+        { geom = f#geom |> Vector.mapWithIndex((i, g) -> if (inBatch(i)) Rng.intAt(seed, at(i, 0), 8) else g),
+          material = f#material |> Vector.mapWithIndex((i, m) -> if (inBatch(i)) Rng.intAt(seed, at(i, 1), Vector.length(f#materials)) else m),
+          scale = f#scale |> Vector.mapWithIndex((i, x) -> if (inBatch(i)) s * Rng.rangeAt(seed, at(i, 2), { min = 0.8, max = 1.2 }) else x),
+          position = f#position |> Vector.mapWithIndex((j, p) -> if (inBatch(j / 3)) Vector.get(j - first * 3, fresh) else p) | f }
+
+    /// K3: コマ frame の絵（ARGB・行優先・一辺 churnTextureSize）。市松の升の一辺は 8・16・32 をコマごとに回す。
+    pub def churnPixels(frame: Int32): Vector[Int32] =
+        let size = churnTextureSize();
+        let a = Int32.bitwiseAnd(frame * 37, 255);
+        let b = Int32.bitwiseAnd(frame * 91, 255);
+        let cell = Int32.leftShift(8, Int32.remainder(frame, 3));
+        Vector.range(0, size * size) |> Vector.map(p -> {
+            let on = Int32.bitwiseAnd(Int32.bitwiseXor(Int32.remainder(p, size) / cell, p / size / cell), 1) == 1;
+            let (r, g, bl) = if (on) (255, b, a) else (a, 255, b);
+            Int32.leftShift(255, 24) |> Int32.bitwiseOr(Int32.leftShift(r, 16)) |> Int32.bitwiseOr(Int32.leftShift(g, 8)) |> Int32.bitwiseOr(bl)
+        })
+
+    /// K3: 種の場面からコマ 1..frame の作り直しを順に済ませた場面。
+    pub def churnedUpTo(frame: Int32, f: Field): Field =
+        List.range(1, frame + 1) |> List.foldLeft((acc, k) -> churnAt(k, acc), f)
 
     /// K5 のカメラの注視点が 1 周する秒。
     def turnSeconds(): Float64 = 10.0 * Num.pi()

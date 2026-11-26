@@ -21,6 +21,30 @@ mod Draw {
         case Chunks
     }
 
+    /// K3 の作り直しの状態。field = 今の場面の写し・frame = 最後に作り直したコマ・looks = 組の番号 → その組を最後に作り直したコマの絵と材質
+    /// （生きている絵は組の数まで。組が回ってくると前の絵は looks から落ちる）。
+    pub type alias Churn = { field = Scenes.Field, frame = Int32, looks = Map[Int32, Look] }
+
+    /// 作り直した組の絵と、組の中の物ごとの材質（materials の k 番目が組の k 番目の物）。
+    pub type alias Look = { texture = Texture3d.Texture3d, materials = Vector[Scene3d.Material3d] }
+
+    pub def churnOf(kit: Kit): Churn = { field = kit#field, frame = 0, looks = Map.empty() }
+
+    /// 作り直した場面 field（コマ frame の後）と、そのコマの絵の画素 pixels から、組の絵と新しい材質を作って looks を差し替える。
+    pub def respawn(frame: Int32, field: Scenes.Field, pixels: Vector[Int32], c: Churn): Churn =
+        let size = Scenes.churnTextureSize();
+        let batch = Scenes.churnBatchOf(field, frame);
+        let first = batch * Scenes.churnPerFrame();
+        match Texture3d.fromArgb(size, size, pixels) {
+            case Err(_)  => { field = field, frame = frame | c }
+            case Ok(tex) =>
+                let materials = Vector.range(first, first + Scenes.churnPerFrame()) |> Vector.map(i -> {
+                    let pbr = Vector.get(Vector.get(i, field#material), field#materials);
+                    Scene3d.texturedMaterial(Texture3d.name(tex), ShaderDoc.FilterMode.Linear) |> Scene3d.withMetallicRoughness(pbr#metalness, pbr#roughness)
+                });
+                { field = field, frame = frame, looks = Map.insert(batch, { texture = tex, materials = materials }, c#looks) }
+        }
+
     /// 区画の一辺（m）。
     def chunkSize(): Float64 = 16.0
 
@@ -97,10 +121,23 @@ mod Draw {
         List.range(0, kit#field#count) |> List.map(instanceOf(kit, t))
 
     /// 物 i を時刻 t の置き方で 1 つ置く。
-    def instanceOf(kit: Kit, t: Float64, i: Int32): Scene3d.Instance3d =
-        let f = kit#field;
+    def instanceOf(kit: Kit, t: Float64, i: Int32): Scene3d.Instance3d = placed(kit, kit#field, t, i)
+
+    /// 場面 f の物 i を時刻 t の置き方で、場面の材質のまま 1 つ置く。
+    def placed(kit: Kit, f: Scenes.Field, t: Float64, i: Int32): Scene3d.Instance3d =
         Scene3d.meshInstance(Vector.get(Vector.get(i, f#geom), kit#meshes), worldOf(f, t, i))
             |> Scene3d.withMaterial(Vector.get(Vector.get(i, f#material), kit#materials))
+
+    /// K3: 時刻 t の物全部。作り直した組の物は組の絵の材質に、場面の材質の色を tint で掛ける。
+    def churnInstances(kit: Kit, c: Churn, t: Float64): List[Scene3d.Instance3d] =
+        let f = c#field;
+        let per = Scenes.churnPerFrame();
+        List.range(0, f#count) |> List.map(i -> match Map.get(i / per, c#looks) {
+            case Some(look) =>
+                placed(kit, f, t, i) |> Scene3d.withMaterial(Vector.get(Int32.remainder(i, per), look#materials))
+                                     |> Scene3d.withTint(screenColor(Vector.get(Vector.get(i, f#material), f#materials)#color))
+            case None => placed(kit, f, t, i)
+        })
 
     /// canvas の画素 (x, y)（左上が 0）の下にある一番近い物の番号。engine のレイ（Camera3d.screenPointToRay と Ray3d.hitMesh）で 1 つずつ当てる。
     pub def pick(kit: Kit, t: Float64, x: Float64, y: Float64): Option[Int32] =
@@ -148,13 +185,18 @@ mod Draw {
             MultiMesh3d.build(Vector.get(b#geom, kit#meshes), Vector.length(b#members), j -> worldOf(kit#field, t, Vector.get(j, b#members)))
                 |> MultiMesh3d.withMaterial(Vector.get(b#material, kit#materials)))
 
-    /// 時刻 t の場面。
-    pub def scene(kit: Kit, t: Float64): Scene3d.Scene3dCmd =
+    /// 時刻 t の場面（churn があれば K3 の今の場面の写しと組の絵で描く）。
+    pub def scene(kit: Kit, churn: Option[Churn], t: Float64): Scene3d.Scene3dCmd =
         let f = kit#field;
+        let perObject = () -> match churn {
+            case Some(c) => churnInstances(kit, c, t)
+            case None    => Option.getWithDefault(instances(kit, t), kit#fixed)
+        };
         let (ar, ag, ab) = f#ambient#color;
         let k = f#ambient#intensity;
         let sun = { color = screenColor(f#sun#color), intensity = f#sun#intensity * lightScale() | Scene3d.directionalLight(flip(f#sun#direction)) };
-        { instances = if (kit#path == Path.PerObject) Option.getWithDefault(instances(kit, t), kit#fixed) else Nil,
+        { instances = if (kit#path == Path.PerObject) perObject() else Nil,
+          textures = churn |> Option.map(c -> Map.valuesOf(c#looks) |> List.map(look -> look#texture)) |> Option.getWithDefault(Nil),
           multiMeshes = if (kit#path == Path.Batched) multiMeshes(kit, t) else Nil,
           groups = if (kit#path == Path.Chunks) visibleChunks(kit, t) else Nil,
           directionalLight = Some(sun),
@@ -164,7 +206,7 @@ mod Draw {
             |> Scene3d.withLightUnits(Scene3d.LightUnits.Physical)
             |> Scene3d.withUnitsPerMeter(1.0)
 
-    pub def items(kit: Kit, t: Float64): List[Render.PlacedItem] = Render.scene3d(Vec2.zero(), scene(kit, t)) :: Nil
+    pub def items(kit: Kit, churn: Option[Churn], t: Float64): List[Render.PlacedItem] = Render.scene3d(Vec2.zero(), scene(kit, churn, t)) :: Nil
 
     /// 比べる相手と同じ条件の後がけ（MSAA 4×・ACES）。
     // WhyNot: 線形で掛ける ACES にしない — engine に無い（ViewTransform に足すのは X2 の相談の後）。今ある AcesNarkowicz は画面の値に掛けるので、明るい所の色が比べる相手とずれる。
