@@ -148,12 +148,11 @@ func writeExportSizes(out *strings.Builder, sizes *webSizeTable, b webBundle, at
 	}
 	start := webStartupSizeOf(sizes, &b)
 	var waitFor []string
-	logoMax := webAfterTapMaxSeconds
 	if t := b.Splash; t != nil && t.AfterTap != nil && t.AfterTap.Mode != "none" {
-		waitFor, logoMax = t.AfterTap.WaitFor, t.AfterTap.MaxSeconds
+		waitFor = t.AfterTap.WaitFor
 	}
 	writeStartupEstimate(w, webStartupEstimateOf(sizes, &b), start)
-	writeTapWaitEstimate(w, webTapWaitOf(sizes, &b, waitFor), logoMax)
+	writeTapWaitEstimate(w, webTapWaitOf(sizes, &b, waitFor))
 	if r.FallbackBytes > 0 {
 		fmt.Fprintf(w, "  置き場には元の wav（%s）も残す — Opus を解けないブラウザだけが取る\n", humanBytes(r.FallbackBytes))
 	}
@@ -184,8 +183,8 @@ func writeStartupEstimate(w io.Writer, s webStartupEstimate, start webStartupSiz
 }
 
 // writeTapWaitEstimate は「開いてすぐ押した時に、押してから最初の場面が動くまで」の 4G の見積もりを書く（人の要件の 2 本目の数字）。
-// logoMax は押した後のロゴの上限の秒（ゲームの web.splash.maxSeconds）。
-func writeTapWaitEstimate(w io.Writer, t webTapWait, logoMax float64) {
+// 遅く届く物を止めるか知らせるのは門（webLateWaitsOf）。
+func writeTapWaitEstimate(w io.Writer, t webTapWait) {
 	switch {
 	case t.Count == 0 && len(t.Group) > 0:
 		fmt.Fprintf(w, "  押してから動くまで（開いてすぐ押した時・4G）: 0 秒（group %s に後回しの物が無い）\n", strings.Join(t.Group, "・"))
@@ -197,10 +196,6 @@ func writeTapWaitEstimate(w io.Writer, t webTapWait, logoMax float64) {
 	default:
 		fmt.Fprintf(w, "  押してから動くまで（開いてすぐ押した時・4G）: 約 %.1f〜%.1f 秒（最初に届く待つ物 %s から、待つ物 %d 本の最後まで。最初の場面が使う物で決まる）\n",
 			t.Seconds, t.Until, t.FirstPath, t.Count)
-	}
-	if t.Count > 0 && t.Seconds > logoMax {
-		fmt.Fprintf(w, "  知らせ: 押してから動くまでが 4G で押した後のロゴの上限 %.1f 秒を超える — すぐ要る物を web.deferred の頭へ並べ替えるか、後回しから外す（ロゴと待ちの合計が後回しにしない時の起動の秒を超えるなら後回しにしない）\n",
-			logoMax)
 	}
 }
 

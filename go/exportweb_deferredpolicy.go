@@ -14,7 +14,7 @@ type webDeferredPolicyRow struct {
 	Match     string `json:"match"`
 	OnMissing string `json:"onMissing,omitempty"`
 	Group     string `json:"group,omitempty"`
-	// Why は絵を placeholder にする理由（絵の placeholder には必須）。
+	// Why は絵を placeholder にする理由（絵の placeholder には必須）か、待つ物が 4G で押してから遅く届いてよい理由（遅く届く待つ物の門が許す）。
 	Why string `json:"why,omitempty"`
 }
 
@@ -131,6 +131,7 @@ func applyWebDeferredPolicy(entries []webDeferredEntry, pol webDeferredPolicy, b
 			}
 			out[i].OnMissing = row.OnMissing
 			out[i].Group = row.Group
+			out[i].Why = strings.TrimSpace(row.Why)
 			break
 		}
 	}
