@@ -881,8 +881,11 @@ pub mod Scene3d {
     pub type alias EnvironmentBox = { min = Vec3.Vec3, max = Vec3.Vec3, center = Vec3.Vec3 }
 
     /// 環境マップの中身。texture = 場面の textures の絵の名前（Texture3d.name）・intensity = 線形の量に戻した後に掛ける倍率・
-    /// box = 室内の壁の補正（None なら無限に遠い景色）・asBackground = 空の代わりに背景へも描くか。
-    pub type alias EnvironmentMapFields = { texture = String, intensity = Float64, box = Option[EnvironmentBox], asBackground = Bool }
+    /// box = 室内の壁の補正（None なら無限に遠い景色）・asBackground = 空の代わりに背景へも描くか・skyContribution = 拡散の光に景色を混ぜる割合（0..1）・
+    /// irradiance = withIrradiance で渡した拡散の光・textureIrradiance = 絵から求める拡散の光（初めて読んだ時に 1 回だけ求める）。
+    pub type alias EnvironmentMapFields = { texture = String, intensity = Float64, box = Option[EnvironmentBox], asBackground = Bool,
+                                            skyContribution = Float64, irradiance = Option[SphericalHarmonics.SphericalHarmonics],
+                                            textureIrradiance = Lazy[Option[SphericalHarmonics.SphericalHarmonics]] }
 
     enum EnvironmentMapData { case EnvironmentMapData(EnvironmentMapFields) }
 
@@ -892,9 +895,29 @@ pub mod Scene3d {
 
     /// 正距円筒（横 2：縦 1）のパノラマの絵 texture を景色にする。絵は Scene3dCmd の textures にも載せる（"tex3d:" の名前）。
     /// 色は sRGB の絵として読み、強さ 1・箱なし・背景には描かない。向きと絵の座標は LightModel3d.environmentUvOf。
-    /// 映るのは metallic と roughness を持つ材質の映り込みだけで、拡散の光（ambient と hemisphere）は変わらない。
+    /// 映るのは metallic と roughness を持つ材質の映り込みだけで、拡散の光（ambient と hemisphere）は変わらない（変えるのは withSkyContribution）。
     pub def environmentMap(texture: Texture3d.Texture3d): EnvironmentMap =
-        EnvironmentMapData.EnvironmentMapData({ texture = Texture3d.name(texture), intensity = 1.0, box = None, asBackground = false })
+        EnvironmentMapData.EnvironmentMapData({ texture = Texture3d.name(texture), intensity = 1.0, box = None, asBackground = false,
+                                                skyContribution = 0.0, irradiance = None, textureIrradiance = Texture3d.Internal.irradianceOf(texture) })
+
+    /// 拡散の光（ambient）を景色から求めた光へ混ぜる割合 k（Godot の ambient_light_sky_contribution）。0..1 に丸め、NaN は 0。既定 0（ambient のまま）。
+    /// 光 = ambient + (景色の拡散の光 × 強さ − ambient) × k。景色の拡散の光は withIrradiance で渡した物、無ければ絵から求めた物
+    /// （SphericalHarmonics.fromEquirectangular。機種の側の絵は求められないので ambient のまま描いて 1 回知らせる）。
+    /// hemisphere も空の光なので、k を上げる時は hemisphere を 0 にする（2 回足すと 1 回知らせる）。lightmap の面には足さない。
+    pub def withSkyContribution(k: Float64, e: EnvironmentMap): EnvironmentMap =
+        let EnvironmentMapData.EnvironmentMapData(r) = e;
+        EnvironmentMapData.EnvironmentMapData({ skyContribution = if (Float64.isNan(k)) 0.0 else Num.clamp01(k) | r })
+
+    /// 拡散の光に景色を混ぜる割合（withSkyContribution で丸めた後の値）。
+    pub def skyContributionOf(e: EnvironmentMap): Float64 = environmentMapFieldsOf(e)#skyContribution
+
+    /// 景色の拡散の光を外から渡す（前に求めた SH を JSON で持つ・空の色から作る時。Filament の IndirectLight.irradiance）。絵から求める物より先に使う。
+    pub def withIrradiance(sh: SphericalHarmonics.SphericalHarmonics, e: EnvironmentMap): EnvironmentMap =
+        let EnvironmentMapData.EnvironmentMapData(r) = e;
+        EnvironmentMapData.EnvironmentMapData({ irradiance = Some(sh) | r })
+
+    /// withIrradiance で渡した拡散の光（渡していなければ None。絵から求めはしない）。
+    pub def irradianceOf(e: EnvironmentMap): Option[SphericalHarmonics.SphericalHarmonics] = environmentMapFieldsOf(e)#irradiance
 
     /// 映り込みの強さの倍率（線形の量に戻した後に掛ける。0 で映り込み無し。負・NaN は 0 として描く）。
     pub def withEnvironmentIntensity(k: Float64, e: EnvironmentMap): EnvironmentMap =
@@ -1108,13 +1131,15 @@ pub mod Scene3d {
 
     /// 先に組むシェーダーの変種（場面の設定で決まる版）。pointShadows = 点光源の影を引く版（場面の pointShadows が Some・描き手の鍵の +ps）・
     /// physicalUnits = Physical の光の版（場面の lightUnits が Physical・+pu）・psx = PS1 風の版（場面の psx が Scene3d.Psx.isOn・+psx）。どれも偽なら既定の版（いつも組む）。
-    pub type alias PreloadVariant = { pointShadows = Bool, physicalUnits = Bool, psx = Bool }
+    /// skyIrradiance = 景色の拡散の光を混ぜる版（環境マップがあり skyContribution が 0 より大きい・+sh）。
+    pub type alias PreloadVariant = { pointShadows = Bool, physicalUnits = Bool, psx = Bool, skyIrradiance = Bool }
 
     /// 場面 scene を描く時に描き手が組む変種（先に上げる宣言に、遊びで出す場面の設定から渡す）。
     pub def preloadVariantOf(scene: Scene3dCmd): PreloadVariant =
-        { pointShadows = Option.nonEmpty(scene#pointShadows), physicalUnits = scene#lightUnits == LightUnits.Physical, psx = Scene3d.Psx.isOn(scene#psx) }
+        { pointShadows = Option.nonEmpty(scene#pointShadows), physicalUnits = scene#lightUnits == LightUnits.Physical, psx = Scene3d.Psx.isOn(scene#psx),
+          skyIrradiance = Scene3d.Internal.SkyIrradiance.isOn(scene) }
 
-    /// 変種 v の字（"" = 既定・+ps・+pu・+psx の組。描き手のプログラムの鍵と同じ並び）。
+    /// 変種 v の字（"" = 既定・+ps・+pu・+psx・+sh の組。描き手のプログラムの鍵と同じ並び）。
     pub def preloadVariantKey(v: PreloadVariant): String =
-        (if (v#pointShadows) "+ps" else "") + (if (v#physicalUnits) "+pu" else "") + (if (v#psx) "+psx" else "")
+        (if (v#pointShadows) "+ps" else "") + (if (v#physicalUnits) "+pu" else "") + (if (v#psx) "+psx" else "") + (if (v#skyIrradiance) "+sh" else "")
 }

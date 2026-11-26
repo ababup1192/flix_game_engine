@@ -15,8 +15,10 @@ pub mod Texture3d {
     }
 
     /// width × height・source = 画素の在りか・hash = 中身の鍵（Argb は寸法と画素の SHA-256・PlatformImage は寸法と key の SHA-256。16 進）。
-    /// name = name の答え（作る時に 1 回だけ作る）。
-    type alias Texture3dRec = { width = Int32, height = Int32, source = Source, hash = String, name = String }
+    /// name = name の答え（作る時に 1 回だけ作る）・irradiance = 正距円筒の景色として求めた拡散の光（SphericalHarmonics.fromEquirectangular。初めて読んだ時に 1 回だけ求める）。
+    // WhyNot: 拡散の光を環境マップ（Scene3d.EnvironmentMap）の値に持たせない — ゲームは環境マップを毎コマ作り直すので、絵（読み込みで 1 回作る）に持たせないと毎コマ求め直す。
+    type alias Texture3dRec = { width = Int32, height = Int32, source = Source, hash = String, name = String,
+                                irradiance = Lazy[Option[SphericalHarmonics.SphericalHarmonics]] }
 
     enum Texture3dData { case Texture3dData(Texture3dRec) }
 
@@ -27,7 +29,8 @@ pub mod Texture3d {
     /// 作る口は全部ここを通す（hash から name を作る）。
     // WhyNot: name を呼ぶたびに字をつながない — 描き手が場面の textures の Map を作るたびに、絵の数だけ作り直す。
     def made(width: Int32, height: Int32, source: Source, hash: String): Texture3d =
-        Texture3dData.Texture3dData({ width = width, height = height, source = source, hash = hash, name = namePrefix() + String.takeLeft(16, hash) })
+        Texture3dData.Texture3dData({ width = width, height = height, source = source, hash = hash, name = namePrefix() + String.takeLeft(16, hash),
+                                      irradiance = lazy Texture3d.Internal.equirectangularIrradianceOf(width, height, source) })
 
     /// 辺の上限（GL 3.3 が約束する大きさより大きいが、今の GPU なら作れる）。
     pub def maxSide(): Int32 = 8192

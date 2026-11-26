@@ -144,10 +144,10 @@ mod Render3d.Counts {
         count(state, Counter.BillboardRuns, List.length(textures));
         count(state, Counter.BillboardImages, Set.size(List.toSet(textures)))
 
-    /// 場面 1 つで上限を超えて落とした光を数え、種類ごとに初めての時だけ知らせる。
+    /// 場面 1 つで上限を超えて落とした光を数え、種類ごとに初めての時だけ知らせる（景色の拡散の光の知らせも同じ口で出す）。
     pub def noteDroppedLights(state: State, scene: Scene3d.Scene3dCmd): Unit \ IO =
         countDroppedLights(state, scene);
-        Scene3d.droppedLightsWarnings(scene) |> List.forEach(kl -> warnSceneOnce(state, fst(kl), snd(kl)))
+        (Scene3d.droppedLightsWarnings(scene) ::: Scene3d.Internal.SkyIrradiance.warningsOf(scene)) |> List.forEach(kl -> warnSceneOnce(state, fst(kl), snd(kl)))
 
     /// 場面 1 つで上限を超えて落とした光を種類ごとに数える（知らせない）。
     pub def countDroppedLights(state: { countsHolder = Array[Int32, Static] | r }, scene: Scene3d.Scene3dCmd): Unit \ IO =

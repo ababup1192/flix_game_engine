@@ -699,18 +699,18 @@
 - Select の条件。
   `pub enum Cond with Eq { case Greater(ScalarExpr, ScalarExpr) case AtLeast(ScalarExpr, ScalarExpr) case And(Cond, Cond) }`
 - 画素ごと・場面ごとのスカラーの入力。
-  `pub enum ScalarInput with Eq, Order { case Hemisphere case ShadowLit case SunLit case FogNear case FogFar case SkyCurve case LightmapSrgb case LightmapIntensity case EnvironmentOn case EnvironmentBoxOn case PointShadowLit case PhysicalUnits case InverseUnitsPerMeterSquared }`
+  `pub enum ScalarInput with Eq, Order { case Hemisphere case ShadowLit case SunLit case FogNear case FogFar case SkyCurve case LightmapSrgb case LightmapIntensity case EnvironmentOn case EnvironmentBoxOn case PointShadowLit case PhysicalUnits case InverseUnitsPerMeterSquared case SkyContribution }`
 - 画素ごと・場面ごとの vec3 の入力。
-  `pub enum Vec3Input with Eq, Order { case Position case Normal case Eye case Ambient case LightmapColor case Color case FogColor case SkyDirection case SkyZenith case SkyHorizon case SkyGround case Albedo case Light case MetallicRoughness case EnvironmentColor case EnvironmentBoxMin case EnvironmentBoxMax case EnvironmentBoxCenter case SunDirection case SunColor }`
+  `pub enum Vec3Input with Eq, Order { case Position case Normal case Eye case Ambient case LightmapColor case Color case FogColor case SkyDirection case SkyZenith case SkyHorizon case SkyGround case Albedo case Light case MetallicRoughness case EnvironmentColor case EnvironmentBoxMin case EnvironmentBoxMax case EnvironmentBoxCenter case SunDirection case SunColor case IrradianceSh(Int32) }`
 - 光のループの中で読めるスカラーの欄。
   `pub enum ScalarLightField with Eq { case RangeSquared case OuterCos case InnerCos }`
 - 光のループの中で読める vec3 の欄。
   `pub enum Vec3LightField with Eq { case Position case Color case Direction }`
 - 木の変種（Unity の shader variant に当たる）。pointShadows = 点光源の光に影の割合（ScalarInput.PointShadowLit）を掛けるか・
-  `pub type alias LightVariant = { pointShadows = Bool, lightUnits = Option[Scene3d.LightUnits] }`
+  `pub type alias LightVariant = { pointShadows = Bool, lightUnits = Option[Scene3d.LightUnits], skyIrradiance = Bool }`
 - 点光源の影なし・Legacy の変種（lightingModel() などと同じ木）。
   `pub def legacyVariant(): LightVariant`
-- CPU の描き手が回す変種（点光源の影の割合を読み・光の量の読み方を入力で選ぶ）。
+- CPU の描き手が回す変種（点光源の影の割合を読み・光の量の読み方を入力で選ぶ・景色の拡散の光は SkyContribution が 0 なら ambient のまま）。
   `pub def cpuVariant(): LightVariant`
 - 場面 scene に使う GPU の変種（pointShadows が Some なら影の割合を読む・光の量の読み方は場面のまま）。
   `pub def variantOf(scene: Scene3d.Scene3dCmd): LightVariant`
@@ -1627,11 +1627,19 @@
 - 環境マップの箱。室内の壁の位置（world）。min・max = 箱の対角の 2 点・center = 絵を撮った点（景色の向きの中心）。
   `pub type alias EnvironmentBox = { min = Vec3.Vec3, max = Vec3.Vec3, center = Vec3.Vec3 }`
 - 環境マップの中身。texture = 場面の textures の絵の名前（Texture3d.name）・intensity = 線形の量に戻した後に掛ける倍率・
-  `pub type alias EnvironmentMapFields = { texture = String, intensity = Float64, box = Option[EnvironmentBox], asBackground = Bool }`
+  `pub type alias EnvironmentMapFields = { texture = String, intensity = Float64, box = Option[EnvironmentBox], asBackground = Bool, skyContribution = Float64, irradiance = Option[SphericalHarmonics.SphericalHarmonics], textureIrradiance = Lazy[Option[SphericalHarmonics.SphericalHarmonics]] }`
 - 周りの景色のパノラマの絵（閉じた型 — 欄を後から足しても、ゲームの書いた値が壊れない）。environmentMap から作り、with… で足す。
   `pub type alias EnvironmentMap = EnvironmentMapData`
 - 正距円筒（横 2：縦 1）のパノラマの絵 texture を景色にする。絵は Scene3dCmd の textures にも載せる（"tex3d:" の名前）。
   `pub def environmentMap(texture: Texture3d.Texture3d): EnvironmentMap`
+- 拡散の光（ambient）を景色から求めた光へ混ぜる割合 k（Godot の ambient_light_sky_contribution）。0..1 に丸め、NaN は 0。既定 0（ambient のまま）。
+  `pub def withSkyContribution(k: Float64, e: EnvironmentMap): EnvironmentMap`
+- 拡散の光に景色を混ぜる割合（withSkyContribution で丸めた後の値）。
+  `pub def skyContributionOf(e: EnvironmentMap): Float64`
+- 景色の拡散の光を外から渡す（前に求めた SH を JSON で持つ・空の色から作る時。Filament の IndirectLight.irradiance）。絵から求める物より先に使う。
+  `pub def withIrradiance(sh: SphericalHarmonics.SphericalHarmonics, e: EnvironmentMap): EnvironmentMap`
+- withIrradiance で渡した拡散の光（渡していなければ None。絵から求めはしない）。
+  `pub def irradianceOf(e: EnvironmentMap): Option[SphericalHarmonics.SphericalHarmonics]`
 - 映り込みの強さの倍率（線形の量に戻した後に掛ける。0 で映り込み無し。負・NaN は 0 として描く）。
   `pub def withEnvironmentIntensity(k: Float64, e: EnvironmentMap): EnvironmentMap`
 - 室内の壁の補正（Box Projection）。跳ね返りの線を点から伸ばして箱の内側の面と交わる点を、center から見た向きで絵を読む。
@@ -1705,10 +1713,10 @@
 - 進み具合 p が全部済んでいるか。
   `pub def isPreloaded(p: PreloadProgress): Bool`
 - 先に組むシェーダーの変種（場面の設定で決まる版）。pointShadows = 点光源の影を引く版（場面の pointShadows が Some・描き手の鍵の +ps）・
-  `pub type alias PreloadVariant = { pointShadows = Bool, physicalUnits = Bool, psx = Bool }`
+  `pub type alias PreloadVariant = { pointShadows = Bool, physicalUnits = Bool, psx = Bool, skyIrradiance = Bool }`
 - 場面 scene を描く時に描き手が組む変種（先に上げる宣言に、遊びで出す場面の設定から渡す）。
   `pub def preloadVariantOf(scene: Scene3dCmd): PreloadVariant`
-- 変種 v の字（"" = 既定・+ps・+pu・+psx の組。描き手のプログラムの鍵と同じ並び）。
+- 変種 v の字（"" = 既定・+ps・+pu・+psx・+sh の組。描き手のプログラムの鍵と同じ並び）。
   `pub def preloadVariantKey(v: PreloadVariant): String`
 
 ## Scene3d.PointShadows — `engine/src/scene3d/Scene3d/PointShadows.flix`
@@ -2004,6 +2012,17 @@
   `pub def sortStableWith(cmp: (a, a) -> Comparison, xs: List[a]): List[a]`
 - 要素そのものの小さい順。同じ物は来た順のまま。
   `pub def sortStable(xs: List[a]): List[a] with Order[a]`
+
+## SphericalHarmonics — `engine/src/scene3d/SphericalHarmonics.flix`
+- `pub type alias SphericalHarmonics = SphericalHarmonicsData`
+- 正距円筒の景色の絵 t から求める（絵ごとに 1 回だけ求め、2 回目からは控えを返す）。機種の側の絵（PlatformImage）は画素が無いので None。
+  `pub def fromEquirectangular(t: Texture3d.Texture3d): Option[SphericalHarmonics]`
+- 係数 9 個（線形の rgb を x・y・z に入れた物。並びは型の doc の基底の順）から作る。9 個でない・NaN か無限がある、は Err。
+  `pub def fromCoefficients(cs: List[Vec3.Vec3]): Result[String, SphericalHarmonics]`
+- 係数 9 個（fromCoefficients と同じ並び）。
+  `pub def coefficientsOf(sh: SphericalHarmonics): List[Vec3.Vec3]`
+- 向き n（長さ 1）の面が受ける拡散の光（線形の rgb・負は 0）。3 つの描き手の光の式（LightModel3d の木）と同じ式。
+  `pub def irradianceAt(sh: SphericalHarmonics, n: Vec3.Vec3): (Float64, Float64, Float64)`
 
 ## Splash — `engine/src/render2d/Splash.flix`
 - 起動画面 1 枚の見え方。

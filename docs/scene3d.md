@@ -24,6 +24,7 @@ GL と WebGPU（窓・ブラウザ）と CPU（画面なしの描き出し・テ
 - [glb の頂点の色（COLOR_0・Blender でベイクした明るさ）](#glb-の頂点の色color_0blender-でベイクした明るさ)
 - [金属っぽさと粗さ（鏡面ハイライトと空の映り込み）](#金属っぽさと粗さ鏡面ハイライトと空の映り込み)
 - [周りの景色を映す（環境マップと箱の補正）](#周りの景色を映す環境マップと箱の補正)
+- [環境マップから拡散の光（SH）](#環境マップから拡散の光sh)
 - [描く量（視錐台の外を間引く）](#描く量視錐台の外を間引く)
   - [物の置き方を選ぶ（instances / staticGroup / MultiMesh3d）](#物の置き方を選ぶinstances--staticgroup--multimesh3d)
   - [同じ形の動く物をたくさん（MultiMesh3d）](#同じ形の動く物をたくさんmultimesh3d)
@@ -389,13 +390,34 @@ let env = Scene3d.environmentMap(panorama)                      // Texture3d の
 - **箱の補正**（`withEnvironmentBox`）: 無限に遠い景色として読むと、部屋の中の物が壁の近くでも景色の位置がずれない。箱があれば、点から跳ね返りの向きへ伸ばした線が
   箱の内側の面と交わる点を求め、`その点 − center` の向きで絵を読む（Unity の Box Projection と同じ）。center は絵を撮った点。
   部屋の中の物にだけ付ける（屋外の空には要らない）。点が箱の外にある時は、点から見た向きになる
-- **映すもの**: metallic と roughness を持つ材質の映り込み（`Fresnel` を掛けた色）だけ。拡散の光（ambient と hemisphere）は変わらず、鏡面ハイライト（光源の映り）も今まで通り。
+- **映すもの**: metallic と roughness を持つ材質の映り込み（`Fresnel` を掛けた色）だけ。拡散の光（ambient と hemisphere）は変わらず（変えるのは次の節の `withSkyContribution`）、鏡面ハイライト（光源の映り）も今まで通り。
   環境マップの無い場面（`environmentMap = None`）は今までと同じ（空のグラデーションを映す・絵も GL のプログラムの字も同じ）
 - **重さ**: 絵を 1 回読む（画素 × 1 回）と、箱があれば向きの計算が少し増える。環境マップの無い場面は何も増えない
-- やらない事: 環境マップから拡散の光を作る（放射照度の前計算）・エンジン自身で景色を撮る（反射プローブ・キューブマップ）・複数の環境マップの切り替えと混ぜ
+- やらない事: エンジン自身で景色を撮る（反射プローブ・キューブマップ）・複数の環境マップの切り替えと混ぜ
 - `Scene3dCmd` に欄 `environmentMap = Option[EnvironmentMap]` が増えた（`Scene3d.scene` は None）。場面のレコードを全部の欄で書いている所は `environmentMap = None` を足す
 - **背景**（`Scene3d.withEnvironmentAsBackground(true, env)`）: 何も描かれない画素にも景色の絵を空として描く（屋外の景色の絵向き・室内の見本の部屋では使わない）。
   向きは画素の NDC を通る向き（空と同じ）・絵は段 0 で読み、強さも掛かる。`sky` があれば `sky` が勝つ（環境マップの背景は描かず、映り込みだけに使う）
+
+## 環境マップから拡散の光（SH）
+
+陰の中が灰色に平たい屋外の場面で、空の青と地面の照り返しの色を陰にも拾わせる。環境マップの絵から 2 次までの球面調和 9 個（SH）を求め、
+拡散の光（ambient）をその光へ混ぜる（Godot の `ambient_light_sky_contribution`・Filament の `IndirectLight.irradiance`・three.js の `LightProbe` と同じ）。
+
+```flix
+let sky = Texture3d.decodeUsing(decoder, bytes)                    // 画素を持つ絵（機種の側の絵は求められない）
+discard SphericalHarmonics.fromEquirectangular(sky);               // 読み込みで 1 回求めておく（初めて描くコマで止まらない）
+let env = Scene3d.environmentMap(sky) |> Scene3d.withSkyContribution(1.0);
+{ environmentMap = Some(env), environment = { hemisphere = 0.0 | base#environment } | base }   // hemisphere は 0（同じ空の光を 2 回足さない）
+```
+
+- **式**: 光 = ambient + (景色の拡散の光 × 環境マップの強さ − ambient) × k（k = `withSkyContribution`・0..1・既定 0）。hemisphere・点光源・スポット・太陽はそのまま足す。
+  lightmap の面には足さない（ベイクした光が空の光を含む）。明るさ 1 の一様な景色で、拡散の光は ambient 1.0 と同じ明るさ
+- **求め方**: 絵を 128 × 64 へ線形の量で縮めて足し込む（2048 × 1024 で 50〜150 ms）。絵ごとに 1 回だけ求め、2 回目からは控えを返す。
+  環境マップは毎コマ作り直してよい（控えは絵の側にある）
+- **外から渡す**: 前に求めた係数を持つ・空の色から作る時は `SphericalHarmonics.fromCoefficients(9 個の Vec3)` → `Scene3d.withIrradiance(sh, env)`（絵から求める物より先に使う）
+- **向き**: 環境マップと同じ（Blender・Poly Haven のパノラマは左右を反転してから渡す。渡さないと東西の色が逆になる）
+- **知らせ**: 機種の側の絵で求められない時は ambient のまま描いて `@sky-irradiance-unavailable`・hemisphere も 0 より大きいと `@sky-irradiance-double`（どちらも 1 回）
+- **重さ**: k > 0 の場面だけシェーダーの変種 `+sh`（uniform 28 個）。k = 0 の場面はプログラムの字も CPU の絵も今と同じ
 
 ## 描く量（視錐台の外を間引く）
 

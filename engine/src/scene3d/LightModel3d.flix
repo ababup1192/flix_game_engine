@@ -5,6 +5,8 @@
 /// 式（木は下を足す順まで写す。CPU の描き手は生成した SoftRaster3dLight でこの木をそのまま回す）:
 ///
 ///   light  = toon(ambient + hemisphere × max(0, n.y) + Σ 点光源 + Σ スポット + 太陽)
+///   ambient = 変種 skyIrradiance で SkyContribution > 0 なら ambient + (irradiance − ambient) × SkyContribution（ほかは ambient のまま）
+///   irradiance = max(0, Σ_{i<9} IrradianceSh(i) × Y_i(n))（基底は SphericalHarmonics の doc・係数は環境マップの強さを掛けた後）
 ///   太陽   = SunColor × facing × sunLit                        SunColor = color × intensity・facing = clamp01(wrap + n·l)・l = 点から太陽への向き（SunDirection）
 ///   sunLit = n·l > 0 かつ影の地図がある時だけ 1 − strength × fade × (1 − 照らされる割合)（ほかは 1。木の外で画素ごとに 1 回。Scene3d.directionalShadowOf）
 ///   点光源 = color × intensity × att × facing × pointLit
@@ -139,6 +141,8 @@ pub mod LightModel3d {
         case PhysicalUnits
         /// 1 / unitsPerMeter²（Physical の逆二乗を m で測る）。
         case InverseUnitsPerMeterSquared
+        /// 拡散の光に景色を混ぜる割合（Scene3d.withSkyContribution。変種 skyIrradiance の時だけ読む・拡散の光が求められない場面は 0）。
+        case SkyContribution
     }
 
     /// 画素ごと・場面ごとの vec3 の入力。
@@ -175,6 +179,8 @@ pub mod LightModel3d {
         case SunDirection
         /// 太陽の color × intensity（線形の量。太陽が無い時は 0）。
         case SunColor
+        /// 景色の拡散の光の係数 i 番（0..8・線形の rgb・環境マップの強さを掛けた後。変種 skyIrradiance の時だけ読む）。
+        case IrradianceSh(Int32)
     }
 
     /// 光のループの中で読めるスカラーの欄。
@@ -204,19 +210,20 @@ pub mod LightModel3d {
     def wrap(): Float64 = 0.0
 
     /// 木の変種（Unity の shader variant に当たる）。pointShadows = 点光源の光に影の割合（ScalarInput.PointShadowLit）を掛けるか・
-    /// lightUnits = 光の量の読み方（Some なら木に書き込む・None なら ScalarInput.PhysicalUnits で画素ごとに選ぶ）。
+    /// lightUnits = 光の量の読み方（Some なら木に書き込む・None なら ScalarInput.PhysicalUnits で画素ごとに選ぶ）・
+    /// skyIrradiance = ambient に景色の拡散の光を混ぜる（ScalarInput.SkyContribution と Vec3Input.IrradianceSh を読む）。
     /// GL と WebGPU は場面ごとに Some の変種のプログラムを組み、CPU は cpuVariant() の木 1 本を回す（Legacy では Select と × 1.0 だけが増え、値は同じ）。
-    pub type alias LightVariant = { pointShadows = Bool, lightUnits = Option[Scene3d.LightUnits] }
+    pub type alias LightVariant = { pointShadows = Bool, lightUnits = Option[Scene3d.LightUnits], skyIrradiance = Bool }
 
     /// 点光源の影なし・Legacy の変種（lightingModel() などと同じ木）。
-    pub def legacyVariant(): LightVariant = { pointShadows = false, lightUnits = Some(Scene3d.LightUnits.Legacy) }
+    pub def legacyVariant(): LightVariant = { pointShadows = false, lightUnits = Some(Scene3d.LightUnits.Legacy), skyIrradiance = false }
 
-    /// CPU の描き手が回す変種（点光源の影の割合を読み・光の量の読み方を入力で選ぶ）。
-    pub def cpuVariant(): LightVariant = { pointShadows = true, lightUnits = None }
+    /// CPU の描き手が回す変種（点光源の影の割合を読み・光の量の読み方を入力で選ぶ・景色の拡散の光は SkyContribution が 0 なら ambient のまま）。
+    pub def cpuVariant(): LightVariant = { pointShadows = true, lightUnits = None, skyIrradiance = true }
 
     /// 場面 scene に使う GPU の変種（pointShadows が Some なら影の割合を読む・光の量の読み方は場面のまま）。
     pub def variantOf(scene: Scene3d.Scene3dCmd): LightVariant =
-        { pointShadows = Option.nonEmpty(scene#pointShadows), lightUnits = Some(scene#lightUnits) }
+        { pointShadows = Option.nonEmpty(scene#pointShadows), lightUnits = Some(scene#lightUnits), skyIrradiance = Scene3d.Internal.SkyIrradiance.isOn(scene) }
 
     /// lightmap の無い面に当たる光（ファイルの頭の light）。
     pub def lightingModel(): Vec3Expr = lightingModelFor(legacyVariant())
@@ -225,10 +232,33 @@ pub mod LightModel3d {
     pub def lightingModelFor(v: LightVariant): Vec3Expr =
         Vec3Expr.LetScalar("sky", ScalarExpr.Mul(ScalarExpr.In(ScalarInput.Hemisphere),
                                                  ScalarExpr.Max(ScalarExpr.Num(0.0), ScalarExpr.Y(Vec3Expr.In(Vec3Input.Normal)))),
-            Vec3Expr.Toon(Vec3Expr.Add(Vec3Expr.Add(Vec3Expr.Add(Vec3Expr.Add(Vec3Expr.In(Vec3Input.Ambient),
+            Vec3Expr.Toon(Vec3Expr.Add(Vec3Expr.Add(Vec3Expr.Add(Vec3Expr.Add(ambientLight(v),
                                                                  Vec3Expr.Make(ScalarExpr.Ref("sky"), ScalarExpr.Ref("sky"), ScalarExpr.Ref("sky"))),
                                                     Vec3Expr.SumPoints(pointLight(v))),
                                        Vec3Expr.SumSpots(spotLight(v))), sunLight(v))))
+
+    /// 拡散の環境の光（変種 skyIrradiance なら景色の拡散の光を SkyContribution の割合で混ぜる）。
+    // WhyNot: SkyContribution が 0 の時も Mix を通さない — 係数を読まずに ambient をそのまま返せば、景色の拡散を使わない場面の値はビットで同じ。
+    def ambientLight(v: LightVariant): Vec3Expr =
+        let ambient = Vec3Expr.In(Vec3Input.Ambient);
+        if (not v#skyIrradiance) ambient
+        else {
+            let k = ScalarExpr.In(ScalarInput.SkyContribution);
+            Vec3Expr.Select(Cond.Greater(k, ScalarExpr.Num(0.0)), Vec3Expr.Mix(ambient, skyIrradiance(), k), ambient)
+        }
+
+    /// 法線 n の面が受ける景色の拡散の光（式は頭の説明。SphericalHarmonics.irradianceAt と同じ式）。
+    def skyIrradiance(): Vec3Expr =
+        let n = Vec3Expr.In(Vec3Input.Normal);
+        let (x, y, z) = (ScalarExpr.X(n), ScalarExpr.Y(n), ScalarExpr.Z(n));
+        let mul = (a: ScalarExpr, b: ScalarExpr) -> ScalarExpr.Mul(a, b);
+        let num = ScalarExpr.Num;
+        let basis = num(0.282095) :: mul(num(0.488603), y) :: mul(num(0.488603), z) :: mul(num(0.488603), x) ::
+            mul(num(1.092548), mul(x, y)) :: mul(num(1.092548), mul(y, z)) :: mul(num(0.315392), ScalarExpr.Sub(mul(num(3.0), mul(z, z)), num(1.0))) ::
+            mul(num(1.092548), mul(x, z)) :: mul(num(0.546274), ScalarExpr.Sub(mul(x, x), mul(y, y))) :: Nil;
+        let terms = List.zipWithIndex(basis) |> List.map(entry -> { let (i, b) = entry; Vec3Expr.Scale(Vec3Expr.In(Vec3Input.IrradianceSh(i)), b) });
+        let sum = List.foldLeft((acc, t) -> Vec3Expr.Add(acc, t), Vec3Expr.Scale(Vec3Expr.In(Vec3Input.IrradianceSh(0)), num(0.282095)), List.drop(1, terms));
+        Vec3Expr.Max(Vec3Expr.Make(num(0.0), num(0.0), num(0.0)), sum)
 
     /// lightmap のある面に当たる光（ambient と hemisphere の代わりにベイクした光を足す）。
     pub def lightmapLightingModel(): Vec3Expr = lightmapLightingModelFor(legacyVariant())

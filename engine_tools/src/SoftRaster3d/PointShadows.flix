@@ -50,21 +50,23 @@ mod SoftRaster3d.PointShadows {
                                                p#x, p#y, p#z, g#x, g#y, g#z, n#x, n#y, n#z)
     }
 
-    /// lights に場面の点光源の影と光の量の読み方（Physical か・1 / max(unitsPerMeter², 1e−12)。GL の uniform と同じ値）を入れた物。
+    /// lights に場面の点光源の影と光の量の読み方（Physical か・1 / max(unitsPerMeter², 1e−12)）と景色の拡散の光（GL の uniform と同じ値）を入れた物。
     pub def withSceneLighting(points: Option[PointShadowMaps], scene: Scene3d.Scene3dCmd, lights: SoftRaster3d.Lights): SoftRaster3d.Lights =
-        let SoftRaster3d.Lights.Lights(ar, ag, ab, hemi, steps, packedPoints, spots, shadow, sun, _, ones, _, _) = lights;
+        let SoftRaster3d.Lights.Lights(ar, ag, ab, hemi, steps, packedPoints, spots, shadow, sun, _, ones, _, _, _, _) = lights;
         let physical = if (scene#lightUnits == Scene3d.LightUnits.Physical) 1.0 else 0.0;
         let upm = scene#unitsPerMeter;
-        SoftRaster3d.Lights.Lights(ar, ag, ab, hemi, steps, packedPoints, spots, shadow, sun, points, ones, physical, 1.0 / Float64.max(upm * upm, 1.0e-12))
+        let (skyContribution, sh) = Scene3d.Internal.SkyIrradiance.valuesOf(scene);
+        SoftRaster3d.Lights.Lights(ar, ag, ab, hemi, steps, packedPoints, spots, shadow, sun, points, ones, physical, 1.0 / Float64.max(upm * upm, 1.0e-12),
+                                   sh, skyContribution)
 
     /// どの点光源も影の割合 1 の並び（ビルボード）。
     pub def unshadowedPointsOf(lights: SoftRaster3d.Lights): Vector[Float64] =
-        let SoftRaster3d.Lights.Lights(_, _, _, _, _, _, _, _, _, _, ones, _, _) = lights;
+        let SoftRaster3d.Lights.Lights(_, _, _, _, _, _, _, _, _, _, ones, _, _, _, _) = lights;
         ones
 
     /// 点 p（g = 形の法線・n = 光の計算の法線）の点光源ごとの影の割合（影の無い場面は全部 1 の並びを使い回す）。
     pub def pointLitOf(lights: SoftRaster3d.Lights, p: (Float64, Float64, Float64), g: Vec3.Vec3, n: Vec3.Vec3): Vector[Float64] =
-        let SoftRaster3d.Lights.Lights(_, _, _, _, _, _, _, _, _, points, ones, _, _) = lights;
+        let SoftRaster3d.Lights.Lights(_, _, _, _, _, _, _, _, _, points, ones, _, _, _, _) = lights;
         match points {
             case None => ones
             case Some(_) =>

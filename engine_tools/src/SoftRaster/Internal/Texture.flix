@@ -20,7 +20,7 @@ pub mod SoftRaster.Internal.Texture {
             |> List.map(Scene3d.materialFieldsOf);
         scenes |> List.flatMap(c -> Scene3d.instancesOf(c#scene)) |> List.map(Scene3d.instanceFieldsOf) |> List.forEach(warnNormalMapWithoutUv(warnLog));
         scenes |> List.flatMap(c -> Scene3d.instancesOf(c#scene)) |> List.forEach(warnUnusedLightmap(warnLog));
-        scenes |> List.flatMap(c -> Scene3d.droppedLightsWarnings(c#scene)) |> List.forEach(kl -> warnSceneOnce(warnLog, fst(kl), snd(kl)));
+        scenes |> List.flatMap(c -> Scene3d.droppedLightsWarnings(c#scene) ::: Scene3d.Internal.SkyIrradiance.warningsOf(c#scene)) |> List.forEach(kl -> warnSceneOnce(warnLog, fst(kl), snd(kl)));
         scenes |> List.filterMap(c -> Scene3d.directionalLightWarning(c#scene)) |> List.forEach(line -> warnSceneOnce(warnLog, "@sun:direction", line));
         let keyOf = (name: String, textureUse: Texture3d.TextureUse) -> (name, Texture3d.mipSpaceOf(textureUse));
         let lightmapKeys = scenes |> List.flatMap(c -> Scene3d.instancesOf(c#scene) |> List.filterMap(Scene3d.lightmapOf))

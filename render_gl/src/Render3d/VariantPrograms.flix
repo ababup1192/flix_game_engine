@@ -37,11 +37,12 @@ mod Render3d.VariantPrograms {
                 made
         }
 
-    /// 変種 v のプログラムだけが持つ uniform の location（+ps の点光源の影・+pu の uInverseUnitsPerMeterSquared・+psx の uPsx・uPsxTarget・uVertexSnap）を light と pointShadow へ足す。
+    /// 変種 v のプログラムだけが持つ uniform の location（+ps の点光源の影・+pu の uInverseUnitsPerMeterSquared・+psx の uPsx・uPsxTarget・uVertexSnap・+sh の uSh・uSkyContribution）を light と pointShadow へ足す。
     // WhyNot: 既定のプログラムでも location を引かない — 既定の場面で GL への呼び出しが増え、変種を足す前と同じ GL の流れでなくなる。
     pub def variantLocsOf(gl: GlContext, program: Int32, v: ShaderVariant, light: LightLocs): (LightLocs, PointShadowLocs) \ IO =
         let physical = if (v#physicalUnits) { inverseUnitsPerMeterSquared = loc(gl, program, "uInverseUnitsPerMeterSquared") | light } else light;
         let units = if (v#psx) { psx = loc(gl, program, "uPsx"), psxTarget = loc(gl, program, "uPsxTarget"), vertexSnap = loc(gl, program, "uVertexSnap") | physical } else physical;
+        let sky = if (v#skyIrradiance) { sh = loc(gl, program, "uSh"), skyContribution = loc(gl, program, "uSkyContribution") | units } else units;
         let point = if (v#pointShadows) Render3d.Shadow.pointShadowLocsOf(gl, program) else Render3d.Shadow.noPointShadowLocs();
-        (units, point)
+        (sky, point)
 }

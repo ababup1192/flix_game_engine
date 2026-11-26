@@ -25,18 +25,20 @@ mod Render3d.TestUniformLayout {
     /// R3dScene は 992 バイト・R3dLight は 176 バイト（どちらも 16 の倍数）。
     @Test
     def testStructBytes(): Unit \ Assert =
-        Assert.assertEq(expected = (992, 176), (bytesOf(sceneFields()), bytesOf(lightFields())))
+        Assert.assertEq(expected = (992, 336), (bytesOf(sceneFields()), bytesOf(lightFields())))
 
-    /// R3dLight の欄の位置: 点光源 8 本の値の後に atlas（128）・bias（144）・1 / unitsPerMeter²（152）・pad0（156）・PS1 風の値（160）。
+    /// R3dLight の欄の位置: 点光源 8 本の値の後に atlas（128）・bias（144）・1 / unitsPerMeter²（152）・pad0（156）・PS1 風の値（160）・
+    /// 景色の拡散の光の係数（176）・割合（320）。
     @Test
     def testLightFieldOffsets(): Unit \ Assert =
-        Assert.assertEq(expected = ("uPointShadow", 0) :: ("uPointShadowAtlas", 128) :: ("uPointShadowBias", 144) :: ("uInverseUnitsPerMeterSquared", 152) :: ("pad0", 156) :: ("uPsx", 160) :: Nil,
+        Assert.assertEq(expected = ("uPointShadow", 0) :: ("uPointShadowAtlas", 128) :: ("uPointShadowBias", 144) :: ("uInverseUnitsPerMeterSquared", 152) :: ("pad0", 156) :: ("uPsx", 160) ::
+                                   ("uSh", 176) :: ("uSkyContribution", 320) :: Nil,
                         namedOffsets(lightFields(), lightOffsets()))
 
     /// struct の字は 16 バイトの区切りで改行する（R3dLight の 3 行目は vec2f・f32・f32 が 1 行）。
     @Test
     def testStructSourceBreaksEvery16Bytes(): Unit \ Assert =
         Assert.assertEq(expected = "struct R3dLight {\n    uPointShadow: array<vec4f, 8>,\n    uPointShadowAtlas: vec4f,\n" +
-                                   "    uPointShadowBias: vec2f, uInverseUnitsPerMeterSquared: f32, pad0: f32,\n    uPsx: vec4f,\n};\n",
+                                   "    uPointShadowBias: vec2f, uInverseUnitsPerMeterSquared: f32, pad0: f32,\n    uPsx: vec4f,\n    uSh: array<vec4f, 9>,\n    uSkyContribution: f32,\n};\n",
                         structSource("R3dLight", lightFields()))
 }

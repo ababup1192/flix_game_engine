@@ -85,6 +85,7 @@
 | 3D の光の量を物理の単位で読む（逆二乗・拡散に 1/π・Godot の Use Physical Light Units） | Scene3d.LightUnits（Legacy / Physical）を Scene3d.withLightUnits で。場面の長さが m でなければ Scene3d.withUnitsPerMeter（docs/scene3d.md の「光の量の読み方」） |
 | 3D の光の式の変種（点光源の影の有無・光の量の読み方）を選ぶ（shader variant） | LightModel3d.LightVariant（variantOf(scene) で場面から選ぶ・lightingModelFor / pbrModelFor。ゲームは使わない） |
 | 3D のカメラの向きを変えずに写す範囲を上下左右へずらす（レンズシフト・縦の線を平行のまま見下ろす HD-2D） | Camera3d の欄 lensShift（Camera3d.camera(eye, yaw, pitch, fovY) から `{ lensShift = Vec2.v2(0.0, -0.5) \| .. }`・docs/scene3d.md の「縦の線を平行のまま見下ろす」） |
+| 3D の陰の光に環境マップの空と地面の色を混ぜる（景色の拡散の光・球面調和 9 個） | SphericalHarmonics（fromEquirectangular で絵から求める・fromCoefficients で渡す。Scene3d.withSkyContribution と組む） |
 | 3D の光・かすみ・空の式を読む・直す（GL と CPU の描き手が同じ木から出す） | LightModel3d（式の木と lightingModel・fogModel・skyModel。コード生成は LightModel3d.Codegen。直したら make gen-light3d で engine_tools の SoftRaster3dLight を作り直す。ゲームは使わない） |
 | 3D の形に骨を入れる（関節の並び・頂点ごとの重み） | Skin3d |
 | 骨の動き（キーフレームの並び）を持つ・ある時刻の姿勢を取り出す | AnimationClip3d |

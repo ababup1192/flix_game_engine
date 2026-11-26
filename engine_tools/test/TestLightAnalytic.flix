@@ -49,7 +49,7 @@ mod SoftRaster3d.TestLightAnalytic {
     /// 原点の上向きの面に、真上から color × intensity = e の太陽を当てた光の量（r）。環境光・半球光は 0。
     def sunAboveLight(e: Float64): Float64 =
         let (r, _, _) = SoftRaster3dLight.lightAt(0, noLights(), noLights(), None, SoftRaster3d.PointShadows.allLit(), 0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
-                                                  0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, e, e, e, 1.0, 0.0, 1.0);
+                                                  0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, e, e, e, 1.0, 0.0, 1.0, Scene3d.Internal.SkyIrradiance.zeros(), 0.0);
         r
 
     /// 同じ面を、反射率 albedo・metallic 0・roughness 1 の PBR の材質で塗った色（r・かすみの前）。空と環境は 0。
@@ -65,7 +65,7 @@ mod SoftRaster3d.TestLightAnalytic {
     def pointBelowLight(d: Float64, range: Float64): Float64 =
         let points = LightModel3d.packPointLights({ position = Vec3.zero(), color = Color.rgb(1.0, 1.0, 1.0), intensity = 1.0, range = range } :: Nil);
         let (r, _, _) = SoftRaster3dLight.lightAt(0, points, noLights(), None, SoftRaster3d.PointShadows.allLit(), 0.0, 0.0 - d, 0.0, 0.0, 1.0, 0.0,
-                                                  0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0);
+                                                  0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, Scene3d.Internal.SkyIrradiance.zeros(), 0.0);
         r
 
     def emptyEnvironment(): Scene3d.Environment3d =
@@ -135,5 +135,40 @@ mod SoftRaster3d.TestLightAnalytic {
     @Test
     def testTonemapLiftsShadowsAndDimsWhiteAgainstStandard(): Unit \ Assert =
         Assert.assertTrue(tonemappedScene(0.01) > standardTonemap(0.01) and tonemappedScene(1.0) < standardTonemap(1.0))
+
+    // ════════════════════════════════════════════════════════════════════
+    // 景色の拡散の光（SH）
+    // ════════════════════════════════════════════════════════════════════
+
+    /// 上が空色・下が茶の 32 × 16 の景色から求めた拡散の光。
+    def skyHarmonics(): SphericalHarmonics.SphericalHarmonics =
+        let argb = (r: Int32, g: Int32, b: Int32) -> Int32.bitwiseOr(Int32.leftShift(255, 24), Int32.bitwiseOr(Int32.leftShift(r, 16), Int32.bitwiseOr(Int32.leftShift(g, 8), b)));
+        let pixels = Vector.range(0, 32 * 16) |> Vector.map(k -> if (k / 32 < 8) argb(90, 140, 230) else argb(150, 90, 40));
+        match Texture3d.fromArgb(32, 16, pixels) |> Result.toOption |> Option.flatMap(SphericalHarmonics.fromEquirectangular) {
+            case Some(sh) => sh
+            case None     => bug!("求められない")
+        }
+
+    /// 割合 1・ambient 0 の光の式の値（CPU の木）は、どの向きでも SphericalHarmonics.irradianceAt と 1e−6 以内で同じ。
+    @Test
+    def testTreeMatchesIrradianceAt(): Unit \ Assert =
+        let sh = skyHarmonics();
+        let packed = SphericalHarmonics.coefficientsOf(sh) |> List.flatMap(c -> c#x :: c#y :: c#z :: Nil) |> List.toVector;
+        let normals = Vec3.v3(0.0, 1.0, 0.0) :: Vec3.v3(0.0, -1.0, 0.0) :: Vec3.normalized(Vec3.v3(0.3, 0.5, -0.8)) :: Vec3.normalized(Vec3.v3(-0.7, -0.2, 0.4)) :: Nil;
+        let worst = normals |> List.map(n -> {
+            let (r, g, b) = SoftRaster3dLight.lightAt(0, noLights(), noLights(), None, SoftRaster3d.PointShadows.allLit(), 0.0, 0.0, 0.0, n#x, n#y, n#z,
+                                                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, packed, 1.0);
+            let (er, eg, eb) = SphericalHarmonics.irradianceAt(sh, n);
+            Float64.max(Float64.abs(r - er), Float64.max(Float64.abs(g - eg), Float64.abs(b - eb)))
+        }) |> List.foldLeft(Float64.max, 0.0);
+        Assert.assertTrue(worst < 1.0e-6)
+
+    /// 割合 0 なら係数を読まず ambient のまま（同じビット）。
+    @Test
+    def testZeroContributionKeepsAmbient(): Unit \ Assert =
+        let packed = Vector.repeat(27, 5.0);
+        let (r, _, _) = SoftRaster3dLight.lightAt(0, noLights(), noLights(), None, SoftRaster3d.PointShadows.allLit(), 0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+                                                  0.3, 0.3, 0.3, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, packed, 0.0);
+        Assert.assertEq(expected = 0.3, r)
 
 }

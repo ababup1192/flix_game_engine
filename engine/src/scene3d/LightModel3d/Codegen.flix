@@ -27,6 +27,8 @@ pub mod LightModel3d.Codegen {
         case Shadow
         /// 点光源ごとの影の割合（Vector[Float64]・点光源の番号で引く）。
         case PointLit
+        /// 景色の拡散の光の係数 27 個（Vector[Float64]・Vec3Input.IrradianceSh の 9 個を 1 つにまとめる）。
+        case Sh
         case Vec3Param(Vec3Input)
         case ScalarParam(ScalarInput)
     }
@@ -112,6 +114,8 @@ pub mod LightModel3d.Codegen {
         case (Target.Flix, _) => scalarInputName(input)
         case (Target.Glsl, ScalarInput.InverseUnitsPerMeterSquared) => "uInverseUnitsPerMeterSquared"
         case (Target.Wgsl, ScalarInput.InverseUnitsPerMeterSquared) => "r3dLight.uInverseUnitsPerMeterSquared"
+        case (Target.Glsl, ScalarInput.SkyContribution)   => "uSkyContribution"
+        case (Target.Wgsl, ScalarInput.SkyContribution)   => "r3dLight.uSkyContribution"
         // WhyNot: 太陽の影の割合を関数の引数にしない — toGlsl の引数の並びを変えず、frag の main が先に求めて渡す（地図を引くのは木の外）。
         case (Target.Glsl, ScalarInput.SunLit)            => "r3d_sunLit"
         case (Target.Glsl, ScalarInput.Hemisphere)        => "uHemisphere"
@@ -148,6 +152,7 @@ pub mod LightModel3d.Codegen {
         case ScalarInput.PointShadowLit    => "pointLit"
         case ScalarInput.PhysicalUnits     => "physicalUnits"
         case ScalarInput.InverseUnitsPerMeterSquared => "inverseUnitsPerMeterSquared"
+        case ScalarInput.SkyContribution   => "skyContribution"
     }
 
     def vec3InputName(input: Vec3Input): String = match input {
@@ -171,6 +176,7 @@ pub mod LightModel3d.Codegen {
         case Vec3Input.EnvironmentBoxCenter => "envBoxCenter"
         case Vec3Input.SunDirection         => "sunDir"
         case Vec3Input.SunColor             => "sunColor"
+        case Vec3Input.IrradianceSh(i)      => "sh${i}"
     }
 
     /// GLSL で画素ごとに関数の引数として受ける入力か（ほかは uniform）。
@@ -195,6 +201,7 @@ pub mod LightModel3d.Codegen {
         case Vec3Input.EnvironmentBoxCenter => false
         case Vec3Input.SunDirection         => false
         case Vec3Input.SunColor             => false
+        case Vec3Input.IrradianceSh(_)      => false
     }
 
     /// GLSL で入力を読む名前（画素ごとの入力は関数の引数の名前・ほかは uniform）。
@@ -219,11 +226,15 @@ pub mod LightModel3d.Codegen {
         case Vec3Input.EnvironmentBoxCenter => "uEnvBoxCenter"
         case Vec3Input.SunDirection         => "uSunDir"
         case Vec3Input.SunColor             => "uSunColor"
+        case Vec3Input.IrradianceSh(i)      => "uSh[${i}]"
     }
 
     /// WGSL で入力を読む名前（場面の値は Render3dWgsl の `var<uniform> r3d` の欄。名前は GLSL の uniform と同じ）。
-    def wgslUniformOf(input: Vec3Input): String =
-        if (isPerPixel(input)) vec3InputName(input) else "r3d." + glslUniformOf(input)
+    /// 景色の拡散の光の係数は変種の R3dLight の vec4 の配列（x・y・z を読む）。
+    def wgslUniformOf(input: Vec3Input): String = match input {
+        case Vec3Input.IrradianceSh(i) => "r3dLight.uSh[${i}]"
+        case _ => if (isPerPixel(input)) vec3InputName(input) else "r3d." + glslUniformOf(input)
+    }
 
     /// WGSL の光の欄。f32 と vec2 の配列は uniform の配列の 16 バイト刻みに合わせて vec4 の配列に入れてある（x・y を読む）。
     def wgslScalarField(kind: LightKind, field: ScalarLightField): String = match (kind, field) {
@@ -244,7 +255,11 @@ pub mod LightModel3d.Codegen {
     }
 
     def vec3InputCode(t: Target, input: Vec3Input, axis: Int32): String = match t {
-        case Target.Flix => vec3InputName(input) + axisSuffix(t, axis)
+        case Target.Flix => match input {
+            // CPU は 27 個の係数を 1 つの引数で受ける（引数を 27 個並べると、使わない場面でも生成した関数が大きくなり JIT されなくなる）。
+            case Vec3Input.IrradianceSh(i) => "Vector.get(${3 * i + axis}, sh)"
+            case _                         => vec3InputName(input) + axisSuffix(t, axis)
+        }
         case Target.Glsl => glslUniformOf(input) + axisSuffix(t, axis)
         case Target.Wgsl => wgslUniformOf(input) + axisSuffix(t, axis)
     }
@@ -622,6 +637,7 @@ pub mod LightModel3d.Codegen {
 
     def paramsOfVec3(e: Vec3Expr): Set[Param] = match e {
         case Vec3Expr.Make(a, b, c)         => Set.union(paramsOfScalar(a), Set.union(paramsOfScalar(b), paramsOfScalar(c)))
+        case Vec3Expr.In(Vec3Input.IrradianceSh(_)) => Set#{ Param.Sh }
         case Vec3Expr.In(input)             => Set#{ Param.Vec3Param(input) }
         case Vec3Expr.LightField(_)         => Set.empty()
         case Vec3Expr.Add(a, b)             => Set.union(paramsOfVec3(a), paramsOfVec3(b))
@@ -720,8 +736,9 @@ pub mod LightModel3d.Codegen {
         let lights = Param.Steps :: Param.Points :: Param.Spots :: Param.Shadow :: Param.PointLit :: p :: n :: Nil;
         let sun = Param.Vec3Param(Vec3Input.SunDirection) :: Param.Vec3Param(Vec3Input.SunColor) :: Param.ScalarParam(ScalarInput.SunLit) :: Nil;
         let v = cpuVariant();
-        { name = "lightAt", model = lightingModelFor(v), doc = "lightingModel の光の量（toon の丸めまで済ませた値。sunLit = 太陽の影の割合）。",
-          params = lights ::: Param.Vec3Param(Vec3Input.Ambient) :: Param.ScalarParam(ScalarInput.Hemisphere) :: sun ::: units } ::
+        { name = "lightAt", model = lightingModelFor(v), doc = "lightingModel の光の量（toon の丸めまで済ませた値。sunLit = 太陽の影の割合・sh と skyContribution = Scene3d.Internal.SkyIrradiance.valuesOf の係数と割合）。",
+          params = lights ::: Param.Vec3Param(Vec3Input.Ambient) :: Param.ScalarParam(ScalarInput.Hemisphere) :: sun ::: units :::
+                   Param.Sh :: Param.ScalarParam(ScalarInput.SkyContribution) :: Nil } ::
         { name = "lightmapLightAt", model = lightmapLightingModelFor(v), doc = "lightmapLightingModel の光の量（lightmap は段つきで読んだ後の rgb を渡す）。",
           params = lights ::: Param.Vec3Param(Vec3Input.LightmapColor) :: Param.ScalarParam(ScalarInput.LightmapSrgb) ::
                    Param.ScalarParam(ScalarInput.LightmapIntensity) :: units } ::
@@ -844,6 +861,7 @@ pub mod LightModel3d.Codegen {
         case Param.Spots    => "Vector[Float64]"
         case Param.Shadow   => hooks#shadowType
         case Param.PointLit => "Vector[Float64]"
+        case Param.Sh       => "Vector[Float64]"
         case Param.Vec3Param(_)   => "Float64"
         case Param.ScalarParam(_) => "Float64"
     }
@@ -854,6 +872,7 @@ pub mod LightModel3d.Codegen {
         case Param.Spots    => "spots" :: Nil
         case Param.Shadow   => "shadow" :: Nil
         case Param.PointLit => "pointLit" :: Nil
+        case Param.Sh       => "sh" :: Nil
         case Param.Vec3Param(input) => let n = vec3InputName(input); "${n}X" :: "${n}Y" :: "${n}Z" :: Nil
         case Param.ScalarParam(input) => scalarInputName(input) :: Nil
     }

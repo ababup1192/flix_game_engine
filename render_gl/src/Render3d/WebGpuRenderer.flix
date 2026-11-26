@@ -288,8 +288,8 @@ pub mod Render3d.WebGpuRenderer {
         if (code >= 2) discard desc.texture(Render3dWgsl.pointShadowMapBinding(), ShaderStage.FRAGMENT, TextureSampleType.DEPTH) else ();
         desc
 
-    /// 変種 v の場面の group 0 の形の番号（0 = 既定・1 = +pu か +psx だけ・2 = +ps がある。ビルボード・空も同じ場面の pass ではこの layout で作る）。
-    pub def layoutCodeOf(v: ShaderVariant): Int32 = if (v#pointShadows) 2 else if (v#physicalUnits or v#psx) 1 else 0
+    /// 変種 v の場面の group 0 の形の番号（0 = 既定・1 = +pu か +psx か +sh だけ・2 = +ps がある。ビルボード・空も同じ場面の pass ではこの layout で作る）。
+    pub def layoutCodeOf(v: ShaderVariant): Int32 = if (v#pointShadows) 2 else if (v#physicalUnits or v#psx or v#skyIrradiance) 1 else 0
 
     /// 形の番号 code の group 0 の layout。
     def sceneLayoutOf(r: Renderer, code: Int32): BindGroupLayout =
@@ -588,6 +588,7 @@ pub mod Render3d.WebGpuRenderer {
         let variant = passVariantOf(scene);
         let sceneGroup = sceneGroupOf(r, target, List.map(st -> st#pass, staged#shadows), staged#environment, variant);
         Scene3d.skyWarning(scene) |> Option.forEach(line -> Render3d.ScenePlan.warnOnce(s#planner, "@sky+background", line));
+        Scene3d.Internal.SkyIrradiance.warningsOf(scene) |> List.forEach(kl -> Render3d.ScenePlan.warnOnce(s#planner, fst(kl), snd(kl)));
         let drawn = target#msaa |> Option.getWithDefault(target#color);
         let full = (0, 0, target#width, target#height);
         staged#passes |> List.forEach(match (spec, list, valuesBase) ->

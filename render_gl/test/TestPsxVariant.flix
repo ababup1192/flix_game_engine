@@ -10,11 +10,11 @@ mod Render3d.TestPsxVariant {
 
     def psxScene(): Scene3d.Scene3dCmd = Scene3d.withPsx(Scene3d.psxPreset(), plain())
 
-    def psx(): Render3d.ShaderVariant = { pointShadows = false, physicalUnits = false, psx = true }
+    def psx(): Render3d.ShaderVariant = { pointShadows = false, physicalUnits = false, psx = true, skyIrradiance = false }
 
     def kind(uv: Bool): Render3d.ProgramKind =
         { skinned = false, uv = uv, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false,
-          metallicRoughness = false, pointShadows = false, physicalUnits = false, psx = true }
+          metallicRoughness = false, pointShadows = false, physicalUnits = false, psx = true, skyIrradiance = false }
 
     def solidGlsl(): ShaderGen.MaterialGlsl =
         { uniforms = "uniform float uTime;\n", functions = "void materialEval(out vec4 albedo, out vec3 emission) {}\n",

@@ -1,0 +1,1 @@
+../../../../engine/src/scene3d/SphericalHarmonics/Internal.flix

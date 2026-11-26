@@ -18,14 +18,27 @@ pub mod SoftRaster3dLight {
             Float64.floor(x * s + 0.5) / s
         }
 
-    /// lightingModel の光の量（toon の丸めまで済ませた値。sunLit = 太陽の影の割合）。
-    pub def lightAt(steps: Int32, points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pointLit: Vector[Float64], pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, ambientX: Float64, ambientY: Float64, ambientZ: Float64, hemisphere: Float64, sunDirX: Float64, sunDirY: Float64, sunDirZ: Float64, sunColorX: Float64, sunColorY: Float64, sunColorZ: Float64, sunLit: Float64, physicalUnits: Float64, inverseUnitsPerMeterSquared: Float64): (Float64, Float64, Float64) =
+    /// lightingModel の光の量（toon の丸めまで済ませた値。sunLit = 太陽の影の割合・sh と skyContribution = Scene3d.Internal.SkyIrradiance.valuesOf の係数と割合）。
+    pub def lightAt(steps: Int32, points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pointLit: Vector[Float64], pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, ambientX: Float64, ambientY: Float64, ambientZ: Float64, hemisphere: Float64, sunDirX: Float64, sunDirY: Float64, sunDirZ: Float64, sunColorX: Float64, sunColorY: Float64, sunColorZ: Float64, sunLit: Float64, physicalUnits: Float64, inverseUnitsPerMeterSquared: Float64, sh: Vector[Float64], skyContribution: Float64): (Float64, Float64, Float64) =
         let sky_0 = (hemisphere * Float64.max(0.0, nY));
-        let (points_1X, points_1Y, points_1Z) = lightAtPoints(points, 0, pointLit, pX, pY, pZ, nX, nY, nZ, physicalUnits, inverseUnitsPerMeterSquared, 0.0, 0.0, 0.0);
-        let (spots_2X, spots_2Y, spots_2Z) = lightAtSpots(spots, 0, shadow, pX, pY, pZ, nX, nY, nZ, physicalUnits, inverseUnitsPerMeterSquared, 0.0, 0.0, 0.0);
-        let sunFacing_3 = clamp01((0.0 + (((nX * sunDirX) + (nY * sunDirY)) + (nZ * sunDirZ))));
-        let t_4 = (if ((physicalUnits > 0.0)) 0.3183098861837907 else 1.0);
-        (toon(steps, ((((ambientX + sky_0) + points_1X) + spots_2X) + (((sunColorX * sunFacing_3) * sunLit) * t_4))), toon(steps, ((((ambientY + sky_0) + points_1Y) + spots_2Y) + (((sunColorY * sunFacing_3) * sunLit) * t_4))), toon(steps, ((((ambientZ + sky_0) + points_1Z) + spots_2Z) + (((sunColorZ * sunFacing_3) * sunLit) * t_4))))
+        let (t_9X, t_9Y, t_9Z) = if ((skyContribution > 0.0)) {
+            let t_1 = (0.488603 * nY);
+            let t_2 = (0.488603 * nZ);
+            let t_3 = (0.488603 * nX);
+            let t_4 = (1.092548 * (nX * nY));
+            let t_5 = (1.092548 * (nY * nZ));
+            let t_6 = (0.315392 * ((3.0 * (nZ * nZ)) - 1.0));
+            let t_7 = (1.092548 * (nX * nZ));
+            let t_8 = (0.546274 * ((nX * nX) - (nY * nY)));
+            ((ambientX + ((Float64.max(0.0, (((((((((Vector.get(0, sh) * 0.282095) + (Vector.get(3, sh) * t_1)) + (Vector.get(6, sh) * t_2)) + (Vector.get(9, sh) * t_3)) + (Vector.get(12, sh) * t_4)) + (Vector.get(15, sh) * t_5)) + (Vector.get(18, sh) * t_6)) + (Vector.get(21, sh) * t_7)) + (Vector.get(24, sh) * t_8))) - ambientX) * skyContribution)), (ambientY + ((Float64.max(0.0, (((((((((Vector.get(1, sh) * 0.282095) + (Vector.get(4, sh) * t_1)) + (Vector.get(7, sh) * t_2)) + (Vector.get(10, sh) * t_3)) + (Vector.get(13, sh) * t_4)) + (Vector.get(16, sh) * t_5)) + (Vector.get(19, sh) * t_6)) + (Vector.get(22, sh) * t_7)) + (Vector.get(25, sh) * t_8))) - ambientY) * skyContribution)), (ambientZ + ((Float64.max(0.0, (((((((((Vector.get(2, sh) * 0.282095) + (Vector.get(5, sh) * t_1)) + (Vector.get(8, sh) * t_2)) + (Vector.get(11, sh) * t_3)) + (Vector.get(14, sh) * t_4)) + (Vector.get(17, sh) * t_5)) + (Vector.get(20, sh) * t_6)) + (Vector.get(23, sh) * t_7)) + (Vector.get(26, sh) * t_8))) - ambientZ) * skyContribution)))
+        } else {
+            (ambientX, ambientY, ambientZ)
+        };
+        let (points_10X, points_10Y, points_10Z) = lightAtPoints(points, 0, pointLit, pX, pY, pZ, nX, nY, nZ, physicalUnits, inverseUnitsPerMeterSquared, 0.0, 0.0, 0.0);
+        let (spots_11X, spots_11Y, spots_11Z) = lightAtSpots(spots, 0, shadow, pX, pY, pZ, nX, nY, nZ, physicalUnits, inverseUnitsPerMeterSquared, 0.0, 0.0, 0.0);
+        let sunFacing_12 = clamp01((0.0 + (((nX * sunDirX) + (nY * sunDirY)) + (nZ * sunDirZ))));
+        let t_13 = (if ((physicalUnits > 0.0)) 0.3183098861837907 else 1.0);
+        (toon(steps, ((((t_9X + sky_0) + points_10X) + spots_11X) + (((sunColorX * sunFacing_12) * sunLit) * t_13))), toon(steps, ((((t_9Y + sky_0) + points_10Y) + spots_11Y) + (((sunColorY * sunFacing_12) * sunLit) * t_13))), toon(steps, ((((t_9Z + sky_0) + points_10Z) + spots_11Z) + (((sunColorZ * sunFacing_12) * sunLit) * t_13))))
 
     /// lightmapLightingModel の光の量（lightmap は段つきで読んだ後の rgb を渡す）。
     pub def lightmapLightAt(steps: Int32, points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pointLit: Vector[Float64], pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, lightmapX: Float64, lightmapY: Float64, lightmapZ: Float64, lightmapSrgb: Float64, lightmapIntensity: Float64, physicalUnits: Float64, inverseUnitsPerMeterSquared: Float64): (Float64, Float64, Float64) =

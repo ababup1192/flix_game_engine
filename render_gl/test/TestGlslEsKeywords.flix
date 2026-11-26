@@ -37,12 +37,12 @@ mod Render3d.TestGlslEsKeywords {
                         ("pointShadows", k#pointShadows) :: ("physicalUnits", k#physicalUnits) :: ("psx", k#psx) :: Nil) + "]"
 
     def variants(): List[Render3d.ShaderVariant] =
-        List.flatMap(ps -> List.flatMap(pu -> List.map(px -> { pointShadows = ps, physicalUnits = pu, psx = px }, bools()), bools()), bools())
+        List.flatMap(ps -> List.flatMap(pu -> List.map(px -> { pointShadows = ps, physicalUnits = pu, psx = px, skyIrradiance = false }, bools()), bools()), bools())
 
     def kindsOf(v: Render3d.ShaderVariant): List[Render3d.ProgramKind] =
         List.flatMap(sk -> List.flatMap(uv -> List.flatMap(nm -> List.flatMap(lm -> List.flatMap(bl -> List.flatMap(ds -> List.flatMap(cv -> List.map(mr ->
             { skinned = sk, uv = uv, normalMap = nm, lightmap = lm, blend = bl, doubleSided = ds, coverage = cv, metallicRoughness = mr,
-              pointShadows = v#pointShadows, physicalUnits = v#physicalUnits, psx = v#psx },
+              pointShadows = v#pointShadows, physicalUnits = v#physicalUnits, psx = v#psx, skyIrradiance = false },
             bools()), bools()), bools()), bools()), bools()), bools()), bools()), bools())
 
     def solidGlsl(): ShaderGen.MaterialGlsl =

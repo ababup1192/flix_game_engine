@@ -43,7 +43,8 @@ mod Render3d.Light {
         let reflectArray = (c: Color) -> { let a = Array.repeat(Static, 3, 0.0f32); fillVec3(a, 0, colorVec(c)); a };
         let environment = environmentUniforms(scene, environmentLevels);
         let sun = sunUniforms(scene);
-        { psx = psxValuesOf(scene),
+        let (skyContribution, sh) = Scene3d.Internal.SkyIrradiance.valuesOf(scene);
+        { psx = psxValuesOf(scene), sh = Vector.toArray(Static, Vector.map(RenderUtil.f32, sh)), skyContribution = RenderUtil.f32(skyContribution),
           psxTarget = Array.repeat(Static, 4, 0.0f32), vertexSnap = RenderUtil.f32(Scene3d.Psx.vertexSnapOf(scene#psx)),
           sunDir = sun#direction, sunColor = sun#color, inverseUnitsPerMeterSquared = RenderUtil.f32(inverseUnitsPerMeterSquaredOf(scene)), ambient = ambient, hemisphere = RenderUtil.f32(env#hemisphere), toonSteps = env#toonSteps,
           pointCount = List.length(points), pointPos = pointPos, pointColor = pointColor, pointRange = pointRange,
@@ -134,6 +135,8 @@ mod Render3d.Light {
         if (locs#psx < 0) () else putVec4(gl, locs#psx, d#psx);
         if (locs#psxTarget < 0) () else putVec4(gl, locs#psxTarget, d#psxTarget);
         if (locs#vertexSnap < 0) () else gl.uniform1f(locs#vertexSnap, d#vertexSnap);
+        if (locs#sh < 0) () else gl.uniform3fv(locs#sh, d#sh);
+        if (locs#skyContribution < 0) () else gl.uniform1f(locs#skyContribution, d#skyContribution);
         putReflection(gl, locs, d)
 
     def putVec4(gl: GlContext, location: Int32, v: Array[Float32, Static]): Unit \ IO =
@@ -174,5 +177,5 @@ mod Render3d.Light {
           envBoxMax = Render3d.loc(gl, program, "uEnvBoxMax"), envBoxCenter = Render3d.loc(gl, program, "uEnvBoxCenter"),
           envLevels = Render3d.loc(gl, program, "uEnvLevels"), envIntensity = Render3d.loc(gl, program, "uEnvIntensity"),
           sunDir = Render3d.loc(gl, program, "uSunDir"), sunColor = Render3d.loc(gl, program, "uSunColor"), inverseUnitsPerMeterSquared = -1,
-          psx = -1, psxTarget = -1, vertexSnap = -1 }
+          psx = -1, psxTarget = -1, vertexSnap = -1, sh = -1, skyContribution = -1 }
 }

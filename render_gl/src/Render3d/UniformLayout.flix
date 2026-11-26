@@ -136,20 +136,24 @@ pub mod Render3d.UniformLayout {
 
     // ── R3dLight（変種の group 0 の binding 6） ──
 
-    /// R3dLight の欄（点光源の影の値と 1 / unitsPerMeter² と PS1 風の値）。
+    /// R3dLight の欄（点光源の影の値と 1 / unitsPerMeter² と PS1 風の値と景色の拡散の光）。
     pub enum LightField with Eq, Order, ToString {
-        case PointShadow, PointShadowAtlas, PointShadowBias, InverseUnitsPerMeterSquared, Pad0, Psx
+        case PointShadow, PointShadowAtlas, PointShadowBias, InverseUnitsPerMeterSquared, Pad0, Psx, Sh, SkyContribution
     }
 
     /// R3dLight の表。uPointShadow = 点光源ごとの (slot, A, B, strength)・uPointShadowAtlas = (大きさ, 列, 縮み, pcf)・uPointShadowBias = (bias, normalBias)・
-    /// uPsx = PS1 風の (段の数, ディザの表の番号, 強さ, アフィンの割合)（GLSL の uPsx と同じ値）。
+    /// uPsx = PS1 風の (段の数, ディザの表の番号, 強さ, アフィンの割合)（GLSL の uPsx と同じ値）・uSh = 景色の拡散の光の係数 9 個（xyz・GLSL の uSh と同じ値）・
+    /// uSkyContribution = 混ぜる割合。
+    // WhyNot: +sh の時だけ別の struct と binding を足さない — group 0 の layout を変種の組ごとに分けることになる（今は 0・1・2 の 3 つ）。R3dLight は既定の場面が読まないので、欄を足しても既定の WGSL は変わらない。
     pub def lightFields(): List[Field[LightField]] =
         (LightField.PointShadow, "uPointShadow", FieldType.Vec4Array(Scene3d.maxPointLights())) ::
         (LightField.PointShadowAtlas, "uPointShadowAtlas", FieldType.Vec4f) ::
         (LightField.PointShadowBias, "uPointShadowBias", FieldType.Vec2f) ::
         (LightField.InverseUnitsPerMeterSquared, "uInverseUnitsPerMeterSquared", FieldType.F32) ::
         (LightField.Pad0, "pad0", FieldType.F32) ::
-        (LightField.Psx, "uPsx", FieldType.Vec4f) :: Nil
+        (LightField.Psx, "uPsx", FieldType.Vec4f) ::
+        (LightField.Sh, "uSh", FieldType.Vec4Array(9)) ::
+        (LightField.SkyContribution, "uSkyContribution", FieldType.F32) :: Nil
 
     /// R3dLight の欄の位置。
     pub def lightOffsets(): Map[LightField, Int32] = offsetsOf(lightFields())

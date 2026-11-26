@@ -102,7 +102,8 @@ mod Render3d {
         fogOn = Int32, fogColor = Int32, fogRange = Int32, eye = Int32,
         reflectZenith = Int32, reflectHorizon = Int32, reflectGround = Int32, reflectCurve = Int32,
         envOn = Int32, envBoxOn = Int32, envBoxMin = Int32, envBoxMax = Int32, envBoxCenter = Int32, envLevels = Int32, envIntensity = Int32,
-        sunDir = Int32, sunColor = Int32, inverseUnitsPerMeterSquared = Int32, psx = Int32, psxTarget = Int32, vertexSnap = Int32
+        sunDir = Int32, sunColor = Int32, inverseUnitsPerMeterSquared = Int32, psx = Int32, psxTarget = Int32, vertexSnap = Int32,
+        sh = Int32, skyContribution = Int32
     }
 
     /// instanceBase = batch の頭の 1 体ごとの値の番号の uniform。
@@ -187,19 +188,20 @@ mod Render3d {
     /// blend = 半透明（出す α を材質の α に）・doubleSided = 裏の面の光の法線を裏返す・
     /// coverage = cutout を discard でなく alpha to coverage で抜く（isCoverageCutout が真の時だけ）・
     /// metallicRoughness = metallic と roughness を持つ材質（鏡面ハイライトと空の映り込みを足す式のプログラム。持たない材質の GLSL は変わらない）・
-    /// pointShadows と physicalUnits と psx = 場面のシェーダーの変種（ShaderVariant。点光源の影を引く・Physical の光・PS1 風）。
+    /// pointShadows と physicalUnits と psx と skyIrradiance = 場面のシェーダーの変種（ShaderVariant。点光源の影を引く・Physical の光・PS1 風・景色の拡散の光）。
     // WhyNot: blend・doubleSided・coverage・metallicRoughness・pointShadows・physicalUnits・psx を uniform で切り替えない — 使わない材質の GLSL の字が変わり、
     //   どの GPU でも同じ絵になる保証が崩れる。どれも偽の版は、それらを足す前と 1 字も同じ GLSL を組む。
     pub type alias ProgramKind = { skinned = Bool, uv = Bool, normalMap = Bool, lightmap = Bool, blend = Bool, doubleSided = Bool, coverage = Bool,
-                                   metallicRoughness = Bool, pointShadows = Bool, physicalUnits = Bool, psx = Bool }
+                                   metallicRoughness = Bool, pointShadows = Bool, physicalUnits = Bool, psx = Bool, skyIrradiance = Bool }
 
     /// 場面ごとのシェーダーの変種（Unity の shader variant に当たる）。pointShadows = 点光源の影を引く（鍵の +ps）・physicalUnits = Physical の光（鍵の +pu）・
     /// psx = PS1 風の描き方（Scene3d.Psx.isOn。鍵の +psx。色の丸めとディザ・頂点の揺れ・アフィンの uv を uniform で渡す）。
+    /// skyIrradiance = ambient に景色の拡散の光を混ぜる（Scene3d.withSkyContribution。鍵の +sh）。
     /// どれも偽なら既定のプログラム（変種を足す前と同じ字）。先に組む宣言の Scene3d.PreloadVariant と同じ形。
     pub type alias ShaderVariant = Scene3d.PreloadVariant
 
     /// 点光源の影なし・Legacy の光・PS1 風なしの変種。
-    pub def defaultShaderVariant(): ShaderVariant = { pointShadows = false, physicalUnits = false, psx = false }
+    pub def defaultShaderVariant(): ShaderVariant = { pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false }
 
     /// 場面 scene の変種（pointShadows が Some なら +ps — このコマで影を落とす灯りが 0 本でも +ps のまま・Physical なら +pu）。
     // WhyNot: このコマで影を落とす灯りの数で +ps を決めない — 灯りが画面に出入りするたびにシェーダーを組み直す。
@@ -212,14 +214,15 @@ mod Render3d {
     }
 
     /// 材質のプログラムの版 kind の変種。
-    pub def shaderVariantOfKind(kind: ProgramKind): ShaderVariant = { pointShadows = kind#pointShadows, physicalUnits = kind#physicalUnits, psx = kind#psx }
+    pub def shaderVariantOfKind(kind: ProgramKind): ShaderVariant = { pointShadows = kind#pointShadows, physicalUnits = kind#physicalUnits, psx = kind#psx, skyIrradiance = kind#skyIrradiance }
 
     /// ビルボードのプログラムの変種（点光源の影を受けないので +ps を落とす）。
-    pub def billboardVariantOf(v: ShaderVariant): ShaderVariant = { pointShadows = false, physicalUnits = v#physicalUnits, psx = v#psx }
+    pub def billboardVariantOf(v: ShaderVariant): ShaderVariant = { pointShadows = false, physicalUnits = v#physicalUnits, psx = v#psx, skyIrradiance = v#skyIrradiance }
 
     /// 変種 v の光の式の木の変種（LightModel3d.lightingModelFor などへ渡す）。
     pub def lightVariantOf(v: ShaderVariant): LightModel3d.LightVariant =
-        { pointShadows = v#pointShadows, lightUnits = Some(if (v#physicalUnits) Scene3d.LightUnits.Physical else Scene3d.LightUnits.Legacy) }
+        { pointShadows = v#pointShadows, lightUnits = Some(if (v#physicalUnits) Scene3d.LightUnits.Physical else Scene3d.LightUnits.Legacy),
+          skyIrradiance = v#skyIrradiance }
 
     /// 変種 v の鍵の字（+ps・+pu・+psx。既定は空）。
     pub def variantKeyOf(v: ShaderVariant): String = Scene3d.preloadVariantKey(v)
@@ -269,7 +272,8 @@ mod Render3d {
         envOn = Int32, envBoxOn = Int32, envBoxMin = Array[Float32, Static], envBoxMax = Array[Float32, Static], envBoxCenter = Array[Float32, Static],
         envLevels = Float32, envIntensity = Float32,
         sunDir = Array[Float32, Static], sunColor = Array[Float32, Static], inverseUnitsPerMeterSquared = Float32,
-        psx = Array[Float32, Static], psxTarget = Array[Float32, Static], vertexSnap = Float32
+        psx = Array[Float32, Static], psxTarget = Array[Float32, Static], vertexSnap = Float32,
+        sh = Array[Float32, Static], skyContribution = Float32
     }
 
     /// 3D の描き手の状態（GL の文脈ごとに 1 つ）。meshes = 形の置き場の表（番号と上限）・meshEntriesRef = 表の番号 → GPU に置いたメッシュ。

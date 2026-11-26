@@ -164,14 +164,14 @@ mod Render3d.ScenePlan {
         { skinned = isSkinned(d), uv = uv, normalMap = Option.nonEmpty(m#normalMap) and uv, lightmap = Option.nonEmpty(Scene3d.lightmapOfFields(d#fields)),
           blend = m#blend, doubleSided = m#doubleSided, coverage = isCoverageCutout(coverage, m),
           metallicRoughness = Option.nonEmpty(m#metallicRoughnessShade), pointShadows = variant#pointShadows, physicalUnits = variant#physicalUnits,
-          psx = variant#psx }
+          psx = variant#psx, skyIrradiance = variant#skyIrradiance }
 
-    /// プログラムの版の 11 の欄を 1 つの数にした物（Render3d.materialKey の版の部分と同じ欄）。
+    /// プログラムの版の 12 の欄を 1 つの数にした物（Render3d.materialKey の版の部分と同じ欄）。
     // WhyNot: Render3d.Batch.kindBits を使わない — あちらは batch にしない版（lightmap・blend）を落とした batch の鍵で、材質の問い合わせは別のプログラムの版を分けなければいけない。
     def kindCodeOf(kind: ProgramKind): Int32 =
         let bit = (on, value) -> if (on) value else 0;
         bit(kind#skinned, 1) + bit(kind#uv, 2) + bit(kind#normalMap, 4) + bit(kind#lightmap, 8) + bit(kind#blend, 16) + bit(kind#doubleSided, 32)
-            + bit(kind#coverage, 64) + bit(kind#metallicRoughness, 128) + bit(kind#pointShadows, 256) + bit(kind#physicalUnits, 512) + bit(kind#psx, 1024)
+            + bit(kind#coverage, 64) + bit(kind#metallicRoughness, 128) + bit(kind#pointShadows, 256) + bit(kind#physicalUnits, 512) + bit(kind#psx, 1024) + bit(kind#skyIrradiance, 2048)
 
     // ── 候補に分ける ──
 

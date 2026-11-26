@@ -217,7 +217,7 @@ pub mod Render3dGlsl {
     pub def lightSource(): String = lightSourceFor(Render3d.defaultShaderVariant())
 
     /// 変種 v の lightSource。v#pointShadows なら点光源の影の uniform と r3d_pointShadowsAt（pointShadowSource）・
-    /// v#physicalUnits なら uInverseUnitsPerMeterSquared を、光の式の前に置く（どちらも偽なら lightSource と同じ字）。
+    /// v#physicalUnits なら uInverseUnitsPerMeterSquared を・v#skyIrradiance なら景色の拡散の光の uSh・uSkyContribution を、光の式の前に置く（どれも偽なら lightSource と同じ字）。
     pub def lightSourceFor(v: Render3d.ShaderVariant): String =
         "uniform vec3 uAmbient;\n" +
         "uniform float uHemisphere;\n" +
@@ -240,6 +240,7 @@ pub mod Render3dGlsl {
         (if (v#pointShadows) pointShadowSource() else "") +
         (if (v#physicalUnits) "uniform float uInverseUnitsPerMeterSquared;\n" else "") +
         (if (v#psx) colorDepthSource() else "") +
+        (if (v#skyIrradiance) "uniform vec3 uSh[9];\nuniform float uSkyContribution;\n" else "") +
         LightModel3d.Codegen.toGlsl("lightAt", Vec3Input.Position :: Vec3Input.Normal :: Nil, LightModel3d.lightingModelFor(Render3d.lightVariantOf(v))) +
         LightModel3d.Codegen.toGlsl("fogAt", Vec3Input.Position :: Vec3Input.Color :: Nil, LightModel3d.fogModel()) +
         "vec3 fogged(vec3 c, vec3 p) {\n" +

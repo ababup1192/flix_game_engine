@@ -18,11 +18,11 @@ pub mod Render3dWgsl {
         "@group(0) @binding(3) var uEnvMap: texture_2d<f32>;\n" +
         "@group(0) @binding(4) var uEnvSampler: sampler;\n"
 
-    /// 変種 v の pipeline だけが group 0 に足す binding（どれも偽なら空の字）。6 = 点光源の影と光の量の読み方と PS1 風の値の buffer（R3dLight・+ps か +pu か +psx）・
+    /// 変種 v の pipeline だけが group 0 に足す binding（どれも偽なら空の字）。6 = 点光源の影と光の量の読み方と PS1 風の値と景色の拡散の光の buffer（R3dLight・+ps か +pu か +psx か +sh）・
     /// 7 = 点光源の影の atlas（+ps だけ）。R3dLight の欄の名前は Render3dGlsl の uniform と同じで、並びは Render3d.UniformLayout.lightFields。
     // WhyNot: 既定の R3dScene の struct に欄を足さない — 既定の pipeline の WGSL の字と group 0 の layout が変わり、変種を使わない場面まで値の並びが動く。
     pub def variantDeclarations(v: Render3d.ShaderVariant): String =
-        if (not v#pointShadows and not v#physicalUnits and not v#psx) ""
+        if (not v#pointShadows and not v#physicalUnits and not v#psx and not v#skyIrradiance) ""
         else
             Render3d.UniformLayout.structSource("R3dLight", Render3d.UniformLayout.lightFields()) +
             "@group(0) @binding(${lightBinding()}) var<uniform> r3dLight: R3dLight;\n" +

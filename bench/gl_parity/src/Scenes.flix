@@ -51,7 +51,7 @@ mod Scenes {
             :: lightmapBaked3d() :: lightmapNormal3d() :: spotSoftEdge3d() :: gltfEmissive3d() :: cullOffscreen3d()
             :: skyGradient3d() :: glassPane3d() :: doubleSided3d() :: msaaEdges()
             :: linearOverlap3d() :: mipSrgbAverage3d() :: emissionIntensity3d() :: skinCrowd() :: skinCrowdRows() :: instanceRows() :: batchKeys3d() :: sameDepthOrder3d()
-            :: pbrSpheres3d() :: pbrNoSky3d() :: pbrMapped3d() :: gltfPbr3d() :: pbrEnvironment3d() :: pbrEnvironmentBox3d() :: pbrEnvironmentSky3d()
+            :: pbrSpheres3d() :: pbrNoSky3d() :: pbrMapped3d() :: gltfPbr3d() :: pbrEnvironment3d() :: pbrEnvironmentBox3d() :: pbrEnvironmentSky3d() :: skyIrradiance3d()
             :: sunLit3d() :: sunShadow3d() :: sunSpotShadow3d() :: sunPbr3d() :: pointShadowPhysical3d()
             :: billboardShadowOf(BillboardShadowYard.SunSide.Axis, "billboardShadowAxis")
             :: billboardShadowOf(BillboardShadowYard.SunSide.Diagonal, "billboardShadowDiagonal")
@@ -94,6 +94,7 @@ mod Scenes {
     /// texel の境が画面の上で長い斜めの線になり、その線の上の画素が GPU の補間の丸めで隣の texel を読む（max ±214 は色の違う texel どうし）。
     /// 色の丸めかアフィンを取り違えると床の面（数万 px）が丸ごと違う。
     /// postStackCrt（Apple Silicon で 54 px ±63）: 元の psxBox3d の縁の割れ（6 px）を横のぼかしが 5 点に広げた物。ぼかしの向きか半径を取り違えると面の縁の全部（千 px の桁）が違う。
+    /// skyIrradiance3d（Apple Silicon で 3 px ±1）: 球の坂の丸めの ±1。基底の並びを取り違えると球と床の面（千 px の桁）が違う。
     /// vertexColorTexture3d（Apple Silicon で 32 px ±1）: 頂点の色の坂の補間の丸め。頂点の色を掛け忘れる・2 倍を取り違えると板の面（千 px の桁）が違う。
     pub def toleranceOf(name: String): Option[Int32] = match name {
         case "psxFloor3d"      => Some(800)
@@ -146,6 +147,7 @@ mod Scenes {
         case "pbrEnvironment3d" => Some(400)
         case "pbrEnvironmentBox3d" => Some(400)
         case "pbrEnvironmentSky3d" => Some(2000)
+        case "skyIrradiance3d" => Some(100)
         case "sunLit3d"        => Some(100)
         case "sunShadow3d"     => Some(100)
         case "sunSpotShadow3d" => Some(200)
@@ -1683,6 +1685,31 @@ mod Scenes {
         let env = Scene3d.environmentMap(tex) |> Scene3d.withEnvironmentAsBackground(true) |> Scene3d.withEnvironmentIntensity(0.9);
         let scene = { environmentMap = Some(env) | pbrLit(pbrSphereGrid(), tex :: Nil) };
         { name = "pbrEnvironmentSky3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
+
+    /// 横 128・縦 64 の空（上半分は青・下半分は橙の地面・東の半分だけ明るい）。景色の拡散の光の元。
+    def skyGroundPanorama(): Texture3d.Texture3d =
+        let argb = (r: Int32, g: Int32, b: Int32) -> Int32.bitwiseOr(Int32.leftShift(255, 24), Int32.bitwiseOr(Int32.leftShift(r, 16), Int32.bitwiseOr(Int32.leftShift(g, 8), b)));
+        let texel = (x: Int32, y: Int32) ->
+            if (y < 32) (if (x >= 64) argb(150, 200, 255) else argb(60, 100, 200))
+            else (if (x >= 64) argb(240, 150, 60) else argb(120, 70, 30));
+        let pixels = Vector.range(0, 128 * 64) |> Vector.map(k -> texel(Int32.remainder(k, 128), k / 128));
+        match Texture3d.fromArgb(128, 64, pixels) {
+            case Ok(t)  => t
+            case Err(e) => bug!(e)
+        }
+
+    // 景色の拡散の光（withSkyContribution 1・hemisphere 0）: 白い球の上は空の青・下は地面の橙を拾い、東（右）の半分が明るい。床は上向きで青い。
+    // 基底の並びか係数の向きを取り違えると、球の上下か左右の色が入れ替わり、面の全部（千 px の桁）が違う。
+    def skyIrradiance3d(): Scene =
+        let tex = skyGroundPanorama();
+        let white = c8(255, 255, 255);
+        let ball = Scene3d.meshInstance(sphereMesh(), Mat4.translate(Vec3.v3(0.0, 0.2, 5.0)));
+        let floor = Scene3d.meshInstance(staticBox(8.0, 0.2, 8.0, white), Mat4.translate(Vec3.v3(0.0, -1.2, 7.0)));
+        let base = flatScene({ x = 64.0, y = 48.0 }, 1, ball :: floor :: Nil, Nil);
+        let env = Scene3d.environmentMap(tex) |> Scene3d.withSkyContribution(1.0);
+        let scene = { textures = tex :: Nil, environmentMap = Some(env), environment = { ambient = c8(40, 40, 40), hemisphere = 0.0 | base#environment } | base };
+        { name = "skyIrradiance3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
             Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
 
     // ── 動かない物のつなぎ（Scene3d.StaticBatch）。B 段階 ──

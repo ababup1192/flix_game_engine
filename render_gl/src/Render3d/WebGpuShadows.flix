@@ -222,7 +222,7 @@ mod Render3d.WebGpuShadows {
         rp.end()
 
     /// 変種の場面の R3dLight の値（Render3d.UniformLayout.lightFields の並び）を buf へ詰める: samplings の点光源の影の atlas の値（無ければ全部の slot が −1）と
-    /// 場面の 1 / unitsPerMeter²（GL の Render3d.Shadow.putPointShadow と Render3d.Light.putLights が渡す値と同じ）。
+    /// 場面の 1 / unitsPerMeter²・PS1 風の値・景色の拡散の光（GL の Render3d.Shadow.putPointShadow と Render3d.Light.putLights が渡す値と同じ）。
     pub def packLightValues(buf: ByteBuffer, scene: Scene3d.Scene3dCmd, samplings: List[Render3d.ShadowMaps.ShadowSampling]): Unit \ IO =
         let values = samplings |> List.findMap(pointAtlasOf) |> Option.map(a -> Render3d.Shadow.pointShadowUseOf(0, a));
         let o = Render3d.UniformLayout.lightOffsets();
@@ -244,7 +244,11 @@ mod Render3d.WebGpuShadows {
         discard buf.putFloat(at(Render3d.UniformLayout.LightField.Pad0), 0.0f32);
         let psx = Render3d.Light.psxValuesOf(scene);
         let psxAt = at(Render3d.UniformLayout.LightField.Psx);
-        discard buf.putFloat(psxAt, Array.get(0, psx)).putFloat(psxAt + 4, Array.get(1, psx)).putFloat(psxAt + 8, Array.get(2, psx)).putFloat(psxAt + 12, Array.get(3, psx))
+        discard buf.putFloat(psxAt, Array.get(0, psx)).putFloat(psxAt + 4, Array.get(1, psx)).putFloat(psxAt + 8, Array.get(2, psx)).putFloat(psxAt + 12, Array.get(3, psx));
+        let (skyContribution, sh) = Scene3d.Internal.SkyIrradiance.valuesOf(scene);
+        let shAt = at(Render3d.UniformLayout.LightField.Sh);
+        sh |> Vector.forEachWithIndex((i, c) -> discard buf.putFloat(shAt + 16 * (i / 3) + 4 * Int32.remainder(i, 3), RenderUtil.f32(c)));
+        discard buf.putFloat(at(Render3d.UniformLayout.LightField.SkyContribution), RenderUtil.f32(skyContribution))
 
     def pointAtlasOf(s: Render3d.ShadowMaps.ShadowSampling): Option[Scene3d.PointShadows.Atlas] = match s {
         case Render3d.ShadowMaps.ShadowSampling.Point(a) => Some(a)

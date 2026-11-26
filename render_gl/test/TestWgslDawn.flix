@@ -241,7 +241,7 @@ mod TestWgslDawn {
             flags |> List.flatMap(lightmap -> flags |> List.flatMap(blend -> flags |> List.flatMap(doubleSided ->
                 flags |> List.flatMap(coverage -> flags |> List.map(metallic ->
                     { skinned = false, uv = uv, normalMap = normalMap, lightmap = lightmap, blend = blend, doubleSided = doubleSided,
-                      coverage = coverage, metallicRoughness = metallic, pointShadows = false, physicalUnits = false, psx = false })))))
+                      coverage = coverage, metallicRoughness = metallic, pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false })))))
         })
 
     def kindLabel(k: Render3d.ProgramKind): String =
@@ -270,18 +270,18 @@ mod TestWgslDawn {
     def sceneFunctions(): List[(String, String)] =
         let head = Render3dWgsl.sceneDeclarations() + Render3dWgsl.colorSpaceSource() + Render3dWgsl.lightSource();
         ("frag lit", Render3dWgsl.litFragmentSource()) ::
-        ("frag lit +ps", Render3dWgsl.litFragmentSourceFor({ pointShadows = true, physicalUnits = false, psx = false })) ::
-        ("frag lit +pu", Render3dWgsl.litFragmentSourceFor({ pointShadows = false, physicalUnits = true, psx = false })) ::
-        ("frag lit +ps+pu", Render3dWgsl.litFragmentSourceFor({ pointShadows = true, physicalUnits = true, psx = false })) ::
-        ("frag billboard +pu", Render3dWgsl.billboardFragmentSourceFor({ pointShadows = true, physicalUnits = true, psx = false })) ::
-        ("frag lit +psx", Render3dWgsl.litFragmentSourceFor({ pointShadows = false, physicalUnits = false, psx = true })) ::
-        ("frag billboard +psx", Render3dWgsl.billboardFragmentSourceFor({ pointShadows = false, physicalUnits = false, psx = true })) ::
+        ("frag lit +ps", Render3dWgsl.litFragmentSourceFor({ pointShadows = true, physicalUnits = false, psx = false, skyIrradiance = false })) ::
+        ("frag lit +pu", Render3dWgsl.litFragmentSourceFor({ pointShadows = false, physicalUnits = true, psx = false, skyIrradiance = false })) ::
+        ("frag lit +ps+pu", Render3dWgsl.litFragmentSourceFor({ pointShadows = true, physicalUnits = true, psx = false, skyIrradiance = false })) ::
+        ("frag billboard +pu", Render3dWgsl.billboardFragmentSourceFor({ pointShadows = true, physicalUnits = true, psx = false, skyIrradiance = false })) ::
+        ("frag lit +psx", Render3dWgsl.litFragmentSourceFor({ pointShadows = false, physicalUnits = false, psx = true, skyIrradiance = false })) ::
+        ("frag billboard +psx", Render3dWgsl.billboardFragmentSourceFor({ pointShadows = false, physicalUnits = false, psx = true, skyIrradiance = false })) ::
         ("vertex lit +psx", Render3dWgsl.litVertexSourceFor(false, true)) ::
         ("vertex lit skinned +psx", Render3dWgsl.litVertexSourceFor(true, true)) ::
         ("vertex material uv +psx", Render3dWgsl.materialVertexSourceFor(true, false, false, true)) ::
         ("vertex material uv skinned +psx", Render3dWgsl.materialVertexSourceFor(true, false, true, true)) ::
         ("vertex material +psx", Render3dWgsl.materialVertexSourceFor(false, true, false, true)) ::
-        ("vertex billboard +psx", Render3dWgsl.billboardVertexSourceFor({ pointShadows = false, physicalUnits = false, psx = true })) ::
+        ("vertex billboard +psx", Render3dWgsl.billboardVertexSourceFor({ pointShadows = false, physicalUnits = false, psx = true, skyIrradiance = false })) ::
         ("frag depth", Render3dWgsl.depthFragmentSource()) ::
         ("vertex lit", Render3dWgsl.litVertexSource(false)) ::
         ("vertex material", Render3dWgsl.materialVertexSource(false, false, false)) ::
@@ -388,6 +388,6 @@ mod TestWgslDawn {
     @Test
     def testNormalMappedFragmentDoesNotFlipRows(): Unit \ Assert =
         let textured = fill("textured", 0.0, Nil, Shade.Solid(red()), Field.Tex({ name = "albedo", chan = TexChan.A }));
-        let kind = { skinned = false, uv = true, normalMap = true, lightmap = true, blend = false, doubleSided = false, coverage = false, metallicRoughness = false, pointShadows = false, physicalUnits = false, psx = false };
+        let kind = { skinned = false, uv = true, normalMap = true, lightmap = true, blend = false, doubleSided = false, coverage = false, metallicRoughness = false, pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false };
         Assert.assertFalse(String.contains(substr = "Flip", Render3dWgsl.materialFragmentSource(ShaderGen.Wgsl.compile3d(textured, None, None, 1), kind)))
 }

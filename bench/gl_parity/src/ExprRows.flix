@@ -643,7 +643,7 @@ mod ExprRows {
         let spots = LightModel3d.packSpotLights(s#spots);
         match row {
             case TreeRow.Light => SoftRaster3dLight.lightAt(steps, points, spots, shadow, Vector.repeat(Scene3d.maxPointLights(), 1.0), p#x, p#y, p#z, n#x, n#y, n#z, s#ambient#x, s#ambient#y, s#ambient#z, s#hemisphere,
-                                                        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0)
+                                                        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, Scene3d.Internal.SkyIrradiance.zeros(), 0.0)
             case TreeRow.LightmapLight => SoftRaster3dLight.lightmapLightAt(steps, points, spots, shadow, Vector.repeat(Scene3d.maxPointLights(), 1.0), p#x, p#y, p#z, n#x, n#y, n#z, e#x, e#y, e#z,
                                                         if (s#lightmapSrgb) 1.0 else 0.0, s#lightmapIntensity, 0.0, 1.0)
             case TreeRow.Fog => SoftRaster3dLight.fogAt(p#x, p#y, p#z, s#eye#x, s#eye#y, s#eye#z, e#x, e#y, e#z, s#fogColor#x, s#fogColor#y, s#fogColor#z, s#fogNear, s#fogFar)

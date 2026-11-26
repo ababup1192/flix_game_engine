@@ -284,6 +284,18 @@ pub mod DrawHash {
         match f#box {
             case None    => out.writeByte(0i32)
             case Some(b) => out.writeByte(1i32); putVec3(out, b#min); putVec3(out, b#max); putVec3(out, b#center)
+        };
+        putSkyIrradiance(out, e)
+
+    /// 景色の拡散の光の割合と渡した係数（割合 0 は何も書かない）。絵から求めた係数は絵の中身の鍵で足りる。
+    // WhyNot: 割合 0 の時も書かない — 景色の拡散を使わない場面の鍵の字を変えない（gallery の PNG を塗り直さない）。
+    def putSkyIrradiance(out: DataOutputStream, e: Scene3d.EnvironmentMap): Unit \ IO =
+        let k = Scene3d.skyContributionOf(e);
+        if (k <= 0.0) ()
+        else {
+            out.writeByte(0x53);
+            putF(out, k);
+            Scene3d.irradianceOf(e) |> Option.forEach(sh -> SphericalHarmonics.coefficientsOf(sh) |> List.forEach(c -> putVec3(out, c)))
         }
 
     // WhyNot: 空の無い場面に印を書かない — sky の欄を足す前の鍵の字を保ち、空の無い場面のキャッシュの PNG を塗り直させない。

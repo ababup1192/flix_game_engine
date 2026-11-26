@@ -431,7 +431,7 @@
   `pub def build(instances: List[Placed], textureOf: String -> Option[ShaderEval.TexData], scene: Scene3d.Scene3dCmd): Option[PointShadowMaps] \ IO`
 - 点 p（g = 形の法線・n = 光の計算の法線）で、点光源の番号ごとの影の割合（maxPointLights() 個。影を落とさない・光が届かない・面が背を向けた灯りは 1）。
   `pub def litAt(set: Option[PointShadowMaps], p: Vec3.Vec3, g: Vec3.Vec3, n: Vec3.Vec3): Vector[Float64]`
-- lights に場面の点光源の影と光の量の読み方（Physical か・1 / max(unitsPerMeter², 1e−12)。GL の uniform と同じ値）を入れた物。
+- lights に場面の点光源の影と光の量の読み方（Physical か・1 / max(unitsPerMeter², 1e−12)）と景色の拡散の光（GL の uniform と同じ値）を入れた物。
   `pub def withSceneLighting(points: Option[PointShadowMaps], scene: Scene3d.Scene3dCmd, lights: SoftRaster3d.Lights): SoftRaster3d.Lights`
 - どの点光源も影の割合 1 の並び（ビルボード）。
   `pub def unshadowedPointsOf(lights: SoftRaster3d.Lights): Vector[Float64]`
@@ -479,8 +479,8 @@
   `pub def litAt(s: Light, px: Float64, py: Float64, pz: Float64, gx: Float64, gy: Float64, gz: Float64, nx: Float64, ny: Float64, nz: Float64): Float64`
 
 ## SoftRaster3dLight — `engine_tools/src/gen/SoftRaster3dLight.flix`
-- lightingModel の光の量（toon の丸めまで済ませた値。sunLit = 太陽の影の割合）。
-  `pub def lightAt(steps: Int32, points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pointLit: Vector[Float64], pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, ambientX: Float64, ambientY: Float64, ambientZ: Float64, hemisphere: Float64, sunDirX: Float64, sunDirY: Float64, sunDirZ: Float64, sunColorX: Float64, sunColorY: Float64, sunColorZ: Float64, sunLit: Float64, physicalUnits: Float64, inverseUnitsPerMeterSquared: Float64): (Float64, Float64, Float64)`
+- lightingModel の光の量（toon の丸めまで済ませた値。sunLit = 太陽の影の割合・sh と skyContribution = Scene3d.Internal.SkyIrradiance.valuesOf の係数と割合）。
+  `pub def lightAt(steps: Int32, points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pointLit: Vector[Float64], pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, ambientX: Float64, ambientY: Float64, ambientZ: Float64, hemisphere: Float64, sunDirX: Float64, sunDirY: Float64, sunDirZ: Float64, sunColorX: Float64, sunColorY: Float64, sunColorZ: Float64, sunLit: Float64, physicalUnits: Float64, inverseUnitsPerMeterSquared: Float64, sh: Vector[Float64], skyContribution: Float64): (Float64, Float64, Float64)`
 - lightmapLightingModel の光の量（lightmap は段つきで読んだ後の rgb を渡す）。
   `pub def lightmapLightAt(steps: Int32, points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pointLit: Vector[Float64], pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, lightmapX: Float64, lightmapY: Float64, lightmapZ: Float64, lightmapSrgb: Float64, lightmapIntensity: Float64, physicalUnits: Float64, inverseUnitsPerMeterSquared: Float64): (Float64, Float64, Float64)`
 - fogModel の色（fog が無い場面では呼ばない）。
