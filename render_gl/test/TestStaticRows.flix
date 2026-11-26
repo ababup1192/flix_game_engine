@@ -285,6 +285,38 @@ mod Render3d.TestStaticRows {
         let answers = answersOver(steps, cache, (1i64, g) :: (2i64, town()) :: (3i64, g) :: Nil);
         Assert.assertEq(expected = (1 :: 1 :: 1 :: Nil, 0), (answers, buildingCountOf(cache)))
 
+    /// 先に作る宣言に載っている集まりは、場面に出ないコマが idle を超えて続いても sweep で手放さず、戻ったコマに作り直さない。
+    @Test
+    def testDeclaredGroupSurvivesTheSweepWhileAway(): Unit \ {Assert, IO} =
+        let builds = Ref.fresh(Static, 0);
+        let steps = countingSteps(builds, _ -> (), 0i64);
+        let planner = freshPlanner(Render3d.DrawMode.Instanced);
+        let cache = freshCache();
+        let g = town();
+        discard ensureWith(planner, cache, 1i64, g, steps);
+        List.range(2, 300) |> List.forEach(gen -> {
+            discard Render3d.StaticRows.prepareAhead(planner, cache, Int32.toInt64(gen), g, "", false, sceneOf(Nil), steps);
+            sweep(cache, Int32.toInt64(gen), 128i64, _ -> ())
+        });
+        let back = ensureWith(planner, cache, 300i64, g, steps);
+        Assert.assertEq(expected = (1, 1), (back, Ref.get(builds)))
+
+    /// 作り終えた名前の新しい値を先に作る宣言に載せ、場面にも新しい値を渡すと、作り終えるまで前の控えを描き、作り終えたコマから新しい物を描く。
+    /// 宣言と場面は同じ作りかけを進めるので、作るのは 1 回。
+    @Test
+    def testDeclaredNewValueShowsPreviousUntilBuilt(): Unit \ {Assert, IO} =
+        let builds = Ref.fresh(Static, 0);
+        let steps = countingSteps(builds, _ -> (), 4i64);
+        let planner = freshPlanner(Render3d.DrawMode.Instanced);
+        let cache = freshCache();
+        discard ensureWith(planner, cache, 1i64, boxes("t"), steps);
+        let next = boxes("t");
+        let answers = List.range(2, 60) |> List.map(gen -> {
+            discard Render3d.StaticRows.prepareAhead(planner, cache, Int32.toInt64(gen), next, "", false, sceneOf(Nil), steps);
+            ensureWith(planner, cache, Int32.toInt64(gen), next, steps)
+        });
+        Assert.assertEq(expected = (1, 2, 2), (List.head(answers) |> Option.getWithDefault(0), List.last(answers) |> Option.getWithDefault(0), Ref.get(builds)))
+
     /// 形の違う箱 20 個の集まり name（呼ぶたびに別の値）。
     def boxes(name: String): Scene3d.StaticGroup =
         Scene3d.staticGroup(name, List.range(1, 21) |> List.map(k -> (Int32.toString(k), boxAt(Int32.toFloat64(k)))))

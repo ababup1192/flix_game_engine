@@ -312,6 +312,15 @@ retro3d-horror-starter の `tools/glb_bundle.py` が 1 階の小物を primitive
 - CPU を 4〜6 倍遅くしても、1 コマは予算＋最後の仕事の形のまま（暗転の間に分かれ、1 倍の 4 倍前後に収まる）。
 - `FIRST=preload` の 2 回目（59.9 ms）は初めて載せたコマの draw 57 ms（1 回だけ・原因はまだ見ていない）。
 
+#### 外して戻す（`FIRST=away AWAY=600`・作り終えた名前を 30 秒載せ続ける前と後）
+
+同じつまみ・PC の Dawn・起動し直して 3 回。90 コマ目に集まりを外し、600 コマ後に同じ値で戻す（区間 return）。`preload_frames` = preload が 1 ms を超えたコマ（Cover ではこの数 + 1 コマが黒）。
+
+| 区間 return | frame max | preload max | preload_frames |
+|---|---|---|---|
+| 前（120 コマで忘れる） | 9.5 / 9.5 / 9.3 | 6.3 / 6.0 / 6.0 | 2 / 2 / 2 |
+| 後（1,800 コマ載せ続ける） | 9.1 / 9.6 / 9.3 | 0.06 / 0.08 / 0.16 | 0 / 0 / 0 |
+
 ## 同じ形の動く物（MultiMesh3d・段 4 の測り直し）
 
 測った日 2026-11-26 / Apple M4 Pro・macOS / ブラウザは Chrome 156 のヘッドレス（1280×720・vsync あり）・PC は Dawn の WebGPU。
