@@ -373,7 +373,7 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
         match ps#frameShotDir {
             case Some(dir) if count < frameShotLimit() =>
                 Array.put(count + 1, 0, ps#frameShotTaken);
-                writeShot(ps, "${dir}/frame-${count + 1}.png")
+                writeFrameShot(ps, "${dir}/frame-${count + 1}.png")
             case _ => ()
         }
 
@@ -401,15 +401,24 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
     /// JVM では ImageIO・native image では stb_image_write で書く（画素は同じ）。
     // WhyNot: JVM でも stb_image_write で書かない — 画素が同じでも PNG のバイトが変わり、gl-capture の基準（SHA の一覧）と
     // 1 枚も合わなくなる。基準の絵の無い機械では画素で比べる相手も置かれず、門が通らない。
-    def writeShot(ps: PresentState, path: String): Unit \ IO =
-        let file = new File(path);
-        let parent = file.getParentFile();
-        if (not Object.isNull(parent)) discard parent.mkdirs() else ();
+    def writeFrameShot(ps: PresentState, path: String): Unit \ IO =
         if (isNativeImage()) writeShotStb(ps, path)
-        else discard ImageIO.write(frameImage(ps), "png", file)
+        else writeShot(frameImage(ps), path)
+
+    /// 画像を PNG に書く（フォルダが無ければ作る）。
+    def writeShot(image: BufferedImage, path: String): Unit \ IO =
+        let file = new File(path);
+        discard makeParentDirs(file);
+        discard ImageIO.write(image, "png", file)
+
+    /// path の親のフォルダを作る（有れば何もしない）。
+    def makeParentDirs(file: File): Bool \ IO =
+        let parent = file.getParentFile();
+        not Object.isNull(parent) and parent.mkdirs()
 
     // WhyNot: native image で ImageIO を使わない — macOS の native image には AWT（libawt）が無く、撮る口が落ちる。
     def writeShotStb(ps: PresentState, path: String): Unit \ IO =
+        discard makeParentDirs(new File(path));
         let (w, h) = Array.get(0, ps#size);
         let stride = w * 4;
         let pixels = ByteBuffer.allocateDirect(stride * h);
