@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta charset="utf-8"><title>compute spike (TeaVM WasmGC + WebGPU)</title></head>
+<body>
+<pre id="log"></pre>
+<script src="wasm-gc-runtime.js"></script>
+<script>
+  window.__bench = { query: location.search, env: {}, results: [], done: false };
+  TeaVM.wasmGC.load("classes.wasm").then(function (teavm) { teavm.exports.main([]); }, function (e) {
+    window.__bench.error = "wasm を読めない: " + (e && e.message || e);
+  });
+</script>
+</body>
+</html>
