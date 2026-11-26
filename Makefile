@@ -388,6 +388,13 @@ bench: ### B=<名前>[,<名前>…] | bench へ渡すだけのターゲット（
 gl-parity:
 	@$(call bench_sh,gl-parity)
 
+# 3D のシェーダーの字を全部の版で build/shader-dump/<OUT> へ書き出す（render_gl の TestShaderDump。直す前と後を diff -r で比べる）。
+shader-dump: sync-layers ## OUT=<名前> | 3D のシェーダーの字を全部の版で build/shader-dump/<OUT> へ書き出す（既定 after。before と diff -r で比べる）
+	@out="$(CURDIR)/build/shader-dump/$(or $(OUT),after)"; rm -rf "$$out"; mkdir -p "$$out"; \
+	(cd $(LAYER_ROOT)/render_gl && FLIX_GE_SHADER_DUMP="$$out" "$(CURDIR)/bin/with-sample-tests" . "$(FLIX_TEST)" test) > build/shader-dump/$(or $(OUT),after).log 2>&1 \
+		|| { tail -30 build/shader-dump/$(or $(OUT),after).log; exit 1; }; \
+	grep -a "\[shader-dump\]" build/shader-dump/$(or $(OUT),after).log
+
 ##> make gl-parity | GL と SoftRaster が同じ絵を出すかを隠しウィンドウで突き合わせ（不一致で exit 1。make bench B=gl-parity と同じ）
 
 # WebGPU の 2D の描き手 (V1・plans/webgpu-v1.md の 8.1) の PC の門。順に:
@@ -639,25 +646,36 @@ gl-capture: ### OUT=<dir> [BACKEND=gl] | テンプレの場面を隠しウィン
 GL_CAPTURE_MACHINE ?= $(shell sysctl -n machdep.cpu.brand_string 2>/dev/null | tr 'A-Z ' 'a-z-')
 GL_CAPTURE_BASELINE_GL ?= bench/baseline/0.96.0/gl-capture-$(GL_CAPTURE_MACHINE).sha256
 GL_CAPTURE_BASELINE_WEBGPU ?= bench/baseline/0.99.0/gl-capture-webgpu-jwebgpu$(GL_JAR_JWEBGPU)-$(GL_CAPTURE_MACHINE).sha256
-GL_CAPTURE_BASELINE_FILE ?= $(if $(filter gl,$(GL_CAPTURE_BACKEND)),$(GL_CAPTURE_BASELINE_GL),$(GL_CAPTURE_BASELINE_WEBGPU))
+# PS1 風の部屋（bin/gl-capture.sh の named_scenes・SCENES=scene3d-psx で選ぶ）の基準は、上の基準とは別のファイル。
+# WhyNot: PS1 風を上の基準のファイルへ足さない — 足すには全部の場面を撮り直すことになり、今の基準が守る絵まで撮った日の絵に替わる。
+GL_CAPTURE_SCENE_LIST = $(subst $(comma), ,$(SCENES))
+GL_CAPTURE_PSX_SELECTED = $(filter scene3d-psx%,$(GL_CAPTURE_SCENE_LIST))
+GL_CAPTURE_BASELINE_PSX_GL ?= bench/baseline/0.116.0/gl-capture-scene3d-psx-$(GL_CAPTURE_MACHINE).sha256
+GL_CAPTURE_BASELINE_PSX_WEBGPU ?= bench/baseline/0.116.0/gl-capture-webgpu-jwebgpu$(GL_JAR_JWEBGPU)-scene3d-psx-$(GL_CAPTURE_MACHINE).sha256
+GL_CAPTURE_BASELINE_PSX = $(if $(filter gl,$(GL_CAPTURE_BACKEND)),$(GL_CAPTURE_BASELINE_PSX_GL),$(GL_CAPTURE_BASELINE_PSX_WEBGPU))
+GL_CAPTURE_BASELINE_MAIN = $(if $(filter gl,$(GL_CAPTURE_BACKEND)),$(GL_CAPTURE_BASELINE_GL),$(GL_CAPTURE_BASELINE_WEBGPU))
+GL_CAPTURE_BASELINE_FILE ?= $(if $(GL_CAPTURE_PSX_SELECTED),$(GL_CAPTURE_BASELINE_PSX),$(GL_CAPTURE_BASELINE_MAIN))
 # 基準の絵（PNG）は git の外の手元に置く（全部で 14 MB ほど・生成した絵は git に入れない決まり）。基準の SHA と同じバイトの絵が撮れた回に
 # gl-capture-check が置き、SHA が基準と違うコマだけこの絵と画素で比べる（物差しは docs/backend-parity.md の「小さい差で通す」）。
 GL_CAPTURE_BASELINE_IMAGES ?= build/gl-capture/baseline/$(notdir $(basename $(GL_CAPTURE_BASELINE_FILE)))
 # SCENES は撮った物のフォルダ名（rpg-starter__title）か、テンプレートのフォルダ名（rpg-starter = その場面全部）を , で並べる。
-GL_CAPTURE_ONLY = $(foreach n,$(subst $(comma), ,$(SCENES)),--only $(n))
-gl-capture-check: ### [BACKEND=gl] [BASE=off] [SKIP=<フォルダ名>] [SCENES=<名前>,…] | 同じ場面を 2 回撮って 2 コマ目以降までバイトで比べ、基準とも比べる（基準との小さい差は通す・超えたら exit 1）
+# PS1 風の部屋は SCENES=scene3d-psx（dither と full の 2 つ）か scene3d-psx__dither のように名前を挙げた時だけ撮る。
+GL_CAPTURE_ONLY = $(foreach n,$(GL_CAPTURE_SCENE_LIST),--only $(n))
+gl-capture-check: ### [BACKEND=gl] [BASE=off] [SKIP=<フォルダ名>] [SCENES=<名前>,…] | 同じ場面を 2 回撮って 2 コマ目以降までバイトで比べ、基準とも比べる（基準との小さい差は通す・超えたら exit 1。SCENES=scene3d-psx で PS1 風の部屋を別の基準と比べる）
+	@if [ -n "$(GL_CAPTURE_PSX_SELECTED)" ] && [ "$(GL_CAPTURE_PSX_SELECTED)" != "$(GL_CAPTURE_SCENE_LIST)" ]; then \
+		echo "[gl-capture] PS1 風の部屋（$(GL_CAPTURE_PSX_SELECTED)）は基準のファイルが別なので、ほかの場面と同じ回に並べない"; exit 2; fi
 	@rm -rf build/gl-capture/a build/gl-capture/b
 	@bin/gl-capture.sh --backend $(GL_CAPTURE_BACKEND) $(GL_CAPTURE_ONLY) build/gl-capture/a && bin/gl-capture.sh --backend $(GL_CAPTURE_BACKEND) $(GL_CAPTURE_ONLY) build/gl-capture/b && \
 		bin/gl-capture.sh --compare build/gl-capture/a build/gl-capture/b $(if $(SKIP),--skip $(SKIP)) $(GL_CAPTURE_ONLY)
 	@if [ "$(BASE)" = off ]; then :; \
 	elif [ -f "$(GL_CAPTURE_BASELINE_FILE)" ]; then bin/fge gl-capture-baseline-check $(GL_CAPTURE_BASELINE_FILE) $(GL_CAPTURE_BASELINE_IMAGES) build/gl-capture/a \
 		--diff-dir build/gl-capture/diff $(if $(SKIP),--skip $(SKIP)) $(GL_CAPTURE_ONLY); \
-	else echo "[gl-capture] この機械 ($(GL_CAPTURE_MACHINE)) の $(GL_CAPTURE_BACKEND) の基準 ($(GL_CAPTURE_BASELINE_FILE)) が無いので、2 回撮りの一致だけを見た（撮るなら make gl-capture-baseline）"; fi
+	else echo "[gl-capture] この機械 ($(GL_CAPTURE_MACHINE)) の $(GL_CAPTURE_BACKEND) の基準 ($(GL_CAPTURE_BASELINE_FILE)) が無いので、2 回撮りの一致だけを見た（撮るなら make gl-capture-baseline$(if $(GL_CAPTURE_PSX_SELECTED), SCENES=scene3d-psx)）"; fi
 
 # この機械の基準を今の絵で撮る（撮った絵は 2 回撮りで一致した物だけ）。WebGPU の基準の頭には、撮った時の adapter の行（Dawn の名乗り）を # で残す。
 .PHONY: gl-capture-baseline
-gl-capture-baseline: ### [BACKEND=gl] | この機械の gl-capture の基準を今の絵で撮る（WebGPU は bench/baseline/<版>/gl-capture-webgpu-jwebgpu<版>-<機械>.sha256）
-	@if [ -n "$(SCENES)" ]; then echo "[gl-capture] 基準は全部の場面で撮る（SCENES= を外す）"; exit 2; fi
+gl-capture-baseline: ### [BACKEND=gl] [SCENES=scene3d-psx] | この機械の gl-capture の基準を今の絵で撮る（WebGPU は bench/baseline/<版>/gl-capture-webgpu-jwebgpu<版>-<機械>.sha256。SCENES=scene3d-psx は PS1 風の部屋の基準のファイルだけを撮る）
+	@if [ -n "$(SCENES)" ] && [ "$(SCENES)" != scene3d-psx ]; then echo "[gl-capture] 基準は全部の場面で撮る（SCENES= を外す。PS1 風の部屋だけは SCENES=scene3d-psx）"; exit 2; fi
 	@$(MAKE) --no-print-directory gl-capture-check BASE=off
 	@mkdir -p $(dir $(GL_CAPTURE_BASELINE_FILE))
 	@{ grep -ah '^\[backend\] webgpu:' build/gl-capture/a/*/run.log 2>/dev/null | head -1 | sed 's/^/# /'; cat build/gl-capture/a/SHA256SUMS; } > $(GL_CAPTURE_BASELINE_FILE)

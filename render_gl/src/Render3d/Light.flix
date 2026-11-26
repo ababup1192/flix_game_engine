@@ -1,7 +1,8 @@
 // Render3d.Light — 3D の描き手（Render3d）の光の uniform（場面の光を並びへ詰める・プログラムへ渡す）。式の約束は Render3d.flix の頭。
 mod Render3d.Light {
     import fge.gl.GlContext
-    use Render3d.{LightData, LightLocs}
+    use Render3d.{LightData}
+    use Render3d.Uniforms.{R3dUniform, UniformLocations, has, put1f, put1fv, put1i, put2fv, put3fv, put4f}
 
     /// 場面の PS1 風の値の uniform（色の段の数 2^bits − 1・ディザの表の番号・ディザの強さ・アフィンの割合）。GL の uPsx と WGSL の R3dLight の psx。
     pub def psxValuesOf(scene: Scene3d.Scene3dCmd): Array[Float32, Static] \ IO =
@@ -116,73 +117,56 @@ mod Render3d.Light {
         Array.put(RenderUtil.f32(v#y), 3 * i + 1, out);
         Array.put(RenderUtil.f32(v#z), 3 * i + 2, out)
 
-    pub def putLights(gl: GlContext, locs: LightLocs, d: LightData): Unit \ IO =
-        gl.uniform3fv(locs#ambient, d#ambient);
-        gl.uniform1f(locs#hemisphere, d#hemisphere);
-        gl.uniform1i(locs#toonSteps, d#toonSteps);
-        gl.uniform1i(locs#pointCount, d#pointCount);
-        gl.uniform3fv(locs#pointPos, d#pointPos);
-        gl.uniform3fv(locs#pointColor, d#pointColor);
-        gl.uniform1fv(locs#pointRange, d#pointRange);
-        gl.uniform1i(locs#spotCount, d#spotCount);
-        gl.uniform3fv(locs#spotPos, d#spotPos);
-        gl.uniform3fv(locs#spotDir, d#spotDir);
-        gl.uniform3fv(locs#spotColor, d#spotColor);
-        gl.uniform1fv(locs#spotRange, d#spotRange);
-        gl.uniform2fv(locs#spotCone, d#spotCone);
-        gl.uniform1i(locs#fogOn, d#fogOn);
-        gl.uniform3fv(locs#fogColor, d#fogColor);
-        gl.uniform2fv(locs#fogRange, d#fogRange);
-        gl.uniform3fv(locs#eye, d#eye);
-        gl.uniform3fv(locs#sunDir, d#sunDir);
-        gl.uniform3fv(locs#sunColor, d#sunColor);
-        if (locs#inverseUnitsPerMeterSquared < 0) () else gl.uniform1f(locs#inverseUnitsPerMeterSquared, d#inverseUnitsPerMeterSquared);
-        if (locs#psx < 0) () else putVec4(gl, locs#psx, d#psx);
-        if (locs#psxTarget < 0) () else putVec4(gl, locs#psxTarget, d#psxTarget);
-        if (locs#vertexSnap < 0) () else gl.uniform1f(locs#vertexSnap, d#vertexSnap);
-        if (locs#sh < 0) () else gl.uniform3fv(locs#sh, d#sh);
-        if (locs#skyContribution < 0) () else gl.uniform1f(locs#skyContribution, d#skyContribution);
+    pub def putLights(gl: GlContext, locs: UniformLocations, d: LightData): Unit \ IO =
+        put3fv(gl, locs, R3dUniform.Ambient, d#ambient);
+        put1f(gl, locs, R3dUniform.Hemisphere, d#hemisphere);
+        put1i(gl, locs, R3dUniform.ToonSteps, d#toonSteps);
+        put1i(gl, locs, R3dUniform.PointCount, d#pointCount);
+        put3fv(gl, locs, R3dUniform.PointPos, d#pointPos);
+        put3fv(gl, locs, R3dUniform.PointColor, d#pointColor);
+        put1fv(gl, locs, R3dUniform.PointRange, d#pointRange);
+        put1i(gl, locs, R3dUniform.SpotCount, d#spotCount);
+        put3fv(gl, locs, R3dUniform.SpotPos, d#spotPos);
+        put3fv(gl, locs, R3dUniform.SpotDir, d#spotDir);
+        put3fv(gl, locs, R3dUniform.SpotColor, d#spotColor);
+        put1fv(gl, locs, R3dUniform.SpotRange, d#spotRange);
+        put2fv(gl, locs, R3dUniform.SpotCone, d#spotCone);
+        put1i(gl, locs, R3dUniform.FogOn, d#fogOn);
+        put3fv(gl, locs, R3dUniform.FogColor, d#fogColor);
+        put2fv(gl, locs, R3dUniform.FogRange, d#fogRange);
+        put3fv(gl, locs, R3dUniform.Eye, d#eye);
+        put3fv(gl, locs, R3dUniform.SunDir, d#sunDir);
+        put3fv(gl, locs, R3dUniform.SunColor, d#sunColor);
+        put1f(gl, locs, R3dUniform.InverseUnitsPerMeterSquared, d#inverseUnitsPerMeterSquared);
+        putVec4(gl, locs, R3dUniform.Psx, d#psx);
+        putVec4(gl, locs, R3dUniform.PsxTarget, d#psxTarget);
+        put1f(gl, locs, R3dUniform.VertexSnap, d#vertexSnap);
+        put3fv(gl, locs, R3dUniform.Sh, d#sh);
+        put1f(gl, locs, R3dUniform.SkyContribution, d#skyContribution);
         putReflection(gl, locs, d)
 
-    def putVec4(gl: GlContext, location: Int32, v: Array[Float32, Static]): Unit \ IO =
-        gl.uniform4f(location, Array.get(0, v), Array.get(1, v), Array.get(2, v), Array.get(3, v))
+    def putVec4(gl: GlContext, locs: UniformLocations, u: R3dUniform, v: Array[Float32, Static]): Unit \ IO =
+        put4f(gl, locs, u, Array.get(0, v), Array.get(1, v), Array.get(2, v), Array.get(3, v))
 
     /// 映り込みに使う空の 3 色と curve を渡す（metallic と roughness を持つ材質のプログラムだけが宣言している。無いプログラムは何も呼ばない）。
-    // WhyNot: location が -1 のままで GL を呼ばない — 持たないプログラムが大半で、毎回 4 回の無駄な呼び出しになる。
-    def putReflection(gl: GlContext, locs: LightLocs, d: LightData): Unit \ IO =
-        if (locs#reflectZenith < 0) ()
+    // WhyNot: uZenith を宣言しないプログラムで残りの 11 個の handle を 1 つずつ引かない — 持たないプログラムが大半で、毎回 11 回の無駄な表引きになる。
+    def putReflection(gl: GlContext, locs: UniformLocations, d: LightData): Unit \ IO =
+        if (not has(R3dUniform.Zenith, locs)) ()
         else {
-            gl.uniform3fv(locs#reflectZenith, d#reflectZenith);
-            gl.uniform3fv(locs#reflectHorizon, d#reflectHorizon);
-            gl.uniform3fv(locs#reflectGround, d#reflectGround);
-            gl.uniform1f(locs#reflectCurve, d#reflectCurve);
-            gl.uniform1i(locs#envOn, d#envOn);
+            put3fv(gl, locs, R3dUniform.Zenith, d#reflectZenith);
+            put3fv(gl, locs, R3dUniform.Horizon, d#reflectHorizon);
+            put3fv(gl, locs, R3dUniform.Ground, d#reflectGround);
+            put1f(gl, locs, R3dUniform.Curve, d#reflectCurve);
+            put1i(gl, locs, R3dUniform.EnvOn, d#envOn);
             if (d#envOn == 0) ()
             else {
-                gl.uniform1i(locs#envBoxOn, d#envBoxOn);
-                gl.uniform3fv(locs#envBoxMin, d#envBoxMin);
-                gl.uniform3fv(locs#envBoxMax, d#envBoxMax);
-                gl.uniform3fv(locs#envBoxCenter, d#envBoxCenter);
-                gl.uniform1f(locs#envLevels, d#envLevels);
-                gl.uniform1f(locs#envIntensity, d#envIntensity);
-                gl.uniform1i(locs#envSrgb, d#envSrgb)
+                put1i(gl, locs, R3dUniform.EnvBoxOn, d#envBoxOn);
+                put3fv(gl, locs, R3dUniform.EnvBoxMin, d#envBoxMin);
+                put3fv(gl, locs, R3dUniform.EnvBoxMax, d#envBoxMax);
+                put3fv(gl, locs, R3dUniform.EnvBoxCenter, d#envBoxCenter);
+                put1f(gl, locs, R3dUniform.EnvLevels, d#envLevels);
+                put1f(gl, locs, R3dUniform.EnvIntensity, d#envIntensity);
+                put1i(gl, locs, R3dUniform.EnvSrgb, d#envSrgb)
             }
         }
-
-    pub def lightLocsOf(gl: GlContext, program: Int32): Render3d.LightLocs \ IO =
-        { ambient = Render3d.loc(gl, program, "uAmbient"), hemisphere = Render3d.loc(gl, program, "uHemisphere"), toonSteps = Render3d.loc(gl, program, "uToonSteps"),
-          pointCount = Render3d.loc(gl, program, "uPointCount"), pointPos = Render3d.loc(gl, program, "uPointPos"),
-          pointColor = Render3d.loc(gl, program, "uPointColor"), pointRange = Render3d.loc(gl, program, "uPointRange"),
-          spotCount = Render3d.loc(gl, program, "uSpotCount"), spotPos = Render3d.loc(gl, program, "uSpotPos"), spotDir = Render3d.loc(gl, program, "uSpotDir"),
-          spotColor = Render3d.loc(gl, program, "uSpotColor"), spotRange = Render3d.loc(gl, program, "uSpotRange"), spotCone = Render3d.loc(gl, program, "uSpotCone"),
-          fogOn = Render3d.loc(gl, program, "uFogOn"), fogColor = Render3d.loc(gl, program, "uFogColor"), fogRange = Render3d.loc(gl, program, "uFogRange"),
-          eye = Render3d.loc(gl, program, "uEye"),
-          reflectZenith = Render3d.loc(gl, program, "uZenith"), reflectHorizon = Render3d.loc(gl, program, "uHorizon"), reflectGround = Render3d.loc(gl, program, "uGround"),
-          reflectCurve = Render3d.loc(gl, program, "uCurve"),
-          envOn = Render3d.loc(gl, program, "uEnvOn"), envBoxOn = Render3d.loc(gl, program, "uEnvBoxOn"), envBoxMin = Render3d.loc(gl, program, "uEnvBoxMin"),
-          envBoxMax = Render3d.loc(gl, program, "uEnvBoxMax"), envBoxCenter = Render3d.loc(gl, program, "uEnvBoxCenter"),
-          envLevels = Render3d.loc(gl, program, "uEnvLevels"), envIntensity = Render3d.loc(gl, program, "uEnvIntensity"),
-          envSrgb = Render3d.loc(gl, program, "uEnvSrgb"),
-          sunDir = Render3d.loc(gl, program, "uSunDir"), sunColor = Render3d.loc(gl, program, "uSunColor"), inverseUnitsPerMeterSquared = -1,
-          psx = -1, psxTarget = -1, vertexSnap = -1, sh = -1, skyContribution = -1 }
 }

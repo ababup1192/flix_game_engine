@@ -3,10 +3,12 @@ mod Render3d.Material {
     import fge.gl.GlConst
     import fge.gl.GlContext
     import java.nio.{ByteBuffer, ByteOrder}
-    use Render3d.Shadow.{putPointShadow, putShadow, putSunShadow, shadowLocsOf, sunShadowLocsOf}
+    use Render3d.Shadow.{putPointShadow, putShadow, putSunShadow}
     use Render3dGlsl.{materialFragmentSource, materialVertexSourceFor}
-    use Render3d.Light.{lightLocsOf, putLights}
-    use Render3d.{materialKey, ProgramKind, BoundTexture, CameraData, MaterialEntry, MaterialLocs, MaterialPass, MeshDraw, State, TextureSlot, TextureSource, bindDataTextureUnits, ensureTangents, environmentTextureUnit, lightmapTextureUnit, loc, meshLocsOf, normalMapTextureUnit, putDepthRange, useMeshProgram, warnDroppedTextures, warnSceneOnce}
+    use Render3d.Light.{putLights}
+    use Render3d.Uniforms.{R3dUniform, put1f, put1i, put4f}
+    use Render3d.{BoundTexture, CameraData, MaterialEntry, MaterialPass, MeshDraw, ProgramUniforms, State, TextureSlot, TextureSource, bindDataTextureUnits, bindUnits, ensureTangents, environmentTextureUnit, lightmapTextureUnit, normalMapTextureUnit, programUniformsOf, putDepthRange, useMeshProgram, warnDroppedTextures, warnSceneOnce}
+    use Render3d.ProgramKey.{materialKey, ProgramKind}
     use Render3d.Batch.{MaterialBatch, SpanBatch}
     use Scene3dRenderer.{RegisteredTexture}
     use Render3d.Counts.{Counter, Phase, count, noteMaterialBuild, timed}
@@ -27,7 +29,7 @@ mod Render3d.Material {
     // WhyNot: 間引いた物を材質の組み立ての前に除かない — 初めて振り向いたコマで GLSL を組んで止まる（読み込み中に先に組ませる作りが効かない）。
     pub def resolveMaterials(gl: GlContext, state: State, gen: Int64, requests: Vector[MaterialRequest]): MaterialTable \ IO =
         let entries = requests |> Vector.map(r -> lookupMaterial(gl, state, gen, fst(r), snd(r)));
-        { entries = entries, orders = Vector.map(e -> e#locs#mesh#program, entries) }
+        { entries = entries, orders = Vector.map(e -> e#uniforms#program, entries) }
 
     /// 表の handle 番の材質のプログラム。
     pub def entryAt(table: MaterialTable, handle: Int32): MaterialEntry = Vector.get(handle, table#entries)
@@ -36,7 +38,7 @@ mod Render3d.Material {
     pub def splitByMaterial(gl: GlContext, state: State, gen: Int64, outside: Scene3d.Instance3d -> Bool, wants: Scene3d.MaterialFields -> Bool, coverage: Bool,
                             instances: List[Scene3d.Instance3d]): ((List[SpanBatch], List[MaterialBatch[SpanBatch]]), MaterialTable) \ IO =
         timed(state, Phase.Split, () -> {
-            let (groups, requests) = groupInstances(state#planner, Render3d.defaultShaderVariant(), outside, wants, coverage, instances);
+            let (groups, requests) = groupInstances(state#planner, Render3d.ProgramKey.defaultShaderVariant(), outside, wants, coverage, instances);
             let table = resolveMaterials(gl, state, gen, requests);
             (splitGroups(groups, table#orders), table)
         })
@@ -46,24 +48,22 @@ mod Render3d.Material {
 
     /// entry のプログラムが今の物と違えば付け替え、場面の値（目・光・影・時刻・出す物）を入れる。
     pub def useMaterial(gl: GlContext, state: State, camera: CameraData, pass: MaterialPass, bound: Array[Int32, Static], entry: MaterialEntry): Unit \ IO =
-        let program = entry#locs#mesh#program;
+        let program = entry#uniforms#program;
         if (program == Array.get(0, bound)) ()
         else {
             Array.put(program, 0, bound);
-            useMaterialProgram(gl, state, camera, pass, entry#locs)
+            useMaterialProgram(gl, state, camera, pass, entry#uniforms)
         }
 
     /// 材質 m（頭の物 head）の cutout・params・絵・法線マップ・lightmap を、今付いている entry のプログラムへ入れ、貼った unit を bound に控える。
     pub def bindMaterial(gl: GlContext, state: State, gen: Int64, source: TextureSource, bound: Array[Int32, Static], entry: MaterialEntry,
                          m: Scene3d.MaterialFields, head: MeshDraw): Unit \ IO =
-        let locs = entry#locs;
-        gl.uniform1i(locs#cutout, if (m#cutout) 1 else 0);
+        let locs = entry#uniforms#locs;
+        put1i(gl, locs, R3dUniform.Cutout, if (m#cutout) 1 else 0);
         // WhyNot: ShaderDoc.materialParamValues で並べない — あちらは上限を超えた tex を 0 にする前の Spec から名前を拾い、
         //   compile3d が uParamN に割り当てた並び（0 にした後）と食い違う余地がある。uniform を宣言した側の並びで引く。
-        List.zip(locs#params, entry#paramNames) |> List.forEach(ln -> {
-            let (paramLoc, name) = ln;
-            gl.uniform1f(paramLoc, RenderUtil.f32(Map.getWithDefault(name, 0.0, m#params)))
-        });
+        entry#paramNames |> List.forEachWithIndex((i, name) ->
+            put1f(gl, locs, R3dUniform.Param(i), RenderUtil.f32(Map.getWithDefault(name, 0.0, m#params))));
         let units = bindMaterialTextures(gl, state, gen, source, entry, m);
         bindNormalMap(gl, state, gen, source, entry, m);
         bindLightmap(gl, state, gen, source, entry, head);
@@ -104,18 +104,19 @@ mod Render3d.Material {
             gl.activeTexture(GlConst.TEXTURE0)
         }
 
-    def useMaterialProgram(gl: GlContext, state: State, camera: CameraData, pass: MaterialPass, locs: MaterialLocs): Unit \ IO =
-        useMeshProgram(gl, locs#mesh, camera#view, camera#proj);
-        putLights(gl, locs#light, camera#lights);
-        putShadow(gl, locs#shadow, camera#shadows#spot);
-        putSunShadow(gl, locs#sunShadow, camera#shadows#sun);
-        putPointShadow(gl, locs#pointShadow, camera#shadows#point);
-        gl.uniform1f(locs#time, RenderUtil.f32(Array.get(0, state#timeHolder)));
+    def useMaterialProgram(gl: GlContext, state: State, camera: CameraData, pass: MaterialPass, p: ProgramUniforms): Unit \ IO =
+        let locs = p#locs;
+        useMeshProgram(gl, p, camera#view, camera#proj);
+        putLights(gl, locs, camera#lights);
+        putShadow(gl, locs, camera#shadows#spot);
+        putSunShadow(gl, locs, camera#shadows#sun);
+        putPointShadow(gl, locs, camera#shadows#point);
+        put1f(gl, locs, R3dUniform.Time, RenderUtil.f32(Array.get(0, state#timeHolder)));
         match pass {
-            case MaterialPass.Color     => gl.uniform1i(locs#depthOut, 0)
+            case MaterialPass.Color     => put1i(gl, locs, R3dUniform.DepthOut, 0)
             case MaterialPass.Depth(dr) =>
-                gl.uniform1i(locs#depthOut, 1);
-                putDepthRange(gl, locs#depthRange, dr)
+                put1i(gl, locs, R3dUniform.DepthOut, 1);
+                putDepthRange(gl, locs, dr)
         }
 
     /// lightmap を lightmap の unit に貼り、段の数・色空間・強さ・atlas の矩形を入れる（Clamp・段つきの Linear で読む）。lightmap を読まないプログラムは何もしない。
@@ -129,11 +130,12 @@ mod Render3d.Material {
             let bound = resolveTextureAs(gl, state, gen, source, "lightmap の絵", lm#texture, Texture3d.TextureUse.Lightmap(lm#colorSpace));
             gl.bindTexture(GlConst.TEXTURE_2D, bound#texId);
             gl.bindSampler(unit, materialSampler(gl, state, Scene3d.Wrap.Clamp, ShaderDoc.FilterMode.Linear, bound#levels > 1));
-            gl.uniform1f(entry#locs#lightmapLevels, RenderUtil.f32(Int32.toFloat64(Render3d.MaterialValues.lightmapLevelsOf(lm, bound#levels))));
-            gl.uniform1i(entry#locs#lightmapSrgb, if (Render3d.MaterialValues.lightmapSrgbOf(source, lm)) 1 else 0);
-            gl.uniform1f(entry#locs#lightmapIntensity, RenderUtil.f32(lm#intensity));
-            gl.uniform4f(entry#locs#lightmapUvRect, RenderUtil.f32(lm#uvRect#position#x), RenderUtil.f32(lm#uvRect#position#y),
-                         RenderUtil.f32(lm#uvRect#size#x), RenderUtil.f32(lm#uvRect#size#y))
+            let locs = entry#uniforms#locs;
+            put1f(gl, locs, R3dUniform.LightmapLevels, RenderUtil.f32(Int32.toFloat64(Render3d.MaterialValues.lightmapLevelsOf(lm, bound#levels))));
+            put1i(gl, locs, R3dUniform.LightmapSrgb, if (Render3d.MaterialValues.lightmapSrgbOf(source, lm)) 1 else 0);
+            put1f(gl, locs, R3dUniform.LightmapIntensity, RenderUtil.f32(lm#intensity));
+            put4f(gl, locs, R3dUniform.LightmapUvRect, RenderUtil.f32(lm#uvRect#position#x), RenderUtil.f32(lm#uvRect#position#y),
+                  RenderUtil.f32(lm#uvRect#size#x), RenderUtil.f32(lm#uvRect#size#y))
         })
 
     /// 場面の環境マップを環境マップの unit に貼り、絵の段の数を返す（無ければ 0・何も貼らない）。名前が場面の textures に無い絵は 0（黒）の 1 段で読み、
@@ -165,9 +167,10 @@ mod Render3d.Material {
                 let bound = resolveMaterialTexture(gl, state, gen, source, n#texture, Texture3d.TextureUse.NormalMap);
                 gl.bindTexture(GlConst.TEXTURE_2D, bound#texId);
                 gl.bindSampler(unit, materialSampler(gl, state, m#wrap, ShaderDoc.FilterMode.Linear, bound#levels > 1));
-                gl.uniform1f(entry#locs#normalStrength, RenderUtil.f32(n#strength));
-                gl.uniform1f(entry#locs#normalFlip, if (bound#flipped) 1.0f32 else 0.0f32);
-                gl.uniform1f(entry#locs#normalLevels, RenderUtil.f32(Int32.toFloat64(bound#levels)))
+                let locs = entry#uniforms#locs;
+                put1f(gl, locs, R3dUniform.NormalStrength, RenderUtil.f32(n#strength));
+                put1f(gl, locs, R3dUniform.NormalFlip, if (bound#flipped) 1.0f32 else 0.0f32);
+                put1f(gl, locs, R3dUniform.NormalLevels, RenderUtil.f32(Int32.toFloat64(bound#levels)))
             case _ => ()
         }
 
@@ -176,16 +179,17 @@ mod Render3d.Material {
     def bindMaterialTextures(gl: GlContext, state: State, gen: Int64, source: TextureSource, entry: MaterialEntry, m: Scene3d.MaterialFields): Int32 \ IO =
         if (List.isEmpty(entry#texReads)) 0
         else {
+            let locs = entry#uniforms#locs;
             let reads = Scene3d.materialTexReadsOf(m) |> List.take(Scene3d.maxMaterialTextures());
-            List.zip(reads, List.zip(entry#locs#texFlips, entry#locs#texLevels)) |> List.forEachWithIndex((unit, pair) -> {
-                let ((name, filter), (flipLoc, levelsLoc)) = pair;
+            reads |> List.take(List.length(entry#texReads)) |> List.forEachWithIndex((unit, read) -> {
+                let (name, filter) = read;
                 // WhyNot: 引いてから unit を選ばない — 初めての絵は引く時に上げて今の unit に貼るので、前の unit に貼った絵を外してしまう。
                 gl.activeTexture(GlConst.TEXTURE0 + unit);
                 let bound = resolveMaterialTexture(gl, state, gen, source, name, Texture3d.TextureUse.MaterialTexture);
                 gl.bindTexture(GlConst.TEXTURE_2D, bound#texId);
                 gl.bindSampler(unit, materialSampler(gl, state, m#wrap, filter, bound#levels > 1));
-                gl.uniform1f(flipLoc, if (bound#flipped) 1.0f32 else 0.0f32);
-                gl.uniform1f(levelsLoc, RenderUtil.f32(Int32.toFloat64(Scene3d.materialMipLevelsOf(m, bound#levels))))
+                put1f(gl, locs, R3dUniform.TexFlip(unit), if (bound#flipped) 1.0f32 else 0.0f32);
+                put1f(gl, locs, R3dUniform.TexLevels(unit), RenderUtil.f32(Int32.toFloat64(Scene3d.materialMipLevelsOf(m, bound#levels))))
             });
             List.length(reads)
         }
@@ -464,7 +468,7 @@ mod Render3d.Material {
     // ── 材質のプログラムの置き場 ──
 
 
-    /// 材質のプログラムを引く。無いか、同じ鍵で中身が違えば組み直す。組めなかった材質は locs#mesh#program が 0（頂点の色で描く）。
+    /// 材質のプログラムを引く。無いか、同じ鍵で中身が違えば組み直す。組めなかった材質は uniforms#program が 0（頂点の色で描く）。
     def lookupMaterial(gl: GlContext, state: State, gen: Int64, m: Scene3d.MaterialFields, kind: ProgramKind): MaterialEntry \ IO =
         let key = materialKey(m, kind);
         let cache = Ref.get(state#materialsRef);
@@ -530,40 +534,36 @@ mod Render3d.Material {
         let label = "scene3d:material" + (if (kind#skinned) ":skin" else "") + (if (kind#uv) ":uv" else "")
             + (if (kind#normalMap) ":nm" else "") + (if (kind#lightmap) ":lm" else "") + (if (kind#blend) ":bl" else "")
             + (if (kind#doubleSided) ":ds" else "") + (if (kind#coverage) ":cov" else "") + (if (kind#metallicRoughness) ":mr" else "")
-            + String.replace(src = "+", dst = ":", Render3d.variantKeyOf(Render3d.shaderVariantOfKind(kind))) + ":${m#spec#name}";
+            + String.replace(src = "+", dst = ":", Render3d.ProgramKey.variantKeyOf(kind#variant)) + ":${m#spec#name}";
         noteMaterialBuild(state, label, reason);
-        let vertex = materialVertexSourceFor({ skinned = kind#skinned, uv = kind#uv, lightmap = kind#lightmap }, kind#psx);
+        let vertex = materialVertexSourceFor({ skinned = kind#skinned, uv = kind#uv, lightmap = kind#lightmap }, kind#variant#psx);
         let fragment = materialFragmentSource(glsl, kind);
         let program = match RenderShader.tryCreateProgram(gl, vertex, fragment, label) {
             case Some(p) => p
             case None    =>
                 Log.warnThen("scene3d: 材質 '${m#spec#name}' のプログラムが組めなかった — この材質の物は頂点の色で描く", 0)
         };
-        let base = materialLocsOf(gl, program, glsl#paramNames, List.length(glsl#texReads));
-        let (light, point) = Render3d.VariantPrograms.variantLocsOf(gl, program, Render3d.shaderVariantOfKind(kind), base#light);
-        bindDataTextureUnits(gl, program);
-        bindTextureUnits(gl, program, List.length(glsl#texReads), kind#normalMap, kind#lightmap, kind#metallicRoughness);
+        let uniforms = programUniformsOf(gl, program, vertex :: fragment :: Nil);
+        bindDataTextureUnits(gl, uniforms);
+        bindTextureUnits(gl, uniforms, List.length(glsl#texReads), kind#normalMap, kind#lightmap, kind#metallicRoughness);
         { spec = m#spec, emission = m#emission, metallicRoughness = m#metallicRoughnessShade,
           known = (m#spec, m#emission, m#metallicRoughnessShade) :: Nil, paramNames = glsl#paramNames, texReads = glsl#texReads, normalMapped = kind#normalMap,
           lightmapped = kind#lightmap, coverage = kind#coverage,
-          locs = { light = light, pointShadow = point | base }, lastUsed = gen }
+          uniforms = uniforms, lastUsed = gen }
 
     /// uTexN を unit N へ、uNormalMap を法線マップの unit へ向ける（プログラムごとに 1 回。組めなかったプログラムと、
     /// 絵も法線マップも無い材質は何もしない）。
-    def bindTextureUnits(gl: GlContext, program: Int32, count: Int32, normalMap: Bool, lightmap: Bool, environment: Bool): Unit \ IO =
-        if (program == 0 or (count == 0 and not normalMap and not lightmap and not environment)) ()
-        else {
-            gl.useProgram(program);
-            if (environment) gl.uniform1i(loc(gl, program, "uEnvMap"), environmentTextureUnit()) else ();
-            List.range(0, count) |> List.forEach(unit -> gl.uniform1i(loc(gl, program, "uTex${unit}"), unit));
-            if (normalMap) gl.uniform1i(loc(gl, program, "uNormalMap"), normalMapTextureUnit()) else ();
-            if (lightmap) gl.uniform1i(loc(gl, program, "uLightmap"), lightmapTextureUnit()) else ();
-            gl.useProgram(0)
-        }
+    def bindTextureUnits(gl: GlContext, p: ProgramUniforms, count: Int32, normalMap: Bool, lightmap: Bool, environment: Bool): Unit \ IO =
+        if (count == 0 and not normalMap and not lightmap and not environment) ()
+        else bindUnits(gl, p, List.flatten(
+            (if (environment) (R3dUniform.EnvMap, environmentTextureUnit()) :: Nil else Nil) ::
+            (List.range(0, count) |> List.map(unit -> (R3dUniform.Tex(unit), unit))) ::
+            (if (normalMap) (R3dUniform.NormalMap, normalMapTextureUnit()) :: Nil else Nil) ::
+            (if (lightmap) (R3dUniform.Lightmap, lightmapTextureUnit()) :: Nil else Nil) :: Nil))
 
     def retireMaterial(state: State, e: MaterialEntry): Unit \ IO =
-        if (e#locs#mesh#program == 0) ()
-        else Ref.put(e#locs#mesh#program :: Ref.get(state#retiredMaterialsRef), state#retiredMaterialsRef)
+        if (e#uniforms#program == 0) ()
+        else Ref.put(e#uniforms#program :: Ref.get(state#retiredMaterialsRef), state#retiredMaterialsRef)
 
     def warnMaterialThrash(state: State, key: String, name: String): Unit \ IO =
         let warned = Ref.get(state#thrashWarnedRef);
@@ -574,28 +574,17 @@ mod Render3d.Material {
                 + " — 毎コマ組み直している。spec か emission の数に NaN があれば直す（NaN は自分とも等しくない）。無ければ engine の不具合")
         }
 
-    def materialLocsOf(gl: GlContext, program: Int32, paramNames: List[String], texCount: Int32): MaterialLocs \ IO =
-        { mesh = meshLocsOf(gl, program), light = lightLocsOf(gl, program), shadow = shadowLocsOf(gl, program),
-          sunShadow = sunShadowLocsOf(gl, program), pointShadow = Render3d.Shadow.noPointShadowLocs(), time = loc(gl, program, "uTime"), cutout = loc(gl, program, "uCutout"),
-          depthOut = loc(gl, program, "uDepthOut"), depthRange = loc(gl, program, "uDepthRange"),
-          params = paramNames |> List.mapWithIndex((i, _) -> loc(gl, program, "uParam${i}")),
-          texFlips = List.range(0, texCount) |> List.map(i -> loc(gl, program, "uTexFlip${i}")),
-          normalStrength = loc(gl, program, "uNormalStrength"), normalFlip = loc(gl, program, "uNormalFlip"),
-          texLevels = List.range(0, texCount) |> List.map(i -> loc(gl, program, "uTexLevels${i}")), normalLevels = loc(gl, program, "uNormalLevels"),
-          lightmapLevels = loc(gl, program, "uLightmapLevels"), lightmapSrgb = loc(gl, program, "uLightmapSrgb"),
-          lightmapIntensity = loc(gl, program, "uLightmapIntensity"), lightmapUvRect = loc(gl, program, "uLightmapUvRect") }
-
     /// 引退した材質のプログラムを消し、使われない材質を LRU で追い出す（画面のコマの終わりに 1 回。捨てる物は materialEvictions）。
     pub def sweepMaterials(gl: GlContext, state: State, gen: Int64): Unit \ IO =
         Ref.get(state#retiredMaterialsRef) |> List.forEach(program -> gl.deleteProgram(program));
         Ref.put(Nil, state#retiredMaterialsRef);
         let cache = Ref.get(state#materialsRef);
         let victims = materialEvictions(gen, Ref.get(state#preloadRef)#programs,
-            Map.toList(cache) |> List.map(ke -> (fst(ke), snd(ke)#locs#mesh#program, snd(ke)#lastUsed)));
+            Map.toList(cache) |> List.map(ke -> (fst(ke), snd(ke)#uniforms#program, snd(ke)#lastUsed)));
         if (List.isEmpty(victims)) ()
         else {
             victims |> List.forEach(key -> Map.get(key, cache) |> Option.forEach(e ->
-                if (e#locs#mesh#program == 0) () else gl.deleteProgram(e#locs#mesh#program)));
+                if (e#uniforms#program == 0) () else gl.deleteProgram(e#uniforms#program)));
             Ref.put(List.foldLeft((acc, key) -> Map.remove(key, acc), cache, victims), state#materialsRef)
         }
 

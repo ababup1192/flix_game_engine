@@ -1,5 +1,5 @@
 // Render3d.GlRows.Instancing — GL の backend の、1 回の prepare の全部の batch の 1 体ごとの値（並びと番号の振り方は Render3d.InstanceValues）を 1 枚の RGBA32F のテクスチャへ上げる所。
-// 頂点シェーダーは uInstanceBase + gl_InstanceID で引く（Render3dGlsl.instanceDeclarations）。テクスチャの回し方は Render3d.GlRows.DataTexture。約束は Render3d.flix の頭。
+// 頂点シェーダーは uInstanceBase + gl_InstanceID で引く（Render3dGlsl.MeshVertex.instanceDeclarations）。テクスチャの回し方は Render3d.GlRows.DataTexture。約束は Render3d.flix の頭。
 // WhyNot: GL で頂点の属性に置かない — GL 3.3 と WebGL2 に baseInstance が無く、batch にならない draw ごとに 8 本の属性を指し直すことになり、WebGL2 では submit が 3 倍を超える。
 // WhyNot: pub を外さない — 呼び手の Render3d（と偽の GL を通るテスト）は GlRows の外で、pub でない孫の mod には届かない（親の Render3d が pub でないので、ゲームからは見えない）。
 pub mod Render3d.GlRows.Instancing {

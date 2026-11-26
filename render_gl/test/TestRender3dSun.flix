@@ -10,12 +10,12 @@ mod Render3d.TestRender3dSun {
     def sunScene(sun: Option[Scene3d.DirectionalLight]): Scene3d.Scene3dCmd =
         { directionalLight = sun | sceneOf(Scene3d.meshInstance(Render3d.FakeGl.plainTriangle(), Mat4.identity()) :: Nil) }
 
-    def materialSource(kind: Render3d.ProgramKind): String =
+    def materialSource(kind: Render3d.ProgramKey.ProgramKind): String =
         Render3dGlsl.materialFragmentSource({ uniforms = "uniform float uTime;\n", functions = "void materialEval(out vec4 albedo, out vec3 emission) {}\n",
                                               paramNames = Nil, texReads = Nil, cutoutAlpha = "albedo.a" }, kind)
 
-    def plainKind(): Render3d.ProgramKind =
-        { skinned = false, uv = false, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false, metallicRoughness = false, pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false }
+    def plainKind(): Render3d.ProgramKey.ProgramKind =
+        { skinned = false, uv = false, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false, metallicRoughness = false, variant = { pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false } }
 
     def indexOf(part: String, s: String): Int32 = String.indexOf(substr = part, s) |> Option.getWithDefault(-1)
 
@@ -114,7 +114,7 @@ mod Render3d.TestRender3dSun {
     @Test
     def testNormalMapShiftsByTheUnmappedNormal(): Unit \ Assert =
         let source = materialSource({ uv = true, normalMap = true | plainKind() });
-        Assert.assertTrue(indexOf("vec3 n = normalMapped(normalize(vNormal));", source) >= 0
+        Assert.assertTrue(indexOf("vec3 n = normalMapped(normalize(vNormal), vUv, vTangent);", source) >= 0
                           and indexOf("r3d_sunLit = sunLitAt(vWorld, normalize(vNormal), n);", source) >= 0)
 
     /// 裏の面を描く両面の材質は、点のずらしにも裏返した法線を使う。

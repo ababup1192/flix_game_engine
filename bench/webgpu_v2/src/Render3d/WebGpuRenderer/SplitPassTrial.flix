@@ -98,7 +98,7 @@ pub mod Render3d.WebGpuRenderer.SplitPassTrial {
             staged#passes |> List.forEach(match (spec, list, valuesBase) ->
                 encodeScene(t#renderer, host, target, { spec = spec, list = list, instanceBase = staged#instanceBase, valuesBase = valuesBase, poseGroup = staged#poseGroup,
                                                        sceneGroup = target#sceneGroup, sky = false, carried = Nil, targetKey = "split",
-                                                       variant = Render3d.passVariantOf(plan#cmd#scene) },
+                                                       variant = Render3d.ProgramKey.passVariantOf(plan#cmd#scene) },
                             { color = t#frame.defaultView(), resolve = None, clear = None, depth = target#depth.defaultView(),
                               viewport = topLeftOf(t#height, rect), scissor = topLeftOf(t#height, scissor) }))
         });

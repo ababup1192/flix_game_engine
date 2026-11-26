@@ -414,6 +414,9 @@ N が定数なので実害は無いと判断している。**N を決めるの�
 - `emitMerged` — 描画の実行そのもの。順序に依存する
 - `App.Internal.Paint.resolvedCamera` の `safeZoom` — 1 フレームに 1 回しか走らない。N に依存しない
 - ~~`ShaderEval.envOf`~~ の画素ごとの `Map` — 測って打ち切り済み（`docs/backlog.md`）
+- `render_gl/src/Render3dGlsl/MeshVertex.flix`・`Render3dWgsl/MeshVertex.flix`（置いた物の頂点シェーダー）— ShaderAst の木へ移さず手書きの字のまま。
+  ブラウザ版の wasm の brotli の大きさ（retro3d-horror-starter の書き出しで測る）の上限は 1,432.8 KB から +6% の 1,518.8 KB と決めてあり、
+  今 1,513.1 KB（+5.6%）で、木の組み立てを足すと届く。frag の varying の表とのずれは `TestShaderDump` が字で照らす
 
 ---
 

@@ -466,7 +466,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
         let image = imageLayout(gpu);
         let renderer = Render3d.WebGpuRenderer.create(gpu, layout, image);
         let RendererData.RendererData(s) = renderer;
-        let plain = Render3d.defaultShaderVariant();
+        let plain = Render3d.ProgramKey.defaultShaderVariant();
         discard Render3d.WebGpuBillboards.pipelineOf(s#billboards, RenderTarget.Format.Rgba8Unorm, 1, plain, (0, s#sceneLayout));
         discard Render3d.WebGpuBillboards.pipelineOf(s#billboards, RenderTarget.Format.Rgba8Unorm, 4, plain, (0, s#sceneLayout));
         discard Render3d.WebGpuBillboards.pipelineOf(s#billboards, RenderTarget.Format.Rgba8Unorm, 1, { physicalUnits = true | plain }, (1, s#lightLayout));

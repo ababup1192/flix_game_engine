@@ -38,7 +38,8 @@ pub mod Render3d.WebGpuMaterials {
     import java.nio.ByteBuffer
     import java.nio.ByteOrder
     import java.util.HashSet
-    use Render3d.{MeshDraw, ProgramKind, TextureSlot, TextureSource, materialKey}
+    use Render3d.{MeshDraw, TextureSlot, TextureSource}
+    use Render3d.ProgramKey.{ProgramKind, materialKey}
     use Render3d.MaterialValues
     use Render3d.ScenePlan.{MaterialRequest}
     use Render3d.SceneList.{SceneList, SceneRowKind, flagLightmap, flagNormalMap, flagSameBinding, hasFlag, headAt, kindAt, materialAt, materialHandleAt, readAt, readCountAt, rowCountOf, valuesAt}
@@ -632,7 +633,7 @@ pub mod Render3d.WebGpuMaterials {
             case None =>
                 let desc = new RenderPipelineDesc("fge material");
                 let skinned = p#kind#skinned;
-                discard desc.bindGroupLayout(mp#sceneLayout).bindGroupLayout(p#layout).vertex(vertexModuleOf(m, p#kind#uv, p#kind#lightmap, skinned, p#kind#psx), "vs_main").fragment(p#fragment, "fs_main");
+                discard desc.bindGroupLayout(mp#sceneLayout).bindGroupLayout(p#layout).vertex(vertexModuleOf(m, p#kind#uv, p#kind#lightmap, skinned, p#kind#variant#psx), "vs_main").fragment(p#fragment, "fs_main");
                 if (skinned) discard desc.bindGroupLayout(mp#poseLayout) else ();
                 discard desc.vertexBuffer(mesh#stride, false).attribute(VertexFormat.FLOAT32X3, 0, 0).attribute(VertexFormat.FLOAT32X3, 12, 1).attribute(VertexFormat.FLOAT32X3, 24, 2);
                 if (p#kind#uv) discard desc.attribute(VertexFormat.FLOAT32X2, 36, 11).attribute(VertexFormat.FLOAT32X4, 44, 12) else ();

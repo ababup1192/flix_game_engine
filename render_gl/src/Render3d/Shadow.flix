@@ -3,12 +3,13 @@
 mod Render3d.Shadow {
     import fge.gl.GlConst
     import fge.gl.GlContext
-    use Render3d.{BillboardLocs, PointShadowLocs, PointShadowUse, SceneShadows, ShadowLocs, SunShadowLocs, ShadowTarget, ShadowUse, SunShadowUse, State, MeshLocs, drawMeshRange, matrixArray, meshEntry,
+    use Render3d.{PointShadowUse, ProgramUniforms, SceneShadows, ShadowTarget, ShadowUse, SunShadowUse, State, drawMeshRange, matrixArray, meshEntry,
                   programsOf, blankTextureUnit, pointShadowTextureUnit, shadowTextureUnit, sunShadowTextureUnit, skinnedProgramsOf, useMeshProgram}
     use Render3d.GlRows.{drawBillboardRuns}
     use Render3d.Counts.{BatchBreak, Counter, count, countDrawCall}
     use Render3d.SceneList.{SceneList, SceneRowKind, billboardAt, breakSlotAt, countAt, firstBillboardRowOf, firstBlendedRowOf, firstInstanceAt, headAt, kindAt, rowCountOf, valuesAt}
     use Render3d.ShadowMaps.{Key, ShadowPass, ShadowSampling}
+    use Render3d.Uniforms.{R3dUniform, UniformLocations, has, put1f, put1i, put2f, put3f, put3fv, put4f, putMatrix4}
 
     // ── 影の地図 ──
 
@@ -133,9 +134,9 @@ mod Render3d.Shadow {
     /// 集まりの行は、動かない物だけの控え（Render3d.GlShadowCache）に描いて写す。鍵が前と同じなら控えを描き直さずに写すだけ。
     def renderShadowMap(gl: GlContext, state: State, gen: Int64, target: ShadowTarget, pass: ShadowPass, first: Bool,
                         carried: { carried = List[Render3d.GlStatic.CarriedDraw], restore = Option[Int32] }): Unit \ IO =
-        let locs = programsOf(gl, state)#depth;
-        let drawable = locs#mesh#program != 0 and not Render3d.GpuSpans.skipsShadowDraws();
-        let frame = { list = pass#list, lightView = matrixArray(pass#map#view), identity = matrixArray(Mat4.identity()), bound = Array#{locs#mesh#program} @ Static };
+        let depth = programsOf(gl, state)#depth;
+        let drawable = depth#program != 0 and not Render3d.GpuSpans.skipsShadowDraws();
+        let frame = { list = pass#list, lightView = matrixArray(pass#map#view), identity = matrixArray(Mat4.identity()), bound = Array#{depth#program} @ Static };
         let cached = if (drawable) cacheOf(gl, state, gen, pass, carried#carried) else None;
         cached |> Option.forEach(match (e, made) -> if (made) drawStaticsInto(gl, state, gen, e, frame, carried) else ());
         gl.bindFramebuffer(GlConst.FRAMEBUFFER, target#fbo);
@@ -148,8 +149,8 @@ mod Render3d.Shadow {
         if (not drawable) ()
         else {
             beginDepthOnly(gl);
-            useMeshProgram(gl, locs#mesh, frame#lightView, frame#identity);
-            Array.put(locs#mesh#program, 0, frame#bound);
+            useMeshProgram(gl, depth, frame#lightView, frame#identity);
+            Array.put(depth#program, 0, frame#bound);
             drawShadowRows(gl, state, gen, frame, 0, firstBillboardRowOf(pass#list));
             if (Option.isEmpty(cached)) drawCarriedShadows(gl, state, gen, frame, carried) else ();
             drawShadowBillboards(gl, state, frame, pass)
@@ -189,8 +190,8 @@ mod Render3d.Shadow {
         gl.bindFramebuffer(GlConst.FRAMEBUFFER, e#target#fbo);
         clearWholeTarget(gl, e#target);
         beginDepthOnly(gl);
-        useMeshProgram(gl, programsOf(gl, state)#depth#mesh, frame#lightView, frame#identity);
-        Array.put(programsOf(gl, state)#depth#mesh#program, 0, frame#bound);
+        useMeshProgram(gl, programsOf(gl, state)#depth, frame#lightView, frame#identity);
+        Array.put(programsOf(gl, state)#depth#program, 0, frame#bound);
         drawCarriedShadows(gl, state, gen, frame, carried)
 
     def clearWholeTarget(gl: GlContext, target: ShadowTarget): Unit \ IO =
@@ -221,19 +222,18 @@ mod Render3d.Shadow {
         let list = pass#list;
         let first = firstBillboardRowOf(list);
         let end = firstBlendedRowOf(list);
-        let locs = programsOf(gl, state)#billboard;
-        if (first >= end or locs#program == 0) ()
+        let billboard = programsOf(gl, state)#billboard;
+        if (first >= end or billboard#program == 0) ()
         else {
-            gl.useProgram(locs#program);
-            Array.put(locs#program, 0, frame#bound);
-            gl.uniformMatrix4fv(locs#view, false, frame#lightView);
-            gl.uniformMatrix4fv(locs#proj, false, frame#identity);
-            putSunShadow(gl, locs#sunShadow, None);
-            gl.uniform1i(locs#depthOut, 1);
+            let locs = billboard#locs;
+            useMeshProgram(gl, billboard, frame#lightView, frame#identity);
+            Array.put(billboard#program, 0, frame#bound);
+            putSunShadow(gl, locs, None);
+            put1i(gl, locs, R3dUniform.DepthOut, 1);
             let right = pass#billboardRight;
-            gl.uniform3f(locs#right, RenderUtil.f32(right#x), RenderUtil.f32(right#y), RenderUtil.f32(right#z));
-            gl.uniform3f(locs#up, 0.0f32, 1.0f32, 0.0f32);
-            gl.uniform1i(locs#rightPerBillboard, if (pass#rightPerBillboard) 1 else 0);
+            put3f(gl, locs, R3dUniform.Right, RenderUtil.f32(right#x), RenderUtil.f32(right#y), RenderUtil.f32(right#z));
+            put3f(gl, locs, R3dUniform.Up, 0.0f32, 1.0f32, 0.0f32);
+            put1i(gl, locs, R3dUniform.RightPerBillboard, if (pass#rightPerBillboard) 1 else 0);
             drawBillboardRuns(gl, state, list, BatchBreak.ShadowPass)
         }
 
@@ -250,7 +250,7 @@ mod Render3d.Shadow {
     /// 行 row を深度だけのプログラムで描く。骨つきの行は骨つきの版（Output.Depth と共用）で、曲がった形で影を落とす。描く物の無い行も形を今のコマで使った物として数える。
     def drawShadowRow(gl: GlContext, state: State, gen: Int64, frame: ShadowFrame, row: Int32): Unit \ IO =
         let list = frame#list;
-        let mesh = shadowLocsFor(gl, state, kindAt(list, row) == SceneRowKind.Skinned);
+        let mesh = shadowProgramFor(gl, state, kindAt(list, row) == SceneRowKind.Skinned);
         if (mesh#program == 0) ()
         else {
             if (mesh#program == Array.get(0, frame#bound)) ()
@@ -259,14 +259,14 @@ mod Render3d.Shadow {
                 useMeshProgram(gl, mesh, frame#lightView, frame#identity)
             };
             let entry = meshEntry(gl, state, gen, headAt(list, row)#fields#mesh);
-            drawMeshRange(gl, state, mesh, breakSlotAt(list, row), (entry#vao, entry#indexCount), firstInstanceAt(list, row), countAt(list, row))
+            drawMeshRange(gl, state, mesh#locs, breakSlotAt(list, row), (entry#vao, entry#indexCount), firstInstanceAt(list, row), countAt(list, row))
         };
         // WhyNot: 末尾を呼び出しで終えない — 行が物の数だけある場面で drawShadowRows のループが JIT から外れる（docs/performance.md の 13 節）。
         ()
 
     /// 骨つきの版は骨つきの行がある時だけ組む。
-    def shadowLocsFor(gl: GlContext, state: State, skinned: Bool): MeshLocs \ IO =
-        if (skinned) skinnedProgramsOf(gl, state)#depth#mesh else programsOf(gl, state)#depth#mesh
+    def shadowProgramFor(gl: GlContext, state: State, skinned: Bool): ProgramUniforms \ IO =
+        if (skinned) skinnedProgramsOf(gl, state)#depth else programsOf(gl, state)#depth
 
     def endShadowPass(gl: GlContext): Unit \ IO =
         gl.disable(GlConst.DEPTH_TEST);
@@ -306,78 +306,68 @@ mod Render3d.Shadow {
         gl.bindTexture(GlConst.TEXTURE_2D, tex);
         gl.activeTexture(GlConst.TEXTURE0)
 
-    pub def putShadow(gl: GlContext, locs: ShadowLocs, shadow: Option[ShadowUse]): Unit \ IO =
+    pub def putShadow(gl: GlContext, locs: UniformLocations, shadow: Option[ShadowUse]): Unit \ IO =
         // WhyNot: 影のある場面でだけ uShadowMap を入れない — 影の無い場面で unit 0 のままになり、描き先の色テクスチャが unit 0 に残ると、
         //   読まない枝でも WebGL2 が feedback loop と見て draw を止める。
         // WhyNot: 影の無い場面で影の unit を指さない — 何も貼っていない unit になり、macOS の GL が起動のたびにログへ書く。
-        gl.uniform1i(locs#map, if (Option.isEmpty(shadow)) blankTextureUnit() else shadowTextureUnit());
+        put1i(gl, locs, R3dUniform.ShadowMap, if (Option.isEmpty(shadow)) blankTextureUnit() else shadowTextureUnit());
         match shadow {
             // プログラムは場面どうしで共有するので、影の無い場面でも毎回切る（前の場面の影が残る）。
-            case None    => gl.uniform1i(locs#on, 0)
+            case None    => put1i(gl, locs, R3dUniform.ShadowOn, 0)
             case Some(s) =>
-                gl.uniform1i(locs#on, 1);
-                gl.uniform1i(locs#spot, s#spotIndex);
-                gl.uniformMatrix4fv(locs#matrix, false, s#matrix);
-                gl.uniform1f(locs#bias, RenderUtil.f32(s#bias));
-                gl.uniform1i(locs#pcf, s#pcfRadius);
-                gl.uniform1f(locs#strength, RenderUtil.f32(s#strength))
+                put1i(gl, locs, R3dUniform.ShadowOn, 1);
+                put1i(gl, locs, R3dUniform.ShadowSpot, s#spotIndex);
+                putMatrix4(gl, locs, R3dUniform.ShadowMatrix, s#matrix);
+                put1f(gl, locs, R3dUniform.ShadowBias, RenderUtil.f32(s#bias));
+                put1i(gl, locs, R3dUniform.ShadowPcf, s#pcfRadius);
+                put1f(gl, locs, R3dUniform.ShadowStrength, RenderUtil.f32(s#strength))
         }
 
     /// 太陽の影の uniform を入れる（putShadow と同じ決まり。影の無い場面は uSunShadowOn = 0 で、uSunMap は何も貼っていない blank の unit を指す）。
-    pub def putSunShadow(gl: GlContext, locs: SunShadowLocs, shadow: Option[SunShadowUse]): Unit \ IO =
-        gl.uniform1i(locs#map, if (Option.isEmpty(shadow)) blankTextureUnit() else sunShadowTextureUnit());
+    pub def putSunShadow(gl: GlContext, locs: UniformLocations, shadow: Option[SunShadowUse]): Unit \ IO =
+        put1i(gl, locs, R3dUniform.SunMap, if (Option.isEmpty(shadow)) blankTextureUnit() else sunShadowTextureUnit());
         match shadow {
-            case None    => gl.uniform1i(locs#on, 0)
+            case None    => put1i(gl, locs, R3dUniform.SunShadowOn, 0)
             case Some(s) =>
-                gl.uniform1i(locs#on, 1);
-                gl.uniformMatrix4fv(locs#matrix, false, s#matrix);
-                gl.uniform1f(locs#bias, RenderUtil.f32(s#bias));
-                gl.uniform1f(locs#normalShift, RenderUtil.f32(s#normalShift));
-                gl.uniform1i(locs#pcf, s#pcfRadius);
-                gl.uniform1f(locs#strength, RenderUtil.f32(s#strength));
-                gl.uniform3fv(locs#forward, s#forward);
-                gl.uniform2f(locs#fade, RenderUtil.f32(s#distance), RenderUtil.f32(s#fadeWidth))
+                put1i(gl, locs, R3dUniform.SunShadowOn, 1);
+                putMatrix4(gl, locs, R3dUniform.SunMatrix, s#matrix);
+                put1f(gl, locs, R3dUniform.SunBias, RenderUtil.f32(s#bias));
+                put1f(gl, locs, R3dUniform.SunNormalShift, RenderUtil.f32(s#normalShift));
+                put1i(gl, locs, R3dUniform.SunPcf, s#pcfRadius);
+                put1f(gl, locs, R3dUniform.SunStrength, RenderUtil.f32(s#strength));
+                put3fv(gl, locs, R3dUniform.SunForward, s#forward);
+                put2f(gl, locs, R3dUniform.SunFade, RenderUtil.f32(s#distance), RenderUtil.f32(s#fadeWidth))
         }
 
     /// 点光源の影の uniform を入れる（putShadow と同じ決まり。変種 +ps でないプログラムは何もしない・影の無い場面は全部の slot が −1 で、
     /// uPointShadowMap は何も貼っていない blank の unit を指す）。
-    pub def putPointShadow(gl: GlContext, locs: PointShadowLocs, shadow: Option[PointShadowUse]): Unit \ IO =
-        if (locs#map < 0) ()
+    pub def putPointShadow(gl: GlContext, locs: UniformLocations, shadow: Option[PointShadowUse]): Unit \ IO =
+        if (not has(R3dUniform.PointShadowMap, locs)) ()
         else {
-            gl.uniform1i(locs#map, if (Option.isEmpty(shadow)) blankTextureUnit() else pointShadowTextureUnit());
+            put1i(gl, locs, R3dUniform.PointShadowMap, if (Option.isEmpty(shadow)) blankTextureUnit() else pointShadowTextureUnit());
             match shadow {
-                case None    => locs#lights |> Vector.forEach(l -> gl.uniform4f(l, -1.0f32, 0.0f32, 0.0f32, 0.0f32))
+                case None    => putPointShadowsOff(gl, locs, 0)
                 case Some(s) =>
-                    Vector.zip(locs#lights, s#lights) |> Vector.forEach(lc -> {
-                        let (l, (slot, a, b, strength)) = lc;
-                        gl.uniform4f(l, slot, a, b, strength)
+                    s#lights |> Vector.forEachWithIndex((i, l) -> {
+                        let (slot, a, b, strength) = l;
+                        put4f(gl, locs, R3dUniform.PointShadow(i), slot, a, b, strength)
                     });
                     let (size, columns, scale, pcf) = s#atlas;
-                    gl.uniform4f(locs#atlas, size, columns, scale, pcf);
+                    put4f(gl, locs, R3dUniform.PointShadowAtlas, size, columns, scale, pcf);
                     let (bias, normalBias) = s#bias;
-                    gl.uniform2f(locs#bias, bias, normalBias)
+                    put2f(gl, locs, R3dUniform.PointShadowBias, bias, normalBias)
             }
         }
 
-    /// 変種 +ps でないプログラムの点光源の影の location（putPointShadow が何もしない）。
-    pub def noPointShadowLocs(): PointShadowLocs = { lights = Vector.empty(), atlas = -1, bias = -1, map = -1 }
-
-    pub def pointShadowLocsOf(gl: GlContext, program: Int32): PointShadowLocs \ IO =
-        { lights = Vector.range(0, Scene3d.maxPointLights()) |> Vector.map(i -> Render3d.loc(gl, program, "uPointShadow[${i}]")),
-          atlas = Render3d.loc(gl, program, "uPointShadowAtlas"), bias = Render3d.loc(gl, program, "uPointShadowBias"),
-          map = Render3d.loc(gl, program, "uPointShadowMap") }
+    /// uPointShadow[i..] の slot を全部 −1（影を落とさない）にする。
+    def putPointShadowsOff(gl: GlContext, locs: UniformLocations, i: Int32): Unit \ IO =
+        if (i >= Scene3d.maxPointLights()) ()
+        else {
+            put4f(gl, locs, R3dUniform.PointShadow(i), -1.0f32, 0.0f32, 0.0f32, 0.0f32);
+            putPointShadowsOff(gl, locs, i + 1)
+        }
 
     /// 使われない影の描き先を捨てる（画面のコマの終わりに 1 回・どれを捨てるかは寿命の表）。
     pub def sweepShadowTargets(gl: GlContext, state: State, gen: Int64): Unit \ IO =
         discard Render3d.ShadowMaps.sweep(state#shadowMaps, allocatorOf(gl, state), gen)
-
-    pub def shadowLocsOf(gl: GlContext, program: Int32): Render3d.ShadowLocs \ IO =
-        { on = Render3d.loc(gl, program, "uShadowOn"), spot = Render3d.loc(gl, program, "uShadowSpot"), matrix = Render3d.loc(gl, program, "uShadowMatrix"),
-          map = Render3d.loc(gl, program, "uShadowMap"), bias = Render3d.loc(gl, program, "uShadowBias"), pcf = Render3d.loc(gl, program, "uShadowPcf"),
-          strength = Render3d.loc(gl, program, "uShadowStrength") }
-
-    pub def sunShadowLocsOf(gl: GlContext, program: Int32): Render3d.SunShadowLocs \ IO =
-        { on = Render3d.loc(gl, program, "uSunShadowOn"), matrix = Render3d.loc(gl, program, "uSunMatrix"), map = Render3d.loc(gl, program, "uSunMap"),
-          bias = Render3d.loc(gl, program, "uSunBias"), normalShift = Render3d.loc(gl, program, "uSunNormalShift"), pcf = Render3d.loc(gl, program, "uSunPcf"),
-          strength = Render3d.loc(gl, program, "uSunStrength"), forward = Render3d.loc(gl, program, "uSunForward"), fade = Render3d.loc(gl, program, "uSunFade") }
 }

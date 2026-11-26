@@ -4,15 +4,16 @@
 mod Render3d.GlRows {
     import fge.gl.GlConst
     import fge.gl.GlContext
-    use Render3d.{CameraData, DepthLocs, LitLocs, MaterialEntry, MaterialPass, MeshDraw, MeshLocs, SceneShadows, ShaderVariant, State, TextureSource,
-                  Programs, drawMeshRange, ensureTangents, materialTextureNames, meshEntry, meshEntryAt, programsOf, putDepthRange, skinnedProgramsOf, useMeshProgram, warnMissingTexture}
+    use Render3d.{CameraData, MaterialEntry, MaterialPass, MeshDraw, ProgramUniforms, SceneShadows, State, TextureSource, Programs, drawMeshRange, ensureTangents, materialTextureNames, meshEntry, meshEntryAt, programsOf, putDepthRange, skinnedProgramsOf, useMeshProgram, warnMissingTexture}
+    use Render3d.ProgramKey.{ShaderVariant}
     use Render3d.Batch.{MaterialBatch, MeshBatch}
     use Render3d.Counts.{BatchBreak, countBillboardRuns, countDrawCall, countInstances}
     use Render3d.Light.{putLights}
     use Render3d.Material.{MaterialTable, bindMaterial, drawWithLook, entryAt, freshBound, releaseBound, resolveTextureAs, useMaterial}
     use Render3d.SceneList.{SceneList, ScenePasses, SceneRowKind, billboardAt, breakSlotAt, countAt, firstInstanceAt, kindAt, materialHandleAt, textureIdAt, valuesAt, firstBillboardRowOf, firstBlendedRowOf, flagCoverage, flagDoubleSided, flagNormalMap, flagSameBinding, hasFlag, headAt, materialAt, meshAt, rowCountOf}
     use Render3d.Shadow.{putPointShadow, putShadow, putSunShadow}
-    use Render3d.VariantPrograms.{litLocsOfVariant}
+    use Render3d.VariantPrograms.{litProgramOfVariant}
+    use Render3d.Uniforms.{R3dUniform, UniformLocations, put3f}
 
     /// 場面を描く時に場面の外から渡す物。passes = 場面の pass と、その行（計画の答え・列の順に描く）・materials = その prepare の材質の表・
     /// shadows = 先に描いておいた影の地図（スポットと太陽。無ければ None）・jointTexture = その prepare の joint texture（姿勢が無ければ None）・
@@ -129,7 +130,7 @@ mod Render3d.GlRows {
 
     // WhyNot: 描く物の無い行でプログラムを引く前に飛ばさない — 骨つきの版は骨つきの行が来たコマに組む決まりで、全部が間引かれている間に組まずにおくと、振り向いたコマで GLSL を組んで止まる。
     def drawShapeRow(gl: GlContext, state: State, frame: RowFrame, skinned: Bool, row: Int32): Unit \ IO =
-        let mesh = shapeMeshLocs(gl, state, frame#camera#variant, frame#pass, skinned);
+        let mesh = shapeProgramOf(gl, state, frame#camera#variant, frame#pass, skinned);
         if (mesh#program == 0) ()
         else {
             if (mesh#program == Array.get(0, frame#bound)) ()
@@ -137,7 +138,7 @@ mod Render3d.GlRows {
                 Array.put(mesh#program, 0, frame#bound);
                 useShapeProgram(gl, state, frame, skinned)
             };
-            drawRowRange(gl, state, mesh, frame, row)
+            drawRowRange(gl, state, mesh#locs, frame, row)
         }
 
     def drawMaterialRow(gl: GlContext, state: State, gen: Int64, frame: RowFrame, row: Int32): Unit \ IO =
@@ -151,17 +152,17 @@ mod Render3d.GlRows {
                 useMaterial(gl, state, frame#camera, frame#pass, frame#bound, entry);
                 bindMaterial(gl, state, gen, frame#source, frame#bound, entry, m, headAt(list, row))
             };
-            drawWithLook(gl, look, () -> drawRowRange(gl, state, entry#locs#mesh, frame, row))
+            drawWithLook(gl, look, () -> drawRowRange(gl, state, entry#uniforms#locs, frame, row))
         })
 
-    def drawRowRange(gl: GlContext, state: State, mesh: MeshLocs, frame: RowFrame, row: Int32): Unit \ IO =
+    def drawRowRange(gl: GlContext, state: State, mesh: UniformLocations, frame: RowFrame, row: Int32): Unit \ IO =
         let list = frame#list;
         let entry = meshEntryAt(state, meshAt(list, row));
         drawMeshRange(gl, state, mesh, breakSlotAt(list, row), (entry#vao, entry#indexCount), firstInstanceAt(list, row), countAt(list, row))
 
-    def shapeMeshLocs(gl: GlContext, state: State, frameVariant: ShaderVariant, pass: MaterialPass, skinned: Bool): MeshLocs \ IO = match pass {
-        case MaterialPass.Color    => litLocsOfVariant(gl, state, frameVariant, skinned)#mesh
-        case MaterialPass.Depth(_) => depthLocsFor(gl, state, skinned)#mesh
+    def shapeProgramOf(gl: GlContext, state: State, frameVariant: ShaderVariant, pass: MaterialPass, skinned: Bool): ProgramUniforms \ IO = match pass {
+        case MaterialPass.Color    => litProgramOfVariant(gl, state, frameVariant, skinned)
+        case MaterialPass.Depth(_) => depthProgramFor(gl, state, skinned)
     }
 
     /// 頂点の色の（骨つきなら骨つきの版の）プログラムを付けて、場面の値を入れる。
@@ -169,20 +170,20 @@ mod Render3d.GlRows {
         let camera = frame#camera;
         match frame#pass {
             case MaterialPass.Color =>
-                let locs = litLocsOfVariant(gl, state, camera#variant, skinned);
-                useMeshProgram(gl, locs#mesh, camera#view, camera#proj);
-                putLights(gl, locs#light, camera#lights);
-                putShadow(gl, locs#shadow, camera#shadows#spot);
-                putSunShadow(gl, locs#sunShadow, camera#shadows#sun);
-                putPointShadow(gl, locs#pointShadow, camera#shadows#point)
+                let lit = litProgramOfVariant(gl, state, camera#variant, skinned);
+                useMeshProgram(gl, lit, camera#view, camera#proj);
+                putLights(gl, lit#locs, camera#lights);
+                putShadow(gl, lit#locs, camera#shadows#spot);
+                putSunShadow(gl, lit#locs, camera#shadows#sun);
+                putPointShadow(gl, lit#locs, camera#shadows#point)
             case MaterialPass.Depth(dr) =>
-                let locs = depthLocsFor(gl, state, skinned);
-                useMeshProgram(gl, locs#mesh, camera#view, camera#proj);
-                gl.uniform3f(locs#eye, RenderUtil.f32(frame#eye#x), RenderUtil.f32(frame#eye#y), RenderUtil.f32(frame#eye#z));
-                putDepthRange(gl, locs#depthRange, dr)
+                let depth = depthProgramFor(gl, state, skinned);
+                useMeshProgram(gl, depth, camera#view, camera#proj);
+                put3f(gl, depth#locs, R3dUniform.Eye, RenderUtil.f32(frame#eye#x), RenderUtil.f32(frame#eye#y), RenderUtil.f32(frame#eye#z));
+                putDepthRange(gl, depth#locs, dr)
         }
 
-    def depthLocsFor(gl: GlContext, state: State, skinned: Bool): DepthLocs \ IO =
+    def depthProgramFor(gl: GlContext, state: State, skinned: Bool): ProgramUniforms \ IO =
         if (skinned) skinnedProgramsOf(gl, state)#depth else programsOf(gl, state)#depth
 
     // ── ビルボードの行 ──

@@ -27,7 +27,7 @@
 //   わざと壊した式（減衰の 2 乗を外す → 差 0.31・cone の内と外を入れ替える → 差 1.08）は、光の行の差が brokenAtLeast() = 1e−2 を
 //   超えることを毎回確かめる（上限が緩すぎて式の食い違いを見逃していないことの確かめ）。
 mod ExprRows {
-    use fge::{Color, GlOffscreen, LightModel3d, Mat4, Mesh3d, Render3dGlsl, Scene3d, ShaderEval, SoftRaster3d, SoftRaster3dLight, Texture3d, Vec3}
+    use fge::{Color, GlOffscreen, LightModel3d, Mat4, Mesh3d, Render3dGlsl, Render3dShaders, Scene3d, ShaderAst, ShaderEval, SoftRaster3d, SoftRaster3dLight, Texture3d, Vec3}
     use fge::GlOffscreen.{RowUniform, RowTexels, RowTexture}
     import java.util.Random
     import java.lang.{Math => JMath}
@@ -254,6 +254,14 @@ mod ExprRows {
 
     // ── GPU ──
 
+    def defaultVariant(): Scene3d.PreloadVariant = { pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false }
+
+    /// 3D の描き手の既定の変種の光の式と、それと一緒に置く定義（Render3dGlsl.lightSource の定義）。
+    def lightDefinitions(): List[ShaderAst.Definition] = Render3dShaders.lightDefinitions(defaultVariant(), Render3dShaders.featureOf(defaultVariant()))
+
+    /// metallic と roughness を持つ材質の色の定義（Render3dGlsl.metallicRoughnessSource の定義）。
+    def metallicDefinitions(): List[ShaderAst.Definition] = Render3dShaders.metallicRoughnessDefinitions(defaultVariant(), Render3dShaders.featureOf(defaultVariant()))
+
     /// 光の行の frag。uMode は modeOf（0 lightAt・1 lightmapLightAt・2 fogAt・3 skyAt。式の字は 3D の描き手と同じ Render3dGlsl の物）。
     def treeFragment(edit: String -> String): String =
         "#version 330 core\n" +
@@ -262,8 +270,7 @@ mod ExprRows {
         "uniform sampler2D uIn1;\n" +
         "uniform sampler2D uIn2;\n" +
         "uniform int uMode;\n" +
-        Render3dGlsl.colorSpaceSource() +
-        edit(Render3dGlsl.lightSource() + Render3dGlsl.lightmapLightSource()) + Render3dGlsl.skyLightSource() +
+        edit(ShaderAst.Glsl.print(lightDefinitions() ::: Render3dShaders.lightmapLightAt(defaultVariant(), Render3dShaders.spotShadow()) :: Render3dShaders.skyAt() :: Nil)) +
         "void main() {\n" +
         "    ivec2 at = ivec2(int(gl_FragCoord.x), 0);\n" +
         "    vec3 a = texelFetch(uIn0, at, 0).xyz;\n" +
@@ -277,7 +284,6 @@ mod ExprRows {
         "#version 330 core\n" +
         "out vec4 fragColor;\n" +
         "uniform sampler2D uIn0;\n" +
-        Render3dGlsl.colorSpaceSource() +
         Render3dGlsl.lightSource() +
         "void main() {\n" +
         "    fragColor = vec4(shadowLitFraction(uShadowMap, uShadowMatrix, uShadowBias, uShadowPcf, 0.0, vec3(0.0), texelFetch(uIn0, ivec2(int(gl_FragCoord.x), 0), 0).xyz), 0.0, 0.0, 1.0);\n" +
@@ -328,7 +334,6 @@ mod ExprRows {
         "uniform sampler2D uIn2;\n" +
         "uniform vec3 uTint;\n" +
         "uniform float uEmissionIntensity;\n" +
-        Render3dGlsl.colorSpaceSource() +
         Render3dGlsl.lightSource() +
         "void main() {\n" +
         "    ivec2 at = ivec2(int(gl_FragCoord.x), 0);\n" +
@@ -346,9 +351,7 @@ mod ExprRows {
         "uniform sampler2D uIn1;\n" +
         "uniform sampler2D uIn2;\n" +
         "uniform sampler2D uIn3;\n" +
-        Render3dGlsl.colorSpaceSource() +
-        Render3dGlsl.lightSource() +
-        Render3dGlsl.metallicRoughnessSource() +
+        ShaderAst.Glsl.print(lightDefinitions() ::: metallicDefinitions()) +
         "void main() {\n" +
         "    ivec2 at = ivec2(int(gl_FragCoord.x), 0);\n" +
         "    vec4 a = texelFetch(uIn0, at, 0);\n" +
@@ -365,9 +368,7 @@ mod ExprRows {
         "uniform sampler2D uIn0;\n" +
         "uniform sampler2D uIn1;\n" +
         "uniform sampler2D uIn2;\n" +
-        Render3dGlsl.colorSpaceSource() +
-        Render3dGlsl.lightSource() +
-        Render3dGlsl.metallicRoughnessSource() +
+        ShaderAst.Glsl.print(lightDefinitions() ::: metallicDefinitions()) +
         "void main() {\n" +
         "    ivec2 at = ivec2(int(gl_FragCoord.x), 0);\n" +
         "    vec4 a = texelFetch(uIn0, at, 0);\n" +
@@ -529,7 +530,6 @@ mod ExprRows {
         "uniform sampler2D uIn0;\n" +
         "uniform sampler2D uIn1;\n" +
         "uniform sampler2D uIn2;\n" +
-        Render3dGlsl.colorSpaceSource() +
         Render3dGlsl.lightSource() +
         "void main() {\n" +
         "    ivec2 at = ivec2(int(gl_FragCoord.x), 0);\n" +
@@ -545,9 +545,7 @@ mod ExprRows {
         "uniform sampler2D uIn1;\n" +
         "uniform sampler2D uIn2;\n" +
         "uniform sampler2D uIn3;\n" +
-        Render3dGlsl.colorSpaceSource() +
-        Render3dGlsl.lightSource() +
-        Render3dGlsl.metallicRoughnessSource() +
+        ShaderAst.Glsl.print(lightDefinitions() ::: metallicDefinitions()) +
         "void main() {\n" +
         "    ivec2 at = ivec2(int(gl_FragCoord.x), 0);\n" +
         "    vec4 a = texelFetch(uIn0, at, 0);\n" +
@@ -565,7 +563,6 @@ mod ExprRows {
         "uniform sampler2D uIn0;\n" +
         "uniform sampler2D uIn1;\n" +
         "uniform sampler2D uIn2;\n" +
-        Render3dGlsl.colorSpaceSource() +
         Render3dGlsl.lightSource() +
         "void main() {\n" +
         "    ivec2 at = ivec2(int(gl_FragCoord.x), 0);\n" +

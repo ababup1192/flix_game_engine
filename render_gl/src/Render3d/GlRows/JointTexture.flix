@@ -1,5 +1,5 @@
 // Render3d.GlRows.JointTexture — GL の backend の、1 回の prepare の姿勢（行の割り当てと詰め方は Render3d.PoseRows）を 1 枚の RGBA32F のテクスチャへ上げる所。
-// 1 行 = 1 姿勢・1 ジョイント = 横に 4 texel（mat4 の列の順）。頂点シェーダーは texelFetch 4 本で mat4 に組む（Render3dGlsl.skinDeclarations）。テクスチャの回し方は Render3d.GlRows.DataTexture。約束は Render3d.flix の頭。
+// 1 行 = 1 姿勢・1 ジョイント = 横に 4 texel（mat4 の列の順）。頂点シェーダーは texelFetch 4 本で mat4 に組む（Render3dGlsl.MeshVertex.skinDeclarations）。テクスチャの回し方は Render3d.GlRows.DataTexture。約束は Render3d.flix の頭。
 // WhyNot: UBO に置かない — 最低保証の 16 KB に重複の無い姿勢が入り切らず、1 体ごとに書き直すことになる。SSBO は GL 3.3 と WebGL2 に無い。
 // WhyNot: pub を外さない — 呼び手の Render3d（と偽の GL を通るテスト）は GlRows の外で、pub でない孫の mod には届かない（親の Render3d が pub でないので、ゲームからは見えない）。
 pub mod Render3d.GlRows.JointTexture {

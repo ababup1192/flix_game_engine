@@ -118,7 +118,7 @@ mod Render3d.TestPreload {
         let marks = Ref.get(state#preloadRef);
         Assert.assertEq(expected = (Map.keysOf(Render3d.MeshTable.createdOf(state#meshes)),
                                     Map.keysOf(sceneTextures(state)),
-                                    Map.valuesOf(Ref.get(state#materialsRef)) |> List.map(e -> e#locs#mesh#program) |> List.toSet),
+                                    Map.valuesOf(Ref.get(state#materialsRef)) |> List.map(e -> e#uniforms#program) |> List.toSet),
                         (marks#meshes, marks#textures, marks#programs))
 
     def cutoutCmd(): Scene3d.PreloadCmd =

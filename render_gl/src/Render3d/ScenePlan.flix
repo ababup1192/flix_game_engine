@@ -6,7 +6,8 @@ mod Render3d.ScenePlan {
     import java.util.HashMap
     import java.util.IdentityHashMap
     import java.util.Objects
-    use Render3d.{DrawMode, MeshDraw, ProgramKind, ShaderVariant, ShadowCaster, ShadowLight, ShadowPlan, defaultShaderVariant, maxShadowMapSize, maxShadowPcfRadius}
+    use Render3d.{DrawMode, MeshDraw, ShadowCaster, ShadowLight, ShadowPlan, maxShadowMapSize, maxShadowPcfRadius}
+    use Render3d.ProgramKey.{ProgramKind, ShaderVariant, defaultShaderVariant}
     use Render3d.Batch.{BatchKey, MaterialBatch, SpanBatch, batchKeyOf}
     use Render3d.PoseRows.{PoseRows, noRows, withPoseRow}
 
@@ -163,15 +164,14 @@ mod Render3d.ScenePlan {
         let uv = hasUv(d);
         { skinned = isSkinned(d), uv = uv, normalMap = Option.nonEmpty(m#normalMap) and uv, lightmap = Option.nonEmpty(Scene3d.lightmapOfFields(d#fields)),
           blend = m#blend, doubleSided = m#doubleSided, coverage = isCoverageCutout(coverage, m),
-          metallicRoughness = Option.nonEmpty(m#metallicRoughnessShade), pointShadows = variant#pointShadows, physicalUnits = variant#physicalUnits,
-          psx = variant#psx, skyIrradiance = variant#skyIrradiance }
+          metallicRoughness = Option.nonEmpty(m#metallicRoughnessShade), variant = variant }
 
-    /// プログラムの版の 12 の欄を 1 つの数にした物（Render3d.materialKey の版の部分と同じ欄）。
+    /// プログラムの版の 12 の欄を 1 つの数にした物（Render3d.ProgramKey.materialKey の版の部分と同じ欄）。
     // WhyNot: Render3d.Batch.kindBits を使わない — あちらは batch にしない版（lightmap・blend）を落とした batch の鍵で、材質の問い合わせは別のプログラムの版を分けなければいけない。
     def kindCodeOf(kind: ProgramKind): Int32 =
         let bit = (on, value) -> if (on) value else 0;
         bit(kind#skinned, 1) + bit(kind#uv, 2) + bit(kind#normalMap, 4) + bit(kind#lightmap, 8) + bit(kind#blend, 16) + bit(kind#doubleSided, 32)
-            + bit(kind#coverage, 64) + bit(kind#metallicRoughness, 128) + bit(kind#pointShadows, 256) + bit(kind#physicalUnits, 512) + bit(kind#psx, 1024) + bit(kind#skyIrradiance, 2048)
+            + bit(kind#coverage, 64) + bit(kind#metallicRoughness, 128) + Render3d.ProgramKey.kindCodeBitsOf(kind#variant)
 
     // ── 候補に分ける ──
 
@@ -236,7 +236,7 @@ mod Render3d.ScenePlan {
     pub def startCarried(planner: Planner, coverage: Bool, scene: Scene3d.Scene3dCmd, items: List[Scene3d.Instance3d]): CarriedGrouping \ IO =
         let tables = freshTables();
         let spec = passSpecOf(scene#output);
-        let variant = Render3d.passVariantOf(scene);
+        let variant = Render3d.ProgramKey.passVariantOf(scene);
         let placed = List.toArray(Static, items);
         let shadow = match spec {
             case ScenePassSpec.Color       => Some(placeWorkOf(grouping(planner, tables, _ -> false, _ -> false, false, variant), placed))
@@ -313,7 +313,7 @@ mod Render3d.ScenePlan {
         let outside = Scene3d.isOutsideFrustum(Scene3d.frustumOf(scene));
         let coverage = coverageOf(caps, samples, scene);
         let mainPass = passSpecOf(scene#output);
-        let variant = Render3d.passVariantOf(scene);
+        let variant = Render3d.ProgramKey.passVariantOf(scene);
         let groups = match mainPass {
             case ScenePassSpec.Color => groupWith(grouping(planner, tables, outside, materialWantedIn(mainPass), coverage, variant), drawn)
             case ScenePassSpec.DepthOut(_) =>

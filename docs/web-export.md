@@ -113,7 +113,7 @@ project.json の `web`（`keysDoc`・`virtualPad: { dpad: true, buttons: [{label
 
 - View は `ctx#display#sizeClass == Display.SizeClass.Small`（`ViewCtx#display` に画面の大きさ・`designScale`・最後の pointer も）
 - 当たりを取る系は同じ並べ方を `frame#sizeClass` から引く（World の結果を区分で変えない）
-- 大きさは Doc に出す（手本 sound-novel-starter の `novel.small.json`・`Layout.Fit`）
+- 大きさは Doc に出す（手本 sound-novel-starter の `novel.small.json`・その src/Layout.flix の Fit）
 - PC から確かめるのは、描き出しの ctx を `{ display = { sizeClass = Display.SizeClass.Small | ctx#display } | ctx }` にするか、ブラウザ版の頁を `?fge=small,touch` で開く
 
 ## 縦の画面で起動する（`web.portraitDesign`）

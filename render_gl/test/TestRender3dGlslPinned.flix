@@ -15,23 +15,23 @@ mod Render3d.TestGlslPinned {
 
     def mipGlsl(): ShaderGen.MaterialGlsl =
         { uniforms = "uniform float uTime;\n", functions = "vec4 sg_texMip(sampler2D t, float f, float l, vec2 uv) { return vec4(0.0); }\nvoid materialEval(out vec4 albedo, out vec3 emission) {}\n",
-          paramNames = Nil, texReads = Nil, cutoutAlpha = "albedo.a" }
+          paramNames = Nil, texReads = ("t", ShaderDoc.FilterMode.Linear) :: Nil, cutoutAlpha = "albedo.a" }
 
     def fragments(glsl: ShaderGen.MaterialGlsl): List[String] =
         ((false, false) :: (false, true) :: (true, false) :: (true, true) :: Nil)
-            |> List.map(k -> { let (uv, nm) = k; sha256(Render3dGlsl.materialFragmentSource(glsl, { skinned = false, uv = uv, normalMap = nm, lightmap = false, blend = false, doubleSided = false, coverage = false, metallicRoughness = false, pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false })) })
+            |> List.map(k -> { let (uv, nm) = k; sha256(Render3dGlsl.materialFragmentSource(glsl, { skinned = false, uv = uv, normalMap = nm, lightmap = false, blend = false, doubleSided = false, coverage = false, metallicRoughness = false, variant = { pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false } })) })
 
     @Test
     def testLightSourceIsUnchanged(): Unit \ Assert =
-        Assert.assertEq(expected = "6497ac6aab7e6049298484a7385ca2ecb37b87964787e9fd207a9a29da5ca494", sha256(Render3dGlsl.lightSource()))
+        Assert.assertEq(expected = "edaff50c79ef454616f14e6c9044f8002911b7742f26f9ddc285aaf462acde27", sha256(Render3dGlsl.lightSource()))
 
     @Test
     def testSolidMaterialFragmentsAreUnchanged(): Unit \ Assert =
-        Assert.assertEq(expected = "fb8fcd8db697260ecf3630f872e54ecf9e0fcc813f30e09069cd2feab22b845e" :: "fb8fcd8db697260ecf3630f872e54ecf9e0fcc813f30e09069cd2feab22b845e" :: "4ea39b66f3de36fec0e91f48ed30f51c89d296ab2ee54f4aed3c1007031def06" :: "bb9210c710f5f6ae0fc29f1d44b63bfd1e9114639267a547063182b6301a0e9f" :: Nil, fragments(solidGlsl()))
+        Assert.assertEq(expected = "e6363aa3861f102b7c2f805e3efeb72bde52a11943f6a60a026cce76400540be" :: "e6363aa3861f102b7c2f805e3efeb72bde52a11943f6a60a026cce76400540be" :: "5071b783b34ba59ebd48aaf429a96f04849a7571613104a8fb765c3f57cb1ce1" :: "0a2e49f31d19a9d84d56b75cc855086294b69a2251df6a346a7374940008a054" :: Nil, fragments(solidGlsl()))
 
     @Test
     def testMipMaterialFragmentsAreUnchanged(): Unit \ Assert =
-        Assert.assertEq(expected = "e75dbbf12b5b537493a8d5cd3108dc0b793af11fc0283d803c48a9c5c1f6b5a7" :: "e75dbbf12b5b537493a8d5cd3108dc0b793af11fc0283d803c48a9c5c1f6b5a7" :: "8432532598b2f303f8599c62cfa35e703be3e595ca7e812600a418f5c4e026bd" :: "8a06d5f2956acc4a277cb3bef61d1a7b131c7ed70fabb26aa0cdc8e38ef37009" :: Nil, fragments(mipGlsl()))
+        Assert.assertEq(expected = "b5f9a828836e6b6904fd4840d3f2740991fa924adbb47acb04557787fc514b13" :: "b5f9a828836e6b6904fd4840d3f2740991fa924adbb47acb04557787fc514b13" :: "8d3daa3ec0a26f2e352605aa5560509da48eb20dab309c2de07e747bc745951f" :: "4a791d4cda15ae37c84b4d80725737f27b15a9f248216e509e49ed57f121374f" :: Nil, fragments(mipGlsl()))
 
     @Test
     def testMaterialVertexSourcesAreUnchanged(): Unit \ Assert =
@@ -50,7 +50,7 @@ mod Render3d.TestGlslPinned {
     /// 材質が sg_texMip を持つ時も、法線マップと lightmap の版で sg_texMip の定義は 1 回だけ。
     @Test
     def testTexMipOnceWhenTheMaterialHasIt(): Unit \ Assert =
-        Assert.assertEq(expected = 1, count("vec4 sg_texMip(", Render3dGlsl.materialFragmentSource(mipGlsl(), { skinned = false, uv = true, normalMap = true, lightmap = true, blend = false, doubleSided = false, coverage = false, metallicRoughness = false, pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false })))
+        Assert.assertEq(expected = 1, count("vec4 sg_texMip(", Render3dGlsl.materialFragmentSource(mipGlsl(), { skinned = false, uv = true, normalMap = true, lightmap = true, blend = false, doubleSided = false, coverage = false, metallicRoughness = false, variant = { pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false } })))
 
     /// uv の無い形の lightmap の版の頂点シェーダーも、location 7 の 2 本目の uv を vUv2 へ渡す。
     @Test
@@ -62,13 +62,13 @@ mod Render3d.TestGlslPinned {
     @Test
     def testLightmapKeyDiffers(): Unit \ Assert =
         let m = Scene3d.materialFieldsOf(Scene3d.texturedMaterial("t", ShaderDoc.FilterMode.Linear));
-        Assert.assertFalse(Render3d.materialKey(m, { skinned = false, uv = true, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false, metallicRoughness = false, pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false })
-                           == Render3d.materialKey(m, { skinned = false, uv = true, normalMap = false, lightmap = true, blend = false, doubleSided = false, coverage = false, metallicRoughness = false, pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false }))
+        Assert.assertFalse(Render3d.ProgramKey.materialKey(m, { skinned = false, uv = true, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false, metallicRoughness = false, variant = { pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false } })
+                           == Render3d.ProgramKey.materialKey(m, { skinned = false, uv = true, normalMap = false, lightmap = true, blend = false, doubleSided = false, coverage = false, metallicRoughness = false, variant = { pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false } }))
 
     /// lightmap の GLSL の sRGB の式は、Texture3d の 1 か所の関数から組まれる。
     @Test
     def testSrgbGlslComesFromTexture3d(): Unit \ Assert =
-        let source = Render3dGlsl.materialFragmentSource(solidGlsl(), { skinned = false, uv = false, normalMap = false, lightmap = true, blend = false, doubleSided = false, coverage = false, metallicRoughness = false, pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false });
+        let source = Render3dGlsl.materialFragmentSource(solidGlsl(), { skinned = false, uv = false, normalMap = false, lightmap = true, blend = false, doubleSided = false, coverage = false, metallicRoughness = false, variant = { pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false } });
         Assert.assertEq(expected = (1, 1),
             (count(Texture3d.srgbToLinearGlsl("r3d_srgbToLinear"), source), count(Texture3d.linearToSrgbGlsl("r3d_linearToSrgb"), source)))
 
@@ -77,7 +77,7 @@ mod Render3d.TestGlslPinned {
     /// lit・材質・ビルボード・空の frag は色の変換の部品（r3d_srgbToLinear3 の定義）を 1 回だけ持つ。
     @Test
     def testFragmentsDeclareColorSpaceOnce(): Unit \ Assert =
-        let material = Render3dGlsl.materialFragmentSource(mipGlsl(), { skinned = false, uv = true, normalMap = true, lightmap = true, blend = false, doubleSided = false, coverage = false, metallicRoughness = false, pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false });
+        let material = Render3dGlsl.materialFragmentSource(mipGlsl(), { skinned = false, uv = true, normalMap = true, lightmap = true, blend = false, doubleSided = false, coverage = false, metallicRoughness = false, variant = { pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false } });
         Assert.assertEq(expected = 1 :: 1 :: 1 :: 1 :: Nil,
             (Render3dGlsl.litFragmentSource() :: material :: Render3dGlsl.billboardFragmentSource() :: Render3dGlsl.skyFragmentSource() :: Nil)
                 |> List.map(count("vec3 r3d_srgbToLinear3(vec3 c)")))
@@ -85,7 +85,7 @@ mod Render3d.TestGlslPinned {
     /// lightmap の版の材質の frag でも、vec3 の変換の関数は 1 回だけ定義される。
     @Test
     def testVec3ConversionDefinedOnce(): Unit \ Assert =
-        let source = Render3dGlsl.materialFragmentSource(mipGlsl(), { skinned = false, uv = true, normalMap = true, lightmap = true, blend = false, doubleSided = false, coverage = false, metallicRoughness = false, pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false });
+        let source = Render3dGlsl.materialFragmentSource(mipGlsl(), { skinned = false, uv = true, normalMap = true, lightmap = true, blend = false, doubleSided = false, coverage = false, metallicRoughness = false, variant = { pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false } });
         Assert.assertEq(expected = (1, 1), (count("vec3 r3d_srgbToLinear3(vec3 c)", source), count("vec3 r3d_linearToSrgb3(vec3 c)", source)))
 
     /// 頂点の色を線形へ戻すのは lit の頂点シェーダー（骨なし・骨つき）だけ。

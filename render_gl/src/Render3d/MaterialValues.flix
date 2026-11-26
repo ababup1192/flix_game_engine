@@ -8,7 +8,8 @@
 // WhyNot: 区画を 256 バイトにそろえずに詰めない — WebGPU は uniform の binding を 256 バイト（core の minUniformBufferOffsetAlignment の上限）の倍数の位置でしか付けられない（2D の面の values と同じ・12.22）。
 // WhyNot: 値の並びを backend が材質の program を組んだ時に決めない — 計画が backend に聞かずに書け、GL と WebGPU が同じ値を読む（並びは ShaderGen が決め、ここは同じ数え方で写す）。
 mod Render3d.MaterialValues {
-    use Render3d.{ProgramKind, TextureSource}
+    use Render3d.{TextureSource}
+    use Render3d.ProgramKey.{ProgramKind}
     use Render3d.Batch.{MaterialBatch, MeshBatch}
     use Render3d.TextureTable3d
 
