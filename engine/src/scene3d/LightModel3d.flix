@@ -385,7 +385,7 @@ pub mod LightModel3d {
     pub def environmentUvOf(d: Vec3.Vec3): (Float64, Float64) =
         (0.5 + Num.atan2(d#x, 0.0 - d#z) / (2.0 * pi()), 0.5 - Num.asin(Float64.max(-1.0, Float64.min(1.0, d#y))) / pi())
 
-    /// 環境マップを読む段（roughness × 最後の段。levels = 段の数）。GLSL は Render3dGlsl.environmentSource が同じ式を書く。
+    /// 環境マップを読む段（roughness × 最後の段。levels = 段の数）。GPU は Render3dShaders.environmentColorAt が同じ式を木で書く。
     pub def environmentLodOf(roughness: Float64, levels: Int32): Float64 =
         roughness * Int32.toFloat64(Int32.max(1, levels) - 1)
 

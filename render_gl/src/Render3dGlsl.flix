@@ -1,24 +1,18 @@
-// Render3dGlsl — 3D の描き手（Render3d）のシェーダーの字。座標と式の約束は Render3d.flix の頭。
+// Render3dGlsl — 3D の描き手（Render3d）の GL のシェーダーの字の入口。座標と式の約束は Render3d.flix の頭。
 //
-// 光・かすみ・空の式は LightModel3d の木から LightModel3d.Codegen.toGlsl で作る（CPU の描き手は同じ木から生成した SoftRaster3dLight を回す）。
-// 光の uniform を光ごとに引く式（点光源・スポットの配列の [i]）は、このファイルと字を作る LightModel3d.Codegen の外に書かない（bin/lint-rules/forbid.json が止める）。
-// 木の外に残る GLSL（影の地図の PCF・法線マップの TBN・lightmap の段つきの読み・色を作る最後の組み立て r3d_surfaceOut）は、
-// gl-parity の式の行が CPU の描き手と同じ値になることを確かめる。
+// frag・ビルボード・空・blit と、光・かすみ・影・色の空間の関数は Render3dShaders の木から ShaderAst.Glsl で出す（WGSL は同じ木から Render3dWgsl）。
+// 入口が辿る定義と uniform・varying の宣言は ShaderAst が木から集める。置いた物の頂点シェーダーだけは Render3dGlsl.MeshVertex の手書きの字。
+// 式が CPU の描き手（SoftRaster3d）と同じ値になることは gl-parity の式の行が確かめる。
+// 光の uniform を光ごとに引く式（点光源・スポットの配列の [i]）は、LightModel3d.Codegen の外に書かない（bin/lint-rules/forbid.json が止める）。
 // 3D の色（Scene3d の頭の「3D の色」）: 光の color・ambient・かすみ・空・tint は描き手が線形の量へ戻して uniform に入れ、
 // 頂点の色は lit の頂点シェーダーで、材質の albedo.rgb・emission とビルボードの絵は frag で線形へ戻し、色を作った直後に 1 回だけ画面の値へ戻す。
 // WhyNot: 描き先を GL_SRGB8_ALPHA8 にして GL_FRAMEBUFFER_SRGB で戻さない — 2D の Pass が描き先を sRGB の絵として線形へ戻して読み、2D の絵が変わる。
 // WhyNot: 3D を別の float の描き先へ描いて貼る時に戻さない — 背景の無い場面の縁は 2D の上で結局画面の値で混ざり、場面ごとに描き先と貼り直しが増える。
 //   半透明の混ぜと MSAA の平均は戻した後の画面の値どうし。
 pub mod Render3dGlsl {
-    use Render3d.Uniforms.R3dUniform
 
     /// 置いた物の頂点シェーダー（深度だけのプログラム・uv の無い材質のプログラムで共有。頂点の色は値のまま渡す）。
-    pub def meshVertexSource(): String = meshVertexSourceFor(false)
-
-    /// psx（PS1 風の変種 +psx）なら頂点を丸める版の meshVertexSource。
-    def meshVertexSourceFor(psx: Bool): String =
-        meshVertexSourceOf({ declarations = "", prelude = "", position = "vec4(aPos, 1.0)", normal = "aNormal", tangent = None, uv2 = false,
-                             vertexColorToLinear = false, psx = psx })
+    pub def meshVertexSource(): String = Render3dGlsl.MeshVertex.meshSource(false)
 
     /// 頂点の色のプログラム（lit）の頂点シェーダー。頂点の色を線形の量へ戻してから渡す（三角形の中は線形の量でつなぐ）。
     /// skinned なら骨つきの版。
@@ -26,29 +20,12 @@ pub mod Render3dGlsl {
     pub def litVertexSource(skinned: Bool): String = litVertexSourceFor(skinned, Render3d.ProgramKey.defaultShaderVariant())
 
     /// 変種 v の litVertexSource（v#psx なら頂点を丸める）。
-    pub def litVertexSourceFor(skinned: Bool, v: Render3d.ProgramKey.ShaderVariant): String =
-        if (skinned)
-            meshVertexSourceOf({ declarations = skinDeclarations() + colorSpaceSource(), prelude = skinPrelude(), position = "skin * vec4(aPos, 1.0)",
-                                 normal = "mat3(skin) * aNormal", tangent = None, uv2 = false, vertexColorToLinear = true, psx = v#psx })
-        else
-            meshVertexSourceOf({ declarations = colorSpaceSource(), prelude = "", position = "vec4(aPos, 1.0)", normal = "aNormal",
-                                 tangent = None, uv2 = false, vertexColorToLinear = true, psx = v#psx })
+    pub def litVertexSourceFor(skinned: Bool, v: Render3d.ProgramKey.ShaderVariant): String = Render3dGlsl.MeshVertex.litSource(skinned, v#psx)
 
     /// 骨つきの版: 位置と法線を joint 行列の重みつきの和（Pose3d.jointMatrices の並び）で曲げてから model を掛ける。
     // WhyNot: 法線を skin の逆行列の転置で曲げない — 左上 3×3 のままだと倍率が軸ごとに違うジョイントで少し傾くが、
     //   CPU の描き手も同じ式なので GL と CPU の絵は一致する。その差は許す。
-    pub def skinnedMeshVertexSource(): String = skinnedMeshVertexSourceFor(false)
-
-    def skinnedMeshVertexSourceFor(psx: Bool): String =
-        meshVertexSourceOf({
-            declarations = skinDeclarations(),
-            prelude = skinPrelude(),
-            position = "skin * vec4(aPos, 1.0)",
-            normal = "mat3(skin) * aNormal",
-            tangent = None,
-            uv2 = false,
-            vertexColorToLinear = false,
-            psx = psx })
+    pub def skinnedMeshVertexSource(): String = Render3dGlsl.MeshVertex.skinnedSource(false)
 
     /// 材質のプログラムの頂点シェーダー。uv の無い形は頂点の色のプログラムと同じ物・uv つきは vUv と vTangent も出す・
     /// lightmap つき（骨の無い版だけ）は 2 本目の uv の vUv2 も出す。骨つきの版は lightmap を読まない（Scene3d.lightmapOf が None）。
@@ -57,51 +34,7 @@ pub mod Render3dGlsl {
     /// psx（PS1 風の変種 +psx）なら頂点を丸め、uv つきの版は遠近で補正する uv（vUvPerspective）と画面の上でまっすぐつなぐ uv（vUvAffine）の 2 本を出す版の
     /// materialVertexSource（materialFragmentSource が uPsx.w で混ぜる）。
     pub def materialVertexSourceFor(kind: { skinned = Bool, uv = Bool, lightmap = Bool }, psx: Bool): String =
-        match (kind#skinned, kind#uv, kind#lightmap) {
-            case (false, false, false) => meshVertexSourceFor(psx)
-            case (true, false, _)      => skinnedMeshVertexSourceFor(psx)
-            case (false, false, true)  =>
-                meshVertexSourceOf({ declarations = uv2Declarations(), prelude = "", position = "vec4(aPos, 1.0)", normal = "aNormal",
-                                     tangent = None, uv2 = true, vertexColorToLinear = false, psx = psx })
-            case (false, true, lm)     =>
-                meshVertexSourceOf({ declarations = surfaceDeclarations(psx) + (if (lm) uv2Declarations() else ""), prelude = "",
-                                     position = "vec4(aPos, 1.0)", normal = "aNormal", tangent = Some("aTangent.xyz"), uv2 = lm,
-                                     vertexColorToLinear = false, psx = psx })
-            case (true, true, _)       =>
-                meshVertexSourceOf({ declarations = skinDeclarations() + surfaceDeclarations(psx), prelude = skinPrelude(),
-                                     position = "skin * vec4(aPos, 1.0)", normal = "mat3(skin) * aNormal",
-                                     tangent = Some("mat3(skin) * aTangent.xyz"), uv2 = false, vertexColorToLinear = false, psx = psx })
-        }
-
-    def uv2Declarations(): String =
-        "layout (location = 7) in vec2 aUv2;\n" +
-        "out vec2 vUv2;\n"
-
-    def skinDeclarations(): String =
-        "layout (location = 3) in ivec4 aJoints;\n" +
-        "layout (location = 4) in vec4 aWeights;\n" +
-        Render3d.Uniforms.glslDeclarations(R3dUniform.JointTexture :: Nil) +
-        "mat4 jointMatrix(int row, int joint) {\n" +
-        "    int x = joint * 4;\n" +
-        "    return mat4(texelFetch(uJointTexture, ivec2(x, row), 0), texelFetch(uJointTexture, ivec2(x + 1, row), 0),\n" +
-        "                texelFetch(uJointTexture, ivec2(x + 2, row), 0), texelFetch(uJointTexture, ivec2(x + 3, row), 0));\n" +
-        "}\n"
-
-    def skinPrelude(): String =
-        "    int poseRow = int(instanceNormal1.w);\n" +
-        "    mat4 skin = aWeights.x * jointMatrix(poseRow, aJoints.x) + aWeights.y * jointMatrix(poseRow, aJoints.y)\n" +
-        "              + aWeights.z * jointMatrix(poseRow, aJoints.z) + aWeights.w * jointMatrix(poseRow, aJoints.w);\n"
-
-    def surfaceDeclarations(psx: Bool): String =
-        "layout (location = 5) in vec2 aUv;\n" +
-        "layout (location = 6) in vec4 aTangent;\n" +
-        (if (psx) "out vec2 vUvPerspective;\nout vec3 vUvAffine;\n" else "out vec2 vUv;\n") +
-        "out vec4 vTangent;\n"
-
-    /// PS1 風の変種の頂点を丸める式 r3d_vertexSnap(clip の位置)（CPU の描き手は SoftRaster3d.Psx.snapVertex）。uPsxTarget.zw = 場面の描き先の幅と高さ（画素）・
-    /// uVertexSnap = 格子の大きさ（画素。0 で丸めない）。x・y を描き先の左上を 0 とする画素へ写して格子の一番近い点へ丸め、clip へ戻す（z と w は変えない）。
-    // WhyNot: w が 0 以下（目の後ろ）の頂点を丸めない — 画素へ写せず、GPU が手前の面で切る前の形を壊す。
-    def vertexSnapSource(): String = ShaderAst.Glsl.print(Render3dShaders.vertexSnap() :: Nil)
+        Render3dGlsl.MeshVertex.materialSource(kind, psx)
 
     /// 頂点シェーダーへ数を渡すテクスチャの幅（texel）。
     pub def dataTextureWidth(): Int32 = Skin3d.maxJoints() * 4
@@ -111,71 +44,6 @@ pub mod Render3dGlsl {
 
     /// 1 体ごとの値のテクスチャの 1 行の体の数（dataTextureWidth は texelsPerInstance で割り切れる）。
     pub def instancesPerRow(): Int32 = dataTextureWidth() / texelsPerInstance()
-
-    /// 1 体ごとの値のテクスチャの宣言（並びは Render3d.InstanceValues の頭）。
-    def instanceDeclarations(): String =
-        Render3d.Uniforms.glslDeclarations(R3dUniform.InstanceTexture :: R3dUniform.InstanceBase :: Nil) +
-        "flat out vec3 vTint;\n" +
-        "flat out float vEmissionIntensity;\n"
-
-    /// main の頭: 1 体ごとの値を読む。model = world の行列・normalMatrix = 法線の行列。
-    def instancePrelude(): String =
-        let texel = (i: Int32) -> "texelFetch(uInstanceTexture, instanceAt + ivec2(${i}, 0), 0)";
-        "    int instanceIndex = uInstanceBase + gl_InstanceID;\n" +
-        "    ivec2 instanceAt = ivec2((instanceIndex % ${instancesPerRow()}) * ${texelsPerInstance()}, instanceIndex / ${instancesPerRow()});\n" +
-        "    mat4 model = mat4(${texel(0)}, ${texel(1)},\n" +
-        "                      ${texel(2)}, ${texel(3)});\n" +
-        "    vec4 instanceNormal0 = ${texel(4)};\n" +
-        "    vec4 instanceNormal1 = ${texel(5)};\n" +
-        "    vec4 instanceNormal2 = ${texel(6)};\n" +
-        "    mat4 normalMatrix = mat4(vec4(instanceNormal0.xyz, 0.0), vec4(instanceNormal1.xyz, 0.0), vec4(instanceNormal2.xyz, 0.0), vec4(0.0, 0.0, 0.0, 1.0));\n" +
-        "    vTint = ${texel(7)}.rgb;\n" +
-        "    vEmissionIntensity = instanceNormal0.w;\n"
-
-    /// 置いた物の頂点シェーダーの組み立て。declarations = 足す属性と uniform・prelude = main の頭・
-    /// position = model を掛ける前の形の座標（vec4）・normal = normalMatrix を掛ける前の法線（vec3）・
-    /// tangent = model の左上 3×3 を掛ける前のタンジェントの xyz（vec3。uv の無い形は None で vUv・vTangent を出さない）。
-    /// タンジェントの w には model の左上 3×3 の行列式の符号を掛ける（鏡写しの置き方で絵の上の向きを保つ）。
-    /// vertexColorToLinear = 頂点の色を r3d_srgbToLinear3 に通すか（declarations に colorSpaceSource() を入れる）。
-    // WhyNot: タンジェントを normalMatrix で写さない — 法線の行列は面に垂直な向きを保つための物で、面の上の向きは model のまま写る。
-    def meshVertexSourceOf(parts: { declarations = String, prelude = String, position = String, normal = String,
-                                    tangent = Option[String], uv2 = Bool, vertexColorToLinear = Bool, psx = Bool }): String =
-        // WhyNot: 画面の上でまっすぐつなぐ uv を noperspective で出さない — GLSL ES 3.00（WebGL2）には無い語で、スマホの GL ES の上の ANGLE ではコンパイルが落ちる。
-        // uv と w を掛けて遠近で補正する普通の varying で送り、フラグメントで w で割り戻すと同じ値になる（gl_Position が決まった後に書く）。
-        let affineUv = match parts#tangent {
-            case Some(_) if parts#psx => "    vUvAffine = vec3(aUv * gl_Position.w, gl_Position.w);\n"
-            case _                    => ""
-        };
-        let surfaceBody = match parts#tangent {
-            case None    => ""
-            case Some(t) =>
-                (if (parts#psx) "    vUvPerspective = aUv;\n" else "    vUv = aUv;\n") +
-                "    mat3 modelLinear = mat3(model);\n" +
-                "    vTangent = vec4(modelLinear * (" + t + "), aTangent.w * sign(determinant(modelLinear)));\n"
-        };
-        "#version 330 core\n" +
-        "layout (location = 0) in vec3 aPos;\n" +
-        "layout (location = 1) in vec3 aNormal;\n" +
-        "layout (location = 2) in vec3 aColor;\n" +
-        parts#declarations +
-        (if (parts#psx) vertexSnapSource() else "") +
-        instanceDeclarations() +
-        Render3d.Uniforms.glslDeclarations(R3dUniform.View :: R3dUniform.Proj :: Nil) +
-        "out vec3 vWorld;\n" +
-        "out vec3 vNormal;\n" +
-        "out vec3 vColor;\n" +
-        "void main() {\n" +
-        instancePrelude() +
-        parts#prelude +
-        "    vec4 world = model * " + parts#position + ";\n" +
-        "    vWorld = world.xyz;\n" +
-        "    vNormal = (normalMatrix * vec4(" + parts#normal + ", 0.0)).xyz;\n" +
-        (if (parts#vertexColorToLinear) "    vColor = r3d_srgbToLinear3(aColor);\n" else "    vColor = aColor;\n") +
-        surfaceBody +
-        (if (parts#uv2) "    vUv2 = aUv2;\n" else "") +
-        (if (parts#psx) "    gl_Position = r3d_vertexSnap(uProj * uView * world);\n" else "    gl_Position = uProj * uView * world;\n") +
-        affineUv +
-        "}\n"
 
     /// 光の uniform と、光の式（lightAt）・かすみ（fogged）・影・色を作る最後の組み立て。式は LightModel3d の木から作る（CPU の描き手と同じ木）。
     pub def lightSource(): String = lightSourceFor(Render3d.ProgramKey.defaultShaderVariant())

@@ -2,7 +2,7 @@
 // ゲームからは呼ばない。
 
 /// 環境マップの読み。式は LightModel3d の頭の説明（向きは LightModel3d.environmentDirection の木から作る SoftRaster3dLight.environmentDirectionAt）。
-/// GL の Render3dGlsl.environmentSource と同じ式・同じ段・同じ補間で読む。
+/// GL の Render3dShaders.environmentColorAt と同じ式・同じ段・同じ補間で読む。
 pub mod SoftRaster3d.Internal {
 
     /// 絵の段の列。Srgb = 8bit の sRGB の絵の段（読んだ値を線形の量へ戻す）・Linear = half の絵の段（線形の量のまま・1 を超える）。

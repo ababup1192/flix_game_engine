@@ -1,4 +1,4 @@
-<!-- engine v0.116.0 / 生成: 2026-11-26 -->
+<!-- engine v0.116.0 / 生成: 2026-11-27 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine
@@ -734,7 +734,7 @@
   `pub def environmentDirection(): Vec3Expr`
 - 向き d（長さ 1）で環境マップ（正距円筒）を読む座標。u = 0.5 + atan2(d.x, −d.z) / 2π・v = 0.5 − asin(d.y) / π（v = 0 が絵の上 = 真上）。
   `pub def environmentUvOf(d: Vec3.Vec3): (Float64, Float64)`
-- 環境マップを読む段（roughness × 最後の段。levels = 段の数）。GLSL は Render3dGlsl.environmentSource が同じ式を書く。
+- 環境マップを読む段（roughness × 最後の段。levels = 段の数）。GPU は Render3dShaders.environmentColorAt が同じ式を木で書く。
   `pub def environmentLodOf(roughness: Float64, levels: Int32): Float64`
 - 映り込みに使う空の 3 色（線形の量）と curve。場面に空があればその空・無ければ ambient + hemisphere の色（真っ黒にしない）。
   `pub def reflectionSkyOf(scene: Scene3d.Scene3dCmd): { zenith = Color, horizon = Color, ground = Color, curve = Float64 }`
@@ -760,7 +760,7 @@
   `pub def toWgsl(name: String, perPixel: List[Vec3Input], e: Vec3Expr): String`
 
 ## LightModel3d.PointShadowCodegen — `engine/src/scene3d/LightModel3d/PointShadowCodegen.flix`
-- GLSL の float r3d_pointShadowLit(int i, vec3 p, vec3 g, vec3 n)（uniform は Render3dGlsl.pointShadowSource が宣言する）。
+- GLSL の float r3d_pointShadowLit(int i, vec3 p, vec3 g, vec3 n)（uniform の宣言は ShaderAst が読んだ handle から出す）。
   `pub def toGlsl(): String`
 - WGSL の fn r3d_pointShadowLit(i, p, g, n) -> f32（場面の値は r3d と r3dLight の欄。atlas の行は読む時だけ高さ − 1 − 行 に返す）。
   `pub def toWgsl(): String`

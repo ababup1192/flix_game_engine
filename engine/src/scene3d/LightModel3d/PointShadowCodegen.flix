@@ -296,7 +296,7 @@ pub mod LightModel3d.PointShadowCodegen {
     // GLSL・WGSL の出口
     // ════════════════════════════════════════════════════════
 
-    /// GLSL の float r3d_pointShadowLit(int i, vec3 p, vec3 g, vec3 n)（uniform は Render3dGlsl.pointShadowSource が宣言する）。
+    /// GLSL の float r3d_pointShadowLit(int i, vec3 p, vec3 g, vec3 n)（uniform の宣言は ShaderAst が読んだ handle から出す）。
     pub def toGlsl(): String =
         "float r3d_pointShadowLit(int i, vec3 p, vec3 g, vec3 n) {\n" +
         "    vec4 shadowed = uPointShadow[i];\n" +

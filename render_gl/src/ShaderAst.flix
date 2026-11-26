@@ -463,21 +463,14 @@ pub mod ShaderAst {
 
     /// float のベクトルと f32 の四則（a1 の型のまま）。
     pub def addS(a1: Expr[t], s: Expr[Float]): Expr[t] with FloatLike[t] = bin(BinOp.Add, nodeOf(a1), nodeOf(s), tyOf(a1))
-    pub def subS(a1: Expr[t], s: Expr[Float]): Expr[t] with FloatLike[t] = bin(BinOp.Sub, nodeOf(a1), nodeOf(s), tyOf(a1))
     pub def mulS(a1: Expr[t], s: Expr[Float]): Expr[t] with FloatLike[t] = bin(BinOp.Mul, nodeOf(a1), nodeOf(s), tyOf(a1))
     pub def divS(a1: Expr[t], s: Expr[Float]): Expr[t] with FloatLike[t] = bin(BinOp.Div, nodeOf(a1), nodeOf(s), tyOf(a1))
 
-    /// f32 と float のベクトルの積・差（f32 が左）。
-    pub def sMul(s: Expr[Float], a1: Expr[t]): Expr[t] with FloatLike[t] = bin(BinOp.Mul, nodeOf(s), nodeOf(a1), tyOf(a1))
-    pub def sSub(s: Expr[Float], a1: Expr[t]): Expr[t] with FloatLike[t] = bin(BinOp.Sub, nodeOf(s), nodeOf(a1), tyOf(a1))
-
     /// 行列 × ベクトル・行列 × 行列。
     pub def mulMV(m: Expr[Mat4], v: Expr[Vec4]): Expr[Vec4] = bin(BinOp.Mul, nodeOf(m), nodeOf(v), Ty.Vec4)
-    pub def mulM3V(m: Expr[Mat3], v: Expr[Vec3]): Expr[Vec3] = bin(BinOp.Mul, nodeOf(m), nodeOf(v), Ty.Vec3)
     pub def mulMM(a1: Expr[Mat4], b1: Expr[Mat4]): Expr[Mat4] = bin(BinOp.Mul, nodeOf(a1), nodeOf(b1), Ty.Mat4)
 
-    /// 整数の余り・ビットの積。
-    pub def modulo(a1: Expr[Int], b1: Expr[Int]): Expr[Int] = bin(BinOp.Mod, nodeOf(a1), nodeOf(b1), Ty.I32)
+    /// ビットの積。
     pub def bitAnd(a1: Expr[Int], b1: Expr[Int]): Expr[Int] = bin(BinOp.BitAnd, nodeOf(a1), nodeOf(b1), Ty.I32)
 
     /// スカラーの比べ。
@@ -488,10 +481,9 @@ pub mod ShaderAst {
     pub def eq(a1: Expr[t], b1: Expr[t]): Expr[Boolean] with Scalar[t] = bin(BinOp.EqOp, nodeOf(a1), nodeOf(b1), Ty.Bool)
     pub def ne(a1: Expr[t], b1: Expr[t]): Expr[Boolean] with Scalar[t] = bin(BinOp.Ne, nodeOf(a1), nodeOf(b1), Ty.Bool)
 
-    /// 論理の積・和・否定。
+    /// 論理の積・和。
     pub def and_(a1: Expr[Boolean], b1: Expr[Boolean]): Expr[Boolean] = bin(BinOp.And, nodeOf(a1), nodeOf(b1), Ty.Bool)
     pub def or_(a1: Expr[Boolean], b1: Expr[Boolean]): Expr[Boolean] = bin(BinOp.Or, nodeOf(a1), nodeOf(b1), Ty.Bool)
-    pub def not_(a1: Expr[Boolean]): Expr[Boolean] = wrap(Node.Not(nodeOf(a1)))
 
     /// 符号を返す。
     pub def neg(a1: Expr[t]): Expr[t] with Numeric[t] = wrap(Node.Neg(nodeOf(a1), tyOf(a1)))
@@ -572,7 +564,6 @@ pub mod ShaderAst {
     pub def abs(a1: Expr[t]): Expr[t] with FloatLike[t] = same1(BuiltinFn.Abs, nodeOf(a1))
     pub def normalize(a1: Expr[t]): Expr[t] with FloatVector[t] = same1(BuiltinFn.Normalize, nodeOf(a1))
     pub def asin(a1: Expr[Float]): Expr[Float] = same1(BuiltinFn.Asin, nodeOf(a1))
-    pub def sign(a1: Expr[Float]): Expr[Float] = same1(BuiltinFn.Sign, nodeOf(a1))
     pub def fwidth(a1: Expr[t]): Expr[t] with FloatLike[t] = same1(BuiltinFn.Fwidth, nodeOf(a1))
     pub def length(a1: Expr[t]): Expr[Float] with FloatVector[t] = builtin(BuiltinFn.Length, nodeOf(a1) :: Nil, Ty.F32)
     pub def dot(a1: Expr[t], b1: Expr[t]): Expr[Float] with FloatVector[t] = builtin(BuiltinFn.Dot, nodeOf(a1) :: nodeOf(b1) :: Nil, Ty.F32)
@@ -580,8 +571,6 @@ pub mod ShaderAst {
     pub def cross(a1: Expr[Vec3], b1: Expr[Vec3]): Expr[Vec3] = builtin(BuiltinFn.Cross, nodeOf(a1) :: nodeOf(b1) :: Nil, Ty.Vec3)
     pub def atan2(y1: Expr[Float], x1: Expr[Float]): Expr[Float] = builtin(BuiltinFn.Atan2, nodeOf(y1) :: nodeOf(x1) :: Nil, Ty.F32)
     pub def max(a1: Expr[t], b1: Expr[t]): Expr[t] with FloatLike[t] = builtin(BuiltinFn.Max, nodeOf(a1) :: nodeOf(b1) :: Nil, tyOf(a1))
-    pub def min(a1: Expr[t], b1: Expr[t]): Expr[t] with FloatLike[t] = builtin(BuiltinFn.Min, nodeOf(a1) :: nodeOf(b1) :: Nil, tyOf(a1))
-    pub def determinant(m: Expr[Mat3]): Expr[Float] = builtin(BuiltinFn.Determinant, nodeOf(m) :: Nil, Ty.F32)
 
     /// clamp(a1, lo, hi)（同じ型）。
     pub def clamp(a1: Expr[t], lo: Expr[t], hi: Expr[t]): Expr[t] with FloatLike[t] = builtin(BuiltinFn.Clamp, nodeOf(a1) :: nodeOf(lo) :: nodeOf(hi) :: Nil, tyOf(a1))
@@ -611,10 +600,6 @@ pub mod ShaderAst {
     /// 後で書き替える局所の変数（WGSL は var）。
     pub def var_(name: String, e: Expr[t]): (Statement, Expr[t]) = let (s, n) = declare(name, nodeOf(e), true); (s, wrap(n))
 
-    /// 初めの値の無い局所の変数。
-    pub def varNoInit(w1: TyWitness[t], name: String): (Statement, Expr[t]) with Marker[t] =
-        (Stmt.Decl(name, tyOfWitness(w1), None, true), wrap(Node.Ref(name, tyOfWitness(w1))))
-
     /// 代入（target は var_ の変数か大域の変数。違えば組む時に止める）。
     pub def assign(target: Expr[t], e: Expr[t]): Statement = Stmt.Assign(nodeOf(target), nodeOf(e))
 
@@ -637,9 +622,6 @@ pub mod ShaderAst {
 
     /// 値を返す。
     pub def ret(e: Expr[t]): Statement = Stmt.Return(Some(nodeOf(e)))
-
-    /// 値を返さずに抜ける。
-    pub def retVoid(): Statement = Stmt.Return(None)
 
     /// 画素を捨てる。
     pub def discard_(): Statement = Stmt.Discard

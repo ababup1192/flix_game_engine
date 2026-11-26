@@ -147,6 +147,22 @@
           "why": "DevTools を手で開いて比べる（同じ条件で何回も流せない）"
         }
       ]
+    },
+    {
+      "id": "render3d-shader-entry-tree",
+      "prompt": "engine の render_gl の 3D の描き手に、WebGPU と GL の両方で使う新しい frag（物の輪郭を光らせる版）を足したい。Render3dWgsl.flix に \"@fragment fn fs_main(...)\" の字を、Render3dGlsl.flix に \"#version 330 core ...\" の字を手で書けば早いと思う。どう書くのがこのリポの決まり？",
+      "expect": [
+        {
+          "re": "FragmentEntry|ShaderAst",
+          "why": "本文を Render3dShaders に ShaderAst の木で 1 回書き、FragmentEntry にして ShaderAst.Glsl / ShaderAst.Wgsl の fragment で両方の字を出す（forbid の render3d-shader-entry-by-hand が手書きを止める）"
+        }
+      ],
+      "avoid": [
+        {
+          "re": "(?i)(手で書いて(よい|良い|いい|構わない)|手書きで(よい|良い|いい|構わない))",
+          "why": "GLSL と WGSL を別々に手で書くと式が分かれ、forbid が止める"
+        }
+      ]
     }
   ]
 }

@@ -429,9 +429,18 @@
       "id": "light-uniform-in-glsl",
       "suffixes": [".flix"],
       "rawLine": true,
-      "skip": ["render_gl/src/Render3dGlsl.flix", "src/render_gl/Render3dGlsl.flix", "engine/src/scene3d/LightModel3d/Codegen.flix", "src/engine/scene3d/LightModel3d/Codegen.flix", "engine/src/scene3d/LightModel3d/PointShadowCodegen.flix", "src/engine/scene3d/LightModel3d/PointShadowCodegen.flix", "engine_full/", "lib/", "build/"],
+      "skip": ["engine/src/scene3d/LightModel3d/Codegen.flix", "src/engine/scene3d/LightModel3d/Codegen.flix", "engine/src/scene3d/LightModel3d/PointShadowCodegen.flix", "src/engine/scene3d/LightModel3d/PointShadowCodegen.flix", "engine_full/", "lib/", "build/"],
       "pattern": "\"[^\"]*\\bu(?:Point|Spot)(?:Pos|Color|Range|Dir|Cone)\\[[A-Za-z_]\\w*\\]",
-      "hint": "光の式を GLSL の字で手で書かない（CPU の描き手と式が分かれる）。式は engine の LightModel3d の木に書き、GLSL は LightModel3d.Codegen.toGlsl で作る（点光源の影を引く式は LightModel3d.PointShadowCodegen。3D の描き手の字は Render3dGlsl。uniform の位置を引く loc(program, \"uPointPos\") は止めない）"
+      "hint": "光の式を GLSL の字で手で書かない（CPU の描き手と式が分かれる）。式は engine の LightModel3d の木に書き、GLSL は LightModel3d.Codegen.toGlsl で作る（点光源の影を引く式は LightModel3d.PointShadowCodegen。3D の描き手の式は Render3dShaders の木。uniform の位置を引く loc(program, \"uPointPos\") は止めない）"
+    },
+    {
+      "id": "render3d-shader-entry-by-hand",
+      "suffixes": [".flix"],
+      "prefixes": ["render_gl/src/Render3dGlsl.flix", "render_gl/src/Render3dWgsl.flix", "render_gl/src/Render3dShaders.flix", "render_gl/src/Render3d/"],
+      "rawLine": true,
+      "skip": ["render_gl/src/Render3dGlsl/MeshVertex.flix", "render_gl/src/Render3dWgsl/MeshVertex.flix", "render_gl/src/Render3d/WebGpuMipmaps.flix", "render_gl/src/Render3d/WebGpuShadowCache.flix"],
+      "pattern": "\"[^\"]*(?:#version 330|@fragment|@vertex)",
+      "hint": "3D の描き手のシェーダーの入口を字で手で書かない（GLSL と WGSL の式が分かれる）。本文は Render3dShaders に ShaderAst の木で書き、入口は ShaderAst の FragmentEntry / VertexEntry にして ShaderAst.Glsl / ShaderAst.Wgsl の fragment・vertex で出す（手書きのまま残す置いた物の頂点は Render3dGlsl.MeshVertex・Render3dWgsl.MeshVertex）"
     },
     {
       "id": "scene3d-linear-color-flag",

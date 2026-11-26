@@ -3,7 +3,7 @@
 pub mod Render3dShaders {
     use ShaderAst.{Expr, Definition, Float, Vec2, Vec3, Vec4, IVec2, Int, Boolean, Tex, DepthTex, Mat4, Body, Layout}
     use Render3d.Uniforms.R3dUniform
-    use ShaderAst.{f, i, add, sub, mul, div, addS, subS, mulS, divS, sMul, sSub, lt, le, or_, neg, paren, ternary, at,
+    use ShaderAst.{f, i, add, sub, mul, div, addS, mulS, divS, lt, le, or_, neg, paren, ternary, at,
                    x, y, z, w, r, g, b, xyz, vec2Of, vec3Of, vec4Of, ivec2Of, floor, abs, normalize, asin, dot, cross, distance, atan2,
                    clamp, clampS, let_, var_, assign, ifInline, ret, param, call, arg, uniform, bitAnd}
 
@@ -224,7 +224,7 @@ pub mod Render3dShaders {
 
     // ── 影 ──
 
-    /// 影の地図 map の PCF で、点 p（法線 n の向きへ shift ずらす）が光を受ける割合（Render3dGlsl.shadowSource の doc の約束 1〜5）。
+    /// 影の地図 map の PCF で、点 p（法線 n の向きへ shift ずらす）が光を受ける割合（Scene3d.shadowMatrix の doc の約束 1〜5）。
     // WhyNot: 周りの画素を返した後の行で端にそろえない — 端にそろえる（clamp）のを GL の行で済ませてから返せば、CPU の描き手と同じ画素の組を読む。
     pub def shadowLitFraction(): Definition =
         let (pm, map) = param(DepthTex.DepthTex, "map");
@@ -272,7 +272,7 @@ pub mod Render3dShaders {
     /// 光の式の木が読む太陽の影の割合（frag の main が先に代入する。ビルボードは 1 のまま）。
     pub def sunLit(): Definition = ShaderAst.privateVar("r3d_sunLit", Float.Float, None, Some(f("1.0")), None)
 
-    /// 太陽の影の割合 sunLitAt(p, g, n)（Render3dGlsl.sunShadowSource の doc。CPU の描き手は SoftRaster3d.Sun.litAt）。
+    /// 太陽の影の割合 sunLitAt(p, g, n)（Scene3d.directionalShadowOf の doc の約束。CPU の描き手は SoftRaster3d.Sun.litAt）。
     // WhyNot: 太陽へ背を向けた点（n·l ≤ 0）で地図を引かない — facing が 0 なので結果は同じで、pcf の (2r+1)² 回が無駄になる。
     pub def sunLitAt(): Definition =
         let (pp, p) = param(Vec3.Vec3, "p");
