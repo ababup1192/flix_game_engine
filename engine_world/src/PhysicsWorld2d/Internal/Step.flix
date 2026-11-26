@@ -8,6 +8,7 @@ pub mod PhysicsWorld2d.Internal.Step {
     use PhysicsWorld2d.Internal.Solver.Solve
     use PhysicsWorld2d.Internal.Narrowphase.WorldPolygon
     use PhysicsWorld2d.Internal.Shape.Shape
+    import java.util.Arrays
 
     def bStride(): Int32 = PhysicsWorld2d.Internal.Solver.bStride()
     def stateStride(): Int32 = PhysicsWorld2d.Internal.Data.stateStride()
@@ -21,7 +22,29 @@ pub mod PhysicsWorld2d.Internal.Step {
     def stopDistance(): Float64 = margin()
 
     /// 1 刻み進めた中身と、NaN・無限大になった体の id（呼ぶ側が消す）。出来事は d#pending の後ろに足して events に置く。
-    pub def step(d: Data): (Data, List[Int32]) = region rc {
+    pub def step(d: Data): (Data, List[Int32]) =
+        if (isAtRest(d)) (restingStep(d), Nil) else movingStep(d)
+
+    /// どの体も動かない（Dynamic は全部眠り・Kinematic は止まっていて目標も無い）か。
+    def isAtRest(d: Data): Bool =
+        let ss = stateStride();
+        Map.isEmpty(d#targets) and Vector.range(0, Vector.length(d#ids)) |> Vector.forAll(i -> match Vector.get(i, d#types) {
+            case RigidBody2d.BodyType.Dynamic => Vector.get(i, d#asleep)
+            case RigidBody2d.BodyType.Kinematic =>
+                Vector.get(i * ss + 4, d#state) == 0.0 and Vector.get(i * ss + 5, d#state) == 0.0 and Vector.get(i * ss + 6, d#state) == 0.0
+            case RigidBody2d.BodyType.Fixed => true
+        })
+
+    /// 動かない刻み: 当たりも解き手も回さず、前の姿勢を今の姿勢にそろえ、消した体の出来事だけを出す（組と控えはそのまま続く）。
+    // WhyNot: 眠った体だけの刻みでも全部を詰めて掃かない — 眠った物 1,000 個で 1 刻み 1 ms かかり、予算（0.2 ms）を超えた。
+    def restingStep(d: Data): Data =
+        let ss = stateStride();
+        let earlier = d#pending |> List.reverse;
+        let prev = Vector.range(0, Vector.length(d#ids) * 4) |> Vector.map(k -> Vector.get((k / 4) * ss + Int32.modulo(k, 4), d#state));
+        { prev = prev, events = { collisions = List.flatMap(e -> e#collisions, earlier), sensors = List.flatMap(e -> e#sensors, earlier) },
+          pending = Nil, steps = d#steps + 1i64 | d }
+
+    def movingStep(d: Data): (Data, List[Int32]) = region rc {
         let n = Vector.length(d#ids);
         let dt = d#stepSeconds;
         let bs = Array.repeat(rc, n * bStride(), 0.0);
@@ -31,7 +54,7 @@ pub mod PhysicsWorld2d.Internal.Step {
         let asleep = Array.repeat(rc, n, false);
         let woken = Array.repeat(rc, n, false);
         let touchWake = Array.repeat(rc, n, false);
-        packAll(d, { bs = bs, dyn = dyn, kin = kin, kinMoving = kinMoving, asleep = asleep }, 0, n);
+        packAll(d, (bs, dyn, kin, kinMoving, asleep), n);
         let polys = Vector.mapWithIndex((i, shape) -> PhysicsWorld2d.Internal.Narrowphase.worldPolygonOf(shape, poseOf(bs, i)), d#shapes);
         let box = Array.repeat(rc, n * 4, 0.0);
         Vector.forEachWithIndex((i, poly) -> fillBox(bs, box, i, poly), polys);
@@ -40,10 +63,9 @@ pub mod PhysicsWorld2d.Internal.Step {
         fillIdentity(parent, 0, n);
         let out = { points = MutList.empty(rc), manifolds = MutList.empty(rc), contactSeps = MutList.empty(rc),
                     kept = MutList.empty(rc), sensed = MutList.empty(rc), keptSensed = MutList.empty(rc) };
-        let flags = flagsOf(rc, d, n);
-        sweep({ shapes = d#shapes, ids = d#ids, polys = polys, box = box, bs = bs, dyn = dyn, kin = kin, kinMoving = kinMoving, asleep = asleep,
-                parent = parent, touchWake = touchWake, sensor = fst3(flags), layer = snd3(flags), mask = thd3(flags), out = out }, order, 0, n);
-        wakeIslands(rc, { dyn = dyn, asleep = asleep, woken = woken, touchWake = touchWake, bs = bs, parent = parent }, n);
+        let (bits, layer, mask) = flagsOf(rc, d, (dyn, kin, kinMoving, asleep), n);
+        sweepEach((bits, layer, mask, bs, parent, touchWake, d#shapes, polys, d#ids, out), order, box, 0, n);
+        wakeIslands(rc, (dyn, asleep, woken, touchWake, bs, parent), n);
         let pts = MutList.toVector(out#points);
         let manifolds = MutList.toVector(out#manifolds);
         let pab = Array.repeat(rc, Vector.length(pts) * 2, 0);
@@ -51,16 +73,18 @@ pub mod PhysicsWorld2d.Internal.Step {
         let s = d#settings;
         let impulses = PhysicsWorld2d.Internal.Solver.solveStep(rc, sv, pts, d#warm,
             { dt = dt, gx = s#gravity#x, gy = s#gravity#y, substeps = Int32.max(1, s#solverSubsteps) });
-        updateTimers(sv, { dt = dt, linear = s#sleepLinearThreshold, angular = s#sleepAngularThreshold }, 0);
+        updateTimers(sv, { dt = dt, linear = s#sleepLinearThreshold, angular = s#sleepAngularThreshold });
         sleepIslands(rc, sv, parent);
         snapKinematic(d, bs, kin, 0, n);
         let keptSorted = PhysicsWorld2d.Internal.Solver.sortedKeys(rc, MutList.toVector(out#kept));
-        let warm = keepRestingWarm(rc, PhysicsWorld2d.Internal.Solver.warmOf(rc, pts, manifolds, impulses), d#warm, keptSorted);
+        let fresh = PhysicsWorld2d.Internal.Solver.warmOf(rc, pts, manifolds, impulses);
+        let (freshKeys, _, _, _) = fresh;
+        let warm = keepRestingWarm(rc, fresh, d#warm, keptSorted);
         let broken = List.range(0, n) |> List.filter(i -> not isFinitePose(bs, i)) |> List.map(i -> Vector.get(i, d#ids));
         let next = Array.repeat(rc, n * stateStride(), 0.0);
         let prev = Array.repeat(rc, n * 4, 0.0);
         unpackAll(bs, next, prev, 0, n);
-        let (touching, collisions) = diffTouching(rc, d#touching, MutList.toVector(out#contactSeps), keptSorted);
+        let (touching, collisions) = diffTouching(rc, d#touching, freshKeys, MutList.toVector(out#contactSeps), keptSorted);
         let (sensing, sensors) = diffSensing(rc, d, MutList.toVector(out#sensed), MutList.toVector(out#keptSensed));
         let earlier = d#pending |> List.reverse;
         let events = { collisions = List.append(List.flatMap(e -> e#collisions, earlier), collisions),
@@ -70,53 +94,61 @@ pub mod PhysicsWorld2d.Internal.Step {
          broken)
     }
 
-    def fst3(t: (a, b, c)): a = let (x, _, _) = t; x
-    def snd3(t: (a, b, c)): b = let (_, x, _) = t; x
-    def thd3(t: (a, b, c)): c = let (_, _, x) = t; x
-
-    /// 形ごとの sensor の印・当たり層・mask。
-    def flagsOf(rc: Region[r], d: Data, n: Int32): (Array[Bool, r], Array[Int32, r], Array[Int32, r]) \ r =
-        let sensor = Array.repeat(rc, n, false);
+    /// 体ごとの印（Dynamic・Kinematic・動く Kinematic・眠り・sensor）・当たり層・mask。
+    def flagsOf(rc: Region[r], d: Data, kinds: (Array[Bool, r], Array[Bool, r], Array[Bool, r], Array[Bool, r]),
+                n: Int32): (Array[Int32, r], Array[Int32, r], Array[Int32, r]) \ r =
+        let (dyn, kin, kinMoving, asleep) = kinds;
+        let bits = Array.repeat(rc, n, 0);
         let layer = Array.repeat(rc, n, 0);
         let mask = Array.repeat(rc, n, 0);
+        let bit = (on, b) -> if (on) b else 0;
         Vector.forEachWithIndex((i, c) -> {
-            Array.put(Collider2d.isSensor(c), i, sensor);
+            Array.put(bit(Array.get(i, dyn), bitDyn()) + bit(Array.get(i, kin), bitKin()) + bit(Array.get(i, kinMoving), bitKinMoving())
+                      + bit(Array.get(i, asleep), bitAsleep()) + bit(Collider2d.isSensor(c), bitSensor()), i, bits);
             Array.put(Collider2d.collisionLayer(c), i, layer);
             Array.put(Collider2d.collisionMask(c), i, mask)
         }, d#colliders);
-        (sensor, layer, mask)
+        (bits, layer, mask)
 
-    type alias Pack[r: Region] = { bs = Array[Float64, r], dyn = Array[Bool, r], kin = Array[Bool, r], kinMoving = Array[Bool, r], asleep = Array[Bool, r] }
+    /// 詰める先（体の欄・Dynamic か・Kinematic か・動く Kinematic か・眠り）。
+    type alias Pack[r: Region] = (Array[Float64, r], Array[Bool, r], Array[Bool, r], Array[Bool, r], Array[Bool, r])
 
-    def packAll(d: Data, pk: Pack[r], i: Int32, n: Int32): Unit \ r =
-        if (i >= n) () else { packOne(d, pk, i); packAll(d, pk, i + 1, n) }
+    // WhyNot: 体ごとに d#… を引かない — record の欄は名前で探すので、体の数 × 欄の数だけ重さが乗る。欄は輪の外で 1 回だけ取り出す。
+    def packAll(d: Data, pk: Pack[r], n: Int32): Unit \ r =
+        let friction = Vector.map(m -> m#friction, d#materials);
+        let restitution = Vector.map(m -> m#restitution, d#materials);
+        let src = (d#state, d#props, d#asleep, d#types, d#materialIndex, friction, restitution);
+        List.range(0, n) |> List.forEach(i -> packOne(d, src, pk, i))
 
-    def packOne(d: Data, pk: Pack[r], i: Int32): Unit \ r =
-        let bs = pk#bs;
+    def packOne(d: Data, src: (Vector[Float64], Vector[Float64], Vector[Bool], Vector[RigidBody2d.BodyType], Vector[Int32], Vector[Float64], Vector[Float64]),
+                pk: Pack[r], i: Int32): Unit \ r =
+        let (state, props, sleepingAll, types, materialIndex, friction, restitution) = src;
+        let (bs, dyn, kin, kinMoving, asleep) = pk;
         let o = i * bStride();
         let so = i * stateStride();
         let po = i * propStride();
-        let st = k -> Vector.get(so + k, d#state);
-        let pr = k -> Vector.get(po + k, d#props);
-        let sleeping = Vector.get(i, d#asleep);
-        let bodyType = Vector.get(i, d#types);
+        let sleeping = Vector.get(i, sleepingAll);
+        let bodyType = Vector.get(i, types);
         let isKin = bodyType == RigidBody2d.BodyType.Kinematic;
-        let material = Vector.get(Vector.get(i, d#materialIndex), d#materials);
-        let (vx, vy, w) = if (isKin) kinematicVelocity(d, i, d#stepSeconds) else (st(4), st(5), st(6));
-        Array.put(st(0), o, bs); Array.put(st(1), o + 1, bs);
-        Array.put(st(2), o + 2, bs); Array.put(st(3), o + 3, bs);
+        let mat = Vector.get(i, materialIndex);
+        let (vx, vy, w) = if (isKin) kinematicVelocity(d, i, d#stepSeconds)
+                          else (Vector.get(so + 4, state), Vector.get(so + 5, state), Vector.get(so + 6, state));
+        let x = Vector.get(so, state);
+        let y = Vector.get(so + 1, state);
+        let c = Vector.get(so + 2, state);
+        let s = Vector.get(so + 3, state);
+        Array.put(x, o, bs); Array.put(y, o + 1, bs); Array.put(c, o + 2, bs); Array.put(s, o + 3, bs);
         Array.put(vx, o + 4, bs); Array.put(vy, o + 5, bs); Array.put(w, o + 6, bs);
         // 眠っている体はこの刻みだけ重さ無限として扱う（起こすのは次の刻みから）。
-        Array.put(if (sleeping) 0.0 else pr(1), o + 7, bs);
-        Array.put(if (sleeping) 0.0 else pr(2), o + 8, bs);
-        Array.put(pr(0), o + 9, bs); Array.put(st(7), o + 10, bs);
-        Array.put(material#friction, o + 11, bs); Array.put(material#restitution, o + 12, bs);
-        Array.put(st(0), o + 13, bs); Array.put(st(1), o + 14, bs);
-        Array.put(st(2), o + 15, bs); Array.put(st(3), o + 16, bs);
-        Array.put(bodyType == RigidBody2d.BodyType.Dynamic, i, pk#dyn);
-        Array.put(isKin, i, pk#kin);
-        Array.put(isKin and (vx != 0.0 or vy != 0.0 or w != 0.0), i, pk#kinMoving);
-        Array.put(sleeping, i, pk#asleep)
+        Array.put(if (sleeping) 0.0 else Vector.get(po + 1, props), o + 7, bs);
+        Array.put(if (sleeping) 0.0 else Vector.get(po + 2, props), o + 8, bs);
+        Array.put(Vector.get(po, props), o + 9, bs); Array.put(Vector.get(so + 7, state), o + 10, bs);
+        Array.put(Vector.get(mat, friction), o + 11, bs); Array.put(Vector.get(mat, restitution), o + 12, bs);
+        Array.put(x, o + 13, bs); Array.put(y, o + 14, bs); Array.put(c, o + 15, bs); Array.put(s, o + 16, bs);
+        Array.put(bodyType == RigidBody2d.BodyType.Dynamic, i, dyn);
+        Array.put(isKin, i, kin);
+        Array.put(isKin and (vx != 0.0 or vy != 0.0 or w != 0.0), i, kinMoving);
+        Array.put(sleeping, i, asleep)
 
     /// Kinematic の体の、この刻みの速さ: 目標があれば 1 刻みでそこへ着く速さ、無ければ持っている速さ。
     def kinematicVelocity(d: Data, i: Int32, dt: Float64): (Float64, Float64, Float64) =
@@ -239,18 +271,22 @@ pub mod PhysicsWorld2d.Internal.Step {
             Array.put(Vector.foldLeft(Float64.max, Float64.minValue(), ys), b + 3, box)
         }
 
-    /// AABB の左端で並べた番号。同じ値は番号（= id）の順。
-    def sortedByLeft(rc: Region[r], box: Array[Float64, r], n: Int32): Array[Int32, r] \ r =
-        let lefts = Vector.range(0, n) |> Vector.map(i -> Array.get(i * 4, box));
-        // WhyNot: Array.sortWith を使わない — 単純なクイックソートで、前の刻みとほぼ同じ並びの入力で二乗になる。
-        let sorted = Sort.sortStableWith((i, j) -> compareLeft(lefts, i, j), List.range(0, n));
-        List.toArray(rc, sorted)
+    /// 左端を刻む細かさ（1 / 8192 m ≒ 0.12 mm）。
+    def leftScale(): Float64 = 8192.0
 
-    def compareLeft(lefts: Vector[Float64], i: Int32, j: Int32): Comparison =
-        let li = Vector.get(i, lefts);
-        let lj = Vector.get(j, lefts);
-        if (li < lj) Comparison.LessThan else if (li > lj) Comparison.GreaterThan
-        else if (i < j) Comparison.LessThan else if (i > j) Comparison.GreaterThan else Comparison.EqualTo
+    /// 左端の刻み（下へ丸めた整数）。q(x) > q(y) なら x > y。
+    def leftStep(x: Float64): Int64 =
+        Float64.tryToInt64(Float64.floor(Float64.max(-1.0e9, Float64.min(1.0e9, x)) * leftScale())) |> Option.getWithDefault(0i64)
+
+    /// AABB の左端の刻みで並べた番号（同じ刻みは番号 = id の順）。(刻み << 32 | 番号) を long のまま並べる。
+    // WhyNot: 比べる関数を渡す並べ替え（Sort.sortStableWith の List）にしない — 毎刻み List と閉包を作る定まった代金が、物 100 個の小さい山の 1 刻みの重さの多くを占めた。
+    def sortedByLeft(rc: Region[r], box: Array[Float64, r], n: Int32): Array[Int32, r] \ r =
+        let keys = Array.repeat(rc, n, 0i64);
+        List.range(0, n) |> List.forEach(i -> Array.put(Int64.bitwiseOr(Int64.leftShift(leftStep(Array.get(i * 4, box)), 32), Int32.toInt64(i)), i, keys));
+        unchecked_cast(Arrays.sort(keys) as _ \ r);
+        let order = Array.repeat(rc, n, 0);
+        List.range(0, n) |> List.forEach(k -> Array.put(Int64.tryToInt32(Int64.bitwiseAnd(Array.get(k, keys), 4294967295i64)) |> Option.getWithDefault(0), k, order));
+        order
 
     // ── 粗い当たりと細かい当たり ──
 
@@ -260,30 +296,41 @@ pub mod PhysicsWorld2d.Internal.Step {
         kept = MutList[Int64, r], sensed = MutList[Int64, r], keptSensed = MutList[Int64, r]
     }
 
-    type alias Sweep[r: Region] = {
-        shapes = Vector[Shape], ids = Vector[Int32], polys = Vector[WorldPolygon], box = Array[Float64, r], bs = Array[Float64, r],
-        dyn = Array[Bool, r], kin = Array[Bool, r], kinMoving = Array[Bool, r], asleep = Array[Bool, r], parent = Array[Int32, r], touchWake = Array[Bool, r],
-        sensor = Array[Bool, r], layer = Array[Int32, r], mask = Array[Int32, r], out = Found[r]
-    }
+    /// 体ごとの印（bits の bit）。
+    def bitDyn(): Int32 = 1
+    def bitKin(): Int32 = 2
+    def bitKinMoving(): Int32 = 4
+    def bitAsleep(): Int32 = 8
+    def bitSensor(): Int32 = 16
 
-    // WhyNot: 輪の中で st#box・st#order を引かない — record の欄は名前で探すので、組の数だけ重さが乗る。配列は輪の外で 1 回だけ取り出す。
-    def sweep(st: Sweep[r], order: Array[Int32, r], k: Int32, n: Int32): Unit \ r =
-        sweepEach(st, order, st#box, k, n)
+    def has(bits: Array[Int32, r], i: Int32, bit: Int32): Bool \ r = Int32.bitwiseAnd(Array.get(i, bits), bit) != 0
+
+    /// 掃く時に読む物: 体ごとの印・当たり層・mask・体の欄・union-find の親・動く Kinematic が触れた眠りの体・形・world の頂点・id・集める先。
+    // WhyNot: record にしない — 組ごとに 10 回ほど欄を引き、record の欄は名前で探すので、組の数だけ重さが乗る（ブラウザで重い）。
+    type alias Sweep[r: Region] = (Array[Int32, r], Array[Int32, r], Array[Int32, r], Array[Float64, r], Array[Int32, r], Array[Bool, r],
+                                   Vector[Shape], Vector[WorldPolygon], Vector[Int32], Found[r])
+
+    def bitsOf(st: Sweep[r]): Array[Int32, r] = let (x, _, _, _, _, _, _, _, _, _) = st; x
+    def parentOf(st: Sweep[r]): Array[Int32, r] = let (_, _, _, _, x, _, _, _, _, _) = st; x
+    def touchWakeOf(st: Sweep[r]): Array[Bool, r] = let (_, _, _, _, _, x, _, _, _, _) = st; x
+    def idsOf(st: Sweep[r]): Vector[Int32] = let (_, _, _, _, _, _, _, _, x, _) = st; x
+    def foundOf(st: Sweep[r]): Found[r] = let (_, _, _, _, _, _, _, _, _, x) = st; x
 
     def sweepEach(st: Sweep[r], order: Array[Int32, r], box: Array[Float64, r], k: Int32, n: Int32): Unit \ r =
         if (k >= n) ()
         else {
             let i = Array.get(k, order);
-            let right = Array.get(i * 4 + 1, box) + margin();
+            let right = leftStep(Array.get(i * 4 + 1, box) + margin());
             sweepFrom(st, order, box, i, right, k + 1, n);
             sweepEach(st, order, box, k + 1, n)
         }
 
-    def sweepFrom(st: Sweep[r], order: Array[Int32, r], box: Array[Float64, r], i: Int32, right: Float64, k: Int32, n: Int32): Unit \ r =
+    def sweepFrom(st: Sweep[r], order: Array[Int32, r], box: Array[Float64, r], i: Int32, right: Int64, k: Int32, n: Int32): Unit \ r =
         if (k >= n) ()
         else {
             let j = Array.get(k, order);
-            if (Array.get(j * 4, box) > right) ()
+            // 並びは左端の刻みの順なので、刻みで比べて止める（刻みが right を超えた後の体は、本当の左端も i の右端 + 余白を超える）。
+            if (leftStep(Array.get(j * 4, box)) > right) ()
             else {
                 let a = Int32.min(i, j);
                 let b = Int32.max(i, j);
@@ -293,15 +340,17 @@ pub mod PhysicsWorld2d.Internal.Step {
             }
         }
 
-    def isActive(st: Sweep[r], i: Int32): Bool \ r =
-        (Array.get(i, st#dyn) and not Array.get(i, st#asleep)) or Array.get(i, st#kinMoving)
+    def isActive(bits: Array[Int32, r], i: Int32): Bool \ r =
+        let v = Array.get(i, bits);
+        (Int32.bitwiseAnd(v, bitDyn()) != 0 and Int32.bitwiseAnd(v, bitAsleep()) == 0) or Int32.bitwiseAnd(v, bitKinMoving()) != 0
 
     /// 組 1 つ（a < b の番号）: 当たり層で絞り、sensor の組と押し合う組に分ける。
     def pairOf(st: Sweep[r], a: Int32, b: Int32): Unit \ r =
-        let layered = Int32.bitwiseAnd(Array.get(a, st#layer), Array.get(b, st#mask)) != 0
-                  and Int32.bitwiseAnd(Array.get(b, st#layer), Array.get(a, st#mask)) != 0;
-        let sa = Array.get(a, st#sensor);
-        let sb = Array.get(b, st#sensor);
+        let (bits, layer, mask, _, _, _, _, _, _, _) = st;
+        let layered = Int32.bitwiseAnd(Array.get(a, layer), Array.get(b, mask)) != 0
+                  and Int32.bitwiseAnd(Array.get(b, layer), Array.get(a, mask)) != 0;
+        let sa = has(bits, a, bitSensor());
+        let sb = has(bits, b, bitSensor());
         if (not layered or (sa and sb)) ()
         else if (sa) sensorPair(st, a, b, b)
         else if (sb) sensorPair(st, a, b, a)
@@ -309,51 +358,58 @@ pub mod PhysicsWorld2d.Internal.Step {
 
     /// sensor の組（other は sensor でない方）。動かない体は出来事を出さない。
     def sensorPair(st: Sweep[r], a: Int32, b: Int32, other: Int32): Unit \ r =
-        let movable = Array.get(other, st#dyn) or Array.get(other, st#kin);
-        let key = PhysicsWorld2d.Internal.Data.pairKey(Vector.get(a, st#ids), Vector.get(b, st#ids));
+        let bits = bitsOf(st);
+        let movable = has(bits, other, bitDyn()) or has(bits, other, bitKin());
+        let key = PhysicsWorld2d.Internal.Data.pairKey(Vector.get(a, idsOf(st)), Vector.get(b, idsOf(st)));
         if (not movable) ()
-        else if (not isActive(st, a) and not isActive(st, b)) MutList.push(key, st#out#keptSensed)
+        else if (not isActive(bits, a) and not isActive(bits, b)) MutList.push(key, foundOf(st)#keptSensed)
         else {
             let contacts = collide(st, a, b);
-            if (List.exists(c -> sepOf(c) <= 0.0, contacts)) MutList.push(key, st#out#sensed) else ()
+            if (List.exists(c -> sepOf(c) <= 0.0, contacts)) MutList.push(key, foundOf(st)#sensed) else ()
         }
 
     def sepOf(c: PhysicsWorld2d.Internal.Narrowphase.Contact): Float64 = let (_, _, _, _, sep, _) = c; sep
 
     def collide(st: Sweep[r], a: Int32, b: Int32): List[PhysicsWorld2d.Internal.Narrowphase.Contact] \ r =
-        PhysicsWorld2d.Internal.Narrowphase.collideWith(Vector.get(a, st#shapes), Vector.get(a, st#polys), poseOf(st#bs, a),
-                                                        Vector.get(b, st#shapes), Vector.get(b, st#polys), poseOf(st#bs, b))
+        let (_, _, _, bs, _, _, shapes, polys, _, _) = st;
+        PhysicsWorld2d.Internal.Narrowphase.collideWith(Vector.get(a, shapes), Vector.get(a, polys), poseOf(bs, a),
+                                                        Vector.get(b, shapes), Vector.get(b, polys), poseOf(bs, b))
 
     /// 押し合う組: どちらも Dynamic でなければ捨て、どちらも止まっている（眠りか止まった Kinematic・Fixed）なら島だけつないで触れたままと見る。
     def contactPair(st: Sweep[r], a: Int32, b: Int32): Unit \ r =
-        let da = Array.get(a, st#dyn);
-        let db = Array.get(b, st#dyn);
-        let key = PhysicsWorld2d.Internal.Data.pairKey(Vector.get(a, st#ids), Vector.get(b, st#ids));
+        let bits = bitsOf(st);
+        let da = has(bits, a, bitDyn());
+        let db = has(bits, b, bitDyn());
         if (not da and not db) ()
-        else if (not isActive(st, a) and not isActive(st, b)) {
-            if (da and db) union(st#parent, a, b) else ();
-            MutList.push(key, st#out#kept)
+        else {
+            let key = PhysicsWorld2d.Internal.Data.pairKey(Vector.get(a, idsOf(st)), Vector.get(b, idsOf(st)));
+            if (not isActive(bits, a) and not isActive(bits, b)) {
+                if (da and db) union(parentOf(st), a, b) else ();
+                MutList.push(key, foundOf(st)#kept)
+            }
+            else narrowPair(st, a, b, key)
         }
-        else narrowPair(st, a, b, key)
 
     def narrowPair(st: Sweep[r], a: Int32, b: Int32, key: Int64): Unit \ r =
         let manifold = collide(st, a, b);
         if (List.isEmpty(manifold)) ()
         else {
-            let da = Array.get(a, st#dyn);
-            let db = Array.get(b, st#dyn);
-            if (da and db) union(st#parent, a, b) else ();
-            if (Array.get(a, st#kinMoving) and db and Array.get(b, st#asleep)) Array.put(true, b, st#touchWake) else ();
-            if (Array.get(b, st#kinMoving) and da and Array.get(a, st#asleep)) Array.put(true, a, st#touchWake) else ();
-            let points = st#out#points;
+            let bits = bitsOf(st);
+            let da = has(bits, a, bitDyn());
+            let db = has(bits, b, bitDyn());
+            if (da and db) union(parentOf(st), a, b) else ();
+            if (has(bits, a, bitKinMoving()) and db and has(bits, b, bitAsleep())) Array.put(true, b, touchWakeOf(st)) else ();
+            if (has(bits, b, bitKinMoving()) and da and has(bits, a, bitAsleep())) Array.put(true, a, touchWakeOf(st)) else ();
+            let found = foundOf(st);
+            let points = found#points;
             let first = MutList.size(points);
             manifold |> List.forEach(m -> {
                 let (nx, ny, px, py, sep, feature) = m;
                 MutList.push((a, b, nx, ny, px, py, sep, key, feature), points)
             });
-            MutList.push((key, first, List.length(manifold)), st#out#manifolds);
+            MutList.push((key, first, List.length(manifold)), found#manifolds);
             let nearest = manifold |> List.foldLeft((acc, c) -> Float64.min(acc, sepOf(c)), Float64.maxValue());
-            MutList.push((key, nearest), st#out#contactSeps)
+            MutList.push((key, nearest), found#contactSeps)
         }
 
     // ── 島と眠り ──
@@ -374,84 +430,65 @@ pub mod PhysicsWorld2d.Internal.Step {
         let rj = find(parent, j);
         if (ri == rj) () else if (ri < rj) Array.put(ri, rj, parent) else Array.put(rj, ri, parent)
 
-    type alias Islands[r: Region] = { dyn = Array[Bool, r], asleep = Array[Bool, r], woken = Array[Bool, r], touchWake = Array[Bool, r],
-                                      bs = Array[Float64, r], parent = Array[Int32, r] }
+    /// 島を見る時に読む物（Dynamic か・眠り・この刻みに起こした体・動く Kinematic が触れた体・体の欄・union-find の親）。
+    type alias Islands[r: Region] = (Array[Bool, r], Array[Bool, r], Array[Bool, r], Array[Bool, r], Array[Float64, r], Array[Int32, r])
+
+    // WhyNot: 体ごとの輪で record の欄を引かない — 名前で探すので、体の数 × 欄の数だけ重さが乗る。配列は輪の外で 1 回だけ取り出す。
 
     /// 起きた体が 1 つでもある島（と動く Kinematic が触れた体の島）の、眠っていた体を次の刻みから起こす。
     def wakeIslands(rc: Region[r], il: Islands[r], n: Int32): Unit \ r =
+        let (dyn, asleep, woken, touchWake, bs, parent) = il;
         let islandAwake = Array.repeat(rc, n, false);
-        markAwakeIslands(il, islandAwake, 0, n);
-        wakeMarked(il, islandAwake, 0, n)
-
-    def markAwakeIslands(il: Islands[r], islandAwake: Array[Bool, r], i: Int32, n: Int32): Unit \ r =
-        if (i >= n) ()
-        else {
-            let awake = Array.get(i, il#dyn) and not Array.get(i, il#asleep);
-            if (awake or Array.get(i, il#touchWake)) Array.put(true, find(il#parent, i), islandAwake) else ();
-            markAwakeIslands(il, islandAwake, i + 1, n)
-        }
-
-    def wakeMarked(il: Islands[r], islandAwake: Array[Bool, r], i: Int32, n: Int32): Unit \ r =
-        if (i >= n) ()
-        else {
-            if (Array.get(i, il#dyn) and Array.get(i, il#asleep) and Array.get(find(il#parent, i), islandAwake)) {
-                Array.put(false, i, il#asleep); Array.put(0.0, i * bStride() + 10, il#bs); Array.put(true, i, il#woken)
-            } else ();
-            wakeMarked(il, islandAwake, i + 1, n)
-        }
+        List.range(0, n) |> List.forEach(i -> {
+            let awake = Array.get(i, dyn) and not Array.get(i, asleep);
+            if (awake or Array.get(i, touchWake)) Array.put(true, find(parent, i), islandAwake) else ()
+        });
+        List.range(0, n) |> List.forEach(i ->
+            if (Array.get(i, dyn) and Array.get(i, asleep) and Array.get(find(parent, i), islandAwake)) {
+                Array.put(false, i, asleep); Array.put(0.0, i * bStride() + 10, bs); Array.put(true, i, woken)
+            } else ())
 
     type alias SleepLimits = { dt = Float64, linear = Float64, angular = Float64 }
 
     /// 眠りの時計を足す（解いた後の速さで見る。食い込みを戻す速さが残った値で見ると、積んだ物がいつまでも眠らない）。
-    def updateTimers(sv: Solve[r], limits: SleepLimits, i: Int32): Unit \ r =
-        if (i >= sv#n) ()
-        else {
-            if (PhysicsWorld2d.Internal.Solver.moving(sv#dyn, sv#asleep, sv#woken, i)) {
-                let bs = sv#bs;
+    def updateTimers(sv: Solve[r], limits: SleepLimits): Unit \ r =
+        let (bs, dyn, asleep, woken) = (sv#bs, sv#dyn, sv#asleep, sv#woken);
+        let dt = limits#dt;
+        let linear = limits#linear;
+        let angular = limits#angular;
+        let sleeps = linear > 0.0 and angular > 0.0;
+        List.range(0, sv#n) |> List.forEach(i ->
+            if (PhysicsWorld2d.Internal.Solver.moving(dyn, asleep, woken, i)) {
                 let o = i * bStride();
                 let vx = Array.get(o + 4, bs);
                 let vy = Array.get(o + 5, bs);
                 let w = Array.get(o + 6, bs);
-                let slow = limits#linear > 0.0 and limits#angular > 0.0 and vx * vx + vy * vy < limits#linear * limits#linear and w * w < limits#angular * limits#angular;
-                Array.put(if (slow) Array.get(o + 10, bs) + limits#dt else 0.0, o + 10, bs)
-            } else ();
-            updateTimers(sv, limits, i + 1)
-        }
+                let slow = sleeps and vx * vx + vy * vy < linear * linear and w * w < angular * angular;
+                Array.put(if (slow) Array.get(o + 10, bs) + dt else 0.0, o + 10, bs)
+            } else ())
 
     /// 島ごとに、全部の体が sleepAfter 秒続けて遅ければ眠らせる。
     def sleepIslands(rc: Region[r], sv: Solve[r], parent: Array[Int32, r]): Unit \ r =
-        let n = sv#n;
+        let (bs, dyn, asleep, woken, n) = (sv#bs, sv#dyn, sv#asleep, sv#woken, sv#n);
         let islandMin = Array.repeat(rc, n, Float64.maxValue());
-        minTimers(sv, parent, islandMin, 0);
-        sleepWhere(sv, parent, islandMin, 0)
-
-    def minTimers(sv: Solve[r], parent: Array[Int32, r], islandMin: Array[Float64, r], i: Int32): Unit \ r =
-        if (i >= sv#n) ()
-        else {
-            if (Array.get(i, sv#dyn)) {
+        List.range(0, n) |> List.forEach(i ->
+            if (Array.get(i, dyn)) {
                 let root = find(parent, i);
-                let t = if (Array.get(i, sv#woken)) 0.0 else Array.get(i * bStride() + 10, sv#bs);
+                let t = if (Array.get(i, woken)) 0.0 else Array.get(i * bStride() + 10, bs);
                 Array.put(Float64.min(t, Array.get(root, islandMin)), root, islandMin)
-            } else ();
-            minTimers(sv, parent, islandMin, i + 1)
-        }
-
-    def sleepWhere(sv: Solve[r], parent: Array[Int32, r], islandMin: Array[Float64, r], i: Int32): Unit \ r =
-        if (i >= sv#n) ()
-        else {
-            if (PhysicsWorld2d.Internal.Solver.moving(sv#dyn, sv#asleep, sv#woken, i) and Array.get(find(parent, i), islandMin) >= sleepAfter()) {
+            } else ());
+        List.range(0, n) |> List.forEach(i ->
+            if (PhysicsWorld2d.Internal.Solver.moving(dyn, asleep, woken, i) and Array.get(find(parent, i), islandMin) >= sleepAfter()) {
                 let o = i * bStride();
-                Array.put(true, i, sv#asleep); Array.put(0.0, o + 4, sv#bs); Array.put(0.0, o + 5, sv#bs); Array.put(0.0, o + 6, sv#bs)
-            } else ();
-            sleepWhere(sv, parent, islandMin, i + 1)
-        }
+                Array.put(true, i, asleep); Array.put(0.0, o + 4, bs); Array.put(0.0, o + 5, bs); Array.put(0.0, o + 6, bs)
+            } else ())
 
     // ── 出来事（前の刻みの組との差分） ──
 
     /// 前に触れていた組 prev（並んだ鍵）と、この刻みの組から、今触れている組（並んだ鍵）と出来事（鍵の順）。
-    def diffTouching(rc: Region[r], prev: Vector[Int64], seps: Vector[(Int64, Float64)],
+    /// active は今の刻みの組の鍵（並べた物。warm start の控えの鍵と同じ）。
+    def diffTouching(rc: Region[r], prev: Vector[Int64], active: Vector[Int64], seps: Vector[(Int64, Float64)],
                      kept: Vector[Int64]): (Vector[Int64], List[CollisionEvent2d.CollisionEvent2d]) \ r =
-        let active = PhysicsWorld2d.Internal.Solver.sortedKeys(rc, Vector.map(fst, seps));
         let sepAt = Array.repeat(rc, Vector.length(active), 0.0);
         Vector.forEach(p -> Array.put(snd(p), PhysicsWorld2d.Internal.Data.searchKey(fst(p), active, 0, Vector.length(active) - 1), sepAt), seps);
         let now = MutList.empty(rc);

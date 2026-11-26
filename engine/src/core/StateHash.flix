@@ -23,8 +23,9 @@ pub mod StateHash {
 
     pub def mixBool(b: Bool, h: StateHash): StateHash = mixInt64(if (b) 1i64 else 0i64, h)
 
-    /// Float64 のビットを流す（NaN は 1 つのビットにまとめて流す）。
-    pub def mixFloat64(x: Float64, h: StateHash): StateHash = mixInt64(Double.doubleToLongBits(x), h)
+    /// Float64 のビットを流す（NaN は 1 つのビットに、-0.0 は 0.0 にまとめて流す）。
+    // WhyNot: -0.0 と 0.0 を分けて流さない — 0 の符号は Math.max(-0.0, 0.0) などで JVM と wasm が分かれうる一方、値として同じ。0 の符号が 0 でない値を分けるのは 0 で割る所だけで、物理は割る前に 0 を確かめている。
+    pub def mixFloat64(x: Float64, h: StateHash): StateHash = mixInt64(Double.doubleToLongBits(x + 0.0), h)
 
     pub def toInt64(h: StateHash): Int64 = match h { case StateHashOf.StateHashOf(v) => v }
 }

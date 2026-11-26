@@ -2112,7 +2112,7 @@
   `pub def mixInt64(word: Int64, h: StateHash): StateHash`
 - `pub def mixInt32(word: Int32, h: StateHash): StateHash`
 - `pub def mixBool(b: Bool, h: StateHash): StateHash`
-- Float64 のビットを流す（NaN は 1 つのビットにまとめて流す）。
+- Float64 のビットを流す（NaN は 1 つのビットに、-0.0 は 0.0 にまとめて流す）。
   `pub def mixFloat64(x: Float64, h: StateHash): StateHash`
 - `pub def toInt64(h: StateHash): Int64`
 

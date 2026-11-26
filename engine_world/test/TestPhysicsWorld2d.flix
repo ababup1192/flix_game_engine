@@ -76,7 +76,7 @@ mod TestPhysicsWorld2d {
     def testReferenceHash100(): Unit \ Assert =
         Assert.assertEq(expected = referenceHash100(), PhysicsWorld2d.stateHash(advance(600, pile(100))))
 
-    def referenceHash100(): Int64 = -7928258968195396701i64
+    def referenceHash100(): Int64 = 7638917548363580542i64
 
     // ── 積み重ね・眠り・跳ね返り ──
 
