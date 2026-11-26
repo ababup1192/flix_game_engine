@@ -66,6 +66,8 @@ public final class GlConst {
     public static final int RENDERBUFFER = 0x8D41;
     public static final int DEPTH24_STENCIL8 = 0x88F0;
     public static final int RGBA16F = 0x881A;
+    public static final int R8 = 0x8229;
+    public static final int R32F = 0x822E;
     public static final int MAX_SAMPLES = 0x8D57;
     public static final int NONE = 0;
     public static final int BACK = 0x0405;

@@ -83,6 +83,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             presentModule = ShaderModule,
             frameLayout = BindGroupLayout,
             imageLayout = BindGroupLayout,
+            floatImageLayout = BindGroupLayout,
             presentLayout = BindGroupLayout,
             uniform = Buffer,
             frameGroup = BindGroup,
@@ -185,6 +186,9 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         let imageLayoutDesc = new BindGroupLayoutDesc("fge image");
         discard imageLayoutDesc.texture(0, ShaderStage.FRAGMENT, TextureSampleType.FLOAT).sampler(1, ShaderStage.FRAGMENT, SamplerBindingType.FILTERING);
         let imageLayout = gpu.createBindGroupLayout(imageLayoutDesc);
+        let floatImageLayoutDesc = new BindGroupLayoutDesc("fge image r32float");
+        discard floatImageLayoutDesc.texture(0, ShaderStage.FRAGMENT, TextureSampleType.UNFILTERABLE_FLOAT).sampler(1, ShaderStage.FRAGMENT, SamplerBindingType.NON_FILTERING);
+        let floatImageLayout = gpu.createBindGroupLayout(floatImageLayoutDesc);
         let presentLayout = gpu.createBindGroupLayout(new BindGroupLayoutDesc("fge present").texture(0, ShaderStage.FRAGMENT, TextureSampleType.FLOAT));
         let uniform = gpu.createBuffer("fge projection", 64i64, Int32.bitwiseOr(BufferUsage.UNIFORM, BufferUsage.COPY_DST));
         let projection = projectionBytes(designW, designH);
@@ -205,7 +209,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         let paint = PaintData.PaintData({
             gpu = gpu, designW = designW, designH = designH, clearColor = cfg#clearColor,
             presentModule = gpu.createShaderModule("fge present", WebGpuShader.presentWgsl()),
-            frameLayout = frameLayout, imageLayout = imageLayout, presentLayout = presentLayout,
+            frameLayout = frameLayout, imageLayout = imageLayout, floatImageLayout = floatImageLayout, presentLayout = presentLayout,
             uniform = uniform, frameGroup = frameGroup,
             pipes = pipes, copyPipelines = Ref.fresh(Static, Map.empty()), presentPipeline = Ref.fresh(Static, None),
             presentGroup = Ref.fresh(Static, None),
@@ -314,11 +318,14 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     // ── 絵の表 ──
 
     /// 絵を表に足して番号を返す。
+    // WhyNot: R32_FLOAT の絵の group を imageLayout で作らない — unfilterable-float の絵は filterable の layout に入らず、group を作る所で誤りになる。
+    //   スプライトがその group を読む pipeline は無い（R32Float の Pass は面の Spec と 3D の描き手だけが読む）。
     def addSlot(paint: Paint, texture: Texture, sampler: Sampler, width: Int32, height: Int32): Int32 \ IO =
         let PaintData.PaintData(p) = paint;
         let id = Array.get(0, p#nextSlot);
         Array.put(id + 1, 0, p#nextSlot);
-        let desc = new BindGroupDesc("fge image", p#imageLayout);
+        let layout = if (WebGpuPipelines.isR32Float(texture)) p#floatImageLayout else p#imageLayout;
+        let desc = new BindGroupDesc("fge image", layout);
         discard desc.textureView(0, texture.defaultView()).sampler(1, sampler);
         let group = p#gpu.createBindGroup(desc);
         Ref.put(Map.insert(id, { texture = texture, group = group, width = width, height = height }, Ref.get(p#slots)), p#slots);
@@ -442,6 +449,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         p#linearClamp.release();
         p#frameLayout.release();
         p#imageLayout.release();
+        p#floatImageLayout.release();
         p#presentLayout.release();
         p#presentModule.release()
 

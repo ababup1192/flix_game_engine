@@ -176,7 +176,7 @@ mod Render3d {
         envLevels = Float32, envIntensity = Float32, envSrgb = Int32,
         sunDir = Array[Float32, Static], sunColor = Array[Float32, Static], inverseUnitsPerMeterSquared = Float32,
         psx = Array[Float32, Static], psxTarget = Array[Float32, Static], vertexSnap = Float32,
-        sh = Array[Float32, Static], skyContribution = Float32
+        sh = Array[Float32, Static], skyContribution = Float32, aoValues = Array[Float32, Static]
     }
 
     /// 3D の描き手の状態（GL の文脈ごとに 1 つ）。meshes = 形の置き場の表（番号と上限）・meshEntriesRef = 表の番号 → GPU に置いたメッシュ。
@@ -197,6 +197,7 @@ mod Render3d {
         skinnedRef = Ref[Option[SkinnedPrograms], Static],
         // 空を初めて描く時に組む（空を使わない場面は空のプログラムのコンパイルを払わない）。
         skyRef = Ref[Option[ProgramUniforms], Static],
+        screenPasses = Render3d.GlScreenPasses.Data,
         // 変種の頂点の色のプログラム（(variantKeyOf, 骨つきか) → location）。その変種の場面を初めて描く時に組む。
         variantLitRef = Ref[Map[(String, Bool), ProgramUniforms], Static],
         // 変種のビルボードのプログラム（variantKeyOf → location）。
@@ -306,7 +307,7 @@ mod Render3d {
         { textureByteBudget = Int32.toInt64(Int32.max(1, textureBudget#megabytes)) * 1048576i64,
           textureCountBudget = Int32.max(1, textureBudget#count), meshes = Render3d.MeshTable.fresh(), meshEntriesRef = Ref.fresh(Static, Map.empty()),
           uploadStreak = Array#{0, 0, 0} @ Static, materialStreak = Array#{0, 0, 0} @ Static, programsRef = Ref.fresh(Static, None),
-          skinnedRef = Ref.fresh(Static, None), skyRef = Ref.fresh(Static, None),
+          skinnedRef = Ref.fresh(Static, None), skyRef = Ref.fresh(Static, None), screenPasses = Render3d.GlScreenPasses.fresh(),
           variantLitRef = Ref.fresh(Static, Map.empty()), variantBillboardRef = Ref.fresh(Static, Map.empty()),
           designTargets = Render3d.SceneTargets.fresh(), missingTexturesRef = Ref.fresh(Static, Set.empty()),
           materialsRef = Ref.fresh(Static, Map.empty()), retiredMaterialsRef = Ref.fresh(Static, Nil),
@@ -375,7 +376,7 @@ mod Render3d {
         let items = List.zip(List.zip(plans, lists), List.zip(shadows, carried)) |> List.map(pls -> {
             let ((plan, passes), (shadow, cs)) = pls;
             let inputs = { passes = passes, materials = materials, shadows = shadow,
-                           jointTexture = jointTexture, instanceTexture = instanceTexture, carried = cs };
+                           jointTexture = jointTexture, instanceTexture = instanceTexture, carried = cs, framebuffer = dest#framebuffer };
             let target = match plan#cmd#scene#resolution {
                 case Scene3d.Resolution.Native => SceneTarget.Native(inputs)
                 case Scene3d.Resolution.Design =>
@@ -483,8 +484,12 @@ mod Render3d {
             gl.viewport(rect#x, rect#y, rect#width, rect#height);
             gl.enable(GlConst.SCISSOR_TEST);
             gl.scissor(scissor#x, scissor#y, scissor#width, scissor#height);
-            gl.enable(GlConst.BLEND);
-            gl.blendFunc(GlConst.ONE, GlConst.ONE_MINUS_SRC_ALPHA);
+            // WhyNot: R32Float の描き先へ blend で重ねない — WebGL2 は EXT_float_blend が無いと float32 の描き先への blend を誤りにする（奥行きは置き換えで描く）。
+            if (target#storedFormat == RenderTarget.Format.R32Float) gl.disable(GlConst.BLEND)
+            else {
+                gl.enable(GlConst.BLEND);
+                gl.blendFunc(GlConst.ONE, GlConst.ONE_MINUS_SRC_ALPHA)
+            };
             gl.useProgram(programs#blit#program);
             gl.activeTexture(GlConst.TEXTURE0);
             gl.bindTexture(GlConst.TEXTURE_2D, target#tex);
@@ -505,6 +510,7 @@ mod Render3d {
         Array.put(scene#time, 0, state#timeHolder);
         discard programsOf(gl, state);
         let background = if (area#fillBackground and Option.isEmpty(scene#sky)) scene#environment#background else None;
+        let aoMask = if (passVariantOf(scene)#ambientOcclusion) Some(Render3d.GlScreenPasses.renderMask(gl, state, textureOf, area#viewport, inputs#framebuffer, scene)) else None;
         beginScene(gl, area#viewport, area#scissor, background);
         let source = { textureOf = textureOf, own = scene#textures |> List.map(t -> (Texture3d.name(t), t)) |> List.toMap };
         let environmentLevels = bindEnvironmentMap(gl, state, gen, source, scene);
@@ -512,7 +518,7 @@ mod Render3d {
         let picked = Scene3d.pickLights(scene);
         noteDroppedLights(state, scene);
         Render3d.ScenePlan.noteStaticGroupHint(state#planner, Render3d.StaticRows.itemCountOf(scene), scene);
-        let lights = withPsxTarget(area#viewport, lightDataOf(picked, environmentLevels));
+        let lights = Render3d.Light.withScreenAo(area#viewport#width, area#viewport#height, scene, withPsxTarget(area#viewport, lightDataOf(picked, environmentLevels)));
         let view = matrixArray(Camera3d.viewMatrix(scene#camera));
         let proj = matrixArray(Camera3d.projectionMatrix(scene#camera, Scene3d.aspectOf(scene)));
         let shadows = inputs#shadows;
@@ -524,9 +530,12 @@ mod Render3d {
         inputs#carried |> List.forEach(c -> uploadRows(gl, state, gen, source, Render3d.GlStatic.inputsOf(inputs, c), 0));
         Render3d.Counts.countInstances(state, 0, List.sumWith(c -> c#carried#rows#combinedAway, inputs#carried));
         uploadRows(gl, state, gen, source, inputs, Render3d.StaticRows.itemCountOf(scene) + Render3d.StaticRows.multiMeshCountOf(scene));
-        let ctx = { camera = camera, eye = scene#camera#eye, source = source, billboard = Render3d.VariantPrograms.billboardProgramFor(gl, state, variant), scene = scene };
+        let ctx = { camera = camera, eye = scene#camera#eye, source = source, billboard = Render3d.VariantPrograms.billboardProgramFor(gl, state, variant), scene = scene,
+                    aoMask = aoMask };
         let (callsBefore, meshBefore) = Render3d.Counts.drawCallsSoFar(state);
-        if (Render3d.GpuSpans.skipsColorDraws()) () else inputs#passes |> List.forEach(match (spec, list) -> drawPass(gl, state, gen, ctx, inputs, spec, list));
+        if (Render3d.GpuSpans.skipsColorDraws()) ()
+        else if (Render3d.ScreenPasses.isShown(scene)) aoMask |> Option.forEach(Render3d.GlScreenPasses.drawShow(gl, state, area#viewport, scene))
+        else inputs#passes |> List.forEach(match (spec, list) -> drawPass(gl, state, gen, ctx, inputs, spec, list));
         let (callsAfter, meshAfter) = Render3d.Counts.drawCallsSoFar(state);
         Render3d.ScenePlan.noteDrawCallHint(state#planner, callsAfter - callsBefore, meshAfter - meshBefore);
         releaseEnvironmentMap(gl, scene);
@@ -536,8 +545,9 @@ mod Render3d {
     def withPsxTarget(viewport: PixelBox, d: LightData): LightData \ IO =
         { psxTarget = Array#{ Int32.toFloat32(viewport#x), Int32.toFloat32(viewport#y), Int32.toFloat32(viewport#width), Int32.toFloat32(viewport#height) } @ Static | d }
 
-    /// drawPass が場面 1 つの中で pass をまたいで使う物。billboard = ビルボードのプログラム。
-    type alias PassContext = { camera = CameraData, eye = Vec3.Vec3, source = TextureSource, billboard = ProgramUniforms, scene = Scene3d.Scene3dCmd }
+    /// drawPass が場面 1 つの中で pass をまたいで使う物。billboard = ビルボードのプログラム・aoMask = SSAO の mask の絵（+ao の場面だけ）。
+    type alias PassContext = { camera = CameraData, eye = Vec3.Vec3, source = TextureSource, billboard = ProgramUniforms, scene = Scene3d.Scene3dCmd,
+                               aoMask = Option[Int32] }
 
     /// 場面の pass spec の行 list を描く（形は uploadRows で上げてある）。色の pass は不透明の行 → ビルボードの行 → 半透明の行・奥行きの書き出しは不透明の行 → ビルボードの行。
     /// 持ち越した集まり（inputs#carried）の行は、不透明の行の前に描く（Render3d.GlStatic の頭）。
@@ -548,10 +558,12 @@ mod Render3d {
         match spec {
             case ScenePassSpec.Color =>
                 bindShadowMap(gl, inputs#shadows);
+                Render3d.GlScreenPasses.bindMask(gl, ctx#aoMask);
                 drawCarriedRows(gl, state, gen, ctx, MaterialPass.Color, inputs);
                 drawRows(gl, state, gen, camera, MaterialPass.Color, ctx#eye, ctx#source, inputs, list);
                 drawBillboards(gl, state, ctx#billboard, camera, ctx#scene, list);
                 drawBlendedRows(gl, state, gen, camera, ctx#eye, ctx#source, inputs, list);
+                Render3d.GlScreenPasses.bindMask(gl, ctx#aoMask |> Option.map(_ -> 0));
                 unbindShadowMap(gl, inputs#shadows)
             case ScenePassSpec.DepthOut(dr) =>
                 drawCarriedRows(gl, state, gen, ctx, MaterialPass.Depth(dr), inputs);

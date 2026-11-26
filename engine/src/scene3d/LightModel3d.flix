@@ -20,6 +20,8 @@
 ///   shadowLit = att × facing と cone が共に正の時だけ地図を引く（ほかは 1）
 ///   toon   = toonSteps > 0 なら各成分を floor(x × steps + 0.5) / steps
 ///   lightmap つき: toon(baked + Σ 点光源 + Σ スポット)・baked = linearToSrgb(max(0, toLinear(s) × intensity))
+///   変種 ambientOcclusion（画面の上の SSAO・ScreenEffects3d）: 環境の光（ambient + hemisphere・lightmap は baked）に ao を、
+///     直接光（Σ 点光源・Σ スポット・太陽）に aoDirect = 1 − lightAffect × (1 − ao) を掛ける（toon の内側。ao と aoDirect は木の外で画素ごとに 1 回）
 ///   fog    = c + (fogColor − c) × clamp01((|点 − 目| − near) / max(far − near, 1e−6))（fog が無い時は呼ぶ側が c のまま返す）
 ///   空     = horizon + (toward − horizon) × min(1, |dir.y|^curve)・toward = dir.y ≥ 0 なら zenith、ほかは ground
 ///
@@ -143,6 +145,10 @@ pub mod LightModel3d {
         case InverseUnitsPerMeterSquared
         /// 拡散の光に景色を混ぜる割合（Scene3d.withSkyContribution。変種 skyIrradiance の時だけ読む・拡散の光が求められない場面は 0）。
         case SkyContribution
+        /// 画面の上の SSAO の値（環境の光に掛ける。変種 ambientOcclusion の時だけ読む・mask の無い画素は 1。木の外で画素ごとに 1 回）。
+        case ScreenAmbientOcclusion
+        /// 直接光に掛ける SSAO の値 1 − lightAffect × (1 − ScreenAmbientOcclusion)（変種 ambientOcclusion の時だけ読む）。
+        case ScreenAmbientOcclusionDirect
     }
 
     /// 画素ごと・場面ごとの vec3 の入力。
@@ -211,19 +217,22 @@ pub mod LightModel3d {
 
     /// 木の変種（Unity の shader variant に当たる）。pointShadows = 点光源の光に影の割合（ScalarInput.PointShadowLit）を掛けるか・
     /// lightUnits = 光の量の読み方（Some なら木に書き込む・None なら ScalarInput.PhysicalUnits で画素ごとに選ぶ）・
-    /// skyIrradiance = ambient に景色の拡散の光を混ぜる（ScalarInput.SkyContribution と Vec3Input.IrradianceSh を読む）。
+    /// skyIrradiance = ambient に景色の拡散の光を混ぜる（ScalarInput.SkyContribution と Vec3Input.IrradianceSh を読む）・
+    /// ambientOcclusion = 画面の上の SSAO を掛ける（ScalarInput.ScreenAmbientOcclusion と ScreenAmbientOcclusionDirect を読む）。
     /// GL と WebGPU は場面ごとに Some の変種のプログラムを組み、CPU は cpuVariant() の木 1 本を回す（Legacy では Select と × 1.0 だけが増え、値は同じ）。
-    pub type alias LightVariant = { pointShadows = Bool, lightUnits = Option[Scene3d.LightUnits], skyIrradiance = Bool }
+    pub type alias LightVariant = { pointShadows = Bool, lightUnits = Option[Scene3d.LightUnits], skyIrradiance = Bool, ambientOcclusion = Bool }
 
     /// 点光源の影なし・Legacy の変種（lightingModel() などと同じ木）。
-    pub def legacyVariant(): LightVariant = { pointShadows = false, lightUnits = Some(Scene3d.LightUnits.Legacy), skyIrradiance = false }
+    pub def legacyVariant(): LightVariant = { pointShadows = false, lightUnits = Some(Scene3d.LightUnits.Legacy), skyIrradiance = false, ambientOcclusion = false }
 
-    /// CPU の描き手が回す変種（点光源の影の割合を読み・光の量の読み方を入力で選ぶ・景色の拡散の光は SkyContribution が 0 なら ambient のまま）。
-    pub def cpuVariant(): LightVariant = { pointShadows = true, lightUnits = None, skyIrradiance = true }
+    /// CPU の描き手が回す変種（点光源の影の割合を読み・光の量の読み方を入力で選ぶ・景色の拡散の光は SkyContribution が 0 なら ambient のまま・
+    /// SSAO の無い画素は 1 を渡す）。
+    pub def cpuVariant(): LightVariant = { pointShadows = true, lightUnits = None, skyIrradiance = true, ambientOcclusion = true }
 
     /// 場面 scene に使う GPU の変種（pointShadows が Some なら影の割合を読む・光の量の読み方は場面のまま）。
     pub def variantOf(scene: Scene3d.Scene3dCmd): LightVariant =
-        { pointShadows = Option.nonEmpty(scene#pointShadows), lightUnits = Some(scene#lightUnits), skyIrradiance = Scene3d.Internal.SkyIrradiance.isOn(scene) }
+        { pointShadows = Option.nonEmpty(scene#pointShadows), lightUnits = Some(scene#lightUnits), skyIrradiance = Scene3d.Internal.SkyIrradiance.isOn(scene),
+          ambientOcclusion = Scene3d.preloadVariantOf(scene)#ambientOcclusion }
 
     /// lightmap の無い面に当たる光（ファイルの頭の light）。
     pub def lightingModel(): Vec3Expr = lightingModelFor(legacyVariant())
@@ -232,10 +241,19 @@ pub mod LightModel3d {
     pub def lightingModelFor(v: LightVariant): Vec3Expr =
         Vec3Expr.LetScalar("sky", ScalarExpr.Mul(ScalarExpr.In(ScalarInput.Hemisphere),
                                                  ScalarExpr.Max(ScalarExpr.Num(0.0), ScalarExpr.Y(Vec3Expr.In(Vec3Input.Normal)))),
-            Vec3Expr.Toon(Vec3Expr.Add(Vec3Expr.Add(Vec3Expr.Add(Vec3Expr.Add(ambientLight(v),
-                                                                 Vec3Expr.Make(ScalarExpr.Ref("sky"), ScalarExpr.Ref("sky"), ScalarExpr.Ref("sky"))),
-                                                    Vec3Expr.SumPoints(pointLight(v))),
-                                       Vec3Expr.SumSpots(spotLight(v))), sunLight(v))))
+            Vec3Expr.Toon(Vec3Expr.Add(Vec3Expr.Add(Vec3Expr.Add(occluded(v, Vec3Expr.Add(ambientLight(v),
+                                                                 Vec3Expr.Make(ScalarExpr.Ref("sky"), ScalarExpr.Ref("sky"), ScalarExpr.Ref("sky")))),
+                                                    occludedDirect(v, Vec3Expr.SumPoints(pointLight(v)))),
+                                       occludedDirect(v, Vec3Expr.SumSpots(spotLight(v)))), occludedDirect(v, sunLight(v)))))
+
+    /// 環境の光 light に SSAO の値を掛けた物（変種 ambientOcclusion でなければ light のまま）。
+    // WhyNot: SSAO の無い場面でも × 1 を通さない — 変種で分けると、SSAO を使わない場面の GPU のプログラムの字が変わらない（CPU は 1 を掛けて値はビットで同じ）。
+    def occluded(v: LightVariant, light: Vec3Expr): Vec3Expr =
+        if (v#ambientOcclusion) Vec3Expr.Scale(light, ScalarExpr.In(ScalarInput.ScreenAmbientOcclusion)) else light
+
+    /// 直接光 light に SSAO の直接光の値を掛けた物（変種 ambientOcclusion でなければ light のまま）。
+    def occludedDirect(v: LightVariant, light: Vec3Expr): Vec3Expr =
+        if (v#ambientOcclusion) Vec3Expr.Scale(light, ScalarExpr.In(ScalarInput.ScreenAmbientOcclusionDirect)) else light
 
     /// 拡散の環境の光（変種 skyIrradiance なら景色の拡散の光を SkyContribution の割合で混ぜる）。
     // WhyNot: SkyContribution が 0 の時も Mix を通さない — 係数を読まずに ambient をそのまま返せば、景色の拡散を使わない場面の値はビットで同じ。
@@ -264,7 +282,8 @@ pub mod LightModel3d {
 
     /// 変種 v の lightmapLightingModel。
     pub def lightmapLightingModelFor(v: LightVariant): Vec3Expr =
-        Vec3Expr.Toon(Vec3Expr.Add(Vec3Expr.Add(bakedLight(), Vec3Expr.SumPoints(pointLight(v))), Vec3Expr.SumSpots(spotLight(v))))
+        Vec3Expr.Toon(Vec3Expr.Add(Vec3Expr.Add(occluded(v, bakedLight()), occludedDirect(v, Vec3Expr.SumPoints(pointLight(v)))),
+                                   occludedDirect(v, Vec3Expr.SumSpots(spotLight(v)))))
 
     /// 色 Color に距離のかすみを掛けた色。
     pub def fogModel(): Vec3Expr =

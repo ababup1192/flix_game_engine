@@ -645,7 +645,7 @@ pub mod Render3d.WebGpuMaterials {
                 discard desc.attribute(VertexFormat.FLOAT32X4, 64, 7).attribute(VertexFormat.FLOAT32X4, 80, 8);
                 discard desc.attribute(VertexFormat.FLOAT32X4, 96, 9).attribute(VertexFormat.FLOAT32X4, 112, 10);
                 discard desc.colorTarget(WebGpuPipelines.textureFormatOf(mp#format));
-                if (p#kind#blend)
+                if (p#kind#blend and mp#format != RenderTarget.Format.R32Float)
                     discard desc.blend(BlendFactor.SRC_ALPHA, BlendFactor.ONE_MINUS_SRC_ALPHA, BlendOperation.ADD, BlendFactor.ONE, BlendFactor.ONE_MINUS_SRC_ALPHA, BlendOperation.ADD)
                 else ();
                 discard desc.primitive(PrimitiveTopology.TRIANGLE_LIST, FrontFace.CW, if (p#kind#doubleSided) CullMode.NONE else CullMode.BACK);

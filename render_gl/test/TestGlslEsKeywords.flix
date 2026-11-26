@@ -37,12 +37,14 @@ mod Render3d.TestGlslEsKeywords {
                         ("pointShadows", k#variant#pointShadows) :: ("physicalUnits", k#variant#physicalUnits) :: ("psx", k#variant#psx) :: Nil) + "]"
 
     def variants(): List[Render3d.ProgramKey.ShaderVariant] =
-        List.flatMap(ps -> List.flatMap(pu -> List.map(px -> { pointShadows = ps, physicalUnits = pu, psx = px, skyIrradiance = false }, bools()), bools()), bools())
+        List.flatMap(ps -> List.flatMap(pu -> List.map(px -> { pointShadows = ps, physicalUnits = pu, psx = px, skyIrradiance = false, ambientOcclusion = false }, bools()), bools()), bools()) :::
+        { pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false, ambientOcclusion = true } ::
+        { pointShadows = true, physicalUnits = true, psx = true, skyIrradiance = true, ambientOcclusion = true } :: Nil
 
     def kindsOf(v: Render3d.ProgramKey.ShaderVariant): List[Render3d.ProgramKey.ProgramKind] =
         List.flatMap(sk -> List.flatMap(uv -> List.flatMap(nm -> List.flatMap(lm -> List.flatMap(bl -> List.flatMap(ds -> List.flatMap(cv -> List.map(mr ->
             { skinned = sk, uv = uv, normalMap = nm, lightmap = lm, blend = bl, doubleSided = ds, coverage = cv, metallicRoughness = mr,
-              variant = { skyIrradiance = false | v } },
+              variant = v },
             bools()), bools()), bools()), bools()), bools()), bools()), bools()), bools())
 
     def solidGlsl(): ShaderGen.MaterialGlsl =
@@ -58,6 +60,10 @@ mod Render3d.TestGlslEsKeywords {
             ("skyFragment", Render3dGlsl.skyFragmentSource()) ::
             ("blitVertex", Render3dGlsl.blitVertexSource()) ::
             ("blitFragment", Render3dGlsl.blitFragmentSource()) ::
+            ("screenVertex", ShaderAst.Glsl.vertex(Render3d.ScreenPasses.vertex())) ::
+            ("screenAoMask", ShaderAst.Glsl.fragment(Render3d.ScreenPasses.fragment(Render3d.ScreenPasses.ScreenPassKind.AoMask, Nil))) ::
+            ("screenAoBlur", ShaderAst.Glsl.fragment(Render3d.ScreenPasses.fragment(Render3d.ScreenPasses.ScreenPassKind.AoBlurH, Nil))) ::
+            ("screenAoShow", ShaderAst.Glsl.fragment(Render3d.ScreenPasses.fragment(Render3d.ScreenPasses.ScreenPassKind.ShowAo, Nil))) ::
             ("tileVertex", RenderShader.tileVertexShaderSource()) ::
             ("tileFragment", RenderShader.tileFragmentShaderSource()) ::
             ("spriteInstancedVertex", RenderShader.spriteInstancedVertexShaderSource()) ::

@@ -254,7 +254,7 @@ mod ExprRows {
 
     // ── GPU ──
 
-    def defaultVariant(): Scene3d.PreloadVariant = { pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false }
+    def defaultVariant(): Scene3d.PreloadVariant = { pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false, ambientOcclusion = false }
 
     /// 3D の描き手の既定の変種の光の式と、それと一緒に置く定義（Render3dGlsl.lightSource の定義）。
     def lightDefinitions(): List[ShaderAst.Definition] = Render3dShaders.lightDefinitions(defaultVariant(), Render3dShaders.featureOf(defaultVariant()))
@@ -640,9 +640,9 @@ mod ExprRows {
         let spots = LightModel3d.packSpotLights(s#spots);
         match row {
             case TreeRow.Light => SoftRaster3dLight.lightAt(steps, points, spots, shadow, Vector.repeat(Scene3d.maxPointLights(), 1.0), p#x, p#y, p#z, n#x, n#y, n#z, s#ambient#x, s#ambient#y, s#ambient#z, s#hemisphere,
-                                                        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, Scene3d.Internal.SkyIrradiance.zeros(), 0.0)
+                                                        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, Scene3d.Internal.SkyIrradiance.zeros(), 0.0, 1.0, 1.0)
             case TreeRow.LightmapLight => SoftRaster3dLight.lightmapLightAt(steps, points, spots, shadow, Vector.repeat(Scene3d.maxPointLights(), 1.0), p#x, p#y, p#z, n#x, n#y, n#z, e#x, e#y, e#z,
-                                                        if (s#lightmapSrgb) 1.0 else 0.0, s#lightmapIntensity, 0.0, 1.0)
+                                                        if (s#lightmapSrgb) 1.0 else 0.0, s#lightmapIntensity, 0.0, 1.0, 1.0, 1.0)
             case TreeRow.Fog => SoftRaster3dLight.fogAt(p#x, p#y, p#z, s#eye#x, s#eye#y, s#eye#z, e#x, e#y, e#z, s#fogColor#x, s#fogColor#y, s#fogColor#z, s#fogNear, s#fogFar)
             case TreeRow.Sky => SoftRaster3dLight.skyAt(e#x, e#y, e#z, s#zenith#x, s#zenith#y, s#zenith#z, s#horizon#x, s#horizon#y, s#horizon#z,
                                               s#ground#x, s#ground#y, s#ground#z, s#curve)

@@ -57,6 +57,8 @@ mod Scenes {
             :: billboardShadowOf(BillboardShadowYard.SunSide.Diagonal, "billboardShadowDiagonal")
             :: billboardShadowOf(BillboardShadowYard.SunSide.Side, "billboardShadowSide")
             :: PostScenes.postStackLook() :: PostScenes.postStackDepthBand() :: PostScenes.postStackCrt()
+            :: PostScenes.ambientOcclusionMask3d() :: PostScenes.ambientOcclusion3d()
+            :: PostScenes.ambientOcclusionFog3d() :: PostScenes.ambientOcclusionFocus3d() :: PostScenes.ambientOcclusionBandFog3d()
             :: staticBatch3d() :: staticBatchInstances3d() :: Nil
 
     /// B 段階の scene のうち、違う画素の数に上限を置く物（名前 → 許す画素数）。3D の場面は GL と CPU で三角形の縁の
@@ -98,7 +100,17 @@ mod Scenes {
     /// hdrEnvironment3d（Apple Silicon で 267 px ±2）: 球の縁と粗い球の段の混ぜの丸め（half と Float64）。sRGB から戻すのを取り違えると球と背景の全部が違う。
     /// skyIrradiance3d（Apple Silicon で 3 px ±1）: 球の坂の丸めの ±1。基底の並びを取り違えると球と床の面（千 px の桁）が違う。
     /// vertexColorTexture3d（Apple Silicon で 32 px ±1）: 頂点の色の坂の補間の丸め。頂点の色を掛け忘れる・2 倍を取り違えると板の面（千 px の桁）が違う。
+    /// SSAO の 5 つ（Apple Silicon で ambientOcclusionMask3d 200 px ±4・ambientOcclusion3d 90 px ±1・ambientOcclusionFog3d 63 px ±1・
+    /// ambientOcclusionFocus3d 110 px ±1・ambientOcclusionBandFog3d 2,108 px ±35）: mask は tap の角の cos・sin と ign の fract（f32 と Float64）が
+    /// 丸めの境目に落ちた画素で 1 tap だけ別の画素を読む ±1〜4 で、奥行きの段差（箱の縁・壁と床の境）の近くにだけ出る。仕上がりは mask の ±1 が
+    /// 環境の光に掛かった ±1。BandFog は DepthBand の帯の縁（postStackDepthBand と同じ割れ）。法線の向き・半径の単位・掛ける項を取り違えると
+    /// 床と壁の面（数千 px）が丸ごと違い、桁が変わる。
     pub def toleranceOf(name: String): Option[Int32] = match name {
+        case "ambientOcclusionMask3d"    => Some(300)
+        case "ambientOcclusion3d"        => Some(150)
+        case "ambientOcclusionFog3d"     => Some(100)
+        case "ambientOcclusionFocus3d"   => Some(170)
+        case "ambientOcclusionBandFog3d" => Some(3200)
         case "psxFloor3d"      => Some(800)
         case "psxBox3d"        => Some(20)
         case "psxSkin3d"       => Some(60)
@@ -1116,6 +1128,21 @@ mod Scenes {
 
     /// PS1 風の箱の場面（psxBox3d）の描き物（PostScenes の CRT のにじみの場面が読む）。
     pub def psxWorld(): List[Render.PlacedItem] = psxBox3d()#items
+
+    /// 床・奥の壁・左の壁と、床に置いた箱 3 つ（1 つは部屋の隅）の部屋（240 × 140・PostScenes の SSAO の場面が読む）。
+    /// 環境の光が強く、太陽は影を落とさない（SSAO が暗くする所 = 箱の足元・壁と床の境・部屋の隅が、ほかの暗さと混ざらない）。
+    pub def roomWorld(): List[Render.PlacedItem] =
+        let camera = { eye = Vec3.v3(0.5, 3.0, 0.0), yaw = 0.15, pitch = 0.32, fovY = 1.0, near = 1.0, far = 60.0, lensShift = Vec2.zero() };
+        let v = Vec3.v3;
+        let floor = shape(upQuad(-6.0, 6.0, 4.0, 16.5, -2.0, c8(200, 196, 188)) :: Nil);
+        let walls = shape(boxOf(v(-6.0, -2.0, 16.0), v(6.0, 4.0, 16.5), c8(190, 200, 210)) ::: boxOf(v(-6.5, -2.0, 4.0), v(-6.0, 4.0, 16.5), c8(210, 200, 190)));
+        let boxes = shape(boxOf(v(-2.0, -2.0, 9.0), v(0.0, -0.6, 11.0), c8(180, 90, 70)) ::: boxOf(v(1.5, -2.0, 11.5), v(3.5, 1.0, 13.5), c8(80, 130, 180))
+                          ::: boxOf(v(-5.9, -2.0, 14.0), v(-4.0, 0.0, 15.9), c8(120, 170, 90)));
+        let sun = { intensity = 0.6 | Scene3d.directionalLight(Vec3.v3(0.4, -0.8, 0.45)) };
+        let scene = { instances = floor :: walls :: boxes :: Nil, directionalLight = Some(sun), zIndex = 1,
+                      environment = { ambient = c8(170, 170, 175), hemisphere = 0.25, toonSteps = 0, fog = None, background = Some(c8(10, 10, 30)) }
+                      | Scene3d.scene(camera, { x = 240.0, y = 140.0 }) };
+        Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil
 
     /// 太陽で照らした床と板の 3D の場面を画面いっぱいに 1 つ（PostScenes の奥行きのぼかしの場面が読む）。
     pub def sunWorld(): List[Render.PlacedItem] =

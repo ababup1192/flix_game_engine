@@ -1,4 +1,4 @@
-<!-- engine v0.117.0 / 生成: 2026-11-26 -->
+<!-- engine v0.117.0 / 生成: 2026-11-27 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_world
@@ -2039,6 +2039,8 @@
   `pub type alias FogNoise = { size = Float64, amount = Float64, speed = Vec2.Vec2 }`
 - 高さの霧（地面の近くほど濃く、遠いほど濃くなる霧）。Unreal の Exponential Height Fog と同じ式で、名前もそろえた。
   `pub type alias HeightFog = { color = Color, density = Float64, baseHeight = Float64, heightFalloff = Float64, startDistance = Float64, maxOpacity = Float64, noise = Option[FogNoise], lightGlow = Float64 }`
+- 画面の上の SSAO（家具の足元・部屋の隅・物の接する所を暗くする）。値は ScreenEffects3d.AmbientOcclusion（半径と thickness は m）。
+  `pub type alias AmbientOcclusion = ScreenEffects3d.AmbientOcclusion`
 - 場面の Pass の縁のならし（MSAA）。WebGPU は 1 か 4 しか持たない。
   `pub enum Msaa with Eq, ToString { case Off case X4 }`
 - 自分の Spec を挟む所。BeforeBloom = 場面の Pass の値（描き手が書いた画面の値・1 を超える）を読んで同じ形の値を書く（線形へ戻すのはこの後）・
@@ -2047,12 +2049,12 @@
   `pub enum Read with Eq, ToString { case SceneColor case SceneDepth case Pass(String) }`
 - 自分の Spec の Pass 1 枚。name は Pass の名前（ps_ で始めない）・scale は描き先の倍率（窓の画素 = 1）。
   `pub type alias CustomPass = { name = String, at = CustomAt, spec = ShaderDoc.Spec, reads = List[Read], scale = Float64 }`
-- 途中の絵を画面へ出す（make render で 1 枚見る用）。Final = 仕上がり・Scene = 露出と曲線の前の場面の値・Bloom = ブルームの絵・Depth = 奥行きの絵。
-  `pub enum DebugView with Eq, ToString { case Final case Scene case Bloom case Depth }`
+- 途中の絵を画面へ出す（make render で 1 枚見る用）。Final = 仕上がり・Scene = 露出と曲線の前の場面の値・Bloom = ブルームの絵・Depth = 奥行きの絵・
+  `pub enum DebugView with Eq, ToString { case Final case Scene case Bloom case Depth case AmbientOcclusion }`
 - 見た目の名前から引く出発点（docs/art-ref/visual-dict/reference-3d.md の行の名前と同じ）。値は PostStack.preset。
   `pub enum Preset with Eq, ToString { case Neutral case DuskOutdoor case NightOutdoor case SunnyCity case EveningBeach case Cave case NightCorridor case TorchRoom }`
 - 組み方の問題（build が返す。実機は 1 回だけ知らせ、描き出しの lint は止める）。
-  `pub enum Issue with Eq, ToString { case NoScene3d case SeveralScenes(Int32) case ReservedPassName(String) }`
+  `pub enum Issue with Eq, ToString { case NoScene3d case SeveralScenes(Int32) case ReservedPassName(String) case AmbientOcclusionNeedsNative }`
 - threshold 1・smoothness 0.5・size 0.04・strength 0.6 のブルーム。
   `pub def bloom(): Bloom`
 - strength 0.3・inner 0.35・outer 1.05・画面の真ん中のビネット。
@@ -2065,6 +2067,8 @@
   `pub def crt(): Crt`
 - size 8・amount 0.4・speed (0.5, 0.2) の霧のむら。
   `pub def fogNoise(): FogNoise`
+- 半径 1 m・強さ 2・曲線 1.5・12 点の SSAO（ScreenEffects3d.ambientOcclusion）。
+  `pub def ambientOcclusion(): AmbientOcclusion`
 - 青みの灰色・density 0.02・heightFalloff 0.2・むらと灯りのにじみ無しの高さの霧。
   `pub def heightFog(): HeightFog`
 - 後がけの値の束（Godot の Environment・Unity の Volume のように、効果ごとの欄を持つ値 1 つ）。
@@ -2092,6 +2096,8 @@
 - `pub def withDistortion(d: Option[Distortion], s: Stack): Stack`
 - `pub def withHeightFog(h: Option[HeightFog], s: Stack): Stack`
 - `pub def withCrt(c: Option[Crt], s: Stack): Stack`
+- 画面の上の SSAO（None で外す。`PostStack.withAmbientOcclusion(Some({ radius = 0.5 | PostStack.ambientOcclusion() }), s)`）。
+  `pub def withAmbientOcclusion(a: Option[AmbientOcclusion], s: Stack): Stack`
 - 時間で動く後がけ（Distortion と HeightFog のむら）の時刻。陽炎と霧は遊びの時計（ポーズで止まる）を渡す。描き出しとテストは決まった時刻を渡す。
   `pub def withTime(t: Clock.Time[c], s: Stack): Stack`
 - `pub def exposureOf(s: Stack): Float64`
@@ -2109,6 +2115,7 @@
 - `pub def distortionOf(s: Stack): Option[Distortion]`
 - `pub def heightFogOf(s: Stack): Option[HeightFog]`
 - `pub def crtOf(s: Stack): Option[Crt]`
+- `pub def ambientOcclusionOf(s: Stack): Option[AmbientOcclusion]`
 - withTime の秒。
   `pub def timeOf(s: Stack): Float64`
 - 場面（View が返す絵）を描いた Pass。BeforeBloom の自分の Spec はこれを読む。

@@ -23,7 +23,7 @@ mod Render3d.TestBatch {
     def solidFields(): Scene3d.MaterialFields = Scene3d.materialFieldsOf(solidMaterial())
 
     def plainKind(): Render3d.ProgramKey.ProgramKind =
-        { skinned = false, uv = false, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false, metallicRoughness = false, variant = { pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false } }
+        { skinned = false, uv = false, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false, metallicRoughness = false, variant = { pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false, ambientOcclusion = false } }
 
     def surfaceKey(m: Scene3d.MaterialFields, kind: Render3d.ProgramKey.ProgramKind): Option[BatchKey] =
         batchKeyOf(DrawMode.Instanced, plainDraw(1.0, false), Some((m, kind)))

@@ -741,12 +741,29 @@ pub mod Scene3d {
     /// groups = 動かない物の集まり（staticGroup。中の物は instances と同じに描かれる。読むのは instancesOf）・multiMeshes = 同じ形をたくさん（MultiMesh3d.build。既定 Nil）・
     /// unitsPerMeter = 1 m が場面の長さのいくつか（withUnitsPerMeter。Legacy の光では描き方は変えず、m で受ける値（PostStack の奥行きのぼかし）と Physical の光の逆二乗が読む）・
     /// pointShadows = 点光源の影（withPointShadows。None なら影なし）・lightUnits = 光の量の読み方（withLightUnits。既定 Legacy）・
-    /// psx = PS1 風の描き方（withPsx。既定 psxOff = 全部切る）。
+    /// psx = PS1 風の描き方（withPsx。既定 psxOff = 全部切る）・screenInputs = 画面の上の技（SSAO）の入力（PostStack が入れる。ゲームは書かない・既定 None）。
     pub type alias Scene3dCmd = { size = Vec2.Vec2, camera = Camera3d.Camera3d, instances = List[Instance3d], groups = List[StaticGroup], multiMeshes = List[MultiMesh3d.MultiMesh3d], billboards = List[Billboard3d],
                                   pointLights = List[PointLight], spotLights = List[SpotLight], directionalLight = Option[DirectionalLight], environment = Environment3d,
                                   resolution = Resolution, output = Output, zIndex = Int32, time = Float64,
                                   textures = List[Texture3d.Texture3d], sky = Option[Sky3d], environmentMap = Option[EnvironmentMap], unitsPerMeter = Float64,
-                                  pointShadows = Option[PointShadowMap], lightUnits = LightUnits, psx = PsxLook }
+                                  pointShadows = Option[PointShadowMap], lightUnits = LightUnits, psx = PsxLook, screenInputs = Option[ScreenInputs] }
+
+    // WhyNot: 開いたレコードにしない — 奥行きの Pass の名前と range は PostStack が場面の camera から 1 回だけ決める値で、ゲームが欄を 1 つだけ書き替えると 3 つの描き手が別の奥行きを読む。
+    enum ScreenInputsData { case ScreenInputsData(ScreenInputsFields) }
+
+    /// 画面の上の技（SSAO）の入力（閉じた型。作るのは Scene3d.screenInputs）。
+    pub type alias ScreenInputs = ScreenInputsData
+
+    /// ScreenInputs の中身。depth = 奥行きの Pass の名前（R32Float・赤が目からの距離 / depthRange）・depthRange = その range（Scene3d.Internal.ScreenInputs.depthRangeOf）・
+    /// ambientOcclusion = SSAO の値（None なら掛けない）・show = 場面の色の代わりに出す内側の絵（PostStack.DebugView）。
+    pub type alias ScreenInputsFields = { depth = String, depthRange = Float64, ambientOcclusion = Option[ScreenEffects3d.AmbientOcclusion],
+                                          show = Option[ScreenEffects3d.ScreenDebug] }
+
+    /// 画面の上の技の入力を作る（PostStack が奥行きを描く場面に入れる。ゲームは呼ばない — PostStack.withAmbientOcclusion を使う）。
+    pub def screenInputs(fields: ScreenInputsFields): ScreenInputs = ScreenInputsData.ScreenInputsData(fields)
+
+    /// s の中身。
+    pub def screenInputsFieldsOf(s: ScreenInputs): ScreenInputsFields = match s { case ScreenInputsData.ScreenInputsData(f) => f }
 
     /// 空の場面（環境光は白・光なし・かすみなし・地の色なし・Native・色を書き出す・zIndex 0・時刻 0・絵なし・空なし・1 m = 1・点光源の影なし・Legacy の光・PS1 風は切る）。
     /// time = 材質の ShaderDoc の時刻（秒）（ゲームの遊びの時計を渡すと、ポーズやヒットストップで材質の動きも止まる）。
@@ -756,7 +773,7 @@ pub mod Scene3d {
         { size = size, camera = camera, instances = Nil, groups = Nil, multiMeshes = Nil, billboards = Nil, pointLights = Nil, spotLights = Nil, directionalLight = None,
           environment = { ambient = Color.rgb(1.0, 1.0, 1.0), hemisphere = 0.0, toonSteps = 0, fog = None, background = None },
           resolution = Resolution.Native, output = Output.Color, zIndex = 0, time = 0.0, textures = Nil, sky = None, environmentMap = None,
-          unitsPerMeter = 1.0, pointShadows = None, lightUnits = LightUnits.Legacy, psx = psxOff() }
+          unitsPerMeter = 1.0, pointShadows = None, lightUnits = LightUnits.Legacy, psx = psxOff(), screenInputs = None }
 
     /// 1 m が場面の長さのいくつかを言う（既定 1 = glTF・Blender と同じ）。Blender の 1 m を 16 で置いた場面は 16。
     pub def withUnitsPerMeter(k: Float64, scene: Scene3dCmd): Scene3dCmd = { unitsPerMeter = k | scene }
@@ -1027,15 +1044,25 @@ pub mod Scene3d {
 
     /// 先に組むシェーダーの変種（場面の設定で決まる版）。pointShadows = 点光源の影を引く版（場面の pointShadows が Some・描き手の鍵の +ps）・
     /// physicalUnits = Physical の光の版（場面の lightUnits が Physical・+pu）・psx = PS1 風の版（場面の psx が Scene3d.Psx.isOn・+psx）。どれも偽なら既定の版（いつも組む）。
-    /// skyIrradiance = 景色の拡散の光を混ぜる版（環境マップがあり skyContribution が 0 より大きい・+sh）。
-    pub type alias PreloadVariant = { pointShadows = Bool, physicalUnits = Bool, psx = Bool, skyIrradiance = Bool }
+    /// skyIrradiance = 景色の拡散の光を混ぜる版（環境マップがあり skyContribution が 0 より大きい・+sh）・
+    /// ambientOcclusion = 画面の上の SSAO の mask を読む版（screenInputs に ambientOcclusion がある色の場面・+ao）。
+    pub type alias PreloadVariant = { pointShadows = Bool, physicalUnits = Bool, psx = Bool, skyIrradiance = Bool, ambientOcclusion = Bool }
 
     /// 場面 scene を描く時に描き手が組む変種（先に上げる宣言に、遊びで出す場面の設定から渡す）。
+    // WhyNot: Design の解像度の場面を +ao にしない — 奥行きの Pass の中の場面の矩形は 2D の並びを描く時まで決まらず、場面を先に描く所で mask の場所を決められない。
     pub def preloadVariantOf(scene: Scene3dCmd): PreloadVariant =
         { pointShadows = Option.nonEmpty(scene#pointShadows), physicalUnits = scene#lightUnits == LightUnits.Physical, psx = Scene3d.Psx.isOn(scene#psx),
-          skyIrradiance = Scene3d.Internal.SkyIrradiance.isOn(scene) }
+          skyIrradiance = Scene3d.Internal.SkyIrradiance.isOn(scene),
+          ambientOcclusion = isColorOutput(scene#output) and scene#resolution == Resolution.Native and (scene#screenInputs |> Option.exists(s -> Option.nonEmpty(screenInputsFieldsOf(s)#ambientOcclusion))) }
 
-    /// 変種 v の字（"" = 既定・+ps・+pu・+psx・+sh の組。描き手のプログラムの鍵と同じ並び）。
+    /// 色を書き出す場面か（Output.Color）。
+    def isColorOutput(o: Output): Bool = match o {
+        case Output.Color    => true
+        case Output.Depth(_) => false
+    }
+
+    /// 変種 v の字（"" = 既定・+ps・+pu・+psx・+sh・+ao の組。描き手のプログラムの鍵と同じ並び）。
     pub def preloadVariantKey(v: PreloadVariant): String =
         (if (v#pointShadows) "+ps" else "") + (if (v#physicalUnits) "+pu" else "") + (if (v#psx) "+psx" else "") + (if (v#skyIrradiance) "+sh" else "")
+            + (if (v#ambientOcclusion) "+ao" else "")
 }

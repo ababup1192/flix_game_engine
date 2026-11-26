@@ -243,6 +243,7 @@ mod RenderFrame.TestRenderList {
     def formatName(format: Option[RenderTarget.Format]): String = match format {
         case Some(RenderTarget.Format.Rgba8Unorm)  => "rgba8"
         case Some(RenderTarget.Format.Rgba16Float) => "rgba16f"
+        case Some(RenderTarget.Format.R32Float)    => "r32f"
         case None                                  => "none"
     }
 

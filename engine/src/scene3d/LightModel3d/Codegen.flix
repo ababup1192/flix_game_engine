@@ -114,6 +114,11 @@ pub mod LightModel3d.Codegen {
         case (Target.Flix, _) => scalarInputName(input)
         case (Target.Glsl, ScalarInput.InverseUnitsPerMeterSquared) => "uInverseUnitsPerMeterSquared"
         case (Target.Wgsl, ScalarInput.InverseUnitsPerMeterSquared) => "r3dLight.uInverseUnitsPerMeterSquared"
+        // WhyNot: SSAO の値を関数の引数にしない — toGlsl の引数の並びを変えず、frag の main が mask を読んで先に代入する（太陽の影の割合と同じ）。
+        case (Target.Glsl, ScalarInput.ScreenAmbientOcclusion)       => "r3d_ao"
+        case (Target.Wgsl, ScalarInput.ScreenAmbientOcclusion)       => "r3d_ao"
+        case (Target.Glsl, ScalarInput.ScreenAmbientOcclusionDirect) => "r3d_aoDirect"
+        case (Target.Wgsl, ScalarInput.ScreenAmbientOcclusionDirect) => "r3d_aoDirect"
         case (Target.Glsl, ScalarInput.SkyContribution)   => "uSkyContribution"
         case (Target.Wgsl, ScalarInput.SkyContribution)   => "r3dLight.uSkyContribution"
         // WhyNot: 太陽の影の割合を関数の引数にしない — toGlsl の引数の並びを変えず、frag の main が先に求めて渡す（地図を引くのは木の外）。
@@ -153,6 +158,8 @@ pub mod LightModel3d.Codegen {
         case ScalarInput.PhysicalUnits     => "physicalUnits"
         case ScalarInput.InverseUnitsPerMeterSquared => "inverseUnitsPerMeterSquared"
         case ScalarInput.SkyContribution   => "skyContribution"
+        case ScalarInput.ScreenAmbientOcclusion       => "ao"
+        case ScalarInput.ScreenAmbientOcclusionDirect => "aoDirect"
     }
 
     def vec3InputName(input: Vec3Input): String = match input {
@@ -733,15 +740,16 @@ pub mod LightModel3d.Codegen {
         let p = Param.Vec3Param(Vec3Input.Position);
         let n = Param.Vec3Param(Vec3Input.Normal);
         let units = Param.ScalarParam(ScalarInput.PhysicalUnits) :: Param.ScalarParam(ScalarInput.InverseUnitsPerMeterSquared) :: Nil;
+        let ao = Param.ScalarParam(ScalarInput.ScreenAmbientOcclusion) :: Param.ScalarParam(ScalarInput.ScreenAmbientOcclusionDirect) :: Nil;
         let lights = Param.Steps :: Param.Points :: Param.Spots :: Param.Shadow :: Param.PointLit :: p :: n :: Nil;
         let sun = Param.Vec3Param(Vec3Input.SunDirection) :: Param.Vec3Param(Vec3Input.SunColor) :: Param.ScalarParam(ScalarInput.SunLit) :: Nil;
         let v = cpuVariant();
-        { name = "lightAt", model = lightingModelFor(v), doc = "lightingModel の光の量（toon の丸めまで済ませた値。sunLit = 太陽の影の割合・sh と skyContribution = Scene3d.Internal.SkyIrradiance.valuesOf の係数と割合）。",
+        { name = "lightAt", model = lightingModelFor(v), doc = "lightingModel の光の量（toon の丸めまで済ませた値。sunLit = 太陽の影の割合・sh と skyContribution = Scene3d.Internal.SkyIrradiance.valuesOf の係数と割合・ao と aoDirect = SSAO の値（無ければ 1））。",
           params = lights ::: Param.Vec3Param(Vec3Input.Ambient) :: Param.ScalarParam(ScalarInput.Hemisphere) :: sun ::: units :::
-                   Param.Sh :: Param.ScalarParam(ScalarInput.SkyContribution) :: Nil } ::
+                   Param.Sh :: Param.ScalarParam(ScalarInput.SkyContribution) :: ao } ::
         { name = "lightmapLightAt", model = lightmapLightingModelFor(v), doc = "lightmapLightingModel の光の量（lightmap は段つきで読んだ後の rgb を渡す）。",
           params = lights ::: Param.Vec3Param(Vec3Input.LightmapColor) :: Param.ScalarParam(ScalarInput.LightmapSrgb) ::
-                   Param.ScalarParam(ScalarInput.LightmapIntensity) :: units } ::
+                   Param.ScalarParam(ScalarInput.LightmapIntensity) :: units ::: ao } ::
         { name = "fogAt", model = fogModel(), doc = "fogModel の色（fog が無い場面では呼ばない）。",
           params = p :: Param.Vec3Param(Vec3Input.Eye) :: Param.Vec3Param(Vec3Input.Color) :: Param.Vec3Param(Vec3Input.FogColor) ::
                    Param.ScalarParam(ScalarInput.FogNear) :: Param.ScalarParam(ScalarInput.FogFar) :: Nil } ::

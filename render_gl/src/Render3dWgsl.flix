@@ -17,16 +17,28 @@ pub mod Render3dWgsl {
         "@group(0) @binding(3) var uEnvMap: texture_2d<f32>;\n" +
         "@group(0) @binding(4) var uEnvSampler: sampler;\n"
 
-    /// 変種 v の pipeline だけが group 0 に足す binding（どれも偽なら空の字）。6 = 点光源の影と光の量の読み方と PS1 風の値と景色の拡散の光の buffer（R3dLight・+ps か +pu か +psx か +sh）・
-    /// 7 = 点光源の影の atlas（+ps だけ）。R3dLight の欄の名前は Render3dGlsl の uniform と同じで、並びは Render3d.UniformLayout.lightFields。
+    /// 変種 v の pipeline だけが group 0 に足す binding の宣言（Render3d.ProgramKey.group0Of の順。どれも無ければ空の字）。
+    /// R3dLight の欄の名前は Render3dGlsl の uniform と同じで、並びは Render3d.UniformLayout.lightFields。
     // WhyNot: 既定の R3dScene の struct に欄を足さない — 既定の pipeline の WGSL の字と group 0 の layout が変わり、変種を使わない場面まで値の並びが動く。
     pub def variantDeclarations(v: Render3d.ProgramKey.ShaderVariant): String =
-        let rows = Render3d.ProgramKey.rowsOf(v);
-        if (not (rows |> List.exists(row -> row#lightBuffer))) ""
-        else
+        Render3d.ProgramKey.group0Of(v) |> Set.toList |> List.map(group0Declaration) |> String.flatten
+
+    def group0Declaration(b: Render3d.ProgramKey.Group0Binding): String = match b {
+        case Render3d.ProgramKey.Group0Binding.LightBuffer      =>
             Render3d.UniformLayout.structSource("R3dLight", Render3d.UniformLayout.lightFields()) +
-            "@group(0) @binding(${lightBinding()}) var<uniform> r3dLight: R3dLight;\n" +
-            (if (rows |> List.exists(row -> row#pointShadowAtlas)) "@group(0) @binding(${pointShadowMapBinding()}) var uPointShadowMap: texture_depth_2d;\n" else "")
+            "@group(0) @binding(${lightBinding()}) var<uniform> r3dLight: R3dLight;\n"
+        case Render3d.ProgramKey.Group0Binding.PointShadowAtlas =>
+            "@group(0) @binding(${pointShadowMapBinding()}) var uPointShadowMap: texture_depth_2d;\n"
+        case Render3d.ProgramKey.Group0Binding.AoMask =>
+            "@group(0) @binding(${aoMaskBinding()}) var uAoMask: texture_2d<f32>;\n" +
+            "struct R3dAo { uValues: vec4f };\n@group(0) @binding(${aoMaskBinding() + 1}) var<uniform> r3dAo: R3dAo;\n"
+    }
+
+    /// 変種 +ao の group 0 の SSAO の mask の binding（R3dAo の buffer はその次）。
+    pub def aoMaskBinding(): Int32 = 8
+
+    /// R3dAo のバイト数（uValues = (場面の描き先の幅, 高さ, lightAffect, 0)）。
+    pub def aoValueBytes(): Int32 = 16
 
     /// 変種の group 0 の R3dLight の binding。
     pub def lightBinding(): Int32 = 6

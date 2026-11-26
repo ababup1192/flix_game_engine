@@ -78,11 +78,11 @@ pub mod Render3dShaders {
                                    deps = Nil, derivative = false })
 
     /// 光の式の木の字が読みうる定義（spot = スポット i の光に掛ける割合の関数）。
-    def lightReads(spot: Definition): List[Definition] = spot :: sunLit() :: pointLit() :: colorSpace()
+    def lightReads(spot: Definition): List[Definition] = spot :: sunLit() :: pointLit() :: screenAo() :: screenAoDirect() :: colorSpace()
 
-    /// 変種 v の光の式の木を見分ける字（光の式の木を変える欄の +ps・+pu・+sh だけで決める）。
+    /// 変種 v の光の式の木を見分ける字（光の式の木を変える欄の +ps・+pu・+sh・+ao だけで決める）。
     def lightKeyOf(v: Render3d.ProgramKey.ShaderVariant): String =
-        "/ps=${v#pointShadows}/pu=${v#physicalUnits}/sh=${v#skyIrradiance}"
+        "/ps=${v#pointShadows}/pu=${v#physicalUnits}/sh=${v#skyIrradiance}" + (if (v#ambientOcclusion) "/ao" else "")
 
     /// 変種 v の光の式 lightAt(点, 法線)（spot = スポットの影の割合の関数）。
     pub def lightAt(v: Render3d.ProgramKey.ShaderVariant, spot: Definition): Definition =
@@ -290,6 +290,18 @@ pub mod Render3dShaders {
             ifInline(le(fade, f("0.0")), ret(f("1.0"))) ::
             ret(sub(f("1.0"), mul(mul(u(Float.Float, R3dUniform.SunStrength), fade), paren(sub(f("1.0"), fraction))))) :: Nil)
 
+    /// 光の式の木が読む SSAO の値（+ao の frag の main が mask を読んで先に代入する。半透明の材質とそれまでは 1）。
+    pub def screenAo(): Definition = ShaderAst.privateVar("r3d_ao", Float.Float, None, Some(f("1.0")), None)
+
+    /// 光の式の木が読む直接光の SSAO の値 1 − lightAffect × (1 − r3d_ao)。
+    pub def screenAoDirect(): Definition = ShaderAst.privateVar("r3d_aoDirect", Float.Float, None, Some(f("1.0")), None)
+
+    /// 場面の描き先の今の画素が読む SSAO の mask の値 r3d_screenAoAt()（Render3d.ScreenPasses.screenMaskAt。描き先の大きさは uAo.xy）。
+    pub def screenAoAt(): Definition =
+        let values = u(Vec4.Vec4, R3dUniform.AoValues);
+        ShaderAst.function("r3d_screenAoAt", ShaderAst.Ty.F32, Nil,
+            ret(Render3d.ScreenPasses.screenMaskAt(u(Tex.Tex, R3dUniform.AoMask), ShaderAst.pixelFromTopLeft(psxTargetRect()), ShaderAst.xy(values))) :: Nil)
+
     /// 光の式の木が読む点光源ごとの影の割合（frag の main が r3d_pointShadowsAt で埋める）。
     pub def pointLit(): Definition = ShaderAst.privateVar("r3d_pointLit", Float.Float, Some(Scene3d.maxPointLights()), None, None)
 
@@ -475,8 +487,9 @@ pub mod Render3dShaders {
 
     // ── feature の関数（変種のフラグが名前のある点に差し込む物） ──
 
-    /// 光の計算の前の点: point = 点・shift = 点をずらす向きの法線（法線マップを当てる前・裏の面は裏返した物）・normal = 光の計算の法線。
-    pub type alias LightPoint = { point = Expr[Vec3], shift = Expr[Vec3], normal = Expr[Vec3] }
+    /// 光の計算の前の点: point = 点・shift = 点をずらす向きの法線（法線マップを当てる前・裏の面は裏返した物）・normal = 光の計算の法線・
+    /// screenAo = 画面の上の SSAO の mask を読むか（半透明の材質は読まない — 奥行きの絵に入らない物で、奥の面の値を拾う）。
+    pub type alias LightPoint = { point = Expr[Vec3], shift = Expr[Vec3], normal = Expr[Vec3], screenAo = Bool }
 
     /// シェーダーの名前のある点ごとの差し込み（木 → 木）。declarations = 光の式の定義の並びを差し替える・beforeLight = 光の計算の前の文を差し替える・
     /// colorOut = 画面の値の色を出す前に通す式・spotShadow = スポットの影の割合の関数を差し替える・clipOut = vertex が出す clip の位置（GL の clip）を通す式。
@@ -496,6 +509,17 @@ pub mod Render3dShaders {
     pub def psxFeature(): ShaderFeature =
         { declarations = ds -> ds ::: colorDepth() :: Nil, colorOut = c -> call(Vec3.Vec3, colorDepth(), arg(c) :: Nil),
           clipOut = c -> call(Vec4.Vec4, vertexSnap(), arg(c) :: Nil) | noFeature() }
+
+    /// 画面の上の SSAO（+ao）: 光の計算の前に mask を読んで r3d_ao と r3d_aoDirect を埋める（LightPoint#screenAo が偽の物は 1 のまま）。
+    pub def screenAoFeature(): ShaderFeature =
+        { beforeLight = (at, ss) ->
+              if (not at#screenAo) ss
+              else {
+                  let ao = ShaderAst.readGlobal(Float.Float, screenAo());
+                  let lightAffect = ShaderAst.z(u(Vec4.Vec4, R3dUniform.AoValues));
+                  ss ::: assign(ao, call(Float.Float, screenAoAt(), Nil)) ::
+                         assign(ShaderAst.readGlobal(Float.Float, screenAoDirect()), sub(f("1.0"), mul(lightAffect, paren(sub(f("1.0"), ao))))) :: Nil
+              } | noFeature() }
 
     /// スポットの影を受けない（ビルボード）: spotShadow をいつも 1 の spotShadowUnlit に差し替える。
     // WhyNot: スポットの影の on の uniform を 0 にしてスポットの影を切らない — WebGPU の場面の group 0 は同じ場面の物の影の地図と on を持ち、ビルボードだけ値を替える binding が無い。
@@ -609,7 +633,7 @@ pub mod Render3dShaders {
                 toScreen(call(Vec3.Vec3, surfaceOut(),
                               arg(toLinear3(ShaderAst.rgb(albedo))) :: arg(tint) :: arg(light) :: arg(emission) :: arg(intensity) :: arg(world) :: arg(ShaderAst.bool(true)) :: Nil)) :: Nil;
         materialNames(surface) ::: (materialEval(surface#metallicRoughness) :: Nil) ::: cutout ::: (depthOut :: Nil) :::
-        (if (surface#doubleSided) declFacing :: Nil else Nil) ::: (declN :: Nil) ::: shadowsBeforeLight(feature, { point = world, shift = faceNormal, normal = n }) :::
+        (if (surface#doubleSided) declFacing :: Nil else Nil) ::: (declN :: Nil) ::: shadowsBeforeLight(feature, { point = world, shift = faceNormal, normal = n, screenAo = not surface#blend }) :::
         (declLight :: Nil) ::: shade
 
     /// 頂点の色のプログラムの frag の main の本文（vColor は頂点シェーダーが線形へ戻し済み）。
@@ -621,7 +645,7 @@ pub mod Render3dShaders {
                          arg(ShaderAst.varying(Vec3.Vec3, colorVarying())) :: arg(ShaderAst.varying(Vec3.Vec3, tintVarying())) ::
                          arg(call(Vec3.Vec3, lightAt(v, feature#spotShadow(spotShadow())), arg(world) :: arg(n) :: Nil)) :: arg(ShaderAst.vec3Splat(f("0.0"))) :: arg(f("1.0")) ::
                          arg(world) :: arg(ShaderAst.bool(true)) :: Nil);
-        (declN :: Nil) ::: shadowsBeforeLight(feature, { point = world, shift = n, normal = n }) :::
+        (declN :: Nil) ::: shadowsBeforeLight(feature, { point = world, shift = n, normal = n, screenAo = true }) :::
         (ShaderAst.emit(ShaderAst.vec4FromVec3(feature#colorOut(color), f("1.0"))) :: Nil)
 
     /// 材質の frag の入口。bindings = WGSL の binding の宣言（wgslDeclarations。GL の描き手は空）。
@@ -742,6 +766,7 @@ pub mod Render3dShaders {
                  declLit ::
                  ifInline(ShaderAst.eq(lit, i(2)), assign(ShaderAst.readGlobal(Float.Float, sunLit()), call(Float.Float, sunLitAt(), arg(shadowPoint) :: arg(sunDir) :: arg(facing) :: Nil))) ::
                  declLight ::
+                 feature#beforeLight({ point = world, shift = facing, normal = facing, screenAo = true }, Nil) :::
                  ifInline(litOn, assign(light, call(Vec3.Vec3, lightAt(bv, feature#spotShadow(spotShadow())), arg(world) :: arg(facing) :: Nil))) ::
                  ShaderAst.emit(ShaderAst.vec4FromVec3(feature#colorOut(color), f("1.0"))) :: Nil }
 

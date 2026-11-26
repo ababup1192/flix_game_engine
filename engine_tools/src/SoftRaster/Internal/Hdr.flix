@@ -4,7 +4,7 @@
 pub mod SoftRaster.Internal.Hdr {
     import java.awt.image.BufferedImage
     import java.awt.Graphics2D
-    use SoftRaster.{HdrCanvas, PassImage, QualityHints, applyQualityHints, blendPixelF, channelOf, forEachPixel, frozenHdr, passImageSize, putHdr, withClip}
+    use SoftRaster.{HdrCanvas, PassImage, QualityHints, applyQualityHints, blendPixelF, channelOf, forEachPixel, frozenFloats, frozenHdr, passImageSize, putHdr, withClip}
 
     pub def blankHdrCanvas(w: Int32, h: Int32): HdrCanvas \ IO =
         { width = w, height = h, rgba = Array.repeat(Static, Int32.max(1, w * h) * 4, 0.0) }
@@ -15,6 +15,8 @@ pub mod SoftRaster.Internal.Hdr {
         let canvas = blankHdrCanvas(w, h);
         match img {
             case PassImage.Rgba16Float(hdr) =>
+                forEachPixel(w * h * 4, i -> Array.put(ShaderEval.hdrChannelOf(hdr, i), i, canvas#rgba))
+            case PassImage.R32Float(hdr) =>
                 forEachPixel(w * h * 4, i -> Array.put(ShaderEval.hdrChannelOf(hdr, i), i, canvas#rgba))
             case PassImage.Rgba8Unorm(argb) =>
                 let pixels: Array[Int32, Static] = Array.repeat(Static, w * h, 0);
@@ -30,6 +32,14 @@ pub mod SoftRaster.Internal.Hdr {
     /// 描き終えた描き先を凍らせる（以降は PassImage として読むだけ）。
     pub def freezeHdr(canvas: HdrCanvas): ShaderEval.HdrTexture \ IO =
         frozenHdr(canvas#width, canvas#height, canvas#rgba)
+
+    /// R32Float の描き終えた描き先を凍らせる（float32 に丸める。half に丸めない）。
+    pub def freezeR32(canvas: HdrCanvas): ShaderEval.HdrTexture \ IO =
+        frozenFloats(canvas#width, canvas#height, canvas#rgba)
+
+    /// R32Float の描き先の全面を (c の赤, 0, 0, 1) で塗る（GPU の R32Float の描き先の clear は赤だけを持つ）。
+    pub def fillClearR32(canvas: HdrCanvas, c: Color): Unit \ IO =
+        forEachPixel(canvas#width * canvas#height, i -> putHdr(canvas#rgba, i, (c#r, 0.0, 0.0, 1.0)))
 
     /// 描き先の全面を c の不透明で塗る（fillClear の Rgba16Float 版。c は 0..1 に切らない）。
     pub def fillClearHdr(canvas: HdrCanvas, c: Color): Unit \ IO =

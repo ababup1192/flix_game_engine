@@ -94,6 +94,7 @@ pub mod SoftRaster.Internal.DrawList {
         match fromPass {
             case Some(PassImage.Rgba8Unorm(img))  => Some(ShaderEval.TexImage.Rgba8Unorm(texDataOf(img)))
             case Some(PassImage.Rgba16Float(hdr)) => Some(ShaderEval.TexImage.Rgba16Float(hdr))
+            case Some(PassImage.R32Float(hdr))    => Some(ShaderEval.TexImage.Rgba16Float(hdr))
             case None => Map.get(name, fileTextures) |> Option.map(img -> ShaderEval.TexImage.Rgba8Unorm(texDataOf(img)))
         }
 
@@ -111,6 +112,7 @@ pub mod SoftRaster.Internal.DrawList {
         Map.foldLeftWithKey((acc, name, img) -> match img {
             case PassImage.Rgba8Unorm(argb) => Map.insert(name, argb, acc)
             case PassImage.Rgba16Float(_)  => if (Set.memberOf(name, names)) Map.insert(name, toArgbImage(img), acc) else acc
+            case PassImage.R32Float(_)     => if (Set.memberOf(name, names)) Map.insert(name, toArgbImage(img), acc) else acc
         }, Map.empty(), extraImages)
 
     /// 描画本体（z 合流 + 種類ごとの分岐）。背景を塗る/塗らないの違いは入口関数側に置き、
@@ -147,7 +149,7 @@ pub mod SoftRaster.Internal.DrawList {
                     blendedDraw(image, sf, hintsOf(req), p#blend, p#clip, polygonAabb(req#design, p),
                                 gs -> drawPolygon(rc, gs, sf, p))
             case RItem.RSurf(s) => drawSurface(image, sf, plan#texEnv, texels, memo, s)
-            case RItem.RScene(c) => SoftRaster3d.drawScene(image, sf, plan#sceneTextures, c#scene#time, c)
+            case RItem.RScene(c) => SoftRaster3d.drawSceneWithPasses(image, sf, plan#sceneTextures, floatPassesOf(extraImages), c#scene#time, c)
         }, plan#items);
         g.dispose()
     }
@@ -175,9 +177,40 @@ pub mod SoftRaster.Internal.DrawList {
                     blendedDrawHdr(canvas, sf, hints, p#blend, p#clip, polygonAabb(req#design, p),
                                    gs -> drawPolygon(rc, gs, sf, p))
             case RItem.RSurf(s) => drawSurfaceHdr(canvas, sf, plan#texEnv, texels, s)
-            case RItem.RScene(c) => SoftRaster3d.drawSceneHdr(canvas#rgba, (canvas#width, canvas#height), sf, plan#sceneTextures, c#scene#time, c)
+            case RItem.RScene(c) => SoftRaster3d.Targets.drawSceneHdr(canvas#rgba, (canvas#width, canvas#height), sf, plan#sceneTextures, floatPassesOf(extraImages), c#scene#time, c)
         }, plan#items)
     }
+
+    /// drawAllInto の R32Float の描き先版。描くのは 3D の場面だけ（奥行きの絵の Pass。置き換えで赤に書く）。ほかの描き物は描かずに 1 回知らせる。
+    pub def drawAllIntoR32(canvas: HdrCanvas, req: RasterReq, surfaces: List[SurfaceCmd],
+                           extraFonts: Map[String, FontEntry], fontAntialias: FontAntialias,
+                           extraImages: Map[String, PassImage], warnLog: TexWarnLog): Unit \ IO =
+        let sf = Int32.toFloat64(req#scale);
+        let plan = planDraw(req, surfaces, extraFonts, fontAntialias, extraImages, warnLog, None);
+        let (scenes, others) = List.partition(item -> match item {
+            case RItem.RScene(_) => true
+            case _               => false
+        }, plan#items);
+        if (List.isEmpty(others)) ()
+        else {
+            let warned = Ref.get(warnLog);
+            if (Set.memberOf("@r32float-2d", warned)) ()
+            else {
+                System.err.println("SoftRaster: R32Float の Pass は 3D の場面だけを描く（2D の描き物 ${Int32.toString(List.length(others))} 件は描かない）");
+                Ref.put(Set.insert("@r32float-2d", warned), warnLog)
+            }
+        };
+        List.forEach(item -> match item {
+            case RItem.RScene(c) => SoftRaster3d.Targets.drawSceneR32(canvas#rgba, (canvas#width, canvas#height), sf, plan#sceneTextures, c#scene#time, c)
+            case _               => ()
+        }, scenes)
+
+    /// extraImages のうち R32Float の Pass の絵（3D の場面が画面の上の技の奥行きとして名前で読む）。
+    def floatPassesOf(extraImages: Map[String, PassImage]): Map[String, ShaderEval.HdrTexture] =
+        Map.foldLeftWithKey((acc, name, img) -> match img {
+            case PassImage.R32Float(hdr) => Map.insert(name, hdr, acc)
+            case _                       => acc
+        }, Map.empty(), extraImages)
 
     /// z 値取り出し（Drawable / Polygon / シェーダー面 / 3D の場面）。
     def zOf(item: RItem): Int32 =

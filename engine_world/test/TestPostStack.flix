@@ -558,7 +558,7 @@ mod PostStack.Internal.Passes.TestDepthItem {
         let crowd = MultiMesh3d.build(tri, 3, i -> Mat4.translate(Vec3.v3(Int32.toFloat64(i), 0.0, 0.0)));
         let camera = { eye = Vec3.v3(0.0, 0.0, -5.0), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 100.0, lensShift = Vec2.zero() };
         let scene = { multiMeshes = crowd :: Nil | Scene3d.scene(camera, Vec2.v2(32.0, 32.0)) };
-        let kept = match PostStack.Internal.Passes.depthItemOf((Vec2.zero(), scene), 0.5, 10.0)#item {
+        let kept = match PostStack.Internal.Passes.depthItemOf((Vec2.zero(), scene), 0.5, 10.0, false)#item {
             case Render.Item.Scene3d(cmd) => List.sumWith(MultiMesh3d.countOf, cmd#multiMeshes)
             case _                        => -1
         };

@@ -64,6 +64,7 @@ mod TestRenderPassesHdr {
                 let at = c -> ShaderEval.hdrChannelOf(hdr, (y * ShaderEval.hdrWidthOf(hdr) + x) * 4 + c);
                 (at(0), at(1), at(2), at(3))
             case SoftRaster.PassImage.Rgba8Unorm(_) => bug!("Rgba16Float の pass が 8bit で描かれた")
+            case SoftRaster.PassImage.R32Float(_)   => bug!("Rgba16Float の pass が R32Float で描かれた")
         }
 
     def box(at: Vec2.Vec2, size: Vec2.Vec2, c: Color, blend: DrawCmd.BlendMode): GameEngine.Drawable =

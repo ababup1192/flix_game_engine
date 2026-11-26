@@ -251,6 +251,14 @@ public final class WebGl2 implements GlContext {
     private static native void jsTexImageDepth24(int width, int height);
     public void texImageDepth24(int width, int height) { jsTexImageDepth24(width, height); }
 
+    @JSBody(params = {"w", "h"}, script = "fgeGl.texImage2D(fgeGl.TEXTURE_2D, 0, fgeGl.R32F, w, h, 0, fgeGl.RED, fgeGl.FLOAT, null);")
+    private static native void jsTexImageR32fZero(int width, int height);
+    public void texImageR32fZero(int width, int height) { jsTexImageR32fZero(width, height); }
+
+    @JSBody(params = {"w", "h"}, script = "fgeGl.texImage2D(fgeGl.TEXTURE_2D, 0, fgeGl.R8, w, h, 0, fgeGl.RED, fgeGl.UNSIGNED_BYTE, null);")
+    private static native void jsTexImageR8Zero(int width, int height);
+    public void texImageR8Zero(int width, int height) { jsTexImageR8Zero(width, height); }
+
     @JSBody(params = {"w", "h"}, script = "fgeGl.texImage2D(fgeGl.TEXTURE_2D, 0, fgeGl.RGBA32F, w, h, 0, fgeGl.RGBA, fgeGl.FLOAT, null);")
     private static native void jsTexImageRgba32f(int width, int height);
     public void texImageRgba32f(int width, int height) { jsTexImageRgba32f(width, height); }

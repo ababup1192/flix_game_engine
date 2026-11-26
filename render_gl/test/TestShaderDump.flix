@@ -10,12 +10,12 @@ mod TestShaderDump {
     def flags(): List[Bool] = false :: true :: Nil
 
     def allVariants(): List[Render3d.ProgramKey.ShaderVariant] =
-        flags() |> List.flatMap(ps -> flags() |> List.flatMap(pu -> flags() |> List.flatMap(psx -> flags() |> List.map(sh ->
-            { pointShadows = ps, physicalUnits = pu, psx = psx, skyIrradiance = sh }))))
+        flags() |> List.flatMap(ao -> flags() |> List.flatMap(ps -> flags() |> List.flatMap(pu -> flags() |> List.flatMap(psx -> flags() |> List.map(sh ->
+            { pointShadows = ps, physicalUnits = pu, psx = psx, skyIrradiance = sh, ambientOcclusion = ao })))))
 
     def variantLabel(v: Render3d.ProgramKey.ShaderVariant): String =
         let bit = (b: Bool, ch: String) -> if (b) ch else "-";
-        bit(v#pointShadows, "s") + bit(v#physicalUnits, "p") + bit(v#psx, "x") + bit(v#skyIrradiance, "h")
+        bit(v#pointShadows, "s") + bit(v#physicalUnits, "p") + bit(v#psx, "x") + bit(v#skyIrradiance, "h") + (if (v#ambientOcclusion) "a" else "")
 
     /// 材質の frag の字を変える ProgramKind の正しい組（skinned は頂点だけ・法線マップは uv つきの時だけ）。変種は v。
     def surfaceKinds(v: Render3d.ProgramKey.ShaderVariant): List[Render3d.ProgramKey.ProgramKind] =
@@ -25,7 +25,7 @@ mod TestShaderDump {
             flags() |> List.flatMap(lightmap -> flags() |> List.flatMap(blend -> flags() |> List.flatMap(doubleSided ->
                 flags() |> List.flatMap(coverage -> flags() |> List.map(metallic ->
                     { skinned = false, uv = uv, normalMap = normalMap, lightmap = lightmap, blend = blend, doubleSided = doubleSided,
-                      coverage = coverage, metallicRoughness = metallic, variant = { pointShadows = v#pointShadows, physicalUnits = v#physicalUnits, psx = v#psx, skyIrradiance = v#skyIrradiance } })))))
+                      coverage = coverage, metallicRoughness = metallic, variant = { pointShadows = v#pointShadows, physicalUnits = v#physicalUnits, psx = v#psx, skyIrradiance = v#skyIrradiance, ambientOcclusion = v#ambientOcclusion } })))))
         })
 
     def kindLabel(k: Render3d.ProgramKey.ProgramKind): String =
@@ -144,7 +144,7 @@ mod TestShaderDump {
                 println("[shader-dump] ${List.length(sources)} 本・${total} 字・組んだ時間 ${elapsed} ms → ${dir}")
             case None => ()
         };
-        Assert.assertEq(expected = 1507, List.length(sources))
+        Assert.assertEq(expected = 2627, List.length(sources))
 
     /// vertex と frag の入口の全部の組（ビルボードの変種と横の向き・影の地図の frag・空・blit）で、frag が受ける varying が vertex の表に同じ形であり、location が重ならない。
     @Test
@@ -163,7 +163,7 @@ mod TestShaderDump {
         let surfaces = (false, false) :: (true, false) :: (true, true) :: Nil;
         let d = Render3d.ProgramKey.defaultShaderVariant();
         flags() |> List.flatMap(psx -> {
-            let v = { pointShadows = d#pointShadows, physicalUnits = d#physicalUnits, psx = psx, skyIrradiance = d#skyIrradiance };
+            let v = { pointShadows = d#pointShadows, physicalUnits = d#physicalUnits, psx = psx, skyIrradiance = d#skyIrradiance, ambientOcclusion = d#ambientOcclusion };
             let materials = flags() |> List.flatMap(skinned -> surfaces |> List.flatMap(un -> {
                 let (uv, normalMap) = un;
                 (if (skinned) false :: Nil else flags()) |> List.map(lightmap -> {

@@ -27,6 +27,37 @@ mod PostScenes {
         sceneOf("postStackCrt", Scenes.psxWorld(),
             PostStack.preset(PostStack.Preset.Neutral) |> PostStack.withCrt(Some({ compositeBlur = 1.5, scanlines = 0.3, chromaBleed = 2.0 })))
 
+    /// 部屋の SSAO の値（半径 0.8 m・mask は半分）。
+    def roomAo(): PostStack.AmbientOcclusion = { radius = 0.8, intensity = 2.0 | PostStack.ambientOcclusion() }
+
+    /// 部屋（Scenes.roomWorld）の SSAO の mask だけ（DebugView.AmbientOcclusion）。式の差を光の式と分けて見る。
+    pub def ambientOcclusionMask3d(): Scenes.Scene =
+        sceneOf("ambientOcclusionMask3d", Scenes.roomWorld(),
+            PostStack.preset(PostStack.Preset.Neutral) |> PostStack.withAmbientOcclusion(Some(roomAo())) |> PostStack.withDebugView(PostStack.DebugView.AmbientOcclusion))
+
+    /// 部屋の SSAO を掛けた仕上がり（環境の光に mask を掛ける）。
+    pub def ambientOcclusion3d(): Scenes.Scene =
+        sceneOf("ambientOcclusion3d", Scenes.roomWorld(), PostStack.preset(PostStack.Preset.Neutral) |> PostStack.withAmbientOcclusion(Some(roomAo())))
+
+    /// SSAO と高さの霧（霧は SSAO の奥行きの Pass（ps_depth_far）を読む）。
+    pub def ambientOcclusionFog3d(): Scenes.Scene =
+        sceneOf("ambientOcclusionFog3d", Scenes.roomWorld(),
+            PostStack.preset(PostStack.Preset.Neutral) |> PostStack.withAmbientOcclusion(Some(roomAo()))
+                |> PostStack.withHeightFog(Some({ density = 0.06, baseHeight = -2.0, heightFalloff = 0.3 | PostStack.heightFog() })))
+
+    /// SSAO と Physical の奥行きのぼかし（ぼかしも ps_depth_far を読む）。
+    pub def ambientOcclusionFocus3d(): Scenes.Scene =
+        sceneOf("ambientOcclusionFocus3d", Scenes.roomWorld(),
+            PostStack.preset(PostStack.Preset.Neutral) |> PostStack.withAmbientOcclusion(Some(roomAo()))
+                |> PostStack.withDepthOfField(Some(PostStack.DepthOfField.Physical({ focusDistance = 10.0, fStop = 1.4 }))))
+
+    /// SSAO と DepthBand の奥行きのぼかしと高さの霧（ぼかしは帯の自分の絵・霧は ps_depth_far）。
+    pub def ambientOcclusionBandFog3d(): Scenes.Scene =
+        sceneOf("ambientOcclusionBandFog3d", Scenes.roomWorld(),
+            PostStack.preset(PostStack.Preset.Neutral) |> PostStack.withAmbientOcclusion(Some(roomAo()))
+                |> PostStack.withHeightFog(Some({ density = 0.06, baseHeight = -2.0, heightFalloff = 0.3 | PostStack.heightFog() }))
+                |> PostStack.withDepthOfField(Some(PostStack.DepthOfField.DepthBand({ focusDistance = 11.0, range = 6.0, band = 0.2, soft = 0.4, blur = 0.01 }))))
+
     /// 3D の場面（太陽で照らした床と板）に、ピントの奥行きを中心とする帯の外をぼかす。奥行きの絵は PostStack が場面から作る。
     pub def postStackDepthBand(): Scenes.Scene =
         sceneOf("postStackDepthBand", Scenes.sunWorld(),

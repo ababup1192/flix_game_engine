@@ -8,7 +8,7 @@ mod RenderTargetGl {
 
     /// レンダーターゲット 1 枚の GL 実体。tex が registry へ TextureInfo として渡る。
     /// depthStencil = mask 付きの面・sprite を抜くためのステンシル（テクセル寸法の renderbuffer）。
-    /// format = 頼まれた形式（作り直しの鍵）・storedFormat = 実際に作れた形式（描き先が Rgba16Float に対応しない時だけ Rgba8Unorm に替わる）。
+    /// format = 頼まれた形式（作り直しの鍵）・storedFormat = 実際に作れた形式（描き先が Rgba16Float か R32Float に対応しない時だけ Rgba8Unorm に替わる）。
     /// samples = 頼まれた標本の数（作り直しの鍵）・msaa = 標本を持つ描き先（samples が 1 か、作れなかった時は None）。
     /// msaa が Some なら描くのは msaa の FBO で、tex（fbo）は resolve で写した後の絵（読む側は今までどおり tex を読む）。
     pub type alias Entry = { fbo = Int32, tex = Int32, depthStencil = Int32, width = Int32, height = Int32,
@@ -21,7 +21,7 @@ mod RenderTargetGl {
     /// 初回でもゴミが出ない）。ラップが CLAMP_TO_EDGE なのは、貼るときの縁の標本が反対側の行へ
     /// 回り込まないように（REPEAT だと v=0/1 ちょうどで滲む）。フィルタは他のテクスチャと
     /// 同じ NEAREST（ドット絵前提）。
-    /// Rgba16Float の FBO が完成しない描き先では Rgba8Unorm で作り直す（storedFormat に残る。知らせるのは呼び手）。
+    /// Rgba16Float と R32Float の FBO が完成しない描き先では Rgba8Unorm で作り直す（storedFormat に残る。知らせるのは呼び手）。
     pub def create(gl: GlContext, width: Int32, height: Int32, format: RenderTarget.Format): Entry \ IO =
         let (made, status) = createStored(gl, width, height, format);
         if (status == GlConst.FRAMEBUFFER_COMPLETE) made
@@ -54,6 +54,7 @@ mod RenderTargetGl {
         let internal = match stored {
             case RenderTarget.Format.Rgba8Unorm  => GlConst.RGBA8
             case RenderTarget.Format.Rgba16Float => GlConst.RGBA16F
+            case RenderTarget.Format.R32Float    => GlConst.R32F
         };
         let color = gl.createRenderbuffer();
         gl.bindRenderbuffer(GlConst.RENDERBUFFER, color);
@@ -134,6 +135,7 @@ mod RenderTargetGl {
         match stored {
             case RenderTarget.Format.Rgba8Unorm  => gl.texImageArgbZero(width, height)
             case RenderTarget.Format.Rgba16Float => gl.texImageRgba16fZero(width, height)
+            case RenderTarget.Format.R32Float    => gl.texImageR32fZero(width, height)
         }
 
     def warnIncomplete(status: Int32): Unit \ IO =

@@ -38,6 +38,7 @@ GL と WebGPU（窓・ブラウザ）と CPU（画面なしの描き出し・テ
 - [画面の歪み（熱のゆらぎ・水の中・魔法）](#画面の歪み熱のゆらぎ水の中魔法)
 - [地面を這う霧（高さの霧・街灯のにじみ）](#地面を這う霧高さの霧街灯のにじみ)
   - [明るい所へ入った直後の白飛び（ExposureAdaptation）](#明るい所へ入った直後の白飛びexposureadaptation)
+- [画面の上の技（SSAO）](#画面の上の技ssao)
 - [PS1 風の描き方（色の丸めとディザ・頂点の揺れ・アフィンの uv）](#ps1-風の描き方色の丸めとディザ頂点の揺れアフィンの-uv)
   - [テレビのにじみ（CRT・コンポジット映像）](#テレビのにじみcrtコンポジット映像)
   - [3 つの描き手の違い](#3-つの描き手の違い)
@@ -693,6 +694,29 @@ PostStack.withExposure(ExposureAdaptation.computeExposure(ExposureAdaptation.def
 
 - 絵を測らない（ゲームが場所ごとの狙いの明るさを持つ）。3 つの描き手と描き出しで同じ値。明るくなる時は `speedUp`（既定 3/秒）、暗くなる時は `speedDown`（1/秒）で寄る
 - 露出はブルームの後に掛かるので、白飛びの間もブルームが光り始める明るさは変わらない
+
+## 画面の上の技（SSAO）
+
+家具の足元・部屋の隅・物の接する所を暗くする（Godot の Environment の SSAO・Unity URP の SSAO と同じ物）。PostStack の欄の 1 つ:
+
+```flix
+App.withPostStack(w -> PostStack.preset(PostStack.Preset.NightOutdoor)
+    |> PostStack.withAmbientOcclusion(Some({ radius = 0.5, intensity = 2.0 | PostStack.ambientOcclusion() })))
+```
+
+post.json なら `"ambientOcclusion": { "radius": 0.5 }`（null で外す）。値は `ScreenEffects3d.AmbientOcclusion`（PostStack.AmbientOcclusion は同じ型）:
+
+- `radius`（m）・`thickness`（m・これより離れた点は数えない）は場面の `unitsPerMeter` を掛けて使う。`intensity`・`power` で暗さ、`taps`（4〜16）で 1 画素の点の数、
+  `scale`（0.25〜1）で mask の解像度、`lightAffect`（0..1）で直接光（点光源・スポット・太陽）にも掛ける割合
+- 掛かるのは環境の光（ambient・hemisphere・景色の拡散の光）と lightmap にベイクした光。環境マップの映り込みと半透明の物には掛からない
+- PostStack が場面の色より先に奥行きを R32Float の Pass（`ps_depth_far`・目からの距離 / far の面の遠い隅までの距離）へ描き、3D の描き手が場面の色を描く前に
+  mask → 横のぼかし → 縦のぼかしを描いて、材質の frag が画面の位置で読む。霧と Physical の奥行きのぼかしも同じ 1 枚を読む（場面を 3 回描かない）
+- View の絵の一番大きい 3D の場面 1 つにだけ掛かり、`Resolution.Native` の場面だけ（Design の場面は掛けずに `Issue.AmbientOcclusionNeedsNative`）
+- `PostStack.withDebugView(PostStack.DebugView.AmbientOcclusion)` で mask だけを灰色で見る（白 = 暗くしない）
+- 3 つの描き手: GPU（GL・WebGPU）は render_gl の `Render3d.ScreenPasses` の AST・CPU は `SoftRaster3d.ScreenEffects` の同じ式の Flix。式と表の値は `ScreenEffects3d` の頭。
+  gl-parity の `ambientOcclusionMask3d`（mask だけ）・`ambientOcclusion3d` と、霧・奥行きのぼかしとの組 3 つで違う画素の数を見る
+- R32Float の Pass を作れない WebGL2（`EXT_color_buffer_float` が無い）は技を切って `@screen-effects-no-float-target` を 1 回知らせる
+- 重さ: 奥行きの場面の draw が 1 回増え（霧かぼかしがあれば増えない）、mask の 3 回の全画面の三角形が増える（docs/performance.md）。Low の画質は mask を半分・6 点に抑える
 
 ## PS1 風の描き方（色の丸めとディザ・頂点の揺れ・アフィンの uv）
 

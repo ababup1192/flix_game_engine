@@ -10,11 +10,11 @@ mod Render3d.TestPsxVariant {
 
     def psxScene(): Scene3d.Scene3dCmd = Scene3d.withPsx(Scene3d.psxPreset(), plain())
 
-    def psx(): Render3d.ProgramKey.ShaderVariant = { pointShadows = false, physicalUnits = false, psx = true, skyIrradiance = false }
+    def psx(): Render3d.ProgramKey.ShaderVariant = { pointShadows = false, physicalUnits = false, psx = true, skyIrradiance = false, ambientOcclusion = false }
 
     def kind(uv: Bool): Render3d.ProgramKey.ProgramKind =
         { skinned = false, uv = uv, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false,
-          metallicRoughness = false, variant = { pointShadows = false, physicalUnits = false, psx = true, skyIrradiance = false } }
+          metallicRoughness = false, variant = { pointShadows = false, physicalUnits = false, psx = true, skyIrradiance = false, ambientOcclusion = false } }
 
     def solidGlsl(): ShaderGen.MaterialGlsl =
         { uniforms = "uniform float uTime;\n", functions = "void materialEval(out vec4 albedo, out vec3 emission) {}\n",
@@ -49,7 +49,7 @@ mod Render3d.TestPsxVariant {
 
     @Test
     def testPsxWithPointShadowsUsesShadowLayout(): Unit \ Assert =
-        Assert.assertEq(expected = 2, Render3d.WebGpuRenderer.layoutCodeOf({ pointShadows = true | psx() }))
+        Assert.assertEq(expected = 3, Render3d.WebGpuRenderer.layoutCodeOf({ pointShadows = true | psx() }))
 
     // ── GLSL ──
 

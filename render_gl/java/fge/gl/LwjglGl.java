@@ -108,6 +108,16 @@ public final class LwjglGl implements GlContext {
         }
         GL11.glTexImage2D(GL11.GL_TEXTURE_2D, level, GL30.GL_RGBA16F, width, height, 0, GL11.GL_RGBA, GL30.GL_HALF_FLOAT, direct);
     }
+    public void texImageR32fZero(int width, int height) {
+        GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL30.GL_R32F, width, height, 0, GL11.GL_RED, GL11.GL_FLOAT,
+                          BufferUtils.createFloatBuffer(Math.max(1, width * height)));
+    }
+    public void texImageR8Zero(int width, int height) {
+        GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 1);
+        GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL30.GL_R8, width, height, 0, GL11.GL_RED, GL11.GL_UNSIGNED_BYTE,
+                          BufferUtils.createByteBuffer(Math.max(1, width * height)));
+        GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 4);
+    }
     public void texImageDepth24(int width, int height) {
         GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL14.GL_DEPTH_COMPONENT24, width, height, 0, GL11.GL_DEPTH_COMPONENT, GL11.GL_FLOAT, 0L);
     }

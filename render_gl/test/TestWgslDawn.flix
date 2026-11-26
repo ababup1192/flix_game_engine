@@ -241,7 +241,7 @@ mod TestWgslDawn {
             flags |> List.flatMap(lightmap -> flags |> List.flatMap(blend -> flags |> List.flatMap(doubleSided ->
                 flags |> List.flatMap(coverage -> flags |> List.map(metallic ->
                     { skinned = false, uv = uv, normalMap = normalMap, lightmap = lightmap, blend = blend, doubleSided = doubleSided,
-                      coverage = coverage, metallicRoughness = metallic, variant = { pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false } })))))
+                      coverage = coverage, metallicRoughness = metallic, variant = { pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false, ambientOcclusion = false } })))))
         })
 
     def kindLabel(k: Render3d.ProgramKey.ProgramKind): String =
@@ -257,7 +257,7 @@ mod TestWgslDawn {
             let (name, spec, glow, metal) = v;
             let m = ShaderGen.Wgsl.compile3d(spec, glow, metal, 1);
             let chosen = if (name == "scene3d-field" or name == "textured-metal") kinds else few;
-            let variants = if (name == "textured-metal") few |> List.flatMap(k -> { variant = { pointShadows = true | k#variant } | k } :: { variant = { physicalUnits = true | k#variant } | k } :: { variant = { pointShadows = true, physicalUnits = true | k#variant } | k } :: { variant = { psx = true | k#variant } | k } :: { variant = { pointShadows = true, psx = true | k#variant } | k } :: Nil) else Nil;
+            let variants = if (name == "textured-metal") few |> List.flatMap(k -> { variant = { ambientOcclusion = true | k#variant } | k } :: { variant = { pointShadows = true | k#variant } | k } :: { variant = { physicalUnits = true | k#variant } | k } :: { variant = { pointShadows = true, physicalUnits = true | k#variant } | k } :: { variant = { psx = true | k#variant } | k } :: { variant = { pointShadows = true, psx = true | k#variant } | k } :: Nil) else Nil;
             (chosen ::: variants) |> List.map(k -> ("frag ${name} ${kindLabel(k)}", Render3dWgsl.materialFragmentSource(m, k)))
         })
 
@@ -270,18 +270,25 @@ mod TestWgslDawn {
     def sceneFunctions(): List[(String, String)] =
         let head = Render3dWgsl.sceneDeclarations() + Render3dWgsl.lightSource();
         ("frag lit", Render3dWgsl.litFragmentSource()) ::
-        ("frag lit +ps", Render3dWgsl.litFragmentSourceFor({ pointShadows = true, physicalUnits = false, psx = false, skyIrradiance = false })) ::
-        ("frag lit +pu", Render3dWgsl.litFragmentSourceFor({ pointShadows = false, physicalUnits = true, psx = false, skyIrradiance = false })) ::
-        ("frag lit +ps+pu", Render3dWgsl.litFragmentSourceFor({ pointShadows = true, physicalUnits = true, psx = false, skyIrradiance = false })) ::
-        ("frag billboard +pu", Render3dWgsl.billboardFragmentSourceFor({ pointShadows = true, physicalUnits = true, psx = false, skyIrradiance = false })) ::
-        ("frag lit +psx", Render3dWgsl.litFragmentSourceFor({ pointShadows = false, physicalUnits = false, psx = true, skyIrradiance = false })) ::
-        ("frag billboard +psx", Render3dWgsl.billboardFragmentSourceFor({ pointShadows = false, physicalUnits = false, psx = true, skyIrradiance = false })) ::
+        ("frag lit +ps", Render3dWgsl.litFragmentSourceFor({ pointShadows = true, physicalUnits = false, psx = false, skyIrradiance = false, ambientOcclusion = false })) ::
+        ("frag lit +pu", Render3dWgsl.litFragmentSourceFor({ pointShadows = false, physicalUnits = true, psx = false, skyIrradiance = false, ambientOcclusion = false })) ::
+        ("frag lit +ps+pu", Render3dWgsl.litFragmentSourceFor({ pointShadows = true, physicalUnits = true, psx = false, skyIrradiance = false, ambientOcclusion = false })) ::
+        ("frag billboard +pu", Render3dWgsl.billboardFragmentSourceFor({ pointShadows = true, physicalUnits = true, psx = false, skyIrradiance = false, ambientOcclusion = false })) ::
+        ("frag lit +psx", Render3dWgsl.litFragmentSourceFor({ pointShadows = false, physicalUnits = false, psx = true, skyIrradiance = false, ambientOcclusion = false })) ::
+        ("frag billboard +psx", Render3dWgsl.billboardFragmentSourceFor({ pointShadows = false, physicalUnits = false, psx = true, skyIrradiance = false, ambientOcclusion = false })) ::
         ("vertex lit +psx", Render3dWgsl.litVertexSourceFor(false, true)) ::
         ("vertex lit skinned +psx", Render3dWgsl.litVertexSourceFor(true, true)) ::
         ("vertex material uv +psx", Render3dWgsl.materialVertexSourceFor(true, false, false, true)) ::
         ("vertex material uv skinned +psx", Render3dWgsl.materialVertexSourceFor(true, false, true, true)) ::
         ("vertex material +psx", Render3dWgsl.materialVertexSourceFor(false, true, false, true)) ::
-        ("vertex billboard +psx", Render3dWgsl.billboardVertexSourceFor({ pointShadows = false, physicalUnits = false, psx = true, skyIrradiance = false })) ::
+        ("vertex billboard +psx", Render3dWgsl.billboardVertexSourceFor({ pointShadows = false, physicalUnits = false, psx = true, skyIrradiance = false, ambientOcclusion = false })) ::
+        ("frag lit +ao", Render3dWgsl.litFragmentSourceFor({ pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false, ambientOcclusion = true })) ::
+        ("frag lit +ps+pu+psx+sh+ao", Render3dWgsl.litFragmentSourceFor({ pointShadows = true, physicalUnits = true, psx = true, skyIrradiance = true, ambientOcclusion = true })) ::
+        ("frag billboard +ao", Render3dWgsl.billboardFragmentSourceFor({ pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false, ambientOcclusion = true })) ::
+        ("frag screen ao mask", ShaderAst.Wgsl.fragment(Render3d.ScreenPasses.fragment(Render3d.ScreenPasses.ScreenPassKind.AoMask, Render3d.ScreenPasses.wgslBindings() :: Nil))) ::
+        ("frag screen ao blur", ShaderAst.Wgsl.fragment(Render3d.ScreenPasses.fragment(Render3d.ScreenPasses.ScreenPassKind.AoBlurH, Render3d.ScreenPasses.wgslBindings() :: Nil))) ::
+        ("frag screen ao show", ShaderAst.Wgsl.fragment(Render3d.ScreenPasses.fragment(Render3d.ScreenPasses.ScreenPassKind.ShowAo, Render3d.ScreenPasses.wgslBindings() :: Nil))) ::
+        ("vertex screen", ShaderAst.Wgsl.vertex(Render3d.ScreenPasses.vertex())) ::
         ("frag depth", Render3dWgsl.depthFragmentSource()) ::
         ("vertex lit", Render3dWgsl.litVertexSource(false)) ::
         ("vertex material", Render3dWgsl.materialVertexSource(false, false, false)) ::
@@ -388,6 +395,6 @@ mod TestWgslDawn {
     @Test
     def testNormalMappedFragmentDoesNotFlipRows(): Unit \ Assert =
         let textured = fill("textured", 0.0, Nil, Shade.Solid(red()), Field.Tex({ name = "albedo", chan = TexChan.A }));
-        let kind = { skinned = false, uv = true, normalMap = true, lightmap = true, blend = false, doubleSided = false, coverage = false, metallicRoughness = false, variant = { pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false } };
+        let kind = { skinned = false, uv = true, normalMap = true, lightmap = true, blend = false, doubleSided = false, coverage = false, metallicRoughness = false, variant = { pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false, ambientOcclusion = false } };
         Assert.assertFalse(String.contains(substr = "Flip", Render3dWgsl.materialFragmentSource(ShaderGen.Wgsl.compile3d(textured, None, None, 1), kind)))
 }

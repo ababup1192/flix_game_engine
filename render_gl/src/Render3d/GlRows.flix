@@ -20,7 +20,7 @@ mod Render3d.GlRows {
     /// instanceTexture = その prepare の 1 体ごとの値のテクスチャ（描く物が無ければ None）・carried = 場面の持ち越した集まり（Render3d.GlStatic）。
     pub type alias SceneInputs = {
         passes = ScenePasses, materials = MaterialTable, shadows = SceneShadows,
-        jointTexture = Option[Int32], instanceTexture = Option[Int32], carried = List[Render3d.GlStatic.CarriedDraw]
+        jointTexture = Option[Int32], instanceTexture = Option[Int32], carried = List[Render3d.GlStatic.CarriedDraw], framebuffer = Int32
     }
 
     /// 場面をどう 2D の並びへ出すか。Native = その場で描く・Design = 先に描いておいた描き先を貼る（大きさの無い場面は None で、何も出さない）。

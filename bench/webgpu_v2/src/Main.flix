@@ -64,6 +64,8 @@ mod V2Main {
         sceneCase("atlasNearestLowCapped", Scene3d.Resolution.Native, V2Atlas.yard(true, true)) ::
         billboardMsaaPassCase(kit) ::
         billboardHistoryCase(kit) ::
+        aoCase("ambientOcclusion", kit, false) ::
+        aoCase("ambientOcclusionMask", kit, true) ::
         postCase("post", kit, 1, PostProcess.Tonemap.AcesFitted, Scene3d.Resolution.Native) ::
         postCase("postMsaa", kit, 4, PostProcess.Tonemap.AcesFitted, Scene3d.Resolution.Native) ::
         postCase("postDesign", kit, 1, PostProcess.Tonemap.Reinhard, Scene3d.Resolution.Design) ::
@@ -210,6 +212,13 @@ mod V2Main {
           items = Render.blitRegion({ name = V2Billboards.trailName(), design = design, src = { position = Vec2.zero(), size = design },
                                       at = { x = design#x * 0.5, y = design#y * 0.5 }, size = design, z = 1 }) :: Nil }
 
+    /// 部屋（yaw 0.3）に PostStack の SSAO（半径 0.5・強さ 2）。mask = DebugView.AmbientOcclusion（mask の灰色だけ）。
+    def aoCase(name: String, kit: Room.Kit, mask: Bool): Case =
+        let stack = PostStack.preset(PostStack.Preset.Neutral) |> PostStack.withAmbientOcclusion(Some({ radius = 0.5 | PostStack.ambientOcclusion() }))
+                    |> PostStack.withDebugView(if (mask) PostStack.DebugView.AmbientOcclusion else PostStack.DebugView.Final);
+        let built = PostStack.build({ size = Room.design(), clear = Color.rgb(0.0, 0.0, 0.0), world = Room.items(kit, 0.3) }, stack);
+        { name = name, passes = built#plan#passes, targets = built#plan#targets, items = built#present :: Nil }
+
     /// 後がけの鎖（V2Post）: 部屋（yaw 0.3・解像度 resolution）を標本 samples のウィンドウの画素の HDR の Pass に描き、奥行き・ぼかし・ブルーム・トーンマップ（曲線 op）・FXAA の面を通して画面へ。
     def postCase(name: String, kit: Room.Kit, samples: Int32, op: PostProcess.Tonemap, resolution: Scene3d.Resolution): Case =
         let c = V2Post.chain(Room.design(), samples, op, { resolution = resolution | Room.scene(kit, 0.3) }, depthOfRoom());
@@ -349,6 +358,7 @@ mod V2Main {
              "lmTextured" => (150, 460, 255), "lmNormalLinear" => (160, 580, 255), "lmDepth" => (8, 16, 16),
              "sky" => (4, 16, 16), "skyTurned" => (4, 8, 16), "skyDesign" => (4, 8, 16), "skyDepth" => (4, 8, 16), "skyMsaaPass" => (24000, 28000, 128),
              "blend" => (32, 64, 255), "blendDesign" => (4, 8, 16), "blendDepth" => (4, 24, 16), "blendMsaaPass" => (28000, 34000, 128),
+             "ambientOcclusion" => (64, 128, 255), "ambientOcclusionMask" => (64, 128, 255),
              "post" => (84, 500, 255), "postMsaa" => (27000, 112000, 128), "postDesign" => (7300, 31000, 128), "halfDepthDesign" => (19000, 192000, 128),
              "billboard" => (52, 128, 255), "billboardDesign" => (4, 8, 16), "billboardDepth" => (4, 24, 16), "billboardGlass" => (32, 64, 255),
              "billboardMsaaPass" => (23000, 27000, 128), "billboardHistory" => (4, 40, 16),

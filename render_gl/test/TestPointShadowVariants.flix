@@ -23,7 +23,7 @@ mod Render3d.TestPointShadowVariants {
     def kindOf(b: List[Bool]): Render3d.ProgramKey.ProgramKind =
         let at = (i: Int32) -> List.nth(i, b) |> Option.getWithDefault(false);
         { skinned = false, uv = at(0), normalMap = at(1), lightmap = at(2), blend = at(3), doubleSided = at(4), coverage = at(5),
-          metallicRoughness = at(6), variant = { pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false } }
+          metallicRoughness = at(6), variant = { pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false, ambientOcclusion = false } }
 
     def defaultGlsl(): String =
         Render3dGlsl.lightSource() + Render3dGlsl.litFragmentSource() + Render3dGlsl.billboardFragmentSource() +
@@ -47,9 +47,9 @@ mod Render3d.TestPointShadowVariants {
 
     def has(part: String, s: String): Bool = String.contains(substr = part, s)
 
-    def shadowed(): Render3d.ProgramKey.ShaderVariant = { pointShadows = true, physicalUnits = false, psx = false, skyIrradiance = false }
+    def shadowed(): Render3d.ProgramKey.ShaderVariant = { pointShadows = true, physicalUnits = false, psx = false, skyIrradiance = false, ambientOcclusion = false }
 
-    def physical(): Render3d.ProgramKey.ShaderVariant = { pointShadows = false, physicalUnits = true, psx = false, skyIrradiance = false }
+    def physical(): Render3d.ProgramKey.ShaderVariant = { pointShadows = false, physicalUnits = true, psx = false, skyIrradiance = false, ambientOcclusion = false }
 
     def plainKind(): Render3d.ProgramKey.ProgramKind = kindOf(Nil)
 
@@ -99,12 +99,12 @@ mod Render3d.TestPointShadowVariants {
 
     @Test
     def testBillboardTakesPhysicalUnits(): Unit \ Assert =
-        let source = Render3dGlsl.billboardFragmentSourceFor({ pointShadows = true, physicalUnits = true, psx = false, skyIrradiance = false });
+        let source = Render3dGlsl.billboardFragmentSourceFor({ pointShadows = true, physicalUnits = true, psx = false, skyIrradiance = false, ambientOcclusion = false });
         Assert.assertEq(expected = (true, false), (has("uInverseUnitsPerMeterSquared", source), has("uPointShadow", source)))
 
     @Test
     def testPbrAndLightmapUseTheVariantTree(): Unit \ Assert =
-        let v = { pointShadows = true, physicalUnits = true, psx = false, skyIrradiance = false };
+        let v = { pointShadows = true, physicalUnits = true, psx = false, skyIrradiance = false, ambientOcclusion = false };
         Assert.assertEq(expected = (true, true),
             (has("r3d_pointLit[i]", Render3dGlsl.metallicRoughnessSourceFor(v)), has("uInverseUnitsPerMeterSquared", Render3dGlsl.lightmapLightSourceFor(v))))
 
@@ -152,10 +152,10 @@ mod Render3d.TestPointShadowVariants {
 
     @Test
     def testLayoutCodesAreDefaultLightAtlas(): Unit \ Assert =
-        Assert.assertEq(expected = 0 :: 1 :: 1 :: 2 :: 2 :: Nil,
+        Assert.assertEq(expected = 0 :: 1 :: 1 :: 3 :: 3 :: Nil,
             Render3d.WebGpuRenderer.layoutCodeOf(Render3d.ProgramKey.defaultShaderVariant()) :: Render3d.WebGpuRenderer.layoutCodeOf(physical())
                 :: Render3d.WebGpuRenderer.layoutCodeOf({ skyIrradiance = true | Render3d.ProgramKey.defaultShaderVariant() })
-                :: Render3d.WebGpuRenderer.layoutCodeOf(shadowed()) :: Render3d.WebGpuRenderer.layoutCodeOf({ pointShadows = true, physicalUnits = true, psx = false, skyIrradiance = false }) :: Nil)
+                :: Render3d.WebGpuRenderer.layoutCodeOf(shadowed()) :: Render3d.WebGpuRenderer.layoutCodeOf({ pointShadows = true, physicalUnits = true, psx = false, skyIrradiance = false, ambientOcclusion = false }) :: Nil)
 
     // ── 場面の変種 ──
 

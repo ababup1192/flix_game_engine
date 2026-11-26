@@ -524,6 +524,7 @@ World に写し、`FrameDiagnostics.summaryLines(d)` をゲームの字の部品
 **3D の中の pass ごとの GPU の時間**: `gpuPasses` には描き先（Pass の名前・`screen`）に加え、3D の描き手の中の区間が入る:
 `shadow:sun`・`shadow:spot`・`shadow:point`（影の地図。点光源の atlas は面ごとの pass を足した値）・`shadow:cache`（動かない物だけの控えを描き直した分・WebGPU だけ）・
 `scene3d`・`scene3d:depth`（場面の色の pass・奥行きの書き出し）。GL では描き先の query をそこで閉じて区間を測り、描き先の名前で開き直すので、描き先の時間は中の区間を引いた残り。
+`scene3d:screen:AoMask`・`AoBlurH`・`AoBlurV`（画面の上の SSAO の mask の 3 回の全画面の三角形・WebGPU）。SSAO は奥行きの場面の draw を 1 回足す（霧か奥行きのぼかしがあれば同じ 1 枚を読み増えない）。GL は mask を描く間だけ場面の描き先から R8 の描き先へ替える。
 - **WebGPU（PC のウィンドウの既定）は `FLIX_GE_GPU_TIMER=1` を置いた時だけ測る**（timestamp-query の `timestampWrites`）。読み戻し（Dawn の mapAsync を待つ形）はそれまでの仕事を GPU が終えるまで返らず、
   測るコマが長くなる。1 コマの時間を比べる回はこれを置かずに流し、pass ごとの内訳を見る回だけ置く。ブラウザでは測らない（`gpuNs` は None）。
 - タイル型の GPU（M 系・Mali）は次の pass を前の pass の終わりを待たずに始めるので、WebGPU の pass の時間は「前の pass の終わりから自分の終わりまで」で数える（重なった分は先の pass に入る・`GpuTimer.exclusiveTimes`）。
