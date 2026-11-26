@@ -8,7 +8,7 @@ mod RenderTargetGl {
 
     /// レンダーターゲット 1 枚の GL 実体。tex が registry へ TextureInfo として渡る。
     /// depthStencil = mask 付きの面・sprite を抜くためのステンシル（テクセル寸法の renderbuffer）。
-    /// format = 頼まれた形式（作り直しの鍵）・storedFormat = 実際に作れた形式（描き先が Rgba16Float に対応しない時だけ Rgba8Unorm に替わる）。
+    /// format = 頼まれた形式（作り直しの鍵）・storedFormat = 実際に作れた形式（描き先が Rgba16Float か R32Float に対応しない時だけ Rgba8Unorm に替わる）。
     /// samples = 頼まれた標本の数（作り直しの鍵）・msaa = 標本を持つ描き先（samples が 1 か、作れなかった時は None）。
     /// msaa が Some なら描くのは msaa の FBO で、tex（fbo）は resolve で写した後の絵（読む側は今までどおり tex を読む）。
     pub type alias Entry = { fbo = Int32, tex = Int32, depthStencil = Int32, width = Int32, height = Int32,
