@@ -58,7 +58,7 @@ mod RenderPaintHandlers {
         }
 
     /// 3D の場面を paint の列へ積む（出すのは同じ paint の Draw2d.renderCommands）。ahead = 先に作る宣言を受けて作るか
-    /// （偽なら何もせず済んだ進み具合を返す。撮る文脈 — 1 枚撮り・dt を固定した窓・撮る頁 — で偽にする）。
+    /// （偽なら何もせず済んだ進み具合を返す。撮る文脈 — 1 枚撮り・dt を固定したウィンドウ・撮る頁 — で偽にする）。
     pub def handleDraw3d(ahead: Bool, paint: RenderPaint.Paint, f: Unit -> a \ ef): a \ (ef - Platform.Draw3d) + IO =
         run f() with handler Platform.Draw3d {
             def drawScene3d(cmd, k) = {
