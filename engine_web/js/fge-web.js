@@ -817,6 +817,7 @@ function fgeApplyLayout() {
 // 縦のドラッグは、離した時に縦へ払った形なら swipeUp / swipeDown のキーも出す（ホイールは動かしている間に出したまま）。
 // 横のドラッグの間は、マウスの左ボタンを押したまま動かすのと同じに見せる（横と決まった所で押し始め、位置は指に付いて動く。離すと押しも離れる）。
 // スライダーを指で動かせるように。
+// ゲームがマウスの取り込みを頼んでいる間（一人称の視点など）は、ドラッグは縦横とも取り込んだマウスの動きと同じに見せる（ホイール・払い・左ボタンにしない）。
 // 長押しは、動かさずに fgeLongPressMs 以上置いてから離した時に出す（離した時のタップの代わり）。
 // 動かさずに置いている間（ホイール・払い・長押しに決まる前）は、置いた所で左ボタンを押している状態にする（押した拍は離した時のまま）。
 // 長押しのボタンで続けて何かをする形を指でも効かせる。置いている指が 2 本ならカーソルは後に置いた指の所。
@@ -835,6 +836,8 @@ var fgeTouchHolding = false;
 // 指の今の状態から、左ボタンの押している状態とカーソルを作り直す。
 function fgeTouchSyncHold() {
   if (fgeGesture && fgeGesture.mode === "swipe") { fgeTouchHolding = false; return; }
+  // WhyNot: 視点のドラッグに入った後も左ボタンを押したままにしない — 置いた時の押しが残り、ドラッグの間ずっと押した扱いになる。
+  if (fgeGesture && fgeGesture.mode === "look") { if (fgeTouchHolding) fgePointer.buttons[0] = false; fgeTouchHolding = false; return; }
   var best = null;
   if (fgeGesture && fgeGesture.mode === "tap" && !fgeGesture.held) best = fgeGesture;
   fgeExtraTaps.forEach(function (t) { if (!t.moved && (best === null || t.order > best.order)) best = t; });
@@ -893,7 +896,7 @@ function fgeGestureDown(e, canvasXY) {
     fgeTouchSyncHold();
     return;
   }
-  var g = { id: e.pointerId, x0: e.clientX, y0: e.clientY, lastY: e.clientY, px: canvasXY.x, py: canvasXY.y,
+  var g = { id: e.pointerId, x0: e.clientX, y0: e.clientY, lastY: e.clientY, px: canvasXY.x, py: canvasXY.y, lastPx: canvasXY.x, lastPy: canvasXY.y,
             mode: "tap", wheelRest: 0, wheelSign: 0, timer: 0, held: false, order: ++fgeTouchOrder };
   if (fgeGestureKey("longPress")) {
     g.timer = setTimeout(function () {
@@ -915,7 +918,8 @@ function fgeGestureMove(e, canvasXY) {
   if (!g || g.id !== e.pointerId) return;
   var dx = e.clientX - g.x0, dy = e.clientY - g.y0;
   if (g.mode === "tap" && dx * dx + dy * dy > fgeTouchSlop * fgeTouchSlop) {
-    g.mode = Math.abs(dy) > Math.abs(dx) ? "scroll" : "swipe";
+    // WhyNot: 取り込みの間は縦をホイールにしない — 視点を上下に向ける指が、開いていない一覧のホイールに化けて上下が回らない。
+    g.mode = fgeMouseCapture.wanted ? "look" : Math.abs(dy) > Math.abs(dx) ? "scroll" : "swipe";
     if (g.timer) { clearTimeout(g.timer); g.timer = 0; }
     fgeTouchSyncHold();
   }
@@ -924,6 +928,10 @@ function fgeGestureMove(e, canvasXY) {
     fgePointer.x = canvasXY.x;
     fgePointer.y = canvasXY.y;
     fgePointer.buttons[0] = true;
+  }
+  if (g.mode === "look" && document.hasFocus()) {
+    fgePointer.dx += canvasXY.x - g.lastPx;
+    fgePointer.dy += canvasXY.y - g.lastPy;
   }
   if (g.mode === "scroll") {
     // 指を下へ引くと上へ回したホイール（前の行へ）。1 回のドラッグの中で、最初に出た向きと逆の刻みは捨てる（開いた直後に閉じない）。
@@ -936,6 +944,8 @@ function fgeGestureMove(e, canvasXY) {
     }
   }
   g.lastY = e.clientY;
+  g.lastPx = canvasXY.x;
+  g.lastPy = canvasXY.y;
 }
 function fgeGestureUp(e) {
   var t = fgeExtraTaps.get(e.pointerId);
