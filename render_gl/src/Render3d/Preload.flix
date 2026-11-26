@@ -104,7 +104,7 @@ mod Render3d.Preload {
         let source = { textureOf = textureOf, own = (cmd#textures)() |> List.map(t -> (Texture3d.name(t), t)) |> List.toMap };
         { builtKey = Some(cmd#key), rebuilds = Nil, meshes = draws |> List.map(d -> Mesh3d.contentHash(d#fields#mesh)) |> List.toSet,
           pairs = groupPairsOf(state#planner, cmd), settled = Set.empty(),
-          programs = allMaterials |> List.map(td -> { let (t, d) = td; entryAt(t, d#handle)#locs#mesh#program }) |> List.toSet,
+          programs = allMaterials |> List.map(td -> { let (t, d) = td; entryAt(t, d#handle)#uniforms#program }) |> List.toSet,
           textures = allMaterials |> List.flatMap(td -> { let (t, d) = td; materialTextureNames(entryAt(t, d#handle), d#material, d#batch#head) })
               |> List.toSet |> Set.toList |> uploadTextures(gl, state, gen, source) }
 
@@ -115,8 +115,8 @@ mod Render3d.Preload {
     /// 変種 v の材質のプログラムを組み、その batch を引いた表と組にして返す。shapes・skinned = 頂点の色の物（骨の無い物・骨つきの物）があれば、その版の頂点の色のプログラムも組む。
     def variantVersions(gl: GlContext, state: State, gen: Int64, v: Render3d.ProgramKey.ShaderVariant, shapes: Bool, skinned: Bool,
                         instances: List[Scene3d.Instance3d]): List[(MaterialTable, MaterialBatch[SpanBatch])] \ IO =
-        if (shapes) discard Render3d.VariantPrograms.litLocsOfVariant(gl, state, v, false) else ();
-        if (skinned) discard Render3d.VariantPrograms.litLocsOfVariant(gl, state, v, true) else ();
+        if (shapes) discard Render3d.VariantPrograms.litProgramOfVariant(gl, state, v, false) else ();
+        if (skinned) discard Render3d.VariantPrograms.litProgramOfVariant(gl, state, v, true) else ();
         let (groups, requests) = groupInstances(state#planner, v, _ -> true, _ -> true, false, instances);
         let table = resolveMaterials(gl, state, gen, requests);
         let (_, materials) = splitGroups(groups, table#orders);

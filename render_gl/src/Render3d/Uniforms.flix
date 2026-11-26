@@ -1,0 +1,238 @@
+// Render3d.Uniforms — 3D の描き手の uniform の handle の表（GLSL の宣言の字・GL の location を引く名前・WGSL の読む字を 1 か所に）。
+// GL の location は、プログラムを組んだ時に、そのプログラムの GLSL が宣言した uniform だけを引いて UniformLocations（handle → location）に持つ。
+// 値を差す所は handle を渡す（名前の字を書かない）。宣言していない handle に差すと何も呼ばない。
+pub mod Render3d.Uniforms {
+    import fge.gl.GlContext
+    use ShaderAst.Ty
+
+    /// 3D の描き手の GLSL の uniform（材質の部品の uParamN・uTexN などは番号つき）。
+    pub enum R3dUniform with Eq, Order, ToString {
+        case View, Proj, InstanceBase, InstanceTexture, JointTexture
+        case Ambient, Hemisphere, ToonSteps, PointCount, PointPos, PointColor, PointRange
+        case SpotCount, SpotPos, SpotDir, SpotColor, SpotRange, SpotCone, FogOn, FogColor, FogRange, Eye
+        case ShadowOn, ShadowSpot, ShadowMatrix, ShadowMap, ShadowBias, ShadowPcf, ShadowStrength
+        case SunDir, SunColor, SunShadowOn, SunMatrix, SunMap, SunBias, SunNormalShift, SunPcf, SunStrength, SunForward, SunFade
+        case PointShadow(Int32)
+        case PointShadowAtlas, PointShadowBias, PointShadowMap
+        case InverseUnitsPerMeterSquared, Psx, PsxTarget, VertexSnap, Sh, SkyContribution
+        case Zenith, Horizon, Ground, Curve, EnvOn, EnvBoxOn, EnvBoxMin, EnvBoxMax, EnvBoxCenter, EnvMap, EnvLevels, EnvIntensity, EnvSrgb
+        case DepthRange, DepthOut, Cutout, Time
+        case Param(Int32)
+        case Tex(Int32)
+        case TexFlip(Int32)
+        case TexLevels(Int32)
+        case NormalMap, NormalStrength, NormalFlip, NormalLevels
+        case Lightmap, LightmapLevels, LightmapUvRect, LightmapSrgb, LightmapIntensity
+        case Right, Up, RightPerBillboard, Facing, Image, Viewport, Forward
+    }
+
+    /// uniform の表の 1 行: name = GLSL の名前（location を引く字）・glsl = GLSL の宣言の型の字・length = 配列の長さ（GLSL の宣言の [N]）・
+    /// ty = 木で読む時の型・wgsl = WGSL で読む字（None は WGSL に無い欄）。
+    pub type alias UniformRow = { name = String, glsl = String, length = Option[Int32], ty = Ty, wgsl = Option[ShaderAst.Access] }
+
+    def row(name: String, glsl: String, ty: Ty, wgsl: Option[ShaderAst.Access]): UniformRow = { name = name, glsl = glsl, length = None, ty = ty, wgsl = wgsl }
+
+    def arrayRow(name: String, glsl: String, length: Int32, ty: Ty, wgsl: Option[ShaderAst.Access]): UniformRow =
+        { name = name, glsl = glsl, length = Some(length), ty = ty, wgsl = wgsl }
+
+    def at(base: String): Option[ShaderAst.Access] = Some({ base = base, swizzle = "" })
+
+    def scene(name: String): Option[ShaderAst.Access] = at("r3d." + name)
+    def light(name: String): Option[ShaderAst.Access] = at("r3dLight." + name)
+    def draw(name: String): Option[ShaderAst.Access] = at("r3dDraw." + name)
+    def camera(name: String, swizzle: String): Option[ShaderAst.Access] = Some({ base = "r3dCamera." + name, swizzle = swizzle })
+
+    /// handle u の行。
+    pub def rowOf(u: R3dUniform): UniformRow =
+        let p = Scene3d.maxPointLights();
+        let s = Scene3d.maxSpotLights();
+        match u {
+            case R3dUniform.View            => row("uView", "mat4", Ty.Mat4, camera("uView", ""))
+            case R3dUniform.Proj            => row("uProj", "mat4", Ty.Mat4, camera("uProj", ""))
+            case R3dUniform.InstanceBase    => row("uInstanceBase", "int", Ty.I32, None)
+            case R3dUniform.InstanceTexture => row("uInstanceTexture", "sampler2D", Ty.Texture2d, None)
+            case R3dUniform.JointTexture    => row("uJointTexture", "sampler2D", Ty.Texture2d, None)
+            case R3dUniform.Ambient         => row("uAmbient", "vec3", Ty.Vec3, scene("uAmbient"))
+            case R3dUniform.Hemisphere      => row("uHemisphere", "float", Ty.F32, scene("uHemisphere"))
+            case R3dUniform.ToonSteps       => row("uToonSteps", "int", Ty.I32, scene("uToonSteps"))
+            case R3dUniform.PointCount      => row("uPointCount", "int", Ty.I32, scene("uPointCount"))
+            case R3dUniform.PointPos        => arrayRow("uPointPos", "vec3", p, Ty.Vec3, scene("uPointPos"))
+            case R3dUniform.PointColor      => arrayRow("uPointColor", "vec3", p, Ty.Vec3, scene("uPointColor"))
+            case R3dUniform.PointRange      => arrayRow("uPointRange", "float", p, Ty.F32, scene("uPointRange"))
+            case R3dUniform.SpotCount       => row("uSpotCount", "int", Ty.I32, scene("uSpotCount"))
+            case R3dUniform.SpotPos         => arrayRow("uSpotPos", "vec3", s, Ty.Vec3, scene("uSpotPos"))
+            case R3dUniform.SpotDir         => arrayRow("uSpotDir", "vec3", s, Ty.Vec3, scene("uSpotDir"))
+            case R3dUniform.SpotColor       => arrayRow("uSpotColor", "vec3", s, Ty.Vec3, scene("uSpotColor"))
+            case R3dUniform.SpotRange       => arrayRow("uSpotRange", "float", s, Ty.F32, scene("uSpotRange"))
+            case R3dUniform.SpotCone        => arrayRow("uSpotCone", "vec2", s, Ty.Vec2, scene("uSpotCone"))
+            case R3dUniform.FogOn           => row("uFogOn", "int", Ty.I32, scene("uFogOn"))
+            case R3dUniform.FogColor        => row("uFogColor", "vec3", Ty.Vec3, scene("uFogColor"))
+            case R3dUniform.FogRange        => row("uFogRange", "vec2", Ty.Vec2, scene("uFogRange"))
+            case R3dUniform.Eye             => row("uEye", "vec3", Ty.Vec3, scene("uEye"))
+            case R3dUniform.ShadowOn        => row("uShadowOn", "int", Ty.I32, scene("uShadowOn"))
+            case R3dUniform.ShadowSpot      => row("uShadowSpot", "int", Ty.I32, scene("uShadowSpot"))
+            case R3dUniform.ShadowMatrix    => row("uShadowMatrix", "mat4", Ty.Mat4, scene("uShadowMatrix"))
+            case R3dUniform.ShadowMap       => row("uShadowMap", "sampler2D", Ty.DepthTexture2d, at("uShadowMap"))
+            case R3dUniform.ShadowBias      => row("uShadowBias", "float", Ty.F32, scene("uShadowBias"))
+            case R3dUniform.ShadowPcf       => row("uShadowPcf", "int", Ty.I32, scene("uShadowPcf"))
+            case R3dUniform.ShadowStrength  => row("uShadowStrength", "float", Ty.F32, scene("uShadowStrength"))
+            case R3dUniform.SunDir          => row("uSunDir", "vec3", Ty.Vec3, scene("uSunDir"))
+            case R3dUniform.SunColor        => row("uSunColor", "vec3", Ty.Vec3, scene("uSunColor"))
+            case R3dUniform.SunShadowOn     => row("uSunShadowOn", "int", Ty.I32, scene("uSunShadowOn"))
+            case R3dUniform.SunMatrix       => row("uSunMatrix", "mat4", Ty.Mat4, scene("uSunMatrix"))
+            case R3dUniform.SunMap          => row("uSunMap", "sampler2D", Ty.DepthTexture2d, at("uSunMap"))
+            case R3dUniform.SunBias         => row("uSunBias", "float", Ty.F32, scene("uSunBias"))
+            case R3dUniform.SunNormalShift  => row("uSunNormalShift", "float", Ty.F32, scene("uSunNormalShift"))
+            case R3dUniform.SunPcf          => row("uSunPcf", "int", Ty.I32, scene("uSunPcf"))
+            case R3dUniform.SunStrength     => row("uSunStrength", "float", Ty.F32, scene("uSunStrength"))
+            case R3dUniform.SunForward      => row("uSunForward", "vec3", Ty.Vec3, scene("uSunForward"))
+            case R3dUniform.SunFade         => row("uSunFade", "vec2", Ty.Vec2, scene("uSunFade"))
+            case R3dUniform.PointShadow(i)  => row("uPointShadow[${i}]", "vec4", Ty.Vec4, light("uPointShadow"))
+            case R3dUniform.PointShadowAtlas => row("uPointShadowAtlas", "vec4", Ty.Vec4, light("uPointShadowAtlas"))
+            case R3dUniform.PointShadowBias => row("uPointShadowBias", "vec2", Ty.Vec2, light("uPointShadowBias"))
+            case R3dUniform.PointShadowMap  => row("uPointShadowMap", "sampler2D", Ty.DepthTexture2d, at("uPointShadowMap"))
+            case R3dUniform.InverseUnitsPerMeterSquared => row("uInverseUnitsPerMeterSquared", "float", Ty.F32, light("uInverseUnitsPerMeterSquared"))
+            case R3dUniform.Psx             => row("uPsx", "vec4", Ty.Vec4, light("uPsx"))
+            case R3dUniform.PsxTarget       => row("uPsxTarget", "vec4", Ty.Vec4, None)
+            case R3dUniform.VertexSnap      => row("uVertexSnap", "float", Ty.F32, camera("uSnap", "z"))
+            case R3dUniform.Sh              => arrayRow("uSh", "vec3", 9, Ty.Vec3, light("uSh"))
+            case R3dUniform.SkyContribution => row("uSkyContribution", "float", Ty.F32, light("uSkyContribution"))
+            case R3dUniform.Zenith          => row("uZenith", "vec3", Ty.Vec3, scene("uZenith"))
+            case R3dUniform.Horizon         => row("uHorizon", "vec3", Ty.Vec3, scene("uHorizon"))
+            case R3dUniform.Ground          => row("uGround", "vec3", Ty.Vec3, scene("uGround"))
+            case R3dUniform.Curve           => row("uCurve", "float", Ty.F32, scene("uCurve"))
+            case R3dUniform.EnvOn           => row("uEnvOn", "int", Ty.I32, scene("uEnvOn"))
+            case R3dUniform.EnvBoxOn        => row("uEnvBoxOn", "int", Ty.I32, scene("uEnvBoxOn"))
+            case R3dUniform.EnvBoxMin       => row("uEnvBoxMin", "vec3", Ty.Vec3, scene("uEnvBoxMin"))
+            case R3dUniform.EnvBoxMax       => row("uEnvBoxMax", "vec3", Ty.Vec3, scene("uEnvBoxMax"))
+            case R3dUniform.EnvBoxCenter    => row("uEnvBoxCenter", "vec3", Ty.Vec3, scene("uEnvBoxCenter"))
+            case R3dUniform.EnvMap          => row("uEnvMap", "sampler2D", Ty.Texture2d, at("uEnvMap"))
+            case R3dUniform.EnvLevels       => row("uEnvLevels", "float", Ty.F32, scene("uEnvLevels"))
+            case R3dUniform.EnvIntensity    => row("uEnvIntensity", "float", Ty.F32, scene("uEnvIntensity"))
+            case R3dUniform.EnvSrgb         => row("uEnvSrgb", "int", Ty.I32, scene("uEnvSrgb"))
+            case R3dUniform.DepthRange      => row("uDepthRange", "vec2", Ty.Vec2, scene("uDepthRange"))
+            case R3dUniform.DepthOut        => row("uDepthOut", "int", Ty.I32, scene("uDepthOut"))
+            case R3dUniform.Cutout          => row("uCutout", "int", Ty.I32, None)
+            case R3dUniform.Time            => row("uTime", "float", Ty.F32, None)
+            case R3dUniform.Param(i)        => row("uParam${i}", "float", Ty.F32, None)
+            case R3dUniform.Tex(i)          => row("uTex${i}", "sampler2D", Ty.Texture2d, None)
+            case R3dUniform.TexFlip(i)      => row("uTexFlip${i}", "float", Ty.F32, None)
+            case R3dUniform.TexLevels(i)    => row("uTexLevels${i}", "float", Ty.F32, None)
+            case R3dUniform.NormalMap       => row("uNormalMap", "sampler2D", Ty.Texture2d, at("uNormalMap"))
+            case R3dUniform.NormalStrength  => row("uNormalStrength", "float", Ty.F32, draw("uNormalStrength"))
+            case R3dUniform.NormalFlip      => row("uNormalFlip", "float", Ty.F32, None)
+            case R3dUniform.NormalLevels    => row("uNormalLevels", "float", Ty.F32, draw("uNormalLevels"))
+            case R3dUniform.Lightmap        => row("uLightmap", "sampler2D", Ty.Texture2d, at("uLightmap"))
+            case R3dUniform.LightmapLevels  => row("uLightmapLevels", "float", Ty.F32, draw("uLightmapLevels"))
+            case R3dUniform.LightmapUvRect  => row("uLightmapUvRect", "vec4", Ty.Vec4, draw("uLightmapUvRect"))
+            case R3dUniform.LightmapSrgb    => row("uLightmapSrgb", "int", Ty.I32, draw("uLightmapSrgb"))
+            case R3dUniform.LightmapIntensity => row("uLightmapIntensity", "float", Ty.F32, draw("uLightmapIntensity"))
+            case R3dUniform.Right           => row("uRight", "vec3", Ty.Vec3, camera("uRight", "xyz"))
+            case R3dUniform.Up              => row("uUp", "vec3", Ty.Vec3, camera("uUp", "xyz"))
+            case R3dUniform.RightPerBillboard => row("uRightPerBillboard", "int", Ty.I32, None)
+            case R3dUniform.Facing          => row("uFacing", "vec3", Ty.Vec3, camera("uFacing", "xyz"))
+            case R3dUniform.Image           => row("uImage", "sampler2D", Ty.Texture2d, at("uImage"))
+            case R3dUniform.Viewport        => row("uViewport", "vec4", Ty.Vec4, None)
+            case R3dUniform.Forward         => row("uForward", "vec3", Ty.Vec3, None)
+        }
+
+    /// 番号の無い handle の全部（GLSL の名前から handle を引く表を作る）。
+    def plainHandles(): List[R3dUniform] =
+        R3dUniform.View :: R3dUniform.Proj :: R3dUniform.InstanceBase :: R3dUniform.InstanceTexture :: R3dUniform.JointTexture ::
+        R3dUniform.Ambient :: R3dUniform.Hemisphere :: R3dUniform.ToonSteps :: R3dUniform.PointCount :: R3dUniform.PointPos :: R3dUniform.PointColor ::
+        R3dUniform.PointRange :: R3dUniform.SpotCount :: R3dUniform.SpotPos :: R3dUniform.SpotDir :: R3dUniform.SpotColor :: R3dUniform.SpotRange ::
+        R3dUniform.SpotCone :: R3dUniform.FogOn :: R3dUniform.FogColor :: R3dUniform.FogRange :: R3dUniform.Eye ::
+        R3dUniform.ShadowOn :: R3dUniform.ShadowSpot :: R3dUniform.ShadowMatrix :: R3dUniform.ShadowMap :: R3dUniform.ShadowBias :: R3dUniform.ShadowPcf ::
+        R3dUniform.ShadowStrength :: R3dUniform.SunDir :: R3dUniform.SunColor :: R3dUniform.SunShadowOn :: R3dUniform.SunMatrix :: R3dUniform.SunMap ::
+        R3dUniform.SunBias :: R3dUniform.SunNormalShift :: R3dUniform.SunPcf :: R3dUniform.SunStrength :: R3dUniform.SunForward :: R3dUniform.SunFade ::
+        R3dUniform.PointShadowAtlas :: R3dUniform.PointShadowBias :: R3dUniform.PointShadowMap ::
+        R3dUniform.InverseUnitsPerMeterSquared :: R3dUniform.Psx :: R3dUniform.PsxTarget :: R3dUniform.VertexSnap :: R3dUniform.Sh :: R3dUniform.SkyContribution ::
+        R3dUniform.Zenith :: R3dUniform.Horizon :: R3dUniform.Ground :: R3dUniform.Curve :: R3dUniform.EnvOn :: R3dUniform.EnvBoxOn :: R3dUniform.EnvBoxMin ::
+        R3dUniform.EnvBoxMax :: R3dUniform.EnvBoxCenter :: R3dUniform.EnvMap :: R3dUniform.EnvLevels :: R3dUniform.EnvIntensity :: R3dUniform.EnvSrgb ::
+        R3dUniform.DepthRange :: R3dUniform.DepthOut :: R3dUniform.Cutout :: R3dUniform.Time ::
+        R3dUniform.NormalMap :: R3dUniform.NormalStrength :: R3dUniform.NormalFlip :: R3dUniform.NormalLevels ::
+        R3dUniform.Lightmap :: R3dUniform.LightmapLevels :: R3dUniform.LightmapUvRect :: R3dUniform.LightmapSrgb :: R3dUniform.LightmapIntensity ::
+        R3dUniform.Right :: R3dUniform.Up :: R3dUniform.RightPerBillboard :: R3dUniform.Facing :: R3dUniform.Image :: R3dUniform.Viewport :: R3dUniform.Forward :: Nil
+
+    /// GLSL の宣言の名前（配列の [N] を除く）→ handle の並び（点光源の影は 1 つずつの location を引くので要素ごと）。
+    def handlesByName(): Map[String, List[R3dUniform]] =
+        let indexed = (prefix: String, make: Int32 -> R3dUniform) ->
+            List.range(0, Scene3d.maxMaterialTextures() + 32) |> List.map(i -> ("${prefix}${i}", make(i) :: Nil));
+        let plain = plainHandles() |> List.map(u -> (rowOf(u)#name, u :: Nil));
+        let pointShadows = ("uPointShadow", List.range(0, Scene3d.maxPointLights()) |> List.map(R3dUniform.PointShadow)) :: Nil;
+        List.toMap(plain ::: pointShadows ::: indexed("uParam", R3dUniform.Param) ::: indexed("uTex", R3dUniform.Tex)
+                   ::: indexed("uTexFlip", R3dUniform.TexFlip) ::: indexed("uTexLevels", R3dUniform.TexLevels))
+
+    /// GLSL の字 source が宣言した uniform の名前（行の頭の `uniform <型> <名前>` の名前。配列の [N] は除く）。
+    pub def declaredNames(source: String): List[String] =
+        TextSplit.lines(source) |> List.filterMap(line -> {
+            let words = TextSplit.split(" ", String.trim(line));
+            match words {
+                case "uniform" :: _ :: name :: _ => Some(String.takeWhile(ch -> ch != '[' and ch != ';', name))
+                case _                           => None
+            }
+        })
+
+    /// GLSL の字 sources が宣言した uniform の handle（表に無い名前は Err の並びへ）。
+    pub def handlesOf(sources: List[String]): (List[R3dUniform], List[String]) =
+        let table = handlesByName();
+        let names = sources |> List.flatMap(declaredNames) |> List.distinct;
+        let found = names |> List.map(n -> (n, Map.get(n, table)));
+        let known = found |> List.flatMap(nf -> snd(nf) |> Option.getWithDefault(Nil));
+        let unknown = found |> List.filterMap(nf -> if (Option.isEmpty(snd(nf))) Some(fst(nf)) else None);
+        (known, unknown)
+
+    /// プログラムの uniform の location（handle → location。プログラムが宣言していない handle は入らない）。
+    pub type alias UniformLocations = Map[R3dUniform, Int32]
+
+    /// 宣言の無いプログラムの location（何も差さない）。
+    pub def noLocations(): UniformLocations = Map.empty()
+
+    /// プログラム program の、GLSL の字 sources が宣言した uniform の location。
+    // WhyNot: 表の全部の handle の location を引かない — プログラムを組むたびに GL への呼び出しが 100 回ほど増え、宣言していない名前の -1 を持つだけになる。
+    pub def locationsOf(gl: GlContext, program: Int32, sources: List[String]): UniformLocations \ IO =
+        fst(handlesOf(sources)) |> List.foldLeft((acc, u) -> {
+            let at = gl.getUniformLocation(program, rowOf(u)#name);
+            if (at < 0) acc else Map.insert(u, at, acc)
+        }, Map.empty())
+
+    /// handle u の location（宣言が無ければ −1）。
+    pub def locationOf(u: R3dUniform, locs: UniformLocations): Int32 = Map.getWithDefault(u, -1, locs)
+
+    /// プログラムが u を宣言しているか。
+    pub def has(u: R3dUniform, locs: UniformLocations): Bool = Map.memberOf(u, locs)
+
+    /// u を宣言していれば f(location) を呼ぶ。
+    def withLocation(u: R3dUniform, locs: UniformLocations, f: Int32 -> Unit \ IO): Unit \ IO = match Map.get(u, locs) {
+        case Some(at) => f(at)
+        case None     => ()
+    }
+
+    pub def put1i(gl: GlContext, locs: UniformLocations, u: R3dUniform, v: Int32): Unit \ IO = withLocation(u, locs, at -> gl.uniform1i(at, v))
+    pub def put1f(gl: GlContext, locs: UniformLocations, u: R3dUniform, v: Float32): Unit \ IO = withLocation(u, locs, at -> gl.uniform1f(at, v))
+    pub def put2f(gl: GlContext, locs: UniformLocations, u: R3dUniform, x: Float32, y: Float32): Unit \ IO = withLocation(u, locs, at -> gl.uniform2f(at, x, y))
+    pub def put3f(gl: GlContext, locs: UniformLocations, u: R3dUniform, x: Float32, y: Float32, z: Float32): Unit \ IO =
+        withLocation(u, locs, at -> gl.uniform3f(at, x, y, z))
+    pub def put4f(gl: GlContext, locs: UniformLocations, u: R3dUniform, x: Float32, y: Float32, z: Float32, w: Float32): Unit \ IO =
+        withLocation(u, locs, at -> gl.uniform4f(at, x, y, z, w))
+    pub def put1fv(gl: GlContext, locs: UniformLocations, u: R3dUniform, v: Array[Float32, Static]): Unit \ IO = withLocation(u, locs, at -> gl.uniform1fv(at, v))
+    pub def put2fv(gl: GlContext, locs: UniformLocations, u: R3dUniform, v: Array[Float32, Static]): Unit \ IO = withLocation(u, locs, at -> gl.uniform2fv(at, v))
+    pub def put3fv(gl: GlContext, locs: UniformLocations, u: R3dUniform, v: Array[Float32, Static]): Unit \ IO = withLocation(u, locs, at -> gl.uniform3fv(at, v))
+    pub def putMatrix4(gl: GlContext, locs: UniformLocations, u: R3dUniform, m: Array[Float32, Static]): Unit \ IO =
+        withLocation(u, locs, at -> gl.uniformMatrix4fv(at, false, m))
+
+    // ── 木で読む ──
+
+    /// handle u を木で読む uniform（GLSL の名前・型・言語ごとの読む字）。
+    pub def refOf(u: R3dUniform): ShaderAst.UniformRef =
+        let r = rowOf(u);
+        { name = r#name, ty = r#ty, glsl = Some({ base = r#name, swizzle = "" }), wgsl = r#wgsl }
+
+    /// handles の GLSL の宣言の行（並べた順）。
+    pub def glslDeclarations(handles: List[R3dUniform]): String =
+        handles |> List.map(u -> {
+            let r = rowOf(u);
+            let dims = r#length |> Option.map(n -> "[${n}]") |> Option.getWithDefault("");
+            "uniform ${r#glsl} ${r#name}${dims};\n"
+        }) |> String.flatten
+}

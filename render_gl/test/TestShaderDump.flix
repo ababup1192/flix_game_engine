@@ -144,4 +144,10 @@ mod TestShaderDump {
             case None => ()
         };
         Assert.assertEq(expected = 1506, List.length(sources))
+
+    /// GLSL の全部の版が宣言する uniform は、どれも handle の表（Render3d.Uniforms）にある（GL の location を handle で引くため）。
+    @Test
+    def testEveryGlslUniformIsInTheHandleTable(): Unit \ Assert =
+        let glsl = allSources() |> List.filter(s -> String.startsWith(prefix = "glsl/", fst(s))) |> List.map(snd);
+        Assert.assertEq(expected = Nil, snd(Render3d.Uniforms.handlesOf(glsl)))
 }

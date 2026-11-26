@@ -36,6 +36,7 @@ mod Render3d {
     use Render3d.Shadow.{bindShadowMap, renderShadows, sweepShadowTargets, unbindShadowMap}
     use Render3d.Material.{MaterialTable, bindEnvironmentMap, releaseEnvironmentMap, blankTextureId, budgetEvictions, resolveMaterials, sweepMaterials, sweepTextures3d}
     use Render3d.Counts.{BatchBreak, Counter, Phase, breakSlotOf, count, countDrawCall, countDrawCallAt, noteDroppedLights, takeCounts, timed}
+    use Render3d.Uniforms.{R3dUniform, UniformLocations, put1f, put1i, put2f, put3f, put4f, putMatrix4}
 
     // ── 型 ──
 
@@ -95,79 +96,33 @@ mod Render3d {
     /// 影の地図を描く材料。light = 影を落とす光・plain = 骨の無い物・skinned = 骨つきの物（描く順）。
     type alias ShadowPlan[b] = { caster = ShadowCaster, light = ShadowLight, plain = List[b], skinned = List[b] }
 
-    /// 光の uniform の location（頂点の色のプログラムとビルボードのプログラムで同じ名前）。
-    pub type alias LightLocs = {
-        ambient = Int32, hemisphere = Int32, toonSteps = Int32,
-        pointCount = Int32, pointPos = Int32, pointColor = Int32, pointRange = Int32,
-        spotCount = Int32, spotPos = Int32, spotDir = Int32, spotColor = Int32, spotRange = Int32, spotCone = Int32,
-        fogOn = Int32, fogColor = Int32, fogRange = Int32, eye = Int32,
-        reflectZenith = Int32, reflectHorizon = Int32, reflectGround = Int32, reflectCurve = Int32,
-        envOn = Int32, envBoxOn = Int32, envBoxMin = Int32, envBoxMax = Int32, envBoxCenter = Int32, envLevels = Int32, envIntensity = Int32, envSrgb = Int32,
-        sunDir = Int32, sunColor = Int32, inverseUnitsPerMeterSquared = Int32, psx = Int32, psxTarget = Int32, vertexSnap = Int32,
-        sh = Int32, skyContribution = Int32
-    }
-
-    /// instanceBase = batch の頭の 1 体ごとの値の番号の uniform。
-    type alias MeshLocs = { program = Int32, view = Int32, proj = Int32, instanceBase = Int32 }
-
-    /// 影の uniform の location（頂点の色のプログラムと材質のプログラム。ビルボードはスポットの影を受けない）。
-    pub type alias ShadowLocs = { on = Int32, spot = Int32, matrix = Int32, map = Int32, bias = Int32, pcf = Int32, strength = Int32 }
-
-    /// 太陽の影の uniform の location（ShadowLocs と同じ決まり。on = uSunShadowOn）。
-    pub type alias SunShadowLocs = { on = Int32, matrix = Int32, map = Int32, bias = Int32, normalShift = Int32, pcf = Int32, strength = Int32,
-                                 forward = Int32, fade = Int32 }
-
-    /// 点光源の影の uniform の location（変種 +ps のプログラムだけが持つ。ほかは map が −1）。lights = uPointShadow[0..7] の location。
-    pub type alias PointShadowLocs = { lights = Vector[Int32], atlas = Int32, bias = Int32, map = Int32 }
-
-    type alias LitLocs = { mesh = MeshLocs, light = LightLocs, shadow = ShadowLocs, sunShadow = SunShadowLocs, pointShadow = PointShadowLocs }
+    /// 組んだプログラムと、その GLSL が宣言した uniform の location（Render3d.Uniforms の handle で引く）。program が 0 なら組めなかった（locs は空）。
+    pub type alias ProgramUniforms = { program = Int32, locs = UniformLocations }
 
     /// 1 つの場面の目と光と影（置いた物を描くプログラムへ渡す物）。variant = 場面のシェーダーの変種（shaderVariantOf）。
     type alias CameraData = { view = Array[Float32, Static], proj = Array[Float32, Static], lights = LightData, shadows = SceneShadows, variant = ShaderVariant }
 
-    type alias DepthLocs = { mesh = MeshLocs, eye = Int32, depthRange = Int32 }
-
-    /// rightPerBillboard = uRightPerBillboard（板の横の向きを instance の値から読む）。板ごとの値は uniform でなく instance の attribute（Render3dGlsl.billboardVertexSource）。
-    type alias BillboardLocs = {
-        program = Int32, view = Int32, proj = Int32, right = Int32, up = Int32, rightPerBillboard = Int32, facing = Int32,
-        depthOut = Int32, depthRange = Int32, light = LightLocs, sunShadow = SunShadowLocs
-    }
-
     /// billboardVao = 板の VAO（location 0 = 四角の角・1〜4 = 板ごとの値）・billboardVbo = 板ごとの値の VBO・billboardBuf = それへ送る前に詰める入れ物。
     // WhyNot: 板ごとの値の attribute を quadVao に持たせない — quadVao は Design の重ねも使い、そちらは location 1〜4 を読まない。
-    type alias Programs = { lit = LitLocs, depth = DepthLocs, billboard = BillboardLocs, blit = Int32, quadVao = Int32, quadVbo = Int32,
+    type alias Programs = { lit = ProgramUniforms, depth = ProgramUniforms, billboard = ProgramUniforms, blit = ProgramUniforms, quadVao = Int32, quadVbo = Int32,
                             billboardVao = Int32, billboardVbo = Int32, billboardBuf = RenderBuf.Buf }
 
-    /// 空のプログラムの uniform の location。
-    type alias SkyLocs = { program = Int32, viewport = Int32, forward = Int32, right = Int32, up = Int32,
-                           zenith = Int32, horizon = Int32, ground = Int32, curve = Int32, depthOut = Int32,
-                           envOn = Int32, envIntensity = Int32, envSrgb = Int32 }
-
     /// 骨つきの版のプログラム。
-    type alias SkinnedPrograms = { lit = LitLocs, depth = DepthLocs }
+    type alias SkinnedPrograms = { lit = ProgramUniforms, depth = ProgramUniforms }
 
     /// 置いた物 1 つと、描く時に曲げる Pose（Scene3d.skinningOf。None なら骨の無い版で曲げずに描く）と、その joint texture の行（骨の無い物は 0）。
     /// culled = 視錐台の外なので描かない（形と絵は今のコマで使った物として数え、GPU から捨てない）。
     type alias MeshDraw = { fields = Scene3d.InstanceFields, pose = Option[Pose3d.Pose3d], poseRow = Int32, culled = Bool }
 
-    /// 材質のプログラムの uniform の location。params = uParamN の location（paramNames の並び）・
-    /// texFlips = uTexFlipN の location（texReads の並び）。
-    type alias MaterialLocs = {
-        mesh = MeshLocs, light = LightLocs, shadow = ShadowLocs, sunShadow = SunShadowLocs, pointShadow = PointShadowLocs, time = Int32, cutout = Int32,
-        depthOut = Int32, depthRange = Int32, params = List[Int32], texFlips = List[Int32],
-        normalStrength = Int32, normalFlip = Int32, texLevels = List[Int32], normalLevels = Int32,
-        lightmapLevels = Int32, lightmapSrgb = Int32, lightmapIntensity = Int32, lightmapUvRect = Int32
-    }
-
     /// 組んだ材質のプログラム 1 つ。spec・emission・metallicRoughness（材質の metallicRoughnessShade）は組んだ時の物（次に来た材質と比べる）。
     /// known = 同じ GLSL を生むと確かめた材質の参照（最近使った順・Render3d.Material.knownMaterialLimit 個まで。参照が合えば木を比べない）。
     /// paramNames = ShaderGen.compile3d が uParamN に割り当てた名前の並び・texReads = uTexN に貼る (名前, 補間) の並び
     /// （組んだ時の材質の名前。同じプログラムを名前だけ違う材質が使うので、貼る名前は描く材質から引き直す）。
-    /// locs#mesh#program が 0 なら組めなかった。
+    /// uniforms#program が 0 なら組めなかった。uParamN は paramNames の並び・uTexN・uTexFlipN・uTexLevelsN は texReads の並びの番号（R3dUniform.Param(i) など）。
     type alias MaterialEntry = {
         spec = ShaderDoc.Spec, emission = Option[ShaderDoc.Shade], metallicRoughness = Option[ShaderDoc.Shade],
         known = List[(ShaderDoc.Spec, Option[ShaderDoc.Shade], Option[ShaderDoc.Shade])], paramNames = List[String],
-        texReads = List[(String, ShaderDoc.FilterMode)], normalMapped = Bool, lightmapped = Bool, coverage = Bool, locs = MaterialLocs, lastUsed = Int64
+        texReads = List[(String, ShaderDoc.FilterMode)], normalMapped = Bool, lightmapped = Bool, coverage = Bool, uniforms = ProgramUniforms, lastUsed = Int64
     }
 
     /// 材質の Tex の名前を絵に引く元。textureOf = 全体の登録（project.json・レンダーターゲット）・
@@ -241,11 +196,11 @@ mod Render3d {
         // 骨つきの物を初めて描く時に組む（ジョイントを使わない場面は骨つきの版のコンパイルを払わない）。
         skinnedRef = Ref[Option[SkinnedPrograms], Static],
         // 空を初めて描く時に組む（空を使わない場面は空のプログラムのコンパイルを払わない）。
-        skyRef = Ref[Option[SkyLocs], Static],
+        skyRef = Ref[Option[ProgramUniforms], Static],
         // 変種の頂点の色のプログラム（(variantKeyOf, 骨つきか) → location）。その変種の場面を初めて描く時に組む。
-        variantLitRef = Ref[Map[(String, Bool), LitLocs], Static],
+        variantLitRef = Ref[Map[(String, Bool), ProgramUniforms], Static],
         // 変種のビルボードのプログラム（variantKeyOf → location）。
-        variantBillboardRef = Ref[Map[String, BillboardLocs], Static],
+        variantBillboardRef = Ref[Map[String, ProgramUniforms], Static],
         // Design の解像度の描き先の寿命の表（(そのコマの Design の場面の並びの番号, 形式の名前) → FBO。形が同じなら使い回す）。
         designTargets = Render3d.SceneTargets.Table[(Int32, String), RenderTargetGl.Entry],
         // 見つからないと知らせたビルボードのテクスチャの名前。
@@ -523,18 +478,18 @@ mod Render3d {
     /// 半透明の無い場面の FBO の画素は α が 0（色も 0）か 1 なので、Normal で重ねた時と 1 bit も同じ。
     def blitDesign(gl: GlContext, state: State, rect: PixelBox, scissor: PixelBox, target: RenderTargetGl.Entry): Unit \ IO =
         let programs = programsOf(gl, state);
-        if (programs#blit == 0) ()
+        if (programs#blit#program == 0) ()
         else {
             gl.viewport(rect#x, rect#y, rect#width, rect#height);
             gl.enable(GlConst.SCISSOR_TEST);
             gl.scissor(scissor#x, scissor#y, scissor#width, scissor#height);
             gl.enable(GlConst.BLEND);
             gl.blendFunc(GlConst.ONE, GlConst.ONE_MINUS_SRC_ALPHA);
-            gl.useProgram(programs#blit);
+            gl.useProgram(programs#blit#program);
             gl.activeTexture(GlConst.TEXTURE0);
             gl.bindTexture(GlConst.TEXTURE_2D, target#tex);
             gl.bindVertexArray(programs#quadVao);
-            gl.uniform1i(gl.getUniformLocation(programs#blit, "uImage"), 0);
+            put1i(gl, programs#blit#locs, R3dUniform.Image, 0);
             gl.drawArrays(GlConst.TRIANGLES, 0, 6);
             gl.bindVertexArray(0);
             gl.useProgram(0)
@@ -569,7 +524,7 @@ mod Render3d {
         inputs#carried |> List.forEach(c -> uploadRows(gl, state, gen, source, Render3d.GlStatic.inputsOf(inputs, c), 0));
         Render3d.Counts.countInstances(state, 0, List.sumWith(c -> c#carried#rows#combinedAway, inputs#carried));
         uploadRows(gl, state, gen, source, inputs, Render3d.StaticRows.itemCountOf(scene) + Render3d.StaticRows.multiMeshCountOf(scene));
-        let ctx = { camera = camera, eye = scene#camera#eye, source = source, billboard = Render3d.VariantPrograms.billboardLocsFor(gl, state, variant), scene = scene };
+        let ctx = { camera = camera, eye = scene#camera#eye, source = source, billboard = Render3d.VariantPrograms.billboardProgramFor(gl, state, variant), scene = scene };
         let (callsBefore, meshBefore) = Render3d.Counts.drawCallsSoFar(state);
         if (Render3d.GpuSpans.skipsColorDraws()) () else inputs#passes |> List.forEach(match (spec, list) -> drawPass(gl, state, gen, ctx, inputs, spec, list));
         let (callsAfter, meshAfter) = Render3d.Counts.drawCallsSoFar(state);
@@ -582,7 +537,7 @@ mod Render3d {
         { psxTarget = Array#{ Int32.toFloat32(viewport#x), Int32.toFloat32(viewport#y), Int32.toFloat32(viewport#width), Int32.toFloat32(viewport#height) } @ Static | d }
 
     /// drawPass が場面 1 つの中で pass をまたいで使う物。billboard = ビルボードのプログラム。
-    type alias PassContext = { camera = CameraData, eye = Vec3.Vec3, source = TextureSource, billboard = BillboardLocs, scene = Scene3d.Scene3dCmd }
+    type alias PassContext = { camera = CameraData, eye = Vec3.Vec3, source = TextureSource, billboard = ProgramUniforms, scene = Scene3d.Scene3dCmd }
 
     /// 場面の pass spec の行 list を描く（形は uploadRows で上げてある）。色の pass は不透明の行 → ビルボードの行 → 半透明の行・奥行きの書き出しは不透明の行 → ビルボードの行。
     /// 持ち越した集まり（inputs#carried）の行は、不透明の行の前に描く（Render3d.GlStatic の頭）。
@@ -642,28 +597,29 @@ mod Render3d {
     def drawSky(gl: GlContext, state: State, viewport: PixelBox, scene: Scene3d.Scene3dCmd): Unit \ IO =
         Scene3d.skyWarning(scene) |> Option.forEach(line -> warnSceneOnce(state, "@sky+background", line));
         Scene3d.drawnSkyOf(scene) |> Option.forEach(sky -> {
-            let locs = skyProgramOf(gl, state);
-            if (locs#program == 0) ()
+            let sp = skyProgramOf(gl, state);
+            if (sp#program == 0) ()
             else {
+                let locs = sp#locs;
                 let f = Scene3d.skyFieldsOf(sky);
                 let basis = Scene3d.skyBasisOf(scene);
                 gl.disable(GlConst.DEPTH_TEST);
                 gl.disable(GlConst.CULL_FACE);
-                gl.useProgram(locs#program);
-                gl.uniform4f(locs#viewport, Int32.toFloat32(viewport#x), Int32.toFloat32(viewport#y),
-                                 Int32.toFloat32(viewport#width), Int32.toFloat32(viewport#height));
-                putVec3(gl, locs#forward, basis#forward);
-                putVec3(gl, locs#right, basis#right);
-                putVec3(gl, locs#up, basis#up);
-                putLinearizedColor(gl, locs#zenith, f#zenith);
-                putLinearizedColor(gl, locs#horizon, f#horizon);
-                putLinearizedColor(gl, locs#ground, f#ground);
-                gl.uniform1f(locs#curve, RenderUtil.f32(Scene3d.skyCurveOf(sky)));
+                gl.useProgram(sp#program);
+                put4f(gl, locs, R3dUniform.Viewport, Int32.toFloat32(viewport#x), Int32.toFloat32(viewport#y),
+                      Int32.toFloat32(viewport#width), Int32.toFloat32(viewport#height));
+                putVec3(gl, locs, R3dUniform.Forward, basis#forward);
+                putVec3(gl, locs, R3dUniform.Right, basis#right);
+                putVec3(gl, locs, R3dUniform.Up, basis#up);
+                putLinearizedColor(gl, locs, R3dUniform.Zenith, f#zenith);
+                putLinearizedColor(gl, locs, R3dUniform.Horizon, f#horizon);
+                putLinearizedColor(gl, locs, R3dUniform.Ground, f#ground);
+                put1f(gl, locs, R3dUniform.Curve, RenderUtil.f32(Scene3d.skyCurveOf(sky)));
                 let background = Scene3d.backgroundEnvironmentOf(scene);
-                gl.uniform1i(locs#envOn, if (Option.isEmpty(background)) 0 else 1);
-                gl.uniform1f(locs#envIntensity, RenderUtil.f32(background |> Option.map(Scene3d.environmentIntensityOf) |> Option.getWithDefault(0.0)));
-                gl.uniform1i(locs#envSrgb, Render3d.Light.environmentSrgbOf(background));
-                gl.uniform1i(locs#depthOut, match scene#output {
+                put1i(gl, locs, R3dUniform.EnvOn, if (Option.isEmpty(background)) 0 else 1);
+                put1f(gl, locs, R3dUniform.EnvIntensity, RenderUtil.f32(background |> Option.map(Scene3d.environmentIntensityOf) |> Option.getWithDefault(0.0)));
+                put1i(gl, locs, R3dUniform.EnvSrgb, Render3d.Light.environmentSrgbOf(background));
+                put1i(gl, locs, R3dUniform.DepthOut, match scene#output {
                     case Scene3d.Output.Color    => 0
                     case Scene3d.Output.Depth(_) => 1
                 });
@@ -704,29 +660,30 @@ mod Render3d {
 
     // ── 置いた物 ──
 
-    def putColor(gl: GlContext, loc: Int32, c: Color): Unit \ IO =
-        gl.uniform3f(loc, RenderUtil.f32(c#r), RenderUtil.f32(c#g), RenderUtil.f32(c#b))
+    def putColor(gl: GlContext, locs: UniformLocations, u: R3dUniform, c: Color): Unit \ IO =
+        put3f(gl, locs, u, RenderUtil.f32(c#r), RenderUtil.f32(c#g), RenderUtil.f32(c#b))
 
     /// 場面の色（tint・空の色）を線形へ戻してから入れる（光の色・ambient・かすみは lightDataOf）。
-    def putLinearizedColor(gl: GlContext, loc: Int32, c: Color): Unit \ IO =
-        putColor(gl, loc, Texture3d.srgbToLinearColor(c))
+    def putLinearizedColor(gl: GlContext, locs: UniformLocations, u: R3dUniform, c: Color): Unit \ IO =
+        putColor(gl, locs, u, Texture3d.srgbToLinearColor(c))
 
-    def putDepthRange(gl: GlContext, loc: Int32, depthRange: { near = Float64, range = Float64 }): Unit \ IO =
-        gl.uniform2f(loc, RenderUtil.f32(depthRange#near), RenderUtil.f32(Float64.max(0.000001, depthRange#range)))
+    /// uDepthRange へ (near, range) を入れる。
+    def putDepthRange(gl: GlContext, locs: UniformLocations, depthRange: { near = Float64, range = Float64 }): Unit \ IO =
+        put2f(gl, locs, R3dUniform.DepthRange, RenderUtil.f32(depthRange#near), RenderUtil.f32(Float64.max(0.000001, depthRange#range)))
 
-    def useMeshProgram(gl: GlContext, locs: MeshLocs, view: Array[Float32, Static], proj: Array[Float32, Static]): Unit \ IO =
-        gl.useProgram(locs#program);
-        gl.uniformMatrix4fv(locs#view, false, view);
-        gl.uniformMatrix4fv(locs#proj, false, proj)
+    def useMeshProgram(gl: GlContext, p: ProgramUniforms, view: Array[Float32, Static], proj: Array[Float32, Static]): Unit \ IO =
+        gl.useProgram(p#program);
+        putMatrix4(gl, p#locs, R3dUniform.View, view);
+        putMatrix4(gl, p#locs, R3dUniform.Proj, proj)
 
 
     /// 置き場の形 mesh = (VAO, 添え字の数) の、1 体ごとの値の first 番から count 体を 1 回の instanced draw で描く（どちらかが 0 以下なら何もしない）。
     /// why = 分かれた理由の Counts.breakSlotOf の番号（数えるだけ）。
-    def drawMeshRange(gl: GlContext, state: State, locs: MeshLocs, why: Int32, mesh: (Int32, Int32), first: Int32, count: Int32): Unit \ IO =
+    def drawMeshRange(gl: GlContext, state: State, locs: UniformLocations, why: Int32, mesh: (Int32, Int32), first: Int32, count: Int32): Unit \ IO =
         let (vao, indexCount) = mesh;
         if (indexCount <= 0 or count <= 0) ()
         else {
-            gl.uniform1i(locs#instanceBase, first);
+            put1i(gl, locs, R3dUniform.InstanceBase, first);
             gl.bindVertexArray(vao);
             gl.drawElementsInstanced(GlConst.TRIANGLES, indexCount, GlConst.UNSIGNED_INT, 0, count);
             countDrawCallAt(state, why)
@@ -951,33 +908,32 @@ mod Render3d {
     // ── ビルボード ──
 
     /// 行 list のビルボードの行（firstBillboardRowOf から firstBlendedRowOf の前まで・同じ絵の板の並び）を描く（drawBillboardRuns）。
-    def drawBillboards(gl: GlContext, state: State, locs: BillboardLocs, camera: CameraData, scene: Scene3d.Scene3dCmd, list: SceneList): Unit \ IO =
+    def drawBillboards(gl: GlContext, state: State, p: ProgramUniforms, camera: CameraData, scene: Scene3d.Scene3dCmd, list: SceneList): Unit \ IO =
         let first = firstBillboardRowOf(list);
         let end = firstBlendedRowOf(list);
-        if (first >= end or locs#program == 0) ()
+        if (first >= end or p#program == 0) ()
         else {
+            let locs = p#locs;
             // WhyNot: ビルボードに裏の面の間引き（GL_CULL_FACE）を掛けない — 四角はいつもカメラを向くので裏は来ず、頂点の巻き方を合わせる手間だけが増える。
             gl.disable(GlConst.CULL_FACE);
-            gl.useProgram(locs#program);
-            gl.uniformMatrix4fv(locs#view, false, camera#view);
-            gl.uniformMatrix4fv(locs#proj, false, camera#proj);
-            putLights(gl, locs#light, camera#lights);
-            Render3d.Shadow.putSunShadow(gl, locs#sunShadow, camera#shadows#sun);
-            putVec3(gl, locs#right, Camera3d.right(scene#camera));
-            putVec3(gl, locs#up, Camera3d.up(scene#camera));
-            gl.uniform1i(locs#rightPerBillboard, 0);
-            putVec3(gl, locs#facing, Vec3.mul(Camera3d.forward(scene#camera), -1.0));
+            useMeshProgram(gl, p, camera#view, camera#proj);
+            putLights(gl, locs, camera#lights);
+            Render3d.Shadow.putSunShadow(gl, locs, camera#shadows#sun);
+            putVec3(gl, locs, R3dUniform.Right, Camera3d.right(scene#camera));
+            putVec3(gl, locs, R3dUniform.Up, Camera3d.up(scene#camera));
+            put1i(gl, locs, R3dUniform.RightPerBillboard, 0);
+            putVec3(gl, locs, R3dUniform.Facing, Vec3.mul(Camera3d.forward(scene#camera), -1.0));
             putBillboardOutput(gl, locs, scene#output);
             Render3d.GlRows.drawBillboardRuns(gl, state, list, BatchBreak.Billboard);
             gl.enable(GlConst.CULL_FACE)
         }
 
-    def putBillboardOutput(gl: GlContext, locs: BillboardLocs, output: Scene3d.Output): Unit \ IO =
+    def putBillboardOutput(gl: GlContext, locs: UniformLocations, output: Scene3d.Output): Unit \ IO =
         match output {
-            case Scene3d.Output.Color => gl.uniform1i(locs#depthOut, 0)
+            case Scene3d.Output.Color => put1i(gl, locs, R3dUniform.DepthOut, 0)
             case Scene3d.Output.Depth(dr) =>
-                gl.uniform1i(locs#depthOut, 1);
-                putDepthRange(gl, locs#depthRange, dr)
+                put1i(gl, locs, R3dUniform.DepthOut, 1);
+                putDepthRange(gl, locs, dr)
         }
 
     def warnMissingTexture(state: State, name: String): Unit \ IO =
@@ -992,8 +948,8 @@ mod Render3d {
     def missingBillboardTextureLine(name: String): String =
         "scene3d: ビルボードのテクスチャ '${name}' が見つからない — 描かない（project.json の textures に同名の宣言があるか確認）"
 
-    def putVec3(gl: GlContext, loc: Int32, v: Vec3.Vec3): Unit \ IO =
-        gl.uniform3f(loc, RenderUtil.f32(v#x), RenderUtil.f32(v#y), RenderUtil.f32(v#z))
+    def putVec3(gl: GlContext, locs: UniformLocations, u: R3dUniform, v: Vec3.Vec3): Unit \ IO =
+        put3f(gl, locs, u, RenderUtil.f32(v#x), RenderUtil.f32(v#y), RenderUtil.f32(v#z))
 
     // ── プログラム ──
 
@@ -1011,30 +967,25 @@ mod Render3d {
         }
 
     def buildPrograms(gl: GlContext): Programs \ IO =
-        let lit = compile(gl, litVertexSource(false), litFragmentSource(), "scene3d:lit");
-        let depth = compile(gl, meshVertexSource(), depthFragmentSource(), "scene3d:depth");
-        let billboard = compile(gl, billboardVertexSource(), billboardFragmentSource(), "scene3d:billboard");
-        let blit = compile(gl, blitVertexSource(), blitFragmentSource(), "scene3d:blit");
+        let lit = compileProgram(gl, litVertexSource(false), litFragmentSource(), "scene3d:lit");
+        let depth = compileProgram(gl, meshVertexSource(), depthFragmentSource(), "scene3d:depth");
+        let billboard = compileProgram(gl, billboardVertexSource(), billboardFragmentSource(), "scene3d:billboard");
+        let blit = compileProgram(gl, blitVertexSource(), blitFragmentSource(), "scene3d:blit");
         bindDataTextureUnits(gl, lit);
         bindDataTextureUnits(gl, depth);
+        bindUnits(gl, billboard, (R3dUniform.Image, 0) :: Nil);
         let (quadVao, quadVbo) = buildQuad(gl);
         let (billboardVao, billboardVbo) = Render3d.GlRows.buildBillboardVao(gl, quadVbo);
-        { lit = litLocsOf(gl, lit), depth = depthLocsOf(gl, depth),
-          billboard = billboardLocsOf(gl, billboard), blit = blit, quadVao = quadVao, quadVbo = quadVbo,
+        { lit = lit, depth = depth, billboard = billboard, blit = blit, quadVao = quadVao, quadVbo = quadVbo,
           billboardVao = billboardVao, billboardVbo = billboardVbo, billboardBuf = RenderBuf.make(gl, 64 * Render3d.SceneList.billboardValueFloats()) }
 
     /// 空のプログラムを初めて要る時に組む。組めなかったプログラムは 0（空を描かず、地の色も塗らない）。
-    def skyProgramOf(gl: GlContext, state: State): SkyLocs \ IO =
+    def skyProgramOf(gl: GlContext, state: State): ProgramUniforms \ IO =
         match Ref.get(state#skyRef) {
             case Some(p) => p
             case None =>
-                let program = compile(gl, blitVertexSource(), skyFragmentSource(), "scene3d:sky");
-                let made = { program = program, viewport = loc(gl, program, "uViewport"), forward = loc(gl, program, "uForward"),
-                             right = loc(gl, program, "uRight"), up = loc(gl, program, "uUp"), zenith = loc(gl, program, "uZenith"),
-                             horizon = loc(gl, program, "uHorizon"), ground = loc(gl, program, "uGround"), curve = loc(gl, program, "uCurve"),
-                             depthOut = loc(gl, program, "uDepthOut"), envOn = loc(gl, program, "uEnvOn"), envIntensity = loc(gl, program, "uEnvIntensity"),
-                             envSrgb = loc(gl, program, "uEnvSrgb") };
-                if (program == 0) () else { gl.useProgram(program); gl.uniform1i(loc(gl, program, "uEnvMap"), environmentTextureUnit()); gl.useProgram(0) };
+                let made = compileProgram(gl, blitVertexSource(), skyFragmentSource(), "scene3d:sky");
+                bindUnits(gl, made, (R3dUniform.EnvMap, environmentTextureUnit()) :: Nil);
                 Ref.put(Some(made), state#skyRef);
                 made
         }
@@ -1050,28 +1001,24 @@ mod Render3d {
         }
 
     def buildSkinnedPrograms(gl: GlContext): SkinnedPrograms \ IO =
-        let lit = compile(gl, litVertexSource(true), litFragmentSource(), "scene3d:lit:skin");
-        let depth = compile(gl, skinnedMeshVertexSource(), depthFragmentSource(), "scene3d:depth:skin");
+        let lit = compileProgram(gl, litVertexSource(true), litFragmentSource(), "scene3d:lit:skin");
+        let depth = compileProgram(gl, skinnedMeshVertexSource(), depthFragmentSource(), "scene3d:depth:skin");
         bindDataTextureUnits(gl, lit);
         bindDataTextureUnits(gl, depth);
-        { lit = litLocsOf(gl, lit), depth = depthLocsOf(gl, depth) }
+        { lit = lit, depth = depth }
 
     /// 置いた物のプログラムの uInstanceTexture と、骨つきの版の uJointTexture をそれぞれの unit へ向ける（プログラムごとに 1 回。組めなかったプログラムは何もしない）。
-    def bindDataTextureUnits(gl: GlContext, program: Int32): Unit \ IO =
-        if (program == 0) ()
+    def bindDataTextureUnits(gl: GlContext, p: ProgramUniforms): Unit \ IO =
+        bindUnits(gl, p, (R3dUniform.InstanceTexture, instanceTextureUnit()) :: (R3dUniform.JointTexture, jointTextureUnit()) :: Nil)
+
+    /// プログラム p の sampler の uniform を (handle, unit) の unit へ向ける（プログラムごとに 1 回。組めなかったプログラムは何もしない）。
+    def bindUnits(gl: GlContext, p: ProgramUniforms, units: List[(R3dUniform, Int32)]): Unit \ IO =
+        if (p#program == 0) ()
         else {
-            gl.useProgram(program);
-            gl.uniform1i(loc(gl, program, "uInstanceTexture"), instanceTextureUnit());
-            gl.uniform1i(loc(gl, program, "uJointTexture"), jointTextureUnit());
+            gl.useProgram(p#program);
+            units |> List.forEach(uu -> put1i(gl, p#locs, fst(uu), snd(uu)));
             gl.useProgram(0)
         }
-
-    def litLocsOf(gl: GlContext, program: Int32): LitLocs \ IO =
-        { mesh = meshLocsOf(gl, program), light = Render3d.Light.lightLocsOf(gl, program), shadow = Render3d.Shadow.shadowLocsOf(gl, program), sunShadow = Render3d.Shadow.sunShadowLocsOf(gl, program),
-          pointShadow = Render3d.Shadow.noPointShadowLocs() }
-
-    def depthLocsOf(gl: GlContext, program: Int32): DepthLocs \ IO =
-        { mesh = meshLocsOf(gl, program), eye = loc(gl, program, "uEye"), depthRange = loc(gl, program, "uDepthRange") }
 
     def compile(gl: GlContext, vertex: String, fragment: String, label: String): Int32 \ IO =
         match RenderShader.tryCreateProgram(gl, vertex, fragment, label) {
@@ -1080,22 +1027,14 @@ mod Render3d {
                 Log.warnThen("scene3d: プログラム '${label}' が組めなかった — この種類の 3D の描き物は描かない", 0)
         }
 
-    pub def loc(gl: GlContext, program: Int32, name: String): Int32 \ IO =
-        if (program == 0) -1 else gl.getUniformLocation(program, name)
+    /// vertex と fragment のプログラムを組み、その GLSL が宣言した uniform の location を引く（組めなければ program が 0）。
+    def compileProgram(gl: GlContext, vertex: String, fragment: String, label: String): ProgramUniforms \ IO =
+        programUniformsOf(gl, compile(gl, vertex, fragment, label), vertex :: fragment :: Nil)
 
-    def meshLocsOf(gl: GlContext, program: Int32): MeshLocs \ IO =
-        { program = program, view = loc(gl, program, "uView"), proj = loc(gl, program, "uProj"), instanceBase = loc(gl, program, "uInstanceBase") }
-
-    def billboardLocsOf(gl: GlContext, program: Int32): BillboardLocs \ IO =
-        if (program == 0) () else {
-            gl.useProgram(program);
-            gl.uniform1i(loc(gl, program, "uImage"), 0);
-            gl.useProgram(0)
-        };
-        { program = program, view = loc(gl, program, "uView"), proj = loc(gl, program, "uProj"),
-          right = loc(gl, program, "uRight"), up = loc(gl, program, "uUp"), rightPerBillboard = loc(gl, program, "uRightPerBillboard"), facing = loc(gl, program, "uFacing"),
-          depthOut = loc(gl, program, "uDepthOut"), depthRange = loc(gl, program, "uDepthRange"), light = Render3d.Light.lightLocsOf(gl, program),
-          sunShadow = Render3d.Shadow.sunShadowLocsOf(gl, program) }
+    /// 組んだプログラム program と、その GLSL の字 sources が宣言した uniform の location。
+    // WhyNot: 組めなかったプログラム（0）の location を GL に聞かない — 0 は GL のプログラムでないので、聞いても −1 が返るだけで GL への呼び出しが増える。
+    def programUniformsOf(gl: GlContext, program: Int32, sources: List[String]): ProgramUniforms \ IO =
+        { program = program, locs = if (program == 0) Render3d.Uniforms.noLocations() else Render3d.Uniforms.locationsOf(gl, program, sources) }
 
     /// 四角の 6 頂点（角の 0〜1。y は下向き = 絵の上が 0）。ビルボードと Design の重ねで共有する。
     def buildQuad(gl: GlContext): (Int32, Int32) \ IO =
