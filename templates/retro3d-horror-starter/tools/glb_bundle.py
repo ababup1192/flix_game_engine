@@ -28,7 +28,9 @@ OUT = SCHOOL / "bundle"
 
 # 束の分け方。起動で読むのは floor1 と entrance（ブラウザ版の後回しは project.json の web.deferred）。
 #   floor1   = 1 階の建物（昇降口から見える面の全部）
-#   entrance = 始まりの場所（layout の spawn）から ENTRANCE_REACH m の内に 1 つでも置く小物（押してすぐの場面に要る物）
+#   entrance = 始まりの場所（layout の spawn）から ENTRANCE_REACH m の内に 1 つでも置く小物（押してすぐの場面に要る物）。
+#              ただし壁越しの部屋（始まりの部屋でも廊下・階段でもない部屋）の内に置く物は数えない（壁に掛けた物は数える）
+#   props_1f_near = NEAR_REACH m の内の小物のうち entrance に入らなかった物（壁越しの部屋の内と、霧の奥の帯。後回しの頭で取る）
 #   props_1f_a・props_1f_b = ほかの 1 階の小物を primitive の数で前と後の半分ずつ（2・3 階と共通の物も入る）
 #   upper_a・upper_b       = 2・3 階の建物と、2・3 階にだけ置く小物を primitive の数で半分ずつ（建物は前の upper_a に入る）
 # 小物は 1 つの束にだけ入る（2 階でも使う小物が entrance にあれば、2 階もその束を使う）。
@@ -38,7 +40,14 @@ OUT = SCHOOL / "bundle"
 #         階段を上る前に 1 回だけ解く方が、上の階へ着くたびに待つより短い。
 # WhyNot: 1 階の小物を全部起動に入れない — gzip で 0.9 MB・4G で約 4.5 秒延び、起動の予算（16 秒）を超える。
 #         遠くの小物は押した後の数秒で届いて足される（届くまでは建物だけ）。
-ENTRANCE_REACH = 10.0
+# WhyNot: 壁越しの部屋の物と、霧（look の fog は 5 m から掛かり 12 m で沈み切る）が半分より濃い 9〜10 m の帯の物を起動に入れない —
+#         昇降口の両隣（職員室・保健室）の机やベッドは始まりの場所から見えず、帯の物は暗く沈んでいるのに、合わせて gzip で約 100 KB・4G で 0.5 秒延びる。
+#         どちらも props_1f_near で押してから 1 秒ほどで届く。
+# WhyNot: props_1f_near の物を props_1f_a・b へ混ぜない — 2 つとも primitive が 200 個を超え、帯の物が押してから数秒遅れて現れる。
+ENTRANCE_REACH = 9.0
+NEAR_REACH = 10.0
+OPEN_ROOM_KINDS = ("corridor", "stairs")
+WALL_MARGIN = 0.3
 
 
 def bundle_plan(layout):
@@ -46,10 +55,15 @@ def bundle_plan(layout):
     for p in layout["props"]:
         on.setdefault(p["prop"], set()).add(p["floor"])
     sx, _, sz = layout["spawn"]["pos"]
-    near = {p["prop"] for p in layout["props"]
-            if p["floor"] == 1 and ((p["pos"][0] - sx) ** 2 + (p["pos"][2] - sz) ** 2) ** 0.5 < ENTRANCE_REACH}
-    entrance = sorted(near)
-    first = sorted(n for n, fl in on.items() if 1 in fl and n not in near)
+    walled = walled_rooms(layout, (sx, sz))
+    reach = lambda p: ((p["pos"][0] - sx) ** 2 + (p["pos"][2] - sz) ** 2) ** 0.5
+    on_first = [p for p in layout["props"] if p["floor"] == 1]
+    start = {p["prop"] for p in on_first
+             if reach(p) < ENTRANCE_REACH and not any(strictly_inside(p["pos"], r) for r in walled)}
+    soon = {p["prop"] for p in on_first if reach(p) < NEAR_REACH} - start
+    entrance = sorted(start)
+    near = sorted(soon)
+    first = sorted(n for n, fl in on.items() if 1 in fl and n not in start and n not in soon)
     upper_only = sorted(n for n, fl in on.items() if 1 not in fl)
     floors = {f["index"]: f["glb"] for f in layout["floors"]}
     upper_floors = sorted(i for i in floors if i != 1)
@@ -66,6 +80,7 @@ def bundle_plan(layout):
     return [
         {"key": "floor1", "floors": [1], "buildings": [1], "sources": [floors[1]]},
         {"key": "entrance", "floors": floors_of(entrance), "buildings": [], "sources": prop_sources(entrance)},
+        entry("props_1f_near", prop_sources(near)),
         entry("props_1f_a", first_a),
         entry("props_1f_b", first_b),
         entry("upper_a", upper_a),
@@ -76,6 +91,20 @@ def bundle_plan(layout):
 def primitive_count(src):
     js, _ = read_glb(SCHOOL / src)
     return sum(len(m["primitives"]) for m in js.get("meshes", []))
+
+
+def walled_rooms(layout, spawn):
+    """1 階の部屋のうち、始まりの場所の部屋でも廊下・階段でもない物（始まりの場所から壁越しになる部屋）。"""
+    rooms = next(f["rooms"] for f in layout["floors"] if f["index"] == 1)
+    here = [r for r in rooms if strictly_inside((spawn[0], 0.0, spawn[1]), r)]
+    return [r for r in rooms if r not in here and r["kind"] not in OPEN_ROOM_KINDS]
+
+
+def strictly_inside(pos, room):
+    """pos（x, y, z）が部屋の床の矩形の、壁から WALL_MARGIN m より内にあるか。壁に掛けた物（窓・戸・貼り紙）は内に数えない。"""
+    x, z = pos[0], pos[2]
+    return (room["min"][0] + WALL_MARGIN < x < room["max"][0] - WALL_MARGIN
+            and room["min"][1] + WALL_MARGIN < z < room["max"][1] - WALL_MARGIN)
 
 
 def halves(sources):

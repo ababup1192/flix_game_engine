@@ -23,6 +23,16 @@
       "buildings": []
     },
     {
+      "key": "props_1f_near",
+      "path": "assets/school/bundle/props_1f_near.glb",
+      "floors": [
+        1,
+        2,
+        3
+      ],
+      "buildings": []
+    },
+    {
       "key": "props_1f_a",
       "path": "assets/school/bundle/props_1f_a.glb",
       "floors": [
