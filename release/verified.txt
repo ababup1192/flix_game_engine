@@ -1,4 +1,4 @@
-version 0.116.0
-sha d390f3868b73d5028ecad90417315aac50e3c60c
-gates release-guard sync test gl-parity go-test-full
-at 2026-11-26T08:10:15Z
+version 0.117.0
+sha 335003f8e1052b21aede0f185090d0ee67a54f62
+gates release-guard sync test-release gl-parity go-test-full
+at 2026-11-26T13:28:48Z
