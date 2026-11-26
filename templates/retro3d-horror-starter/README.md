@@ -38,7 +38,7 @@ make web        # 校舎の束を作り直し（make bundles）、build/web へ�
 ```
 
 - 操作はデスクトップと同じ。スマホは画面の十字キーと「調べる」「持ち物」「地図」「走る」
-- 起動で取るのは 1 階の建物と昇降口のまわりの小物（`bundle/floor1.glb`・`entrance.glb`）と足音だけ。1 階のほかの小物・人物・空気と戸の音・2〜3 階（`upper_a.glb`・`upper_b.glb`）は押した後に届いた物から足す（project.json の `web.deferred`）。
+- 起動で取るのは 1 階の建物と昇降口のまわりの小物（`bundle/floor1.glb`・`entrance.glb`）と足音だけ。押した後は地図の絵と、昇降口の両隣の部屋と霧の奥の小物（`props_1f_near.glb`）を先に取る。1 階のほかの小物・人物・空気と戸の音・2〜3 階（`upper_a.glb`・`upper_b.glb`）は押した後に届いた物から足す（project.json の `web.deferred`）。
   2 階へ上がる時に上の階がまだ届いていなければ、届くまで階段で待つ。人物は届くまで見えず、話しかけられない
 - 好きな所から開く: `http://127.0.0.1:8000/?at=1&x=-24.04&z=-1.5&yaw=180`（中央の階段の前）。重さは `?fge=fps`、4G の届き方のまねは `?fge=4g`
 - 公開の前の門: `bin/fge web-check build/web --browser`

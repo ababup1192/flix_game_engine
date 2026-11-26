@@ -72,11 +72,12 @@
   ],
   "// glyphs": "起動時に焼く字。auto=出た字から順に焼く / used=ソースとアセットにある字を先に焼く / all=フォントの全字",
   "glyphs": "auto",
+  "// fonts": "fontSize は字のアトラスを焼く大きさ（画面の字の大きさは光の Doc の subtitle.size）。48 にしない — ブラウザ版の起動で取るアトラスが gzip で 0.7 MB になり、4G で 1.3 秒延びて起動の予算（web.startupBudget）を超える。32 でも窓の 2 倍・スマホの全画面の字の大きさで、込んだ漢字（職・聴）の線は潰れない。",
   "fonts": [
     {
       "name": "default",
       "path": "assets/fonts/KaiseiTokumin-Regular.ttf",
-      "fontSize": 48.0
+      "fontSize": 32.0
     }
   ],
   "sounds": [
@@ -228,8 +229,10 @@
   },
   "web": {
     "startPrompt": "タッチして開始",
-    "// deferred": "押してから取る物（取る順）。起動で読むのは 1 階の建物（bundle/floor1）と昇降口のまわりの小物（bundle/entrance）・足音。1 階のほかの小物・人物・空気と戸の音・2〜3 階（bundle/upper_a・upper_b）・時計と風と紙の音は届いた物から足す。2〜3 階へ上がる・人物に話す時は、届くまで engine が前の場面で待つ（Controls.loadGate）。メニュー（地図・持ち物）で使う絵は頭へ（4G で押してから 10 秒より後に届く待つ物は書き出しが知らせる）。",
+    "// deferred": "押してから取る物（取る順）。起動で読むのは 1 階の建物（bundle/floor1）と昇降口のまわりの小物（bundle/entrance）・足音。地図の紙と印の絵（押してから 0.3 秒ほどで届く。届く前に地図を開くと engine がそのコマを待つ）・昇降口の両隣の部屋と霧の奥の小物（bundle/props_1f_near）を頭で取る。1 階のほかの小物・人物・空気と戸の音・2〜3 階（bundle/upper_a・upper_b）・時計と風と紙の音は届いた物から足す。2〜3 階へ上がる・人物に話す時は、届くまで engine が前の場面で待つ（Controls.loadGate）。メニュー（地図・持ち物）で使う絵は頭へ（4G で押してから 10 秒より後に届く待つ物は書き出しが知らせる）。",
     "deferred": [
+      "assets/ui/map/*.png",
+      "assets/school/bundle/props_1f_near.glb",
       "assets/school/bundle/props_1f_a.glb",
       "assets/school/bundle/props_1f_b.glb",
       "assets/sfx/amb_quiet.wav",
