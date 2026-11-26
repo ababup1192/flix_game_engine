@@ -2,7 +2,7 @@
 mod Render3d.Material {
     import fge.gl.GlConst
     import fge.gl.GlContext
-    import java.nio.ShortBuffer
+    import java.nio.{ByteBuffer, ByteOrder}
     use Render3d.Shadow.{putPointShadow, putShadow, putSunShadow, shadowLocsOf, sunShadowLocsOf}
     use Render3dGlsl.{materialFragmentSource, materialVertexSourceFor}
     use Render3d.Light.{lightLocsOf, putLights}
@@ -319,7 +319,10 @@ mod Render3d.Material {
         gl.bindTexture(GlConst.TEXTURE_2D, texId);
         chain |> List.forEachWithIndex((level, entry) -> {
             let (w, h, bits) = entry;
-            gl.texImageRgba16fLevel(level, w, h, ShortBuffer.wrap(Vector.toArray(Static, bits)))
+            let direct = ByteBuffer.allocateDirect(Int32.max(8, Vector.length(bits) * 2)).order(ByteOrder.nativeOrder()).asShortBuffer();
+            discard direct.put(unchecked_cast(bits as Array[Int16, Static]));
+            discard direct.flip();
+            gl.texImageRgba16fLevel(level, w, h, direct)
         });
         gl.texParameteri(GlConst.TEXTURE_2D, GlConst.TEXTURE_BASE_LEVEL, 0);
         gl.texParameteri(GlConst.TEXTURE_2D, GlConst.TEXTURE_MAX_LEVEL, Int32.max(0, List.length(chain) - 1));

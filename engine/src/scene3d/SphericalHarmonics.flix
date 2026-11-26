@@ -34,12 +34,7 @@ pub mod SphericalHarmonics {
     /// 向き n（長さ 1）の面が受ける拡散の光（線形の rgb・負は 0）。3 つの描き手の光の式（LightModel3d の木）と同じ式。
     pub def irradianceAt(sh: SphericalHarmonics, n: Vec3.Vec3): (Float64, Float64, Float64) =
         let SphericalHarmonicsData.SphericalHarmonicsData(v) = sh;
-        let basis = basisAt(n#x, n#y, n#z);
+        let basis = SphericalHarmonics.Internal.basisAt(n#x, n#y, n#z);
         let channel = (k: Int32) -> Float64.max(0.0, List.range(0, 9) |> List.foldLeft((acc, i) -> acc + Vector.get(3 * i + k, v) * Vector.get(i, basis), 0.0));
         (channel(0), channel(1), channel(2))
-
-    /// 向き (x, y, z) の基底 9 個（型の doc の順）。
-    def basisAt(x: Float64, y: Float64, z: Float64): Vector[Float64] =
-        Vector#{ 0.282095, 0.488603 * y, 0.488603 * z, 0.488603 * x, 1.092548 * x * y, 1.092548 * y * z,
-                 0.315392 * (3.0 * z * z - 1.0), 1.092548 * x * z, 0.546274 * (x * x - y * y) }
 }

@@ -251,14 +251,13 @@ pub mod LightModel3d {
     def skyIrradiance(): Vec3Expr =
         let n = Vec3Expr.In(Vec3Input.Normal);
         let (x, y, z) = (ScalarExpr.X(n), ScalarExpr.Y(n), ScalarExpr.Z(n));
-        let mul = (a: ScalarExpr, b: ScalarExpr) -> ScalarExpr.Mul(a, b);
-        let num = ScalarExpr.Num;
-        let basis = num(0.282095) :: mul(num(0.488603), y) :: mul(num(0.488603), z) :: mul(num(0.488603), x) ::
-            mul(num(1.092548), mul(x, y)) :: mul(num(1.092548), mul(y, z)) :: mul(num(0.315392), ScalarExpr.Sub(mul(num(3.0), mul(z, z)), num(1.0))) ::
-            mul(num(1.092548), mul(x, z)) :: mul(num(0.546274), ScalarExpr.Sub(mul(x, x), mul(y, y))) :: Nil;
+        let basis = SphericalHarmonics.Internal.basisWith(ScalarExpr.Num, (a, b) -> ScalarExpr.Mul(a, b), (a, b) -> ScalarExpr.Sub(a, b), x, y, z);
         let terms = List.zipWithIndex(basis) |> List.map(entry -> { let (i, b) = entry; Vec3Expr.Scale(Vec3Expr.In(Vec3Input.IrradianceSh(i)), b) });
-        let sum = List.foldLeft((acc, t) -> Vec3Expr.Add(acc, t), Vec3Expr.Scale(Vec3Expr.In(Vec3Input.IrradianceSh(0)), num(0.282095)), List.drop(1, terms));
-        Vec3Expr.Max(Vec3Expr.Make(num(0.0), num(0.0), num(0.0)), sum)
+        let zero = Vec3Expr.Make(ScalarExpr.Num(0.0), ScalarExpr.Num(0.0), ScalarExpr.Num(0.0));
+        match terms {
+            case first :: rest => Vec3Expr.Max(zero, List.foldLeft((acc, t) -> Vec3Expr.Add(acc, t), first, rest))
+            case Nil           => zero
+        }
 
     /// lightmap のある面に当たる光（ambient と hemisphere の代わりにベイクした光を足す）。
     pub def lightmapLightingModel(): Vec3Expr = lightmapLightingModelFor(legacyVariant())

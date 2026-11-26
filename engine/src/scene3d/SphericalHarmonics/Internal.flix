@@ -5,8 +5,14 @@ pub mod SphericalHarmonics.Internal {
 
     /// 向き (x, y, z) の基底 9 個（SphericalHarmonics の doc の順）。
     pub def basisAt(x: Float64, y: Float64, z: Float64): Vector[Float64] =
-        Vector#{ 0.282095, 0.488603 * y, 0.488603 * z, 0.488603 * x, 1.092548 * x * y, 1.092548 * y * z,
-                 0.315392 * (3.0 * z * z - 1.0), 1.092548 * x * z, 0.546274 * (x * x - y * y) }
+        basisWith(c -> c, (a, b) -> a * b, (a, b) -> a - b, x, y, z) |> List.toVector
+
+    /// 基底 9 個の式を、数 num・積 mul・差 sub で組んだ物（Float64 の値にも、光の式の木（LightModel3d）にも使う）。
+    // WhyNot: 木の側に同じ 9 個の数を書き写さない — 求める側（basisAt）と読む側（3 つの描き手の木）の式が 1 字でもずれると、陰の色が静かにずれる。
+    pub def basisWith(num: Float64 -> a, mul: (a, a) -> a, sub: (a, a) -> a, x: a, y: a, z: a): List[a] =
+        num(0.282095) :: mul(num(0.488603), y) :: mul(num(0.488603), z) :: mul(num(0.488603), x) ::
+            mul(num(1.092548), mul(x, y)) :: mul(num(1.092548), mul(y, z)) :: mul(num(0.315392), sub(mul(num(3.0), mul(z, z)), num(1.0))) ::
+            mul(num(1.092548), mul(x, z)) :: mul(num(0.546274), sub(mul(x, x), mul(y, y))) :: Nil
 
     /// 縮めた後の横の上限（縦は半分）。
     def gridWidth(): Int32 = 128
