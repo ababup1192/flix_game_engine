@@ -290,6 +290,28 @@ retro3d-horror-starter の `tools/glb_bundle.py` が 1 階の小物を primitive
 
 - 束が届いたコマの解く仕事は 40 ms 以下（M4 Pro Chrome・ウォームアップ後）。区間の cpu max には同じコマで初めて描く split（12〜13 ms）と draw（20〜23 ms）が乗る（初めて描く分は集まりを作り直す側の目標で見る）。
 
+### engine が自動で先に作る（`FIRST=auto`・`App.withAutoPreload3d` の既定 Cover・0.115.0 の上・plans/engine-auto-preload.md）
+
+`FIRST=1` と同じ場面（30 コマ目に集まりを初めて載せる）で、宣言を書かずに engine が先に作り、済むまで外して黒で覆う。`FIRST=1` は `Off`（自動なし）にして前の値を測る。
+`COUNT=300 SHAPES=137 MATS=8 VERTS=600`・起動し直して 3 回。PC は M4 Pro の Dawn（`frame#dt`・120 Hz に張り付く）・ブラウザは Chrome 156 のヘッドレス WebGPU（`make bench-web … CPU=<倍>`）。
+
+| 区間 first | PC frame max | PC split max | PC draw max | PC preload max |
+|---|---|---|---|---|
+| `FIRST=1`（自動なし） | 74.1 / 81.7 / 71.1 | 59.4 / 67.8 / 57.2 | 13.3 / 12.4 / 12.5 | 0 |
+| `FIRST=auto` | 18.8 / 18.2 / 27.3 | 0.8 / 0.6 / 0.5 | 14.3 / 14.0 / 23.2 | 16.2 / 15.2 / 24.3 |
+| `FIRST=auto GROUPS=50`（集まりを 50 個に分けた） | 22.4 / 35.7 / 17.5 | 0.6 / 18.4 / 0.5 | 12.9 / 14.2 / 14.1 | 18.7 / 15.9 / 10.9 |
+| `FIRST=preload`（宣言） | 15.5 / 59.9 / 19.9 | 0.5 / 0.6 / 0.7 | 13.2 / 57.1 / 13.4 | 0.2 / 0.2 / 0.2 |
+
+| 区間 first・ブラウザ cpu max（split / draw / preload の最大） | CPU 1 倍 | CPU 4 倍 | CPU 6 倍 |
+|---|---|---|---|
+| `first=1`（自動なし） | 66.8 / 64.6 / 65.1（split 61〜63） | 265.8 / 267.9 / 262.6（split 248〜252） | 411.3 / 403.7 / 407.2（split 380〜386） |
+| `first=auto` | 16.6 / 16.5 / 16.8（preload 13.1〜13.3・draw 2.2〜2.4） | 57.9 / 54.4 / 54.6（preload 35〜38・draw 9.5〜11.7） | 63.4 / 71.5 / 64.0（preload 54〜56・draw 15〜18） |
+
+- 止まりの無いコマ（区間 steady）の中央値: PC 8.10〜8.29 → 8.37〜8.41 ms（120 Hz の間隔）・ブラウザ cpu 1 倍 1.4〜1.5 → 1.5 ms・4 倍 5.5〜5.7 → 5.7 ms・6 倍 8.0〜8.8 → 8.4〜10.1 ms。
+- 最悪のコマは、黒の間の preload の 1 コマ（予算 8 ms を、形 1 つより細かく分けない分だけ超える）か、黒の下で初めて描くコマの draw（描き先の形式の pipeline と bundle）。PC の `GROUPS=50` の 1 回（35.7 ms）は黒の間の split 18 ms のコマ。
+- CPU を 4〜6 倍遅くしても、1 コマは予算＋最後の仕事の形のまま（暗転の間に分かれ、1 倍の 4 倍前後に収まる）。
+- `FIRST=preload` の 2 回目（59.9 ms）は初めて載せたコマの draw 57 ms（1 回だけ・原因はまだ見ていない）。
+
 ## 同じ形の動く物（MultiMesh3d・段 4 の測り直し）
 
 測った日 2026-11-26 / Apple M4 Pro・macOS / ブラウザは Chrome 156 のヘッドレス（1280×720・vsync あり）・PC は Dawn の WebGPU。

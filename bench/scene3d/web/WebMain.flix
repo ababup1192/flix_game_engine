@@ -9,7 +9,7 @@ mod WebMain {
 
     def loadScene(knobs: Map[String, String]): Result[String, SceneBench.Scene] \ Fs.FileRead + LoadProgress + IO =
         if (First.modeOf(knobs) == Some(First.Mode.Glb)) Ok(SceneBench.Scene.First(First.kitOf(First.Mode.Glb, knobs, None) |> First.withGlb(glbJob(knobs))))
-        else if (First.modeOf(knobs) == Some(First.Mode.Group) or First.modeOf(knobs) == Some(First.Mode.Preload))
+        else if (First.modeOf(knobs) == Some(First.Mode.Group) or First.modeOf(knobs) == Some(First.Mode.Preload) or First.modeOf(knobs) == Some(First.Mode.Auto))
             Ok(SceneBench.Scene.First(First.kitOf(First.modeOf(knobs) |> Option.getWithDefault(First.Mode.Group), knobs, None)))
         else if (SceneBench.isField(knobs)) Ok(SceneBench.Scene.Field(Field.kitOf(Field.configOf(knobs))))
         else match Map.get("psx", knobs) {
