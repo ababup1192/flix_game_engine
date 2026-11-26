@@ -133,7 +133,7 @@ Chrome は後回しの無いゲームで 2 回、ある時は 3〜4 回起こす
 
 門として 3D のゲームをブラウザ版へ書き出すのはこれだけ（ほかの web の門は 2D の rpg-starter と 2D のベンチ。`make bench-web BENCH=scene3d` は測るだけ）。release の門の 1 つ。
 
-1. `bin/fge export-web <ゲーム> --draft --no-browser-check`（既定は `templates/retro3d-horror-starter` と 2D の `templates/rpg-starter`・`WEB_LOAD_GAMES=<ゲーム…>` で替える）。
+1. `bin/fge export-web <ゲーム> --draft --no-browser-check`（既定は `templates/retro3d-horror-starter`・`WEB_LOAD_GAMES=<ゲーム…>` で替える。2D の `templates/rpg-starter` は `make web-load-check-2d` でリリースの門にだけ流す）。
    TeaVM の classlib に無いメソッドやクラスを engine が呼ぶと、ここ（③ TeaVM）で落ちる。`--draft` は遊べるまでの予算（cwebp の有無で機械ごとに揺れる）で止めないため
 2. `bin/fge web-capture index.html … --dev capture:10`（WebGPU）と `--dev capture:10,webgl2`（WebGL2）を `--console-errors --console-allow '^WebFs fail-open: '` で開く。
    10 コマ目まで描けない（`fgeCaptureError`）・頁が名乗った描き手が違う・console.error か拾われなかった例外が 1 件でもある、のどれかで exit 1

@@ -469,9 +469,10 @@ webgpu-v1-check-web: ### [WEB_EXPORT=off] | 同じ門のブラウザ版（rpg-st
 # WhyNot: export-web の ⑨ に任せない — ⑨ は Chrome が無いと黙って飛ばし、console.error（engine の Log.warn・Worker から送り直した行）を数えない。
 # WhyNot: 書き出しの門（遊べるまでの予算）で止めない（--draft） — 予算は cwebp の有無で機械ごとに揺れ、この門の見たい事ではない。
 # wasm の大きさ（classes.wasm.br）も書き出したゲームごとに testdata/web-size.tsv の記録と比べ、WEB_SIZE_GROWTH（既定 3）% を超えて増えたら止める
-# （bin/web-size-check.sh）。2D の軽さも守るので rpg-starter も既定に入れる。増えを受け入れるのは make web-size-update。
+# （bin/web-size-check.sh）。増えを受け入れるのは make web-size-update。2D（rpg-starter）は web-load-check-2d でリリースの門にだけ流す。
 # WhyNot: 前の版の Release の wasm と比べない — 版を跨いだ取り物が要り、手元で作業中に差を見られない。記録はコミットの差で追える。
-WEB_LOAD_GAMES   ?= templates/retro3d-horror-starter templates/rpg-starter
+# WhyNot: 2D を作業中の門に入れない — 書き出しが 1 回 1 分半かかり、3D と engine_web を触るたびに倍になる。2D の wasm を太らせる変更はリリースまでに拾えば足りる。
+WEB_LOAD_GAMES   ?= templates/retro3d-horror-starter
 WEB_LOAD_OUT     := build/web-load-check
 WEB_LOAD_FRAMES  ?= 10
 .PHONY: web-load-check
@@ -496,6 +497,10 @@ web-load-check: ### [WEB_LOAD_GAMES=<ゲーム…>] [WEB_EXPORT=off] | 3D のテ
 		bin/web-size-check.sh $$name $$dir; \
 	done
 	@echo "[web-load-check] OK"
+
+.PHONY: web-load-check-2d
+web-load-check-2d: ### | web-load-check を 2D の rpg-starter で（頁が描けるか・wasm の大きさ。リリースの門）
+	@$(MAKE) --no-print-directory web-load-check WEB_LOAD_GAMES=templates/rpg-starter
 
 .PHONY: web-size-update
 web-size-update: ### [WEB_LOAD_GAMES=<ゲーム…>] [WEB_EXPORT=off] | web-load-check の書き出しの classes.wasm.br の大きさで testdata/web-size.tsv の記録を書き換える（増えを受け入れる時・理由はコミットに）
@@ -1180,7 +1185,7 @@ studio-parity: ### [STUDIO=<パス>|none] | Studio の check-agents-parity を�
 # gl-parity も全量ゲートの一員 — GL と SoftRaster の絵の退行はテストに出ないため。
 # WhyNot: studio-parity を門に入れない — Studio は凍結中（plans/dashboard.md の 7 節）。凍結を解いたら戻す。
 # web-load-check も一員 — 3D のブラウザ版が TeaVM に無いメソッドで落ちても、テストと PC の門には出ない（0.117.0 の前の Float.float16ToFloat）。
-RELEASE_GATES := release-guard sync $(RELEASE_TEST) gl-parity web-load-check go-test-full
+RELEASE_GATES := release-guard sync $(RELEASE_TEST) gl-parity web-load-check web-load-check-2d go-test-full
 .PHONY: release
 release: release-verify ### [JOBS=1] | release-verify と同じ
 
