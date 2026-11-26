@@ -491,13 +491,15 @@ pub mod Render3dGlsl {
         "uniform sampler2D uEnvMap;\n" +
         "uniform float uEnvLevels;\n" +
         "uniform float uEnvIntensity;\n" +
+        "uniform int uEnvSrgb;\n" +
         LightModel3d.Codegen.toGlsl("environmentDirectionAt", Vec3Input.Position :: Vec3Input.Normal :: Vec3Input.Albedo :: Vec3Input.MetallicRoughness :: Nil,
                                     LightModel3d.environmentDirection()) +
         environmentUvSource() +
         "vec3 environmentColorAt(vec3 p, vec3 n, vec3 albedo, vec3 metalRough) {\n" +
         "    vec3 d = environmentDirectionAt(p, n, albedo, metalRough);\n" +
         "    float lod = metalRough.y * (uEnvLevels - 1.0);\n" +
-        "    return r3d_srgbToLinear3(textureLod(uEnvMap, environmentUv(d), lod).rgb) * uEnvIntensity;\n" +
+        "    vec3 c = textureLod(uEnvMap, environmentUv(d), lod).rgb;\n" +
+        "    return (uEnvSrgb == 1 ? r3d_srgbToLinear3(c) : c) * uEnvIntensity;\n" +
         "}\n"
 
     /// 向き d（長さ 1）で環境マップを読む座標 environmentUv(d)（LightModel3d.environmentUvOf と同じ式）。
@@ -659,6 +661,7 @@ pub mod Render3dGlsl {
         "uniform int uEnvOn;\n" +
         "uniform sampler2D uEnvMap;\n" +
         "uniform float uEnvIntensity;\n" +
+        "uniform int uEnvSrgb;\n" +
         colorSpaceSource() +
         skyLightSource() +
         environmentUvSource() +
@@ -670,7 +673,8 @@ pub mod Render3dGlsl {
         "    vec2 ndc = (gl_FragCoord.xy - uViewport.xy) / uViewport.zw * 2.0 - 1.0;\n" +
         "    vec3 d = normalize(uForward + uRight * ndc.x + uUp * ndc.y);\n" +
         "    if (uEnvOn == 1) {\n" +
-        "        fragColor = vec4(r3d_linearToSrgb3(r3d_srgbToLinear3(textureLod(uEnvMap, environmentUv(d), 0.0).rgb) * uEnvIntensity), 1.0);\n" +
+        "        vec3 c = textureLod(uEnvMap, environmentUv(d), 0.0).rgb;\n" +
+        "        fragColor = vec4(r3d_linearToSrgb3((uEnvSrgb == 1 ? r3d_srgbToLinear3(c) : c) * uEnvIntensity), 1.0);\n" +
         "        return;\n" +
         "    }\n" +
         "    fragColor = vec4(r3d_linearToSrgb3(skyAt(d)), 1.0);\n" +

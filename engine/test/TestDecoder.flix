@@ -6,10 +6,11 @@ mod TestDecoder {
 
     pub def imageIo(): ImageData.ImageDecoder = ImageData.decoderOf(decode)
 
-    /// 絵の ARGB（機種の側の絵は空）。
+    /// 絵の ARGB（機種の側の絵と half の絵は空）。
     pub def pixelsOf(t: Texture3d.Texture3d): Vector[Int32] = match Texture3d.sourceOf(t) {
         case Texture3d.Source.Argb(pixels)    => pixels
         case Texture3d.Source.PlatformImage(_) => Vector.empty()
+        case Texture3d.Source.Rgba16Float(_)   => Vector.empty()
     }
 
     def decode(bytes: Vector[Int8]): Result[String, ImageData.ImageData] \ IO =

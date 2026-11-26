@@ -882,8 +882,9 @@ pub mod Scene3d {
 
     /// 環境マップの中身。texture = 場面の textures の絵の名前（Texture3d.name）・intensity = 線形の量に戻した後に掛ける倍率・
     /// box = 室内の壁の補正（None なら無限に遠い景色）・asBackground = 空の代わりに背景へも描くか・skyContribution = 拡散の光に景色を混ぜる割合（0..1）・
-    /// irradiance = withIrradiance で渡した拡散の光・textureIrradiance = 絵から求める拡散の光（初めて読んだ時に 1 回だけ求める）。
-    pub type alias EnvironmentMapFields = { texture = String, intensity = Float64, box = Option[EnvironmentBox], asBackground = Bool,
+    /// irradiance = withIrradiance で渡した拡散の光・textureIrradiance = 絵から求める拡散の光（初めて読んだ時に 1 回だけ求める）・
+    /// colorSpace = 絵の値の意味（8bit の絵は Srgb で線形へ戻して読む・half の絵は Linear でそのまま読む。environmentMap が絵の形式から決める）。
+    pub type alias EnvironmentMapFields = { texture = String, intensity = Float64, box = Option[EnvironmentBox], asBackground = Bool, colorSpace = Texture3d.ColorSpace,
                                             skyContribution = Float64, irradiance = Option[SphericalHarmonics.SphericalHarmonics],
                                             textureIrradiance = Lazy[Option[SphericalHarmonics.SphericalHarmonics]] }
 
@@ -894,10 +895,11 @@ pub mod Scene3d {
     pub type alias EnvironmentMap = EnvironmentMapData
 
     /// 正距円筒（横 2：縦 1）のパノラマの絵 texture を景色にする。絵は Scene3dCmd の textures にも載せる（"tex3d:" の名前）。
-    /// 色は sRGB の絵として読み、強さ 1・箱なし・背景には描かない。向きと絵の座標は LightModel3d.environmentUvOf。
+    /// 8bit の絵は sRGB の絵として・half の絵（Texture3d.decodeHdr）は線形の量のまま読み、強さ 1・箱なし・背景には描かない。向きと絵の座標は LightModel3d.environmentUvOf。
     /// 映るのは metallic と roughness を持つ材質の映り込みだけで、拡散の光（ambient と hemisphere）は変わらない（変えるのは withSkyContribution）。
     pub def environmentMap(texture: Texture3d.Texture3d): EnvironmentMap =
-        EnvironmentMapData.EnvironmentMapData({ texture = Texture3d.name(texture), intensity = 1.0, box = None, asBackground = false,
+        let colorSpace = if (Texture3d.formatOf(texture) == Texture3d.Format.Rgba16Float) Texture3d.ColorSpace.Linear else Texture3d.ColorSpace.Srgb;
+        EnvironmentMapData.EnvironmentMapData({ texture = Texture3d.name(texture), intensity = 1.0, box = None, asBackground = false, colorSpace = colorSpace,
                                                 skyContribution = 0.0, irradiance = None, textureIrradiance = Texture3d.Internal.irradianceOf(texture) })
 
     /// 拡散の光（ambient）を景色から求めた光へ混ぜる割合 k（Godot の ambient_light_sky_contribution）。0..1 に丸め、NaN は 0。既定 0（ambient のまま）。

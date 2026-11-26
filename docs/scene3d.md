@@ -380,8 +380,11 @@ let env = Scene3d.environmentMap(panorama)                      // Texture3d の
 ```
 
 - **絵の作り方**: 部屋の中の 1 点から全方向を、正距円筒（equirectangular）で描く（Blender は Cycles のカメラを Panoramic → Equirectangular）。
-  映したくない物（映る側の球・銃）は隠して描く。8bit の sRGB の絵として読み、段（mipmap）を作る。1 を超える明るさ（光る板）は 1 に頭打ちになるので、
-  足りなければ `withEnvironmentIntensity` で倍にする。Blender は engine と左右が鏡なので、描いた絵の左右を反転して書く
+  映したくない物（映る側の球・銃）は隠して描く。PNG / JPEG は 8bit の sRGB の絵として読み、1 を超える明るさ（光る板・太陽）は 1 に頭打ちになる。
+  **.hdr は 1 を超える明るさのまま読む**（`Texture3d.decodeHdr(bytes)`・Radiance の RGBE・half で持つ・段も half のまま CPU で作る）。EXR は読まないので
+  `oiiotool in.exr -o out.hdr` か Blender で .hdr に替える。Blender・Poly Haven のパノラマは engine と左右が鏡なので、渡す前に左右を反転する
+  （`oiiotool in.hdr --flop -o out.hdr`・Blender は Compositor の Flip X で書き出す）。half の絵は 1 画素 8 バイト（2048 × 1024 で段込み約 22 MB）。
+  half の絵を材質の `Tex` で読むと 0（黒）で読んで 1 回知らせる（HDR の絵は環境マップと lightmap だけ）
 - **向き**: 座標の約束（X = 東・Y = 上・Z = 北）のまま。向き d（長さ 1）の絵の座標は `u = 0.5 + atan2(d.x, −d.z) / 2π`・`v = 0.5 − asin(d.y) / π`
   （`LightModel3d.environmentUvOf`）。絵の真ん中が −Z・u = 0.75 が +X・u = 0.25 が −X・継ぎ目（u = 0 と 1）が +Z・上の行が真上
 - **段**: roughness × (段の数 − 1) の段を、段どうしを混ぜて読む（`LightModel3d.environmentLodOf`）。roughness 0 の鏡は一番細かい絵・1 は 1 × 1 の平均。
@@ -404,7 +407,7 @@ let env = Scene3d.environmentMap(panorama)                      // Texture3d の
 拡散の光（ambient）をその光へ混ぜる（Godot の `ambient_light_sky_contribution`・Filament の `IndirectLight.irradiance`・three.js の `LightProbe` と同じ）。
 
 ```flix
-let sky = Texture3d.decodeUsing(decoder, bytes)                    // 画素を持つ絵（機種の側の絵は求められない）
+let sky = Texture3d.decodeHdr(bytes)                               // .hdr（太陽の明るさまで SH に入る）か decodeUsing の画素を持つ絵
 discard SphericalHarmonics.fromEquirectangular(sky);               // 読み込みで 1 回求めておく（初めて描くコマで止まらない）
 let env = Scene3d.environmentMap(sky) |> Scene3d.withSkyContribution(1.0);
 { environmentMap = Some(env), environment = { hemisphere = 0.0 | base#environment } | base }   // hemisphere は 0（同じ空の光を 2 回足さない）

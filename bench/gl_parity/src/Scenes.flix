@@ -51,7 +51,7 @@ mod Scenes {
             :: lightmapBaked3d() :: lightmapNormal3d() :: spotSoftEdge3d() :: gltfEmissive3d() :: cullOffscreen3d()
             :: skyGradient3d() :: glassPane3d() :: doubleSided3d() :: msaaEdges()
             :: linearOverlap3d() :: mipSrgbAverage3d() :: emissionIntensity3d() :: skinCrowd() :: skinCrowdRows() :: instanceRows() :: batchKeys3d() :: sameDepthOrder3d()
-            :: pbrSpheres3d() :: pbrNoSky3d() :: pbrMapped3d() :: gltfPbr3d() :: pbrEnvironment3d() :: pbrEnvironmentBox3d() :: pbrEnvironmentSky3d() :: skyIrradiance3d()
+            :: pbrSpheres3d() :: pbrNoSky3d() :: pbrMapped3d() :: gltfPbr3d() :: pbrEnvironment3d() :: pbrEnvironmentBox3d() :: pbrEnvironmentSky3d() :: skyIrradiance3d() :: hdrEnvironment3d()
             :: sunLit3d() :: sunShadow3d() :: sunSpotShadow3d() :: sunPbr3d() :: pointShadowPhysical3d()
             :: billboardShadowOf(BillboardShadowYard.SunSide.Axis, "billboardShadowAxis")
             :: billboardShadowOf(BillboardShadowYard.SunSide.Diagonal, "billboardShadowDiagonal")
@@ -94,6 +94,7 @@ mod Scenes {
     /// texel の境が画面の上で長い斜めの線になり、その線の上の画素が GPU の補間の丸めで隣の texel を読む（max ±214 は色の違う texel どうし）。
     /// 色の丸めかアフィンを取り違えると床の面（数万 px）が丸ごと違う。
     /// postStackCrt（Apple Silicon で 54 px ±63）: 元の psxBox3d の縁の割れ（6 px）を横のぼかしが 5 点に広げた物。ぼかしの向きか半径を取り違えると面の縁の全部（千 px の桁）が違う。
+    /// hdrEnvironment3d（Apple Silicon で 267 px ±2）: 球の縁と粗い球の段の混ぜの丸め（half と Float64）。sRGB から戻すのを取り違えると球と背景の全部が違う。
     /// skyIrradiance3d（Apple Silicon で 3 px ±1）: 球の坂の丸めの ±1。基底の並びを取り違えると球と床の面（千 px の桁）が違う。
     /// vertexColorTexture3d（Apple Silicon で 32 px ±1）: 頂点の色の坂の補間の丸め。頂点の色を掛け忘れる・2 倍を取り違えると板の面（千 px の桁）が違う。
     pub def toleranceOf(name: String): Option[Int32] = match name {
@@ -148,6 +149,7 @@ mod Scenes {
         case "pbrEnvironmentBox3d" => Some(400)
         case "pbrEnvironmentSky3d" => Some(2000)
         case "skyIrradiance3d" => Some(100)
+        case "hdrEnvironment3d" => Some(600)
         case "sunLit3d"        => Some(100)
         case "sunShadow3d"     => Some(100)
         case "sunSpotShadow3d" => Some(200)
@@ -1710,6 +1712,32 @@ mod Scenes {
         let env = Scene3d.environmentMap(tex) |> Scene3d.withSkyContribution(1.0);
         let scene = { textures = tex :: Nil, environmentMap = Some(env), environment = { ambient = c8(40, 40, 40), hemisphere = 0.0 | base#environment } | base };
         { name = "skyIrradiance3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
+
+    /// 横 64・縦 32 の half の景色（上は 0.2〜0.6 の青・下は 0.15 の茶・東の上に 8 の明るい太陽の 4 × 4）。
+    def hdrPanorama(): Texture3d.Texture3d =
+        let texel = (x: Int32, y: Int32) ->
+            if (x >= 44 and x < 48 and y >= 6 and y < 10) Vector#{8.0, 7.5, 6.0, 1.0}
+            else if (y < 16) { let k = 0.2 + 0.4 * Int32.toFloat64(y) / 16.0; Vector#{k * 0.6, k * 0.8, k * 1.2, 1.0} }
+            else Vector#{0.15, 0.1, 0.06, 1.0};
+        let rgba = Vector.range(0, 64 * 32) |> Vector.flatMap(k -> texel(Int32.remainder(k, 64), k / 64));
+        match Texture3d.fromRgba16Float(64, 32, rgba) {
+            case Ok(t)  => t
+            case Err(e) => bug!(e)
+        }
+
+    // HDR の環境マップ（Texture3d.fromRgba16Float → GL・WebGPU は RGBA16F・CPU は half の段）: 鏡の球（左）は太陽を 1 を超える明るさのまま映し、
+    // 粗い球（右）は段の平均でぼけた景色を映す。背景も同じ景色。sRGB から戻すのを取り違えると球と背景の全部（千 px の桁）が違う。
+    def hdrEnvironment3d(): Scene =
+        let tex = hdrPanorama();
+        let mirror = solidMaterial("parity:hdr-mirror", c8(230, 230, 230)) |> Scene3d.withMetallicRoughness(1.0, 0.1);
+        let rough = solidMaterial("parity:hdr-rough", c8(230, 230, 230)) |> Scene3d.withMetallicRoughness(1.0, 0.7);
+        let left = Scene3d.meshInstance(sphereMesh(), Mat4.translate(Vec3.v3(-1.2, 0.0, 5.0))) |> Scene3d.withMaterial(mirror);
+        let right = Scene3d.meshInstance(sphereMesh(), Mat4.translate(Vec3.v3(1.2, 0.0, 5.0))) |> Scene3d.withMaterial(rough);
+        let base = flatScene({ x = 64.0, y = 48.0 }, 1, left :: right :: Nil, Nil);
+        let env = Scene3d.environmentMap(tex) |> Scene3d.withEnvironmentAsBackground(true);
+        let scene = { textures = tex :: Nil, environmentMap = Some(env), environment = { ambient = c8(30, 30, 30), background = None | base#environment } | base };
+        { name = "hdrEnvironment3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
             Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
 
     // ── 動かない物のつなぎ（Scene3d.StaticBatch）。B 段階 ──

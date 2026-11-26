@@ -2,6 +2,7 @@
 mod Render3d.Material {
     import fge.gl.GlConst
     import fge.gl.GlContext
+    import java.nio.ShortBuffer
     use Render3d.Shadow.{putPointShadow, putShadow, putSunShadow, shadowLocsOf, sunShadowLocsOf}
     use Render3dGlsl.{materialFragmentSource, materialVertexSourceFor}
     use Render3d.Light.{lightLocsOf, putLights}
@@ -190,8 +191,14 @@ mod Render3d.Material {
     /// 材質の Tex の名前を、貼る GPU のテクスチャ・上下を反転して読むか（レンダーターゲット）・段の数へ引く。
     /// "tex3d:" は場面の textures（置き場に無ければ段ごと上げる）・ほかは全体の登録（段つきの写しを作る。レンダーターゲットは
     /// 毎コマ書き換わるので段を作らず、そのまま読む）・どちらにも無ければ透明な黒（名前ごとに 1 回知らせる）。
+    /// half の絵（Texture3d.Format.Rgba16Float）は環境マップと lightmap の絵の約束なので、材質の絵としては透明な黒を貼る（絵ごとに 1 回知らせる。CPU の描き手と同じ 0）。
     def resolveMaterialTexture(gl: GlContext, state: State, gen: Int64, source: TextureSource, name: String, textureUse: Texture3d.TextureUse): BoundTexture \ IO =
-        resolveTextureAs(gl, state, gen, source, "材質の絵", name, textureUse)
+        match findTexture(source, name) {
+            case Some(TextureHit.Own(t)) if Texture3d.formatOf(t) == Texture3d.Format.Rgba16Float =>
+                warnSceneOnce(state, "@hdr-texture-in-material:" + name, Texture3d.Internal.hdrInMaterialLine(name));
+                { texId = blankTextureId(gl, state), flipped = false, levels = 1 }
+            case _ => resolveTextureAs(gl, state, gen, source, "材質の絵", name, textureUse)
+        }
 
     /// resolveMaterialTexture の、見つからない時の知らせで何の絵かを label で言う版（知らせの鍵は名前ごとに共有）。
     /// textureUse = 貼る使い方（段の平均の仕方を決める）。
@@ -299,7 +306,23 @@ mod Render3d.Material {
         match Texture3d.sourceOf(t) {
             case Texture3d.Source.Argb(pixels)       => Some(uploadArgbMipped(gl, state, average, width, height, pixels))
             case Texture3d.Source.PlatformImage(key) => uploadGpuMipped(gl, state, width, height, () -> gl.texImagePlatform(key))
+            case Texture3d.Source.Rgba16Float(halves) => Some(uploadHalfMipped(gl, state, width, height, halves))
         }
+
+    /// half の絵を CPU で作った段（Mip.buildRgba16Float）ごと RGBA16F で上げる（1 画素 8 バイト）。
+    // WhyNot: half の段を GPU に作らせない — 8bit の絵の Mip.build と同じく、CPU の描き出しと段の中身がそろわない。
+    def uploadHalfMipped(gl: GlContext, state: State, width: Int32, height: Int32, halves: Vector[Int16]): MippedUpload \ IO =
+        let chain = timed(state, Phase.Mip, () -> Mip.buildRgba16Float(width, height, halves));
+        let texId = gl.createTexture();
+        gl.bindTexture(GlConst.TEXTURE_2D, texId);
+        chain |> List.forEachWithIndex((level, entry) -> {
+            let (w, h, bits) = entry;
+            gl.texImageRgba16fLevel(level, w, h, ShortBuffer.wrap(Vector.toArray(Static, bits)))
+        });
+        gl.texParameteri(GlConst.TEXTURE_2D, GlConst.TEXTURE_BASE_LEVEL, 0);
+        gl.texParameteri(GlConst.TEXTURE_2D, GlConst.TEXTURE_MAX_LEVEL, Int32.max(0, List.length(chain) - 1));
+        { texId = texId, levels = List.length(chain),
+          bytes = chain |> List.foldLeft((acc, entry) -> { let (w, h, _) = entry; acc + Int32.toInt64(w) * Int32.toInt64(h) * 8i64 }, 0i64) }
 
     /// 段の列を 1 枚のテクスチャの段 0〜 に上げる（行 0 が絵の上・ARGB）。
     def uploadMipChain(gl: GlContext, chain: List[ShaderEval.TexData]): Int32 \ IO =

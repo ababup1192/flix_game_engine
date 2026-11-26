@@ -6,6 +6,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
+import java.nio.ShortBuffer;
 import org.teavm.jso.JSBody;
 import org.teavm.jso.JSObject;
 import org.teavm.jso.typedarrays.Float32Array;
@@ -236,6 +237,14 @@ public final class WebGl2 implements GlContext {
     @JSBody(params = {"w", "h"}, script = "fgeGl.texImage2D(fgeGl.TEXTURE_2D, 0, fgeGl.RGBA16F, w, h, 0, fgeGl.RGBA, fgeGl.HALF_FLOAT, null);")
     private static native void jsTexImageRgba16fZero(int width, int height);
     public void texImageRgba16fZero(int width, int height) { jsTexImageRgba16fZero(width, height); }
+
+    @JSBody(params = {"lv", "w", "h", "px", "from"}, script = "fgeGl.texImage2D(fgeGl.TEXTURE_2D, lv, fgeGl.RGBA16F, w, h, 0, fgeGl.RGBA, fgeGl.HALF_FLOAT, new Uint16Array(px.buffer, px.byteOffset + from * 2, w * h * 4));")
+    private static native void texImageRgba16fLevelView(int level, int width, int height, JSObject pixels, int from);
+    public void texImageRgba16fLevel(int level, int width, int height, ShortBuffer halves) {
+        ByteBuffer direct = ByteBuffer.allocateDirect(halves.remaining() * 2).order(ByteOrder.nativeOrder());
+        direct.asShortBuffer().put(halves.duplicate());
+        texImageRgba16fLevelView(level, width, height, Uint8Array.fromJavaBuffer(whole(direct)), 0);
+    }
 
     /** WebGL2 の DEPTH_COMPONENT24 は UNSIGNED_INT とだけ組める（デスクトップの FLOAT は通らない）。 */
     @JSBody(params = {"w", "h"}, script = "fgeGl.texImage2D(fgeGl.TEXTURE_2D, 0, fgeGl.DEPTH_COMPONENT24, w, h, 0, fgeGl.DEPTH_COMPONENT, fgeGl.UNSIGNED_INT, null);")

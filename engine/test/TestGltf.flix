@@ -443,6 +443,7 @@ mod TestGltf {
     def isArgb(s: Texture3d.Source): Bool = match s {
         case Texture3d.Source.Argb(_)          => true
         case Texture3d.Source.PlatformImage(_) => false
+        case Texture3d.Source.Rgba16Float(_)   => false
     }
 
     // ── Model3d の読む口（loader / decode）──

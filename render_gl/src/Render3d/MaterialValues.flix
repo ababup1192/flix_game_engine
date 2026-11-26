@@ -94,7 +94,13 @@ mod Render3d.MaterialValues {
     /// 絵 name の組を reads の at へ書き、段の数を返す（無い絵は番号 -1・段 1）。how = (補間, 読み方)。
     def putRead(naming: Naming, name: String, textureUse: Texture3d.TextureUse, how: (Int32, Int32), reads: Array[Int32, Static], at: Int32): Int32 \ IO =
         let (filter, wrap) = how;
-        let found = TextureTable3d.readOf(naming#gpuMip, naming#source, name, textureUse);
+        // WhyNot: half の絵を材質の色と法線マップの読みに貼らない — 環境マップと lightmap の絵の約束で、GL と CPU の描き手は 0 で読む。
+        let hdrInMaterial = textureUse != Texture3d.TextureUse.Lightmap(Texture3d.ColorSpace.Srgb) and textureUse != Texture3d.TextureUse.Lightmap(Texture3d.ColorSpace.Linear)
+            and (TextureTable3d.findTexture(naming#source, name) |> Option.exists(hit -> match hit {
+                case TextureTable3d.TextureHit.Own(t) => Texture3d.formatOf(t) == Texture3d.Format.Rgba16Float
+                case _                                => false
+            }));
+        let found = if (hdrInMaterial) None else TextureTable3d.readOf(naming#gpuMip, naming#source, name, textureUse);
         let handle = found |> Option.map(sl -> TextureTable3d.numberOf(naming#textures, naming#gen, fst(sl))) |> Option.getWithDefault(-1);
         Array.put(handle, at, reads);
         Array.put(filter, at + 1, reads);

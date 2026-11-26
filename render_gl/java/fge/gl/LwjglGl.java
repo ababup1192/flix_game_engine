@@ -3,6 +3,7 @@ package fge.gl;
 import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
+import java.nio.ShortBuffer;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
@@ -98,6 +99,14 @@ public final class LwjglGl implements GlContext {
     public void texImageRgba16fZero(int width, int height) {
         GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL30.GL_RGBA16F, width, height, 0, GL11.GL_RGBA, GL30.GL_HALF_FLOAT,
                           BufferUtils.createShortBuffer(Math.max(1, width * height) * 4));
+    }
+    public void texImageRgba16fLevel(int level, int width, int height, ShortBuffer halves) {
+        ShortBuffer direct = halves;
+        if (!halves.isDirect()) {
+            direct = BufferUtils.createShortBuffer(halves.remaining());
+            direct.put(halves.duplicate()).flip();
+        }
+        GL11.glTexImage2D(GL11.GL_TEXTURE_2D, level, GL30.GL_RGBA16F, width, height, 0, GL11.GL_RGBA, GL30.GL_HALF_FLOAT, direct);
     }
     public void texImageDepth24(int width, int height) {
         GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL14.GL_DEPTH_COMPONENT24, width, height, 0, GL11.GL_DEPTH_COMPONENT, GL11.GL_FLOAT, 0L);

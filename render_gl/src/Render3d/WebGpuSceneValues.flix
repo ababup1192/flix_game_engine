@@ -40,6 +40,7 @@ mod Render3d.WebGpuSceneValues {
         discard buf.putFloat(at(SceneField.EnvLevels), d#envLevels);
         putVec3(buf, at(SceneField.EnvBoxMax), d#envBoxMax, 0);
         discard buf.putFloat(at(SceneField.EnvIntensity), d#envIntensity);
+        discard buf.putInt(at(SceneField.EnvSrgb), d#envSrgb);
         putVec3(buf, at(SceneField.EnvBoxCenter), d#envBoxCenter, 0);
         discard buf.putInt(at(SceneField.ShadowSpot), -1);
         let p = Scene3d.maxPointLights();

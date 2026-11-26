@@ -23,7 +23,10 @@ pub mod SoftRaster.Internal.Texture {
         scenes |> List.flatMap(c -> Scene3d.droppedLightsWarnings(c#scene) ::: Scene3d.Internal.SkyIrradiance.warningsOf(c#scene)) |> List.forEach(kl -> warnSceneOnce(warnLog, fst(kl), snd(kl)));
         scenes |> List.filterMap(c -> Scene3d.directionalLightWarning(c#scene)) |> List.forEach(line -> warnSceneOnce(warnLog, "@sun:direction", line));
         let keyOf = (name: String, textureUse: Texture3d.TextureUse) -> (name, Texture3d.mipSpaceOf(textureUse));
+        // WhyNot: half の絵の環境マップと lightmap を 8bit の段の表に入れない — 描き手は場面の textures から half の段を作って読む（SoftRaster3d.Internal.halfChainNamed）。
+        let isHalf = (name: String) -> Map.get(name, ownTextures) |> Option.exists(t -> Texture3d.formatOf(t) == Texture3d.Format.Rgba16Float);
         let lightmapKeys = scenes |> List.flatMap(c -> Scene3d.instancesOf(c#scene) |> List.filterMap(Scene3d.lightmapOf))
+            |> List.filter(lm -> not isHalf(lm#texture))
             |> List.map(lm -> keyOf(lm#texture, Texture3d.TextureUse.Lightmap(lm#colorSpace)));
         let materialKeys = materials |> List.flatMap(f -> {
             let reads = Scene3d.materialTexReadsOf(f);
@@ -31,7 +34,7 @@ pub mod SoftRaster.Internal.Texture {
             List.append(List.take(Scene3d.maxMaterialTextures(), reads) |> List.map(r -> keyOf(fst(r), Texture3d.TextureUse.MaterialTexture)),
                         f#normalMap |> Option.toList |> List.map(n -> keyOf(n#texture, Texture3d.TextureUse.NormalMap)))
         });
-        let environmentKeys = scenes |> List.flatMap(c -> Scene3d.environmentTextureNamesOf(c#scene))
+        let environmentKeys = scenes |> List.flatMap(c -> Scene3d.environmentTextureNamesOf(c#scene)) |> List.filter(name -> not isHalf(name))
             |> List.map(name -> keyOf(name, Texture3d.TextureUse.MaterialTexture));
         let mippedKeys = List.append(materialKeys, List.append(lightmapKeys, environmentKeys)) |> List.distinct;
         let environmentOnly = Set.difference(List.toSet(List.map(fst, environmentKeys)), List.toSet(List.map(fst, List.append(materialKeys, lightmapKeys))));
@@ -65,6 +68,9 @@ pub mod SoftRaster.Internal.Texture {
             case Texture3d.Source.PlatformImage(key) =>
                 warnSceneOnce(warnLog, "@platform-texture:" + key, "scene3d: 場面の絵 '${Texture3d.name(t)}' は機種の側の絵（${key}）で、"
                     + "CPU の描き手は画素を読めない — 0（黒・透明）で読む（画面なしで描くなら ImageData.decoderOf のデコーダーで読む）");
+                { width = 1, height = 1, pixels = Vector#{ 0 } }
+            case Texture3d.Source.Rgba16Float(_) =>
+                warnSceneOnce(warnLog, "@hdr-texture-in-material:" + Texture3d.name(t), Texture3d.Internal.hdrInMaterialLine(Texture3d.name(t)));
                 { width = 1, height = 1, pixels = Vector#{ 0 } }
         }
 

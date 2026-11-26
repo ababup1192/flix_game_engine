@@ -953,6 +953,8 @@
   `pub def build(average: Average, tex: ShaderEval.TexData): List[ShaderEval.TexData]`
 - tex の長い辺が maxSide 以下になるまで、Raw の段と同じ縮め方で半分にした絵（もう収まっていれば tex のまま）。
   `pub def shrinkTo(maxSide: Int32, tex: ShaderEval.TexData): ShaderEval.TexData`
+- half の絵（width × height・halves = 1 画素 r, g, b, α の half の bit・行優先）の段の列 (幅, 高さ, half の bit)（段 0 = 元の絵・1 × 1 まで）。
+  `pub def buildRgba16Float(width: Int32, height: Int32, halves: Vector[Int16]): List[(Int32, Int32, Vector[Int16])]`
 - 絵を読む座標の、画面の右隣と下隣の画素との差（uv の単位）。
   `pub type alias Derivatives = { dudx = Float64, dvdx = Float64, dudy = Float64, dvdy = Float64 }`
 - 読む段の番号（GL と CPU で同じ式）。差の各成分から floor(d + 0.5) を引き（REPEAT で座標が 1 跳ぶ継ぎ目の画素で
@@ -1627,7 +1629,7 @@
 - 環境マップの箱。室内の壁の位置（world）。min・max = 箱の対角の 2 点・center = 絵を撮った点（景色の向きの中心）。
   `pub type alias EnvironmentBox = { min = Vec3.Vec3, max = Vec3.Vec3, center = Vec3.Vec3 }`
 - 環境マップの中身。texture = 場面の textures の絵の名前（Texture3d.name）・intensity = 線形の量に戻した後に掛ける倍率・
-  `pub type alias EnvironmentMapFields = { texture = String, intensity = Float64, box = Option[EnvironmentBox], asBackground = Bool, skyContribution = Float64, irradiance = Option[SphericalHarmonics.SphericalHarmonics], textureIrradiance = Lazy[Option[SphericalHarmonics.SphericalHarmonics]] }`
+  `pub type alias EnvironmentMapFields = { texture = String, intensity = Float64, box = Option[EnvironmentBox], asBackground = Bool, colorSpace = Texture3d.ColorSpace, skyContribution = Float64, irradiance = Option[SphericalHarmonics.SphericalHarmonics], textureIrradiance = Lazy[Option[SphericalHarmonics.SphericalHarmonics]] }`
 - 周りの景色のパノラマの絵（閉じた型 — 欄を後から足しても、ゲームの書いた値が壊れない）。environmentMap から作り、with… で足す。
   `pub type alias EnvironmentMap = EnvironmentMapData`
 - 正距円筒（横 2：縦 1）のパノラマの絵 texture を景色にする。絵は Scene3dCmd の textures にも載せる（"tex3d:" の名前）。
@@ -1922,6 +1924,8 @@
   `pub def evalMaterial3Mip(compiled: CompiledSpec, center: SurfacePoint, nextX: SurfacePoint, nextY: SurfacePoint, t: Float64): MaterialSample`
 - 段の列 chain の uv (u, v) の r・g・b を lod で読む（sampleMip と同じ読み方。3D の法線マップが読む）。
   `pub def sampleMipRgb(chain: Vector[TexData], sampling: { linear = Bool, repeat = Bool }, lod: Float64, u: Float64, v: Float64): (Float64, Float64, Float64)`
+- sampleMipRgb の half の段の列の版（値は線形の量のまま・1 を超えても切らない）。
+  `pub def sampleMipRgbHdr(chain: Vector[HdrTexture], sampling: { linear = Bool, repeat = Bool }, lod: Float64, u: Float64, v: Float64): (Float64, Float64, Float64)`
 
 ## ShaderGen — `engine/src/shader/ShaderGen.flix`
 - vertex シェーダー（面 quad 1 枚・uv を渡すだけ）。Spec に依存しない固定ソース。
@@ -2142,7 +2146,9 @@
 
 ## Texture3d — `engine/src/scene3d/Texture3d.flix`
 - 絵の画素の在りか。Argb = ARGB の並び（行優先・行 0 が絵の上）・PlatformImage(key) = 機種の側に解いて持つ絵
-  `pub enum Source with Eq, ToString { case Argb(Vector[Int32]) case PlatformImage(String) }`
+  `pub enum Source with Eq, ToString { case Argb(Vector[Int32]) case PlatformImage(String) case Rgba16Float(Vector[Int16]) }`
+- 絵の画素の形式（RenderTarget.Format と同じ字）。Rgba8Unorm = 8bit の絵（ARGB と機種の側の絵）・Rgba16Float = half の絵（decodeHdr・fromRgba16Float）。
+  `pub enum Format with Eq, ToString { case Rgba8Unorm case Rgba16Float }`
 - `pub type alias Texture3d = Texture3dData`
 - 辺の上限（GL 3.3 が約束する大きさより大きいが、今の GPU なら作れる）。
   `pub def maxSide(): Int32`
@@ -2150,6 +2156,12 @@
   `pub def fromArgb(width: Int32, height: Int32, argb: Vector[Int32]): Result[String, Texture3d]`
 - 機種の側に解いて持つ絵から作る（ImageData.ImageDecoder の platformImage が返した物）。辺の決まりは fromArgb と同じ。
   `pub def fromPlatformImage(image: ImageData.PlatformImage): Result[String, Texture3d]`
+- rgba（1 画素 r, g, b, α の 4 つ・行優先・行 0 が絵の上・線形の量）を half に丸めて作る（作った HDR の絵・空の色から作る景色）。
+  `pub def fromRgba16Float(width: Int32, height: Int32, rgba: Vector[Float64]): Result[String, Texture3d]`
+- Radiance の .hdr（Poly Haven・Blender が書く RGBE）のバイトから、1 を超える明るさのまま half の絵を作る（three.js の HDRLoader）。
+  `pub def decodeHdr(bytes: Vector[Int8]): Result[String, Texture3d]`
+- 絵の画素の形式（機種の側の絵は Rgba8Unorm）。
+  `pub def formatOf(t: Texture3d): Format`
 - 解いた絵から作る（決まりは fromArgb と同じ）。
   `pub def fromImage(image: ImageData.ImageData): Result[String, Texture3d]`
 - PNG / JPEG のバイトを decoder で画素に戻して作る（decoder は LoadProgress.imageDecoder() で受け取る）。

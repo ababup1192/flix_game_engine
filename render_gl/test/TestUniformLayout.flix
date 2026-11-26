@@ -13,7 +13,7 @@ mod Render3d.TestUniformLayout {
             ("uZenith", 128) :: ("uCurve", 140) :: ("uHorizon", 144) :: ("uEnvOn", 156) :: ("uGround", 160) :: ("uEnvBoxOn", 172) ::
             ("uEnvBoxMin", 176) :: ("uEnvLevels", 188) :: ("uEnvBoxMax", 192) :: ("uEnvIntensity", 204) :: ("uEnvBoxCenter", 208) :: ("uShadowOn", 220) ::
             ("uDepthRange", 224) :: ("uShadowSpot", 232) :: ("uShadowPcf", 236) :: ("uShadowBias", 240) :: ("uShadowStrength", 244) :: ("uDepthOut", 248) ::
-            ("pad0", 252) :: ("pad1", 256) :: ("pad2", 260) :: ("pad3", 264) :: ("pad4", 268) :: ("uShadowMatrix", 272) :: ("uSunMatrix", 336) ::
+            ("uEnvSrgb", 252) :: ("pad1", 256) :: ("pad2", 260) :: ("pad3", 264) :: ("pad4", 268) :: ("uShadowMatrix", 272) :: ("uSunMatrix", 336) ::
             ("uPointPos", 400) :: ("uPointColor", 528) :: ("uPointRange", 656) :: ("uSpotPos", 784) :: ("uSpotDir", 816) :: ("uSpotColor", 848) ::
             ("uSpotRange", 880) :: ("uSpotCone", 912) :: ("uSkyForward", 944) :: ("uSkyRight", 960) :: ("uSkyUp", 976) :: Nil,
             namedOffsets(sceneFields(), sceneOffsets()))

@@ -4,6 +4,7 @@
 /// 絵の段と lod の式。
 pub mod Mip {
     import java.lang.Math
+    import java.lang.{Float => JFloat}
 
     /// 段を作る時の、4 つのテクセルの色の平均の仕方。SrgbCurve = 8bit の値を sRGB の曲線の値と見て、線形の量へ戻して平均し、
     /// 8bit の sRGB の値へ戻す（色の絵）・Raw = 8bit の値のまま平均する（法線マップ・数の絵）。α はどちらも 8bit の値のまま平均する。
@@ -144,6 +145,48 @@ pub mod Mip {
     /// 4 つの ARGB の、shift ビット目から 8 ビットの成分の平均（(和 + 2) / 4 の切り捨て）を同じ位置に置いた値。
     def rawMeanOf(shift: Int32, a: Int32, b: Int32, c: Int32, d: Int32): Int32 =
         Int32.leftShift((channelOf(shift, a) + channelOf(shift, b) + channelOf(shift, c) + channelOf(shift, d) + 2) / 4, shift)
+
+    /// half の絵（width × height・halves = 1 画素 r, g, b, α の half の bit・行優先）の段の列 (幅, 高さ, half の bit)（段 0 = 元の絵・1 × 1 まで）。
+    /// 段の辺と 4 つの選び方は build と同じ（はみ出す列と行は端のテクセルを繰り返す）。値は 4 つの線形の量の平均を half に丸めた物。
+    /// GL・WebGPU・CPU が同じ段を読む（HDR の環境マップと lightmap）。
+    // WhyNot: 段ごとに Vector とクロージャーで回さない — build の WhyNot と同じ。中間の段は配列のまま次の段へ渡す。
+    pub def buildRgba16Float(width: Int32, height: Int32, halves: Vector[Int16]): List[(Int32, Int32, Vector[Int16])] = region rc {
+        if (isLastLevel(width, height)) (width, height, halves) :: Nil
+        else (width, height, halves) :: halveHalfAll(rc, width, height, Vector.toArray(rc, halves))
+    }
+
+    def halveHalfAll(rc: Region[r], w: Int32, h: Int32, src: Array[Int16, r]): List[(Int32, Int32, Vector[Int16])] \ r =
+        let (nw, nh) = halfSize(w, h);
+        let out = Array.empty(rc, nw * nh * 4);
+        halveHalfRows(w, h, nw, nh, src, out, 0);
+        let level = (nw, nh, Array.toVector(out));
+        if (isLastLevel(nw, nh)) level :: Nil else level :: halveHalfAll(rc, nw, nh, out)
+
+    def halveHalfRows(w: Int32, h: Int32, nw: Int32, nh: Int32, src: Array[Int16, r], out: Array[Int16, r], j: Int32): Unit \ r =
+        if (j >= nh) ()
+        else {
+            let row0 = Int32.min(2 * j, h - 1) * w;
+            let row1 = Int32.min(2 * j + 1, h - 1) * w;
+            halveHalfCols(w, row0, row1, nw, j * nw, src, out, 0);
+            halveHalfRows(w, h, nw, nh, src, out, j + 1)
+        }
+
+    def halveHalfCols(w: Int32, row0: Int32, row1: Int32, nw: Int32, outRow: Int32, src: Array[Int16, r], out: Array[Int16, r], i: Int32): Unit \ r =
+        if (i >= nw) ()
+        else {
+            let x0 = Int32.min(2 * i, w - 1);
+            let x1 = Int32.min(2 * i + 1, w - 1);
+            halfMean(src, out, (outRow + i) * 4, (row0 + x0) * 4, (row0 + x1) * 4, (row1 + x0) * 4, (row1 + x1) * 4, 0);
+            halfMean(src, out, (outRow + i) * 4, (row0 + x0) * 4, (row0 + x1) * 4, (row1 + x0) * 4, (row1 + x1) * 4, 1);
+            halfMean(src, out, (outRow + i) * 4, (row0 + x0) * 4, (row0 + x1) * 4, (row1 + x0) * 4, (row1 + x1) * 4, 2);
+            halfMean(src, out, (outRow + i) * 4, (row0 + x0) * 4, (row0 + x1) * 4, (row1 + x0) * 4, (row1 + x1) * 4, 3);
+            halveHalfCols(w, row0, row1, nw, outRow, src, out, i + 1)
+        }
+
+    /// 4 つのテクセル（a〜d は頭の位置）の成分 c の線形の量の平均を half に丸めて out の at + c へ。
+    def halfMean(src: Array[Int16, r], out: Array[Int16, r], at: Int32, a: Int32, b: Int32, e: Int32, d: Int32, c: Int32): Unit \ r =
+        let value = (i: Int32) -> Float32.toFloat64(JFloat.float16ToFloat(Array.get(i + c, src)));
+        Array.put(JFloat.floatToFloat16(RenderUtil.f32((value(a) + value(b) + value(e) + value(d)) / 4.0)), at + c, out)
 
     /// 絵を読む座標の、画面の右隣と下隣の画素との差（uv の単位）。
     pub type alias Derivatives = { dudx = Float64, dvdx = Float64, dudy = Float64, dvdy = Float64 }

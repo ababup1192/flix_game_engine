@@ -854,6 +854,26 @@ pub mod ShaderEval {
     pub def sampleMipRgb(chain: Vector[TexData], sampling: { linear = Bool, repeat = Bool }, lod: Float64, u: Float64, v: Float64): (Float64, Float64, Float64) =
         (sampleMip(chain, sampling, 16, lod, u, v), sampleMip(chain, sampling, 8, lod, u, v), sampleMip(chain, sampling, 0, lod, u, v))
 
+    /// sampleMipRgb の half の段の列の版（値は線形の量のまま・1 を超えても切らない）。
+    pub def sampleMipRgbHdr(chain: Vector[HdrTexture], sampling: { linear = Bool, repeat = Bool }, lod: Float64, u: Float64, v: Float64): (Float64, Float64, Float64) =
+        (sampleMipF(chain, sampling, 0, lod, u, v), sampleMipF(chain, sampling, 1, lod, u, v), sampleMipF(chain, sampling, 2, lod, u, v))
+
+    /// sampleMip の half の版（段の選び方と混ぜる重みは同じ）。
+    def sampleMipF(chain: Vector[HdrTexture], sampling: { linear = Bool, repeat = Bool }, chan: Int32, lod: Float64, u: Float64, v: Float64): Float64 =
+        let n = Vector.length(chain);
+        let read = (k: Int32) -> {
+            let HdrTextureData.HdrTextureData(w, h, values) = Vector.get(Int32.max(0, Int32.min(n - 1, k)), chain);
+            sampleTexFAs(sampling#linear, sampling#repeat, w, h, values, chan, u, v)
+        };
+        if (n == 0) 0.0
+        else if (lod <= 0.0) read(0)
+        else {
+            let k = Float64.tryToInt32(Float64.floor(lod)) |> Option.getWithDefault(0);
+            let f = Float64.floor((lod - Float64.floor(lod)) * 256.0) / 256.0;
+            let a = read(k);
+            if (f == 0.0) a else a + (read(k + 1) - a) * f
+        }
+
     // ── TexBlurGroup（値の置き場 env[slot + j] が j 番目の shift の値）──
 
     def putAmounts(amounts: Vector[Node], x: Float64, y: Float64, t: Float64, slot: Int32, j: Int32, env: Array[Float64, r]): Unit \ r =

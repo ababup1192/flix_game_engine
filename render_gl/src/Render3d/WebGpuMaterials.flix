@@ -413,7 +413,25 @@ pub mod Render3d.WebGpuMaterials {
                 chain |> List.forEachWithIndex((level, td) -> s#gpu.writeTexture(texture, level, 0, 0, td#width, td#height, argbBytes(td#pixels), 0, td#width * 4));
                 Ref.put(Map.insert(handle, { texture = texture, levels = levels }, Ref.get(s#store)), s#store);
                 Some({ levels = levels, bytes = List.foldLeft((acc, td) -> acc + Int32.toInt64(td#width * td#height * 4), 0i64, chain) })
+            case Texture3d.Source.Rgba16Float(halves) =>
+                let chain = Mip.buildRgba16Float(Texture3d.width(t), Texture3d.height(t), halves);
+                let levels = List.length(chain);
+                let texture = s#gpu.createTexture("fge material ${Texture3d.name(t)}", Texture3d.width(t), Texture3d.height(t), TextureFormat.RGBA16_FLOAT,
+                                                  Int32.bitwiseOr(TextureUsage.TEXTURE_BINDING, TextureUsage.COPY_DST), levels, 1);
+                chain |> List.forEachWithIndex((level, entry) -> {
+                    let (w, h, bits) = entry;
+                    s#gpu.writeTexture(texture, level, 0, 0, w, h, halfBytes(bits), 0, w * 8)
+                });
+                Ref.put(Map.insert(handle, { texture = texture, levels = levels }, Ref.get(s#store)), s#store);
+                Some({ levels = levels, bytes = List.foldLeft((acc, entry) -> { let (w, h, _) = entry; acc + Int32.toInt64(w * h * 8) }, 0i64, chain) })
         }
+
+    /// half の bit の列を little-endian のバイトにする（rgba16float の 1 画素 8 バイト）。
+    def halfBytes(bits: Vector[Int16]): ByteBuffer \ IO =
+        let arr = unchecked_cast(bits as Array[Int16, Static]);
+        let bytes = ByteBuffer.allocateDirect(Int32.max(8, Vector.length(bits) * 2)).order(ByteOrder.LITTLE_ENDIAN);
+        discard bytes.asShortBuffer().put(arr);
+        bytes
 
     /// 機種の側の絵 key（大きさは t の物）を段つきの texture のレベル 0 へ写し、上の段を作る pass を up の encoder へ積んで、番号 handle で控える（写せなければ texture を捨てて None）。
     // WhyNot: GL のように段を素の値のまま平均しない — 同じ置き場の ARGB の絵と全体の登録の絵の写しは average（Mip.build と同じ決まり）で作っていて、絵の出どころで遠くの面の色がずれる。

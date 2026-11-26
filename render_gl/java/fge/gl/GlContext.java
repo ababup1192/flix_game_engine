@@ -112,6 +112,8 @@ public interface GlContext {
     void texImageBytes(int format, int width, int height, ByteBuffer pixels);
     /** 今 bind している TEXTURE_2D の置き場を RGBA16F で確保し、0 で埋める。 */
     void texImageRgba16fZero(int width, int height);
+    /** 今 bind している TEXTURE_2D の段 level を RGBA16F で確保し、halves（1 画素 4 個の half の bit・行 0 が絵の上）を上げる。 */
+    void texImageRgba16fLevel(int level, int width, int height, ShortBuffer halves);
     /** 今 bind している TEXTURE_2D の置き場を 24 ビットの深度で確保する（中身は描いて決める）。 */
     void texImageDepth24(int width, int height);
     /**

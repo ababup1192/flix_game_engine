@@ -54,7 +54,12 @@ mod Render3d.Light {
           reflectZenith = reflectArray(reflection#zenith), reflectHorizon = reflectArray(reflection#horizon), reflectGround = reflectArray(reflection#ground),
           reflectCurve = RenderUtil.f32(reflection#curve),
           envOn = environment#on, envBoxOn = environment#boxOn, envBoxMin = environment#boxMin, envBoxMax = environment#boxMax,
-          envBoxCenter = environment#boxCenter, envLevels = environment#levels, envIntensity = environment#intensity }
+          envBoxCenter = environment#boxCenter, envLevels = environment#levels, envIntensity = environment#intensity,
+          envSrgb = environmentSrgbOf(scene#environmentMap) }
+
+    /// 環境マップの絵を sRGB から線形へ戻して読むなら 1（8bit の絵）・そのまま読むなら 0（half の絵）。環境マップが無ければ 1（読まれない）。
+    pub def environmentSrgbOf(e: Option[Scene3d.EnvironmentMap]): Int32 =
+        if (e |> Option.exists(m -> Scene3d.environmentMapFieldsOf(m)#colorSpace == Texture3d.ColorSpace.Linear)) 0 else 1
 
     /// Physical の光の逆二乗を m で測る 1 / unitsPerMeter²（unitsPerMeter² が 1e−12 より小さければ 1e−12 で割る）。
     pub def inverseUnitsPerMeterSquaredOf(scene: Scene3d.Scene3dCmd): Float64 =
@@ -159,7 +164,8 @@ mod Render3d.Light {
                 gl.uniform3fv(locs#envBoxMax, d#envBoxMax);
                 gl.uniform3fv(locs#envBoxCenter, d#envBoxCenter);
                 gl.uniform1f(locs#envLevels, d#envLevels);
-                gl.uniform1f(locs#envIntensity, d#envIntensity)
+                gl.uniform1f(locs#envIntensity, d#envIntensity);
+                gl.uniform1i(locs#envSrgb, d#envSrgb)
             }
         }
 
@@ -176,6 +182,7 @@ mod Render3d.Light {
           envOn = Render3d.loc(gl, program, "uEnvOn"), envBoxOn = Render3d.loc(gl, program, "uEnvBoxOn"), envBoxMin = Render3d.loc(gl, program, "uEnvBoxMin"),
           envBoxMax = Render3d.loc(gl, program, "uEnvBoxMax"), envBoxCenter = Render3d.loc(gl, program, "uEnvBoxCenter"),
           envLevels = Render3d.loc(gl, program, "uEnvLevels"), envIntensity = Render3d.loc(gl, program, "uEnvIntensity"),
+          envSrgb = Render3d.loc(gl, program, "uEnvSrgb"),
           sunDir = Render3d.loc(gl, program, "uSunDir"), sunColor = Render3d.loc(gl, program, "uSunColor"), inverseUnitsPerMeterSquared = -1,
           psx = -1, psxTarget = -1, vertexSnap = -1, sh = -1, skyContribution = -1 }
 }

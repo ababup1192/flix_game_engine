@@ -95,11 +95,12 @@ pub mod Render3d.UniformLayout {
     pub enum SceneField with Eq, Order, ToString {
         case Ambient, Hemisphere, Eye, ToonSteps, FogColor, FogOn, FogRange, PointCount, SpotCount, SunDir, SunShadowOn, SunColor, SunNormalShift,
              SunForward, SunBias, SunFade, SunPcf, SunStrength, Zenith, Curve, Horizon, EnvOn, Ground, EnvBoxOn, EnvBoxMin, EnvLevels, EnvBoxMax,
-             EnvIntensity, EnvBoxCenter, ShadowOn, DepthRange, ShadowSpot, ShadowPcf, ShadowBias, ShadowStrength, DepthOut, Pad0, Pad1, Pad2, Pad3, Pad4,
+             EnvIntensity, EnvBoxCenter, ShadowOn, DepthRange, ShadowSpot, ShadowPcf, ShadowBias, ShadowStrength, DepthOut, EnvSrgb, Pad1, Pad2, Pad3, Pad4,
              ShadowMatrix, SunMatrix, PointPos, PointColor, PointRange, SpotPos, SpotDir, SpotColor, SpotRange, SpotCone, SkyForward, SkyRight, SkyUp
     }
 
     /// R3dScene の表。vec3f の後ろの 4 バイトには f32 か i32 を 1 つ置く。末尾の uSky* は空の画素の向きの材料（Render3d.WebGpuSky.packValues）。
+    // uEnvSrgb は空いていた pad の枠に置いた（環境マップの絵を sRGB から戻すなら 1。既定の場面の欄の位置と buffer の大きさは変わらない）。
     // WhyNot: pad0〜pad4 を表から抜かない — 抜くと uShadowMatrix が 272 から 256 へ動き、struct の字（TestPointShadowVariants の既定の WGSL の sha）と
     //   各欄の位置が変わる。位置は表から求めるので詰める側とはずれないが、0 差を確かめる前提が崩れる。
     pub def sceneFields(): List[Field[SceneField]] =
@@ -121,7 +122,7 @@ pub mod Render3d.UniformLayout {
         (SceneField.EnvBoxCenter, "uEnvBoxCenter", FieldType.Vec3f) :: (SceneField.ShadowOn, "uShadowOn", FieldType.I32) ::
         (SceneField.DepthRange, "uDepthRange", FieldType.Vec2f) :: (SceneField.ShadowSpot, "uShadowSpot", FieldType.I32) :: (SceneField.ShadowPcf, "uShadowPcf", FieldType.I32) ::
         (SceneField.ShadowBias, "uShadowBias", FieldType.F32) :: (SceneField.ShadowStrength, "uShadowStrength", FieldType.F32) ::
-        (SceneField.DepthOut, "uDepthOut", FieldType.I32) :: (SceneField.Pad0, "pad0", FieldType.I32) ::
+        (SceneField.DepthOut, "uDepthOut", FieldType.I32) :: (SceneField.EnvSrgb, "uEnvSrgb", FieldType.I32) ::
         (SceneField.Pad1, "pad1", FieldType.F32) :: (SceneField.Pad2, "pad2", FieldType.F32) :: (SceneField.Pad3, "pad3", FieldType.F32) :: (SceneField.Pad4, "pad4", FieldType.F32) ::
         (SceneField.ShadowMatrix, "uShadowMatrix", FieldType.Mat4) :: (SceneField.SunMatrix, "uSunMatrix", FieldType.Mat4) ::
         (SceneField.PointPos, "uPointPos", FieldType.Vec4Array(p)) :: (SceneField.PointColor, "uPointColor", FieldType.Vec4Array(p)) ::

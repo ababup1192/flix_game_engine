@@ -4,6 +4,7 @@ import java.nio.Buffer;
 import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
+import java.nio.ShortBuffer;
 import java.util.zip.CRC32;
 
 /**
@@ -117,6 +118,7 @@ public final class RecordingGl implements GlContext {
     public void texSubImageAlphaMask(int x, int y, int width, int height, ByteBuffer alpha) { if (enabled) log.append("texSubImageAlphaMask").append(' ').append(x).append(' ').append(y).append(' ').append(width).append(' ').append(height).append(' ').append(buf(alpha)).append('\n'); inner.texSubImageAlphaMask(x, y, width, height, alpha); }
     public void texImageBytes(int format, int width, int height, ByteBuffer pixels) { if (enabled) log.append("texImageBytes").append(' ').append(format).append(' ').append(width).append(' ').append(height).append(' ').append(buf(pixels)).append('\n'); inner.texImageBytes(format, width, height, pixels); }
     public void texImageRgba16fZero(int width, int height) { if (enabled) log.append("texImageRgba16fZero").append(' ').append(width).append(' ').append(height).append('\n'); inner.texImageRgba16fZero(width, height); }
+    public void texImageRgba16fLevel(int level, int width, int height, ShortBuffer halves) { if (enabled) log.append("texImageRgba16fLevel").append(' ').append(level).append(' ').append(width).append(' ').append(height).append('\n'); inner.texImageRgba16fLevel(level, width, height, halves); }
     public void texImageDepth24(int width, int height) { if (enabled) log.append("texImageDepth24").append(' ').append(width).append(' ').append(height).append('\n'); inner.texImageDepth24(width, height); }
     public void texImageRgba32f(int width, int height) { if (enabled) log.append("texImageRgba32f").append(' ').append(width).append(' ').append(height).append('\n'); inner.texImageRgba32f(width, height); }
     public void texSubImageRgba32f(int x, int y, int width, int height, FloatBuffer pixels) { if (enabled) log.append("texSubImageRgba32f").append(' ').append(x).append(' ').append(y).append(' ').append(width).append(' ').append(height).append(' ').append(buf(pixels)).append('\n'); inner.texSubImageRgba32f(x, y, width, height, pixels); }

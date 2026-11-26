@@ -5,17 +5,51 @@
 /// GL の Render3dGlsl.environmentSource と同じ式・同じ段・同じ補間で読む。
 pub mod SoftRaster3d.Internal {
 
-    /// 場面の環境マップ。chain = 絵の段の列（段 0 が元の絵）・intensity = Scene3d.environmentIntensityOf・box = 箱の補正（Scene3d.environmentBoxOf で軸ごとに min < max にそろえた物）。
-    pub type alias EnvironmentLookup = { chain = Vector[ShaderEval.TexData], intensity = Float64, box = Option[Scene3d.EnvironmentBox] }
+    /// 絵の段の列。Srgb = 8bit の sRGB の絵の段（読んだ値を線形の量へ戻す）・Linear = half の絵の段（線形の量のまま・1 を超える）。
+    pub enum MipChain {
+        case Srgb(Vector[ShaderEval.TexData])
+        case Linear(Vector[ShaderEval.HdrTexture])
+    }
 
-    /// 場面 scene の環境マップ（無ければ None）。textures = 場面が読む絵の段の列。絵が無ければ透明な黒で読む（GL の代わりの絵と同じ）。
+    /// 場面の環境マップ。chain = 絵の段の列（段 0 が元の絵）・intensity = Scene3d.environmentIntensityOf・box = 箱の補正（Scene3d.environmentBoxOf で軸ごとに min < max にそろえた物）。
+    pub type alias EnvironmentLookup = { chain = MipChain, intensity = Float64, box = Option[Scene3d.EnvironmentBox] }
+
+    /// 場面 scene の環境マップ（無ければ None）。textures = 場面が読む絵の段の列。half の絵は場面の textures から段を作る。絵が無ければ透明な黒で読む（GL の代わりの絵と同じ）。
     pub def environmentLookupOf(textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]], scene: Scene3d.Scene3dCmd): Option[EnvironmentLookup] =
         scene#environmentMap |> Option.map(e -> {
             let f = Scene3d.environmentMapFieldsOf(e);
             let key = (f#texture, Texture3d.mipSpaceOf(Texture3d.TextureUse.MaterialTexture));
-            { chain = Map.getWithDefault(key, Vector#{ { width = 1, height = 1, pixels = Vector#{ 0 } } }, textures),
-              intensity = Scene3d.environmentIntensityOf(e), box = f#box |> Option.map(Scene3d.environmentBoxOf) }
+            let chain = match halfChainNamed(scene, f#texture) {
+                case Some(hdr) => MipChain.Linear(hdr)
+                case None      => MipChain.Srgb(Map.getWithDefault(key, Vector#{ { width = 1, height = 1, pixels = Vector#{ 0 } } }, textures))
+            };
+            { chain = chain, intensity = Scene3d.environmentIntensityOf(e), box = f#box |> Option.map(Scene3d.environmentBoxOf) }
         })
+
+    /// 場面の textures の名前 name の絵が half の絵なら、その段の列（Mip.buildRgba16Float）。
+    pub def halfChainNamed(scene: Scene3d.Scene3dCmd, name: String): Option[Vector[ShaderEval.HdrTexture]] =
+        scene#textures |> List.find(t -> Texture3d.name(t) == name) |> Option.flatMap(t -> match Texture3d.sourceOf(t) {
+            case Texture3d.Source.Rgba16Float(halves) =>
+                Some(Mip.buildRgba16Float(Texture3d.width(t), Texture3d.height(t), halves)
+                    |> List.map(level -> { let (w, h, bits) = level; ShaderEval.hdrTextureOfHalves(w, h, Vector.map(b -> RenderUtil.f32(Texture3d.Internal.fromHalfBits(b)), bits)) })
+                    |> List.toVector)
+            case _ => None
+        })
+
+    /// 段の列の段の数。
+    pub def mipLevelsOf(chain: MipChain): Int32 = match chain {
+        case MipChain.Srgb(levels)   => Vector.length(levels)
+        case MipChain.Linear(levels) => Vector.length(levels)
+    }
+
+    /// 段の列を lod・uv (u, v) で読んだ線形の量の rgb（8bit の絵は sRGB から戻す）。
+    pub def sampleLinearRgb(chain: MipChain, sampling: { linear = Bool, repeat = Bool }, lod: Float64, u: Float64, v: Float64): (Float64, Float64, Float64) =
+        match chain {
+            case MipChain.Srgb(levels) =>
+                let (r, g, b) = ShaderEval.sampleMipRgb(levels, sampling, lod, u, v);
+                (Texture3d.srgbToLinear(r), Texture3d.srgbToLinear(g), Texture3d.srgbToLinear(b))
+            case MipChain.Linear(levels) => ShaderEval.sampleMipRgbHdr(levels, sampling, lod, u, v)
+        }
 
     /// 層の画素 (x, y)（層の大きさ (lw, lh)）の、景色を背景に描く時の色（Scene3d.backgroundEnvironmentOf）と α。Output.Depth なら白（一番奥）。
     /// 向きは画素の真ん中の NDC を通る向き（Scene3d.skyDirectionOf）・絵は段 0 の Repeat・Linear・強さを線形に掛けて画面の値へ戻す。GL は skyFragmentSource の uEnvOn。
@@ -26,8 +60,8 @@ pub mod SoftRaster3d.Internal {
             let (x, y) = pixel;
             let ndc = { x = (Int32.toFloat64(x) + 0.5) / Int32.toFloat64(lw) * 2.0 - 1.0, y = 1.0 - (Int32.toFloat64(y) + 0.5) / Int32.toFloat64(lh) * 2.0 };
             let (u, v) = LightModel3d.environmentUvOf(Scene3d.skyDirectionOf(basis, ndc));
-            let (r, g, b) = ShaderEval.sampleMipRgb(env#chain, { linear = true, repeat = true }, 0.0, u, v);
-            let screen = (c: Float64) -> Texture3d.linearToSrgb(Texture3d.srgbToLinear(c) * env#intensity);
+            let (r, g, b) = sampleLinearRgb(env#chain, { linear = true, repeat = true }, 0.0, u, v);
+            let screen = (c: Float64) -> Texture3d.linearToSrgb(c * env#intensity);
             (screen(r), screen(g), screen(b), 1.0)
         }
 
@@ -46,9 +80,9 @@ pub mod SoftRaster3d.Internal {
                                                                    box#min#x, box#min#y, box#min#z, box#max#x, box#max#y, box#max#z,
                                                                    box#center#x, box#center#y, box#center#z, if (Option.isEmpty(env#box)) 0.0 else 1.0);
         let (u, v) = LightModel3d.environmentUvOf(Vec3.v3(dx, dy, dz));
-        let lod = LightModel3d.environmentLodOf(roughness, Vector.length(env#chain));
-        let (r, g, b) = ShaderEval.sampleMipRgb(env#chain, { linear = true, repeat = true }, lod, u, v);
-        (Texture3d.srgbToLinear(r) * env#intensity, Texture3d.srgbToLinear(g) * env#intensity, Texture3d.srgbToLinear(b) * env#intensity)
+        let lod = LightModel3d.environmentLodOf(roughness, mipLevelsOf(env#chain));
+        let (r, g, b) = sampleLinearRgb(env#chain, { linear = true, repeat = true }, lod, u, v);
+        (r * env#intensity, g * env#intensity, b * env#intensity)
 
     /// NDC の x か y（−1..1）が落ちる地図の画素（0..n−1）。
     pub def mapTexel(n: Int32, ndc: Float64): Int32 =

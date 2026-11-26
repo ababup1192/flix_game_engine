@@ -101,7 +101,7 @@ mod Render3d {
         spotCount = Int32, spotPos = Int32, spotDir = Int32, spotColor = Int32, spotRange = Int32, spotCone = Int32,
         fogOn = Int32, fogColor = Int32, fogRange = Int32, eye = Int32,
         reflectZenith = Int32, reflectHorizon = Int32, reflectGround = Int32, reflectCurve = Int32,
-        envOn = Int32, envBoxOn = Int32, envBoxMin = Int32, envBoxMax = Int32, envBoxCenter = Int32, envLevels = Int32, envIntensity = Int32,
+        envOn = Int32, envBoxOn = Int32, envBoxMin = Int32, envBoxMax = Int32, envBoxCenter = Int32, envLevels = Int32, envIntensity = Int32, envSrgb = Int32,
         sunDir = Int32, sunColor = Int32, inverseUnitsPerMeterSquared = Int32, psx = Int32, psxTarget = Int32, vertexSnap = Int32,
         sh = Int32, skyContribution = Int32
     }
@@ -140,7 +140,7 @@ mod Render3d {
     /// 空のプログラムの uniform の location。
     type alias SkyLocs = { program = Int32, viewport = Int32, forward = Int32, right = Int32, up = Int32,
                            zenith = Int32, horizon = Int32, ground = Int32, curve = Int32, depthOut = Int32,
-                           envOn = Int32, envIntensity = Int32 }
+                           envOn = Int32, envIntensity = Int32, envSrgb = Int32 }
 
     /// 骨つきの版のプログラム。
     type alias SkinnedPrograms = { lit = LitLocs, depth = DepthLocs }
@@ -270,7 +270,7 @@ mod Render3d {
         fogOn = Int32, fogColor = Array[Float32, Static], fogRange = Array[Float32, Static], eye = Array[Float32, Static],
         reflectZenith = Array[Float32, Static], reflectHorizon = Array[Float32, Static], reflectGround = Array[Float32, Static], reflectCurve = Float32,
         envOn = Int32, envBoxOn = Int32, envBoxMin = Array[Float32, Static], envBoxMax = Array[Float32, Static], envBoxCenter = Array[Float32, Static],
-        envLevels = Float32, envIntensity = Float32,
+        envLevels = Float32, envIntensity = Float32, envSrgb = Int32,
         sunDir = Array[Float32, Static], sunColor = Array[Float32, Static], inverseUnitsPerMeterSquared = Float32,
         psx = Array[Float32, Static], psxTarget = Array[Float32, Static], vertexSnap = Float32,
         sh = Array[Float32, Static], skyContribution = Float32
@@ -712,6 +712,7 @@ mod Render3d {
                 let background = Scene3d.backgroundEnvironmentOf(scene);
                 gl.uniform1i(locs#envOn, if (Option.isEmpty(background)) 0 else 1);
                 gl.uniform1f(locs#envIntensity, RenderUtil.f32(background |> Option.map(Scene3d.environmentIntensityOf) |> Option.getWithDefault(0.0)));
+                gl.uniform1i(locs#envSrgb, Render3d.Light.environmentSrgbOf(background));
                 gl.uniform1i(locs#depthOut, match scene#output {
                     case Scene3d.Output.Color    => 0
                     case Scene3d.Output.Depth(_) => 1
@@ -1081,7 +1082,8 @@ mod Render3d {
                 let made = { program = program, viewport = loc(gl, program, "uViewport"), forward = loc(gl, program, "uForward"),
                              right = loc(gl, program, "uRight"), up = loc(gl, program, "uUp"), zenith = loc(gl, program, "uZenith"),
                              horizon = loc(gl, program, "uHorizon"), ground = loc(gl, program, "uGround"), curve = loc(gl, program, "uCurve"),
-                             depthOut = loc(gl, program, "uDepthOut"), envOn = loc(gl, program, "uEnvOn"), envIntensity = loc(gl, program, "uEnvIntensity") };
+                             depthOut = loc(gl, program, "uDepthOut"), envOn = loc(gl, program, "uEnvOn"), envIntensity = loc(gl, program, "uEnvIntensity"),
+                             envSrgb = loc(gl, program, "uEnvSrgb") };
                 if (program == 0) () else { gl.useProgram(program); gl.uniform1i(loc(gl, program, "uEnvMap"), environmentTextureUnit()); gl.useProgram(0) };
                 Ref.put(Some(made), state#skyRef);
                 made

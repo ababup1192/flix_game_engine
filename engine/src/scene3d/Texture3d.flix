@@ -8,10 +8,18 @@ pub mod Texture3d {
     import java.security.MessageDigest
 
     /// 絵の画素の在りか。Argb = ARGB の並び（行優先・行 0 が絵の上）・PlatformImage(key) = 機種の側に解いて持つ絵
-    /// （ブラウザの ImageBitmap。ImageData.PlatformImage の key。画素は GL の描き手だけが GPU へ上げられる）。
+    /// （ブラウザの ImageBitmap。ImageData.PlatformImage の key。画素は GL の描き手だけが GPU へ上げられる）・
+    /// Rgba16Float = 1 を超える明るさを持つ絵の half（16bit の浮動小数）の bit（1 画素 r, g, b, α の 4 つ・行優先・行 0 が絵の上・線形の量）。
     pub enum Source with Eq, ToString {
         case Argb(Vector[Int32])
         case PlatformImage(String)
+        case Rgba16Float(Vector[Int16])
+    }
+
+    /// 絵の画素の形式（RenderTarget.Format と同じ字）。Rgba8Unorm = 8bit の絵（ARGB と機種の側の絵）・Rgba16Float = half の絵（decodeHdr・fromRgba16Float）。
+    pub enum Format with Eq, ToString {
+        case Rgba8Unorm
+        case Rgba16Float
     }
 
     /// width × height・source = 画素の在りか・hash = 中身の鍵（Argb は寸法と画素の SHA-256・PlatformImage は寸法と key の SHA-256。16 進）。
@@ -29,8 +37,11 @@ pub mod Texture3d {
     /// 作る口は全部ここを通す（hash から name を作る）。
     // WhyNot: name を呼ぶたびに字をつながない — 描き手が場面の textures の Map を作るたびに、絵の数だけ作り直す。
     def made(width: Int32, height: Int32, source: Source, hash: String): Texture3d =
+        madeWith(width, height, source, hash, lazy Texture3d.Internal.equirectangularIrradianceOf(width, height, source))
+
+    def madeWith(width: Int32, height: Int32, source: Source, hash: String, irradiance: Lazy[Option[SphericalHarmonics.SphericalHarmonics]]): Texture3d =
         Texture3dData.Texture3dData({ width = width, height = height, source = source, hash = hash, name = namePrefix() + String.takeLeft(16, hash),
-                                      irradiance = lazy Texture3d.Internal.equirectangularIrradianceOf(width, height, source) })
+                                      irradiance = irradiance })
 
     /// 辺の上限（GL 3.3 が約束する大きさより大きいが、今の GPU なら作れる）。
     pub def maxSide(): Int32 = 8192
@@ -51,6 +62,35 @@ pub mod Texture3d {
         if (width <= 0 or height <= 0) Err("${label}: 辺が 0 以下（${width} × ${height}）")
         else if (width > maxSide() or height > maxSide()) Err("${label}: 辺が ${maxSide()} を超える（${width} × ${height}）")
         else Ok(())
+
+    /// rgba（1 画素 r, g, b, α の 4 つ・行優先・行 0 が絵の上・線形の量）を half に丸めて作る（作った HDR の絵・空の色から作る景色）。
+    /// 数の食い違い・辺の決まり（fromArgb と同じ）・NaN は Err。65504 を超える値は 65504 で頭打ち。
+    pub def fromRgba16Float(width: Int32, height: Int32, rgba: Vector[Float64]): Result[String, Texture3d] =
+        checkSides("Texture3d.fromRgba16Float", width, height) |> Result.flatMap(_ ->
+            if (Vector.length(rgba) != width * height * 4) Err("Texture3d.fromRgba16Float: rgba の数が ${width} × ${height} × 4 でない")
+            else if (Vector.exists(Float64.isNan, rgba)) Err("Texture3d.fromRgba16Float: NaN がある")
+            else Ok(madeHalves(width, height, Vector.map(Texture3d.Internal.toHalfBits, rgba))))
+
+    /// Radiance の .hdr（Poly Haven・Blender が書く RGBE）のバイトから、1 を超える明るさのまま half の絵を作る（three.js の HDRLoader）。
+    /// 読むのは #?RADIANCE か #?RGBE の見出し・FORMAT=32-bit_rle_rgbe・向き -Y 高さ +X 幅・新しい RLE の行と平らな行。EXR は読まない（Blender か oiiotool で .hdr に替える）。
+    /// 向きは並べ替えない（Blender・Poly Haven のパノラマは engine と左右が鏡なので、渡す前に `oiiotool in.hdr --flop -o out.hdr` で反転する）。
+    /// 解いた時に景色の拡散の光（SphericalHarmonics.fromEquirectangular）も求めておく。読めない・辺が決まりの外、は 1 行の理由の Err。
+    pub def decodeHdr(bytes: Vector[Int8]): Result[String, Texture3d] =
+        Texture3d.Internal.decodeRadiance(bytes) |> Result.map(decoded -> {
+            let (w, h, halves) = decoded;
+            let source = Source.Rgba16Float(halves);
+            let irradiance = Texture3d.Internal.equirectangularIrradianceOf(w, h, source);
+            madeWith(w, h, source, halvesHashOf(w, h, halves), lazy irradiance)
+        })
+
+    def madeHalves(width: Int32, height: Int32, halves: Vector[Int16]): Texture3d =
+        made(width, height, Source.Rgba16Float(halves), halvesHashOf(width, height, halves))
+
+    /// 絵の画素の形式（機種の側の絵は Rgba8Unorm）。
+    pub def formatOf(t: Texture3d): Format = match recOf(t)#source {
+        case Source.Rgba16Float(_) => Format.Rgba16Float
+        case _                     => Format.Rgba8Unorm
+    }
 
     /// 解いた絵から作る（決まりは fromArgb と同じ）。
     pub def fromImage(image: ImageData.ImageData): Result[String, Texture3d] = fromArgb(image#width, image#height, image#argb)
@@ -99,6 +139,12 @@ pub mod Texture3d {
                 made(small#width, small#height, Source.Argb(small#pixels), hashOf(small#width, small#height, small#pixels))
             case Source.PlatformImage(key) =>
                 Log.warnThen("Texture3d.limitSize: 機種の側の絵 ${key}（${r#width} × ${r#height}）は ${maxSide} へ縮めない", t)
+            case Source.Rgba16Float(halves) =>
+                let fits = (level: (Int32, Int32, Vector[Int16])) -> { let (w, h, _) = level; Int32.max(w, h) <= Int32.max(1, maxSide) };
+                match Mip.buildRgba16Float(r#width, r#height, halves) |> List.find(fits) {
+                    case Some((w, h, small)) => madeHalves(w, h, small)
+                    case None                => t
+                }
         }
 
     // ── 色空間（8bit の絵の値の意味）──
@@ -233,6 +279,17 @@ pub mod Texture3d {
     def keyHashOf(width: Int32, height: Int32, key: String): String =
         unsafe IO {
             let digest = MessageDigest.getInstance("SHA-256").digest(unchecked_cast(String.toBytes("platform|${width}x${height}|${key}") as Array[Int8, Static]));
+            Util.Codec.encodeHex(Array.toVector(digest))
+        }
+
+    def halvesHashOf(width: Int32, height: Int32, halves: Vector[Int16]): String =
+        unsafe IO {
+            let buffer = ByteBuffer.allocate(9 + Vector.length(halves) * 2);
+            discard buffer.putInt(width);
+            discard buffer.putInt(height);
+            discard buffer.put(72i8);
+            discard buffer.asShortBuffer().put(unchecked_cast(halves as Array[Int16, Static]));
+            let digest = MessageDigest.getInstance("SHA-256").digest(buffer.array());
             Util.Codec.encodeHex(Array.toVector(digest))
         }
 

@@ -43,7 +43,7 @@ Scene3d.meshInstance(part#mesh, world)
 場面の絵（Texture3d）は GPU に持つ量に上限がある（既定 256 MB・64 枚）。超えると今と前のコマで使っていない古い絵から捨て、次に要る時に上げ直す（知らせが 1 回出る）。
 上限に収まっている間は、しばらく使わなかった絵も捨てない（たまにしか出ない物を出すたびに mip を作り直さない）。
 材質が project.json の textures の絵を読む時に作る mip つきの写しも、MB の上限に数える（枚数には数えない）。
-2048² の RGBA8 の絵は mip 込みで 1 枚約 21 MB で、12 枚で 256 MB に届く。
+2048² の RGBA8 の絵は mip 込みで 1 枚約 21 MB で、12 枚で 256 MB に届く。half の絵（`Texture3d.decodeHdr` の .hdr）は 1 画素 8 バイトで、同じ大きさで倍の約 43 MB。
 
 - glb の読み込み（`Model3d.load` / `decode`）は描くのに使う絵（baseColorTexture・normalTexture）だけを読む（metallicRoughness・occlusion・emissive は読まない）。
 - project.json の `"gltf"` の `maxTextureSide`・`maxNormalSide` で、材質の絵の長い辺に上限を掛ける（mip を作るのと同じ縮め方で半分にしていく）。lightmap の PNG は `Texture3d.limitSize`。

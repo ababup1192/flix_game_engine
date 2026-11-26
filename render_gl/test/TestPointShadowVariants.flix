@@ -37,11 +37,11 @@ mod Render3d.TestPointShadowVariants {
 
     @Test
     def testDefaultGlslIsUnchanged(): Unit \ Assert =
-        Assert.assertEq(expected = "37baee1d465f287e3d16237f8a95957f8fd350ab6fac746a63344c07ccece46a", sha256(defaultGlsl()))
+        Assert.assertEq(expected = "f45f5c7ffdba4eed37a1614aa1831766d4207f1af7cba4ae12b6e15e3a630743", sha256(defaultGlsl()))
 
     @Test
     def testDefaultWgslIsUnchanged(): Unit \ Assert =
-        Assert.assertEq(expected = "f5e2e06d52f998f72e531ac738c6365485a36df1b043368c80ab4efb65c200b4", sha256(defaultWgsl()))
+        Assert.assertEq(expected = "52eb2adc8f32a9847b311ffa957fbf4b7a54a3f91ac2ff17eff9dd1dc39bc3d0", sha256(defaultWgsl()))
 
     // ── 変種の鍵と字（GL）──
 

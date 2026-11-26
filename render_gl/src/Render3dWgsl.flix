@@ -217,7 +217,8 @@ pub mod Render3dWgsl {
         "fn environmentColorAt(p: vec3f, n: vec3f, albedo: vec3f, metalRough: vec3f) -> vec3f {\n" +
         "    let d = environmentDirectionAt(p, n, albedo, metalRough);\n" +
         "    let lod = metalRough.y * (r3d.uEnvLevels - 1.0);\n" +
-        "    return r3d_srgbToLinear3(textureSampleLevel(uEnvMap, uEnvSampler, environmentUv(d), lod).rgb) * r3d.uEnvIntensity;\n" +
+        "    let c = textureSampleLevel(uEnvMap, uEnvSampler, environmentUv(d), lod).rgb;\n" +
+        "    return select(c, r3d_srgbToLinear3(c), r3d.uEnvSrgb == 1) * r3d.uEnvIntensity;\n" +
         "}\n"
 
     /// 向き d（長さ 1）で環境マップを読む座標 environmentUv(d)（Render3dGlsl.environmentUvSource と同じ式）。
@@ -650,7 +651,8 @@ pub mod Render3dWgsl {
         "    let ndc = vec2f(at.x / r3d.uSkyForward.w * 2.0 - 1.0, 1.0 - at.y / r3d.uSkyRight.w * 2.0);\n" +
         "    let d = normalize(r3d.uSkyForward.xyz + r3d.uSkyRight.xyz * ndc.x + r3d.uSkyUp.xyz * ndc.y);\n" +
         "    if (r3d.uSkyUp.w > 0.5) {\n" +
-        "        return vec4f(r3d_linearToSrgb3(r3d_srgbToLinear3(textureSampleLevel(uEnvMap, uEnvSampler, environmentUv(d), 0.0).rgb) * r3d.uEnvIntensity), 1.0);\n" +
+        "        let c = textureSampleLevel(uEnvMap, uEnvSampler, environmentUv(d), 0.0).rgb;\n" +
+        "        return vec4f(r3d_linearToSrgb3(select(c, r3d_srgbToLinear3(c), r3d.uEnvSrgb == 1) * r3d.uEnvIntensity), 1.0);\n" +
         "    }\n" +
         "    return vec4f(r3d_linearToSrgb3(skyAt(d)), 1.0);\n" +
         "}\n"

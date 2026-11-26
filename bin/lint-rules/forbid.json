@@ -497,6 +497,20 @@
       "suffixes": [".go"],
       "pattern": "\\bexec\\.Command(Context)?\\(\\s*(\\w+,\\s*)?\"(make|sh|bash|env)\"",
       "hint": "go/ の中から make・sh・bash・env を起こさない（Windows には make が無く、sh と bash は Git Bash の場所を探さないと起きない。plans/windows.md 9 節）。fge 自身の作業は os.Executable() で起こすか同じプロセスで呼ぶ・案内の字は cmdhint.Command・engine の sh のスクリプトを起こすなら Git Bash を探す起動役（windows.md 3 節の 2）を通す。engine の開発だけで使う所は forbid.json の exempt に理由つきで足す"
+    },
+    {
+      "id": "exr-environment",
+      "suffixes": [
+        ".flix"
+      ],
+      "skip": [
+        "lib/",
+        "build/",
+        "plans/"
+      ],
+      "rawLine": true,
+      "pattern": "Texture3d\\.decode[A-Za-z]*\\([^\\n]*\\.exr\\b|\"[^\"]*\\.exr\"[^\\n]*Texture3d\\.decode",
+      "hint": "EXR は読まない。Blender（Compositor で Radiance HDR に書き出す）か `oiiotool in.exr -o out.hdr` で .hdr に替え、Texture3d.decodeHdr で読む（Blender・Poly Haven のパノラマは左右の鏡を --flop で直す）"
     }
   ],
   "exempt": {
