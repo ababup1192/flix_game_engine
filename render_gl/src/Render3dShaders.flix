@@ -60,20 +60,26 @@ pub mod Render3dShaders {
 
     // ── 色を作る最後の組み立て ──
 
-    /// LightModel3d の木から作った関数 name（引数は inputs・返り値は vec3）。本文は LightModel3d.Codegen が両方の言語で作る。
-    def treeFunction(name: String, inputs: List[LightModel3d.Vec3Input], tree: LightModel3d.Vec3Expr): Definition =
+    /// LightModel3d の木から作った関数 name（引数は inputs・返り値は vec3）。本文は LightModel3d.Codegen が両方の言語で、print する時に作る。
+    /// key = 木を見分ける字（同じ名前で木の違う定義を見分ける。木の変種を入れる）。
+    def treeFunction(name: String, key: String, inputs: List[LightModel3d.Vec3Input], tree: LightModel3d.Vec3Expr): Definition =
         ShaderAst.externFunction({ name = name, ret = ShaderAst.Ty.Vec3, params = inputs |> List.map(_ -> ShaderAst.Ty.Vec3),
-                                   glsl = Body.Text(LightModel3d.Codegen.toGlsl(name, inputs, tree)), wgsl = Body.Text(LightModel3d.Codegen.toWgsl(name, inputs, tree)),
+                                   glsl = Body.Generated(name + key, lazy LightModel3d.Codegen.toGlsl(name, inputs, tree)),
+                                   wgsl = Body.Generated(name + key, lazy LightModel3d.Codegen.toWgsl(name, inputs, tree)),
                                    deps = Nil, derivative = false })
+
+    /// 変種 v の光の式の木を見分ける字（光の式の木を変える欄の +ps・+pu・+sh だけで決める）。
+    def lightKeyOf(v: Render3d.ProgramKey.ShaderVariant): String =
+        "/ps=${v#pointShadows}/pu=${v#physicalUnits}/sh=${v#skyIrradiance}"
 
     /// 変種 v の光の式 lightAt(点, 法線)。
     pub def lightAt(v: Render3d.ProgramKey.ShaderVariant): Definition =
-        treeFunction("lightAt", LightModel3d.Vec3Input.Position :: LightModel3d.Vec3Input.Normal :: Nil,
+        treeFunction("lightAt", lightKeyOf(v), LightModel3d.Vec3Input.Position :: LightModel3d.Vec3Input.Normal :: Nil,
                      LightModel3d.lightingModelFor(Render3d.ProgramKey.lightVariantOf(v)))
 
     /// かすみの式 fogAt(点, 色)。
     pub def fogAt(): Definition =
-        treeFunction("fogAt", LightModel3d.Vec3Input.Position :: LightModel3d.Vec3Input.Color :: Nil, LightModel3d.fogModel())
+        treeFunction("fogAt", "", LightModel3d.Vec3Input.Position :: LightModel3d.Vec3Input.Color :: Nil, LightModel3d.fogModel())
 
     /// かすみ fogged(色, 点)（uFogOn = 0 なら色のまま）。
     pub def fogged(): Definition =
@@ -134,6 +140,7 @@ pub mod Render3dShaders {
             ret(ternary(lt(dot(p, p), f("1e-12")), n, normalize(p))) :: Nil)
 
     /// 向き d（長さ 1）で環境マップを読む座標（LightModel3d.environmentUvOf と同じ式）。
+    // WhyNot: 極（向きが真上・真下）の atan を言語に任せない — 引数が両方 0 の atan は値が決まらない。Flix の atan2 は 0 を返すので、同じ 0 にそろえる。
     // WhyNot: 極で atan2 を選ばない形を If の文にしない — select は両側を計算するが、atan2(0, 0) の値は捨てられる（Flix の atan2 と同じ 0 を選ぶ）。
     pub def environmentUv(): Definition =
         let (pd, d) = param(ShaderAst.vec3(), "d");
@@ -274,7 +281,7 @@ pub mod Render3dShaders {
     pub def pointShadowLit(): Definition =
         ShaderAst.externFunction({ name = "r3d_pointShadowLit", ret = ShaderAst.Ty.F32,
                                    params = ShaderAst.Ty.I32 :: ShaderAst.Ty.Vec3 :: ShaderAst.Ty.Vec3 :: ShaderAst.Ty.Vec3 :: Nil,
-                                   glsl = Body.Text(LightModel3d.PointShadowCodegen.toGlsl()), wgsl = Body.Text(LightModel3d.PointShadowCodegen.toWgsl()),
+                                   glsl = Body.Generated("r3d_pointShadowLit", lazy LightModel3d.PointShadowCodegen.toGlsl()), wgsl = Body.Generated("r3d_pointShadowLit", lazy LightModel3d.PointShadowCodegen.toWgsl()),
                                    deps = Nil, derivative = false })
 
     /// 点光源の数だけ r3d_pointLit を埋める r3d_pointShadowsAt(p, g, n)。
@@ -287,4 +294,277 @@ pub mod Render3dShaders {
             ShaderAst.for_("i", i(0), k -> lt(k, i(Scene3d.maxPointLights())), Layout.Inline, k ->
                 ShaderAst.assign(ShaderAst.readGlobalAt(ShaderAst.float(), pointLit(), k),
                                  call(ShaderAst.float(), pointShadowLit(), arg(k) :: arg(p) :: arg(g1) :: arg(n) :: Nil)) :: Nil) :: Nil)
+
+    // ── 材質の frag の部品（法線マップ・lightmap・環境マップ・光の式） ──
+
+    def glslOf(e: Expr[t]): String = ShaderAst.Glsl.expression(e)
+
+    def wgslOf(e: Expr[t]): String = ShaderAst.Wgsl.expression(e)
+
+    /// 段つきの読み sg_texMip（本文は ShaderGen が両方の言語で作る）。inMaterial = 材質の部品が既に定義している（置かない）。
+    // WhyNot: 引数の型を持たせない — GLSL は (絵, 上下の返し, 段の数, 座標)・WGSL は (絵, sampler, 段の数, 座標) で並びが違い、呼ぶ所は texMipRead の字で書く。
+    def texMip(inMaterial: Bool): Definition =
+        ShaderAst.externFunction({ name = "sg_texMip", ret = ShaderAst.Ty.Vec4, params = Nil,
+                                   glsl = if (inMaterial) Body.Outside else Body.Text(ShaderGen.texMipSource()),
+                                   wgsl = if (inMaterial) Body.Outside else Body.Text(ShaderGen.Wgsl.texMipSource()),
+                                   deps = Nil, derivative = true })
+
+    /// 絵 map を sg_texMip で段つきに読む式。glslFlip = GLSL の上下の返し（1 で v を返す）・wgslSampler = WGSL の sampler の名前・levels = 段の数・c = 座標。
+    def texMipRead(inMaterial: Bool, map: R3dUniform, glslFlip: Expr[Float], wgslSampler: String, levels: Expr[Float], c: Expr[Vec2]): Expr[Vec4] =
+        let tex = u(ShaderAst.texture(), map);
+        let glsl = "sg_texMip(" + String.intercalate(", ", glslOf(tex) :: glslOf(glslFlip) :: glslOf(levels) :: glslOf(c) :: Nil) + ")";
+        let wgsl = "sg_texMip(" + String.intercalate(", ", wgslOf(tex) :: wgslSampler :: wgslOf(levels) :: wgslOf(c) :: Nil) + ")";
+        ShaderAst.rawExpr(ShaderAst.vec4(), glsl, wgsl, texMip(inMaterial) :: Nil, true)
+
+    /// 外向きの法線 n を、uv で読んだ法線マップとタンジェント tangent で傾けた n'（applyNormalMap）。法線マップは段つきの Linear で読む。
+    /// GLSL の uNormalFlip = 1 はレンダーターゲット（行 0 が下）で、v を上下反転して読む。inMaterial = 材質の部品が sg_texMip を定義しているか。
+    // WhyNot: 絵を読むのをタンジェントの長さを見た後にしない — 読みの段を選ぶ微分（dFdx）は、画素ごとに分かれる if の中では値が決まらない。
+    pub def normalMapped(inMaterial: Bool): Definition =
+        let (pn, n) = param(ShaderAst.vec3(), "n");
+        let (pu, uv) = param(ShaderAst.vec2(), "uv");
+        let (pt, tangent) = param(ShaderAst.vec4(), "tangent");
+        let texel = texMipRead(inMaterial, R3dUniform.NormalMap, u(ShaderAst.float(), R3dUniform.NormalFlip), "uNormalMapSampler",
+                               u(ShaderAst.float(), R3dUniform.NormalLevels), uv);
+        ShaderAst.function("normalMapped", ShaderAst.Ty.Vec3, pn :: pu :: pt :: Nil,
+            ret(call(ShaderAst.vec3(), applyNormalMap(), arg(n) :: arg(tangent) :: arg(u(ShaderAst.float(), R3dUniform.NormalStrength)) :: arg(ShaderAst.rgb(texel)) :: Nil)) :: Nil)
+
+    /// lightmap の色 lightmapColor(2 本目の uv)。段つきの Linear で読む（段は Lightmap の maxLevels まで）。2 本目の uv の絵は場面の textures だけから引くので上下の反転は無い。
+    /// 読む uv = uv2 × uLightmapUvRect.zw + uLightmapUvRect.xy（Lightmap の uvRect）。
+    // WhyNot: 矩形を頂点の式で当てない — WebGPU の物ごとの値（R3dDraw）は FRAGMENT からだけ見え、頂点で読むと layout の可視範囲と全部の材質の WGSL が変わる。GL も同じ所で当ててそろえる。
+    pub def lightmapColor(inMaterial: Bool): Definition =
+        let (pu, uv2) = param(ShaderAst.vec2(), "uv2");
+        let rect = u(ShaderAst.vec4(), R3dUniform.LightmapUvRect);
+        let texel = texMipRead(inMaterial, R3dUniform.Lightmap, f("0.0"), "uLightmapSampler", u(ShaderAst.float(), R3dUniform.LightmapLevels),
+                               add(mul(uv2, ShaderAst.zw(rect)), ShaderAst.xy(rect)));
+        ShaderAst.function("lightmapColor", ShaderAst.Ty.Vec3, pu :: Nil, ret(ShaderAst.rgb(texel)) :: Nil)
+
+    /// lightmap のある面の光の式 lightmapLightAt(p, n, lightmap の色)（変種 v の LightModel3d の木から作る）。
+    pub def lightmapLightAt(v: Render3d.ProgramKey.ShaderVariant): Definition =
+        treeFunction("lightmapLightAt", lightKeyOf(v), LightModel3d.Vec3Input.Position :: LightModel3d.Vec3Input.Normal :: LightModel3d.Vec3Input.LightmapColor :: Nil,
+                     LightModel3d.lightmapLightingModelFor(Render3d.ProgramKey.lightVariantOf(v)))
+
+    /// 跳ね返りの向き environmentDirectionAt(p, n, albedo, metalRough)（LightModel3d.environmentDirection の木から作る）。
+    pub def environmentDirectionAt(): Definition =
+        treeFunction("environmentDirectionAt", "", LightModel3d.Vec3Input.Position :: LightModel3d.Vec3Input.Normal :: LightModel3d.Vec3Input.Albedo ::
+                                               LightModel3d.Vec3Input.MetallicRoughness :: Nil,
+                     LightModel3d.environmentDirection())
+
+    /// metallic と roughness を持つ材質の色 pbrAt(p, n, albedo × tint, 拡散の光, vec3(metallic, roughness, 0), 映り込み)（変種 v の LightModel3d.pbrModel の木から作る）。
+    pub def pbrAt(v: Render3d.ProgramKey.ShaderVariant): Definition =
+        treeFunction("pbrAt", lightKeyOf(v), LightModel3d.Vec3Input.Position :: LightModel3d.Vec3Input.Normal :: LightModel3d.Vec3Input.Albedo :: LightModel3d.Vec3Input.Light ::
+                              LightModel3d.Vec3Input.MetallicRoughness :: LightModel3d.Vec3Input.EnvironmentColor :: Nil,
+                     LightModel3d.pbrModelFor(Render3d.ProgramKey.lightVariantOf(v)))
+
+    /// 跳ね返りの向きで環境マップの絵を読む environmentColorAt(p, n, albedo × tint, vec3(metallic, roughness, 0))（線形の量・強さを掛けた色。
+    /// CPU の描き手は SoftRaster3d.Internal.environmentColorAt）。絵は向き → 座標（environmentUv）で、段は roughness × (段の数 − 1)（LightModel3d.environmentLodOf）を明示して読む。
+    /// uEnvOn = 0 のプログラムは読まない（呼ぶ側が分ける）。
+    // WhyNot: sg_texMip（微分で段を選ぶ読み）を使わない — 向きの atan2 は継ぎ目（u = 0 と 1）で値が 1 跳び、その画素だけ段が最大になって縦の筋が出る。
+    pub def environmentColorAt(): Definition =
+        let (pp, p) = param(ShaderAst.vec3(), "p");
+        let (pn, n) = param(ShaderAst.vec3(), "n");
+        let (pa, albedo) = param(ShaderAst.vec3(), "albedo");
+        let (pm, metalRough) = param(ShaderAst.vec3(), "metalRough");
+        let (declD, d) = let_("d", call(ShaderAst.vec3(), environmentDirectionAt(), arg(p) :: arg(n) :: arg(albedo) :: arg(metalRough) :: Nil));
+        let (declL, lod) = let_("lod", mul(y(metalRough), paren(sub(u(ShaderAst.float(), R3dUniform.EnvLevels), f("1.0")))));
+        let map = u(ShaderAst.texture(), R3dUniform.EnvMap);
+        let uvOf = call(ShaderAst.vec2(), environmentUv(), arg(d) :: Nil);
+        let texel = ShaderAst.rawExpr(ShaderAst.vec4(),
+            "textureLod(" + String.intercalate(", ", glslOf(map) :: glslOf(uvOf) :: glslOf(lod) :: Nil) + ")",
+            "textureSampleLevel(" + String.intercalate(", ", wgslOf(map) :: "uEnvSampler" :: wgslOf(uvOf) :: wgslOf(lod) :: Nil) + ")",
+            environmentUv() :: Nil, false);
+        let (declC, c) = let_("c", ShaderAst.rgb(texel));
+        ShaderAst.function("environmentColorAt", ShaderAst.Ty.Vec3, pp :: pn :: pa :: pm :: Nil,
+            declD :: declL :: declC ::
+            ret(mulS(ternary(ShaderAst.eq(u(ShaderAst.int(), R3dUniform.EnvSrgb), i(1)), toLinear3(c), c), u(ShaderAst.float(), R3dUniform.EnvIntensity))) :: Nil)
+
+    // ── frag の入口（材質・頂点の色・奥行き） ──
+
+    /// varying 1 つ。
+    // WhyNot: flat の値を最後の頂点から取る形（GL の既定）にそろえない — WGSL の flat は最初の頂点を取るが、vTint と vEmissionIntensity は置いた物 1 つで同じ値。
+    def varyingOf(name: String, ty: ShaderAst.Ty, location: Int32, interp: ShaderAst.Interp): ShaderAst.Varying =
+        { name = name, ty = ty, location = location, interp = interp }
+
+    // varying の表（location は WGSL の @location・頂点シェーダーの出口と同じ並び。GLSL は名前でつなぐ）。
+
+    /// 画素の world の点。
+    pub def worldVarying(): ShaderAst.Varying = varyingOf("vWorld", ShaderAst.Ty.Vec3, 0, ShaderAst.Interp.Smooth)
+
+    /// 外向きの法線（長さは問わない）。
+    pub def normalVarying(): ShaderAst.Varying = varyingOf("vNormal", ShaderAst.Ty.Vec3, 1, ShaderAst.Interp.Smooth)
+
+    /// 頂点の色（材質は sRGB のまま・lit は線形へ戻し済み）。
+    pub def colorVarying(): ShaderAst.Varying = varyingOf("vColor", ShaderAst.Ty.Vec3, 2, ShaderAst.Interp.Smooth)
+
+    /// 1 体ごとの tint。
+    pub def tintVarying(): ShaderAst.Varying = varyingOf("vTint", ShaderAst.Ty.Vec3, 3, ShaderAst.Interp.Flat)
+
+    /// 1 体ごとの emission の強さ。
+    pub def emissionIntensityVarying(): ShaderAst.Varying = varyingOf("vEmissionIntensity", ShaderAst.Ty.F32, 4, ShaderAst.Interp.Flat)
+
+    /// uv（PS1 風でない uv つきの形）。
+    pub def uvVarying(): ShaderAst.Varying = varyingOf("vUv", ShaderAst.Ty.Vec2, 5, ShaderAst.Interp.Smooth)
+
+    /// PS1 風の uv つきの形の、遠近で補正する uv（uvVarying と同じ location）。
+    pub def uvPerspectiveVarying(): ShaderAst.Varying = varyingOf("vUvPerspective", ShaderAst.Ty.Vec2, 5, ShaderAst.Interp.Smooth)
+
+    /// 2 本目の uv（lightmap）。
+    pub def uv2Varying(): ShaderAst.Varying = varyingOf("vUv2", ShaderAst.Ty.Vec2, 6, ShaderAst.Interp.Smooth)
+
+    /// タンジェント（xyz と鏡写しの符号 w）。
+    pub def tangentVarying(): ShaderAst.Varying = varyingOf("vTangent", ShaderAst.Ty.Vec4, 7, ShaderAst.Interp.Smooth)
+
+    /// PS1 風の uv つきの形の、画面の上でまっすぐつなぐ uv。
+    pub def uvAffineVarying(): ShaderAst.Varying = varyingOf("vUvAffine", ShaderAst.Ty.Vec2, 8, ShaderAst.Interp.Affine)
+
+    /// 材質の部品のうち frag の本文が読む物: cutoutAlpha = cutout の判定の α（部品の字。materialEval の albedo を albedo の名前で読む）・
+    /// readsTextures = 部品が sg_texMip を定義するか（絵を読む材質）。
+    pub type alias MaterialPart = { cutoutAlpha = Expr[Float], readsTextures = Bool }
+
+    /// GLSL の材質の部品 m の MaterialPart。
+    pub def glslMaterialPart(m: ShaderGen.MaterialGlsl): MaterialPart =
+        { cutoutAlpha = ShaderAst.rawExprIn(ShaderAst.float(), ShaderAst.Lang.Glsl, m#cutoutAlpha, Nil, false), readsTextures = not List.isEmpty(m#texReads) }
+
+    /// WGSL の材質の部品 m の MaterialPart。
+    pub def wgslMaterialPart(m: ShaderGen.Wgsl.MaterialWgsl): MaterialPart =
+        { cutoutAlpha = ShaderAst.rawExprIn(ShaderAst.float(), ShaderAst.Lang.Wgsl, m#cutoutAlpha, Nil, false), readsTextures = not List.isEmpty(m#texReads) }
+
+    /// uv つきで法線マップを当てる版か（uv の無い形は法線マップを読まない）。
+    pub def isNormalMapped(surface: Render3d.ProgramKey.ProgramKind): Bool = surface#uv and surface#normalMap
+
+    /// 材質の frag の本文が呼び、宣言の字が置く材質ごとの関数（法線マップの normalMapped・lightmap の lightmapColor）。
+    pub def materialHelpers(surface: Render3d.ProgramKey.ProgramKind, part: MaterialPart): List[Definition] =
+        (if (isNormalMapped(surface)) normalMapped(part#readsTextures) :: Nil else Nil) :::
+        (if (surface#lightmap) lightmapColor(part#readsTextures) :: Nil else Nil)
+
+    /// 材質の frag が受ける varying（uv・2 本目の uv・タンジェントは使う版だけ）。
+    pub def materialInputs(surface: Render3d.ProgramKey.ProgramKind): List[ShaderAst.Varying] =
+        let psxUv = surface#uv and Render3d.ProgramKey.shaderVariantOfKind(surface)#psx;
+        (worldVarying() :: normalVarying() :: colorVarying() :: tintVarying() :: emissionIntensityVarying() :: Nil) :::
+        (if (psxUv) uvPerspectiveVarying() :: Nil else if (surface#uv) uvVarying() :: Nil else Nil) :::
+        (if (surface#lightmap) uv2Varying() :: Nil else Nil) :::
+        (if (isNormalMapped(surface)) tangentVarying() :: Nil else Nil) :::
+        (if (psxUv) uvAffineVarying() :: Nil else Nil)
+
+    /// 頂点の色のプログラムの frag が受ける varying。
+    pub def litInputs(): List[ShaderAst.Varying] = worldVarying() :: normalVarying() :: colorVarying() :: tintVarying() :: Nil
+
+    /// 変種 v の frag の色の出口（v#psx なら r3d_colorDepth に通す）。
+    def colorOut(v: Render3d.ProgramKey.ShaderVariant, c: Expr[Vec3]): Expr[Vec3] =
+        if (v#psx) call(ShaderAst.vec3(), colorDepth(), arg(c) :: Nil) else c
+
+    /// 光の計算の前に影の割合を埋める文（r3d_sunLit と、v#pointShadows なら r3d_pointLit）。p = 点・g1 = 点をずらす向きの法線・n = 光の計算の法線。
+    def shadowsBeforeLight(v: Render3d.ProgramKey.ShaderVariant, p: Expr[Vec3], g1: Expr[Vec3], n: Expr[Vec3]): List[ShaderAst.Statement] =
+        let args = arg(p) :: arg(g1) :: arg(n) :: Nil;
+        assign(ShaderAst.readGlobal(ShaderAst.float(), sunLit()), call(ShaderAst.float(), sunLitAt(), args)) ::
+        (if (v#pointShadows) ShaderAst.callStmt(pointShadowsAt(), args) :: Nil else Nil)
+
+    /// 点 p の Output.Depth の灰色を出す文（andReturn なら出して抜ける）。
+    def depthGrayOut(p: Expr[Vec3], andReturn: Bool): List[ShaderAst.Statement] =
+        let (declG, gray) = let_("g", call(ShaderAst.float(), depthGray(), arg(p) :: Nil));
+        let color = vec4Of(gray, gray, gray, f("1.0"));
+        declG :: (if (andReturn) ShaderAst.emitAndReturn(color) else ShaderAst.emit(color)) :: Nil
+
+    /// 材質の部品が名前で読む値（vWorld・vNormal・vColor・vUv）を置く文。psx の uv つきは、遠近で補正する uv と画面の上でまっすぐつなぐ uv を
+    /// uPsx.w で混ぜた vUv（GLSL は大域の vec2 vUv へ代入し、uv の無い形は大域の const。どちらの宣言も周りの字）。
+    def materialNames(surface: Render3d.ProgramKey.ProgramKind, v: Render3d.ProgramKey.ShaderVariant): List[ShaderAst.Statement] =
+        let named = (worldVarying() :: normalVarying() :: colorVarying() :: Nil) |> List.map(ShaderAst.varyingAsLocal);
+        let uv =
+            if (surface#uv and v#psx) {
+                let mixed = ShaderAst.mixS(ShaderAst.varying(ShaderAst.vec2(), uvPerspectiveVarying()), ShaderAst.varying(ShaderAst.vec2(), uvAffineVarying()), w(psx()));
+                ShaderAst.rawStatement("vUv = " + glslOf(mixed) + ";", "let vUv = " + wgslOf(mixed) + ";")
+            }
+            else if (surface#uv) ShaderAst.varyingAsLocal(uvVarying())
+            else ShaderAst.rawStatement("", "let vUv = " + wgslOf(vec2Of(f("0.0"), f("0.0"))) + ";");
+        named ::: uv :: Nil
+
+    /// 材質の部品の materialEval を呼び、albedo・emission（metallicRoughness なら metalRough も）を局所の値に置く文（GLSL は out の引数・WGSL は struct を返す）。
+    def materialEval(metallicRoughness: Bool): ShaderAst.Statement =
+        if (metallicRoughness)
+            ShaderAst.rawStatement("vec4 albedo;\nvec3 emission;\nvec2 metalRough;\nmaterialEval(albedo, emission, metalRough);",
+                                   "let material = materialEval(vUv, vWorld, vNormal, vColor);\nlet albedo = material.albedo;\nlet emission = material.emission;\nlet metalRough = material.metalRough;")
+        else
+            ShaderAst.rawStatement("vec4 albedo;\nvec3 emission;\nmaterialEval(albedo, emission);",
+                                   "let material = materialEval(vUv, vWorld, vNormal, vColor);\nlet albedo = material.albedo;\nlet emission = material.emission;")
+
+    /// cutout の材質か。
+    // WhyNot: uniform の handle で読まない — GL の uCutout は int・WebGPU は物ごとの値の f32 で、比べ方が言語で違う。
+    def cutoutOn(): Expr[Boolean] =
+        ShaderAst.rawExpr(ShaderAst.boolean(), glslOf(ShaderAst.eq(u(ShaderAst.int(), R3dUniform.Cutout), i(1))), "r3dDraw.uCutout > 0.5", Nil, false)
+
+    /// 材質の frag の main の本文（材質の値 → cutout の discard → uDepthOut の枝 → 表裏 → 法線 → 影 → 光 → PBR → 出口）。
+    /// 光の式は頂点の色のプログラムと同じで、頂点の色の代わりに materialEval の albedo を使う（頂点の色は材質の Spec が VertexColor で読む）。
+    /// uDepthOut = 1 なら cutout で抜いた後の奥行きの灰色を書く（Output.Depth の cutout の材質）。
+    /// surface#blend = 出す α を材質の α に（半透明）・surface#doubleSided = 裏の面は光の計算の法線を裏返す・surface#coverage = cutout を discard でなく alpha to coverage の α で抜く・
+    /// surface#lightmap = ベイクした光を 2 本目の uv で読み、環境光と hemisphere の代わりに足す。
+    pub def materialFragmentBody(surface: Render3d.ProgramKey.ProgramKind, part: MaterialPart): List[ShaderAst.Statement] =
+        let v = Render3d.ProgramKey.shaderVariantOfKind(surface);
+        let world = ShaderAst.varying(ShaderAst.vec3(), worldVarying());
+        let outward = normalize(ShaderAst.varying(ShaderAst.vec3(), normalVarying()));
+        let alpha = part#cutoutAlpha;
+        let albedo = ShaderAst.ref(ShaderAst.vec4(), "albedo");
+        let emission = ShaderAst.ref(ShaderAst.vec3(), "emission");
+        let tint = ShaderAst.varying(ShaderAst.vec3(), tintVarying());
+        let intensity = ShaderAst.varying(ShaderAst.float(), emissionIntensityVarying());
+        let cutout = if (surface#coverage) Nil else ifInline(ShaderAst.and_(cutoutOn(), lt(alpha, f("0.5"))), ShaderAst.discard_()) :: Nil;
+        let depthOut = ShaderAst.ifBlock(ShaderAst.eq(u(ShaderAst.int(), R3dUniform.DepthOut), i(1)), depthGrayOut(world, true));
+        let (declFacing, facing) = let_("facingNormal", ternary(ShaderAst.frontFacing(), outward, neg(outward)));
+        let faceNormal = if (surface#doubleSided) facing else outward;
+        let bent =
+            if (isNormalMapped(surface))
+                call(ShaderAst.vec3(), normalMapped(part#readsTextures),
+                     arg(faceNormal) :: arg(ShaderAst.ref(ShaderAst.vec2(), "vUv")) :: arg(ShaderAst.varying(ShaderAst.vec4(), tangentVarying())) :: Nil)
+            else faceNormal;
+        let (declN, n) = let_("n", bent);
+        let lightOf =
+            if (surface#lightmap)
+                call(ShaderAst.vec3(), lightmapLightAt(v),
+                     arg(world) :: arg(n) :: arg(call(ShaderAst.vec3(), lightmapColor(part#readsTextures), arg(ShaderAst.varying(ShaderAst.vec2(), uv2Varying())) :: Nil)) :: Nil)
+            else call(ShaderAst.vec3(), lightAt(v), arg(world) :: arg(n) :: Nil);
+        let (declLight, light) = let_("light", lightOf);
+        // WhyNot: alpha to coverage に絵の α をそのまま渡さない — ぼけた α の絵では縁が数画素の幅で透け、cutout の固い縁に見えない。
+        let outAlpha =
+            if (surface#coverage) clamp(add(div(paren(sub(alpha, f("0.5"))), ShaderAst.max(ShaderAst.fwidth(alpha), f("1e-4"))), f("0.5")), f("0.0"), f("1.0"))
+            else if (surface#blend) ShaderAst.a(albedo)
+            else f("1.0");
+        let toScreen = (c: Expr[Vec3]) -> ShaderAst.emit(ShaderAst.vec4FromVec3(colorOut(v, c), outAlpha));
+        let shade =
+            if (surface#metallicRoughness) {
+                let (declBase, base) = let_("base", mul(toLinear3(ShaderAst.rgb(albedo)), tint));
+                let metalRough = ShaderAst.vec3FromVec2(ShaderAst.ref(ShaderAst.vec2(), "metalRough"), f("0.0"));
+                let (declEnv, env) = var_("envColor", ShaderAst.vec3Splat(f("0.0")));
+                let readEnv = ifInline(ShaderAst.eq(u(ShaderAst.int(), R3dUniform.EnvOn), i(1)),
+                                       assign(env, call(ShaderAst.vec3(), environmentColorAt(), arg(world) :: arg(n) :: arg(base) :: arg(metalRough) :: Nil)));
+                let (declLit, lit) = let_("lit", call(ShaderAst.vec3(), pbrAt(v), arg(world) :: arg(n) :: arg(base) :: arg(light) :: arg(metalRough) :: arg(env) :: Nil));
+                declBase :: declEnv :: readEnv :: declLit ::
+                toScreen(call(ShaderAst.vec3(), surfaceOutLit(), arg(lit) :: arg(emission) :: arg(intensity) :: arg(world) :: Nil)) :: Nil
+            }
+            else
+                toScreen(call(ShaderAst.vec3(), surfaceOut(),
+                              arg(toLinear3(ShaderAst.rgb(albedo))) :: arg(tint) :: arg(light) :: arg(emission) :: arg(intensity) :: arg(world) :: arg(ShaderAst.bool(true)) :: Nil)) :: Nil;
+        materialNames(surface, v) ::: (materialEval(surface#metallicRoughness) :: Nil) ::: cutout ::: (depthOut :: Nil) :::
+        (if (surface#doubleSided) declFacing :: Nil else Nil) ::: (declN :: Nil) ::: shadowsBeforeLight(v, world, faceNormal, n) ::: (declLight :: Nil) ::: shade
+
+    /// 頂点の色のプログラムの frag の main の本文（vColor は頂点シェーダーが線形へ戻し済み）。
+    pub def litFragmentBody(v: Render3d.ProgramKey.ShaderVariant): List[ShaderAst.Statement] =
+        let world = ShaderAst.varying(ShaderAst.vec3(), worldVarying());
+        let (declN, n) = let_("n", normalize(ShaderAst.varying(ShaderAst.vec3(), normalVarying())));
+        let color = call(ShaderAst.vec3(), surfaceOut(),
+                         arg(ShaderAst.varying(ShaderAst.vec3(), colorVarying())) :: arg(ShaderAst.varying(ShaderAst.vec3(), tintVarying())) ::
+                         arg(call(ShaderAst.vec3(), lightAt(v), arg(world) :: arg(n) :: Nil)) :: arg(ShaderAst.vec3Splat(f("0.0"))) :: arg(f("1.0")) ::
+                         arg(world) :: arg(ShaderAst.bool(true)) :: Nil);
+        (declN :: Nil) ::: shadowsBeforeLight(v, world, n, n) ::: (ShaderAst.emit(ShaderAst.vec4FromVec3(colorOut(v, color), f("1.0"))) :: Nil)
+
+    /// 材質の frag の入口（宣言の字は言語ごと。GL の描き手は GLSL・WebGPU の描き手は WGSL だけを渡す）。
+    pub def materialFragment(surface: Render3d.ProgramKey.ProgramKind, part: MaterialPart, glslDeclarations: String, wgslDeclarations: String): ShaderAst.FragmentEntry =
+        { inputName = "R3dIn", glslDeclarations = glslDeclarations, wgslDeclarations = wgslDeclarations,
+          inputs = materialInputs(surface), body = materialFragmentBody(surface, part) }
+
+    /// 頂点の色のプログラムの frag の入口。
+    pub def litFragment(v: Render3d.ProgramKey.ShaderVariant, glslDeclarations: String, wgslDeclarations: String): ShaderAst.FragmentEntry =
+        { inputName = "R3dLitIn", glslDeclarations = glslDeclarations, wgslDeclarations = wgslDeclarations, inputs = litInputs(), body = litFragmentBody(v) }
+
+    /// 奥行きの書き出し（Output.Depth）の形だけの frag の入口（読む varying は vWorld だけ）。
+    pub def depthFragment(glslDeclarations: String, wgslDeclarations: String): ShaderAst.FragmentEntry =
+        { inputName = "R3dDepthIn", glslDeclarations = glslDeclarations, wgslDeclarations = wgslDeclarations,
+          inputs = worldVarying() :: Nil, body = depthGrayOut(ShaderAst.varying(ShaderAst.vec3(), worldVarying()), false) }
 }

@@ -15,7 +15,7 @@ mod Render3d.TestGlslPinned {
 
     def mipGlsl(): ShaderGen.MaterialGlsl =
         { uniforms = "uniform float uTime;\n", functions = "vec4 sg_texMip(sampler2D t, float f, float l, vec2 uv) { return vec4(0.0); }\nvoid materialEval(out vec4 albedo, out vec3 emission) {}\n",
-          paramNames = Nil, texReads = Nil, cutoutAlpha = "albedo.a" }
+          paramNames = Nil, texReads = ("t", ShaderDoc.FilterMode.Linear) :: Nil, cutoutAlpha = "albedo.a" }
 
     def fragments(glsl: ShaderGen.MaterialGlsl): List[String] =
         ((false, false) :: (false, true) :: (true, false) :: (true, true) :: Nil)
@@ -27,11 +27,11 @@ mod Render3d.TestGlslPinned {
 
     @Test
     def testSolidMaterialFragmentsAreUnchanged(): Unit \ Assert =
-        Assert.assertEq(expected = "fb8fcd8db697260ecf3630f872e54ecf9e0fcc813f30e09069cd2feab22b845e" :: "fb8fcd8db697260ecf3630f872e54ecf9e0fcc813f30e09069cd2feab22b845e" :: "4ea39b66f3de36fec0e91f48ed30f51c89d296ab2ee54f4aed3c1007031def06" :: "bb9210c710f5f6ae0fc29f1d44b63bfd1e9114639267a547063182b6301a0e9f" :: Nil, fragments(solidGlsl()))
+        Assert.assertEq(expected = "888ffa1788b758d6a556a692cb5efcaa013ec2f9230fc84df00b83b12e8c501e" :: "888ffa1788b758d6a556a692cb5efcaa013ec2f9230fc84df00b83b12e8c501e" :: "4ea39b66f3de36fec0e91f48ed30f51c89d296ab2ee54f4aed3c1007031def06" :: "1f7b227e28e95dee5856791232959b0239c5c59d4bba1657f808e0b2132e430e" :: Nil, fragments(solidGlsl()))
 
     @Test
     def testMipMaterialFragmentsAreUnchanged(): Unit \ Assert =
-        Assert.assertEq(expected = "e75dbbf12b5b537493a8d5cd3108dc0b793af11fc0283d803c48a9c5c1f6b5a7" :: "e75dbbf12b5b537493a8d5cd3108dc0b793af11fc0283d803c48a9c5c1f6b5a7" :: "8432532598b2f303f8599c62cfa35e703be3e595ca7e812600a418f5c4e026bd" :: "8a06d5f2956acc4a277cb3bef61d1a7b131c7ed70fabb26aa0cdc8e38ef37009" :: Nil, fragments(mipGlsl()))
+        Assert.assertEq(expected = "600839aac45ebc0b128f0c9e29fd1074c337204b275100638b465a245e5e0fa4" :: "600839aac45ebc0b128f0c9e29fd1074c337204b275100638b465a245e5e0fa4" :: "8432532598b2f303f8599c62cfa35e703be3e595ca7e812600a418f5c4e026bd" :: "90b2099a4e6ac36efacfb66a1eacf80884b61b89a0001d6374941a9003da9934" :: Nil, fragments(mipGlsl()))
 
     @Test
     def testMaterialVertexSourcesAreUnchanged(): Unit \ Assert =

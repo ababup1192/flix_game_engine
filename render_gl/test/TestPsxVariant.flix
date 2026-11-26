@@ -100,7 +100,7 @@ mod Render3d.TestPsxVariant {
 
     @Test
     def testWgslMaterialFragmentMixesUv(): Unit \ Assert =
-        Assert.assertTrue(has("let vUv = mix(i.vUv, i.vUvAffine, r3dLight.uPsx.w);", Render3dWgsl.materialFragmentSource(solidWgsl(), kind(true))))
+        Assert.assertTrue(has("let vUv = mix(i.vUvPerspective, i.vUvAffine, r3dLight.uPsx.w);", Render3dWgsl.materialFragmentSource(solidWgsl(), kind(true))))
 
     @Test
     def testWgslLitVertexWithoutPsxIsUnchanged(): Unit \ Assert =

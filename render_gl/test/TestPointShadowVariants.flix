@@ -37,11 +37,11 @@ mod Render3d.TestPointShadowVariants {
 
     @Test
     def testDefaultGlslIsUnchanged(): Unit \ Assert =
-        Assert.assertEq(expected = "fa7623b530dec5bd72c651b5d1bcca2b9b2148606ab0a1d1a53716c57fe1ec11", sha256(defaultGlsl()))
+        Assert.assertEq(expected = "4ac098a4350a2741cececb0d587fe1241b30f2c5a313f57c0f23287129867a64", sha256(defaultGlsl()))
 
     @Test
     def testDefaultWgslIsUnchanged(): Unit \ Assert =
-        Assert.assertEq(expected = "0c43f58e2e462d24c1e8e8a6bf89d6370e0d6a3f04ade99d54fd82a48093f11c", sha256(defaultWgsl()))
+        Assert.assertEq(expected = "7828fa5d343a8e106181e1dc1aac5f0f589ad4fdd68e94b69587c34d82687bbf", sha256(defaultWgsl()))
 
     // ── 変種の鍵と字（GL）──
 
@@ -113,8 +113,8 @@ mod Render3d.TestPointShadowVariants {
     @Test
     def testWgslPointShadowFillsPointLitBeforeLight(): Unit \ Assert =
         let source = Render3dWgsl.materialFragmentSource(solidWgsl(), { variant = { pointShadows = true | plainKind()#variant } | plainKind() });
-        let fill = String.indexOf(substr = "    r3d_pointShadowsAt(vWorld, normalize(vNormal), n);\n", source) |> Option.getWithDefault(-1);
-        let light = String.indexOf(substr = "    let light = lightAt(vWorld, n);\n", source) |> Option.getWithDefault(-1);
+        let fill = String.indexOf(substr = "    r3d_pointShadowsAt(i.vWorld, normalize(i.vNormal), n);\n", source) |> Option.getWithDefault(-1);
+        let light = String.indexOf(substr = "    let light = lightAt(i.vWorld, n);\n", source) |> Option.getWithDefault(-1);
         Assert.assertTrue(fill >= 0 and fill < light)
 
     @Test

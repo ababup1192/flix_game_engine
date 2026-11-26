@@ -110,6 +110,8 @@ pub mod ShaderAst {
         case FullscreenPosition
         /// 四角の角（0〜1・y は下向き。6 点で 2 つの三角形）。GLSL は頂点の属性 aCorner・WGSL は vertex_index の表。
         case QuadCorner
+        /// frag が表の面か。
+        case FrontFacing
     }
 
     /// 式の節（型を持つ）。
@@ -129,6 +131,8 @@ pub mod ShaderAst {
         case Paren(Node)
         case Intrinsic(Intrinsic, Ty)
         case Global(Def, Ty)
+        case Raw(Option[String], Option[String], Ty, List[Def], Bool)
+        case Varying(String, Ty, Interp)
     }
 
     /// 文の置き方: Inline = 1 行（GLSL は波かっこを付けない）・Block = 波かっこのブロック。
@@ -144,13 +148,36 @@ pub mod ShaderAst {
         case Return(Option[Node])
         case Discard
         case Eval(Node)
+        case Emit(Node, Bool)
+        case RawStmt(String, String)
     }
 
     /// 言語ごとの本文の字（extern 関数）。Text = この字を置く・Outside = 周りの字が定義する（置かない）・Missing = この言語には無い（print すると止める）。
-    pub enum Body with Eq {
+    /// Generated = (鍵, 字) — print する時に初めて作る字（光の式の木の生成のように重い字）。中身の比べは鍵で済ませる。
+    pub enum Body {
         case Text(String)
+        case Generated(String, Lazy[String])
         case Outside
         case Missing
+    }
+
+    // WhyNot: Generated の字を比べない — 比べると、print しない言語の字や、集める途中で 2 回出会った定義の字まで作ることになる。
+    instance Eq[Body] {
+        pub def eq(a1: Body, b1: Body): Bool = match (a1, b1) {
+            case (Body.Text(x1), Body.Text(y1))                 => x1 == y1
+            case (Body.Generated(k1, _), Body.Generated(k2, _)) => k1 == k2
+            case (Body.Outside, Body.Outside)                   => true
+            case (Body.Missing, Body.Missing)                   => true
+            case _                                              => false
+        }
+    }
+
+    /// 言語の本文の字（Generated はここで作る）。Outside は空の字・Missing は None。
+    def bodyText(b1: Body): Option[String] = match b1 {
+        case Body.Text(text)         => Some(text)
+        case Body.Generated(_, text) => Some(force text)
+        case Body.Outside            => Some("")
+        case Body.Missing            => None
     }
 
     /// extern 関数: 本文は言語ごとの字。deps = 本文が読む定義（先に並べる）・derivative = 微分か暗黙の mip レベルの読みを使うか（一様さの検査が辿る）。
@@ -204,6 +231,8 @@ pub mod ShaderAst {
         case Node.Paren(x1)             => tyOfNode(x1)
         case Node.Intrinsic(_, t)       => t
         case Node.Global(_, t)          => t
+        case Node.Raw(_, _, t, _, _)    => t
+        case Node.Varying(_, t, _)      => t
     }
 
     /// 式の型。
@@ -270,6 +299,25 @@ pub mod ShaderAst {
 
     /// 四角の角（0〜1・y は下向き）。
     pub def quadCorner(): Expr[Vec2] = wrap(Node.Intrinsic(Intrinsic.QuadCorner, Ty.Vec2))
+
+    /// frag が表の面か（入口の中だけで読む。GLSL は gl_FrontFacing・WGSL は入口の @builtin(front_facing)）。
+    pub def frontFacing(): Expr[Boolean] = wrap(Node.Intrinsic(Intrinsic.FrontFacing, Ty.Bool))
+
+    /// 言語ごとに字の違う式（材質の部品が作った字・言語ごとに引数の違う絵の読み）。字は括弧の要らない形で渡す。
+    /// deps = 字が呼ぶ定義（先に並べる）・derivative = 微分か暗黙の mip レベルの読みを使うか（一様さの検査が見る）。
+    pub def rawExpr(w1: TyWitness[t], glsl: String, wgsl: String, deps: List[Definition], derivative: Bool): Expr[t] =
+        wrap(Node.Raw(Some(glsl), Some(wgsl), tyOfWitness(w1), deps, derivative))
+
+    /// 言語 lang だけの字の式（片方の言語の字しか持たない部品。GL の描き手は GLSL の材質の部品だけを持つ）。ほかの言語で print すると止める。
+    pub def rawExprIn(w1: TyWitness[t], lang: Lang, text: String, deps: List[Definition], derivative: Bool): Expr[t] =
+        let (glsl, wgsl) = if (lang == Lang.Glsl) (Some(text), None) else (None, Some(text));
+        wrap(Node.Raw(glsl, wgsl, tyOfWitness(w1), deps, derivative))
+
+    /// raw の式の言語 lang の字（その言語の字が無ければ止める）。
+    def rawTextOrBug(lang: Lang, text: Option[String]): String = match text {
+        case Some(t) => t
+        case None    => invalidOrBug("ShaderAst: ${if (lang == Lang.Glsl) "GLSL" else "WGSL"} の字を持たない式を出した")
+    }
 
     def bin(op: BinOp, a1: Expr[x], b1: Expr[y], t: Ty): Expr[r] = wrap(Node.Bin(op, nodeOf(a1), nodeOf(b1), t))
 
@@ -367,6 +415,7 @@ pub mod ShaderAst {
     pub def vec3Splat(x1: Expr[Float]): Expr[Vec3] = construct(Ty.Vec3, nodeOf(x1) :: Nil)
     pub def vec4Of(x1: Expr[Float], y1: Expr[Float], z1: Expr[Float], w1: Expr[Float]): Expr[Vec4] =
         construct(Ty.Vec4, nodeOf(x1) :: nodeOf(y1) :: nodeOf(z1) :: nodeOf(w1) :: Nil)
+    pub def vec3FromVec2(v: Expr[Vec2], z1: Expr[Float]): Expr[Vec3] = construct(Ty.Vec3, nodeOf(v) :: nodeOf(z1) :: Nil)
     pub def vec4FromVec3(v: Expr[Vec3], w1: Expr[Float]): Expr[Vec4] = construct(Ty.Vec4, nodeOf(v) :: nodeOf(w1) :: Nil)
     pub def ivec2Of(x1: Expr[Int], y1: Expr[Int]): Expr[IVec2] = construct(Ty.IVec2, nodeOf(x1) :: nodeOf(y1) :: Nil)
     pub def ivec2Splat(x1: Expr[Int]): Expr[IVec2] = construct(Ty.IVec2, nodeOf(x1) :: Nil)
@@ -457,6 +506,80 @@ pub mod ShaderAst {
     /// 画素を捨てる。
     pub def discard_(): Statement = Stmt.Discard
 
+    /// frag の色を出す（GLSL は fragColor への代入・WGSL は return）。入口の最後の文。
+    pub def emit(e: Expr[Vec4]): Statement = Stmt.Emit(nodeOf(e), false)
+
+    /// frag の色を出して抜ける（GLSL は fragColor への代入と return・WGSL は return）。
+    pub def emitAndReturn(e: Expr[Vec4]): Statement = Stmt.Emit(nodeOf(e), true)
+
+    /// 言語ごとに字の違う文（字下げと改行は printer が付ける。複数の行は改行で区切る。空の字はその言語では何も置かない）。
+    pub def rawStatement(glsl: String, wgsl: String): Statement = Stmt.RawStmt(glsl, wgsl)
+
+    // ── 入口 ──
+
+    /// varying の補間: Smooth = 遠近で補正・Flat = 1 つの頂点の値・Affine = 画面の上でまっすぐ（PS1 風の uv）。
+    pub enum Interp with Eq { case Smooth, Flat, Affine }
+
+    /// varying 1 つ（location は WGSL の @location。GLSL は名前でつなぐ）。
+    pub type alias Varying = { name = String, ty = Ty, location = Int32, interp = Interp }
+
+    /// frag の入口: inputName = WGSL の入口の引数の struct の名前・glslDeclarations と wgslDeclarations = 言語ごとの宣言と関数の字（main より前に置く）・
+    /// inputs = 受ける varying・body = main の本文（最後は emit。本文が呼ぶ関数は宣言の字が置く）。
+    pub type alias FragmentEntry = { inputName = String, glslDeclarations = String, wgslDeclarations = String, inputs = List[Varying], body = List[Statement] }
+
+    /// varying v の読み（入口の本文の中だけ。GLSL は名前・Affine は w で割り戻す・WGSL は入口の引数の欄）。
+    pub def varying(w1: TyWitness[t], v: Varying): Expr[t] =
+        if (v#ty != tyOfWitness(w1)) invalidOrBug("ShaderAst.varying: ${v#name} の型 ${v#ty} とマーカー ${tyOfWitness(w1)} が違う")
+        else wrap(Node.Varying(v#name, v#ty, v#interp))
+
+    /// varying v を同じ名前の局所の値に置く文（言語ごとの字の部品が varying を名前で読む所。GLSL は in の名前のまま読めるので何も置かない・WGSL は入口の引数の欄を写す）。
+    pub def varyingAsLocal(v: Varying): Statement =
+        if (v#interp == Interp.Affine) invalidOrBug("ShaderAst.varyingAsLocal: ${v#name} は Affine（GLSL の字が w で割る式で、名前で読めない）")
+        else Stmt.RawStmt("", "let ${v#name} = " + ShaderAst.Wgsl.expression(varying(witness(v#ty), v)) + ";")
+
+    /// 入口の本文 body を関数として見た物（検査と、本文が辿る定義を集めるため）。
+    def entryAsFunction(body: List[Stmt]): Def = Def.Fn("main", Ty.Void, Nil, body)
+
+    /// 入口の本文 body が辿って使う定義の名前。
+    def entryDepNames(body: List[Stmt]): Set[String] = collectOrBug(entryAsFunction(body) :: Nil) |> List.map(nameOf) |> List.toSet
+
+    /// 入口の本文が画素の位置（r3d_fragCoord）を読むか。
+    def readsFragCoord(body: List[Stmt]): Bool = Set.memberOf(nameOf(fragCoord()), entryDepNames(body))
+
+    /// 入口の本文が表裏（frontFacing）を読むか。
+    def readsFrontFacing(body: List[Stmt]): Bool = body |> List.exists(stmtHasIntrinsic(Intrinsic.FrontFacing))
+
+    def stmtHasIntrinsic(k: Intrinsic, s: Stmt): Bool = match s {
+        case Stmt.Decl(_, _, init, _)       => init |> Option.exists(nodeHasIntrinsic(k))
+        case Stmt.Assign(a1, b1)            => nodeHasIntrinsic(k, a1) or nodeHasIntrinsic(k, b1)
+        case Stmt.If(c, t, e, _)            => nodeHasIntrinsic(k, c) or ((t ::: e) |> List.exists(stmtHasIntrinsic(k)))
+        case Stmt.For(_, _, a1, c, body, _) => nodeHasIntrinsic(k, a1) or nodeHasIntrinsic(k, c) or (body |> List.exists(stmtHasIntrinsic(k)))
+        case Stmt.Return(e)                 => e |> Option.exists(nodeHasIntrinsic(k))
+        case Stmt.Eval(e)                   => nodeHasIntrinsic(k, e)
+        case Stmt.Emit(e, _)                => nodeHasIntrinsic(k, e)
+        case _                              => false
+    }
+
+    def nodeHasIntrinsic(k: Intrinsic, n: Node): Bool = match n {
+        case Node.Intrinsic(k1, _)     => k1 == k
+        case Node.Bin(_, a1, b1, _)    => nodeHasIntrinsic(k, a1) or nodeHasIntrinsic(k, b1)
+        case Node.Neg(a1, _)           => nodeHasIntrinsic(k, a1)
+        case Node.Not(a1)              => nodeHasIntrinsic(k, a1)
+        case Node.Call(_, args, _)     => args |> List.exists(nodeHasIntrinsic(k))
+        case Node.Builtin(_, args, _)  => args |> List.exists(nodeHasIntrinsic(k))
+        case Node.Construct(_, args)   => args |> List.exists(nodeHasIntrinsic(k))
+        case Node.Swizzle(a1, _, _)    => nodeHasIntrinsic(k, a1)
+        case Node.Index(a1, b1, _)     => nodeHasIntrinsic(k, a1) or nodeHasIntrinsic(k, b1)
+        case Node.Select(c, a1, b1, _) => nodeHasIntrinsic(k, c) or nodeHasIntrinsic(k, a1) or nodeHasIntrinsic(k, b1)
+        case Node.Paren(a1)            => nodeHasIntrinsic(k, a1)
+        case _                         => false
+    }
+
+    /// 入口の本文 body を組む時の検査に通す（誤りがあれば止める）。
+    def checkEntryOrBug(body: List[Stmt]): List[Stmt] = match checkOrBug(entryAsFunction(body) :: Nil) {
+        case _ => body
+    }
+
     // ── 定義の組み立て ──
 
     /// 関数の引数（名前と型）。返り値の式で本文から読む。
@@ -525,6 +648,7 @@ pub mod ShaderAst {
         case Node.Paren(a1)            => depsOfNode(a1)
         case Node.Intrinsic(k, _)      => depsOfIntrinsic(k)
         case Node.Global(d, _)         => d :: Nil
+        case Node.Raw(_, _, _, deps, _) => deps
         case _                         => Nil
     }
 
@@ -533,6 +657,7 @@ pub mod ShaderAst {
         case Intrinsic.PixelFromTopLeft(_) => fragCoord() :: Nil
         case Intrinsic.FullscreenPosition  => vertexIndex() :: Nil
         case Intrinsic.QuadCorner          => vertexIndex() :: quadCornerTable() :: Nil
+        case Intrinsic.FrontFacing         => Nil
     }
 
     /// frag の画素の位置（WGSL の入口が @builtin(position) を写す。GLSL は gl_FragCoord を直に読むので置かない）。
@@ -558,6 +683,8 @@ pub mod ShaderAst {
         case Stmt.Return(e)                 => e |> Option.toList |> List.flatMap(depsOfNode)
         case Stmt.Discard                   => Nil
         case Stmt.Eval(e)                   => depsOfNode(e)
+        case Stmt.Emit(e, _)                => depsOfNode(e)
+        case Stmt.RawStmt(_, _)             => Nil
     }
 
     /// 定義 d が直に読む定義（呼んだ関数・読んだ大域の値）。
@@ -616,6 +743,7 @@ pub mod ShaderAst {
         case Node.Index(a1, b1, _)      => nodeUsesDerivative(a1) or nodeUsesDerivative(b1)
         case Node.Select(c, a1, b1, _)  => nodeUsesDerivative(c) or nodeUsesDerivative(a1) or nodeUsesDerivative(b1)
         case Node.Paren(a1)             => nodeUsesDerivative(a1)
+        case Node.Raw(_, _, _, deps, derivative) => derivative or (deps |> List.exists(usesDerivative))
         case _                          => false
     }
 
@@ -626,6 +754,7 @@ pub mod ShaderAst {
         case Stmt.For(_, _, a1, c, body, _) => nodeUsesDerivative(a1) or nodeUsesDerivative(c) or (body |> List.exists(stmtUsesDerivative))
         case Stmt.Return(e)                 => e |> Option.exists(nodeUsesDerivative)
         case Stmt.Eval(e)                   => nodeUsesDerivative(e)
+        case Stmt.Emit(e, _)                => nodeUsesDerivative(e)
         case _                              => false
     }
 
@@ -685,6 +814,8 @@ pub mod ShaderAst {
             let (stB, errB) = checkStmts(fname, inner, body);
             (afterBlock(st, stB :: Nil), errB)
         case Stmt.Return(_) =>
+            ({ returned = st#returned or st#diverged | st }, leafErrors(fname, st, s))
+        case Stmt.Emit(_, true) =>
             ({ returned = st#returned or st#diverged | st }, leafErrors(fname, st, s))
         case _ =>
             (st, leafErrors(fname, st, s))

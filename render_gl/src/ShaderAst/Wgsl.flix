@@ -124,6 +124,8 @@ pub mod ShaderAst.Wgsl {
         case Node.Paren(a)             => "(" + exprAt(0, a) + ")"
         case Node.Intrinsic(k, _)      => intrinsic(k)
         case Node.Global(d, _)         => ShaderAst.nameOf(d)
+        case Node.Raw(_, text, _, _, _) => ShaderAst.rawTextOrBug(Lang.Wgsl, text)
+        case Node.Varying(name, _, _)  => "i." + name
     }
 
     def intrinsic(k: Intrinsic): String =
@@ -133,6 +135,7 @@ pub mod ShaderAst.Wgsl {
             case Intrinsic.PixelFromTopLeft(_) => "vec2i(i32(floor(${frag}.x)), i32(floor(${frag}.y)))"
             case Intrinsic.FullscreenPosition  => "vec4f(f32((${index} << 1u) & 2u) * 2.0 - 1.0, f32(${index} & 2u) * 2.0 - 1.0, 0.0, 1.0)"
             case Intrinsic.QuadCorner          => "r3d_quadCorner(${index})"
+            case Intrinsic.FrontFacing         => "i.frontFacing"
         }
 
     // ── 文 ──
@@ -147,6 +150,7 @@ pub mod ShaderAst.Wgsl {
         case Stmt.Return(None)                  => "return;"
         case Stmt.Discard                       => "discard;"
         case Stmt.Eval(e)                       => exprAt(0, e) + ";"
+        case Stmt.Emit(e, _)                    => "return " + exprAt(0, e) + ";"
         case _                                  => ShaderAst.invalidOrBug("ShaderAst.Wgsl: if・for は 1 行の文の中に置けない")
     }
 
@@ -168,6 +172,7 @@ pub mod ShaderAst.Wgsl {
                     case (Layout.Inline, one :: Nil) => head + " { " + inline(one) + " }\n"
                     case _                           => head + " {\n" + stmts(depth + 1, body) + ind + "}\n"
                 }
+            case Stmt.RawStmt(_, text) => TextSplit.lines(text) |> List.map(l -> ind + l + "\n") |> ShaderAst.joinParts
             case _ => ind + inline(s) + "\n"
         }
 
@@ -190,10 +195,9 @@ pub mod ShaderAst.Wgsl {
                 "    var ${an} = array<${tyName(elem)}, ${List.length(values)}>(" + String.intercalate(", ", values) + ");\n"
             });
             "fn " + name + "(" + ps + ")" + result + " {\n" + ShaderAst.joinParts(arrays) + stmts(1, body) + "}\n"
-        case Def.Extern(name, _, _, _, wgsl, _, _) => match wgsl {
-            case Body.Text(text) => text
-            case Body.Outside    => ""
-            case Body.Missing    => ShaderAst.invalidOrBug("ShaderAst.Wgsl: extern ${name} に WGSL の本文が無い")
+        case Def.Extern(name, _, _, _, wgsl, _, _) => match ShaderAst.bodyText(wgsl) {
+            case Some(text) => text
+            case None       => ShaderAst.invalidOrBug("ShaderAst.Wgsl: extern ${name} に WGSL の本文が無い")
         }
         case Def.ConstArray(_, _, _) => ""
         case Def.Private(name, t, length, init, lang) =>
@@ -208,6 +212,30 @@ pub mod ShaderAst.Wgsl {
     /// roots と、それが辿って使う定義を、使う前に 1 回ずつ並べた字（組む時の検査を通す）。
     pub def print(roots: List[Definition]): String =
         ShaderAst.checkOrBug(ShaderAst.collectOrBug(roots)) |> List.map(definition) |> ShaderAst.joinParts
+
+    /// varying の欄の字（@location と補間）。
+    def varyingField(v: ShaderAst.Varying): String =
+        let interp = match v#interp {
+            case ShaderAst.Interp.Flat   => "@interpolate(flat) "
+            case ShaderAst.Interp.Affine => "@interpolate(linear) "
+            case ShaderAst.Interp.Smooth => ""
+        };
+        "    @location(${v#location}) " + interp + v#name + ": " + tyName(v#ty) + ",\n"
+
+    /// frag の入口の字（宣言の字・入口の引数の struct・fs_main）。画素の位置を読む本文は入口の頭で r3d_fragCoord へ写す。
+    pub def fragment(e: ShaderAst.FragmentEntry): String =
+        let body = ShaderAst.checkEntryOrBug(e#body);
+        let fragPos = ShaderAst.readsFragCoord(body);
+        let facing = ShaderAst.readsFrontFacing(body);
+        e#wgslDeclarations +
+        "struct ${e#inputName} {\n" +
+        (if (fragPos) "    @builtin(position) fragPos: vec4f,\n" else "") +
+        ShaderAst.joinParts(e#inputs |> List.map(varyingField)) +
+        (if (facing) "    @builtin(front_facing) frontFacing: bool,\n" else "") +
+        "};\n" +
+        "@fragment fn fs_main(i: ${e#inputName}) -> @location(0) vec4f {\n" +
+        (if (fragPos) "    " + ShaderAst.nameOf(ShaderAst.fragCoord()) + " = i.fragPos;\n" else "") +
+        stmts(1, body) + "}\n"
 
     /// defs だけを並べた字（辿った定義は周りの字が置く）。
     pub def printOnly(defs: List[Definition]): String =

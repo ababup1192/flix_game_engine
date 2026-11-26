@@ -114,7 +114,7 @@ mod Render3d.TestRender3dSun {
     @Test
     def testNormalMapShiftsByTheUnmappedNormal(): Unit \ Assert =
         let source = materialSource({ uv = true, normalMap = true | plainKind() });
-        Assert.assertTrue(indexOf("vec3 n = normalMapped(normalize(vNormal));", source) >= 0
+        Assert.assertTrue(indexOf("vec3 n = normalMapped(normalize(vNormal), vUv, vTangent);", source) >= 0
                           and indexOf("r3d_sunLit = sunLitAt(vWorld, normalize(vNormal), n);", source) >= 0)
 
     /// 裏の面を描く両面の材質は、点のずらしにも裏返した法線を使う。

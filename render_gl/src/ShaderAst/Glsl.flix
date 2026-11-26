@@ -75,6 +75,9 @@ pub mod ShaderAst.Glsl {
         case Node.Paren(a)             => "(" + exprAt(0, a) + ")"
         case Node.Intrinsic(k, _)      => intrinsic(k)
         case Node.Global(d, _)         => ShaderAst.nameOf(d)
+        case Node.Raw(text, _, _, _, _) => ShaderAst.rawTextOrBug(Lang.Glsl, text)
+        case Node.Varying(name, _, ShaderAst.Interp.Affine) => name + ".xy / " + name + ".z"
+        case Node.Varying(name, _, _)  => name
     }
 
     def builtin(fun: BuiltinFn, xs: List[Node]): String = match fun {
@@ -89,6 +92,7 @@ pub mod ShaderAst.Glsl {
             "ivec2(int(floor(gl_FragCoord.x - ${at("x")})), int(floor(${at("y")} + ${at("w")} - gl_FragCoord.y)))"
         case Intrinsic.FullscreenPosition => "vec4(float((gl_VertexID << 1) & 2) * 2.0 - 1.0, float(gl_VertexID & 2) * 2.0 - 1.0, 0.0, 1.0)"
         case Intrinsic.QuadCorner         => "aCorner"
+        case Intrinsic.FrontFacing        => "gl_FrontFacing"
     }
 
     // ── 文 ──
@@ -103,6 +107,7 @@ pub mod ShaderAst.Glsl {
         case Stmt.Return(None)              => "return;"
         case Stmt.Discard                   => "discard;"
         case Stmt.Eval(e)                   => exprAt(0, e) + ";"
+        case Stmt.Emit(e, _)                => "fragColor = " + exprAt(0, e) + ";"
         case _                              => ShaderAst.invalidOrBug("ShaderAst.Glsl: if・for は 1 行の文の中に置けない")
     }
 
@@ -124,6 +129,8 @@ pub mod ShaderAst.Glsl {
                     case (Layout.Inline, one :: Nil) => head + " " + inline(one) + "\n"
                     case _                           => head + " {\n" + stmts(depth + 1, body) + ind + "}\n"
                 }
+            case Stmt.Emit(e, true) => ind + inline(Stmt.Emit(e, false)) + "\n" + ind + "return;\n"
+            case Stmt.RawStmt(text, _) => TextSplit.lines(text) |> List.map(l -> ind + l + "\n") |> ShaderAst.joinParts
             case _ => ind + inline(s) + "\n"
         }
 
@@ -134,10 +141,9 @@ pub mod ShaderAst.Glsl {
         case Def.Fn(name, ret, params, body) =>
             let ps = params |> List.map(p -> tyName(snd(p)) + " " + fst(p)) |> String.intercalate(", ");
             tyName(ret) + " " + name + "(" + ps + ") {\n" + stmts(1, body) + "}\n"
-        case Def.Extern(name, _, _, glsl, _, _, _) => match glsl {
-            case Body.Text(text) => text
-            case Body.Outside    => ""
-            case Body.Missing    => ShaderAst.invalidOrBug("ShaderAst.Glsl: extern ${name} に GLSL の本文が無い")
+        case Def.Extern(name, _, _, glsl, _, _, _) => match ShaderAst.bodyText(glsl) {
+            case Some(text) => text
+            case None       => ShaderAst.invalidOrBug("ShaderAst.Glsl: extern ${name} に GLSL の本文が無い")
         }
         case Def.ConstArray(name, elem, values) =>
             let n = List.length(values);
@@ -154,6 +160,16 @@ pub mod ShaderAst.Glsl {
     /// roots と、それが辿って使う定義を、使う前に 1 回ずつ並べた字（組む時の検査を通す）。
     pub def print(roots: List[Definition]): String =
         ShaderAst.checkOrBug(ShaderAst.collectOrBug(roots)) |> List.map(definition) |> ShaderAst.joinParts
+
+    /// varying の宣言の型（Affine は uv と w を掛けた xy と w を送るので 1 つ多い）。
+    def varyingTy(v: ShaderAst.Varying): Ty =
+        if (v#interp == ShaderAst.Interp.Affine and v#ty == Ty.Vec2) Ty.Vec3 else v#ty
+
+    /// frag の入口の字（#version・in の宣言・fragColor・宣言の字・main）。
+    pub def fragment(e: ShaderAst.FragmentEntry): String =
+        let body = ShaderAst.checkEntryOrBug(e#body);
+        let ins = e#inputs |> List.map(v -> (if (v#interp == ShaderAst.Interp.Flat) "flat " else "") + "in " + tyName(varyingTy(v)) + " " + v#name + ";\n");
+        "#version 330 core\n" + ShaderAst.joinParts(ins) + "out vec4 fragColor;\n" + e#glslDeclarations + "void main() {\n" + stmts(1, body) + "}\n"
 
     /// defs だけを並べた字（辿った定義は周りの字が置く）。
     pub def printOnly(defs: List[Definition]): String =

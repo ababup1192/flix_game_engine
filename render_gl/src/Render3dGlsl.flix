@@ -259,90 +259,29 @@ pub mod Render3dGlsl {
 
     /// 変種 v の litFragmentSource。
     pub def litFragmentSourceFor(v: Render3d.ProgramKey.ShaderVariant): String =
-        "#version 330 core\n" +
-        "in vec3 vWorld;\n" +
-        "in vec3 vNormal;\n" +
-        "in vec3 vColor;\n" +
-        "flat in vec3 vTint;\n" +
-        "out vec4 fragColor;\n" +
-        colorSpaceSource() +
-        lightSourceFor(v) +
-        "void main() {\n" +
-        "    vec3 n = normalize(vNormal);\n" +
-        "    r3d_sunLit = sunLitAt(vWorld, n, n);\n" +
-        (if (v#pointShadows) "    r3d_pointShadowsAt(vWorld, n, n);\n" else "") +
-        "    fragColor = vec4(" + colorOut(v, "r3d_surfaceOut(vColor, vTint, lightAt(vWorld, n), vec3(0.0), 1.0, vWorld, true)") + ", 1.0);\n" +
-        "}\n"
+        ShaderAst.Glsl.fragment(Render3dShaders.litFragment(v, colorSpaceSource() + lightSourceFor(v), ""))
 
-    /// 材質の frag。光の式は litFragmentSource と同じで、頂点の色の代わりに materialEval の albedo を使う（頂点の色は
-    /// 材質の Spec が VertexColor で読む）。surface#uv = uv つきの形か（偽なら vUv は (0, 0) の const）・
-    /// surface#normalMap = 法線マップを当てるか（uv つきの時だけ。光の計算の法線を、法線マップで傾けた n' にする）・
-    /// surface#lightmap = ベイクした光を 2 本目の uv で読み、環境光と hemisphere の代わりに足すか。
-    /// uDepthOut = 1 なら cutout で抜いた後の奥行きの灰色を書く（Output.Depth の cutout の材質）。
-    /// surface#blend = 出す α を材質の α に（半透明）・surface#doubleSided = 裏の面（!gl_FrontFacing）は光の計算の法線を裏返す・
-    /// surface#coverage = cutout を discard でなく alpha to coverage の α で抜く。3 つとも偽なら、足す前と同じ字。
+    /// 材質の frag（本文は Render3dShaders.materialFragmentBody）。surface#uv = uv つきの形か（偽なら vUv は (0, 0) の const）・
+    /// surface#normalMap = 法線マップを当てるか（uv つきの時だけ。光の計算の法線を、法線マップで傾けた n' にする）。
+    /// 材質の部品（glsl#functions の materialEval）は大域の vUv・vWorld・vNormal・vColor を読む。psx の uv つきの vUv は main の頭で代入する大域の変数。
     // WhyNot: 欄を 1 つずつ並べた引数にしない — ProgramKind に欄が増えるたびに、呼び手とテストの字が全部書き換わる。skinned は頂点の側だけが読む。
     pub def materialFragmentSource(glsl: ShaderGen.MaterialGlsl, surface: Render3d.ProgramKey.ProgramKind): String =
         let v = Render3d.ProgramKey.shaderVariantOfKind(surface);
-        let normalMapped = surface#uv and surface#normalMap;
-        // WhyNot: sg_texMip を足すかを normalMapSource と lightmapSource の中で別々に決めない — 両方を使う版で 2 回定義され、コンパイルが落ちる。
-        let needsMip = (normalMapped or surface#lightmap) and not String.contains(substr = "vec4 sg_texMip(", glsl#functions);
-        let faceNormal = if (surface#doubleSided) "facingNormal" else "normalize(vNormal)";
-        let normal = if (normalMapped) "normalMapped(${faceNormal})" else faceNormal;
-        let cutout = if (surface#coverage) "" else "    if (uCutout == 1 && " + glsl#cutoutAlpha + " < 0.5) discard;\n";
-        let facing = if (surface#doubleSided) "    vec3 facingNormal = gl_FrontFacing ? normalize(vNormal) : -normalize(vNormal);\n" else "";
-        // WhyNot: alpha to coverage に絵の α をそのまま渡さない — ぼけた α の絵では縁が数画素の幅で透け、cutout の固い縁に見えない。
-        let alpha = if (surface#coverage) "clamp((" + glsl#cutoutAlpha + " - 0.5) / max(fwidth(" + glsl#cutoutAlpha + "), 1e-4) + 0.5, 0.0, 1.0)"
-                    else if (surface#blend) "albedo.a" else "1.0";
-        "#version 330 core\n" +
-        "in vec3 vWorld;\n" +
-        "in vec3 vNormal;\n" +
-        "in vec3 vColor;\n" +
-        "flat in vec3 vTint;\n" +
-        "flat in float vEmissionIntensity;\n" +
-        (if (surface#uv and v#psx) "in vec2 vUvPerspective;\nin vec3 vUvAffine;\nvec2 vUv;\n"
-         else if (surface#uv) "in vec2 vUv;\n" else "const vec2 vUv = vec2(0.0, 0.0);\n") +
-        (if (surface#lightmap) "in vec2 vUv2;\n" else "") +
-        "out vec4 fragColor;\n" +
-        Render3d.Uniforms.glslDeclarations(R3dUniform.Cutout :: R3dUniform.DepthOut :: Nil) +
-        colorSpaceSource() +
-        lightSourceFor(v) +
-        depthGraySource() +
-        glsl#uniforms +
-        glsl#functions +
-        (if (needsMip) ShaderGen.texMipSource() else "") +
-        (if (normalMapped) normalMapSource() else "") +
-        (if (surface#lightmap) lightmapSource(v) else "") +
-        (if (surface#metallicRoughness) metallicRoughnessSourceFor(v) else "") +
-        "void main() {\n" +
-        (if (surface#uv and v#psx) "    vUv = mix(vUvPerspective, vUvAffine.xy / vUvAffine.z, uPsx.w);\n" else "") +
-        "    vec4 albedo;\n" +
-        "    vec3 emission;\n" +
-        (if (surface#metallicRoughness) "    vec2 metalRough;\n    materialEval(albedo, emission, metalRough);\n" else "    materialEval(albedo, emission);\n") +
-        cutout +
-        "    if (uDepthOut == 1) {\n" +
-        "        float g = depthGray(vWorld);\n" +
-        "        fragColor = vec4(g, g, g, 1.0);\n" +
-        "        return;\n" +
-        "    }\n" +
-        facing +
-        "    vec3 n = " + normal + ";\n" +
-        "    r3d_sunLit = sunLitAt(vWorld, " + faceNormal + ", n);\n" +
-        (if (v#pointShadows) "    r3d_pointShadowsAt(vWorld, " + faceNormal + ", n);\n" else "") +
-        (if (surface#metallicRoughness)
-            (if (surface#lightmap) "    vec3 light = lightmapLightAt(vWorld, n, lightmapColor());\n" else "    vec3 light = lightAt(vWorld, n);\n") +
-            "    vec3 base = r3d_srgbToLinear3(albedo.rgb) * vTint;\n" +
-            "    vec3 envColor = vec3(0.0);\n" +
-            "    if (uEnvOn == 1) envColor = environmentColorAt(vWorld, n, base, vec3(metalRough, 0.0));\n" +
-            "    vec3 lit = pbrAt(vWorld, n, base, light, vec3(metalRough, 0.0), envColor);\n" +
-            "    fragColor = vec4(" + colorOut(v, "r3d_surfaceOutLit(lit, emission, vEmissionIntensity, vWorld)") + ", " + alpha + ");\n"
-         else
-            (if (surface#lightmap)
-                "    vec3 light = lightmapLightAt(vWorld, n, lightmapColor());\n"
-             else
-                "    vec3 light = lightAt(vWorld, n);\n") +
-            "    fragColor = vec4(" + colorOut(v, "r3d_surfaceOut(r3d_srgbToLinear3(albedo.rgb), vTint, light, emission, vEmissionIntensity, vWorld, true)") + ", " + alpha + ");\n") +
-        "}\n"
+        let part = Render3dShaders.glslMaterialPart(glsl);
+        let declarations =
+            (if (surface#uv and v#psx) "vec2 vUv;\n" else if (surface#uv) "" else "const vec2 vUv = vec2(0.0, 0.0);\n") +
+            Render3d.Uniforms.glslDeclarations(R3dUniform.Cutout :: R3dUniform.DepthOut :: Nil) +
+            colorSpaceSource() +
+            lightSourceFor(v) +
+            depthGraySource() +
+            glsl#uniforms +
+            glsl#functions +
+            (if (Render3dShaders.isNormalMapped(surface)) Render3d.Uniforms.glslDeclarations(R3dUniform.NormalMap :: R3dUniform.NormalStrength :: R3dUniform.NormalFlip :: R3dUniform.NormalLevels :: Nil) else "") +
+            (if (surface#lightmap) Render3d.Uniforms.glslDeclarations(R3dUniform.Lightmap :: R3dUniform.LightmapLevels :: R3dUniform.LightmapUvRect :: Nil) else "") +
+            ShaderAst.Glsl.print(Render3dShaders.materialHelpers(surface, part)) +
+            (if (surface#lightmap) lightmapLightSourceFor(v) else "") +
+            (if (surface#metallicRoughness) metallicRoughnessSourceFor(v) else "");
+        ShaderAst.Glsl.fragment(Render3dShaders.materialFragment(surface, part, declarations, ""))
 
     /// metallic と roughness を持つ材質の色 pbrAt(p, n, albedo × tint, 拡散の光, vec3(metallic, roughness, 0))（LightModel3d.pbrModel の木から作る）と、
     /// それが読む空の uniform と、かすみ → emission の組み立て r3d_surfaceOutLit(pbrAt の色, emission, intensity, p)。
@@ -356,42 +295,15 @@ pub mod Render3dGlsl {
     pub def metallicRoughnessSourceFor(v: Render3d.ProgramKey.ShaderVariant): String =
         Render3d.Uniforms.glslDeclarations(R3dUniform.Zenith :: R3dUniform.Horizon :: R3dUniform.Ground :: R3dUniform.Curve :: Nil) +
         environmentSource() +
-        LightModel3d.Codegen.toGlsl("pbrAt", Vec3Input.Position :: Vec3Input.Normal :: Vec3Input.Albedo :: Vec3Input.Light :: Vec3Input.MetallicRoughness ::
-                                             Vec3Input.EnvironmentColor :: Nil,
-                                    LightModel3d.pbrModelFor(Render3d.ProgramKey.lightVariantOf(v))) +
-        ShaderAst.Glsl.printOnly(Render3dShaders.surfaceOutLit() :: Nil)
+        ShaderAst.Glsl.printOnly(Render3dShaders.pbrAt(v) :: Render3dShaders.surfaceOutLit() :: Nil)
 
-    /// 環境マップの uniform と、跳ね返りの向き（LightModel3d.environmentDirection の木から作る environmentDirectionAt）で絵を読む
-    /// environmentColorAt(p, n, albedo × tint, vec3(metallic, roughness, 0))（線形の量・強さを掛けた色。CPU の描き手は SoftRaster3d.Internal.environmentColorAt）。
-    /// 絵は向き → 座標（LightModel3d.environmentUvOf）で、段は roughness × (段の数 − 1)（LightModel3d.environmentLodOf）を明示して読む。
-    /// uEnvOn = 0 のプログラムは読まない（呼ぶ側が分ける）。
-    // WhyNot: sg_texMip（微分で段を選ぶ読み）を使わない — 向きの atan2 は継ぎ目（u = 0 と 1）で値が 1 跳び、その画素だけ段が最大になって縦の筋が出る。
-    // WhyNot: 極（向きが真上・真下）の atan を GLSL に任せない — 引数が両方 0 の atan は値が決まらない。Flix の atan2 は 0 を返すので、同じ 0 にそろえる。
+    /// 環境マップの uniform と、跳ね返りの向き（environmentDirectionAt）で絵を読む environmentColorAt（Render3dShaders.environmentColorAt）。
     def environmentSource(): String =
         Render3d.Uniforms.glslDeclarations(R3dUniform.EnvOn :: R3dUniform.EnvBoxOn :: R3dUniform.EnvBoxMin :: R3dUniform.EnvBoxMax :: R3dUniform.EnvBoxCenter :: R3dUniform.EnvMap :: R3dUniform.EnvLevels :: R3dUniform.EnvIntensity :: R3dUniform.EnvSrgb :: Nil) +
-        LightModel3d.Codegen.toGlsl("environmentDirectionAt", Vec3Input.Position :: Vec3Input.Normal :: Vec3Input.Albedo :: Vec3Input.MetallicRoughness :: Nil,
-                                    LightModel3d.environmentDirection()) +
-        environmentUvSource() +
-        "vec3 environmentColorAt(vec3 p, vec3 n, vec3 albedo, vec3 metalRough) {\n" +
-        "    vec3 d = environmentDirectionAt(p, n, albedo, metalRough);\n" +
-        "    float lod = metalRough.y * (uEnvLevels - 1.0);\n" +
-        "    vec3 c = textureLod(uEnvMap, environmentUv(d), lod).rgb;\n" +
-        "    return (uEnvSrgb == 1 ? r3d_srgbToLinear3(c) : c) * uEnvIntensity;\n" +
-        "}\n"
+        ShaderAst.Glsl.printOnly(Render3dShaders.environmentDirectionAt() :: Render3dShaders.environmentUv() :: Render3dShaders.environmentColorAt() :: Nil)
 
     /// 向き d（長さ 1）で環境マップを読む座標 environmentUv(d)（LightModel3d.environmentUvOf と同じ式）。
     def environmentUvSource(): String = ShaderAst.Glsl.printOnly(Render3dShaders.environmentUv() :: Nil)
-
-    /// ベイクした光の uniform と、lightmap の絵の読み（lightmapColor）と、lightmap のある面の光の式（lightmapLightSource）。
-    /// 段つきの Linear で読む（sg_texMip。段は Lightmap の maxLevels まで）。2 本目の uv の絵は場面の textures だけから引くので上下の反転は無い。
-    /// 読む uv = 2 本目の uv × uLightmapUvRect.zw + uLightmapUvRect.xy（Lightmap の uvRect）。
-    // WhyNot: 矩形を頂点の式で当てない — WebGPU の物ごとの値（R3dDraw）は FRAGMENT からだけ見え、頂点で読むと layout の可視範囲と全部の材質の WGSL が変わる。GL も同じ所で当ててそろえる。
-    def lightmapSource(v: Render3d.ProgramKey.ShaderVariant): String =
-        Render3d.Uniforms.glslDeclarations(R3dUniform.Lightmap :: R3dUniform.LightmapLevels :: R3dUniform.LightmapUvRect :: Nil) +
-        "vec3 lightmapColor() {\n" +
-        "    return sg_texMip(uLightmap, 0.0, uLightmapLevels, vUv2 * uLightmapUvRect.zw + uLightmapUvRect.xy).rgb;\n" +
-        "}\n" +
-        lightmapLightSourceFor(v)
 
     /// lightmap のある面の光の式 lightmapLightAt(p, n, lightmap の色)（LightModel3d の木から作る）と、それが読む uniform。
     /// colorSpaceSource()（色の空間の関数）と lightSource の後に置く（光の uniform と spotShadow を読む）。
@@ -400,20 +312,7 @@ pub mod Render3dGlsl {
     /// 変種 v の lightmapLightSource（lightSourceFor(v) の後に置く）。
     pub def lightmapLightSourceFor(v: Render3d.ProgramKey.ShaderVariant): String =
         Render3d.Uniforms.glslDeclarations(R3dUniform.LightmapSrgb :: R3dUniform.LightmapIntensity :: Nil) +
-        LightModel3d.Codegen.toGlsl("lightmapLightAt", Vec3Input.Position :: Vec3Input.Normal :: Vec3Input.LightmapColor :: Nil,
-                                    LightModel3d.lightmapLightingModelFor(Render3d.ProgramKey.lightVariantOf(v)))
-
-    /// 法線マップの uniform と、外向きの法線 n を法線マップで傾けた n'（normalMapped）。
-    /// uNormalFlip = 1 はレンダーターゲット（行 0 が下）で、v を上下反転して読む。
-    // WhyNot: 絵を読むのをタンジェントの長さを見た後にしない — 読みの段を選ぶ微分（dFdx）は、画素ごとに分かれる if の中では値が決まらない。
-    /// 法線マップは段つきの Linear で読む（sg_texMip。materialFragmentSource が前に 1 回だけ出す）。
-    def normalMapSource(): String =
-        "in vec4 vTangent;\n" +
-        Render3d.Uniforms.glslDeclarations(R3dUniform.NormalMap :: R3dUniform.NormalStrength :: R3dUniform.NormalFlip :: R3dUniform.NormalLevels :: Nil) +
-        applyNormalMapSource() +
-        "vec3 normalMapped(vec3 n) {\n" +
-        "    return applyNormalMap(n, vTangent, uNormalStrength, sg_texMip(uNormalMap, uNormalFlip, uNormalLevels, vUv).rgb);\n" +
-        "}\n"
+        ShaderAst.Glsl.printOnly(Render3dShaders.lightmapLightAt(v) :: Nil)
 
     /// 外向きの法線 n をタンジェント（xyz と w）と法線マップの rgb c で傾けた applyNormalMap(n, tangent, strength, c)（式は Render3d.flix の頭。
     /// CPU の描き手は SoftRaster3d.applyNormalMap）。
@@ -421,18 +320,9 @@ pub mod Render3dGlsl {
     // WhyNot: 長さ 0 のタンジェントで傾けない — normalize が NaN を出し、画素が黒く抜ける。その画素は n のまま。
     pub def applyNormalMapSource(): String = ShaderAst.Glsl.printOnly(Render3dShaders.applyNormalMap() :: Nil)
 
+    /// 奥行きの書き出し（Output.Depth）の形だけの frag（本文は Render3dShaders.depthFragment）。
     pub def depthFragmentSource(): String =
-        "#version 330 core\n" +
-        "in vec3 vWorld;\n" +
-        "in vec3 vNormal;\n" +
-        "in vec3 vColor;\n" +
-        "out vec4 fragColor;\n" +
-        Render3d.Uniforms.glslDeclarations(R3dUniform.Eye :: Nil) +
-        depthGraySource() +
-        "void main() {\n" +
-        "    float g = depthGray(vWorld);\n" +
-        "    fragColor = vec4(g, g, g, 1.0);\n" +
-        "}\n"
+        ShaderAst.Glsl.fragment(Render3dShaders.depthFragment(Render3d.Uniforms.glslDeclarations(R3dUniform.Eye :: Nil) + depthGraySource(), ""))
 
     /// ビルボードの頂点シェーダー: カメラの right / up で四角を立てる（aCorner は 0〜1・y は下向き）。板ごとの値は instance の attribute（location 1〜4・
     /// 並びは Render3d.SceneList.billboardValueFloats: 点と光の当て方・anchor と size・貼る範囲の uv・tint と影を受ける点を離す長さ）。

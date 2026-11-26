@@ -2,7 +2,7 @@
 // 式は Render3dGlsl と 1 行ずつ同じに書き、光・かすみ・空の式は同じ LightModel3d の木から LightModel3d.Codegen.toWgsl で作る。
 //
 // bind group: 0 = 場面（`var<uniform> r3d: R3dScene`・影の地図・太陽の影の地図・環境マップ・目と射影の行列とカメラの向き）・1 = 材質（ShaderGen.Wgsl.compile3d の `sg` と絵・
-// `var<uniform> r3dDraw: R3dDraw`・法線マップ・lightmap。ビルボードは 2D の描き手の絵と sampler）・2 = storage（姿勢）。varying の location は R3dIn の並び。
+// `var<uniform> r3dDraw: R3dDraw`・法線マップ・lightmap。ビルボードは 2D の描き手の絵と sampler）・2 = storage（姿勢）。varying の location は Render3dShaders の varying の表。
 // 射影の行列は GL の物のまま使い、頂点シェーダーが ShaderGen.Wgsl.clipFromGlSource の sg_clipFromGl で clip の z を 0..w へ移す前提
 // （奥行きの値が GL のウィンドウの奥行きと同じになり、影の比べ ndc.z × 0.5 + 0.5 をそのまま使える）。
 pub mod Render3dWgsl {
@@ -122,154 +122,52 @@ pub mod Render3dWgsl {
     /// 変種 v の metallicRoughnessSource。
     pub def metallicRoughnessSourceFor(v: Render3d.ProgramKey.ShaderVariant): String =
         environmentSource() +
-        LightModel3d.Codegen.toWgsl("pbrAt", Vec3Input.Position :: Vec3Input.Normal :: Vec3Input.Albedo :: Vec3Input.Light :: Vec3Input.MetallicRoughness ::
-                                             Vec3Input.EnvironmentColor :: Nil,
-                                    LightModel3d.pbrModelFor(Render3d.ProgramKey.lightVariantOf(v))) +
-        ShaderAst.Wgsl.printOnly(Render3dShaders.surfaceOutLit() :: Nil)
+        ShaderAst.Wgsl.printOnly(Render3dShaders.pbrAt(v) :: Render3dShaders.surfaceOutLit() :: Nil)
 
-    /// 環境マップの読み environmentColorAt(p, n, albedo × tint, vec3(metallic, roughness, 0))（Render3dGlsl.environmentSource と同じ式。mip のレベルは roughness × (レベルの数 − 1)）。
+    /// 環境マップの読み environmentColorAt（Render3dShaders.environmentColorAt）と、それが読む向きと座標の関数。
     pub def environmentSource(): String =
-        LightModel3d.Codegen.toWgsl("environmentDirectionAt", Vec3Input.Position :: Vec3Input.Normal :: Vec3Input.Albedo :: Vec3Input.MetallicRoughness :: Nil,
-                                    LightModel3d.environmentDirection()) +
-        environmentUvSource() +
-        "fn environmentColorAt(p: vec3f, n: vec3f, albedo: vec3f, metalRough: vec3f) -> vec3f {\n" +
-        "    let d = environmentDirectionAt(p, n, albedo, metalRough);\n" +
-        "    let lod = metalRough.y * (r3d.uEnvLevels - 1.0);\n" +
-        "    let c = textureSampleLevel(uEnvMap, uEnvSampler, environmentUv(d), lod).rgb;\n" +
-        "    return select(c, r3d_srgbToLinear3(c), r3d.uEnvSrgb == 1) * r3d.uEnvIntensity;\n" +
-        "}\n"
+        ShaderAst.Wgsl.printOnly(Render3dShaders.environmentDirectionAt() :: Render3dShaders.environmentUv() :: Render3dShaders.environmentColorAt() :: Nil)
 
     /// 向き d（長さ 1）で環境マップを読む座標 environmentUv(d)（Render3dGlsl.environmentUvSource と同じ式）。
     // WhyNot: 極で atan2 を選ばない形を if にしない — select は両側を計算するが、atan2(0, 0) の値は捨てられる（Flix の atan2 と同じ 0 を選ぶ）。
     def environmentUvSource(): String = ShaderAst.Wgsl.printOnly(Render3dShaders.environmentUv() :: Nil)
 
-    /// lightmap の読みと、lightmap のある面の光の式（Render3dGlsl.lightmapSource と同じ）。
-    def lightmapSource(v: Render3d.ProgramKey.ShaderVariant): String =
-        "fn lightmapColor(uv2: vec2f) -> vec3f {\n" +
-        "    return sg_texMip(uLightmap, uLightmapSampler, r3dDraw.uLightmapLevels, uv2 * r3dDraw.uLightmapUvRect.zw + r3dDraw.uLightmapUvRect.xy).rgb;\n" +
-        "}\n" +
-        LightModel3d.Codegen.toWgsl("lightmapLightAt", Vec3Input.Position :: Vec3Input.Normal :: Vec3Input.LightmapColor :: Nil,
-                                    LightModel3d.lightmapLightingModelFor(Render3d.ProgramKey.lightVariantOf(v)))
-
-    /// 法線マップで傾けた法線（Render3dGlsl.normalMapSource と同じ式）。
-    def normalMapSource(): String =
-        applyNormalMapSource() +
-        "fn normalMapped(n: vec3f, uv: vec2f, tangent: vec4f) -> vec3f {\n" +
-        "    return applyNormalMap(n, tangent, r3dDraw.uNormalStrength, sg_texMip(uNormalMap, uNormalMapSampler, r3dDraw.uNormalLevels, uv).rgb);\n" +
-        "}\n"
+    /// lightmap のある面の光の式 lightmapLightAt（Render3dGlsl.lightmapLightSourceFor と同じ木）。
+    def lightmapLightSourceFor(v: Render3d.ProgramKey.ShaderVariant): String = ShaderAst.Wgsl.printOnly(Render3dShaders.lightmapLightAt(v) :: Nil)
 
     /// Render3dGlsl.applyNormalMapSource と同じ式。
     // WhyNot: 長さ 0 の p の normalize を if で避けない — select は両側を計算するが、NaN の側は捨てられる。
     pub def applyNormalMapSource(): String = ShaderAst.Wgsl.printOnly(Render3dShaders.applyNormalMap() :: Nil)
 
-    /// frag が受ける varying（Render3dGlsl の in の並び）。uv・2 本目の uv・タンジェント・表裏は使う版だけ。
-    // WhyNot: flat の値を最後の頂点から取る形（GL の既定）にそろえない — WGSL の flat は最初の頂点を取るが、vTint と vEmissionIntensity は置いた物 1 つで同じ値。
-    def inputStruct(surface: Render3d.ProgramKey.ProgramKind, normalMapped: Bool): String =
-        "struct R3dIn {\n" +
-        (if (surface#variant#psx) "    @builtin(position) fragPos: vec4f,\n" else "") +
-        "    @location(0) vWorld: vec3f,\n" +
-        "    @location(1) vNormal: vec3f,\n" +
-        "    @location(2) vColor: vec3f,\n" +
-        "    @location(3) @interpolate(flat) vTint: vec3f,\n" +
-        "    @location(4) @interpolate(flat) vEmissionIntensity: f32,\n" +
-        (if (surface#uv) "    @location(5) vUv: vec2f,\n" else "") +
-        (if (surface#lightmap) "    @location(6) vUv2: vec2f,\n" else "") +
-        (if (normalMapped) "    @location(7) vTangent: vec4f,\n" else "") +
-        (if (surface#uv and surface#variant#psx) "    @location(8) @interpolate(linear) vUvAffine: vec2f,\n" else "") +
-        (if (surface#doubleSided) "    @builtin(front_facing) frontFacing: bool,\n" else "") +
-        "};\n"
-
-    /// 材質の frag（Render3dGlsl.materialFragmentSource と同じ組み立て）。入口は fs_main。
-    /// 材質の部品は group 1 で作った物（ShaderGen.Wgsl.compile3d(…, 1)）を渡す。
+    /// 材質の frag（本文は Render3dShaders.materialFragmentBody）。入口は fs_main・varying の struct は R3dIn。
+    /// 材質の部品は group 1 で作った物（ShaderGen.Wgsl.compile3d(…, 1)）を渡す。materialEval と cutoutAlpha は vUv・vWorld・vNormal・vColor を名前で読む（本文が局所の値に置く）。
     pub def materialFragmentSource(m: ShaderGen.Wgsl.MaterialWgsl, surface: Render3d.ProgramKey.ProgramKind): String =
         let v = Render3d.ProgramKey.shaderVariantOfKind(surface);
-        let normalMapped = surface#uv and surface#normalMap;
-        let needsMip = (normalMapped or surface#lightmap) and List.isEmpty(m#texReads);
-        let faceNormal = if (surface#doubleSided) "facingNormal" else "normalize(vNormal)";
-        let normal = if (normalMapped) "normalMapped(${faceNormal}, vUv, i.vTangent)" else faceNormal;
-        let cutout = if (surface#coverage) "" else "    if (r3dDraw.uCutout > 0.5 && " + m#cutoutAlpha + " < 0.5) { discard; }\n";
-        let facing = if (surface#doubleSided) "    let facingNormal = select(-normalize(vNormal), normalize(vNormal), i.frontFacing);\n" else "";
-        let alpha = if (surface#coverage) "clamp((" + m#cutoutAlpha + " - 0.5) / max(fwidth(" + m#cutoutAlpha + "), 1e-4) + 0.5, 0.0, 1.0)"
-                    else if (surface#blend) "albedo.a" else "1.0";
-        let light = if (surface#lightmap) "    let light = lightmapLightAt(vWorld, n, lightmapColor(i.vUv2));\n" else "    let light = lightAt(vWorld, n);\n";
-        sceneDeclarations() +
-        variantDeclarations(v) +
-        drawDeclarations(normalMapped, surface#lightmap) +
-        m#declarations +
-        inputStruct(surface, normalMapped) +
-        colorSpaceSource() +
-        lightSourceFor(v) +
-        depthGraySource() +
-        m#functions +
-        (if (needsMip) ShaderGen.Wgsl.texMipSource() else "") +
-        (if (normalMapped) normalMapSource() else "") +
-        (if (surface#lightmap) lightmapSource(v) else "") +
-        (if (surface#metallicRoughness) metallicRoughnessSourceFor(v) else "") +
-        "@fragment fn fs_main(i: R3dIn) -> @location(0) vec4f {\n" +
-        fragCoordIn(v, "i.fragPos") +
-        "    let vWorld = i.vWorld;\n" +
-        "    let vNormal = i.vNormal;\n" +
-        "    let vColor = i.vColor;\n" +
-        "    let vTint = i.vTint;\n" +
-        "    let vEmissionIntensity = i.vEmissionIntensity;\n" +
-        (if (surface#uv and v#psx) "    let vUv = mix(i.vUv, i.vUvAffine, r3dLight.uPsx.w);\n"
-         else if (surface#uv) "    let vUv = i.vUv;\n" else "    let vUv = vec2f(0.0, 0.0);\n") +
-        "    let material = materialEval(vUv, vWorld, vNormal, vColor);\n" +
-        "    let albedo = material.albedo;\n" +
-        "    let emission = material.emission;\n" +
-        cutout +
-        "    if (r3d.uDepthOut == 1) {\n" +
-        "        let g = depthGray(vWorld);\n" +
-        "        return vec4f(g, g, g, 1.0);\n" +
-        "    }\n" +
-        facing +
-        "    let n = " + normal + ";\n" +
-        "    r3d_sunLit = sunLitAt(vWorld, " + faceNormal + ", n);\n" +
-        (if (v#pointShadows) "    r3d_pointShadowsAt(vWorld, " + faceNormal + ", n);\n" else "") +
-        light +
-        (if (surface#metallicRoughness)
-            "    let metalRough = material.metalRough;\n" +
-            "    let base = r3d_srgbToLinear3(albedo.rgb) * vTint;\n" +
-            "    var envColor = vec3f(0.0);\n" +
-            "    if (r3d.uEnvOn == 1) { envColor = environmentColorAt(vWorld, n, base, vec3f(metalRough, 0.0)); }\n" +
-            "    let lit = pbrAt(vWorld, n, base, light, vec3f(metalRough, 0.0), envColor);\n" +
-            "    return vec4f(" + colorOut(v, "r3d_surfaceOutLit(lit, emission, vEmissionIntensity, vWorld)") + ", " + alpha + ");\n"
-         else
-            "    return vec4f(" + colorOut(v, "r3d_surfaceOut(r3d_srgbToLinear3(albedo.rgb), vTint, light, emission, vEmissionIntensity, vWorld, true)") + ", " + alpha + ");\n") +
-        "}\n"
+        let part = Render3dShaders.wgslMaterialPart(m);
+        let declarations =
+            sceneDeclarations() +
+            variantDeclarations(v) +
+            drawDeclarations(Render3dShaders.isNormalMapped(surface), surface#lightmap) +
+            m#declarations +
+            colorSpaceSource() +
+            lightSourceFor(v) +
+            depthGraySource() +
+            m#functions +
+            ShaderAst.Wgsl.print(Render3dShaders.materialHelpers(surface, part)) +
+            (if (surface#lightmap) lightmapLightSourceFor(v) else "") +
+            (if (surface#metallicRoughness) metallicRoughnessSourceFor(v) else "");
+        ShaderAst.Wgsl.fragment(Render3dShaders.materialFragment(surface, part, "", declarations))
 
-    /// 奥行きの書き出し（Output.Depth）の形だけの frag（Render3dGlsl.depthFragmentSource と同じ）。頂点シェーダーは litVertexSource で、読む varying は vWorld だけ。入口は fs_main。
+    /// 奥行きの書き出し（Output.Depth）の形だけの frag（Render3dGlsl.depthFragmentSource と同じ本文）。頂点シェーダーは litVertexSource。入口は fs_main。
     pub def depthFragmentSource(): String =
-        sceneDeclarations() +
-        depthGraySource() +
-        "@fragment fn fs_main(@location(0) vWorld: vec3f) -> @location(0) vec4f {\n" +
-        "    let g = depthGray(vWorld);\n" +
-        "    return vec4f(g, g, g, 1.0);\n" +
-        "}\n"
+        ShaderAst.Wgsl.fragment(Render3dShaders.depthFragment("", sceneDeclarations() + depthGraySource()))
 
-    /// 頂点の色のプログラムの frag（Render3dGlsl.litFragmentSource と同じ。vColor は頂点シェーダーが線形へ戻し済み）。入口は fs_main。
+    /// 頂点の色のプログラムの frag（Render3dGlsl.litFragmentSource と同じ本文。vColor は頂点シェーダーが線形へ戻し済み）。入口は fs_main。
     pub def litFragmentSource(): String = litFragmentSourceFor(Render3d.ProgramKey.defaultShaderVariant())
 
     /// 変種 v の litFragmentSource。
     pub def litFragmentSourceFor(v: Render3d.ProgramKey.ShaderVariant): String =
-        sceneDeclarations() +
-        variantDeclarations(v) +
-        "struct R3dLitIn {\n" +
-        (if (v#psx) "    @builtin(position) fragPos: vec4f,\n" else "") +
-        "    @location(0) vWorld: vec3f,\n" +
-        "    @location(1) vNormal: vec3f,\n" +
-        "    @location(2) vColor: vec3f,\n" +
-        "    @location(3) @interpolate(flat) vTint: vec3f,\n" +
-        "};\n" +
-        colorSpaceSource() +
-        lightSourceFor(v) +
-        "@fragment fn fs_main(i: R3dLitIn) -> @location(0) vec4f {\n" +
-        fragCoordIn(v, "i.fragPos") +
-        "    let n = normalize(i.vNormal);\n" +
-        "    r3d_sunLit = sunLitAt(i.vWorld, n, n);\n" +
-        (if (v#pointShadows) "    r3d_pointShadowsAt(i.vWorld, n, n);\n" else "") +
-        "    return vec4f(" + colorOut(v, "r3d_surfaceOut(i.vColor, i.vTint, lightAt(i.vWorld, n), vec3f(0.0), 1.0, i.vWorld, true)") + ", 1.0);\n" +
-        "}\n"
+        ShaderAst.Wgsl.fragment(Render3dShaders.litFragment(v, "", sceneDeclarations() + variantDeclarations(v) + colorSpaceSource() + lightSourceFor(v)))
 
     /// 1 体ごとの値の 1 体のバイト数（Render3d.InstanceValues の 1 体 = 32 float）。
     pub def instanceBytes(): Int32 = 4 * Render3d.InstanceValues.floatsPerInstance()
