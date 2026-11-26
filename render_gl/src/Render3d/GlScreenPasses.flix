@@ -13,13 +13,13 @@ pub mod Render3d.GlScreenPasses {
     pub type alias MaskTarget = { fbo = Int32, tex = Int32 }
 
     /// 描き手が持つ物。programs = pass の種類ごとのプログラム（初めて要る時に組む）・targets = mask の描き先 2 枚と大きさ（大きさが変わったら作り直す）・
-    /// warned = 知らせた鍵・white = mask を描けない場面の代わりの絵（1 画素の 1 = 暗くしない。初めて要る時に作る）。
+    /// white = mask を描けない場面の代わりの絵（1 画素の 1 = 暗くしない。初めて要る時に作る）。
     pub type alias Data = { programs = Ref[Map[String, Program], Static], targets = Ref[Option[(Int32, Int32, MaskTarget, MaskTarget)], Static],
-                            warned = Ref[Set[String], Static], white = Ref[Option[Int32], Static] }
+                            white = Ref[Option[Int32], Static] }
 
     /// 何も持たない Data。
     pub def fresh(): Data \ IO =
-        { programs = Ref.fresh(Static, Map.empty()), targets = Ref.fresh(Static, None), warned = Ref.fresh(Static, Set.empty()), white = Ref.fresh(Static, None) }
+        { programs = Ref.fresh(Static, Map.empty()), targets = Ref.fresh(Static, None), white = Ref.fresh(Static, None) }
 
     /// mask を描けない場面の代わりの絵（1 画素の白）。
     def whiteOf(gl: GlContext, state: State): Int32 \ IO =
@@ -37,38 +37,25 @@ pub mod Render3d.GlScreenPasses {
     // WhyNot: 材質の絵（0〜5）や影の地図の unit と共有しない — 色の pass の間ずっと貼っておき、材質ごとに貼り直さない。GL 3.3 と WebGL2 が約束する 16 枚の最後の 1 つ。
     pub def maskTextureUnit(): Int32 = 15
 
-    /// 場面 scene の SSAO の mask を描き、その絵（texture の番号）を返す（+ao の場面だけが呼ぶ。奥行きの Pass が見つからない・Native でない場面は白の代わりの絵）。
+    /// 場面 scene の SSAO の mask を描き、その絵（texture の番号）を返す（+ao の場面だけが呼ぶ。奥行きの Pass が見つからない場面は白の代わりの絵）。
     /// rect = 場面の描き先の矩形（GL の左下が原点・奥行きの Pass の中の同じ場所）・dest = 描き終えた後に戻す FBO。描き終えたら viewport と scissor は呼ぶ側が置き直す。
     pub def renderMask(gl: GlContext, state: State, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO, rect: PixelBox, dest: Int32,
                        scene: Scene3d.Scene3dCmd): Int32 \ IO =
         let found = Render3d.ScreenPasses.ambientOcclusionOf(scene)
-                    |> Option.flatMap(pair -> depthTextureOf(state, textureOf, fst(pair), scene) |> Option.map(depth -> (pair, depth)));
+                    |> Option.flatMap(pair -> depthTextureOf(state, textureOf, fst(pair)) |> Option.map(depth -> (pair, depth)));
         match found {
             case Some(((inputs, ao), depth)) => drawMask(gl, state, rect, dest, scene, inputs, ao, depth)
             case None                        => whiteOf(gl, state)
         }
 
-    /// 奥行きの Pass の texture（見つからない・Design の場面は 1 回知らせて None）。
-    def depthTextureOf(state: State, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO, inputs: Scene3d.ScreenInputs,
-                       scene: Scene3d.Scene3dCmd): Option[Int32] \ IO =
+    /// 奥行きの Pass の texture（見つからない・R32Float で作れず落ちた時は 1 回知らせて None）。
+    def depthTextureOf(state: State, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO, inputs: Scene3d.ScreenInputs): Option[Int32] \ IO =
         let name = Scene3d.screenInputsFieldsOf(inputs)#depth;
-        if (scene#resolution != Scene3d.Resolution.Native) {
-            warnOnce(state, "@screen-effects-design", Scene3d.Internal.ScreenInputs.designResolutionLine());
-            None
-        }
-        else match textureOf(name) {
+        match textureOf(name) {
             case Some(t) => Some(t#texId)
             case None    =>
-                warnOnce(state, "@screen-effects-depth:" + name, "scene3d: 画面の上の技の奥行きの Pass '${name}' が見つからない — SSAO を掛けずに描く");
+                Render3d.ScenePlan.warnOnce(state#planner, "@screen-effects-depth:" + name, Scene3d.Internal.ScreenInputs.missingDepthLine(name));
                 None
-        }
-
-    def warnOnce(state: State, key: String, line: String): Unit \ IO =
-        let d = state#screenPasses;
-        if (Set.memberOf(key, Ref.get(d#warned))) ()
-        else {
-            Ref.put(Set.insert(key, Ref.get(d#warned)), d#warned);
-            Log.warn(line)
         }
 
     def drawMask(gl: GlContext, state: State, rect: PixelBox, dest: Int32, scene: Scene3d.Scene3dCmd, inputs: Scene3d.ScreenInputs,
@@ -97,10 +84,6 @@ pub mod Render3d.GlScreenPasses {
         gl.bindFramebuffer(GlConst.FRAMEBUFFER, dest);
         a#tex
 
-    /// 場面 scene が色の代わりに mask を出す（PostStack.DebugView.AmbientOcclusion）か。
-    pub def isShown(scene: Scene3d.Scene3dCmd): Bool =
-        scene#screenInputs |> Option.exists(s -> Scene3d.screenInputsFieldsOf(s)#show == Some(ScreenEffects3d.ScreenDebug.AmbientOcclusion))
-
     /// mask の絵 mask を maskTextureUnit() に貼る（色の pass の頭で Some・尻で外す）。SSAO の無い場面（mask が None）は触らない。
     pub def bindMask(gl: GlContext, mask: Option[Int32]): Unit \ IO =
         mask |> Option.forEach(tex -> {
@@ -117,7 +100,7 @@ pub mod Render3d.GlScreenPasses {
                 gl.disable(GlConst.DEPTH_TEST);
                 gl.disable(GlConst.CULL_FACE);
                 gl.disable(GlConst.BLEND);
-                let show = { kind = ScreenPassKind.ShowAo, scaled = false, readsMask = true, dir = (0.0f32, 0.0f32), format = Render3d.ScreenPasses.ScreenTargetFormat.R8 };
+                let show = Render3d.ScreenPasses.showPass();
                 drawPass(gl, state, show, values,
                          (Int32.toFloat32(rect#x), Int32.toFloat32(rect#y), Int32.toFloat32(rect#width), Int32.toFloat32(rect#height)), 0, mask)
             }))

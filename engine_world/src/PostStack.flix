@@ -165,6 +165,8 @@ pub mod PostStack {
         case SeveralScenes(Int32)
         /// 自分の Spec の Pass の名前が ps_ で始まる（PostStack の Pass と混ざるので描かない）。
         case ReservedPassName(String)
+        /// SSAO があるのに、奥行きを描く一番大きい場面が Resolution.Design（画面の上の技は Native の場面だけに掛かる・掛けずに描く）。
+        case AmbientOcclusionNeedsNative
     }
 
     // ── 効果ごとの既定値（`{ strength = 0.9 | PostStack.bloom() }` の形で替える。post.json で効果の欄を書いた時の出発点も同じ値） ──
@@ -387,5 +389,6 @@ pub mod PostStack {
         case Issue.NoScene3d          => "奥行きのぼかしがあるのに、View の絵に 3D の場面が無い — ぼかさない"
         case Issue.SeveralScenes(n)   => "3D の場面が ${n} 個ある — 奥行きの絵は一番大きい場面から作る"
         case Issue.ReservedPassName(n) => "自分の Pass '${n}' が ps_ で始まる — 描かない（ps_ は PostStack の Pass）"
+        case Issue.AmbientOcclusionNeedsNative => "SSAO は Native の解像度の場面だけに掛かる — 一番大きい場面が Resolution.Design なので掛けない"
     }
 }

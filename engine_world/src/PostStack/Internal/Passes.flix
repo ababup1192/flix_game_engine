@@ -73,7 +73,7 @@ pub mod PostStack.Internal.Passes {
         let wantsDepth = Option.nonEmpty(f#depthOfField) or customDepth or Option.nonEmpty(fog) or Option.nonEmpty(f#ambientOcclusion);
         let afterCustom = before |> List.map(c -> c#name) |> List.last |> Option.getWithDefault(PostStack.sceneName());
         // SSAO がある時は、目からの距離の奥行きを ps_depth_far の 1 枚にまとめ、霧と奥行きのぼかし（DepthBand でない物）もそれを読む。
-        let far = forM (_ <- f#ambientOcclusion; s <- largest)
+        let far = forM (_ <- f#ambientOcclusion; s <- largest |> Option.filter(isNativeScene))
                   yield { name = farDepthPass(), range = Scene3d.Internal.ScreenInputs.depthRangeOf(snd(s)#camera, snd(s)#size), linear = false };
         let focus = forM (d <- f#depthOfField; s <- largest; fo <- focusOf(d, s, far)) yield fo;
         // DepthBand の奥行きの絵は帯に切り出した値なので、霧は目からの距離の絵を別に描く。
@@ -106,6 +106,7 @@ pub mod PostStack.Internal.Passes {
             (reserved |> List.map(c -> Issue.ReservedPassName(c#name)))
                 :: (if (wantsDepth and Option.isEmpty(largest)) Issue.NoScene3d :: Nil else Nil)
                 :: (if (wantsDepth and List.length(scenes) > 1) Issue.SeveralScenes(List.length(scenes)) :: Nil else Nil)
+                :: (if (Option.nonEmpty(f#ambientOcclusion) and Option.nonEmpty(largest) and Option.isEmpty(far)) Issue.AmbientOcclusionNeedsNative :: Nil else Nil)
                 :: Nil);
         let sceneTarget = RenderTarget.withMsaa(samplesOf(f#msaa),
             if (isHdrNeeded(f)) RenderTarget.withHdr(RenderTarget.windowDescriptor()) else RenderTarget.windowDescriptor());
@@ -244,6 +245,9 @@ pub mod PostStack.Internal.Passes {
     }
 
     def area(cmd: Scene3d.Scene3dCmd): Float64 = cmd#size#x * cmd#size#y
+
+    /// 場面 s が Native の解像度か（画面の上の技は Native の場面だけに掛かる・Scene3d.preloadVariantOf の WhyNot）。
+    def isNativeScene(s: (Vec2.Vec2, Scene3d.Scene3dCmd)): Bool = snd(s)#resolution == Scene3d.Resolution.Native
 
     def cameraFar(s: (Vec2.Vec2, Scene3d.Scene3dCmd)): Float64 = snd(s)#camera#far
 
@@ -537,7 +541,7 @@ pub mod PostStack.Internal.Passes {
                 rgbOf(t(TexChan.R), t(TexChan.G), t(TexChan.B))
             case (DebugView.Depth, _, Some(_)) => rgbOf(ref("ps_depth"), ref("ps_depth"), ref("ps_depth"))
             // 3D の描き手が場面の色の代わりに mask の灰色を描いた場面の Pass を、曲線を掛けずに出す。
-            case (DebugView.AmbientOcclusion, _, _) =>
+            case (DebugView.AmbientOcclusion, _, _) if Option.nonEmpty(f#ambientOcclusion) =>
                 let t = chan -> Field.Tex({ name = PostStack.sceneName(), chan = chan });
                 rgbOf(t(TexChan.R), t(TexChan.G), t(TexChan.B))
             case _                             => finalOut(f#viewTransform)

@@ -412,7 +412,7 @@
 - 場面 cmd を image へ重ねる。sf = design px → 出力の画素の倍率。textures = ビルボードと材質が引く絵（(名前, 段の平均の色空間) → 段の列。
   `pub def drawScene(image: BufferedImage, sf: Float64, textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]], time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO`
 - drawScene の、R32Float の Pass の絵 floatPasses（名前 → 絵）を読める版（画面の上の技の奥行き）。
-  `pub def drawSceneReading(image: BufferedImage, sf: Float64, textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]], floatPasses: Map[String, ShaderEval.HdrTexture], time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO`
+  `pub def drawSceneWithPasses(image: BufferedImage, sf: Float64, textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]], floatPasses: Map[String, ShaderEval.HdrTexture], time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO`
 - 置いた物を光の目 eye から見た n × n の深度の地図（SoftRaster3d.ShadowMaps.buildShadowMap と同じ形。視錐台の間引きは eye の行列から作る）。
   `pub def depthMapOf(instances: List[Scene3d.Instance3d], eye: LightEye, n: Int32): Vector[Float64] \ IO`
 - 三角形の道の射影の種類。Perspective(near) は w = 目の座標の −z で w ≥ near の側を残す・Orthographic は w = 1 で z ≥ −w の側を残す。

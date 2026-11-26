@@ -63,7 +63,9 @@ pub mod SoftRaster3d.ScreenEffects {
         let (rx, ry, rw, rh) = input#rect;
         let x = rx + clampInt(qx, 0, rw - 1);
         let y = ry + clampInt(qy, 0, rh - 1);
-        ShaderEval.hdrChannelOf(input#depth, (y * ShaderEval.hdrWidthOf(input#depth) + x) * 4)
+        let w = ShaderEval.hdrWidthOf(input#depth);
+        if (x < 0 or y < 0 or x >= w or y >= ShaderEval.hdrHeightOf(input#depth)) 1.0
+        else ShaderEval.hdrChannelOf(input#depth, (y * w + x) * 4)
 
     /// 場面の矩形の中の画素 (qx, qy) の、奥行き d の点。
     def pointAt(input: Input, f: Frame, qx: Int32, qy: Int32, d: Float64): Vec3.Vec3 =

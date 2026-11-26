@@ -2054,7 +2054,7 @@
 - 見た目の名前から引く出発点（docs/art-ref/visual-dict/reference-3d.md の行の名前と同じ）。値は PostStack.preset。
   `pub enum Preset with Eq, ToString { case Neutral case DuskOutdoor case NightOutdoor case SunnyCity case EveningBeach case Cave case NightCorridor case TorchRoom }`
 - 組み方の問題（build が返す。実機は 1 回だけ知らせ、描き出しの lint は止める）。
-  `pub enum Issue with Eq, ToString { case NoScene3d case SeveralScenes(Int32) case ReservedPassName(String) }`
+  `pub enum Issue with Eq, ToString { case NoScene3d case SeveralScenes(Int32) case ReservedPassName(String) case AmbientOcclusionNeedsNative }`
 - threshold 1・smoothness 0.5・size 0.04・strength 0.6 のブルーム。
   `pub def bloom(): Bloom`
 - strength 0.3・inner 0.35・outer 1.05・画面の真ん中のビネット。

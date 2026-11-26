@@ -534,7 +534,7 @@ mod Render3d {
                     aoMask = aoMask };
         let (callsBefore, meshBefore) = Render3d.Counts.drawCallsSoFar(state);
         if (Render3d.GpuSpans.skipsColorDraws()) ()
-        else if (Render3d.GlScreenPasses.isShown(scene)) aoMask |> Option.forEach(Render3d.GlScreenPasses.drawShow(gl, state, area#viewport, scene))
+        else if (Render3d.ScreenPasses.isShown(scene)) aoMask |> Option.forEach(Render3d.GlScreenPasses.drawShow(gl, state, area#viewport, scene))
         else inputs#passes |> List.forEach(match (spec, list) -> drawPass(gl, state, gen, ctx, inputs, spec, list));
         let (callsAfter, meshAfter) = Render3d.Counts.drawCallsSoFar(state);
         Render3d.ScenePlan.noteDrawCallHint(state#planner, callsAfter - callsBefore, meshAfter - meshBefore);

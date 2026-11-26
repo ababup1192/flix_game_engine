@@ -27,10 +27,9 @@ pub mod Scene3d.Internal.ScreenInputs {
         let forward = Vec3.add(Camera3d.forward(camera), Vec3.add(Vec3.mul(right, 2.0 * camera#lensShift#x), Vec3.mul(up, 2.0 * camera#lensShift#y)));
         (forward, right, up)
 
-    /// Design の解像度の場面に SSAO を掛けない知らせの 1 行（3 つの描き手で同じ文面）。
-    // WhyNot: Design の場面にも掛けない — 奥行きの Pass の中の場面の矩形は 2D の並びを描く時まで決まらず、場面を先に描く所で mask の場所を決められない。
-    pub def designResolutionLine(): String =
-        "scene3d: 画面の上の技（SSAO）は Native の解像度の場面だけに掛かる（Resolution.Design の場面は掛けずに描く）"
+    /// 奥行きの Pass name が見つからない時の知らせの 1 行（GL と WebGPU で同じ文面）。
+    pub def missingDepthLine(name: String): String =
+        "scene3d: 画面の上の技の奥行きの Pass '${name}' が見つからない（作れなかった・R32Float で作れず落ちた）— SSAO を掛けずに描く"
 
     /// 場面の矩形の高さ height 画素で、目から距離 1 の所の 1 の長さが何画素か（SSAO の半径を画素へ写す）。
     pub def projScaleOf(camera: Camera3d.Camera3d, height: Int32): Float64 =

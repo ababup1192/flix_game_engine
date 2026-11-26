@@ -598,7 +598,7 @@ pub mod Render3d.WebGpuRenderer {
         let drawn = target#msaa |> Option.getWithDefault(target#color);
         let full = (0, 0, target#width, target#height);
         let rect = placed#rect;
-        if (Option.nonEmpty(aoView) and Render3d.GlScreenPasses.isShown(scene))
+        if (Option.nonEmpty(aoView) and Render3d.ScreenPasses.isShown(scene))
             Render3d.WebGpuScreenPasses.encodeShow(s#screen, host, placed#key, (rect#x, rect#y, rect#width, rect#height), (target#width, target#height),
                                           target#color.defaultView(), target#format, scene)
         else staged#passes |> List.forEach(match (spec, list, valuesBase) ->

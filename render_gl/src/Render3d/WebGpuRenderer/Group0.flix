@@ -34,23 +34,19 @@ pub mod Render3d.WebGpuRenderer.Group0 {
         case Group0Binding.AoMask           => 4
     }
 
-    /// 場面の SSAO の mask の pass を積み、mask の view を返す（奥行きの Pass が見つからない・Native でない場面は 1 回知らせて代わりの絵（1 = 暗くしない）を返す）。
+    /// 場面の SSAO の mask の pass を積み、mask の view を返す（+ao の場面だけが呼ぶ。奥行きの Pass が見つからない場面は 1 回知らせて代わりの絵（1 = 暗くしない）を返す）。
     pub def encodeScreenMask(r: Renderer, host: Host, target: SceneTarget, placed: { key = (Int32, Int32), rect = PixelBox }, scene: Scene3d.Scene3dCmd): TextureView \ IO =
         let RendererData.RendererData(s) = r;
         let depthName = scene#screenInputs |> Option.map(i -> Scene3d.screenInputsFieldsOf(i)#depth) |> Option.getWithDefault("");
         let depth = host#textureOf(depthName) |> Option.flatMap(t -> host#textureById(t#texId));
         let rect = placed#rect;
+        writeAoValues(r, target, scene);
         match depth {
-            case Some(d) if scene#resolution == Scene3d.Resolution.Native =>
+            case Some(d) =>
                 Render3d.WebGpuScreenPasses.encodeMask(s#screen, host, placed#key, (rect#x, rect#y, rect#width, rect#height), (target#width, target#height), d, scene);
-                writeAoValues(r, target, scene);
                 Render3d.WebGpuScreenPasses.maskViewOf(s#screen, placed#key)
-            case Some(_) =>
-                Render3d.ScenePlan.warnOnce(s#planner, "@screen-effects-design", Scene3d.Internal.ScreenInputs.designResolutionLine());
-                Render3d.WebGpuScreenPasses.maskViewOf(s#screen, (-1, -1))
             case None =>
-                Render3d.ScenePlan.warnOnce(s#planner, "@screen-effects-depth:" + depthName,
-                                            "scene3d: 画面の上の技の奥行きの Pass '${depthName}' が見つからない — SSAO を掛けずに描く");
+                Render3d.ScenePlan.warnOnce(s#planner, "@screen-effects-depth:" + depthName, Scene3d.Internal.ScreenInputs.missingDepthLine(depthName));
                 Render3d.WebGpuScreenPasses.maskViewOf(s#screen, (-1, -1))
         }
 

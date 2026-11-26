@@ -441,18 +441,21 @@ mod RenderPaint {
 
     /// 溜めた場面を 3D の描き手に準備させ、2D の並びへ混ぜる形を受け取る。dest = 準備の後に戻す描き先・その形式・標本の数。
     def prepareScenes(paint: Paint, dest: Scene3dRenderer.Dest, scenes: List[Scene3d.RenderCmd]): Scene3dRenderer.Prepared \ IO =
-        paint#scene3d#prepare(Array.get(0, paint#frameGenHolder), registeredTexture(paint#registryRef, paint#targets, paint#textureKeyRef), dest, scenes)
+        paint#scene3d#prepare(Array.get(0, paint#frameGenHolder), registeredTexture(paint), dest, scenes)
 
     /// ビルボードと 3D の材質が貼るテクスチャを名前で引く（レンダーターゲットは上下逆に格納されているので flipped）。
     /// version = ensureTexture の key（同じ GL ハンドルのまま画素を差し替えると変わる。key の無い絵は空の字）。
-    def registeredTexture(registryRef: Ref[RenderAsset.TextureRegistry, Static],
-                          targets: TargetTable.Table,
-                          textureKeyRef: Ref[Map[String, String], Static],
-                          name: String): Option[Scene3dRenderer.RegisteredTexture] \ IO =
-        Map.get(name, Ref.get(registryRef)) |> Option.map(info ->
+    /// R32Float で作れず Rgba8Unorm に落ちた Pass は無い物として返す（3D の描き手は画面の上の技を切り、知らせは warnFormatFallback が出している）。
+    // WhyNot: 落ちた 8bit の奥行きのまま SSAO を描かない — 遠くの面の奥行きが 1 段 数十 cm に丸まり、面の全部に縞の影が出る。
+    def registeredTexture(paint: Paint, name: String): Option[Scene3dRenderer.RegisteredTexture] \ IO =
+        Map.get(name, Ref.get(paint#registryRef)) |> Option.filter(info -> not isFallenFloat(paint, GpuHandle.textureIdInt(info#id))) |> Option.map(info ->
             ({ texId = GpuHandle.textureIdInt(info#id), width = info#width, height = info#height,
-               flipped = TargetTable.isTarget(targets, name),
-               version = Map.getWithDefault(name, "", Ref.get(textureKeyRef)) }: Scene3dRenderer.RegisteredTexture))
+               flipped = TargetTable.isTarget(paint#targets, name),
+               version = Map.getWithDefault(name, "", Ref.get(paint#textureKeyRef)) }: Scene3dRenderer.RegisteredTexture))
+
+    /// テクスチャ tex が、R32Float で頼まれて Rgba8Unorm に落ちた描き先か。
+    def isFallenFloat(paint: Paint, tex: Int32): Bool \ IO =
+        Map.get(tex, Ref.get(paint#targetEntries)) |> Option.exists(e -> e#format == RenderTarget.Format.R32Float and RenderTargetGl.isFallback(e))
 
     /// 最後に画面へ塗り終えた時の 2D の draw call の数（診断を集めていなくても読める）。
     pub def lastDraw2dCounts(paint: Paint): FrameDiagnostics.Draw2dCounts \ IO =
@@ -756,7 +759,7 @@ mod RenderPaint {
     // WhyNot: queueScene3d のように溜めない — 溜めると、同じコマの Pass の場面が上がる前に描かれる。
     pub def preloadScene3d(paint: Paint, cmd: Scene3d.PreloadCmd): Scene3d.PreloadProgress \ IO =
         // WhyNot: 今の世代で呼ばない — 世代は画面を描く直前に進み、今の世代のまま作ると前のコマの切れた予算で進め、作った控えを画面のコマが使っていない物とみなす。
-        paint#scene3d#preload(Array.get(0, paint#frameGenHolder) + 1i64, registeredTexture(paint#registryRef, paint#targets, paint#textureKeyRef), cmd)
+        paint#scene3d#preload(Array.get(0, paint#frameGenHolder) + 1i64, registeredTexture(paint), cmd)
 
     /// 使わなくなったシェーダープログラムを LRU で追い出す。
     def evictShaderPrograms(gl: GlContext, paint: Paint): Unit \ IO =

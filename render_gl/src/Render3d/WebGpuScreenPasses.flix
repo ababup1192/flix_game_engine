@@ -42,6 +42,10 @@ pub mod Render3d.WebGpuScreenPasses {
         discard desc.buffer(0, ShaderStage.FRAGMENT, BufferBindingType.UNIFORM);
         discard desc.texture(1, ShaderStage.FRAGMENT, TextureSampleType.UNFILTERABLE_FLOAT).texture(2, ShaderStage.FRAGMENT, TextureSampleType.FLOAT);
         let blank = gpu.createTexture("fge scene3d screen blank", 1, 1, TextureFormat.R8_UNORM, Int32.bitwiseOr(TextureUsage.TEXTURE_BINDING, TextureUsage.COPY_DST), 1, 1);
+        let white = ByteBuffer.allocateDirect(4);
+        discard white.put(0, -1i8);
+        // WhyNot: 代わりの絵を 0 のままにしない — mask を描けない場面の +ao の frag は代わりの絵を読み、0 だと環境の光が全部消える（GL・CPU は 1 で読む）。
+        gpu.writeTexture(blank, 0, 0, 0, 1, 1, white, 0, 4);
         { gpu = gpu, layout = gpu.createBindGroupLayout(desc),
           vertexModule = gpu.createShaderModule("fge scene3d screen vs", ShaderAst.Wgsl.vertex(Render3d.ScreenPasses.vertex())),
           modules = Ref.fresh(Static, Map.empty()), pipelines = Ref.fresh(Static, Map.empty()), masks = Ref.fresh(Static, Map.empty()),
@@ -110,7 +114,7 @@ pub mod Render3d.WebGpuScreenPasses {
             case (Some((inputs, ao)), Some(masks)) =>
                 let (sw, sh) = size;
                 let values = Render3d.ScreenPasses.valuesOf(scene, inputs, ao, rect);
-                let show = { kind = ScreenPassKind.ShowAo, scaled = false, readsMask = true, dir = (0.0f32, 0.0f32), format = Render3d.ScreenPasses.ScreenTargetFormat.R8 };
+                let show = Render3d.ScreenPasses.showPass();
                 encodePass(sp, host, show, values, (0.0f32, 0.0f32, Int32.toFloat32(sw), Int32.toFloat32(sh)), Vector.get(3, masks#values),
                            sp#blankMask.defaultView(), masks#a.defaultView(), onto, RenderPaint.Internal.WebGpuPipelines.textureFormatOf(format), (0, 0, sw, sh))
             case _ => ()

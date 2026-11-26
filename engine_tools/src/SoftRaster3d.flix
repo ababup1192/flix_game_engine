@@ -247,10 +247,10 @@ pub mod SoftRaster3d {
     /// Native は出力の画素で塗り、Design は design の画素で塗ってから最も近い画素で広げる。
     /// 何も描かれない画素は background が Some ならその色、None なら透明（下地が見える）。重ね方は Shader 面と同じ blendPixel。
     pub def drawScene(image: BufferedImage, sf: Float64, textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]],
-                      time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO = drawSceneReading(image, sf, textures, Map.empty(), time, cmd)
+                      time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO = drawSceneWithPasses(image, sf, textures, Map.empty(), time, cmd)
 
     /// drawScene の、R32Float の Pass の絵 floatPasses（名前 → 絵）を読める版（画面の上の技の奥行き）。
-    pub def drawSceneReading(image: BufferedImage, sf: Float64, textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]],
+    pub def drawSceneWithPasses(image: BufferedImage, sf: Float64, textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]],
                              floatPasses: Map[String, ShaderEval.HdrTexture], time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO = region rc {
         let scene = cmd#scene;
         let (rx0, ry0, rx1, ry1) = DrawCmd.clipPixels({ scaleX = sf, scaleY = sf }, { position = cmd#at, size = scene#size });
@@ -1053,11 +1053,10 @@ pub mod SoftRaster3d {
                 (gray, gray, gray, 1.0)
             case None =>
                 let point = surfaceAt(v, weights);
-                let ao = screenAoAt(env, pixel);
                 let litWith = (sunLit: Float64, pointLit: Vector[Float64], base: (Float64, Float64, Float64)) -> {
                     let (br, bg, bb) = base;
                     let n = point#normal;
-                    let (lr, lg, lb) = evalLight(lights, pointLit, px, py, pz, n#x, n#y, n#z, sunLit, ao);
+                    let (lr, lg, lb) = evalLight(lights, pointLit, px, py, pz, n#x, n#y, n#z, sunLit, screenAoAt(env, pixel));
                     applyFog(fog, ex, ey, ez, px, py, pz, br * lr, bg * lg, bb * lb)
                 };
                 let meshLit = (base: (Float64, Float64, Float64)) ->

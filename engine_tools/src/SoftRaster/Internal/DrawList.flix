@@ -149,7 +149,7 @@ pub mod SoftRaster.Internal.DrawList {
                     blendedDraw(image, sf, hintsOf(req), p#blend, p#clip, polygonAabb(req#design, p),
                                 gs -> drawPolygon(rc, gs, sf, p))
             case RItem.RSurf(s) => drawSurface(image, sf, plan#texEnv, texels, memo, s)
-            case RItem.RScene(c) => SoftRaster3d.drawSceneReading(image, sf, plan#sceneTextures, floatPassesOf(extraImages), c#scene#time, c)
+            case RItem.RScene(c) => SoftRaster3d.drawSceneWithPasses(image, sf, plan#sceneTextures, floatPassesOf(extraImages), c#scene#time, c)
         }, plan#items);
         g.dispose()
     }

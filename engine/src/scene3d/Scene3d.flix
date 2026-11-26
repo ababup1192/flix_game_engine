@@ -1049,10 +1049,11 @@ pub mod Scene3d {
     pub type alias PreloadVariant = { pointShadows = Bool, physicalUnits = Bool, psx = Bool, skyIrradiance = Bool, ambientOcclusion = Bool }
 
     /// 場面 scene を描く時に描き手が組む変種（先に上げる宣言に、遊びで出す場面の設定から渡す）。
+    // WhyNot: Design の解像度の場面を +ao にしない — 奥行きの Pass の中の場面の矩形は 2D の並びを描く時まで決まらず、場面を先に描く所で mask の場所を決められない。
     pub def preloadVariantOf(scene: Scene3dCmd): PreloadVariant =
         { pointShadows = Option.nonEmpty(scene#pointShadows), physicalUnits = scene#lightUnits == LightUnits.Physical, psx = Scene3d.Psx.isOn(scene#psx),
           skyIrradiance = Scene3d.Internal.SkyIrradiance.isOn(scene),
-          ambientOcclusion = isColorOutput(scene#output) and (scene#screenInputs |> Option.exists(s -> Option.nonEmpty(screenInputsFieldsOf(s)#ambientOcclusion))) }
+          ambientOcclusion = isColorOutput(scene#output) and scene#resolution == Resolution.Native and (scene#screenInputs |> Option.exists(s -> Option.nonEmpty(screenInputsFieldsOf(s)#ambientOcclusion))) }
 
     /// 色を書き出す場面か（Output.Color）。
     def isColorOutput(o: Output): Bool = match o {

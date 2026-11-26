@@ -19,8 +19,7 @@ pub mod Render3d.ScreenPasses {
         case AoMask, AoBlurH, AoBlurV, ShowAo
     }
 
-    /// 画面の上の pass が描く内側の絵の形式（GL は R8・WebGPU は R8_UNORM）。
-    // WhyNot: R8 に決め打ちしない — 接地の影の mask を AO と 1 枚（赤と緑）にまとめる時に、texture unit を増やさず形式の case を 1 つ足すだけで済むようにする。
+    /// 画面の上の pass が描く内側の絵の形式（GL は R8・WebGPU は R8_UNORM。形式の字は 2 つの描き手がこの case から 1 か所で決める）。
     pub enum ScreenTargetFormat with Eq, ToString {
         case R8
     }
@@ -32,16 +31,23 @@ pub mod Render3d.ScreenPasses {
     /// 場面の技の値 inputs の pass の並び（技の無い物は出さない。show なら最後に ShowAo）。
     pub def passesOf(inputs: Scene3d.ScreenInputs): List[ScreenPass] =
         let fields = Scene3d.screenInputsFieldsOf(inputs);
+        let r8 = ScreenTargetFormat.R8;
         match fields#ambientOcclusion {
             case None    => Nil
             case Some(_) =>
-                { kind = ScreenPassKind.AoMask, scaled = true, readsMask = false, dir = (0.0f32, 0.0f32), format = Render3d.ScreenPasses.ScreenTargetFormat.R8 } ::
-                { kind = ScreenPassKind.AoBlurH, scaled = true, readsMask = true, dir = (1.0f32, 0.0f32), format = Render3d.ScreenPasses.ScreenTargetFormat.R8 } ::
-                { kind = ScreenPassKind.AoBlurV, scaled = true, readsMask = true, dir = (0.0f32, 1.0f32), format = Render3d.ScreenPasses.ScreenTargetFormat.R8 } ::
-                (if (fields#show == Some(ScreenEffects3d.ScreenDebug.AmbientOcclusion))
-                     { kind = ScreenPassKind.ShowAo, scaled = false, readsMask = true, dir = (0.0f32, 0.0f32), format = Render3d.ScreenPasses.ScreenTargetFormat.R8 } :: Nil
-                 else Nil)
+                { kind = ScreenPassKind.AoMask, scaled = true, readsMask = false, dir = (0.0f32, 0.0f32), format = r8 } ::
+                { kind = ScreenPassKind.AoBlurH, scaled = true, readsMask = true, dir = (1.0f32, 0.0f32), format = r8 } ::
+                { kind = ScreenPassKind.AoBlurV, scaled = true, readsMask = true, dir = (0.0f32, 1.0f32), format = r8 } ::
+                (if (fields#show == Some(ScreenEffects3d.ScreenDebug.AmbientOcclusion)) showPass() :: Nil else Nil)
         }
+
+    /// mask を場面の色として出す pass（PostStack.DebugView.AmbientOcclusion）。
+    pub def showPass(): ScreenPass =
+        { kind = ScreenPassKind.ShowAo, scaled = false, readsMask = true, dir = (0.0f32, 0.0f32), format = ScreenTargetFormat.R8 }
+
+    /// 場面 scene が色の代わりに mask を出すか。
+    pub def isShown(scene: Scene3d.Scene3dCmd): Bool =
+        scene#screenInputs |> Option.exists(s -> Scene3d.screenInputsFieldsOf(s)#show == Some(ScreenEffects3d.ScreenDebug.AmbientOcclusion))
 
     /// 場面 scene の技の入力と SSAO の値（どちらかが無ければ None）。
     pub def ambientOcclusionOf(scene: Scene3d.Scene3dCmd): Option[(Scene3d.ScreenInputs, ScreenEffects3d.AmbientOcclusion)] =
@@ -52,7 +58,7 @@ pub mod Render3d.ScreenPasses {
         let s = Float64.toString(v);
         if (String.contains(substr = ".", s) or String.contains(substr = "E", s) or String.contains(substr = "e", s)) s else s + ".0"
 
-    def k(v: Float64): Expr[Float] = f(floatText(v))
+    def constant(v: Float64): Expr[Float] = f(floatText(v))
 
     // ── uniform と絵 ──
 
@@ -127,10 +133,12 @@ pub mod Render3d.ScreenPasses {
         let (pq, q) = param(IVec2.IVec2, "q");
         let size = ivec(zw(rect()));
         let (declC, c) = let_("c", clampI(q, ShaderAst.ivec2Splat(i(0)), sub(size, ShaderAst.ivec2Splat(i(1)))));
-        let col = add(toInt(x(rect())), x(c));
-        let row = sub(sub(add(toInt(y(rect())), y(size)), i(1)), y(c));
+        let (declT, texel) = let_("t", ivec2Of(add(toInt(x(rect())), x(c)), sub(sub(add(toInt(y(rect())), y(size)), i(1)), y(c))));
+        let whole = ShaderAst.textureSizeOf(depthTex());
+        let outside = ShaderAst.or_(ShaderAst.or_(lt(x(texel), i(0)), lt(y(texel), i(0))), ShaderAst.or_(ge(x(texel), x(whole)), ge(y(texel), y(whole))));
+        // WhyNot: 奥行きの絵の外（描き先からはみ出した場面）を読まない — GPU の texelFetch は外で値が決まらない。CPU と同じく何も無い（1）にそろえる。
         ShaderAst.function("ssao_depthAt", ShaderAst.Ty.F32, pq :: Nil,
-            declC :: ret(ShaderAst.targetTexel(depthTex(), ivec2Of(col, row))) :: Nil)
+            declC :: declT :: ifInline(outside, ret(f("1.0"))) :: ret(ShaderAst.targetTexel(depthTex(), texel)) :: Nil)
 
     /// 場面の矩形の中の画素 q の、奥行き d の点（world）。
     def pointAt(): Definition =
@@ -171,14 +179,14 @@ pub mod Render3d.ScreenPasses {
         let toEye = sub(xyz(eye()), p);
         let (declN, n) = var_("n", ternary(lt(dot(nn, nn), f("1e-20")), normalize(toEye), normalize(nn)));
         let (declR, rPix) = let_("rPix", ShaderAst.minOf(div(mul(w(forward()), w(up())), ShaderAst.max(mul(d0, w(eye())), f("1e-6"))), w(params())));
-        let (declIgn, ign) = let_("ign", ShaderAst.fract(mul(k(ScreenEffects3d.noiseC()),
-            ShaderAst.fract(add(mul(k(ScreenEffects3d.noiseA()), toFloat(x(m))), mul(k(ScreenEffects3d.noiseB()), toFloat(y(m))))))));
+        let (declIgn, ign) = let_("ign", ShaderAst.fract(mul(constant(ScreenEffects3d.noiseC()),
+            ShaderAst.fract(add(mul(constant(ScreenEffects3d.noiseA()), toFloat(x(m))), mul(constant(ScreenEffects3d.noiseB()), toFloat(y(m))))))));
         let (declTaps, taps) = let_("taps", toInt(z(params())));
         let (declSum, sum) = var_("sum", f("0.0"));
         let thick = w(right());
         let tap = (ix: Expr[Int]) -> {
             let (declT, t) = let_("t", div(add(toFloat(ix), f("0.5")), z(params())));
-            let (declA, a) = let_("a", mul(f("6.283185307179586"), add(ign, mul(t, k(ScreenEffects3d.spiralTurns())))));
+            let (declA, a) = let_("a", mul(f("6.283185307179586"), add(ign, mul(t, constant(ScreenEffects3d.spiralTurns())))));
             let (declRr, rr) = let_("rr", mul(rPix, t));
             let off = (v: Expr[Float]) -> toInt(floor(add(mul(v, rr), f("0.5"))));
             let (declQ, q) = let_("q", add(c, ivec2Of(off(ShaderAst.cos(a)), off(ShaderAst.sin(a)))));
@@ -186,7 +194,7 @@ pub mod Render3d.ScreenPasses {
             let (declV, v) = let_("v", sub(pointCall(q, dq), p));
             let (declVv, vv) = let_("vv", dot(v, v));
             let (declFall, fall) = let_("fall", clamp(sub(f("1.0"), div(vv, mul(thick, thick))), f("0.0"), f("1.0")));
-            let contribution = mul(ShaderAst.max(sub(div(dot(v, n), ShaderAst.sqrt(add(vv, k(ScreenEffects3d.epsilon())))), k(ScreenEffects3d.bias())), f("0.0")), fall);
+            let contribution = mul(ShaderAst.max(sub(div(dot(v, n), ShaderAst.sqrt(add(vv, constant(ScreenEffects3d.epsilon())))), constant(ScreenEffects3d.bias())), f("0.0")), fall);
             declT :: declA :: declRr :: declQ :: declDq ::
             ifBlock(lt(dq, f("1.0")), declV :: declVv :: declFall :: assign(sum, add(sum, contribution)) :: Nil) :: Nil
         };
@@ -212,16 +220,16 @@ pub mod Render3d.ScreenPasses {
         let (pm, m) = param(IVec2.IVec2, "m");
         let maskOf = (q: Expr[IVec2]) -> call(Float.Float, maskAt(), arg(q) :: Nil);
         let (declC, c) = let_("c", depthCall(call(IVec2.IVec2, centerOf(), arg(m) :: Nil)));
-        let (declSum, sum) = var_("sum", mul(k(ScreenEffects3d.blurCenterWeight()), maskOf(m)));
-        let (declW, total) = var_("total", k(ScreenEffects3d.blurCenterWeight()));
+        let (declSum, sum) = var_("sum", mul(constant(ScreenEffects3d.blurCenterWeight()), maskOf(m)));
+        let (declW, total) = var_("total", constant(ScreenEffects3d.blurCenterWeight()));
         let step = ivec(xy(dir()));
         let tap = (ix: Expr[Int]) -> {
             let (declQ, q) = let_("q", add(m, ShaderAst.mulIS(step, ix)));
             let (declMq, mq) = let_("mq", clampI(q, ShaderAst.ivec2Splat(i(0)), sub(ivec(zw(target())), ShaderAst.ivec2Splat(i(1)))));
-            let (declWk, wk) = let_("wk", ternary(ShaderAst.eq(abs(toFloat(ix)), f("1.0")), k(ScreenEffects3d.blurNearWeight()), k(ScreenEffects3d.blurFarWeight())));
+            let (declWk, wk) = let_("wk", ternary(ShaderAst.eq(abs(toFloat(ix)), f("1.0")), constant(ScreenEffects3d.blurNearWeight()), constant(ScreenEffects3d.blurFarWeight())));
             let (declDq, dq) = let_("dq", depthCall(call(IVec2.IVec2, centerOf(), arg(mq) :: Nil)));
             declQ :: declMq :: declWk :: declDq ::
-            ifBlock(and_(ne(ix, i(0)), le(abs(sub(dq, c)), mul(k(ScreenEffects3d.blurDepthTolerance()), c))),
+            ifBlock(and_(ne(ix, i(0)), le(abs(sub(dq, c)), mul(constant(ScreenEffects3d.blurDepthTolerance()), c))),
                     assign(sum, add(sum, mul(wk, maskOf(mq)))) :: assign(total, add(total, wk)) :: Nil) :: Nil
         };
         ShaderAst.function("ssao_blurAt", ShaderAst.Ty.F32, pm :: Nil,
