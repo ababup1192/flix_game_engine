@@ -9,8 +9,20 @@
     "b": 0.0
   },
   "maxDeltaTime": 10.0,
-  "textures": [],
-  "fonts": [],
+  "textures": [
+    {
+      "name": "hud_atlas",
+      "path": "assets/hud-atlas.png",
+      "hasAlpha": true
+    }
+  ],
+  "fonts": [
+    {
+      "name": "hud",
+      "path": "assets/Roboto-Regular.ttf",
+      "fontSize": 14.0
+    }
+  ],
   "sounds": [],
   "scene3dTextureBudgetCount": 128
 }

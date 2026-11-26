@@ -5,6 +5,10 @@ import { readFileSync } from 'node:fs';
 import { buildScene, fieldWorldMatrices } from '../build/upstream/src/harness/scenes.ts';
 import type { FieldScene, Geometry } from '../build/upstream/src/harness/types.ts';
 
+// K9 の icon の atlas は canvas に描く（node には無い）。絵は比べないので、何もしない canvas を渡す。
+const noop: any = new Proxy(() => noop, { get: () => noop, set: () => true });
+(globalThis as any).document ??= { createElement: () => ({ getContext: () => noop }) };
+
 const REL = 1e-5;
 const ABS = 1e-6;
 
@@ -85,6 +89,21 @@ for (const line of lines) {
     const rgba = argb.flatMap((v) => [(v >>> 16) & 255, (v >>> 8) & 255, v & 255, (v >>> 24) & 255]);
     exact(`${tag} churn.texture`, rgba, theirs.churn.texture.pixels);
   }
+  if (theirs.hud) {
+    const h = theirs.hud, o = ours.hud;
+    floats(`${tag} hud.panels`, o.panels.flat(), h.panels.flatMap((p) => [p.x, p.y, p.w, p.h, ...p.color]));
+    floats(`${tag} hud.icons.x`, o.icons.x, h.icons.x);
+    floats(`${tag} hud.icons.y`, o.icons.y, h.icons.y);
+    exact(`${tag} hud.icons.cell`, o.icons.cell, h.icons.cell);
+    floats(`${tag} hud.nameplates.x`, o.nameplates.x, h.nameplates.x);
+    floats(`${tag} hud.nameplates.y`, o.nameplates.y, h.nameplates.y);
+    floats(`${tag} hud.nameplates.health`, o.nameplates.health, h.nameplates.health);
+    exact(`${tag} hud.nameplates.cell`, o.nameplates.cell, h.nameplates.cell);
+    exact(`${tag} hud.nameplates.label`, o.nameplates.label, h.nameplates.label);
+    floats(`${tag} hud.dynamicText.x`, o.dynamicText.x, h.dynamicText.x);
+    floats(`${tag} hud.dynamicText.y`, o.dynamicText.y, h.dynamicText.y);
+    exact(`${tag} hud.dynamicText.text`, o.dynamicText.text, h.dynamicText.text);
+  } else if (ours.hud) exact(`${tag} hud`, [1], [0]);
   if (theirs.pick) floats(`${tag} pick.points`, ours.pickPoints, theirs.pick.points);
   if (ours.worldColumns) {
     const world = new Float32Array(theirs.count * 16);

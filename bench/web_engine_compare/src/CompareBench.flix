@@ -1,6 +1,6 @@
 // CompareBench — 場面を毎コマ描き、区間ごとに 1 行の JSON（BenchRun）を出す。
 // 2 つの回し方が同じ App を使う: engine の口（make bench-web）と、比べる相手の harness の adapter（harness/flix-adapter.ts）。
-// つまみ: scenario=k1|k2|k3|k5|k7|k8・variant=naive|optimized・level=<物の数>・frames=<1 区間のコマ数>・repeat=<区間の数>・diag=0。
+// つまみ: scenario=k1|k2|k3|k5|k7|k8|k9・variant=naive|optimized・level=<物の数>・frames=<1 区間のコマ数>・repeat=<区間の数>・diag=0。
 mod CompareBench {
     use fge::{App, Num, Render}
 
@@ -87,12 +87,34 @@ mod CompareBench {
             app0 |> App.withPreload3d({ groups = _ -> kit#chunks |> List.map(c -> c#group), scenes = _ -> Draw.scene(kit, None, 0.0) :: Nil | App.preload3d(_ -> "wec_chunks", _ -> Nil) })
         else app0
 
+    /// K9: HUD の絵。名札の位置（比べる相手の scene.update に当たる）は場面の更新として知らせ、絵の列を組む所は CPU に残す。
+    /// widths = 名札の字の幅の控え（字のアトラスは View で初めて手に入るので、初めのコマで 1 回量る）。
+    def hudView(hooks: Hooks, h: Scenes.Hud, widths: Ref[Option[Vector[Float64]], Static], ctx: App.ViewCtx, w: World): List[Render.PlacedItem] \ IO =
+        let font = (ctx#fontOf)(HudDraw.fontName());
+        let measured = match Ref.get(widths) {
+            case Some(v) => v
+            case None    => { let v = HudDraw.labelWidths(font, h); Ref.put(Some(v), widths); v }
+        };
+        let t = (hooks#sceneTime)(w#t);
+        let (plates, ms) = BenchRun.timed(hooks#now, () -> Vector.range(0, h#units#count) |> Vector.map(Scenes.nameplateAt(h, t)));
+        (hooks#noteSim)(ms);
+        HudDraw.items(h, font, measured, plates, t)
+
+    def withHud(hooks: Hooks, kit: Draw.Kit, app0: App.App[World, IO]): App.App[World, IO] \ IO =
+        match kit#field#hud {
+            case Some(h) =>
+                let widths = Ref.fresh(Static, None);
+                app0 |> App.withFonts(HudDraw.fontName() :: Nil) |> App.withHudView((ctx, w) -> checked_ecast(hudView(hooks, h, widths, ctx, w)))
+            case None => app0
+        }
+
     /// デスクトップとブラウザの入口が同じ App を組む。
-    pub def app(plan: BenchRun.Plan, emit: String -> Unit \ IO, hooks: Hooks, kit: Draw.Kit, scenario: Scenes.Scenario): App.App[World, IO] =
+    pub def app(plan: BenchRun.Plan, emit: String -> Unit \ IO, hooks: Hooks, kit: Draw.Kit, scenario: Scenes.Scenario): App.App[World, IO] \ IO =
         App.make({ t = 0.0, progress = BenchRun.start(), pickSeq = 0, churn = if (scenario == Scenes.Scenario.K3) Some(Draw.churnOf(kit)) else None })
             |> App.addSystem(step(plan, emit, hooks, kit, scenario))
             |> BenchRun.withDiagnostics(plan)
             |> withChunkPreload(kit)
             |> App.withView((_ctx, w) -> checked_ecast(timedItems(hooks, kit, w)))
             |> App.withPostStack(_ -> checked_ecast(Draw.post()))
+            |> withHud(hooks, kit)
 }

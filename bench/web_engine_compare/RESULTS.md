@@ -208,3 +208,29 @@ smoke（1 回・counters の回・WebGPU・2,000 個）:
 - **重い所は engine の 3D の描き手**（`make bench-web` の cpu_phases で split 17.5 ms・draw 17.3 ms。K2 の 2,000 個は 2.5 / 2.2 ms）。
   作り直した物はどれも絵と材質が違うので draw が約 1,700 本に分かれ（draw3d_breaks の material 1,662）、1 本につき CPU 約 20 µs（three.js は 2,000 本で約 5 µs）。
   counters の `createBindGroup` が 1 コマ 1,721 回で、絵の bind group を draw ごとに毎コマ作っている見込み（three.js は 27 回）。→ 相談の候補。
+
+## S5: K9（HUD の名札）
+
+- 場面: 回る 1,000 個（種 9・材質 4）の上に、板 4 枚 → 動かない icon 50 → 名札（下地 → bar → icon → 字）→ 毎コマ変わる字 30。名札の位置・体力・字は比べる相手と同じ乱数（種 99）と式。
+  `make scene-compare` に K9 の 2 場面（250 枚・t = 0 と 1.75）を足し、HUD の値（板・icon・名札の位置と体力と升と字・毎コマ変わる字）まで **12 場面・531 の配列が一致**。
+- icon の atlas は比べる相手の `buildScene` が canvas に描いた物を、そのまま PNG にした（`make hud-assets` が vite と Chrome で描かせる・git の外）。描き方を写していないので、PNG どうしの比べはしない。
+- 字は比べる相手の Roboto（Apache-2.0）を project.json の fonts に置き、書き出しの font-bake でアトラスにする（engine の字の道はこれだけ）。`App.withFonts` で名前を宣言しないと既定の字（起動の字）へ落ちる。
+- 描き方（naive）: `App.withHudView` の 2D で、名札ごとに z を 4 つ（下地・bar・icon・字）続けて置く（HudSpec の描く順のとおり）。名札の字の幅は初めのコマで 1 回量って控える。
+  名札の位置（比べる相手の scene.update に当たる）は場面の更新として差し引き、絵の列を組む所は CPU に残す。HUD は PostStack の外なので tone map も bloom も掛からない。
+- optimized は `N/A (as naive)`: engine の 2D は z の順に続く同じ絵を自動でまとめる 1 つの道だけで、別のまとめ方の口が無い（three.js も N/A）。
+- engine の 2D が 1 コマ 2,000 個を超えると出す助言（`budget: この 1 フレームで …`）は hints に数える（HINT_PREFIXES に足した）。
+
+smoke（1 回・counters の回・WebGPU）:
+
+| 名札 | flix CPU p50（差し引いた後）| flix interval p50 | flix draw | three CPU p50 | three interval p50 |
+|---:|---:|---:|---:|---:|---:|
+| 0（HUD なし）| 2.6 | 3.7 | 35 | 2.8 | 3.2 |
+| 250 | 7.1 | 9.4 | 787 | 3.2 | 3.7 |
+| 500 | 12.7 | 14.0 | 1,537 | 3.5 | 4.0 |
+| 1,000 | 24.3 | 25.4 | 3,037 | 3.5 | 4.0 |
+| 16,000 | — | — | — | 4.1 | 4.6 |
+
+- 60 fps に収まる最大は flix 約 600（500 と 1,000 の間）、three.js は ≥ 16k（README の M1 Pro では PlayCanvas 547・Babylon.js 393 なので、その辺り）。
+- **重い所は engine の 2D**（`make bench-web` の 1,000 枚: 2D の draw 3,003 本・切れ目は全部が絵の替わり（texture 3,001）。3D の区間は split・draw とも 1 ms）。
+  名札の中で 色の矩形 → icon の atlas → 字のアトラス と絵が替わるたびに batch が切れ、1 枚に約 3 本・CPU 約 22 µs。→ 相談の候補（絵を跨いでまとめる・HUD 用に字と icon を 1 枚に寄せる口）。
+- 絵（frame 60）は名札・icon・板の置き方が three.js と同じ。字の縦の置き方は flix が数画素下（engine の字の置き場所は行の上・three.js は canvas の textBaseline top）。
