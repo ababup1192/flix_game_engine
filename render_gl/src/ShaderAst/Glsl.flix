@@ -1,6 +1,6 @@
 // ShaderAst.Glsl — ShaderAst の木を GLSL（330 core・GLSL ES 3.00 へ写す前の字）へ出す。
 pub mod ShaderAst.Glsl {
-    use ShaderAst.{Node, Stmt, Def, Ty, BinOp, Layout, Body, Intrinsic, Lang, Expr, Definition, Statement}
+    use ShaderAst.{Node, Stmt, Def, Ty, BuiltinFn, Layout, Body, Intrinsic, Lang, Expr, Definition}
 
     /// 型の字。
     pub def tyName(t: Ty): String = match t {
@@ -21,6 +21,26 @@ pub mod ShaderAst.Glsl {
         case Ty.Void           => "void"
     }
 
+    /// 組み込みの関数の名前。
+    def builtinName(fun: BuiltinFn): String = match fun {
+        case BuiltinFn.Floor       => "floor"
+        case BuiltinFn.Abs         => "abs"
+        case BuiltinFn.Normalize   => "normalize"
+        case BuiltinFn.Asin        => "asin"
+        case BuiltinFn.Sign        => "sign"
+        case BuiltinFn.Fwidth      => "fwidth"
+        case BuiltinFn.Length      => "length"
+        case BuiltinFn.Dot         => "dot"
+        case BuiltinFn.Distance    => "distance"
+        case BuiltinFn.Cross       => "cross"
+        case BuiltinFn.Atan2       => "atan"
+        case BuiltinFn.Max         => "max"
+        case BuiltinFn.Min         => "min"
+        case BuiltinFn.Determinant => "determinant"
+        case BuiltinFn.Clamp       => "clamp"
+        case BuiltinFn.Mix         => "mix"
+    }
+
     /// 式の字。
     pub def expression(e: Expr[t]): String = exprAt(0, ShaderAst.nodeOf(e))
 
@@ -31,36 +51,36 @@ pub mod ShaderAst.Glsl {
     def args(xs: List[Node]): String = xs |> List.map(exprAt(0)) |> String.intercalate(", ")
 
     def raw(n: Node): String = match n {
-        case Node.Lit(text, _)        => text
-        case Node.Ref(name, _)        => name
-        case Node.Uniform(u)          => accessOf(u, "")
-        case Node.Bin(op, a, b, _)    =>
+        case Node.Lit(text, _)         => text
+        case Node.Ref(name, _)         => name
+        case Node.Uniform(u)           => ShaderAst.accessFor(Lang.Glsl, u, "")
+        case Node.Bin(op, a, b, _)     =>
             let p = ShaderAst.precOf(op);
             exprAt(p, a) + " " + ShaderAst.opText(op) + " " + exprAt(p + 1, b)
-        case Node.Neg(a, _)           => "-" + exprAt(14, a)
-        case Node.Not(a)              => "!" + exprAt(14, a)
-        case Node.Call(d, xs, _)      => ShaderAst.nameOf(d) + "(" + args(xs) + ")"
-        case Node.Builtin(name, xs, _) => name + "(" + args(xs) + ")"
-        case Node.Construct(t, xs)    => tyName(t) + "(" + args(xs) + ")"
+        case Node.Neg(a, _)            => ShaderAst.prefixed("-", exprAt(ShaderAst.unaryPrec(), a))
+        case Node.Not(a)               => ShaderAst.prefixed("!", exprAt(ShaderAst.unaryPrec(), a))
+        case Node.Call(d, xs, _)       => ShaderAst.nameOf(d) + "(" + args(xs) + ")"
+        case Node.Builtin(fun, xs, _)  => builtinName(fun) + "(" + args(xs) + ")"
+        case Node.Construct(t, xs)     => tyName(t) + "(" + args(xs) + ")"
         case Node.Swizzle(inner, s, _) => match inner {
-            case Node.Uniform(u) => accessOf(u, s)
-            case _               => exprAt(16, inner) + "." + s
+            case Node.Uniform(u) => ShaderAst.accessFor(Lang.Glsl, u, s)
+            case _               => exprAt(ShaderAst.atomPrec(), inner) + "." + s
         }
-        case Node.Index(a, at, _)     => exprAt(16, a) + "[" + exprAt(0, at) + "]"
-        case Node.Select(c, a, b, _)  => exprAt(3, c) + " ? " + exprAt(3, a) + " : " + exprAt(2, b)
-        case Node.Paren(a)            => "(" + exprAt(0, a) + ")"
-        case Node.Intrinsic(k, _)     => intrinsic(k)
-        case Node.Global(d, _)        => ShaderAst.nameOf(d)
-    }
-
-    /// uniform u を読む字（outer = 外から重ねる swizzle）。
-    def accessOf(u: ShaderAst.UniformKey, outer: String): String = match u {
-        case (name, _, None, _) => ShaderAst.invalidOrBug("ShaderAst.Glsl: uniform ${name} は GLSL に無い")
-        case (_, _, Some((base, swizzle)), _) => ShaderAst.accessText(base, swizzle, outer)
+        case Node.Index(a, at, _)      => exprAt(ShaderAst.atomPrec(), a) + "[" + exprAt(0, at) + "]"
+        case Node.Select(c, a, b, _)   =>
+            let p = ShaderAst.ternaryPrec();
+            exprAt(p + 1, c) + " ? " + exprAt(p + 1, a) + " : " + exprAt(p, b)
+        case Node.Paren(a)             => "(" + exprAt(0, a) + ")"
+        case Node.Intrinsic(k, _)      => intrinsic(k)
+        case Node.Global(d, _)         => ShaderAst.nameOf(d)
     }
 
     def intrinsic(k: Intrinsic): String = match k {
-        case Intrinsic.PixelFromTopLeft => "ivec2(int(floor(gl_FragCoord.x - uPsxTarget.x)), int(floor(uPsxTarget.y + uPsxTarget.w - gl_FragCoord.y)))"
+        case Intrinsic.PixelFromTopLeft(rect) =>
+            let at = (s: String) -> ShaderAst.accessFor(Lang.Glsl, rect, s);
+            "ivec2(int(floor(gl_FragCoord.x - ${at("x")})), int(floor(${at("y")} + ${at("w")} - gl_FragCoord.y)))"
+        case Intrinsic.FullscreenPosition => "vec4(float((gl_VertexID << 1) & 2) * 2.0 - 1.0, float(gl_VertexID & 2) * 2.0 - 1.0, 0.0, 1.0)"
+        case Intrinsic.QuadCorner         => "aCorner"
     }
 
     // ── 文 ──
@@ -117,17 +137,17 @@ pub mod ShaderAst.Glsl {
         case Def.Private(name, t, length, init, lang) =>
             if (lang == Some(Lang.Wgsl)) ""
             else {
-                let dims = if (length > 0) "[${length}]" else "";
-                let start = init |> Option.map(v -> " = " + v) |> Option.getWithDefault("");
+                let dims = length |> Option.map(n -> "[${n}]") |> Option.getWithDefault("");
+                let start = init |> Option.map(v -> " = " + exprAt(0, v)) |> Option.getWithDefault("");
                 tyName(t) + " " + name + dims + start + ";\n"
             }
     }
 
-    /// roots と、それが辿って使う定義を、使う前に 1 回ずつ並べた字（一様さの検査を通す）。
+    /// roots と、それが辿って使う定義を、使う前に 1 回ずつ並べた字（組む時の検査を通す）。
     pub def print(roots: List[Definition]): String =
-        ShaderAst.checked(ShaderAst.collect(roots)) |> List.map(definition) |> ShaderAst.joinParts
+        ShaderAst.checkOrBug(ShaderAst.collectOrBug(roots)) |> List.map(definition) |> ShaderAst.joinParts
 
     /// defs だけを並べた字（辿った定義は周りの字が置く）。
     pub def printOnly(defs: List[Definition]): String =
-        ShaderAst.checked(defs) |> List.map(definition) |> ShaderAst.joinParts
+        ShaderAst.checkOrBug(defs) |> List.map(definition) |> ShaderAst.joinParts
 }

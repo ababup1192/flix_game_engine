@@ -2,9 +2,9 @@
 // 式の約束（色の空間・法線マップ・PS1 風の丸め）は Render3d.flix の頭と Render3dGlsl の doc。CPU の描き手（SoftRaster3d）が 3 本目で、gl-parity が同じ値かを確かめる。
 pub mod Render3dShaders {
     use ShaderAst.{Expr, Definition, Float, Vec2, Vec3, Vec4, IVec2, Int, Boolean, Body, Layout}
-    use ShaderAst.{f, i, add, sub, mul, div, addS, subS, mulS, divS, sMul, sSub, lt, le, orElse, neg, paren, ternary, at,
+    use ShaderAst.{f, i, add, sub, mul, div, addS, subS, mulS, divS, sMul, sSub, lt, le, or_, neg, paren, ternary, at,
                    x, y, z, w, r, g, b, xyz, vec2Of, vec3Of, vec4Of, ivec2Of, floor, abs, normalize, asin, dot, cross, distance, atan2,
-                   clamp, clampS, let_, var_, assign, if1, ret, param, call, arg, uniform, bitAnd}
+                   clamp, clampS, let_, var_, assign, ifInline, ret, param, call, arg, uniform, bitAnd}
 
     // ── uniform ──
 
@@ -19,6 +19,9 @@ pub mod Render3dShaders {
 
     /// PS1 風の (色のレベルの数, 表の番号, ディザの強さ, アフィンの割合)。
     pub def psx(): Expr[Vec4] = uniform(ShaderAst.vec4(), { name = "uPsx", ty = ShaderAst.Ty.Vec4, glsl = access("uPsx", ""), wgsl = access("r3dLight.uPsx", "") })
+
+    /// 場面の描き先の矩形 (左下の x, y, 幅, 高さ)（GLSL だけ。WGSL の画素の位置は場面の描き先の左上が 0）。
+    pub def psxTargetRect(): ShaderAst.UniformRef = { name = "uPsxTarget", ty = ShaderAst.Ty.Vec4, glsl = access("uPsxTarget", ""), wgsl = None }
 
     /// 頂点を丸める格子の大きさ（画素。0 で丸めない）。
     pub def vertexSnapGrid(): Expr[Float] =
@@ -77,7 +80,7 @@ pub mod Render3dShaders {
         let (declC, c) = var_("c", mul(mul(albedo, tint), light));
         ShaderAst.function("r3d_surfaceOut", ShaderAst.Ty.Vec3, pa :: pt :: pl :: pe :: pi :: pp :: pf :: Nil,
             declC ::
-            if1(fogOn, assign(c, call(ShaderAst.vec3(), fogged(), arg(c) :: arg(p) :: Nil))) ::
+            ifInline(fogOn, assign(c, call(ShaderAst.vec3(), fogged(), arg(c) :: arg(p) :: Nil))) ::
             ret(toSrgb3(add(c, mulS(toLinear3(emission), intensity)))) :: Nil)
 
     /// PBR の色をかすみに通してから emission を足して画面の値へ戻す（Render3dGlsl.metallicRoughnessSource の doc）。
@@ -106,7 +109,7 @@ pub mod Render3dShaders {
         let (declP, p) = let_("p", add(add(mulS(t, x(m)), mulS(bitangent, y(m))), mulS(n, z(m))));
         ShaderAst.function("applyNormalMap", ShaderAst.Ty.Vec3, pn :: pt :: ps :: pc :: Nil,
             declT ::
-            if1(lt(dot(t, t), f("1e-12")), ret(n)) ::
+            ifInline(lt(dot(t, t), f("1e-12")), ret(n)) ::
             assign(t, normalize(t)) ::
             declB :: declM :: declP ::
             ret(ternary(lt(dot(p, p), f("1e-12")), n, normalize(p))) :: Nil)
@@ -142,22 +145,22 @@ pub mod Render3dShaders {
     /// 描き先の左上を 0 とする画素 p のディザの量（uPsx.y = 表の番号 Scene3d.Psx.patternCode）。
     pub def psxDither(): Definition =
         let (pp, p) = param(ShaderAst.ivec2(), "p");
-        let (declI, idx) = let_("i", add(mul(paren(bitAnd(ShaderAst.iy(p), i(3))), i(4)), paren(bitAnd(ShaderAst.ix(p), i(3)))));
+        let (declI, idx) = let_("i", add(mul(paren(bitAnd(y(p), i(3))), i(4)), paren(bitAnd(x(p), i(3)))));
         ShaderAst.function("r3d_psxDither", ShaderAst.Ty.F32, pp :: Nil,
             declI ::
-            if1(lt(y(psx()), f("0.5")), ret(div(at(psxTable(), idx), f("8.0")))) ::
-            if1(lt(y(psx()), f("1.5")), ret(sub(div(paren(add(at(bayerTable(), idx), f("0.5"))), f("16.0")), f("0.5")))) ::
+            ifInline(lt(y(psx()), f("0.5")), ret(div(at(psxTable(), idx), f("8.0")))) ::
+            ifInline(lt(y(psx()), f("1.5")), ret(sub(div(paren(add(at(bayerTable(), idx), f("0.5"))), f("16.0")), f("0.5")))) ::
             ret(f("0.0")) :: Nil)
 
     /// PS1 風の色の丸め r3d_colorDepth(画面の値の色)（式は Scene3d.Psx.quantize・CPU の描き手は SoftRaster3d.Psx.quantized）。
     pub def colorDepth(): Definition =
         let (pc, c) = param(ShaderAst.vec3(), "c");
-        let (declP, p) = let_("p", ShaderAst.pixelFromTopLeft());
+        let (declP, p) = let_("p", ShaderAst.pixelFromTopLeft(psxTargetRect()));
         let (declS, step) = let_("step", div(f("256.0"), paren(add(x(psx()), f("1.0")))));
         let dither = call(ShaderAst.float(), psxDither(), arg(p) :: Nil);
         let (declV, v) = let_("v", addS(floor(addS(mulS(clampS(c, f("0.0"), f("1.0")), f("255.0")), f("0.5"))), mul(mul(dither, z(psx())), step)));
         ShaderAst.function("r3d_colorDepth", ShaderAst.Ty.Vec3, pc :: Nil,
-            if1(le(x(psx()), f("0.0")), ret(c)) ::
+            ifInline(le(x(psx()), f("0.0")), ret(c)) ::
             declP :: declS :: declV ::
             ret(divS(floor(divS(clampS(v, f("0.0"), f("255.0")), step)), x(psx()))) :: Nil)
 
@@ -172,7 +175,7 @@ pub mod Render3dShaders {
                              mul(mul(sub(f("1.0"), div(y(p), w(p))), f("0.5")), y(size)));
         let (declS, s) = let_("s", mulS(floor(addS(divS(toPixel, grid), f("0.5"))), grid));
         ShaderAst.function("r3d_vertexSnap", ShaderAst.Ty.Vec4, pp :: Nil,
-            if1(orElse(le(grid, f("0.0")), le(w(p), f("0.0"))), ret(p)) ::
+            ifInline(or_(le(grid, f("0.0")), le(w(p), f("0.0"))), ret(p)) ::
             declS ::
             ret(vec4Of(mul(paren(sub(mul(div(x(s), x(size)), f("2.0")), f("1.0"))), w(p)),
                        mul(paren(sub(f("1.0"), mul(div(y(s), y(size)), f("2.0")))), w(p)), z(p), w(p))) :: Nil)

@@ -1,9 +1,9 @@
 // ShaderAst.Wgsl — ShaderAst の木を WGSL へ出す。
-// WGSL の違い: 暗黙の型の変換が無い（clamp のスカラーの端はベクトルに広げる）・? : は select（両側を計算する）・
-// ビットの演算は単項の式しか取らない（中の二項は括弧で包む）・&& と || を括弧なしで混ぜられない・
+// WGSL の違い: 暗黙の型の変換が無い（clamp の f32 の端はベクトルに広げる）・? : は select（両側を計算する）・
+// ビットの演算は単項の式しか取らない（中の二項は括弧で包む）・&& と || を括弧なしで混ぜられない・比べは続けて書けない・
 // 決まった値の配列は使う関数の頭の var（実行時の添字で const の配列を引けない実装がある）。
 pub mod ShaderAst.Wgsl {
-    use ShaderAst.{Node, Stmt, Def, Ty, BinOp, Layout, Body, Intrinsic, Lang, Expr, Definition, Statement}
+    use ShaderAst.{Node, Stmt, Def, Ty, BinOp, BuiltinFn, Layout, Body, Intrinsic, Lang, Expr, Definition}
 
     /// 型の字。
     pub def tyName(t: Ty): String = match t {
@@ -24,12 +24,38 @@ pub mod ShaderAst.Wgsl {
         case Ty.Void           => ShaderAst.invalidOrBug("ShaderAst.Wgsl: void の値は無い")
     }
 
+    /// 組み込みの関数の名前。
+    def builtinName(fun: BuiltinFn): String = match fun {
+        case BuiltinFn.Floor       => "floor"
+        case BuiltinFn.Abs         => "abs"
+        case BuiltinFn.Normalize   => "normalize"
+        case BuiltinFn.Asin        => "asin"
+        case BuiltinFn.Sign        => "sign"
+        case BuiltinFn.Fwidth      => "fwidth"
+        case BuiltinFn.Length      => "length"
+        case BuiltinFn.Dot         => "dot"
+        case BuiltinFn.Distance    => "distance"
+        case BuiltinFn.Cross       => "cross"
+        case BuiltinFn.Atan2       => "atan2"
+        case BuiltinFn.Max         => "max"
+        case BuiltinFn.Min         => "min"
+        case BuiltinFn.Determinant => "determinant"
+        case BuiltinFn.Clamp       => "clamp"
+        case BuiltinFn.Mix         => "mix"
+    }
+
     /// 式の字。
     pub def expression(e: Expr[t]): String = exprAt(0, ShaderAst.nodeOf(e))
 
     def exprAt(ctx: Int32, n: Node): String =
         let s = raw(n);
-        if (ShaderAst.precOfNode(n) < ctx) "(" + s + ")" else s
+        if (precOf(n) < ctx) "(" + s + ")" else s
+
+    /// WGSL の節の強さ（select は関数の呼び出しの字なので括弧が要らない）。
+    def precOf(n: Node): Int32 = match n {
+        case Node.Select(_, _, _, _) => ShaderAst.atomPrec()
+        case _                       => ShaderAst.precOfNode(n)
+    }
 
     def args(xs: List[Node]): String = xs |> List.map(exprAt(0)) |> String.intercalate(", ")
 
@@ -40,59 +66,55 @@ pub mod ShaderAst.Wgsl {
     /// 二項の演算の子を置く強さ（WGSL の文法が括弧を求める所は強くする）。
     def childCtx(op: BinOp, child: Node, base: Int32): Int32 = match child {
         case Node.Bin(cop, _, _, _) =>
-            if (isBitwise(op)) 16
-            else if (isLogical(op) and isLogical(cop) and cop != op) 16
+            if (isBitwise(op) or isBitwise(cop) and isLogical(op)) ShaderAst.atomPrec()
+            else if (isLogical(op) and isLogical(cop) and cop != op) ShaderAst.atomPrec()
+            else if (ShaderAst.isRelational(op) and ShaderAst.isRelational(cop)) ShaderAst.atomPrec()
             else base
         case _ => base
     }
 
     def isVector(t: Ty): Bool = t == Ty.Vec2 or t == Ty.Vec3 or t == Ty.Vec4 or t == Ty.IVec2 or t == Ty.IVec4
 
-    /// スカラーの n をベクトルの型 t へ広げた字（t がスカラーならそのまま）。
+    /// f32 の n をベクトルの型 t へ広げた字（t がスカラーならそのまま）。
     def splatTo(t: Ty, n: Node): String =
         if (isVector(t) and not isVector(ShaderAst.tyOfNode(n))) tyName(t) + "(" + exprAt(0, n) + ")" else exprAt(0, n)
 
-    def builtin(name: String, xs: List[Node], t: Ty): String = match (name, xs) {
-        case ("atan", _)                  => "atan2(" + args(xs) + ")"
-        case ("clamp", v :: lo :: hi :: Nil) => "clamp(" + exprAt(0, v) + ", " + splatTo(t, lo) + ", " + splatTo(t, hi) + ")"
-        case ("texelFetch", map :: at :: Nil) => "textureLoad(" + exprAt(0, map) + ", " + exprAt(0, at) + ", 0)"
-        case ("textureSize", map :: Nil)  => "vec2i(textureDimensions(" + exprAt(0, map) + ", 0))"
-        case ("dFdx", _)                  => "dpdx(" + args(xs) + ")"
-        case _                            => name + "(" + args(xs) + ")"
+    def builtin(fun: BuiltinFn, xs: List[Node], t: Ty): String = match (fun, xs) {
+        case (BuiltinFn.Clamp, v :: lo :: hi :: Nil) => "clamp(" + exprAt(0, v) + ", " + splatTo(t, lo) + ", " + splatTo(t, hi) + ")"
+        case _                                       => builtinName(fun) + "(" + args(xs) + ")"
     }
 
     def raw(n: Node): String = match n {
-        case Node.Lit(text, _)        => text
-        case Node.Ref(name, _)        => name
-        case Node.Uniform(u)          => accessOf(u, "")
-        case Node.Bin(op, a, b, _)    =>
+        case Node.Lit(text, _)         => text
+        case Node.Ref(name, _)         => name
+        case Node.Uniform(u)           => ShaderAst.accessFor(Lang.Wgsl, u, "")
+        case Node.Bin(op, a, b, _)     =>
             let p = ShaderAst.precOf(op);
             exprAt(childCtx(op, a, p), a) + " " + ShaderAst.opText(op) + " " + exprAt(childCtx(op, b, p + 1), b)
-        case Node.Neg(a, _)           => "-" + exprAt(14, a)
-        case Node.Not(a)              => "!" + exprAt(14, a)
-        case Node.Call(d, xs, _)      => ShaderAst.nameOf(d) + "(" + args(xs) + ")"
-        case Node.Builtin(name, xs, t) => builtin(name, xs, t)
-        case Node.Construct(t, xs)    => tyName(t) + "(" + args(xs) + ")"
+        case Node.Neg(a, _)            => ShaderAst.prefixed("-", exprAt(ShaderAst.unaryPrec(), a))
+        case Node.Not(a)               => ShaderAst.prefixed("!", exprAt(ShaderAst.unaryPrec(), a))
+        case Node.Call(d, xs, _)       => ShaderAst.nameOf(d) + "(" + args(xs) + ")"
+        case Node.Builtin(fun, xs, t)  => builtin(fun, xs, t)
+        case Node.Construct(t, xs)     => tyName(t) + "(" + args(xs) + ")"
         case Node.Swizzle(inner, s, _) => match inner {
-            case Node.Uniform(u) => accessOf(u, s)
-            case _               => exprAt(16, inner) + "." + s
+            case Node.Uniform(u) => ShaderAst.accessFor(Lang.Wgsl, u, s)
+            case _               => exprAt(ShaderAst.atomPrec(), inner) + "." + s
         }
-        case Node.Index(a, at, _)     => exprAt(16, a) + "[" + exprAt(0, at) + "]"
-        case Node.Select(c, a, b, _)  => "select(" + exprAt(0, b) + ", " + exprAt(0, a) + ", " + exprAt(0, c) + ")"
-        case Node.Paren(a)            => "(" + exprAt(0, a) + ")"
-        case Node.Intrinsic(k, _)     => intrinsic(k)
-        case Node.Global(d, _)        => ShaderAst.nameOf(d)
+        case Node.Index(a, at, _)      => exprAt(ShaderAst.atomPrec(), a) + "[" + exprAt(0, at) + "]"
+        case Node.Select(c, a, b, _)   => "select(" + exprAt(0, b) + ", " + exprAt(0, a) + ", " + exprAt(0, c) + ")"
+        case Node.Paren(a)             => "(" + exprAt(0, a) + ")"
+        case Node.Intrinsic(k, _)      => intrinsic(k)
+        case Node.Global(d, _)         => ShaderAst.nameOf(d)
     }
 
-    /// uniform u を読む字（outer = 外から重ねる swizzle）。
-    def accessOf(u: ShaderAst.UniformKey, outer: String): String = match u {
-        case (name, _, _, None) => ShaderAst.invalidOrBug("ShaderAst.Wgsl: uniform ${name} は WGSL に無い")
-        case (_, _, _, Some((base, swizzle))) => ShaderAst.accessText(base, swizzle, outer)
-    }
-
-    def intrinsic(k: Intrinsic): String = match k {
-        case Intrinsic.PixelFromTopLeft => "vec2i(i32(floor(r3d_fragCoord.x)), i32(floor(r3d_fragCoord.y)))"
-    }
+    def intrinsic(k: Intrinsic): String =
+        let frag = ShaderAst.nameOf(ShaderAst.fragCoord());
+        let index = ShaderAst.nameOf(ShaderAst.vertexIndex());
+        match k {
+            case Intrinsic.PixelFromTopLeft(_) => "vec2i(i32(floor(${frag}.x)), i32(floor(${frag}.y)))"
+            case Intrinsic.FullscreenPosition  => "vec4f(f32((${index} << 1u) & 2u) * 2.0 - 1.0, f32(${index} & 2u) * 2.0 - 1.0, 0.0, 1.0)"
+            case Intrinsic.QuadCorner          => "r3d_quadCorner(${index})"
+        }
 
     // ── 文 ──
 
@@ -144,8 +166,8 @@ pub mod ShaderAst.Wgsl {
         case Def.Fn(name, ret, params, body) =>
             let ps = params |> List.map(p -> fst(p) + ": " + tyName(snd(p))) |> String.intercalate(", ");
             let result = if (ret == Ty.Void) "" else " -> " + tyName(ret);
-            let arrays = localArrays(d) |> List.map(a -> {
-                let (an, elem, values) = a;
+            let arrays = localArrays(d) |> List.map(c -> {
+                let (an, elem, values) = c;
                 "    var ${an} = array<${tyName(elem)}, ${List.length(values)}>(" + String.intercalate(", ", values) + ");\n"
             });
             "fn " + name + "(" + ps + ")" + result + " {\n" + ShaderAst.joinParts(arrays) + stmts(1, body) + "}\n"
@@ -158,17 +180,17 @@ pub mod ShaderAst.Wgsl {
         case Def.Private(name, t, length, init, lang) =>
             if (lang == Some(Lang.Glsl)) ""
             else {
-                let ty = if (length > 0) "array<${tyName(t)}, ${length}>" else tyName(t);
-                let start = init |> Option.map(v -> " = " + v) |> Option.getWithDefault("");
+                let ty = length |> Option.map(n -> "array<${tyName(t)}, ${n}>") |> Option.getWithDefault(tyName(t));
+                let start = init |> Option.map(v -> " = " + exprAt(0, v)) |> Option.getWithDefault("");
                 "var<private> " + name + ": " + ty + start + ";\n"
             }
     }
 
-    /// roots と、それが辿って使う定義を、使う前に 1 回ずつ並べた字（一様さの検査を通す）。
+    /// roots と、それが辿って使う定義を、使う前に 1 回ずつ並べた字（組む時の検査を通す）。
     pub def print(roots: List[Definition]): String =
-        ShaderAst.checked(ShaderAst.collect(roots)) |> List.map(definition) |> ShaderAst.joinParts
+        ShaderAst.checkOrBug(ShaderAst.collectOrBug(roots)) |> List.map(definition) |> ShaderAst.joinParts
 
     /// defs だけを並べた字（辿った定義は周りの字が置く）。
     pub def printOnly(defs: List[Definition]): String =
-        ShaderAst.checked(defs) |> List.map(definition) |> ShaderAst.joinParts
+        ShaderAst.checkOrBug(defs) |> List.map(definition) |> ShaderAst.joinParts
 }

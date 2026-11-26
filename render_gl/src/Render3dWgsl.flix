@@ -74,9 +74,8 @@ pub mod Render3dWgsl {
         surfaceOutSource() +
         (if (v#psx) colorDepthSource() else "")
 
-    /// PS1 風の変種の色の丸め r3d_colorDepth(画面の値の色, 画素の位置)（Render3dGlsl.colorDepthSource と同じ式）。r3dLight.uPsx = (色のレベルの数, 表の番号, 強さ, アフィンの割合)。
-    /// 画素の位置は frag の @builtin(position)（場面ごとの描き先の左上が 0 なので、GLSL の uPsxTarget の原点を引かない）。
-    // WhyNot: 表を const の配列で添字を引かない — 決まった値の配列を実行時の添字で引けない実装がある。関数の中の var の配列にする。
+    /// PS1 風の変種の色の丸め r3d_colorDepth(画面の値の色)（Render3dShaders.colorDepth）。r3dLight.uPsx = (色のレベルの数, 表の番号, 強さ, アフィンの割合)。
+    /// 画素の位置は入口が @builtin(position) を写した r3d_fragCoord（場面ごとの描き先の左上が 0）。
     def colorDepthSource(): String = ShaderAst.Wgsl.print(Render3dShaders.colorDepth() :: Nil)
 
     /// 変種 v の frag の色の出口: v#psx なら r3d_colorDepth(c) の式、ほかは c のまま。
