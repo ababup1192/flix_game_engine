@@ -15,7 +15,7 @@ pub mod Render3d.ProgramKey {
         case PointShadows, PhysicalUnits, Psx, SkyIrradiance, AmbientOcclusion
     }
 
-    /// WebGPU の場面の group 0 に変種が足す binding（Render3dWgsl.variantDeclarations と WebGpuRenderer.sceneLayoutDesc が並べる順）。
+    /// WebGPU の場面の group 0 に変種が足す binding（Render3dWgsl.variantDeclarations と WebGpuRenderer.Group0.sceneLayoutDesc が並べる順）。
     /// LightBuffer = R3dLight の buffer・PointShadowAtlas = 点光源の影の atlas・AoMask = SSAO の mask の絵と R3dAo の buffer。
     pub enum Group0Binding with Eq, Order, ToString {
         case LightBuffer, PointShadowAtlas, AoMask
