@@ -3,6 +3,7 @@
 //   first=skin  … 集まりは頭から載せておき、途中で骨つきの人物を 1 体出す（区間 skin。人物の glb は つまみ person）
 //   first=preload … 集まりを App.withPreload3d で頭から宣言して先に作らせ（区間 ahead）、作り終えた後のコマで初めて載せる（区間 first）
 //   first=auto  … first=1 と同じ場面で、engine が自動で先に作る（App.withAutoPreload3d の既定 Cover）。groups=<n> で集まりを n 個に分ける（区画のつもり）。first=1 は自動を切って測る
+//   first=away  … first=auto と同じ場面で、90 コマ目に集まりを場面から外し、away=<コマ>（既定 600）の後に同じ値で戻す（区間 return。階段から離れて戻る形）
 //   first=glb   … （ブラウザ版）120 コマ目に絵つきの glb（assets/props_a.glb）を解く（区間 glb。keyed=1 で鍵つきの読み方 = 絵を機種の側に持つ）
 // 区間ごとに 1 行の JSON（BenchRun.summaryFields に、1 コマの時間と 3D の描き手の CPU の区間の最大を足した物）を出す。起動し直して何回か流し、最悪のコマを見る。
 mod First {
@@ -14,6 +15,7 @@ mod First {
         case Preload
         case Glb
         case Auto
+        case Away
     }
 
     /// つまみの表の first（無ければ None）。
@@ -23,14 +25,15 @@ mod First {
         case Some("preload") => Some(Mode.Preload)
         case Some("glb")     => Some(Mode.Glb)
         case Some("auto")    => Some(Mode.Auto)
+        case Some("away")    => Some(Mode.Away)
         case _            => None
     }
 
     /// 場面の作り置き。first = 初めて載せる集まり・shown = 載せる集まり（first か、Auto で groups を 2 以上にした時は first を分けた物）・
-    /// second = 後で替える集まり（同じ名前・別の形）・person = 後で出す骨つきの人物。
+    /// second = 後で替える集まり（同じ名前・別の形）・person = 後で出す骨つきの人物・away = Away で集まりを外しておくコマの数。
     /// glb = 120 コマ目に glb を解く仕事（かかった ms と解いた形を返す・Glb の時だけ withGlb で入れる）。
     pub type alias Kit = { mode = Mode, field = Field.Kit, first = Scene3d.StaticGroup, shown = List[Scene3d.StaticGroup], second = Scene3d.StaticGroup, person = Option[Model3d.Model3d],
-                           glb = Unit -> (Float64, Option[Model3d.Model3d]) \ IO }
+                           away = Int32, glb = Unit -> (Float64, Option[Model3d.Model3d]) \ IO }
 
     /// kit の 120 コマ目に解く仕事を job にした物。
     pub def withGlb(job: Unit -> (Float64, Option[Model3d.Model3d]) \ IO, kit: Kit): Kit = { glb = job | kit }
@@ -39,12 +42,13 @@ mod First {
     pub def isGlbFrame(kit: Kit, frame: Int32): Bool = kit#mode == Mode.Glb and frame == swapAt()
 
     /// 測る区間の名前と、始めるコマ・終えるコマ（終えるコマは含まない）。
-    def segments(mode: Mode): List[(String, Int32, Int32)] = match mode {
+    def segments(kit: Kit): List[(String, Int32, Int32)] = match kit#mode {
         case Mode.Group   => ("first", 28, 90) :: ("steady", 90, swapAt() - 2) :: ("rebuild", swapAt() - 2, endAt()) :: Nil
         case Mode.Skin    => ("first", 28, 90) :: ("steady", 90, swapAt() - 2) :: ("skin", swapAt() - 2, endAt()) :: Nil
         case Mode.Preload => ("ahead", 2, swapAt() - 2) :: ("first", swapAt() - 2, endAt()) :: Nil
         case Mode.Glb     => ("steady", 28, swapAt() - 2) :: ("glb", swapAt() - 2, endAt()) :: Nil
         case Mode.Auto    => ("first", 28, 90) :: ("steady", 90, endAt()) :: Nil
+        case Mode.Away    => ("first", 28, hideAt()) :: ("return", returnAt(kit) - 2, endOf(kit)) :: Nil
     }
 
     /// 集まりを初めて載せるコマ（Skin では頭から載せる・Preload は先に作らせてから）。
@@ -54,7 +58,20 @@ mod First {
         case Mode.Preload => swapAt()
         case Mode.Glb     => 0
         case Mode.Auto    => 30
+        case Mode.Away    => 30
     }
+
+    /// Away で集まりを外すコマと、戻すコマ。
+    def hideAt(): Int32 = 90
+
+    def returnAt(kit: Kit): Int32 = hideAt() + kit#away
+
+    /// 全部の区間を出し終えるコマ。
+    def endOf(kit: Kit): Int32 = if (kit#mode == Mode.Away) returnAt(kit) + 60 else endAt()
+
+    /// コマ frame に集まりを載せるか。
+    def isShown(kit: Kit, frame: Int32): Bool =
+        frame >= showAt(kit#mode) and not (kit#mode == Mode.Away and frame >= hideAt() and frame < returnAt(kit))
 
     /// Preload の時、first の集まりを Field の場面で先に作らせる宣言を足す。Group（first=1）は自動で先に作るのを切る（宣言なしの止まりを測る）。
     pub def withPreload(kit: Kit, app: App.App[w, ef]): App.App[w, ef] = match kit#mode {
@@ -85,8 +102,9 @@ mod First {
             (Int32.toString(i), instanceLike(inst, if (keyed) Mesh3d.withContentKey("second:${i}", mesh) else mesh))
         });
         let parts = Map.get("groups", knobs) |> Option.flatMap(Int32.fromString) |> Option.getWithDefault(1);
+        let away = Map.get("away", knobs) |> Option.flatMap(Int32.fromString) |> Option.getWithDefault(600);
         let shown = if (mode == Mode.Auto and parts > 1) splitGroup(parts, first) else first :: Nil;
-        { mode = mode, field = field, first = first, shown = shown, second = Scene3d.staticGroup("field", reshaped), person = person,
+        { mode = mode, field = field, first = first, shown = shown, second = Scene3d.staticGroup("field", reshaped), person = person, away = away,
           glb = () -> checked_ecast((0.0, None)) }
 
     /// g の中身を parts 個の集まり（名前は field-<番号>・i 個目の物は i を parts で割った余りの番号の集まり）に分けた物。
@@ -113,14 +131,14 @@ mod First {
         if (r#done) r
         else {
             let f = r#frame;
-            let segs = segments(kit#mode);
+            let segs = segments(kit);
             segs |> List.find(s -> { let (_, b, _) = s; b == f }) |> Option.forEach(_ -> emit("[bench] begin"));
             let inside = segs |> List.find(s -> { let (_, b, e) = s; f >= b and f < e });
             let samples = if (Option.isEmpty(inside)) r#samples else sample :: r#samples;
             match inside {
                 case Some((name, _, e)) if f + 1 == e =>
                     emit("[bench] result ${BenchRun.jsonObject(List.append(head, ("section", BenchRun.quoted(name)) :: List.append(maxFields(samples), BenchRun.summaryFields(samples))))}");
-                    let done = f + 1 >= endAt();
+                    let done = f + 1 >= endOf(kit);
                     if (done) emit("[bench] done") else ();
                     { frame = f + 1, samples = Nil, done = done | r }
                 case _ => { frame = f + 1, samples = samples | r }
@@ -135,14 +153,19 @@ mod First {
             |> List.foldLeft((acc, p) -> Float64.max(acc, Int64.toFloat64(snd(p)) / 1.0e6), 0.0);
         let frameMax = samples |> List.foldLeft((acc, s) -> Float64.max(acc, s#frameMs), 0.0);
         ("frame_max", BenchRun.fmt3(frameMax)) :: ("split_max", BenchRun.fmt3(phaseMax("split"))) :: ("draw_max", BenchRun.fmt3(phaseMax("draw"))) ::
-        ("preload_max", BenchRun.fmt3(phaseMax("preload"))) :: ("work_max", BenchRun.fmt3(samples |> List.foldLeft((acc, s) -> Float64.max(acc, s#workMs), 0.0))) :: Nil
+        ("preload_max", BenchRun.fmt3(phaseMax("preload"))) :: ("preload_frames", Int32.toString(preloadFrames(samples))) :: ("work_max", BenchRun.fmt3(samples |> List.foldLeft((acc, s) -> Float64.max(acc, s#workMs), 0.0))) :: Nil
+
+    /// 3D の描き手の preload の区間が 1 ms を超えたコマの数（先に作る仕事をしたコマ。Cover で外した名前を作る間は、このコマ数 + 1 が黒になる）。
+    def preloadFrames(samples: List[BenchRun.Sample]): Int32 =
+        samples |> List.count(s -> s#diagnostics |> Option.map(d -> d#scene3dCounts#cpuPhases) |> Option.getWithDefault(Nil)
+                                   |> List.exists(p -> fst(p) == "preload" and snd(p) > 1000000i64))
 
     /// コマ frame・t 秒の描き物。
     pub def items(kit: Kit, frame: Int32, model: Option[Model3d.Model3d], t: Float64): List[Render.PlacedItem] =
         let base = Field.scene(kit#field, t);
         let glbParts = model |> Option.map(m -> Model3d.partInstances(Mat4.mul(Mat4.translate(Vec3.v3(0.0, 0.0, 6.0)), Mat4.scale(Vec3.v3(4.0, 4.0, 4.0))), m)) |> Option.getWithDefault(Nil);
         let glbTextures = model |> Option.map(m -> m#textures) |> Option.getWithDefault(Nil);
-        let groups = if (frame < showAt(kit#mode)) Nil
+        let groups = if (not isShown(kit, frame)) Nil
                      else if (frame >= swapAt() and kit#mode == Mode.Group) kit#second :: Nil
                      else kit#shown;
         let people = if (frame >= swapAt() and kit#mode == Mode.Skin) personInstances(kit, t) else Nil;

@@ -158,7 +158,7 @@ mod SceneBench {
         let knobs = BenchEnv.knobs(("SCENE", "scene") :: ("COUNT", "n") :: ("SHAPES", "shapes") :: ("MATS", "mats") :: ("MOVING", "moving") ::
                                    ("ALPHA", "alpha") :: ("SHADOW", "shadow") :: ("GROUP", "group") :: ("MULTI", "multi") :: ("CUTOUT", "cutout") :: ("LAMPS", "lamps") :: ("FRAMES", "frames") :: ("REPEAT", "repeat") :: ("DIAG", "diag") :: ("POST", "post") :: ("MODELS", "models") ::
                                    ("SHADOWS", "shadows") :: ("MAPSIZE", "mapsize") :: ("PCF", "pcf") :: ("CROWD", "crowd") :: ("PSX", "psx") ::
-                                   ("FIRST", "first") :: ("GROUPS", "groups") :: ("VERTS", "verts") :: ("PERSON", "person") :: ("KEYED", "keyed") :: Nil);
+                                   ("FIRST", "first") :: ("GROUPS", "groups") :: ("AWAY", "away") :: ("VERTS", "verts") :: ("PERSON", "person") :: ("KEYED", "keyed") :: Nil);
         run {
             match loadScene(knobs) {
                 case Err(why) =>

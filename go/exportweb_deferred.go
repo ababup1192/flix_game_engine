@@ -28,6 +28,8 @@ type webDeferredEntry struct {
 	Names     []string `json:"names,omitempty"`
 	OnMissing string   `json:"onMissing,omitempty"`
 	Group     string   `json:"group,omitempty"`
+	// Why は当たった deferredPolicy の行の why（遅く届く待つ物の門が、書いた理由で許す・bundle.json に写るので公開される）。
+	Why string `json:"why,omitempty"`
 	// ArrivalSeconds は後回しを取り始めてから 4G（1.6 Mbps・往復 150 ms）で届くまでの見積もりの秒（頁の ?fge=4g が使う）。
 	ArrivalSeconds float64 `json:"arrivalSeconds,omitempty"`
 }
