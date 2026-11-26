@@ -1,4 +1,4 @@
-// Scene3d.Internal.PointLights — 上限を超えた点光源・スポットライトの選び（Scene3d.pickLights の中身）。
+// Scene3d.Internal.PointLights — 上限を超えた点光源・スポットライトの選びと、落とした本数の数えと知らせ（Scene3d.pickLights・droppedLightsOfScenes・droppedLightsWarnings の中身）。
 
 /// 光の選びの中身。ゲームは呼ばない（Scene3d.pickLights を呼ぶ）。
 pub mod Scene3d.Internal.PointLights {
@@ -76,4 +76,19 @@ pub mod Scene3d.Internal.PointLights {
                 |> List.take(limit)
                 |> Sort.sortStableBy(fst)
                 |> List.map(snd)
+
+    /// 場面の列で上限を超えた光の本数の合計（Scene3d.droppedLightsOf の和）。
+    pub def droppedOfScenes(scenes: List[Scene3d.RenderCmd]): { points = Int32, spots = Int32 } =
+        scenes |> List.foldLeft((acc, c) -> {
+            let d = Scene3d.droppedLightsOf(c#scene);
+            { points = acc#points + d#points, spots = acc#spots + d#spots }
+        }, { points = 0, spots = 0 })
+
+    /// 落とす光の種類ごとの (鍵, 知らせる 1 行)。
+    pub def droppedWarningsOf(cmd: Scene3d.Scene3dCmd): List[(String, String)] =
+        let d = Scene3d.droppedLightsOf(cmd);
+        let line = (kind: String, given: Int32, limit: Int32) ->
+            "scene3d: ${kind}が ${Int32.toString(given)} 本ある — 上限 ${Int32.toString(limit)} 本を選び、残りは描かない（Scene3d.pickLights）";
+        (if (d#points > 0) ("@lights:point", line("点光源", List.length(cmd#pointLights), Scene3d.maxPointLights())) :: Nil else Nil)
+            ::: (if (d#spots > 0) ("@lights:spot", line("スポットライト", List.length(cmd#spotLights), Scene3d.maxSpotLights())) :: Nil else Nil)
 }

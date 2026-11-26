@@ -53,15 +53,7 @@ pub mod Scene3d {
     /// outerCos = cos(fovY / 2)・innerCos = cos(innerFovY / 2)。innerFovY は fovY より大きければ fovY に、
     /// 0 未満と NaN は 0 に直す。None は fovY × spotInnerRatio()。
     /// 内と外が同じ cos になる時は innerCos に 1e-6 を足す（GLSL の smoothstep は両端が同じだと値が決まらない）。
-    pub def spotConeOf(spot: SpotLight): { outerCos = Float64, innerCos = Float64 } =
-        let half = spot#fovY / 2.0;
-        let innerHalf = match spot#innerFovY {
-            case None    => half * spotInnerRatio()
-            case Some(a) => (if (Float64.isNan(a) or a < 0.0) 0.0 else Float64.min(a, spot#fovY)) / 2.0
-        };
-        let outerCos = Num.cos(half);
-        let innerCos = Num.cos(innerHalf);
-        { outerCos = outerCos, innerCos = if (innerCos == outerCos) innerCos + 0.000001 else innerCos }
+    pub def spotConeOf(spot: SpotLight): { outerCos = Float64, innerCos = Float64 } = Scene3d.Internal.SpotLights.coneOf(spot)
 
     /// 太陽の光（平行光源。Unity・Unreal の Directional Light・Godot の DirectionalLight3D と同じ）。direction = 光が進む向き（長さは問わない。描く時に長さ 1 にする）・
     /// color = 光の色（画面の値）・shadow が Some なら影を落とす。場面に 1 つまで（Scene3dCmd の directionalLight）。
@@ -100,22 +92,14 @@ pub mod Scene3d {
     /// 描く時に使う太陽（使える時だけ Some。direction は長さ 1 にした光の進む向き）。GL・CPU・描き出しの鍵はこれだけを読む。
     /// 向きの長さが 0 か有限でない・intensity が 0 以下か有限でない・色が黒の時は None（太陽なしと同じ。影の地図も描かない）。
     pub def directionalLightOf(scene: Scene3dCmd): Option[DirectionalLight] =
-        scene#directionalLight |> Option.filter(l -> Option.isEmpty(directionalLightProblem(l)))
+        scene#directionalLight |> Option.filter(l -> Option.isEmpty(Scene3d.Internal.SunShadow.problemOf(l)))
             |> Option.map(l -> { direction = Vec3.normalized(l#direction) | l })
 
     /// 太陽を使わない理由（1 行）。使える時と、太陽が無い時は None。毎コマ通るので、呼ぶ側が鍵（"@sun:direction"）ごとに初回 1 回だけ出す
     /// （GL は warnSceneOnce・CPU の描き出しも同じ文面）。
     // WhyNot: 純粋な関数の中で Log.warnThen を使わない — 毎コマ通る道で初回だけを覚えられない。
     pub def directionalLightWarning(scene: Scene3dCmd): Option[String] =
-        scene#directionalLight |> Option.flatMap(directionalLightProblem)
-
-    def directionalLightProblem(l: DirectionalLight): Option[String] =
-        let d = l#direction;
-        let length = Vec3.length(d);
-        if (not (Float64.isFinite(length)) or length < 0.000001) Some("scene3d: 太陽の direction の長さが 0 か有限でない — 太陽なしで描く")
-        else if (not (Float64.isFinite(l#intensity)) or l#intensity <= 0.0) Some("scene3d: 太陽の intensity が 0 以下か有限でない — 太陽なしで描く")
-        else if (not (l#color#r > 0.0 or l#color#g > 0.0 or l#color#b > 0.0)) Some("scene3d: 太陽の色が黒 — 太陽なしで描く")
-        else None
+        scene#directionalLight |> Option.flatMap(Scene3d.Internal.SunShadow.problemOf)
 
     /// 太陽の光（directionalLightOf の値）が、点から光源へ向かう向き（長さ 1）と、線形の量にした color × intensity。GL の uniform と CPU の引数に同じ値を入れる。
     pub def sunTermsOf(l: DirectionalLight): { toward = Vec3.Vec3, color = Vec3.Vec3 } =
@@ -148,69 +132,7 @@ pub mod Scene3d {
         };
         if (not castsShadow) None
         else directionalLightOf(scene) |> Option.flatMap(l ->
-            l#shadow |> Option.filter(s -> s#mapSize > 0) |> Option.flatMap(sunShadowSetupOf(scene, l#direction)))
-
-    def sunShadowSetupOf(scene: Scene3dCmd, direction: Vec3.Vec3, s: DirectionalShadow): Option[SunShadowSetup] =
-        let cam = scene#camera;
-        let distance = Float64.min(s#distance, cam#far);
-        if (not (Float64.isFinite(distance) and Float64.isFinite(cam#near) and cam#near > 0.0 and distance > cam#near)) None
-        else {
-            let (center, radius) = frustumSphereOf(cam, aspectOf(scene), distance);
-            let size = Int32.min(s#mapSize, maxShadowMapSize());
-            let texel = 2.0 * radius / Int32.toFloat64(size);
-            let view = sunViewMatrix(direction);
-            let c = Mat4.apply(view, center);
-            let snappedX = Float64.floor(c#x / texel) * texel;
-            let snappedY = Float64.floor(c#y / texel) * texel;
-            let depth = 0.0 - c#z;
-            let reach = Float64.max(0.0, s#casterReach);
-            let proj = Mat4.orthographic({ left = snappedX - radius, right = snappedX + radius, bottom = snappedY - radius, top = snappedY + radius,
-                                           near = depth - radius - reach, far = depth + radius });
-            let matrix = Mat4.mul(proj, view);
-            Some({ matrix = matrix, frustum = Frustum.ofClipMatrix(matrix), mapSize = size,
-                   pcfRadius = Int32.max(0, Int32.min(s#pcfRadius, maxShadowPcfRadius())), strength = s#strength,
-                   depthBias = Float64.max(0.0, s#bias) / (reach + 2.0 * radius), normalShift = Float64.max(0.0, s#normalBias) * texel,
-                   forward = Camera3d.forward(cam), distance = distance, fadeWidth = Float64.max(distance * 0.1, 0.000001), radius = radius })
-        }
-
-    /// カメラの視錐台のうち、前の向きの奥行きが near..far の部分を囲む球（中心, 半径）。式は directionalShadowOf の doc。
-    def frustumSphereOf(cam: Camera3d.Camera3d, aspect: Float64, far: Float64): (Vec3.Vec3, Float64) =
-        if (Camera3d.hasLensShift(cam)) shiftedFrustumSphereOf(cam, aspect, far) else centeredFrustumSphereOf(cam, aspect, far)
-
-    /// レンズシフトのある視錐台の near..far の 8 つの角を囲む球（角の平均を中心に、一番遠い角まで）。
-    /// 半径はカメラの位置と向きによらない（角の並びは目から見て同じ形のまま回るだけ）ので、影の地図の画素は動いても揺れない。
-    def shiftedFrustumSphereOf(cam: Camera3d.Camera3d, aspect: Float64, far: Float64): (Vec3.Vec3, Float64) =
-        let half = cam#fovY / 2.0;
-        let tanHalf = Num.sin(half) / Num.cos(half);
-        let f = Camera3d.forward(cam);
-        let r = Camera3d.right(cam);
-        let u = Camera3d.up(cam);
-        let sx = cam#lensShift#x;
-        let sy = cam#lensShift#y;
-        let cornerAt = (d, kx, ky) -> Vec3.add(cam#eye, Vec3.add(Vec3.mul(f, d),
-            Vec3.add(Vec3.mul(r, (kx + 2.0 * sx) * tanHalf * aspect * d), Vec3.mul(u, (ky + 2.0 * sy) * tanHalf * d))));
-        let corners = List.flatMap(d -> List.flatMap(kx -> List.map(ky -> cornerAt(d, kx, ky), -1.0 :: 1.0 :: Nil), -1.0 :: 1.0 :: Nil),
-                                   cam#near :: far :: Nil);
-        let center = Vec3.mul(List.foldLeft(Vec3.add, Vec3.zero(), corners), 1.0 / 8.0);
-        let radius = List.foldLeft((acc, p) -> Float64.max(acc, Vec3.length(Vec3.sub(p, center))), 0.0, corners);
-        (center, radius)
-
-    def centeredFrustumSphereOf(cam: Camera3d.Camera3d, aspect: Float64, far: Float64): (Vec3.Vec3, Float64) =
-        let half = cam#fovY / 2.0;
-        let tanHalf = Num.sin(half) / Num.cos(half);
-        let k2 = (1.0 + aspect * aspect) * tanHalf * tanHalf;
-        let near = cam#near;
-        let (reach, radius) = if (k2 >= (far - near) / (far + near)) (far, far * Num.sqrt(k2))
-            else ((far + near) / 2.0 * (1.0 + k2),
-                  Num.sqrt((far - near) * (far - near) + 2.0 * (far * far + near * near) * k2 + (far + near) * (far + near) * k2 * k2) / 2.0);
-        (Vec3.add(cam#eye, Vec3.mul(Camera3d.forward(cam), reach)), radius)
-
-    /// 光の進む向き direction（長さ 1）を前にした、原点の目の行列（world → 光の目の座標。回転だけ）。
-    // WhyNot: 光の目を箱の中心に置かない — 中心が動くたびに目の座標の原点が動き、地図の画素の丸め（directionalShadowOf の doc）が効かなくなる。
-    def sunViewMatrix(direction: Vec3.Vec3): Mat4.Mat4 =
-        let flat = Num.sqrt(direction#x * direction#x + direction#z * direction#z);
-        Camera3d.viewMatrix({ eye = Vec3.zero(), yaw = Num.atan2(direction#x, direction#z), pitch = Num.atan2(0.0 - direction#y, flat),
-                              fovY = 1.0, near = 1.0, far = 2.0, lensShift = Vec2.zero() })
+            l#shadow |> Option.filter(s -> s#mapSize > 0) |> Option.flatMap(Scene3d.Internal.SunShadow.setupOf(scene, l#direction)))
 
     /// 点光源の影（光から見た 6 方向の深度を 1 枚の絵 atlas に並べる。Unity・Unreal の Shadow Atlas・Bevy の PointLightShadowMap に当たる）。
     /// maxShadowedLights = 影を落とす灯りの数の上限（0 以下で影なし・maxShadowedPointLights() で頭打ち。どの灯りかは Scene3d.PointShadows.atlasOf）・
@@ -918,8 +840,8 @@ pub mod Scene3d {
     /// 8bit の絵は sRGB の絵として・half の絵（Texture3d.decodeHdr）は線形の量のまま読み、強さ 1・箱なし・背景には描かない。向きと絵の座標は LightModel3d.environmentUvOf。
     /// 映るのは metallic と roughness を持つ材質の映り込みだけで、拡散の光（ambient と hemisphere）は変わらない（変えるのは withSkyContribution）。
     pub def environmentMap(texture: Texture3d.Texture3d): EnvironmentMap =
-        let colorSpace = if (Texture3d.formatOf(texture) == Texture3d.Format.Rgba16Float) Texture3d.ColorSpace.Linear else Texture3d.ColorSpace.Srgb;
-        EnvironmentMapData.EnvironmentMapData({ texture = Texture3d.name(texture), intensity = 1.0, box = None, asBackground = false, colorSpace = colorSpace,
+        EnvironmentMapData.EnvironmentMapData({ texture = Texture3d.name(texture), intensity = 1.0, box = None, asBackground = false,
+                                                colorSpace = Scene3d.Internal.Environment.colorSpaceOf(texture),
                                                 skyContribution = 0.0, irradiance = None, textureIrradiance = Texture3d.Internal.irradianceOf(texture) })
 
     /// 拡散の光（ambient）を景色から求めた光へ混ぜる割合 k（Godot の ambient_light_sky_contribution）。0..1 に丸め、NaN は 0。既定 0（ambient のまま）。
@@ -927,40 +849,38 @@ pub mod Scene3d {
     /// （SphericalHarmonics.fromEquirectangular。機種の側の絵は求められないので ambient のまま描いて 1 回知らせる）。
     /// hemisphere も空の光なので、k を上げる時は hemisphere を 0 にする（2 回足すと 1 回知らせる）。lightmap の面には足さない。
     pub def withSkyContribution(k: Float64, e: EnvironmentMap): EnvironmentMap =
-        let EnvironmentMapData.EnvironmentMapData(r) = e;
-        EnvironmentMapData.EnvironmentMapData({ skyContribution = if (Float64.isNan(k)) 0.0 else Num.clamp01(k) | r })
+        mapEnvironmentMap(r -> { skyContribution = if (Float64.isNan(k)) 0.0 else Num.clamp01(k) | r }, e)
 
     /// 拡散の光に景色を混ぜる割合（withSkyContribution で丸めた後の値）。
     pub def skyContributionOf(e: EnvironmentMap): Float64 = environmentMapFieldsOf(e)#skyContribution
 
     /// 景色の拡散の光を外から渡す（前に求めた SH を JSON で持つ・空の色から作る時。Filament の IndirectLight.irradiance）。絵から求める物より先に使う。
     pub def withIrradiance(sh: SphericalHarmonics.SphericalHarmonics, e: EnvironmentMap): EnvironmentMap =
-        let EnvironmentMapData.EnvironmentMapData(r) = e;
-        EnvironmentMapData.EnvironmentMapData({ irradiance = Some(sh) | r })
+        mapEnvironmentMap(r -> { irradiance = Some(sh) | r }, e)
 
     /// withIrradiance で渡した拡散の光（渡していなければ None。絵から求めはしない）。
     pub def irradianceOf(e: EnvironmentMap): Option[SphericalHarmonics.SphericalHarmonics] = environmentMapFieldsOf(e)#irradiance
 
     /// 映り込みの強さの倍率（線形の量に戻した後に掛ける。0 で映り込み無し。負・NaN は 0 として描く）。
     pub def withEnvironmentIntensity(k: Float64, e: EnvironmentMap): EnvironmentMap =
-        let EnvironmentMapData.EnvironmentMapData(r) = e;
-        EnvironmentMapData.EnvironmentMapData({ intensity = k | r })
+        mapEnvironmentMap(r -> { intensity = k | r }, e)
 
     /// 室内の壁の補正（Box Projection）。跳ね返りの線を点から伸ばして箱の内側の面と交わる点を、center から見た向きで絵を読む。
     /// 部屋の中の物に使い、屋外の空には付けない（景色が無限に遠いので補正が要らない）。
     pub def withEnvironmentBox(box: EnvironmentBox, e: EnvironmentMap): EnvironmentMap =
-        let EnvironmentMapData.EnvironmentMapData(r) = e;
-        EnvironmentMapData.EnvironmentMapData({ box = Some(box) | r })
+        mapEnvironmentMap(r -> { box = Some(box) | r }, e)
 
     /// 真なら、何も描かれない画素に景色の絵を空として描く（屋外の景色の絵向き。向きは映り込みと同じ・段 0 で読み、強さも掛かる。sky があればそちらが勝つ）。
     pub def withEnvironmentAsBackground(on: Bool, e: EnvironmentMap): EnvironmentMap =
-        let EnvironmentMapData.EnvironmentMapData(r) = e;
-        EnvironmentMapData.EnvironmentMapData({ asBackground = on | r })
+        mapEnvironmentMap(r -> { asBackground = on | r }, e)
 
     /// 環境マップの中身を読む（GL・CPU・鍵が使う）。intensity は描き手が environmentIntensityOf で直した値を読む。
     pub def environmentMapFieldsOf(e: EnvironmentMap): EnvironmentMapFields =
         let EnvironmentMapData.EnvironmentMapData(r) = e;
         r
+
+    def mapEnvironmentMap(f: EnvironmentMapFields -> EnvironmentMapFields, e: EnvironmentMap): EnvironmentMap =
+        EnvironmentMapData.EnvironmentMapData(f(environmentMapFieldsOf(e)))
 
     /// 描く時に使う強さ（負・NaN・無限は 0）。GL と CPU が同じ値を使う。
     pub def environmentIntensityOf(e: EnvironmentMap): Float64 =
@@ -972,21 +892,13 @@ pub mod Scene3d {
         scene#environmentMap |> Option.toList |> List.map(e -> environmentMapFieldsOf(e)#texture)
 
     /// 空の代わりに背景へ景色を描く時の環境マップ（asBackground が真で、sky が無い時だけ Some。sky があれば sky が勝つ）。
-    pub def backgroundEnvironmentOf(scene: Scene3dCmd): Option[EnvironmentMap] =
-        if (Option.nonEmpty(scene#sky)) None
-        else scene#environmentMap |> Option.filter(e -> environmentMapFieldsOf(e)#asBackground)
+    pub def backgroundEnvironmentOf(scene: Scene3dCmd): Option[EnvironmentMap] = Scene3d.Internal.Environment.backgroundOf(scene)
 
     /// 描き手が空として塗る物（sky があれば sky・無くて景色を背景に描くなら黒の空 — 色は景色の絵が上書きするので使われない）。
-    pub def drawnSkyOf(scene: Scene3dCmd): Option[Sky3d] =
-        match scene#sky {
-            case Some(s) => Some(s)
-            case None    => backgroundEnvironmentOf(scene) |> Option.map(_ -> gradientSky(Color.rgb(0.0, 0.0, 0.0), Color.rgb(0.0, 0.0, 0.0), Color.rgb(0.0, 0.0, 0.0)))
-        }
+    pub def drawnSkyOf(scene: Scene3dCmd): Option[Sky3d] = Scene3d.Internal.Environment.drawnSkyOf(scene)
 
     /// 環境マップの箱の 3 点を GL の uniform と CPU の引数に渡す形にそろえる（min と max は軸ごとに小さい方を min に）。
-    pub def environmentBoxOf(b: EnvironmentBox): EnvironmentBox =
-        { min = Vec3.v3(Float64.min(b#min#x, b#max#x), Float64.min(b#min#y, b#max#y), Float64.min(b#min#z, b#max#z)),
-          max = Vec3.v3(Float64.max(b#min#x, b#max#x), Float64.max(b#min#y, b#max#y), Float64.max(b#min#z, b#max#z)) | b }
+    pub def environmentBoxOf(b: EnvironmentBox): EnvironmentBox = Scene3d.Internal.Environment.boxOf(b)
 
     // ── 空 ──
 
@@ -1006,9 +918,7 @@ pub mod Scene3d {
         SkyData.SkyData({ zenith = zenith, horizon = horizon, ground = ground, curve = 1.0 })
 
     /// 地平から真上・真下へ向かう色の寄り方を替える。0 以下・NaN・無限は 1 として描く（skyCurveOf）。
-    pub def withSkyCurve(curve: Float64, s: Sky3d): Sky3d =
-        let SkyData.SkyData(r) = s;
-        SkyData.SkyData({ curve = curve | r })
+    pub def withSkyCurve(curve: Float64, s: Sky3d): Sky3d = SkyData.SkyData({ curve = curve | skyFieldsOf(s) })
 
     /// 空の中身を読む（GL・CPU・鍵が使う）。
     pub def skyFieldsOf(s: Sky3d): SkyFields =
@@ -1025,26 +935,14 @@ pub mod Scene3d {
     pub type alias SkyBasis = { forward = Vec3.Vec3, right = Vec3.Vec3, up = Vec3.Vec3 }
 
     /// 場面 scene のカメラと縦横の比（aspectOf）で、空の画素の向きを組む材料を作る。GL と CPU が同じ物を使う。
-    pub def skyBasisOf(scene: Scene3dCmd): SkyBasis =
-        let c = scene#camera;
-        let half = c#fovY / 2.0;
-        let tanHalf = Num.sin(half) / Num.cos(half);
-        let right = Vec3.mul(Camera3d.right(c), tanHalf * aspectOf(scene));
-        let up = Vec3.mul(Camera3d.up(c), tanHalf);
-        let center = if (Camera3d.hasLensShift(c))
-                Vec3.add(Camera3d.forward(c), Vec3.add(Vec3.mul(right, 2.0 * c#lensShift#x), Vec3.mul(up, 2.0 * c#lensShift#y)))
-            else Camera3d.forward(c);
-        { forward = center, right = right, up = up }
+    pub def skyBasisOf(scene: Scene3dCmd): SkyBasis = Scene3d.Internal.Environment.skyBasisOf(scene)
 
     /// NDC の点 ndc（−1..1・y は上へ）を通って目から伸びる向き（長さ 1）。
     pub def skyDirectionOf(b: SkyBasis, ndc: Vec2.Vec2): Vec3.Vec3 =
         Vec3.normalized(Vec3.add(b#forward, Vec3.add(Vec3.mul(b#right, ndc#x), Vec3.mul(b#up, ndc#y))))
 
     /// sky と environment の background が両方 Some の時の、知らせる 1 行（background は使わない）。毎コマ通るので呼ぶ側が初回 1 回だけ出す。
-    pub def skyWarning(scene: Scene3dCmd): Option[String] =
-        if (Option.nonEmpty(scene#sky) and Option.nonEmpty(scene#environment#background))
-            Some("scene3d: sky と environment の background が両方ある — background は使わず空を描く")
-        else None
+    pub def skyWarning(scene: Scene3dCmd): Option[String] = Scene3d.Internal.Environment.skyWarningOf(scene)
 
     /// 1 つの場面で計算する点光源の上限。
     pub def maxPointLights(): Int32 = 8
@@ -1060,24 +958,11 @@ pub mod Scene3d {
 
     /// スポットライトから見たカメラ（影の地図を描く目）。位置から target を向き、fovY の角で見る。far は max(2, range)・near は min(1, far / 100)。
     /// target が位置と同じ所なら真下を向く。
-    // WhyNot: near を 1 に決め打ちしない — 1 = 1 m の部屋の卓上の灯り（光から 1 m 以内に物がある）では、影を落とす物も受ける面も near の手前で切れて影が出ない。
-    // WhyNot: near を range に依らず小さく決めない — 奥行きの値の細かさは far / near で決まり、range の長い光（街の灯り）の影の地図が粗くなる。
-    pub def shadowCamera(spot: SpotLight): Camera3d.Camera3d =
-        let d = Vec3.sub(spot#target, spot#position);
-        let len = Vec3.length(d);
-        let dir = if (len < 0.000001) { x = 0.0, y = -1.0, z = 0.0 } else Vec3.mul(d, 1.0 / len);
-        let flat = Num.sqrt(dir#x * dir#x + dir#z * dir#z);
-        let far = Float64.max(2.0, spot#range);
-        { eye = spot#position, yaw = Num.atan2(dir#x, dir#z), pitch = Num.atan2(0.0 - dir#y, flat),
-          fovY = spot#fovY, near = Float64.min(1.0, far / 100.0), far = far, lensShift = Vec2.zero() }
+    pub def shadowCamera(spot: SpotLight): Camera3d.Camera3d = Scene3d.Internal.SpotLights.cameraOf(spot)
 
     /// スポットの影の判定で地図の値と比べる時に引く値（ShadowMap の bias を、shadowCamera の near で縮めた物）。GL・WebGPU・CPU の描き手がこの値を使う。
     /// bias × near × (far − 1) / (far − near)。near が 1 の光（range 100 以上）は bias のまま。
-    // WhyNot: bias をそのまま引かない — 透視の奥行きの値の傾きは near に比例し、同じ bias が world で表す長さは near に反比例する。
-    //   near を 1 から下げた分そのまま引くと、range の短いスポットの影が物の根元から浮く（range 8 で約 12 倍）。
-    pub def spotShadowDepthBiasOf(spot: SpotLight, bias: Float64): Float64 =
-        let c = shadowCamera(spot);
-        bias * c#near * (c#far - 1.0) / (c#far - c#near)
+    pub def spotShadowDepthBiasOf(spot: SpotLight, bias: Float64): Float64 = Scene3d.Internal.SpotLights.depthBiasOf(spot, bias)
 
     /// 影の地図の行列（world → 光の clip 空間。縦横の比は 1）。GL と CPU が同じ物を使う。
     /// 影の判定の約束（GL と CPU で同じ）:
@@ -1086,9 +971,7 @@ pub mod Scene3d {
     ///   3. 画素の z（同じく 0..1）から bias を引いた値が、地図の値以下なら照らされている
     ///   4. pcfRadius = r なら周りの (2r+1)² 個の地図の画素で 3 を数え、照らされている割合 f を出す
     ///   5. そのスポットの光の量に (1 − strength × (1 − f)) を掛ける（点光源・環境光には掛けない）
-    pub def shadowMatrix(spot: SpotLight): Mat4.Mat4 =
-        let c = shadowCamera(spot);
-        Mat4.mul(Camera3d.projectionMatrix(c, 1.0), Camera3d.viewMatrix(c))
+    pub def shadowMatrix(spot: SpotLight): Mat4.Mat4 = Scene3d.Internal.SpotLights.matrixOf(spot)
 
     /// 上限を超えた光を選んで残す。残った物は元の並びの順のまま。上限以下の光は何も変えない（intensity も触らない）。
     /// 点光源: range の球が視錐台に掛からない物と、range か intensity が 0 以下の物を落とし、残りを画面の真ん中に近い順に maxPointLights 本選ぶ
@@ -1112,19 +995,10 @@ pub mod Scene3d {
     /// 1 コマに描く 3D の場面の列で上限を超えた光の本数の合計（points = 点光源・spots = スポット。droppedLightsOf の和）。
     /// GL・WebGPU の描き手が F3 の診断（FrameDiagnostics の droppedPointLights・droppedSpotLights）に足す数と同じ。
     /// 画面なしで確かめる時は `Scene3d.droppedLightsOfScenes(Render.drawScenes3d(items))`（描き出しの SoftScene なら `soft#scenes`）。
-    pub def droppedLightsOfScenes(scenes: List[RenderCmd]): { points = Int32, spots = Int32 } =
-        scenes |> List.foldLeft((acc, c) -> {
-            let d = droppedLightsOf(c#scene);
-            { points = acc#points + d#points, spots = acc#spots + d#spots }
-        }, { points = 0, spots = 0 })
+    pub def droppedLightsOfScenes(scenes: List[RenderCmd]): { points = Int32, spots = Int32 } = Scene3d.Internal.PointLights.droppedOfScenes(scenes)
 
     /// 落とす光があれば、種類ごとに (鍵, 知らせる 1 行)。毎コマ通るので、呼ぶ側が鍵ごとに初回 1 回だけ出す（GL と CPU で同じ文面）。
-    pub def droppedLightsWarnings(cmd: Scene3dCmd): List[(String, String)] =
-        let d = droppedLightsOf(cmd);
-        let line = (kind: String, given: Int32, limit: Int32) ->
-            "scene3d: ${kind}が ${Int32.toString(given)} 本ある — 上限 ${Int32.toString(limit)} 本を選び、残りは描かない（Scene3d.pickLights）";
-        (if (d#points > 0) ("@lights:point", line("点光源", List.length(cmd#pointLights), maxPointLights())) :: Nil else Nil)
-            ::: (if (d#spots > 0) ("@lights:spot", line("スポットライト", List.length(cmd#spotLights), maxSpotLights())) :: Nil else Nil)
+    pub def droppedLightsWarnings(cmd: Scene3dCmd): List[(String, String)] = Scene3d.Internal.PointLights.droppedWarningsOf(cmd)
 
     /// Shader 効果へ渡す場面 1 つ。at = 描き物の左上（画面の px）・clip = 切り抜く矩形（画面の px）。
     // WhyNot: core の DrawCmd に置かない — 材質が ShaderDoc を持ち、core は ShaderDoc を参照しない層だから。
