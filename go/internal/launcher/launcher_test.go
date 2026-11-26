@@ -20,7 +20,7 @@ func fakeEngine(t *testing.T) (engine, calls string) {
 	engine = t.TempDir()
 	calls = filepath.Join(engine, "calls.log")
 	script := `#!/bin/sh
-echo "$(basename "$0") $* JAVA_TOOL_OPTIONS=${JAVA_TOOL_OPTIONS:-} SHOT=${SHOT:-} START=${START:-} DEBUG=${DEBUG:-} FALLBACK=${FGE_HEADLESS_FALLBACK:-} BOT_RUNS=${BOT_RUNS:-} FLOW=${FLOW:-}" >> "` + calls + `"
+echo "$(basename "$0") $* JAVA_TOOL_OPTIONS=${JAVA_TOOL_OPTIONS:-} SHOT=${SHOT:-} START=${START:-} DEBUG=${DEBUG:-} FALLBACK=${FGE_HEADLESS_FALLBACK:-} BOT_RUNS=${BOT_RUNS:-} FLOW=${FLOW:-} VARIANTS=${FLIX_GE_SHADER_VARIANTS:-}" >> "` + calls + `"
 case "$*" in *fail*) exit 7 ;; esac
 case "$*" in Palette.write) echo palette > assets/x.palette.json ;; esac
 exit 0
@@ -97,7 +97,25 @@ func TestPlayWithShotOpensWindowFromTheShotPaused(t *testing.T) {
 	}
 }
 
+func TestPlayRecordsShaderVariantsOnlyForWebGames(t *testing.T) {
+	l, calls, _ := newTestLauncher(t, "")
+	l.Play("", false, nil)
+	if err := os.MkdirAll(filepath.Join(l.Root, "web"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(l.Root, "web", "WebMain.flix"), []byte("def main(): Unit = ()\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	l.Play("", true, nil)
+	got := readCalls(t, calls)
+	want := filepath.Join(l.Root, "web", "shader-variants.json")
+	if len(got) != 2 || !strings.HasSuffix(got[0], "VARIANTS=") || !strings.HasSuffix(got[1], "VARIANTS="+want) {
+		t.Fatalf("calls %q", got)
+	}
+}
+
 func TestDebugSetsDebugTrue(t *testing.T) {
+
 	l, calls, _ := newTestLauncher(t, "")
 	l.Play("", true, nil)
 	if got := readCalls(t, calls); len(got) != 1 || !strings.Contains(got[0], "DEBUG=true") {

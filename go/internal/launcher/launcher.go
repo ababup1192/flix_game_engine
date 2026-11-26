@@ -132,8 +132,27 @@ func (l *Launcher) Play(shot string, debug bool, vars map[string]string) int {
 		base["START"] = "shot:" + shot
 		base["DEBUG"] = "1"
 	}
+	if path, ok := l.shaderVariantsPath(); ok {
+		base["FLIX_GE_SHADER_VARIANTS"] = path
+	}
 	return l.headless("main", true, merge(base, vars))
 }
+
+// shaderVariantsPath はブラウザ版を出すゲーム（web/WebMain.flix がある）の、3D の描き手が使ったシェーダーの鍵を記録するファイルの道。
+// 書き出し（bin/fge export-web）はこの記録の分だけシェーダーの字を前もって作る。
+// WhyNot: ゲームの Makefile で旗を立てない — Makefile を通らない外のゲームと Studio から走らせた時に記録が漏れる。
+// WhyNot: web/ の無い 3D のゲームでも書かない — ブラウザに出さないゲームのフォルダに使わないファイルが増える。
+func (l *Launcher) shaderVariantsPath() (string, bool) {
+	if _, err := os.Stat(filepath.Join(l.Root, "web", "WebMain.flix")); err != nil {
+		return "", false
+	}
+	abs, err := filepath.Abs(filepath.Join(l.Root, "web", "shader-variants.json"))
+	if err != nil {
+		return "", false
+	}
+	return abs, true
+}
+
 
 // Render は場面を 1 枚ずつ debug/<場面>.png へ描き出す（make render SHOT=）。
 func (l *Launcher) Render(shots []string, vars map[string]string) int {

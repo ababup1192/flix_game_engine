@@ -5,6 +5,8 @@ mod Render3d.TestShaderLibrary {
     import java.lang.System
     import java.io.ByteArrayOutputStream
     import java.io.PrintStream
+    import java.io.File
+
 
     use Render3d.FakeGl.{cmdOf, dest, freshRecorded, passDest, paintTo, plainTriangle, recordingGl, sceneOf, shadowSpot, skinnedAt, poseAt, stderrOf}
     use Render3d.ShaderLibrary.{CollectionKeys, collectionKeysOf, collectionOfJson, collectionToJson, emptyCollection, unionCollection, variantKeys}
@@ -107,7 +109,32 @@ mod Render3d.TestShaderLibrary {
         Assert.assertEq(expected = (true, true),
                         (Set.memberOf("material.fs+uv+ds+cov+tex/+psx", names), Set.memberOf("material.fs+uv+ds+tex/+psx", names)))
 
+    def tempPath(name: String): String \ IO =
+        let dir = File.createTempFile("fge-shader-variants", "");
+        discard dir.delete();
+        discard dir.mkdirs();
+        new File(dir, name).getPath()
+
+    @Test
+    def testMissingFileLoadsAsEmpty(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = Ok((Set.empty(), Set.empty())), Render3d.ShaderLibrary.loadCollection(tempPath("none.json")) |> Result.map(keysOf))
+
+    @Test
+    def testRecordingWritesNewKeysToTheFile(): Unit \ {Assert, IO} =
+        let path = tempPath("web/shader-variants.json");
+        let shaders = Render3d.ShaderLibrary.recordingTo(path, Render3dShaders.makeRuntimeProvider());
+        shaders#record(sampleCollection());
+        Assert.assertEq(expected = Ok(keysOf(sampleCollection())), Render3d.ShaderLibrary.loadCollection(path) |> Result.map(keysOf))
+
+    @Test
+    def testRecordingStartsFromTheFile(): Unit \ {Assert, IO} =
+        let path = tempPath("shader-variants.json");
+        Render3d.ShaderLibrary.recordingTo(path, Render3dShaders.makeRuntimeProvider())#record(sampleCollection());
+        Render3d.ShaderLibrary.recordingTo(path, Render3dShaders.makeRuntimeProvider())#record(variantKeys({ ambientOcclusion = true | Render3d.ProgramKey.defaultShaderVariant() }));
+        Assert.assertEq(expected = Ok(Set#{ "+ao", "+ps", "+psx" }), Render3d.ShaderLibrary.loadCollection(path) |> Result.map(c -> fst(keysOf(c))))
+
     // ── 記録から広げた表だけで描ける ──
+
 
     def textured(): Scene3d.Material3d = Scene3d.texturedMaterial("tex3d:a", ShaderDoc.FilterMode.Linear)
 

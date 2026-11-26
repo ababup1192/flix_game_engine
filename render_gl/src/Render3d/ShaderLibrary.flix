@@ -304,24 +304,26 @@ pub mod Render3d.ShaderLibrary {
     pub def recordingFromEnv(provider: ShaderSourceProvider): ShaderSources \ IO =
         match Map.get("FLIX_GE_SHADER_VARIANTS", LwjglEnv.snapshot()) |> Option.filter(p -> not String.isEmpty(p)) {
             case None       => withoutRecording(provider)
-            case Some(path) =>
-                let start = match loadCollection(path) {
-                    case Ok(c)  => c
-                    case Err(e) => Log.fellBackThen("shader", path, "空の記録", e, emptyCollection())
-
-                };
-                let held = Ref.fresh(Static, start);
-                { provider = provider, record = keys -> {
-                    let before = Ref.get(held);
-                    if (coversCollection(before, keys)) ()
-                    else {
-                        let after = unionCollection(before, keys);
-                        Ref.put(after, held);
-                        match saveCollection(path, after) {
-                            case Ok(_)  => ()
-                            case Err(e) => Log.fellBack("shader", path, "書かない", e)
-                        }
-                    }
-                } }
+            case Some(path) => recordingTo(path, provider)
         }
+
+    /// provider に、path の記録へ足していく記録を足した ShaderSources（始めに path を読み、新しい鍵を見た時だけ書く）。
+    pub def recordingTo(path: String, provider: ShaderSourceProvider): ShaderSources \ IO =
+        let start = match loadCollection(path) {
+            case Ok(c)  => c
+            case Err(e) => Log.fellBackThen("shader", path, "空の記録", e, emptyCollection())
+        };
+        let held = Ref.fresh(Static, start);
+        { provider = provider, record = keys -> {
+            let before = Ref.get(held);
+            if (coversCollection(before, keys)) ()
+            else {
+                let after = unionCollection(before, keys);
+                Ref.put(after, held);
+                match saveCollection(path, after) {
+                    case Ok(_)  => ()
+                    case Err(e) => Log.fellBack("shader", path, "書かない", e)
+                }
+            }
+        } }
 }
