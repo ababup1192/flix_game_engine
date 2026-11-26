@@ -14,7 +14,7 @@ pub mod PhysicsWorld2d.Internal.Solver {
     pub def bStride(): Int32 = 17
     def sStride(): Int32 = 15
 
-    def slop(): Float64 = 0.005
+    pub def slop(): Float64 = 0.005
     def bounceThreshold(): Float64 = 1.0
     def contactHertz(): Float64 = 30.0
     def contactDamping(): Float64 = 10.0

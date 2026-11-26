@@ -11,13 +11,13 @@ pub mod PhysicsWorld2d.Internal.Data {
     pub type alias Events = { collisions = List[CollisionEvent2d.CollisionEvent2d], sensors = List[SensorEvent2d.SensorEvent2d] }
 
     /// warm start の控え: 組の鍵を小さい順に並べた Vector と、組ごとに 2 つの枠（特徴の番号・法線の衝撃・接線の衝撃。空の枠は特徴 -1）。
-    // WhyNot: Map で持たない — 木への挿し込みと引きが 1 刻みの 1 割を食った。並べた配列と二分探索にした。
+    // WhyNot: Map で持たない — 木への挿し込みと引きが、1 刻みに点の数だけ重さを足す。
     // WhyNot: 鍵を (a << 40 | b << 16 | 特徴) の 1 語にしない — id が 2^23 を超えるとぶつかる。組の鍵（a と b の 32 bit ずつ）と特徴を分けて持つ。
     pub type alias Warm = (Vector[Int64], Vector[Int32], Vector[Float64], Vector[Float64])
 
     /// 体の欄（どれも id の順。state は stride 8: x・y・cos・sin・vx・vy・w・眠りの時計。prev は stride 4: 前の刻みの x・y・cos・sin。
     /// props は stride 3: 粗い当たりの半径・重さの逆数・慣性の逆数）。
-    // WhyNot: Vector[Body] で持たない — 毎刻み体の record を全部作り直し、欄を名前で探して書き戻す代金が 1 刻みの 3 割を食った。
+    // WhyNot: Vector[Body] で持たない — 毎刻み体の record を全部作り直し、欄を名前で探して書き戻す代金が体の数だけ乗る。
     pub type alias Data = {
         ids = Vector[Int32], types = Vector[RigidBody2d.BodyType], colliders = Vector[Collider2d.Collider2d], shapes = Vector[Shape],
         materialIndex = Vector[Int32], props = Vector[Float64], state = Vector[Float64], prev = Vector[Float64], asleep = Vector[Bool],

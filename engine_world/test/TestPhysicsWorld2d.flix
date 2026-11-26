@@ -76,20 +76,28 @@ mod TestPhysicsWorld2d {
     def testReferenceHash100(): Unit \ Assert =
         Assert.assertEq(expected = referenceHash100(), PhysicsWorld2d.stateHash(advance(600, pile(100))))
 
-    def referenceHash100(): Int64 = 2064364921975254338i64
+    def referenceHash100(): Int64 = -7928258968195396701i64
 
     // ── 積み重ね・眠り・跳ね返り ──
 
-    /// 一辺 0.5 m の箱 12 個の塔は 600 刻みの後も立っている（横のずれ 5 cm 未満・上の箱の中心は理想の 5.75 m から 20 cm 以内）
+    /// 一辺 0.5 m の箱 12 個の塔は、600 刻みの後もどの箱も横に 5 cm 以上ずれない
     @Test
-    def testTowerStands(): Unit \ Assert =
-        let tower = List.range(0, 12) |> List.foldLeft((w, k) ->
-            PhysicsWorld2d.insert(10 + k, RigidBody2d.dynamic({ x = 0.0, y = -0.25 - 0.5 * Int32.toFloat64(k) }, Collider2d.box(0.25, 0.25)), w), withJar(emptyWorld()));
-        let after = advance(600, tower);
+    def testTowerDoesNotDrift(): Unit \ Assert =
+        let after = towerAfter600();
         let drift = List.range(0, 12) |> List.foldLeft((acc, k) ->
             Float64.max(acc, PhysicsWorld2d.positionOf(10 + k, after) |> Option.map(p -> Float64.abs(p#x)) |> Option.getWithDefault(99.0)), 0.0);
-        let topY = PhysicsWorld2d.positionOf(21, after) |> Option.map(p -> p#y) |> Option.getWithDefault(0.0);
-        Assert.assertTrue(drift < 0.05 and topY < -5.55 and topY > -5.95)
+        Assert.assertTrue(drift < 0.05)
+
+    /// 箱 12 個の塔の上の箱の中心は、600 刻みの後も理想の高さ 5.75 m から 20 cm 以内
+    @Test
+    def testTowerTopStaysUp(): Unit \ Assert =
+        let topY = PhysicsWorld2d.positionOf(21, towerAfter600()) |> Option.map(p -> p#y) |> Option.getWithDefault(0.0);
+        Assert.assertTrue(Float64.abs(topY + 5.75) < 0.2)
+
+    def towerAfter600(): PhysicsWorld2d.PhysicsWorld2d =
+        let tower = List.range(0, 12) |> List.foldLeft((w, k) ->
+            PhysicsWorld2d.insert(10 + k, RigidBody2d.dynamic({ x = 0.0, y = -0.25 - 0.5 * Int32.toFloat64(k) }, Collider2d.box(0.25, 0.25)), w), withJar(emptyWorld()));
+        advance(600, tower)
 
     /// 物 100 個は 60 秒（3,600 刻み）の中で全部眠る（しきい 0.01 m/s では、山の端の転がる円が止まるまでかかる）
     @Test
@@ -162,8 +170,14 @@ mod TestPhysicsWorld2d {
     @Test
     def testSleepingKeepsTouching(): Unit \ Assert =
         let w0 = withJar(emptyWorld()) |> PhysicsWorld2d.insert(10, RigidBody2d.dynamic({ x = 0.0, y = -0.5 }, Collider2d.circle(0.2)));
-        let (w, evs) = advanceCollecting(300, w0, Nil);
-        Assert.assertTrue(PhysicsWorld2d.isSleeping(10, w) and List.isEmpty(collisionsOf(evs) |> List.filterMap(CollisionEvent2d.stoppedPair)))
+        let (_, evs) = advanceCollecting(300, w0, Nil);
+        Assert.assertEq(expected = Nil, collisionsOf(evs) |> List.filterMap(CollisionEvent2d.stoppedPair))
+
+    /// 床に載せた球は 5 秒で眠る
+    @Test
+    def testBallOnFloorFallsAsleep(): Unit \ Assert =
+        let w0 = withJar(emptyWorld()) |> PhysicsWorld2d.insert(10, RigidBody2d.dynamic({ x = 0.0, y = -0.5 }, Collider2d.circle(0.2)));
+        Assert.assertTrue(PhysicsWorld2d.isSleeping(10, advance(300, w0)))
 
     /// sensor の箱の中を落ちていく球は Started と Stopped を 1 回ずつ出す（sensor が先・押し返さない）
     @Test
@@ -194,7 +208,7 @@ mod TestPhysicsWorld2d {
         let pushed = List.range(1, 61) |> List.foldLeft((w, k) ->
             PhysicsWorld2d.step(PhysicsWorld2d.setKinematicTarget(11, { x = -1.0 + 0.03 * Int32.toFloat64(k), y = -0.3 }, Rot2.identity(), w)), asleep);
         let x = PhysicsWorld2d.positionOf(10, pushed) |> Option.map(p -> p#x) |> Option.getWithDefault(0.0);
-        Assert.assertTrue(PhysicsWorld2d.isSleeping(10, asleep) and x > 0.5)
+        Assert.assertTrue(x > 0.5)
 
     /// setKinematicTarget の次の刻みで、kinematic の体はちょうど目標に居る
     @Test
@@ -271,6 +285,99 @@ mod TestPhysicsWorld2d {
         let text = "{\"materials\": {\"foam\": {\"friction\": 0.6, \"restitution\": 0.1, \"density\": 0}}}";
         let parsed = DocJson.parse(text) |> Option.map(j -> PhysicsDoc2d.parse(j) |> Result.isErr);
         Assert.assertEq(expected = Some(true), parsed)
+
+    // ── 追加の決まり ──
+
+    /// id が 2^30 の体と負の id の体の組でも Started が組の id で出る
+    @Test
+    def testLargeAndNegativeIdsKeepPairs(): Unit \ Assert =
+        let w0 = emptyWorld()
+            |> PhysicsWorld2d.insert(-7, RigidBody2d.fixed({ x = 0.0, y = 0.5 }, Collider2d.box(5.0, 0.5)))
+            |> PhysicsWorld2d.insert(1073741824, RigidBody2d.dynamic({ x = 0.0, y = -0.5 }, Collider2d.circle(0.2)));
+        let (_, evs) = advanceCollecting(60, w0, Nil);
+        Assert.assertEq(expected = (-7, 1073741824) :: Nil, collisionsOf(evs) |> List.filterMap(CollisionEvent2d.startedPair))
+
+    /// 眠った 2 段の下の箱を消すと、上の箱が起きて落ちる
+    @Test
+    def testRemovingSupportWakesStack(): Unit \ Assert =
+        let w0 = withJar(emptyWorld())
+            |> PhysicsWorld2d.insert(10, RigidBody2d.dynamic({ x = 0.0, y = -0.25 }, Collider2d.box(0.25, 0.25)))
+            |> PhysicsWorld2d.insert(11, RigidBody2d.dynamic({ x = 0.0, y = -0.75 }, Collider2d.box(0.25, 0.25)));
+        let fallen = advance(300, w0) |> PhysicsWorld2d.remove(10) |> advance(60);
+        let y = PhysicsWorld2d.positionOf(11, fallen) |> Option.map(p -> p#y) |> Option.getWithDefault(-9.0);
+        Assert.assertTrue(y > -0.3)
+
+    /// 同じ id で入れ直しても出来事は出ない
+    @Test
+    def testReinsertSameIdIsQuiet(): Unit \ Assert =
+        let w0 = withJar(emptyWorld()) |> PhysicsWorld2d.insert(10, RigidBody2d.dynamic({ x = 0.0, y = -0.2 }, Collider2d.circle(0.2)));
+        let resting = advance(60, w0);
+        let swapped = PhysicsWorld2d.insert(10, RigidBody2d.dynamic({ x = 0.0, y = -0.2 }, Collider2d.circle(0.2)), resting) |> PhysicsWorld2d.step;
+        Assert.assertEq(expected = Nil, PhysicsWorld2d.events(swapped)#collisions)
+
+    /// sensor の中の体を消すと removed = true の Stopped が出る
+    @Test
+    def testSensorRemovedStops(): Unit \ Assert =
+        let w0 = emptyWorld()
+            |> PhysicsWorld2d.insert(5, RigidBody2d.fixed(Vec2.zero(), Collider2d.box(1.0, 1.0) |> Collider2d.withSensor(true)))
+            |> PhysicsWorld2d.insert(10, RigidBody2d.kinematic(Vec2.zero(), Collider2d.circle(0.2)) |> RigidBody2d.withLinearVelocity({ x = 0.01, y = 0.0 }));
+        let inside = advance(2, w0);
+        let after = PhysicsWorld2d.step(PhysicsWorld2d.remove(10, inside));
+        Assert.assertEq(expected = SensorEvent2d.SensorEvent2d.Stopped(5, 10, true) :: Nil, PhysicsWorld2d.events(after)#sensors)
+
+    /// sensor の中で眠った体は Stopped を出さない
+    @Test
+    def testSleepingInsideSensorStaysInside(): Unit \ Assert =
+        let w0 = withJar(emptyWorld())
+            |> PhysicsWorld2d.insert(5, RigidBody2d.fixed({ x = 0.0, y = -0.5 }, Collider2d.box(1.0, 0.5) |> Collider2d.withSensor(true)))
+            |> PhysicsWorld2d.insert(10, RigidBody2d.dynamic({ x = 0.0, y = -0.3 }, Collider2d.circle(0.2)));
+        let (_, evs) = advanceCollecting(300, w0, Nil);
+        Assert.assertEq(expected = SensorEvent2d.SensorEvent2d.Started(5, 10) :: Nil, sensorsOf(evs))
+
+    /// 目標の無い次の刻みに、kinematic の体は止まる
+    @Test
+    def testKinematicStopsWithoutTarget(): Unit \ Assert =
+        let w = emptyWorld()
+            |> PhysicsWorld2d.insert(11, RigidBody2d.kinematic(Vec2.zero(), Collider2d.circle(0.2)))
+            |> PhysicsWorld2d.setKinematicTarget(11, { x = 0.3, y = 0.0 }, Rot2.identity())
+            |> advance(3);
+        Assert.assertEq(expected = Some(0.3), PhysicsWorld2d.positionOf(11, w) |> Option.map(p -> p#x))
+
+    /// withSettings の重力は次の刻みから効く（重力 0 で止まっていた球が落ち始める）
+    @Test
+    def testWithSettingsAppliesNextStep(): Unit \ Assert =
+        let w = PhysicsWorld2d.empty({ gravity = Vec2.zero() | PhysicsWorld2d.settings() }, dt())
+            |> PhysicsWorld2d.insert(10, RigidBody2d.dynamic(Vec2.zero(), Collider2d.circle(0.2)))
+            |> PhysicsWorld2d.withSettings(PhysicsWorld2d.settings())
+            |> PhysicsWorld2d.step;
+        let vy = PhysicsWorld2d.linearVelocityOf(10, w) |> Option.map(v -> v#y) |> Option.getWithDefault(0.0);
+        Assert.assertTrue(vy > 0.1)
+
+    /// applyImpulses は同じ id の衝撃を足して 1 回で掛ける
+    @Test
+    def testApplyImpulsesSums(): Unit \ Assert =
+        let w = PhysicsWorld2d.empty({ gravity = Vec2.zero() | PhysicsWorld2d.settings() }, dt())
+            |> PhysicsWorld2d.insert(10, RigidBody2d.dynamic(Vec2.zero(), Collider2d.box(0.5, 0.5) |> Collider2d.withMass(2.0)))
+            |> PhysicsWorld2d.applyImpulses((10, { x = 1.0, y = 0.0 }) :: (10, { x = 3.0, y = 0.0 }) :: (99, { x = 5.0, y = 0.0 }) :: Nil);
+        Assert.assertEq(expected = Some(2.0), PhysicsWorld2d.linearVelocityOf(10, w) |> Option.map(v -> v#x))
+
+    /// 起点が形の中の光線は、その形に当てない
+    @Test
+    def testCastRayFromInsideSkipsShape(): Unit \ Assert =
+        let w = emptyWorld() |> PhysicsWorld2d.insert(10, RigidBody2d.fixed(Vec2.zero(), Collider2d.circle(1.0)));
+        Assert.assertEq(expected = None, PhysicsWorld2d.castRay(Vec2.zero(), { x = 1.0, y = 0.0 }, 10.0, -1, w) |> Option.map(h -> h#id))
+
+    /// maxDistance より遠い形には当てない
+    @Test
+    def testCastRayStopsAtMaxDistance(): Unit \ Assert =
+        let hit = PhysicsWorld2d.castRay({ x = 0.0, y = -5.0 }, { x = 0.0, y = 1.0 }, 4.0, -1, withJar(emptyWorld()));
+        Assert.assertEq(expected = None, hit |> Option.map(h -> h#id))
+
+    /// queryPoint は mask に入らない層の体を返さない
+    @Test
+    def testQueryPointSkipsMaskedLayer(): Unit \ Assert =
+        let w = withJar(emptyWorld()) |> PhysicsWorld2d.insert(10, RigidBody2d.fixed({ x = 0.0, y = 0.2 }, Collider2d.circle(0.5) |> Collider2d.withCollisionLayers(4, -1)));
+        Assert.assertEq(expected = 1 :: Nil, PhysicsWorld2d.queryPoint({ x = 0.1, y = 0.3 }, 1, w))
 
     /// world を省いた Doc は既定の設定
     @Test

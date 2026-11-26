@@ -53,9 +53,9 @@ pub mod PhysicsWorld2d {
 
     def validSettings(s: Settings): Settings =
         let finite = PhysicsWorld2d.Internal.Data.isFinite;
-        let ok = finite(s#gravity#x) and finite(s#gravity#y) and s#solverSubsteps >= 1
+        let ok = finite(s#gravity#x) and finite(s#gravity#y) and s#solverSubsteps >= 1 and s#solverSubsteps <= 64
                  and finite(s#sleepLinearThreshold) and finite(s#sleepAngularThreshold);
-        if (ok) s else Log.fellBackThen("PhysicsWorld2d", "Settings", "PhysicsWorld2d.settings()", "重力が NaN・無限大か、solverSubsteps が 1 未満", settings())
+        if (ok) s else Log.fellBackThen("PhysicsWorld2d", "Settings", "PhysicsWorld2d.settings()", "重力が NaN・無限大か、solverSubsteps が 1〜64 の外", settings())
 
     /// 1 刻みの秒。
     pub def stepSecondsOf(w: PhysicsWorld2d): Float64 = data(w)#stepSeconds
@@ -95,10 +95,13 @@ pub mod PhysicsWorld2d {
 
     // ── 足す・消す ──
 
-    /// 体を足す（同じ id がもう居れば置き換える）。重さは材質の密度 × 形の面積（Collider2d.withMass で直に決めた時はその値）。
-    /// 近くで眠っている体は起こす。位置・速さが NaN・無限大なら 0 にして 1 回言う。
+    /// 体を足す。重さは材質の密度 × 形の面積（Collider2d.withMass で直に決めた時はその値）。近くで眠っている体は起こす。
+    /// 同じ id がもう居れば置き換える（出来事は出さず、触れていた組は続く。離れていれば次の刻みに Stopped）。
+    /// 位置・速さが NaN・無限大なら 0 にして 1 回言う。
+    /// 1 回で体の数ぶんの写しがかかる（不変の Vector）。数百個を毎フレーム足し引きせず、足すのは起動・面の切り替え・合わさった時に。
     pub def insert(id: EntityId, body: RigidBody2d.RigidBody2d, w: PhysicsWorld2d): PhysicsWorld2d =
-        let base = if (contains(id, w)) data(remove(id, w)) else data(w);
+        let d = data(w);
+        let base = PhysicsWorld2d.Internal.Data.indexOf(id, d#ids) |> Option.map(at -> dropBody(at, d)) |> Option.getWithDefault(d);
         let collider = RigidBody2d.colliderOf(body);
         let shape = Collider2d.shapeOf(collider);
         let (matIndex, warnMissing) = materialIndexOf(Collider2d.materialName(collider), base);
@@ -149,6 +152,7 @@ pub mod PhysicsWorld2d {
         Vector.append(Vector.slice(start = 0, end = at * stride, v), Vector.slice(start = (at + 1) * stride, end = Vector.length(v), v))
 
     /// 体を消す（居なければそのまま）。その体の組に removed = true の Stopped を出し（次の刻みの出来事）、近くで眠っている体を起こす。
+    /// insert と同じく 1 回で体の数ぶんの写しがかかる。
     pub def remove(id: EntityId, w: PhysicsWorld2d): PhysicsWorld2d =
         let d = data(w);
         match PhysicsWorld2d.Internal.Data.indexOf(id, d#ids) {
@@ -162,18 +166,21 @@ pub mod PhysicsWorld2d {
                     |> List.map(k -> { let (s, o) = PhysicsWorld2d.Internal.Step.sensorFirst(d, k); SensorEvent2d.SensorEvent2d.Stopped(s, o, true) });
                 let (keys, features, normal, tangent) = d#warm;
                 let keepWarm = Vector.range(0, Vector.length(keys)) |> Vector.filter(i -> not involves(Vector.get(i, keys)));
-                
                 let gone = {
-                    ids = dropAt(at, 1, d#ids), types = dropAt(at, 1, d#types), colliders = dropAt(at, 1, d#colliders), shapes = dropAt(at, 1, d#shapes),
-                    materialIndex = dropAt(at, 1, d#materialIndex), props = dropAt(at, PhysicsWorld2d.Internal.Data.propStride(), d#props),
-                    state = dropAt(at, PhysicsWorld2d.Internal.Data.stateStride(), d#state), prev = dropAt(at, PhysicsWorld2d.Internal.Data.prevStride(), d#prev),
-                    asleep = dropAt(at, 1, d#asleep), targets = Map.remove(id, d#targets),
+                    targets = Map.remove(id, d#targets),
                     warm = (Vector.map(i -> Vector.get(i, keys), keepWarm), pickPairs(keepWarm, features), pickPairs(keepWarm, normal), pickPairs(keepWarm, tangent)),
                     touching = Vector.filter(k -> not involves(k), d#touching), sensing = Vector.filter(k -> not involves(k), d#sensing),
-                    pending = { collisions = collisions, sensors = sensors } :: d#pending | d };
+                    pending = { collisions = collisions, sensors = sensors } :: d#pending | dropBody(at, d) };
                 let radius = Vector.get(at * PhysicsWorld2d.Internal.Data.propStride(), d#props);
                 WorldOf.WorldOf(wakeNear(Vector.get(so, d#state), Vector.get(so + 1, d#state), radius, gone))
         }
+
+    /// 番号 at の体の欄を抜く（組・控え・出来事はそのまま）。
+    def dropBody(at: Int32, d: Data): Data =
+        { ids = dropAt(at, 1, d#ids), types = dropAt(at, 1, d#types), colliders = dropAt(at, 1, d#colliders), shapes = dropAt(at, 1, d#shapes),
+          materialIndex = dropAt(at, 1, d#materialIndex), props = dropAt(at, PhysicsWorld2d.Internal.Data.propStride(), d#props),
+          state = dropAt(at, PhysicsWorld2d.Internal.Data.stateStride(), d#state), prev = dropAt(at, PhysicsWorld2d.Internal.Data.prevStride(), d#prev),
+          asleep = dropAt(at, 1, d#asleep) | d }
 
     /// 控えの組の枠（組ごとに 2 つ）から、残す組 keep の分だけを抜き出す。
     def pickPairs(keep: Vector[Int32], v: Vector[a]): Vector[a] =
@@ -202,7 +209,7 @@ pub mod PhysicsWorld2d {
         let (stepped, broken) = PhysicsWorld2d.Internal.Step.step(data(w));
         if (List.isEmpty(broken)) WorldOf.WorldOf(stepped)
         else {
-            let warned = PhysicsWorld2d.Internal.Data.warnOnce("[PhysicsWorld2d] 体の位置か速さが NaN・無限大になったので消した（id ${broken}）", stepped);
+            let warned = PhysicsWorld2d.Internal.Data.warnOnce("[PhysicsWorld2d] 体の位置か速さが NaN・無限大になったので消した（removed の Stopped を出す・最初の 1 回だけ言う）", stepped);
             let removed = List.foldLeft((acc, id) -> remove(id, acc), WorldOf.WorldOf(warned), broken);
             let d = data(removed);
             let late = d#pending |> List.reverse;
@@ -237,7 +244,8 @@ pub mod PhysicsWorld2d {
 
     def rejectNonFinite(w: PhysicsWorld2d): PhysicsWorld2d = WorldOf.WorldOf(PhysicsWorld2d.Internal.Data.warnOnce(nonFiniteLine(), data(w)))
 
-    /// 重心に衝撃（kg·m/s）を掛ける（Dynamic の体だけ・起こす）。
+    /// 重心に衝撃（kg·m/s）を掛ける（Dynamic の体だけ・起こす）。set* と同じく 1 回で体の数ぶんの写しがかかるので、
+    /// 多くの体へ毎フレーム掛けるなら applyImpulses で 1 回にまとめる。
     pub def applyImpulse(id: EntityId, impulse: Vec2.Vec2, w: PhysicsWorld2d): PhysicsWorld2d =
         let d = data(w);
         if (not PhysicsWorld2d.Internal.Data.isFinite(impulse#x) or not PhysicsWorld2d.Internal.Data.isFinite(impulse#y)) rejectNonFinite(w)
@@ -246,6 +254,35 @@ pub mod PhysicsWorld2d {
             case Some(at) =>
                 let invMass = Vector.get(at * PhysicsWorld2d.Internal.Data.propStride() + 1, d#props);
                 updateState(id, (k, v) -> if (k == 4) v + impulse#x * invMass else if (k == 5) v + impulse#y * invMass else if (k == 7) 0.0 else v, w)
+        }
+
+    /// 衝撃をまとめて掛ける（同じ id が 2 回あれば足す・居ない id は飛ばす・NaN の衝撃は捨てて 1 回言う）。体の数ぶんの写しは 1 回だけ。
+    pub def applyImpulses(impulses: List[(EntityId, Vec2.Vec2)], w: PhysicsWorld2d): PhysicsWorld2d =
+        let d = data(w);
+        let finite = PhysicsWorld2d.Internal.Data.isFinite;
+        let (good, bad) = List.partition(p -> finite(snd(p)#x) and finite(snd(p)#y), impulses);
+        let checked = if (List.isEmpty(bad)) d else PhysicsWorld2d.Internal.Data.warnOnce(nonFiniteLine(), d);
+        let ps = PhysicsWorld2d.Internal.Data.propStride();
+        let byIndex = good |> List.foldLeft((acc, p) -> {
+            let (id, j) = p;
+            match PhysicsWorld2d.Internal.Data.indexOf(id, checked#ids) {
+                case None => acc
+                case Some(at) =>
+                    let invMass = Vector.get(at * ps + 1, checked#props);
+                    Map.insertWith((a, b) -> (fst(a) + fst(b), snd(a) + snd(b)), at, (j#x * invMass, j#y * invMass), acc)
+            }
+        }, Map.empty());
+        if (Map.isEmpty(byIndex)) WorldOf.WorldOf(checked)
+        else {
+            let ss = PhysicsWorld2d.Internal.Data.stateStride();
+            let bump = (k, v) -> match Map.get(k / ss, byIndex) {
+                case None => v
+                case Some((dx, dy)) =>
+                    let slot = Int32.modulo(k, ss);
+                    if (slot == 4) v + dx else if (slot == 5) v + dy else if (slot == 7) 0.0 else v
+            };
+            WorldOf.WorldOf({ state = Vector.mapWithIndex(bump, checked#state),
+                              asleep = Vector.mapWithIndex((i, a) -> if (Map.memberOf(i, byIndex)) false else a, checked#asleep) | checked })
         }
 
     /// 速さ（m/s）を置く（Fixed の体には効かない・起こす）。
@@ -262,6 +299,7 @@ pub mod PhysicsWorld2d {
 
     /// Kinematic の体を、次の刻みで position・rotation へ着くように動かす（Rapier の set_next_kinematic_position）。
     /// 着いた刻みの後は止まる（毎刻み呼べば付いてくる）。ほかの種類の体には効かない。触れた眠りの体は起こす。
+    /// 着いた後は linearVelocityOf が 0 を返す（動く床に乗せる計算は、前と今の目標の差 ÷ 刻みでゲームが出す）。
     pub def setKinematicTarget(id: EntityId, position: Vec2.Vec2, rotation: Rot2.Rot2, w: PhysicsWorld2d): PhysicsWorld2d =
         if (not PhysicsWorld2d.Internal.Data.isFinite(position#x) or not PhysicsWorld2d.Internal.Data.isFinite(position#y)) rejectNonFinite(w)
         else if (typeOf(id, w) != Some(RigidBody2d.BodyType.Kinematic)) w
@@ -349,7 +387,8 @@ pub mod PhysicsWorld2d {
     pub def castRay(origin: Vec2.Vec2, direction: Vec2.Vec2, maxDistance: Float64, mask: Int32, w: PhysicsWorld2d): Option[RayHit2d] =
         let d = data(w);
         let len = PortableMath.sqrt(direction#x * direction#x + direction#y * direction#y);
-        if (not (len > 0.0) or not PhysicsWorld2d.Internal.Data.isFinite(len)) None
+        let finite = PhysicsWorld2d.Internal.Data.isFinite;
+        if (not (len > 0.0) or not finite(len) or not finite(origin#x) or not finite(origin#y) or not (maxDistance >= 0.0) or not finite(maxDistance)) None
         else {
             let ray = (origin#x, origin#y, direction#x / len, direction#y / len);
             Vector.range(0, Vector.length(d#ids)) |> Vector.foldLeft((best, i) -> {
@@ -381,14 +420,18 @@ pub mod PhysicsWorld2d {
 
     // ── 指紋 ──
 
-    /// 各体の id・位置・向き・速さ・眠りの時計・眠りを Float64 のビットのまま id の順に流した 64 bit の指紋（StateHash）。
-    /// JVM と wasm の比べ・巻き戻しのテストに使う。
+    /// 各体の id・位置・向き・速さ・眠りの時計・眠りと、触れている組・warm start の控えを、Float64 のビットのまま id の順に流した 64 bit の指紋（StateHash）。
+    /// JVM と wasm の比べ・巻き戻しのテストに使う（控えも入れるので、指紋が同じ World は次の刻みも同じ）。
     pub def stateHash(w: PhysicsWorld2d): Int64 =
         let d = data(w);
-        let ss = PhysicsWorld2d.Internal.Data.stateStride();
-        Vector.range(0, Vector.length(d#ids)) |> Vector.foldLeft((h, i) -> {
-            let withState = List.range(0, ss) |> List.foldLeft((acc, k) -> StateHash.mixFloat64(Vector.get(i * ss + k, d#state), acc),
-                                                                StateHash.mixInt32(Vector.get(i, d#ids), h));
-            StateHash.mixBool(Vector.get(i, d#asleep), withState)
-        }, StateHash.start()) |> StateHash.toInt64
+        let withBodies = Vector.foldLeft((h, x) -> StateHash.mixFloat64(x, h),
+                                         Vector.foldLeft((h, id) -> StateHash.mixInt32(id, h), StateHash.start(), d#ids), d#state);
+        let withSleep = Vector.foldLeft((h, b) -> StateHash.mixBool(b, h), withBodies, d#asleep);
+        let withPairs = Vector.foldLeft((h, k) -> StateHash.mixInt64(k, h), withSleep, d#touching);
+        let (keys, features, normal, tangent) = d#warm;
+        let withWarm = Vector.foldLeft((h, k) -> StateHash.mixInt64(k, h), withPairs, keys)
+            |> h0 -> Vector.foldLeft((h, f) -> StateHash.mixInt32(f, h), h0, features)
+            |> h1 -> Vector.foldLeft((h, x) -> StateHash.mixFloat64(x, h), h1, normal)
+            |> h2 -> Vector.foldLeft((h, x) -> StateHash.mixFloat64(x, h), h2, tangent);
+        StateHash.toInt64(withWarm)
 }

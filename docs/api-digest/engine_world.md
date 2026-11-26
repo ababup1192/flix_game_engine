@@ -1970,7 +1970,7 @@
   `pub def withSettings(s: Settings, w: PhysicsWorld2d): PhysicsWorld2d`
 - 材質の表（名前 → 材質）を差し替える。もう居る体の摩擦と跳ね返りにも次の刻みから効く（重さは体を作った時に出すので変わらない）。
   `pub def withMaterials(table: Map[String, PhysicsMaterial.PhysicsMaterial], w: PhysicsWorld2d): PhysicsWorld2d`
-- 体を足す（同じ id がもう居れば置き換える）。重さは材質の密度 × 形の面積（Collider2d.withMass で直に決めた時はその値）。
+- 体を足す。重さは材質の密度 × 形の面積（Collider2d.withMass で直に決めた時はその値）。近くで眠っている体は起こす。
   `pub def insert(id: EntityId, body: RigidBody2d.RigidBody2d, w: PhysicsWorld2d): PhysicsWorld2d`
 - 体を消す（居なければそのまま）。その体の組に removed = true の Stopped を出し（次の刻みの出来事）、近くで眠っている体を起こす。
   `pub def remove(id: EntityId, w: PhysicsWorld2d): PhysicsWorld2d`
@@ -1978,8 +1978,10 @@
   `pub def step(w: PhysicsWorld2d): PhysicsWorld2d`
 - 直前の 1 刻みの出来事（step のたびに入れ替わる）。`App.addPhysics2d`（予定） の onEvents が刻みごとに受け取るので、ゲームの系はふつう読まない。
   `pub def events(w: PhysicsWorld2d): Events`
-- 重心に衝撃（kg·m/s）を掛ける（Dynamic の体だけ・起こす）。
+- 重心に衝撃（kg·m/s）を掛ける（Dynamic の体だけ・起こす）。set* と同じく 1 回で体の数ぶんの写しがかかるので、
   `pub def applyImpulse(id: EntityId, impulse: Vec2.Vec2, w: PhysicsWorld2d): PhysicsWorld2d`
+- 衝撃をまとめて掛ける（同じ id が 2 回あれば足す・居ない id は飛ばす・NaN の衝撃は捨てて 1 回言う）。体の数ぶんの写しは 1 回だけ。
+  `pub def applyImpulses(impulses: List[(EntityId, Vec2.Vec2)], w: PhysicsWorld2d): PhysicsWorld2d`
 - 速さ（m/s）を置く（Fixed の体には効かない・起こす）。
   `pub def setLinearVelocity(id: EntityId, v: Vec2.Vec2, w: PhysicsWorld2d): PhysicsWorld2d`
 - 回る速さ（rad/s）を置く（Fixed の体には効かない・起こす）。
@@ -2009,7 +2011,7 @@
   `pub def castRay(origin: Vec2.Vec2, direction: Vec2.Vec2, maxDistance: Float64, mask: Int32, w: PhysicsWorld2d): Option[RayHit2d]`
 - 点を含む体の id（id の順・sensor の形も入る）。mask は当たり層。
   `pub def queryPoint(point: Vec2.Vec2, mask: Int32, w: PhysicsWorld2d): List[EntityId]`
-- 各体の id・位置・向き・速さ・眠りの時計・眠りを Float64 のビットのまま id の順に流した 64 bit の指紋（StateHash）。
+- 各体の id・位置・向き・速さ・眠りの時計・眠りと、触れている組・warm start の控えを、Float64 のビットのまま id の順に流した 64 bit の指紋（StateHash）。
   `pub def stateHash(w: PhysicsWorld2d): Int64`
 
 ## PostStack — `engine_world/src/PostStack.flix`

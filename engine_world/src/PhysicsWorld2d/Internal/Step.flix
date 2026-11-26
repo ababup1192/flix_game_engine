@@ -15,9 +15,10 @@ pub mod PhysicsWorld2d.Internal.Step {
     def margin(): Float64 = PhysicsWorld2d.Internal.Narrowphase.margin()
     def sleepAfter(): Float64 = 0.5
 
-    /// 当たり始めとみなす離れ（slop の 2 倍）・離れたとみなす離れ（接触の点を作る余白）。
-    def startDistance(): Float64 = 0.01
-    def stopDistance(): Float64 = 0.02
+    /// 当たり始めとみなす離れ（食い込みを許す幅 slop の 2 倍）・離れたとみなす離れ（接触の点を作る余白）。
+    // WhyNot: 2 つを同じ値にしない — 触れたり離れたりの境目で Started と Stopped が毎刻み交互に出る。
+    def startDistance(): Float64 = 2.0 * PhysicsWorld2d.Internal.Solver.slop()
+    def stopDistance(): Float64 = margin()
 
     /// 1 刻み進めた中身と、NaN・無限大になった体の id（呼ぶ側が消す）。出来事は d#pending の後ろに足して events に置く。
     pub def step(d: Data): (Data, List[Int32]) = region rc {
@@ -53,12 +54,13 @@ pub mod PhysicsWorld2d.Internal.Step {
         updateTimers(sv, { dt = dt, linear = s#sleepLinearThreshold, angular = s#sleepAngularThreshold }, 0);
         sleepIslands(rc, sv, parent);
         snapKinematic(d, bs, kin, 0, n);
-        let warm = PhysicsWorld2d.Internal.Solver.warmOf(rc, pts, manifolds, impulses);
+        let keptSorted = PhysicsWorld2d.Internal.Solver.sortedKeys(rc, MutList.toVector(out#kept));
+        let warm = keepRestingWarm(rc, PhysicsWorld2d.Internal.Solver.warmOf(rc, pts, manifolds, impulses), d#warm, keptSorted);
         let broken = List.range(0, n) |> List.filter(i -> not isFinitePose(bs, i)) |> List.map(i -> Vector.get(i, d#ids));
         let next = Array.repeat(rc, n * stateStride(), 0.0);
         let prev = Array.repeat(rc, n * 4, 0.0);
         unpackAll(bs, next, prev, 0, n);
-        let (touching, collisions) = diffTouching(rc, d#touching, MutList.toVector(out#contactSeps), MutList.toVector(out#kept));
+        let (touching, collisions) = diffTouching(rc, d#touching, MutList.toVector(out#contactSeps), keptSorted);
         let (sensing, sensors) = diffSensing(rc, d, MutList.toVector(out#sensed), MutList.toVector(out#keptSensed));
         let earlier = d#pending |> List.reverse;
         let events = { collisions = List.append(List.flatMap(e -> e#collisions, earlier), collisions),
@@ -148,7 +150,54 @@ pub mod PhysicsWorld2d.Internal.Step {
 
     def isFinitePose(bs: Array[Float64, r], i: Int32): Bool \ r =
         let o = i * bStride();
-        List.range(0, 7) |> List.forAll(k -> PhysicsWorld2d.Internal.Data.isFinite(Array.get(o + k, bs)))
+        let sum = Array.get(o, bs) + Array.get(o + 1, bs) + Array.get(o + 2, bs) + Array.get(o + 3, bs)
+                  + Array.get(o + 4, bs) + Array.get(o + 5, bs) + Array.get(o + 6, bs);
+        PhysicsWorld2d.Internal.Data.isFinite(sum)
+
+    /// 両方とも止まっていて当たりを見なかった組（眠った島）の warm start の衝撃を、前の控えから持ち越す（起こした刻みに 0 から解き直して山が跳ねないように）。
+    def keepRestingWarm(rc: Region[r], fresh: PhysicsWorld2d.Internal.Data.Warm, old: PhysicsWorld2d.Internal.Data.Warm,
+                        kept: Vector[Int64]): PhysicsWorld2d.Internal.Data.Warm \ r =
+        let (oldKeys, _, _, _) = old;
+        let carried = Vector.range(0, Vector.length(oldKeys)) |> Vector.filter(i -> isKept(Vector.get(i, oldKeys), kept));
+        if (Vector.isEmpty(carried)) fresh
+        else {
+            let keys = MutList.empty(rc);
+            let features = MutList.empty(rc);
+            let normal = MutList.empty(rc);
+            let tangent = MutList.empty(rc);
+            mergeWarm({ fresh = fresh, old = old, carried = carried, keys = keys, features = features, normal = normal, tangent = tangent }, 0, 0);
+            (MutList.toVector(keys), MutList.toVector(features), MutList.toVector(normal), MutList.toVector(tangent))
+        }
+
+    type alias WarmMerge[r: Region] = { fresh = PhysicsWorld2d.Internal.Data.Warm, old = PhysicsWorld2d.Internal.Data.Warm, carried = Vector[Int32],
+                                        keys = MutList[Int64, r], features = MutList[Int32, r], normal = MutList[Float64, r], tangent = MutList[Float64, r] }
+
+    /// 2 つの並んだ控え（今の刻みの物と、持ち越す物）を鍵の順に 1 つへ（同じ鍵は今の刻みの物）。
+    def mergeWarm(wm: WarmMerge[r], i: Int32, j: Int32): Unit \ r =
+        let (fk, _, _, _) = wm#fresh;
+        let (ok, _, _, _) = wm#old;
+        let nf = Vector.length(fk);
+        let nc = Vector.length(wm#carried);
+        if (i >= nf and j >= nc) ()
+        else {
+            let kf = if (i < nf) Vector.get(i, fk) else Int64.maxValue();
+            let at = if (j < nc) Vector.get(j, wm#carried) else 0;
+            let kc = if (j < nc) Vector.get(at, ok) else Int64.maxValue();
+            if (i < nf and (j >= nc or kf <= kc)) {
+                pushWarm(wm, wm#fresh, i);
+                mergeWarm(wm, i + 1, if (j < nc and kf == kc) j + 1 else j)
+            } else {
+                pushWarm(wm, wm#old, at);
+                mergeWarm(wm, i, j + 1)
+            }
+        }
+
+    def pushWarm(wm: WarmMerge[r], src: PhysicsWorld2d.Internal.Data.Warm, at: Int32): Unit \ r =
+        let (keys, features, normal, tangent) = src;
+        MutList.push(Vector.get(at, keys), wm#keys);
+        MutList.push(Vector.get(at * 2, features), wm#features); MutList.push(Vector.get(at * 2 + 1, features), wm#features);
+        MutList.push(Vector.get(at * 2, normal), wm#normal); MutList.push(Vector.get(at * 2 + 1, normal), wm#normal);
+        MutList.push(Vector.get(at * 2, tangent), wm#tangent); MutList.push(Vector.get(at * 2 + 1, tangent), wm#tangent)
 
     def unpackAll(bs: Array[Float64, r], next: Array[Float64, r], prev: Array[Float64, r], i: Int32, n: Int32): Unit \ r =
         if (i >= n) ()
@@ -173,7 +222,7 @@ pub mod PhysicsWorld2d.Internal.Step {
         if (i >= n) () else { Array.put(i, i, a); fillIdentity(a, i + 1, n) }
 
     /// 体 i の AABB（box の stride 4: 左・右・上・下）。多角形は world の頂点の端・円は中心 ± 半径。
-    // WhyNot: 体を囲む円で組を選ばない — 床と壁の箱は囲む円の半径が 12〜15 m になり、全部の体と組になってナローフェーズを回し、100 個の山の 1 刻みの 3 割を食った。
+    // WhyNot: 体を囲む円で組を選ばない — 床と壁の箱は囲む円の半径が 12〜15 m になり、全部の体と組になって毎刻みナローフェーズを回す。
     def fillBox(bs: Array[Float64, r], box: Array[Float64, r], i: Int32, poly: WorldPolygon): Unit \ r =
         let (xs, ys, _, _) = poly;
         let o = i * bStride();
@@ -363,7 +412,7 @@ pub mod PhysicsWorld2d.Internal.Step {
                 let vx = Array.get(o + 4, bs);
                 let vy = Array.get(o + 5, bs);
                 let w = Array.get(o + 6, bs);
-                let slow = limits#linear > 0.0 and vx * vx + vy * vy < limits#linear * limits#linear and w * w < limits#angular * limits#angular;
+                let slow = limits#linear > 0.0 and limits#angular > 0.0 and vx * vx + vy * vy < limits#linear * limits#linear and w * w < limits#angular * limits#angular;
                 Array.put(if (slow) Array.get(o + 10, bs) + limits#dt else 0.0, o + 10, bs)
             } else ();
             updateTimers(sv, limits, i + 1)
@@ -405,10 +454,9 @@ pub mod PhysicsWorld2d.Internal.Step {
         let active = PhysicsWorld2d.Internal.Solver.sortedKeys(rc, Vector.map(fst, seps));
         let sepAt = Array.repeat(rc, Vector.length(active), 0.0);
         Vector.forEach(p -> Array.put(snd(p), PhysicsWorld2d.Internal.Data.searchKey(fst(p), active, 0, Vector.length(active) - 1), sepAt), seps);
-        let keptSorted = PhysicsWorld2d.Internal.Solver.sortedKeys(rc, kept);
         let now = MutList.empty(rc);
         let events = MutList.empty(rc);
-        mergeTouching({ prev = prev, active = active, sepAt = sepAt, kept = keptSorted, now = now, events = events }, 0, 0);
+        mergeTouching({ prev = prev, active = active, sepAt = sepAt, kept = kept, now = now, events = events }, 0, 0);
         (MutList.toVector(now), MutList.toList(events))
 
     type alias Merge[r: Region] = { prev = Vector[Int64], active = Vector[Int64], sepAt = Array[Float64, r], kept = Vector[Int64],
@@ -447,10 +495,10 @@ pub mod PhysicsWorld2d.Internal.Step {
         let stillKept = d#sensing |> Vector.filter(k -> isKept(k, keptSorted));
         let now = PhysicsWorld2d.Internal.Solver.sortedKeys(rc, Vector.append(sensed, stillKept));
         let started = now |> Vector.filter(k -> not isKept(k, d#sensing)) |> Vector.toList
-            |> List.map(k -> { let (s, o) = sensorFirst(d, k); SensorEvent2d.SensorEvent2d.Started(s, o) });
+            |> List.map(k -> { let (s, o) = sensorFirst(d, k); (k, SensorEvent2d.SensorEvent2d.Started(s, o)) });
         let stopped = d#sensing |> Vector.filter(k -> not isKept(k, now)) |> Vector.toList
-            |> List.map(k -> { let (s, o) = sensorFirst(d, k); SensorEvent2d.SensorEvent2d.Stopped(s, o, false) });
-        (now, List.append(stopped, started))
+            |> List.map(k -> { let (s, o) = sensorFirst(d, k); (k, SensorEvent2d.SensorEvent2d.Stopped(s, o, false)) });
+        (now, Sort.sortStableBy(fst, List.append(stopped, started)) |> List.map(snd))
 
     /// 組の鍵を (sensor の id, もう片方の id) にする。
     pub def sensorFirst(d: Data, key: Int64): (Int32, Int32) =

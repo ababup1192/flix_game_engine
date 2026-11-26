@@ -20,7 +20,7 @@ pub mod PhysicsWorld2d.Internal.Narrowphase {
     pub def margin(): Float64 = 0.02
 
     /// 多角形の world の頂点と法線を先に作ってある時の当たり（円は空の組を渡す）。
-    // WhyNot: 組ごとに world の頂点を作り直さない — 1 刻みに組の数 × 2 回 Vector を 4 本ずつ作り、ナローフェーズの重さの多くを占めた。体ごとに 1 刻み 1 回だけ作る。
+    // WhyNot: 組ごとに world の頂点を作り直さない — 1 刻みに組の数 × 2 回 Vector を 4 本ずつ作ることになる。体ごとに 1 刻み 1 回だけ作る。
     pub def collideWith(a: Shape, wa: WorldPolygon, pa: Pose, b: Shape, wb: WorldPolygon, pb: Pose): List[Contact] = match (a, b) {
         case (Shape.Circle(ra), Shape.Circle(rb)) => circles(ra, pa, rb, pb)
         case (Shape.Polygon(_, _, _, _), Shape.Circle(rb)) => polygonCircle(wa, rb, pb)
@@ -164,7 +164,7 @@ pub mod PhysicsWorld2d.Internal.Narrowphase {
         else {
             let cx = px - nx * sep / 2.0;
             let cy = py - ny * sep / 2.0;
-            let feature = (if (flipped) 1000 else 0) + edge * 100 + incEdge * 10 + id;
+            let feature = (if (flipped) 1000000 else 0) + edge * 10000 + incEdge * 100 + id;
             Some(if (flipped) (-nx, -ny, cx, cy, sep, feature) else (nx, ny, cx, cy, sep, feature))
         }
 
