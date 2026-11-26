@@ -178,6 +178,7 @@ pub mod Render3d.WebGpuRenderer {
             countsHolder = Array[Int32, Static],
             phaseNsHolder = Array[Int64, Static],
             materialBuildsRef = Ref[List[FrameDiagnostics.ShaderBuild], Static],
+            clock = Render3d.Counts.Clock,
             targets = Render3d.SceneTargets.Table[(Int32, Int32), SceneTarget],
             written = Ref[Set[(Int32, Int32)], Static],
             instances = Array[Buffer, Static],
@@ -255,7 +256,7 @@ pub mod Render3d.WebGpuRenderer {
             meshes = MeshTable.fresh(), meshStore = freshStore(), materials = WebGpuMaterials.create(gpu, binding), layouts = Render3d.MaterialValues.freshLayouts(),
 
             countsHolder = Array.repeat(Static, Render3d.Counts.counterSlots(), 0), phaseNsHolder = Array.repeat(Static, Render3d.Counts.phaseSlots(), 0i64),
-            materialBuildsRef = Ref.fresh(Static, Nil),
+            materialBuildsRef = Ref.fresh(Static, Nil), clock = Render3d.Counts.systemClock(),
             targets = Render3d.SceneTargets.fresh(), written = Ref.fresh(Static, Set.empty()),
             instances = Array#{createInstanceBuffer(gpu, initialInstances() * Render3dWgsl.instanceBytes())} @ Static,
             instanceUsed = Array#{0} @ Static,

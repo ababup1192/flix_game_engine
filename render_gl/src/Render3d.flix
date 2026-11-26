@@ -332,6 +332,8 @@ mod Render3d {
         phaseNsHolder = Array[Int64, Static],
         // 前に takeCounts してから組んだ材質のプログラム（新しい物が頭）。
         materialBuildsRef = Ref[List[FrameDiagnostics.ShaderBuild], Static],
+        // CPU の区間を測る時計（Render3d.Counts.timed）。
+        clock = Render3d.Counts.Clock,
         // 先に上げた物の控え。
         preloadRef = Ref[PreloadState, Static],
         // joint texture の置き場。
@@ -411,7 +413,7 @@ mod Render3d {
           materialSamplers = Array#{0, 0, 0, 0, 0, 0, 0, 0} @ Static,
           blankTexture = Array#{0} @ Static, countsHolder = Array.repeat(Static, Render3d.Counts.counterSlots(), 0),
           phaseNsHolder = Array.repeat(Static, Render3d.Counts.phaseSlots(), 0i64), materialBuildsRef = Ref.fresh(Static, Nil),
-          preloadRef = Ref.fresh(Static, Render3d.Preload.empty()),
+          clock = Render3d.Counts.systemClock(), preloadRef = Ref.fresh(Static, Render3d.Preload.empty()),
           joints = Render3d.GlRows.DataTexture.freshTextures(), instances = Render3d.GlRows.DataTexture.freshTextures(),
           planner = Render3d.ScenePlan.freshPlanner(drawMode), statics = Render3d.GlStatic.fresh(), multiCarry = Render3d.InstanceValues.freshMultiCarry() }
 

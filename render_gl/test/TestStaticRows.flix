@@ -238,7 +238,7 @@ mod Render3d.TestStaticRows {
         let big = Scene3d.meshInstance(Mesh3d.withBoxUvs(1.0, gridMesh(50)), Mat4.identity());
         let g = Scene3d.staticGroup("g", ("small", boxAt(1.0)) :: ("big", big) :: Nil);
         let b = startBuild(planner, false, sceneOf(Nil), g);
-        discard stepBuild(planner, steps, b, System.nanoTime() + 2000000i64);
+        discard stepBuild(planner, steps, b, () -> 0i64, 2000000i64);
         Assert.assertEq(expected = 1, Ref.get(made))
 
     /// 1 辺 n 個の四角を並べた形（頂点 4 × n × n）。
@@ -326,9 +326,10 @@ mod Render3d.TestStaticRows {
     @Test
     def testMinimumStepGoesToOneWorkPerFrame(): Unit \ {Assert, IO} =
         let planner = freshPlanner(Render3d.DrawMode.OneByOne);
-        let cache = freshCache();
+        let now = Ref.fresh(Static, 0i64);
+        let cache = { clock = () -> Ref.get(now) | freshCache() };
         let made = Ref.fresh(Static, 0);
-        let counted = (n: Ref[Int32, Static]) -> { prepareMesh = (_: Mesh3d.Mesh3d) -> { Thread.sleep(1i64); Ref.put(Ref.get(n) + 1, n) } | countingSteps(made, _ -> (), 0i64) };
+        let counted = (n: Ref[Int32, Static]) -> { prepareMesh = (_: Mesh3d.Mesh3d) -> { Ref.put(Ref.get(now) + 1000000i64, now); Ref.put(Ref.get(n) + 1, n) } | countingSteps(made, _ -> (), 0i64) };
         let (a, b, c) = (Ref.fresh(Static, 0), Ref.fresh(Static, 0), Ref.fresh(Static, 0));
         (("a", a) :: ("b", b) :: ("c", c) :: Nil) |> List.forEach(match (name, _) -> discard ensureWith(planner, cache, 1i64, boxes(name), countingSteps(made, _ -> (), 0i64)));
         (("a", a) :: ("b", b) :: ("c", c) :: Nil) |> List.forEach(match (name, n) -> discard ensureWith(planner, cache, 2i64, boxes(name), counted(n)));
@@ -395,7 +396,7 @@ mod Render3d.TestStaticRows {
 
     /// b を、毎回時計の限りを過ぎた（1 つずつしか進めない）ことにして作り終えるまで進める（calls = 呼んだ回数・上限 1000 回）。
     def stepUntilBuilt(planner: Render3d.ScenePlan.Planner, steps: BuildSteps[CarriedRows], b: Render3d.StaticRows.Build[CarriedRows], calls: Int32): CarriedRows \ IO =
-        match stepBuild(planner, steps, b, 0i64) {
+        match stepBuild(planner, steps, b, () -> 0i64, 0i64) {
             case Some(rows) => rows
             case None       => if (calls > 1000) bug!("1000 回進めても作り終えない") else stepUntilBuilt(planner, steps, b, calls + 1)
         }
@@ -626,7 +627,7 @@ mod Render3d.TestStaticRows {
         let builds = Ref.fresh(Static, 0);
         let steps = countingSteps(builds, _ -> (), 0i64);
         let b = startBuild(planner, false, sceneOf(Nil), town());
-        let made = stepBuild(planner, steps, b, System.nanoTime() + 2000000i64);
+        let made = stepBuild(planner, steps, b, () -> 0i64, 2000000i64);
         Assert.assertEq(expected = (None, 0), (made, Ref.get(builds)))
 
     /// GL の描き手は作り終えた宣言の集まりの形を、置き場の上限で捨てる候補から外す集合に入れる。

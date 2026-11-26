@@ -54,11 +54,13 @@ mod Render3d.TestCounts {
 
     @Test
     def testNestedPhaseIsNotCountedTwice(): Unit \ {Assert, IO} =
-        let s = freshState();
-        Render3d.Counts.timed(s, Phase.Draw, () -> Render3d.Counts.timed(s, Phase.Split, () -> spin(2000000i64)));
+        let now = Ref.fresh(Static, 0i64);
+        let s = { clock = () -> Ref.get(now) | freshState() };
+        let work = (ns: Int64) -> Ref.put(Ref.get(now) + ns, now);
+        Render3d.Counts.timed(s, Phase.Draw, () -> { work(300i64); Render3d.Counts.timed(s, Phase.Split, () -> work(2000000i64)) });
         let c = Render3d.Counts.takeCounts(s);
         let ns = (name: String) -> List.find(p -> fst(p) == name, c#cpuPhases) |> Option.map(snd) |> Option.getWithDefault(0i64);
-        Assert.assertTrue(ns("split") >= 2000000i64 and ns("draw") < ns("split"))
+        Assert.assertEq(expected = (2000000i64, 300i64), (ns("split"), ns("draw")))
 
     @Test
     def testMaterialBuildsAreTakenInOrder(): Unit \ {Assert, IO} =

@@ -10,9 +10,11 @@ mod Render3d.Counts {
         countsHolder = Array[Int32, Static], phaseNsHolder = Array[Int64, Static], materialBuildsRef = Ref[List[FrameDiagnostics.ShaderBuild], Static] | r
     }
 
-    /// 空の入れ物の欄。
-    pub def freshHolders(): { countsHolder = Array[Int32, Static], phaseNsHolder = Array[Int64, Static], materialBuildsRef = Ref[List[FrameDiagnostics.ShaderBuild], Static] } \ IO =
-        { countsHolder = Array.repeat(Static, counterSlots(), 0), phaseNsHolder = Array.repeat(Static, phaseSlots(), 0i64), materialBuildsRef = Ref.fresh(Static, Nil) }
+    /// 今の時刻（ns）を返す時計。描き手は systemClock、テストは進め方を決めた物を渡す。
+    // WhyNot: 区間の時間と持ち越しの予算で System.nanoTime を直に読まない — テストが実際に時間を使って比べることになり、負荷の高い時だけ落ちる。
+    pub type alias Clock = Unit -> Int64 \ IO
+
+    pub def systemClock(): Clock = () -> System.nanoTime()
 
     /// 数える物。並びは countsHolder の添え字（slotOf）。
     pub enum Counter {
@@ -93,13 +95,13 @@ mod Render3d.Counts {
         let i = slotOf(c);
         Array.put(Array.get(i, h) + n, i, h)
 
-    /// f を走らせ、かかった時間から中で測った別の区間の時間を引いた残りを p に足す。
-    pub def timed(state: { phaseNsHolder = Array[Int64, Static] | r }, p: Phase, f: Unit -> a \ ef): a \ ef + IO =
+    /// f を走らせ、かかった時間（時計 clock で測る）から中で測った別の区間の時間を引いた残りを p に足す。
+    pub def timed(state: { phaseNsHolder = Array[Int64, Static], clock = Clock | r }, p: Phase, f: Unit -> a \ ef): a \ ef + IO =
         let h = state#phaseNsHolder;
         let nestedBefore = Array.foldLeft((acc, ns) -> acc + ns, 0i64, h);
-        let start = System.nanoTime();
+        let start = (state#clock)();
         let result = f();
-        let elapsed = System.nanoTime() - start;
+        let elapsed = (state#clock)() - start;
         let nested = Array.foldLeft((acc, ns) -> acc + ns, 0i64, h) - nestedBefore;
         let i = phaseSlotOf(p);
         Array.put(Array.get(i, h) + elapsed - nested, i, h);

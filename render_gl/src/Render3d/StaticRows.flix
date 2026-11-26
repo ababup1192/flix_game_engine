@@ -7,10 +7,10 @@
 // backend は WebGPU（Render3d.WebGpuStatic）と GL（Render3d.GlStatic）。どちらも持ち越した行を場面の行の前に描く。
 mod Render3d.StaticRows {
     import java.lang.Object
-    import java.lang.System
     import java.nio.ByteBuffer
     import java.nio.ByteOrder
     import java.util.IdentityHashMap
+    use Render3d.Counts.Clock
     use Render3d.InstanceValues.{PackMode, floatsPerInstance, numberSpan}
     use Render3d.MaterialValues
     use Render3d.MeshTable
@@ -196,17 +196,17 @@ mod Render3d.StaticRows {
         });
         MutList.toArray(Static, out) |> Array.toVector
 
-    /// b を、次の仕事に deadline までの時間が残っている間（hasRoomFor）進める（残っていなくても 1 つは進める）。
+    /// b を、次の仕事に deadline（時計 clock の時刻）までの時間が残っている間（hasRoomFor）進める（残っていなくても 1 つは進める）。
     /// 全部の段が済んだら置いた物。
-    pub def stepBuild(planner: Planner, steps: BuildSteps[a], b: Build[a], deadline: Int64): Option[a] \ IO =
+    pub def stepBuild(planner: Planner, steps: BuildSteps[a], b: Build[a], clock: Clock, deadline: Int64): Option[a] \ IO =
         stepOnce(planner, steps, b);
         if (Ref.get(b#phase) == BuildPhase.Done) Ref.get(b#made)
-        else if (not hasRoomFor(b, deadline)) None
-        else stepBuild(planner, steps, b, deadline)
+        else if (not hasRoomFor(clock, b, deadline)) None
+        else stepBuild(planner, steps, b, clock, deadline)
 
     /// b の次の仕事を deadline までに始めてよいか。重い仕事（Place と、頂点の多い形を作る仕事）は heavyRoomNs 以上残っている時だけ。
-    def hasRoomFor(b: Build[a], deadline: Int64): Bool \ IO =
-        let left = deadline - System.nanoTime();
+    def hasRoomFor(clock: Clock, b: Build[a], deadline: Int64): Bool \ IO =
+        let left = deadline - clock();
         if (isHeavyNext(b)) left >= heavyRoomNs() else left > 0i64
 
     /// b の次の仕事が重いか: Place（集まり 1 つの行を全部作る）か、heavyVertices 以上の頂点の形を作る仕事。
@@ -333,13 +333,15 @@ mod Render3d.StaticRows {
     /// 持ち越しの控え（a = backend が GPU に置いた物）。entries = 集まりの名前 → 控えの列（同じ名前でも中身の違う集まりを 1 コマに何場面かで描くと 2 つ以上）・
     /// rebuilds = 名前 → (最後に作り直した世代, 続けて作り直したコマの数)・works = 名前 → 作りかけの列（行の決め方の鍵ごとに 1 つ）・
     /// remakes = (名前, 行の決め方の鍵) → 作り終える前に別の値へ替わった回数（控えに当たるか作り終えたら 0 に戻す）・
-    /// budget = (予算を決めたコマの世代, そのコマに少しずつ作るのを止める時刻（System.nanoTime）, 予算切れの後の最低の時間を渡したコマの世代)。
+    /// budget = (予算を決めたコマの世代, そのコマに少しずつ作るのを止める時刻（clock の時刻）, 予算切れの後の最低の時間を渡したコマの世代)・
+    /// clock = 予算を測る時計。
     pub type alias Cache[a] = { entries = Ref[Map[String, List[Entry[a]]], Static], rebuilds = Ref[Map[String, (Int64, Int32)], Static],
-                                works = Ref[Map[String, List[Work[a]]], Static], remakes = Ref[Map[(String, String), Int32], Static], budget = Array[Int64, Static] }
+                                works = Ref[Map[String, List[Work[a]]], Static], remakes = Ref[Map[(String, String), Int32], Static], budget = Array[Int64, Static],
+                                clock = Clock }
 
     pub def freshCache(): Cache[a] \ IO =
         { entries = Ref.fresh(Static, Map.empty()), rebuilds = Ref.fresh(Static, Map.empty()), works = Ref.fresh(Static, Map.empty()),
-          remakes = Ref.fresh(Static, Map.empty()), budget = Array#{-1i64, 0i64, -1i64} @ Static }
+          remakes = Ref.fresh(Static, Map.empty()), budget = Array#{-1i64, 0i64, -1i64} @ Static, clock = Render3d.Counts.systemClock() }
 
     /// この数のコマ続けて同じ名前の集まりを作り直したら、1 回知らせる。
     def rebuildStreakLimit(): Int32 = 30
@@ -363,7 +365,7 @@ mod Render3d.StaticRows {
         if (Array.get(0, cache#budget) == gen) ()
         else {
             Array.put(gen, 0, cache#budget);
-            Array.put(System.nanoTime() + frameBudgetNs(), 1, cache#budget)
+            Array.put((cache#clock)() + frameBudgetNs(), 1, cache#budget)
         };
         Array.get(1, cache#budget)
 
@@ -397,7 +399,7 @@ mod Render3d.StaticRows {
     def stepOrShow(planner: Planner, cache: Cache[a], gen: Int64, f: Scene3d.StaticGroupFields, variant: String, steps: BuildSteps[a], deadline: Int64,
                    shown: Entry[a], w: Work[a]): a \ IO =
         Array.put(gen, 0, w#lastStep);
-        match stepBuild(planner, steps, w#build, deadlineWithMinimum(cache, gen, deadline)) {
+        match stepBuild(planner, steps, w#build, cache#clock, deadlineWithMinimum(cache, gen, deadline)) {
             case Some(made) =>
                 removeWork(cache, f#name, variant);
                 Ref.put(Map.remove((f#name, variant), Ref.get(cache#remakes)), cache#remakes);
@@ -409,7 +411,7 @@ mod Render3d.StaticRows {
 
     /// 予算を使い切っていて、このコマにまだ最低の時間を渡していなければ、今から minimumStepNs 後（渡したと控える）。ほかは deadline。
     def deadlineWithMinimum(cache: Cache[a], gen: Int64, deadline: Int64): Int64 \ IO =
-        let now = System.nanoTime();
+        let now = (cache#clock)();
         if (now < deadline or Array.get(2, cache#budget) == gen) deadline
         else {
             Array.put(gen, 2, cache#budget);
@@ -457,16 +459,16 @@ mod Render3d.StaticRows {
     def stepAhead(planner: Planner, cache: Cache[a], gen: Int64, g: Scene3d.StaticGroup, variant: String, coverage: Bool, scene: Scene3d.Scene3dCmd,
                   steps: BuildSteps[a], deadline: Int64): Option[a] \ IO =
         let f = Scene3d.staticGroupFieldsOf(g);
-        if (System.nanoTime() >= deadline) None
+        if ((cache#clock)() >= deadline) None
         else {
             let w = match sameWorkOf(cache, f, variant) {
                 case Some(work) => work
                 case None       => startWork(planner, cache, gen, g, variant, coverage, scene, steps#retire)
             };
-            if (not hasRoomFor(w#build, deadline)) None
+            if (not hasRoomFor(cache#clock, w#build, deadline)) None
             else {
                 Array.put(gen, 0, w#lastStep);
-                match stepBuild(planner, steps, w#build, deadline) {
+                match stepBuild(planner, steps, w#build, cache#clock, deadline) {
                     case Some(made) =>
                         removeWork(cache, f#name, variant);
                         Some(insertEntry(planner, cache, gen, f, variant, made, steps#retire))
