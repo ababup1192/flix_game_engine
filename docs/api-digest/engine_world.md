@@ -1922,6 +1922,20 @@
 - 各接触のめり込みを解消するよう位置を押し出す。動かせる側（velocities に居る側）だけを動かし、
   `pub def separate(contacts: List[Contact], velocities: Map[EntityId, Vec2.Vec2], positions: Map[EntityId, Vec2.Vec2]): Map[EntityId, Vec2.Vec2]`
 
+## PhysicsDoc2d — `engine_world/src/PhysicsDoc2d.flix`
+- 読んだ中身: World の設定と、名前 → 材質の表。
+  `pub type alias PhysicsDoc2d = { settings = PhysicsWorld2d.Settings, materials = Map[String, PhysicsMaterial.PhysicsMaterial] }`
+- Doc が無い時の中身（既定の設定・材質の表は空）。
+  `pub def default(): PhysicsDoc2d`
+- JSON を中身にする。摩擦・跳ね返りが負・密度が 0 以下・NaN、solverSubsteps が 1 未満は Err（どの欄か付きで）。
+  `pub def parse(json: Json): Result[JsonError, PhysicsDoc2d]`
+- path を読んで中身にする（読めない・崩れている・値が使えない時は Err）。
+  `pub def load(path: String): Result[JsonError, PhysicsDoc2d] \ Fs.FileRead`
+- path を読んで中身にする。無ければ黙って既定、有るのに読めない・値が使えない時は既定で続けて 1 行言う。
+  `pub def loadOr(path: String): PhysicsDoc2d \ Fs.FileRead`
+- 中身を物理の World へ当てる（設定と材質の表。もう居る体にも次の刻みから効く）。
+  `pub def applyTo(doc: PhysicsDoc2d, w: PhysicsWorld2d.PhysicsWorld2d): PhysicsWorld2d.PhysicsWorld2d`
+
 ## PhysicsMaterial — `engine_world/src/PhysicsMaterial.flix`
 - friction = 摩擦の係数（2 つの形は掛けた物の平方根）・restitution = 跳ね返り（0 = 跳ねない・2 つの形は大きい方）・
   `pub type alias PhysicsMaterial = { friction = Float64, restitution = Float64, density = Float64 }`

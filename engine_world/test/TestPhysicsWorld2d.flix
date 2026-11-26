@@ -234,4 +234,47 @@ mod TestPhysicsWorld2d {
     def testQueryPoint(): Unit \ Assert =
         let w = withJar(emptyWorld()) |> PhysicsWorld2d.insert(10, RigidBody2d.fixed({ x = 0.0, y = 0.2 }, Collider2d.circle(0.5)));
         Assert.assertEq(expected = 1 :: 10 :: Nil, PhysicsWorld2d.queryPoint({ x = 0.1, y = 0.3 }, -1, w))
+
+    /// 光線は当たり層の mask に入らない形を的にしない
+    @Test
+    def testCastRaySkipsMaskedLayer(): Unit \ Assert =
+        let w = withJar(emptyWorld()) |> PhysicsWorld2d.insert(10, RigidBody2d.fixed({ x = 0.0, y = -2.0 }, Collider2d.circle(0.5) |> Collider2d.withCollisionLayers(4, -1)));
+        let hit = PhysicsWorld2d.castRay({ x = 0.0, y = -5.0 }, { x = 0.0, y = 1.0 }, 20.0, 1, w);
+        Assert.assertEq(expected = Some(1), hit |> Option.map(h -> h#id))
+
+    // ── 材質と Doc ──
+
+    /// 材質の表を差し替えると、もう居る体の摩擦も次の刻みから変わる（摩擦 0 で滑っていた箱が止まる）
+    @Test
+    def testWithMaterialsAppliesToExistingBodies(): Unit \ Assert =
+        let ice = { friction = 0.0, restitution = 0.0, density = 1.0 };
+        let w0 = emptyWorld()
+            |> PhysicsWorld2d.withMaterials(Map#{"floor" => ice})
+            |> PhysicsWorld2d.insert(1, RigidBody2d.fixed({ x = 0.0, y = 0.5 }, Collider2d.box(50.0, 0.5) |> Collider2d.withMaterial("floor")))
+            |> PhysicsWorld2d.insert(10, RigidBody2d.dynamic({ x = 0.0, y = -0.25 }, Collider2d.box(0.25, 0.25) |> Collider2d.withMaterial("floor"))
+                                         |> RigidBody2d.withLinearVelocity({ x = 2.0, y = 0.0 }));
+        let rough = advance(5, w0) |> PhysicsWorld2d.withMaterials(Map#{"floor" => { friction = 1.0 | ice }}) |> advance(60);
+        let vx = PhysicsWorld2d.linearVelocityOf(10, rough) |> Option.map(v -> Float64.abs(v#x)) |> Option.getWithDefault(9.0);
+        Assert.assertTrue(vx < 0.01)
+
+    /// Doc の材質と world の欄を読む
+    @Test
+    def testDocParsesMaterialsAndWorld(): Unit \ Assert =
+        let text = "{\"version\": 1, \"world\": {\"gravity\": [0, 5], \"solverSubsteps\": 2}, \"materials\": {\"stone\": {\"friction\": 0.6, \"restitution\": 0.1, \"density\": 2.0}}}";
+        let doc = DocJson.parse(text) |> Option.flatMap(j -> PhysicsDoc2d.parse(j) |> Result.toOption);
+        Assert.assertEq(expected = Some((5.0, 2, Some(2.0))),
+                        doc |> Option.map(d -> (d#settings#gravity#y, d#settings#solverSubsteps, Map.get("stone", d#materials) |> Option.map(m -> m#density))))
+
+    /// 密度 0 の材質は Err
+    @Test
+    def testDocRejectsZeroDensity(): Unit \ Assert =
+        let text = "{\"materials\": {\"foam\": {\"friction\": 0.6, \"restitution\": 0.1, \"density\": 0}}}";
+        let parsed = DocJson.parse(text) |> Option.map(j -> PhysicsDoc2d.parse(j) |> Result.isErr);
+        Assert.assertEq(expected = Some(true), parsed)
+
+    /// world を省いた Doc は既定の設定
+    @Test
+    def testDocWithoutWorldKeepsDefaults(): Unit \ Assert =
+        let doc = DocJson.parse("{}") |> Option.flatMap(j -> PhysicsDoc2d.parse(j) |> Result.toOption);
+        Assert.assertEq(expected = Some(4), doc |> Option.map(d -> d#settings#solverSubsteps))
 }
