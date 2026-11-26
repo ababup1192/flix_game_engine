@@ -3,7 +3,7 @@
 # usage: [MAIN=FlockBench] plans/compute-spike/desktop/flock.sh
 set -e
 D=$(cd "$(dirname "$0")" && pwd)
-export PATH=/Users/abab/Desktop/flix_game_engine/.devbox/nix/profile/default/bin:$PATH
+export PATH="${DEVBOX_BIN:-$(cd "$(dirname "$0")/../../.." && pwd)/.devbox/nix/profile/default/bin}:$PATH"
 ORG=com/$(printf 'g%sthub' i)/xpenatan
 M=${MVN_CACHE:-$HOME/Library/Caches/flix_game_engine/mvn-cache}/https/repo1.maven.org/maven2/$ORG
 CP=""

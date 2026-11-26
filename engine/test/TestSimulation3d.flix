@@ -97,6 +97,14 @@ mod TestSimulation3d {
         let s = steps(paramsFor(rules(), n), 3, same);
         Assert.assertEq(expected = 0, Vector.count(x -> not Float64.isFinite(Float32.toFloat64(x)), s))
 
+    /// 3 軸でセルの数が違う箱（20 × 6 × 10）でも、格子と総当たりはバイトで同じ。
+    @Test
+    def testGridEqualsBruteInAnUnevenBox(): Unit \ Assert =
+        let p = Simulation3d.Internal.flockParamsOf(rules(), { min = Vec3.v3(-10.0, -3.0, -5.0), max = Vec3.v3(10.0, 3.0, 5.0) }, 400);
+        let s = Simulation3d.Internal.Cpu.advance(p, 20i64, Simulation3d.Internal.Cpu.initialState(p, 12));
+        Assert.assertEq(expected = (true, Vector.map(Float32.toString, Simulation3d.Internal.Cpu.stepFlockBrute(p, s))),
+                        (p#gx != p#gy and p#gy != p#gz, Vector.map(Float32.toString, Simulation3d.Internal.Cpu.stepFlock(p, s))))
+
     // ── 刻みの数えと作り直し ──
 
     def structure(): Structure = Structure.Structure(PresetKind.Flock, 512, 1)
@@ -111,6 +119,15 @@ mod TestSimulation3d {
     @Test
     def testAdvanceIsCappedAtFourSteps(): Unit \ Assert =
         Assert.assertEq(expected = StepPlan.Advance(4i64), Simulation3d.Internal.Step.planOf(120, Some(progress(100i64)), structure(), 110i64))
+
+    @Test
+    def testStructureChangeResets(): Unit \ Assert =
+        Assert.assertEq(expected = StepPlan.Reset(0i64, 101i64),
+                        Simulation3d.Internal.Step.planOf(120, Some(progress(100i64)), Structure.Structure(PresetKind.Flock, 256, 1), 101i64))
+
+    @Test
+    def testJumpOfExactlyOneSecondStillAdvances(): Unit \ Assert =
+        Assert.assertEq(expected = StepPlan.Advance(4i64), Simulation3d.Internal.Step.planOf(120, Some(progress(500i64)), structure(), 560i64))
 
     @Test
     def testTimeGoingBackResets(): Unit \ Assert =

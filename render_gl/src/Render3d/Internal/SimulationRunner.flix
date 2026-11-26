@@ -59,12 +59,12 @@ pub mod Render3d.Internal.SimulationRunner {
         Ref.put(Map.empty(), runner#slots);
         Render3d.Internal.Compute.release(runner#compute)
 
-    /// id の出口（今のコマで encode した物）。
+    /// id の出口（最後に encode した物。idleSeconds の間は encode しなかったコマでも前の出口を返す）。
     pub def instancesOf(runner: Runner, id: String): Option[Instances] \ IO =
         Map.get(id, Ref.get(runner#slots)) |> Option.map(s -> { buffer = s#buffers#instances, count = s#count })
 
     /// requests を encoder へ 1 つの compute の pass で積む（刻みと出口の pack）。同じ id は 1 コマに 1 回だけ進め、
-    /// 同じ id で構造の値が違う宣言はコマで最初に見た方を使って 1 回知らせる。now = 今の時刻（秒・手放す判定だけに使う）。
+    /// 同じ id で構造の値が違う宣言はコマで最初に見た方を使って 1 回知らせる。now = 実時間の秒（手放す判定だけに使う）。
     pub def encode(runner: Runner, encoder: CommandEncoder, now: Float64, requests: List[Request]): Unit \ IO =
         let frame = Ref.get(runner#frame) + 1i64;
         Ref.put(frame, runner#frame);
@@ -76,7 +76,8 @@ pub mod Render3d.Internal.SimulationRunner {
             pass.end()
         }
 
-    /// コマの終わりに呼ぶ: idleSeconds より長く encode しなかった id を手放す。
+    /// コマの終わりに呼ぶ: idleSeconds より長く encode しなかった id を手放す。now は実時間の秒（encode と同じ時計）。
+    // WhyNot: 遊びの時計を渡さない — ポーズ中や時刻が戻った時に手放す判定が止まり、使わない buffer が残り続ける。
     pub def endFrame(runner: Runner, now: Float64): Unit \ IO =
         let slots = Ref.get(runner#slots);
         let stale = Map.toList(slots) |> List.filter(p -> now - Ref.get(snd(p)#seenAt) > idleSeconds());
@@ -134,7 +135,26 @@ pub mod Render3d.Internal.SimulationRunner {
             gpu.writeBuffer(buffer, 0i64, bytes, 0, n * 4)
         }
 
-    def kernel(k: FlockKernel): Render3d.Internal.Compute.Kernel = Render3d.Internal.Kernels.flockKernelOf(k)
+    // WhyNot: 毎回 Kernels.flockKernelOf を呼ばない — 作り直しの数百刻みで dispatch ごとに record と binding の並びを作り直す。
+    def kernel(k: FlockKernel): Render3d.Internal.Compute.Kernel = match k {
+        case FlockKernel.Count      => force countKernel()
+        case FlockKernel.ScanBlocks => force scanBlocksKernel()
+        case FlockKernel.ScanSums   => force scanSumsKernel()
+        case FlockKernel.ScanAdd    => force scanAddKernel()
+        case FlockKernel.Scatter    => force scatterKernel()
+        case FlockKernel.RulesGrid  => force rulesGridKernel()
+        case FlockKernel.RulesBrute => force rulesBruteKernel()
+        case FlockKernel.Pack       => force packKernel()
+    }
+
+    def countKernel(): Lazy[Render3d.Internal.Compute.Kernel] = lazy Render3d.Internal.Kernels.flockKernelOf(FlockKernel.Count)
+    def scanBlocksKernel(): Lazy[Render3d.Internal.Compute.Kernel] = lazy Render3d.Internal.Kernels.flockKernelOf(FlockKernel.ScanBlocks)
+    def scanSumsKernel(): Lazy[Render3d.Internal.Compute.Kernel] = lazy Render3d.Internal.Kernels.flockKernelOf(FlockKernel.ScanSums)
+    def scanAddKernel(): Lazy[Render3d.Internal.Compute.Kernel] = lazy Render3d.Internal.Kernels.flockKernelOf(FlockKernel.ScanAdd)
+    def scatterKernel(): Lazy[Render3d.Internal.Compute.Kernel] = lazy Render3d.Internal.Kernels.flockKernelOf(FlockKernel.Scatter)
+    def rulesGridKernel(): Lazy[Render3d.Internal.Compute.Kernel] = lazy Render3d.Internal.Kernels.flockKernelOf(FlockKernel.RulesGrid)
+    def rulesBruteKernel(): Lazy[Render3d.Internal.Compute.Kernel] = lazy Render3d.Internal.Kernels.flockKernelOf(FlockKernel.RulesBrute)
+    def packKernel(): Lazy[Render3d.Internal.Compute.Kernel] = lazy Render3d.Internal.Kernels.flockKernelOf(FlockKernel.Pack)
 
     /// count 個の群れの buffer と bind group を作る（0 個でも 1 個分の大きさで作る）。
     def allocate(c: Compute, count: Int32, structure: Structure): Slot \ IO =

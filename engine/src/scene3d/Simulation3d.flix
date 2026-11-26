@@ -14,7 +14,7 @@ pub mod Simulation3d {
     /// neighborRadius = 近所と見る距離・separationRadius = 離れようとする距離（neighborRadius 以下）・
     /// cohesion = 近所の真ん中へ寄る重み・alignment = 近所の速さにそろう重み・separation = 近すぎる物から離れる重み・
     /// maxSpeed = 速さの上限・maxForce = 規則の力の上限・margin = 箱の端から中へ押し返し始める幅・
-    /// target = 向かう点（target）（None なら寄らない）・targetWeight = target へ寄る力。
+    /// target = 向かう点（None なら寄らない）・targetWeight = target へ寄る力。
     pub type alias FlockRules = { neighborRadius = Float64, separationRadius = Float64, cohesion = Float64, alignment = Float64,
                                   separation = Float64, maxSpeed = Float64, maxForce = Float64, margin = Float64,
                                   target = Option[Vec3.Vec3], targetWeight = Float64 }

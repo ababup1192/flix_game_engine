@@ -50,8 +50,8 @@ pub mod Render3d.Internal.Kernels {
 
     def kernelOf(name: String, bindings: List[Binding], parts: List[List[String]]): Kernel =
         let all = bindingOf("params", Access.Uniform, "Params") :: bindings;
-        let decls = List.zipWithIndex(all) |> List.map(p -> declOf(fst(p), snd(p)));
-        { name = name, bindings = List.map(x -> x#access, all), source = lazy String.unlines(List.flatten(common() :: decls :: parts)) }
+        { name = name, bindings = List.map(x -> x#access, all),
+          source = lazy String.unlines(List.flatten(common() :: (List.zipWithIndex(all) |> List.map(p -> declOf(fst(p), snd(p)))) :: parts)) }
 
     def boids(name: String, access: Access): Binding = bindingOf(name, access, "array<Boid>")
 
@@ -339,6 +339,7 @@ pub mod Render3d.Internal.Kernels {
         "}" ::
         Nil
 
+    // WhyNot: 近所を見る数に上限を置かない — 「最初の K 個だけ」はセルの中の並び（count の atomicAdd の順）に答えが左右され、回ごとに群れが別の動きになる。
     def rulesGridBody(): List[String] =
         "@compute @workgroup_size(64)" ::
         "fn cs_main(@builtin(global_invocation_id) gid: vec3u) {" ::

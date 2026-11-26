@@ -57,7 +57,7 @@ pub mod Render3d.Internal.Compute {
     pub def buildPipelines(c: Compute, kernels: List[Kernel]): Unit \ IO =
         kernels |> List.forEach(k -> discard pipelineOf(c, k))
 
-    /// kernel の pipeline（置き場に無ければ作る）。
+    /// kernel の pipeline（置き場に無ければその場で作る・作るのは高いので buildPipelines で先に作っておく）。
     pub def pipelineOf(c: Compute, k: Kernel): Built \ IO =
         match Map.get(k#name, Ref.get(c#built)) {
             case Some(b) => b

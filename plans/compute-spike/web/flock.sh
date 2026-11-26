@@ -5,7 +5,7 @@
 set -e
 D=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$D/../../.." && pwd)
-export PATH=/Users/abab/Desktop/flix_game_engine/.devbox/nix/profile/default/bin:$PATH
+export PATH="${DEVBOX_BIN:-$(cd "$(dirname "$0")/../../.." && pwd)/.devbox/nix/profile/default/bin}:$PATH"
 T=${FLIX_GE_TEAVM_DIR:-$HOME/Library/Caches/flix_game_engine/teavm/0.16.0}
 TCP=$(ls "$T"/*.jar | tr '\n' ':')
 OUT="$D/out/flock"

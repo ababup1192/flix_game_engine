@@ -18,13 +18,17 @@ mod Render3d.Internal.SimulationRunner.TestSimulationKernelsDawn {
 
     def box(): Mesh3d.Bounds = { min = Vec3.v3(-5.0, -5.0, -5.0), max = Vec3.v3(5.0, 5.0, 5.0) }
 
-    /// 位置の許し幅（箱の幅 10 の 1e-4）。
-    def tolerance(): Float64 = 1.0e-3
+    /// 許し幅（Dawn の M4 Pro で実測の差は 5e-7。sqrt と FMA の丸めの分だけ見る）。
+    def tolerance(): Float64 = 1.0e-5
 
     def flock(n: Int32, time: Float64): Simulation3d.Simulation3d[Simulation3d.Elements] =
         Simulation3d.Internal.make("birds", Simulation3d.Internal.flockPreset(Simulation3d.Internal.defaultFlockRules()), n, box(), time)
 
     def params(): FlockParams = Simulation3d.Internal.Cpu.paramsOf(count(), flock(count(), 0.0))
+
+    /// 向かう点のある規則の 1 刻みの値。
+    def targetParams(): FlockParams =
+        Simulation3d.Internal.flockParamsOf({ target = Some(Vec3.v3(3.0, -1.0, 2.0)), targetWeight = 4.0 | Simulation3d.Internal.defaultFlockRules() }, box(), count())
 
     /// 初めの状態を CPU で 20 刻み進めた物（近所がばらけた状態から始める）。
     def startState(): Vector[Float32] =
@@ -62,11 +66,13 @@ mod Render3d.Internal.SimulationRunner.TestSimulationKernelsDawn {
         Vector.zip(a, b) |> Vector.foldLeft((m, p) -> Float64.max(m, Float64.abs(Float32.toFloat64(fst(p)) - Float32.toFloat64(snd(p)))), 0.0)
 
     /// 状態 state を上げた slot を作り、steps 刻み（brute なら総当たりの kernel）進めて、最新の状態を読む。
-    def gpuSteps(gpu: WebGpu, state: Vector[Float32], steps: Int32, brute: Bool): Vector[Float32] \ IO =
+    def gpuSteps(gpu: WebGpu, state: Vector[Float32], steps: Int32, brute: Bool): Vector[Float32] \ IO = gpuStepsWith(gpu, params(), state, steps, brute)
+
+    def gpuStepsWith(gpu: WebGpu, p: FlockParams, state: Vector[Float32], steps: Int32, brute: Bool): Vector[Float32] \ IO =
         let c = Render3d.Internal.Compute.create(gpu);
         let sim = flock(count(), 0.0);
         let slot = allocate(c, count(), Simulation3d.Internal.structureOf(count(), sim));
-        gpu.writeBuffer(slot#buffers#params, 0i64, Render3d.Internal.Kernels.flockParamsBytes(params(), 1.0), 0, Render3d.Internal.Kernels.paramsBytes());
+        gpu.writeBuffer(slot#buffers#params, 0i64, Render3d.Internal.Kernels.flockParamsBytes(p, 1.0), 0, Render3d.Internal.Kernels.paramsBytes());
         uploadState(gpu, slot#buffers#stateA, state);
         let encoder = gpu.createCommandEncoder("test steps");
         let pass = Render3d.Internal.Compute.beginPass(encoder, "test steps", None);
@@ -96,7 +102,10 @@ mod Render3d.Internal.SimulationRunner.TestSimulationKernelsDawn {
                 module.release();
                 String.lines(info) |> List.filter(l -> String.startsWith({ prefix = "Error" }, l)) |> List.map(l -> "${k}: ${l}")
             });
-            Assert.assertEq(expected = (Nil: List[String]), errors)
+            let c = Render3d.Internal.Compute.create(gpu);
+            Render3d.Internal.Compute.buildPipelines(c, kinds |> List.map(kernel));
+            Render3d.Internal.Compute.release(c);
+            Assert.assertEq(expected = ((Nil: List[String]), 0), (errors, gpu.errorCount()))
         })
 
     @Test
@@ -104,7 +113,26 @@ mod Render3d.Internal.SimulationRunner.TestSimulationKernelsDawn {
         withDawn(gpu -> {
             let s = startState();
             let gap = maxGap(Simulation3d.Internal.Cpu.stepFlock(params(), s), gpuSteps(gpu, s, 1, false));
+            println("[simulation-dawn] GPU と CPU の 1 刻みの差の最大 ${gap}");
+            Assert.assertEq(expected = (true, 0), (gap <= tolerance(), gpu.errorCount()))
+        })
+
+    @Test
+    def testGpuStepWithTargetIsWithinToleranceOfCpuStep(): Unit \ {Assert, IO} =
+        withDawn(gpu -> {
+            let s = startState();
+            let gap = maxGap(Simulation3d.Internal.Cpu.stepFlock(targetParams(), s), gpuStepsWith(gpu, targetParams(), s, 1, false));
+            println("[simulation-dawn] target つきの 1 刻みの差の最大 ${gap}");
             Assert.assertEq(expected = true, gap <= tolerance())
+        })
+
+    /// 3 軸でセルの数が違う箱でも、GPU の格子と総当たりはバイトで同じ。
+    @Test
+    def testGpuGridEqualsBruteInAnUnevenBox(): Unit \ {Assert, IO} =
+        withDawn(gpu -> {
+            let p = Simulation3d.Internal.flockParamsOf(Simulation3d.Internal.defaultFlockRules(), { min = Vec3.v3(-10.0, -3.0, -5.0), max = Vec3.v3(10.0, 3.0, 5.0) }, count());
+            let s = Simulation3d.Internal.Cpu.initialState(p, 13);
+            Assert.assertEq(expected = Vector.map(Float32.toString, gpuStepsWith(gpu, p, s, 30, true)), Vector.map(Float32.toString, gpuStepsWith(gpu, p, s, 30, false)))
         })
 
     @Test
@@ -219,9 +247,35 @@ mod Render3d.Internal.SimulationRunner.TestSimulationKernelsDawn {
             frame(1.0, 300);
             frame(1.0 + 1.0 / 60.0, 200);
             let resized = instancesOf(runner, "birds") |> Option.map(i -> i#count);
+            endFrame(runner, 1.0 + 1.0 / 60.0 + idleSeconds() - 0.5);
+            let withinIdle = instancesOf(runner, "birds") |> Option.map(i -> i#count);
             endFrame(runner, 1.0 + 1.0 / 60.0 + idleSeconds() + 0.5);
             let afterIdle = instancesOf(runner, "birds") |> Option.map(i -> i#count);
             release(runner);
-            Assert.assertEq(expected = (Some(200), None), (resized, afterIdle))
+            Assert.assertEq(expected = (Some(200), Some(200), None), (resized, withinIdle, afterIdle))
+        })
+
+    /// 時刻が戻った（2 秒 → 1 秒）出口は、新しい runner に 1 秒を渡した出口とバイトで同じ（使い回した slot を作り直す）。
+    @Test
+    def testTimeGoingBackResetsTheHeldSlot(): Unit \ {Assert, IO} =
+        withDawn(gpu -> {
+            let back = runFrames(gpu, 2.0 :: (2.0 + 1.0 / 60.0) :: 1.0 :: Nil, t -> request(count(), t) :: Nil);
+            let fresh = runFrames(gpu, 1.0 :: Nil, t -> request(count(), t) :: Nil);
+            Assert.assertEq(expected = (count() * 32, Vector.map(Float32.toString, fresh)), (Vector.length(back), Vector.map(Float32.toString, back)))
+        })
+
+    /// 同じ id で数の違う 2 つの宣言を 2 コマ続けて渡すと、最初に見た方の数で描き、知らせは 1 回だけ。
+    @Test
+    def testMismatchedSameIdUsesTheFirstDeclarationAndWarnsOnce(): Unit \ {Assert, IO} =
+        withDawn(gpu -> {
+            let runner = create(gpu);
+            let said = Render3d.FakeGl.stderrOf(() -> (1.0 :: (1.0 + 1.0 / 60.0) :: Nil) |> List.forEach(t -> {
+                let encoder = gpu.createCommandEncoder("test frame");
+                encode(runner, encoder, t, request(300, t) :: request(200, t) :: Nil);
+                gpu.submit(encoder.finish())
+            }));
+            let n = instancesOf(runner, "birds") |> Option.map(i -> i#count);
+            release(runner);
+            Assert.assertEq(expected = (Some(300), 2), (n, List.length(String.split(regex = "@simulation-id-mismatch", said))))
         })
 }

@@ -76,8 +76,9 @@ pub mod Simulation3d.Internal {
     def vec3f(v: Vec3.Vec3): Vec3f = { x = f32(v#x), y = f32(v#y), z = f32(v#z) }
 
     /// 1 軸のセルの数（箱の幅 ÷ 近所の距離の床・1〜32）。
+    // WhyNot: 幅 ÷ 半径をそのまま床にしない — 割り切れるとセルが半径ちょうどになり、f32 の (x − lo) ÷ size の丸めで半径未満の 2 個が 2 セル離れて数えられる。
     def cellsAlong(extent: Float64, radius: Float64): Int32 =
-        Float64.min(Float64.max(Float64.floor(extent / radius), 1.0), Int32.toFloat64(maxCellsPerAxis()))
+        Float64.min(Float64.max(Float64.floor(extent / (radius * 1.0001)), 1.0), Int32.toFloat64(maxCellsPerAxis()))
             |> Float64.tryToInt32 |> Option.getWithDefault(1)
 
     /// rules・bounds・count から 1 刻みの値を作る。半径は 1e-3 以上・separationRadius は neighborRadius 以下に丸める。
