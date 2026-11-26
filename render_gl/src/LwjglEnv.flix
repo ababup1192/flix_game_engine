@@ -27,6 +27,10 @@ mod LwjglEnv {
         backend = Backend
     }
 
+    /// 描き手が先に作る宣言（withPreload3d と、View に初めて出た staticGroup）を受けて作るか。dt を固定したウィンドウと FLIX_GE_FRAME_SHOT のウィンドウでは作らない。
+    // WhyNot: 撮るウィンドウで先に作らない — 作り終えるコマが描き手の実時間で決まり、engine が出す黒の明けるコマが回ごとに違って、同じ操作の絵が揃わない。
+    pub def isPreloadAhead(env: Settings): Bool = Option.isEmpty(env#fixedDt) and Option.isEmpty(env#frameShotDir)
+
     /// 描く道。WebGpu = Dawn の WebGPU（既定。窓では、使えない機械なら理由を 1 行言って GL で起動する）・Gl = OpenGL 3.3。
     pub enum Backend with Eq, ToString {
         case Gl

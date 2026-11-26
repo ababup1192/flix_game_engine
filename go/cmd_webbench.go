@@ -12,9 +12,10 @@ import (
 	"github.com/ababup1192/flix_game_engine/go/internal/cdp"
 )
 
-const webBenchUsage = "使い方: fge web-bench <書き出したフォルダ> [--query <a=1&b=2>] [--wait <秒>] [--size WxH] [--out <file>] [--jsonl <file>]\n" +
+const webBenchUsage = "使い方: fge web-bench <書き出したフォルダ> [--query <a=1&b=2>] [--wait <秒>] [--size WxH] [--cpu <倍>] [--out <file>] [--jsonl <file>]\n" +
 	"  ベンチのブラウザ版（make bench-web-export の出力）をヘッドレスの Chrome で開き、頁の window.__bench を JSON で出す\n" +
-	"  --out は出した JSON をファイルにも書く・--jsonl は区間ごとの結果を 1 行ずつファイルの終わりへ足す"
+	"  --out は出した JSON をファイルにも書く・--jsonl は区間ごとの結果を 1 行ずつファイルの終わりへ足す\n" +
+	"  --cpu は CPU を何倍遅くするか（4・6 でスマホの代わり。1 以下は絞らない。出す JSON の cpuThrottle に入る）"
 
 func init() {
 	register("web-bench",
@@ -28,6 +29,7 @@ type webBenchOptions struct {
 	Dir, Query, Out, JSONL string
 	Wait                   time.Duration
 	Width, Height          int
+	CPU                    float64
 }
 
 func parseWebBenchArgs(args []string) (webBenchOptions, error) {
@@ -35,7 +37,7 @@ func parseWebBenchArgs(args []string) (webBenchOptions, error) {
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch a {
-		case "--query", "--wait", "--size", "--out", "--jsonl":
+		case "--query", "--wait", "--size", "--out", "--jsonl", "--cpu":
 			if i+1 >= len(args) {
 				return o, fmt.Errorf("%s の値がありません", a)
 			}
@@ -54,6 +56,12 @@ func parseWebBenchArgs(args []string) (webBenchOptions, error) {
 					return o, fmt.Errorf("--wait は正の秒数: %q", v)
 				}
 				o.Wait = time.Duration(sec * float64(time.Second))
+			case "--cpu":
+				rate, err := strconv.ParseFloat(v, 64)
+				if err != nil || rate <= 0 {
+					return o, fmt.Errorf("--cpu は正の倍数: %q", v)
+				}
+				o.CPU = rate
 			case "--size":
 				w, h, ok := parseSize(v)
 				if !ok {
@@ -118,7 +126,7 @@ func cmdWebBench(out, errOut *strings.Builder, args []string) int {
 	if o.Query != "" {
 		url += "?" + o.Query
 	}
-	page, err := cdp.OpenPage(cdp.PageOptions{Width: o.Width, Height: o.Height})
+	page, err := cdp.OpenPage(cdp.PageOptions{Width: o.Width, Height: o.Height, CPUThrottle: o.CPU})
 	if err != nil {
 		fmt.Fprintf(errOut, "web-bench: %v\n", err)
 		return 1
@@ -173,12 +181,13 @@ func cmdWebBench(out, errOut *strings.Builder, args []string) int {
 		return 1
 	}
 	text, err := json.Marshal(struct {
-		Chrome   string            `json:"chrome"`
-		Viewport string            `json:"viewport"`
-		Query    string            `json:"query"`
-		Env      json.RawMessage   `json:"env"`
-		Results  []json.RawMessage `json:"results"`
-	}{page.Version, fmt.Sprintf("%dx%d", o.Width, o.Height), bench.Query, bench.Env, bench.Results})
+		Chrome      string            `json:"chrome"`
+		Viewport    string            `json:"viewport"`
+		CPUThrottle float64           `json:"cpuThrottle"`
+		Query       string            `json:"query"`
+		Env         json.RawMessage   `json:"env"`
+		Results     []json.RawMessage `json:"results"`
+	}{page.Version, fmt.Sprintf("%dx%d", o.Width, o.Height), cpuRateOf(o.CPU), bench.Query, bench.Env, bench.Results})
 	if err != nil {
 		fmt.Fprintf(errOut, "web-bench: %v\n", err)
 		return 1
@@ -201,6 +210,14 @@ func cmdWebBench(out, errOut *strings.Builder, args []string) int {
 	}
 	fmt.Fprintln(out, string(text))
 	return 0
+}
+
+// cpuRateOf は頁に掛けた CPU の倍率（絞らない時は 1）。
+func cpuRateOf(rate float64) float64 {
+	if rate > 1 {
+		return rate
+	}
+	return 1
 }
 
 func appendWebBenchRows(path string, rows []json.RawMessage) error {

@@ -502,9 +502,9 @@ bench-web-export: ### BENCH=<名前> | ベンチをブラウザ版へ書き出�
 	@grep -q 'bench-overlay.js' $(BENCH_WEB_DIR)/index.html || { echo "[bench-web-export] index.html に </body> が無く、script を差し込めない"; exit 1; }
 	@echo "[bench-web-export] $(BENCH_WEB_DIR)（静的なサーバーで配って index.html?<つまみ> を開く）"
 
-bench-web: ### BENCH=<名前> [ARGS='n=20000&tex=16'] [OUT=<file>] | ベンチ（sprite_stress / crowd2d / scene3d）をヘッドレスの Chrome で測って JSON を出す
+bench-web: ### BENCH=<名前> [ARGS='n=20000&tex=16'] [CPU=<倍>] [OUT=<file>] | ベンチ（sprite_stress / crowd2d / scene3d）をヘッドレスの Chrome で測って JSON を出す（CPU=4 で CPU を 4 倍遅く）
 	@if [ "$(BENCH_WEB_EXPORT)" != off ]; then $(MAKE) --no-print-directory bench-web-export BENCH=$(BENCH); fi
-	@bin/fge web-bench $(BENCH_WEB_DIR) --query '$(ARGS)' --size $(BENCH_WEB_SIZE) --wait $(BENCH_WEB_WAIT) $(if $(OUT),--out $(OUT)) $(if $(JSONL),--jsonl $(JSONL))
+	@bin/fge web-bench $(BENCH_WEB_DIR) --query '$(ARGS)' --size $(BENCH_WEB_SIZE) --wait $(BENCH_WEB_WAIT) $(if $(CPU),--cpu $(CPU)) $(if $(OUT),--out $(OUT)) $(if $(JSONL),--jsonl $(JSONL))
 
 # 光の式の木 (engine の LightModel3d) から CPU の描き手が回す関数 (engine_tools/src/gen/SoftRaster3dLight.flix) を作り直す。
 # 木を直したらこれを流す。入っている物と木が食い違うと engine_tools の TestSoftRaster3dLight が落ちる。

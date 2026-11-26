@@ -30,6 +30,10 @@ mod Game {
             reloads = Nil
         })
             |> App.withHudView(Resources.view(View.hud))
+            // 全部の階の集まりを起動の暗転の間に先に作る（engine が済むまで黒で覆う）。宣言しないと、階段室で上下の階が初めて載るたびに暗転する。
+            // key = 届いた束と人物の数（届くたびに校舎を組み直すので、groups と scenes を読み直させる）。
+            |> App.withPreload3d({ groups = Resources.read((r, _) -> Map.valuesOf(r#school#groups)), scenes = Resources.read(View.preloadScenes)
+                                 | App.preload3d(Resources.read((r, _) -> "${Map.size(r#assets#floors)}:${Map.size(r#assets#props)}:${Map.size(r#people)}"), _ -> Nil) })
             |> withCrt(res)
             |> App.withDocTable(Controls.docTable())
             // 紙・足音・戸のきしみ（起きた音）と、夜の校舎の空気（続く音）。

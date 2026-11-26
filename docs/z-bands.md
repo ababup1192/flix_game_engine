@@ -9,6 +9,7 @@
 | UI layer | layer × 10000 | ui.json の root ごとの層（`CanvasLayer.layerStride`） | UiRender が layer から加算する |
 | Transition | 100000 | 画面を覆う切り替え演出の既定（`Transition.defaultZ`） | UI より手前・HUD の範囲より奥 |
 | HUD の範囲 | 1,000,000,000 〜 +99,999,999 | `App.withHudView` の絵 | `composeScene` が `ZBand.liftHud` で持ち上げる。ゲームが書く z は 0..99,999,999（はみ出しは clamp・wrap しない） |
+| 集まりを先に作る間の黒 | 1,899,999,999 | View に初めて出た `staticGroup` を作り終えるまで design を覆う黒（`ZBand.autoPreloadCover`・`App.withAutoPreload3d` の `Cover`） | エンジン専用。HUD の範囲より手前・待ちの表示より奥 |
 | 読み込み中の表示の範囲 | 1,900,000,000 〜 +10 | ブラウザ版で App が届いていない物を待つ間の輪と、押した点からの波紋（`App.withLoadingIndicator`） | エンジン専用。ゲームは使わない（替えるなら `LoadingIndicator.Custom`・出さないなら `Hidden`） |
 | エンジンデバッグの範囲 | 2,000,000,000 〜 +10 | fps・矩形注釈・トースト・スクラブ表示（Annotate） | エンジン専用。ゲームは使わない |
 

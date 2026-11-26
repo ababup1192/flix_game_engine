@@ -398,7 +398,7 @@ pub mod GlOffscreen {
         handleWindowless(s#design, () ->
         RenderPaintHandlers.handleDiagnostics(paint, () ->
         Platform.runTasksInPlace(() ->
-        RenderPaintHandlers.handleDraw3d(paint, () ->
+        RenderPaintHandlers.handleDraw3d(false, paint, () ->
         RenderPaintHandlers.handleDraw2d(gl, paint, size, (_, _) -> s#glLog#onScreenFrame(), () ->
         RenderPaintHandlers.handleGpuResources(gl, paint, s#fonts, f)))))))
 

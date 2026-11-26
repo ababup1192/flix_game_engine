@@ -164,7 +164,7 @@ pub mod GpuOffscreen {
             GlOffscreen.handleWindowless(w#design, () ->
             WebGpuPaint.handleDiagnostics(paint, () ->
             Platform.runTasksInPlace(() ->
-            WebGpuPaint.handleDraw3d(paint, () ->
+            WebGpuPaint.handleDraw3d(false, paint, () ->
             WebGpuPaint.handleDraw2d(paint, (_, _, _) -> (), () ->
             WebGpuPaint.handleGpuResources(paint, w#fonts, f)))))));
         WebGpuPaint.present(paint, None);

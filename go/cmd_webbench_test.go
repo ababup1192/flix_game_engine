@@ -20,6 +20,13 @@ func TestWebBenchArgsReadWaitAndSize(t *testing.T) {
 	}
 }
 
+func TestWebBenchArgsReadCPUThrottle(t *testing.T) {
+	o, err := parseWebBenchArgs([]string{"out", "--cpu", "4"})
+	if err != nil || o.CPU != 4 || cpuRateOf(o.CPU) != 4 || cpuRateOf(0) != 1 {
+		t.Fatalf("got %+v %v", o, err)
+	}
+}
+
 func TestWebBenchArgsRejectMissingFolder(t *testing.T) {
 	if _, err := parseWebBenchArgs([]string{"--query", "n=1"}); err == nil {
 		t.Fatal("want error")

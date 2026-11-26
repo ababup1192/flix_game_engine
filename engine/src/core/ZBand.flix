@@ -18,6 +18,10 @@ pub mod ZBand {
     /// HUD の範囲より手前・エンジンデバッグの範囲より奥 — 待ちの表示はゲームのどの絵にも隠されず、F8 の注釈は隠さない。
     pub def loadingBase(): Int32 = 1_900_000_000
 
+    /// staticGroup を先に作る間の黒（App.withAutoPreload3d の Cover）の z。HUD の範囲より手前・待ちの表示より奥。
+    // WhyNot: loadingBase ちょうどにしない — 波紋が同じ z で、同じ z の中は種類の順で描くので、積む順で奥へ置けない。
+    pub def autoPreloadCover(): Int32 = loadingBase() - 1
+
     /// エンジンデバッグの範囲の底（fps・矩形注釈・トースト・スクラブ表示）。
     /// HUD の範囲よりさらに手前 — デバッグ中の表示はゲームのどの絵にも隠されない。
     /// Int32 の上限 2_147_483_647 に収まる（この範囲の中は 0..10 しか使わない）。

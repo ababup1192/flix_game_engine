@@ -2,6 +2,7 @@
 //   first=1     … 物を置かずに回した後、集まりを初めて載せる（区間 first）→ しばらく同じ物（steady）→ 同じ名前の別の値の集まりへ替える（rebuild。形も新しい）
 //   first=skin  … 集まりは頭から載せておき、途中で骨つきの人物を 1 体出す（区間 skin。人物の glb は つまみ person）
 //   first=preload … 集まりを App.withPreload3d で頭から宣言して先に作らせ（区間 ahead）、作り終えた後のコマで初めて載せる（区間 first）
+//   first=auto  … first=1 と同じ場面で、engine が自動で先に作る（App.withAutoPreload3d の既定 Cover）。groups=<n> で集まりを n 個に分ける（区画のつもり）。first=1 は自動を切って測る
 //   first=glb   … （ブラウザ版）120 コマ目に絵つきの glb（assets/props_a.glb）を解く（区間 glb。keyed=1 で鍵つきの読み方 = 絵を機種の側に持つ）
 // 区間ごとに 1 行の JSON（BenchRun.summaryFields に、1 コマの時間と 3D の描き手の CPU の区間の最大を足した物）を出す。起動し直して何回か流し、最悪のコマを見る。
 mod First {
@@ -12,6 +13,7 @@ mod First {
         case Skin
         case Preload
         case Glb
+        case Auto
     }
 
     /// つまみの表の first（無ければ None）。
@@ -20,12 +22,14 @@ mod First {
         case Some("skin") => Some(Mode.Skin)
         case Some("preload") => Some(Mode.Preload)
         case Some("glb")     => Some(Mode.Glb)
+        case Some("auto")    => Some(Mode.Auto)
         case _            => None
     }
 
-    /// 場面の作り置き。first = 初めて載せる集まり・second = 後で替える集まり（同じ名前・別の形）・person = 後で出す骨つきの人物。
+    /// 場面の作り置き。first = 初めて載せる集まり・shown = 載せる集まり（first か、Auto で groups を 2 以上にした時は first を分けた物）・
+    /// second = 後で替える集まり（同じ名前・別の形）・person = 後で出す骨つきの人物。
     /// glb = 120 コマ目に glb を解く仕事（かかった ms と解いた形を返す・Glb の時だけ withGlb で入れる）。
-    pub type alias Kit = { mode = Mode, field = Field.Kit, first = Scene3d.StaticGroup, second = Scene3d.StaticGroup, person = Option[Model3d.Model3d],
+    pub type alias Kit = { mode = Mode, field = Field.Kit, first = Scene3d.StaticGroup, shown = List[Scene3d.StaticGroup], second = Scene3d.StaticGroup, person = Option[Model3d.Model3d],
                            glb = Unit -> (Float64, Option[Model3d.Model3d]) \ IO }
 
     /// kit の 120 コマ目に解く仕事を job にした物。
@@ -40,6 +44,7 @@ mod First {
         case Mode.Skin    => ("first", 28, 90) :: ("steady", 90, swapAt() - 2) :: ("skin", swapAt() - 2, endAt()) :: Nil
         case Mode.Preload => ("ahead", 2, swapAt() - 2) :: ("first", swapAt() - 2, endAt()) :: Nil
         case Mode.Glb     => ("steady", 28, swapAt() - 2) :: ("glb", swapAt() - 2, endAt()) :: Nil
+        case Mode.Auto    => ("first", 28, 90) :: ("steady", 90, endAt()) :: Nil
     }
 
     /// 集まりを初めて載せるコマ（Skin では頭から載せる・Preload は先に作らせてから）。
@@ -48,12 +53,15 @@ mod First {
         case Mode.Skin    => 0
         case Mode.Preload => swapAt()
         case Mode.Glb     => 0
+        case Mode.Auto    => 30
     }
 
-    /// Preload の時、first の集まりを Field の場面で先に作らせる宣言を足す。
-    pub def withPreload(kit: Kit, app: App.App[w, ef]): App.App[w, ef] =
-        if (kit#mode != Mode.Preload) app
-        else app |> App.withPreload3d({ groups = _ -> kit#first :: Nil, scenes = _ -> Field.scene(kit#field, 0.0) :: Nil | App.preload3d(_ -> "first", _ -> Nil) })
+    /// Preload の時、first の集まりを Field の場面で先に作らせる宣言を足す。Group（first=1）は自動で先に作るのを切る（宣言なしの止まりを測る）。
+    pub def withPreload(kit: Kit, app: App.App[w, ef]): App.App[w, ef] = match kit#mode {
+        case Mode.Preload => app |> App.withPreload3d({ groups = _ -> kit#first :: Nil, scenes = _ -> Field.scene(kit#field, 0.0) :: Nil | App.preload3d(_ -> "first", _ -> Nil) })
+        case Mode.Group   => app |> App.withAutoPreload3d(App.AutoPreload3d.Off)
+        case _            => app
+    }
 
     /// 別の値の集まりへ替える・人物を出すコマ。
     def swapAt(): Int32 = 120
@@ -76,8 +84,18 @@ mod First {
             let mesh = Field.shapeOf(config#faceGrid, i + 100000);
             (Int32.toString(i), instanceLike(inst, if (keyed) Mesh3d.withContentKey("second:${i}", mesh) else mesh))
         });
-        { mode = mode, field = field, first = first, second = Scene3d.staticGroup("field", reshaped), person = person,
+        let parts = Map.get("groups", knobs) |> Option.flatMap(Int32.fromString) |> Option.getWithDefault(1);
+        let shown = if (mode == Mode.Auto and parts > 1) splitGroup(parts, first) else first :: Nil;
+        { mode = mode, field = field, first = first, shown = shown, second = Scene3d.staticGroup("field", reshaped), person = person,
           glb = () -> checked_ecast((0.0, None)) }
+
+    /// g の中身を parts 個の集まり（名前は field-<番号>・i 個目の物は i を parts で割った余りの番号の集まり）に分けた物。
+    def splitGroup(parts: Int32, g: Scene3d.StaticGroup): List[Scene3d.StaticGroup] =
+        let byPart = Scene3d.staticGroupFieldsOf(g)#items |> List.zipWithIndex |> List.foldRight((ii, acc) -> {
+            let (i, item) = ii;
+            Map.insertWith((fresh, old) -> List.append(fresh, old), Int32.remainder(i, parts), item :: Nil, acc)
+        }, (Map.empty(): Map[Int32, List[(String, Scene3d.Instance3d)]]));
+        List.range(0, parts) |> List.map(p -> Scene3d.staticGroup("field-${p}", Map.getWithDefault(p, Nil, byPart)))
 
     /// inst と同じ置き方と材質で、形を mesh にした物。
     def instanceLike(inst: Scene3d.Instance3d, mesh: Mesh3d.Mesh3d): Scene3d.Instance3d =
@@ -126,7 +144,7 @@ mod First {
         let glbTextures = model |> Option.map(m -> m#textures) |> Option.getWithDefault(Nil);
         let groups = if (frame < showAt(kit#mode)) Nil
                      else if (frame >= swapAt() and kit#mode == Mode.Group) kit#second :: Nil
-                     else kit#first :: Nil;
+                     else kit#shown;
         let people = if (frame >= swapAt() and kit#mode == Mode.Skin) personInstances(kit, t) else Nil;
         Render.scene3d(Vec2.zero(), { groups = groups, instances = List.append(glbParts, List.append(people, base#instances)), textures = List.append(glbTextures, base#textures) | base }) :: Nil
 

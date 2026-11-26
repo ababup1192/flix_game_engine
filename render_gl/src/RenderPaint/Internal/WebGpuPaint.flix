@@ -9,7 +9,7 @@
 // 使い方（device を開いた糸で、create から順に）:
 //   let paint = WebGpuPaint.create(gpu, { designWidth, designHeight, clearColor, width, height });
 //   WebGpuPaint.putTexture(name, WebGpuPaint.uploadRgba(paint, w, h, rgba), paint);
-//   handleTarget(paint, () -> handleDiagnostics(paint, () -> handleDraw3d(paint, () ->
+//   handleTarget(paint, () -> handleDiagnostics(paint, () -> handleDraw3d(true, paint, () ->
 //       handleDraw2d(paint, onScreen, () -> handleGpuResources(paint, fonts, f)))));
 //   コマの終わりに WebGpuPaint.present(paint, 画面の texture か None)
 pub mod RenderPaint.Internal.WebGpuPaint {
@@ -1125,15 +1125,15 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         }
 
     /// 3D の場面は溜めて、次の renderCommands で 2D の pass の前に描き、2D の並びに z の位置で貼る（Render3d.WebGpuRenderer・WebGpuRows）。
-    /// 先に上げる物の宣言は、その場で 3D の描き手に上げさせる（Scenes.preload）。
-    pub def handleDraw3d(paint: Paint, f: Unit -> a \ ef): a \ (ef - Platform.Draw3d) + IO =
+    /// 先に上げる物の宣言は、ahead なら その場で 3D の描き手に上げさせる（Scenes.preload）。偽なら何もせず済んだ進み具合を返す（撮る文脈で偽にする）。
+    pub def handleDraw3d(ahead: Bool, paint: Paint, f: Unit -> a \ ef): a \ (ef - Platform.Draw3d) + IO =
         run f() with handler Platform.Draw3d {
             def drawScene3d(cmd, k) = {
                 let PaintData.PaintData(p) = paint;
                 Array.put(cmd :: Array.get(0, p#pendingScenes), 0, p#pendingScenes);
                 k(())
             }
-            def preload3d(cmd, k) = k(Scenes.preload(paint, cmd))
+            def preload3d(cmd, k) = if (ahead) k(Scenes.preload(paint, cmd)) else k(Scene3d.noPreload())
         }
 
     /// 1 コマごとの描く側の診断を paint で集める。

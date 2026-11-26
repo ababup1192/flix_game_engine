@@ -30,6 +30,9 @@ mod View {
                       eye = pov#eye, yaw = pov#yaw, forward = Camera3d.forward(SchoolView.cameraOf(base)) };
         ({ props = ItemsView.sceneInstances(items) | base }, ItemsView.overlayInstances(items))
 
+    /// 全部の階の動かない物の集まりを先に作る時の、校舎の場面（App.withPreload3d の scenes。描く時と同じ光と psx の版）。
+    pub def preloadScenes(res: Res.Res, w: World.World): List[Scene3d.Scene3dCmd] = SchoolView.sceneOf(fst(inputOf(res, w))) :: Nil
+
     /// 3D の場面: 校舎の場面と、目の前の物があればその場面（アイテム画面の間は間に暗い幕）。
     pub def frame(_ctx: App.ViewCtx, res: Res.Res, w: World.World): List[Render.PlacedItem] =
         let (v, overlay) = inputOf(res, w);

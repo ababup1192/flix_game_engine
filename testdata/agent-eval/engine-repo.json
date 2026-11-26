@@ -115,6 +115,22 @@
           "why": "cache を全部消すと他の作業の cache まで捨てる。make の口がある"
         }
       ]
+    },
+    {
+      "id": "bench-web-cpu-throttle",
+      "prompt": "engine の bench/scene3d のブラウザ版で、初めて staticGroup を載せるコマの重さを、遅いスマホの代わりに手元の Chrome の CPU を 4 倍・6 倍遅くして、同じ条件で 3 回ずつ測りたい。DevTools を手で触らずに流すには何を打つ？",
+      "expect": [
+        {
+          "re": "CPU=[46]|--cpu",
+          "why": "make bench-web BENCH=scene3d ARGS='…' CPU=4（bin/fge web-bench --cpu 4）で CPU を絞って測る"
+        }
+      ],
+      "avoid": [
+        {
+          "re": "(?i)devtools[^\\n]*(手|開いて|performance)",
+          "why": "DevTools の Performance で手で CPU を絞る（同じ条件で何回も流せない）"
+        }
+      ]
     }
   ]
 }
