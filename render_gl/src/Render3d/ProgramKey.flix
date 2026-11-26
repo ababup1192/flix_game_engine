@@ -1,5 +1,5 @@
 // Render3d.ProgramKey — 3D の描き手の GL と WebGPU が共有する、プログラムの版の約束（材質の版・場面の変種・鍵）。
-// 変種のフラグは表（flagRows）の 1 行ずつ。フラグを足す時に render_gl の中で直すのは表の 1 行と、そのフラグの feature の関数（Render3dShaders.ShaderFeature）。
+// 変種のフラグは表（flagRows）の 1 行ずつ。フラグを足す時に render_gl の中で直すのは表の 1 行と、Render3dShaders.featureOfFlag の case 1 つ。
 // engine の Scene3d.PreloadVariant（ゲームへ出している record）は変えず、ここで 1 回だけ Set[VariantFlag] へ変える。
 pub mod Render3d.ProgramKey {
 
@@ -22,24 +22,19 @@ pub mod Render3d.ProgramKey {
     }
 
     /// 変種のフラグの表の 1 行。key = 鍵の字（Scene3d.preloadVariantKey と同じ）・kindCodeBit = 材質の版を 1 つの数にする時の bit・
-    /// billboard = ビルボードのプログラムも受けるか・group0 = WebGPU の group 0 に足す binding（2 つのフラグが同じ binding を足しても 1 つ）・
-    /// feature = シェーダーの名前のある点ごとの差し込み。
-    pub type alias FlagRow = { flag = VariantFlag, key = String, kindCodeBit = Int32, billboard = Bool, group0 = List[Group0Binding],
-                               feature = Render3dShaders.ShaderFeature }
+    /// billboard = ビルボードのプログラムも受けるか・group0 = WebGPU の group 0 に足す binding（2 つのフラグが同じ binding を足しても 1 つ）。
+    /// シェーダーの名前のある点ごとの差し込みは Render3dShaders.featureOfFlag。
+    // WhyNot: 差し込み（Render3dShaders.ShaderFeature）を行の欄に持たない — 鍵の字を引くだけのブラウザの描き手まで、シェーダーの木を組む関数を wasm に持つ。
+    pub type alias FlagRow = { flag = VariantFlag, key = String, kindCodeBit = Int32, billboard = Bool, group0 = List[Group0Binding] }
 
     /// 変種のフラグの表（鍵の並びの順）。
     // WhyNot: ビルボードに点光源の影を受けさせない — 板は薄く、点光源の影の地図の 6 面を引くと 1 枚の板のために全部の面を読む。
     pub def flagRows(): List[FlagRow] =
-        { flag = VariantFlag.PointShadows,  key = "+ps",  kindCodeBit = 256,  billboard = false, group0 = Group0Binding.LightBuffer :: Group0Binding.PointShadowAtlas :: Nil,
-          feature = Render3dShaders.pointShadowsFeature() } ::
-        { flag = VariantFlag.PhysicalUnits, key = "+pu",  kindCodeBit = 512,  billboard = true,  group0 = Group0Binding.LightBuffer :: Nil,
-          feature = Render3dShaders.noFeature() } ::
-        { flag = VariantFlag.Psx,           key = "+psx", kindCodeBit = 1024, billboard = true,  group0 = Group0Binding.LightBuffer :: Nil,
-          feature = Render3dShaders.psxFeature() } ::
-        { flag = VariantFlag.SkyIrradiance, key = "+sh",  kindCodeBit = 2048, billboard = true,  group0 = Group0Binding.LightBuffer :: Nil,
-          feature = Render3dShaders.noFeature() } ::
-        { flag = VariantFlag.AmbientOcclusion, key = "+ao", kindCodeBit = 4096, billboard = true, group0 = Group0Binding.AoMask :: Nil,
-          feature = Render3dShaders.screenAoFeature() } :: Nil
+        { flag = VariantFlag.PointShadows,  key = "+ps",  kindCodeBit = 256,  billboard = false, group0 = Group0Binding.LightBuffer :: Group0Binding.PointShadowAtlas :: Nil } ::
+        { flag = VariantFlag.PhysicalUnits, key = "+pu",  kindCodeBit = 512,  billboard = true,  group0 = Group0Binding.LightBuffer :: Nil } ::
+        { flag = VariantFlag.Psx,           key = "+psx", kindCodeBit = 1024, billboard = true,  group0 = Group0Binding.LightBuffer :: Nil } ::
+        { flag = VariantFlag.SkyIrradiance, key = "+sh",  kindCodeBit = 2048, billboard = true,  group0 = Group0Binding.LightBuffer :: Nil } ::
+        { flag = VariantFlag.AmbientOcclusion, key = "+ao", kindCodeBit = 4096, billboard = true, group0 = Group0Binding.AoMask :: Nil } :: Nil
 
     /// 変種 v のフラグの集まり（render_gl へ入る所で 1 回だけ変える）。
     pub def flagsOf(v: ShaderVariant): Set[VariantFlag] =

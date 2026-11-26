@@ -149,9 +149,9 @@ mod Render3d.FakeGl {
         let recording = (new RecordingGl(unchecked_cast(null as GlContext))).getClass();
         unchecked_cast(Proxy.newProxyInstance(recording.getClassLoader(), recording.getInterfaces(), answers) as GlContext)
 
-    pub def freshState(): Render3d.State \ IO = Render3d.fresh({ megabytes = 1, count = 1 }, Render3d.DrawMode.Instanced)
+    pub def freshState(): Render3d.State \ IO = Render3d.fresh({ megabytes = 1, count = 1 }, Render3d.DrawMode.Instanced, Render3d.ShaderLibrary.withoutRecording(Render3dShaders.makeRuntimeProvider()))
 
-    pub def freshOneByOne(): Render3d.State \ IO = Render3d.fresh({ megabytes = 1, count = 1 }, Render3d.DrawMode.OneByOne)
+    pub def freshOneByOne(): Render3d.State \ IO = Render3d.fresh({ megabytes = 1, count = 1 }, Render3d.DrawMode.OneByOne, Render3d.ShaderLibrary.withoutRecording(Render3dShaders.makeRuntimeProvider()))
 
     /// f が標準エラーへ書いた字（f が投げた例外はそのまま投げ直す）。
     pub def stderrOf(f: Unit -> Unit \ IO): String \ IO =

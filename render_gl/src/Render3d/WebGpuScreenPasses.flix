@@ -27,17 +27,18 @@ pub mod Render3d.WebGpuScreenPasses {
     /// 描き先 1 つの mask の絵 2 枚と大きさ（a が仕上がり）。values = SsaoValues の buffer（pass ごとに 1 つ・dir と target が違う）。
     pub type alias Masks = { width = Int32, height = Int32, a = Texture, b = Texture, values = Vector[Buffer] }
 
-    /// 描き手が持つ物。layout = group 0（SsaoValues・奥行きの絵・mask）・modules = 種類ごとの shader module（ぼかしは 1 つ）・
+    /// 描き手が持つ物。layout = group 0（SsaoValues・奥行きの絵・mask）・modules = 種類ごとの shader module（ぼかしは 1 つ・字が無ければ None で、その pass は白で消すだけ）・
     /// pipelines = (種類, 描き先の形式の番号) → pipeline・masks = 描き先の鍵 → mask の絵・cpu = SsaoValues を詰める入れ物・
     /// blankMask = mask を読まない pass の代わりの絵。
     pub type alias ScreenPasses = {
-        gpu = WebGpu, layout = BindGroupLayout, vertexModule = ShaderModule, modules = Ref[Map[String, ShaderModule], Static],
+        gpu = WebGpu, layout = BindGroupLayout, vertexModule = ShaderModule, modules = Ref[Map[String, Option[ShaderModule]], Static],
+        shaders = Render3d.ShaderLibrary.ShaderSources,
         pipelines = Ref[Map[String, RenderPipeline], Static], masks = Ref[Map[(Int32, Int32), Masks], Static], cpu = ByteBuffer, blankMask = Texture,
         groups = Ref[List[BindGroup], Static]
     }
 
     /// device の上に layout と vertex を作った空の表。
-    pub def create(gpu: WebGpu): ScreenPasses \ IO =
+    pub def create(gpu: WebGpu, shaders: Render3d.ShaderLibrary.ShaderSources): ScreenPasses \ IO =
         let desc = new BindGroupLayoutDesc("fge scene3d screen passes");
         discard desc.buffer(0, ShaderStage.FRAGMENT, BufferBindingType.UNIFORM);
         discard desc.texture(1, ShaderStage.FRAGMENT, TextureSampleType.UNFILTERABLE_FLOAT).texture(2, ShaderStage.FRAGMENT, TextureSampleType.FLOAT);
@@ -47,7 +48,7 @@ pub mod Render3d.WebGpuScreenPasses {
         // WhyNot: 代わりの絵を 0 のままにしない — mask を描けない場面の +ao の frag は代わりの絵を読み、0 だと環境の光が全部消える（GL・CPU は 1 で読む）。
         gpu.writeTexture(blank, 0, 0, 0, 1, 1, white, 0, 4);
         { gpu = gpu, layout = gpu.createBindGroupLayout(desc),
-          vertexModule = gpu.createShaderModule("fge scene3d screen vs", ShaderAst.Wgsl.vertex(Render3d.ScreenPasses.vertex())),
+          vertexModule = gpu.createShaderModule("fge scene3d screen vs", Render3d.ShaderLibrary.wgslOrBug(shaders, Render3d.ShaderSourceKey.SkyVertex)), shaders = shaders,
           modules = Ref.fresh(Static, Map.empty()), pipelines = Ref.fresh(Static, Map.empty()), masks = Ref.fresh(Static, Map.empty()),
           cpu = ByteBuffer.allocateDirect(Render3d.ScreenPasses.valueBytes()).order(ByteOrder.LITTLE_ENDIAN), blankMask = blank,
           groups = Ref.fresh(Static, Nil) }
@@ -137,9 +138,11 @@ pub mod Render3d.WebGpuScreenPasses {
         let (vx, vy, vw, vh) = viewport;
         rp.setViewport(Int32.toFloat64(vx), Int32.toFloat64(vy), Int32.toFloat64(vw), Int32.toFloat64(vh), 0.0, 1.0);
         rp.setScissorRect(vx, vy, vw, vh);
-        rp.setPipeline(pipelineOf(sp, p#kind, format));
-        rp.setBindGroup(0, group);
-        rp.draw(3, 1, 0, 0);
+        pipelineOf(sp, p#kind, format) |> Option.forEach(pipeline -> {
+            rp.setPipeline(pipeline);
+            rp.setBindGroup(0, group);
+            rp.draw(3, 1, 0, 0)
+        });
         rp.end()
 
     /// SsaoValues（Render3d.ScreenPasses の頭の並び）を buffer へ書く。
@@ -154,20 +157,21 @@ pub mod Render3d.WebGpuScreenPasses {
         });
         sp#gpu.writeBuffer(buffer, 0i64, data, 0, Render3d.ScreenPasses.valueBytes())
 
-    /// 種類 kind・描き先の形式 format の pipeline（無ければ作る。ぼかしの 2 つは同じ module）。
-    def pipelineOf(sp: ScreenPasses, kind: ScreenPassKind, format: TextureFormat): RenderPipeline \ IO =
+    /// 種類 kind・描き先の形式 format の pipeline（無ければ作る。ぼかしの 2 つは同じ module。frag の字が無ければ None）。
+    def pipelineOf(sp: ScreenPasses, kind: ScreenPassKind, format: TextureFormat): Option[RenderPipeline] \ IO =
         let shared = sharedKindOf(kind);
         let key = ToString.toString(shared) + ":" + format.name();
         match Map.get(key, Ref.get(sp#pipelines)) {
-            case Some(p) => p
-            case None =>
+            case Some(p) => Some(p)
+            case None => moduleOf(sp, shared) |> Option.map(fragment -> {
                 let desc = new RenderPipelineDesc("fge scene3d screen " + key);
                 discard desc.bindGroupLayout(sp#layout);
-                discard desc.vertex(sp#vertexModule, "vs_main").fragment(moduleOf(sp, shared), "fs_main");
+                discard desc.vertex(sp#vertexModule, "vs_main").fragment(fragment, "fs_main");
                 discard desc.colorTarget(format);
                 let made = sp#gpu.createRenderPipeline(desc);
                 Ref.put(Map.insert(key, made, Ref.get(sp#pipelines)), sp#pipelines);
                 made
+            })
         }
 
     /// ぼかしの縦は横と同じ frag（向きは uniform）。
@@ -176,13 +180,13 @@ pub mod Render3d.WebGpuScreenPasses {
         case other                  => other
     }
 
-    def moduleOf(sp: ScreenPasses, kind: ScreenPassKind): ShaderModule \ IO =
+    def moduleOf(sp: ScreenPasses, kind: ScreenPassKind): Option[ShaderModule] \ IO =
         let key = ToString.toString(kind);
         match Map.get(key, Ref.get(sp#modules)) {
             case Some(m) => m
             case None =>
-                let made = sp#gpu.createShaderModule("fge scene3d screen " + key,
-                                                     ShaderAst.Wgsl.fragment(Render3d.ScreenPasses.fragment(kind, Render3d.ScreenPasses.wgslBindings() :: Nil)));
+                let made = Render3d.ShaderLibrary.optionalWgsl(sp#shaders, Render3d.ShaderSourceKey.ScreenPassFragment(kind))
+                    |> Option.map(source -> sp#gpu.createShaderModule("fge scene3d screen " + key, source));
                 Ref.put(Map.insert(key, made, Ref.get(sp#modules)), sp#modules);
                 made
         }
@@ -197,7 +201,8 @@ pub mod Render3d.WebGpuScreenPasses {
         afterSubmit(sp);
         Map.forEach((_, m) -> destroyMasks(m), Ref.get(sp#masks));
         Map.forEach((_, p) -> p.release(), Ref.get(sp#pipelines));
-        Map.forEach((_, m) -> m.release(), Ref.get(sp#modules));
+        Map.forEach((_, m) -> m |> Option.forEach(found -> found.release()), Ref.get(sp#modules));
+
         sp#vertexModule.release();
         sp#layout.release();
         sp#blankMask.destroy()

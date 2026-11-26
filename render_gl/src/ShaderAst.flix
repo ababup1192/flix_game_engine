@@ -444,18 +444,6 @@ pub mod ShaderAst {
         case None    => invalidOrBug("ShaderAst: ${if (lang == Lang.Glsl) "GLSL" else "WGSL"} の字を持たない式を出した")
     }
 
-    /// 字が括弧なしで演算子の子に置ける形か（名前・数・欄の読み・添字・呼び出しだけで、括弧の外に空白も演算子も無い）。
-    def isAtomText(text: String): Bool =
-        let step = (acc: (Int32, Bool), ch: Char) -> {
-            let (depth, ok) = acc;
-            if (not ok) acc
-            else if (ch == '(' or ch == '[') (depth + 1, true)
-            else if (ch == ')' or ch == ']') (depth - 1, true)
-            else if (depth > 0) acc
-            else (depth, Char.isLetter(ch) or Char.isDigit(ch) or ch == '_' or ch == '.')
-        };
-        not String.isEmpty(text) and snd(String.toList(text) |> List.foldLeft(step, (0, true)))
-
     def bin(op: BinOp, a1: Node, b1: Node, t: Ty): Expr[r] = wrap(Node.Bin(op, a1, b1, t))
 
     /// 同じ型どうしの四則。
@@ -1079,7 +1067,7 @@ pub mod ShaderAst {
         case Node.Intrinsic(Intrinsic.PixelNdc(_, _, _), _) => if (lang == Lang.Glsl) precOf(BinOp.Sub) else atomPrec()
         case Node.Raw(glsl, wgsl, _, _, _)    =>
             let text = if (lang == Lang.Glsl) glsl else wgsl;
-            if (text |> Option.forAll(isAtomText)) atomPrec() else 0
+            if (text |> Option.forAll(ShaderText.isAtomText)) atomPrec() else 0
         case _                                => atomPrec()
     }
 

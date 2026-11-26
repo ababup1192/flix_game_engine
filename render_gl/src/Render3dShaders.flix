@@ -464,11 +464,17 @@ pub mod Render3dShaders {
 
     /// GLSL の材質の部品 m の MaterialPart（surface の vUv の置き方を部品の前に置く）。
     pub def glslMaterialPart(m: ShaderGen.MaterialGlsl, surface: Render3d.ProgramKey.ProgramKind): MaterialPart =
-        materialPartOf(ShaderAst.Lang.Glsl, m#uniforms + m#functions, m#cutoutAlpha, not List.isEmpty(m#texReads), glslUvGlobal(surface))
+        materialPartOf(ShaderAst.Lang.Glsl, Render3d.ShaderLibrary.glslPartText(m), m#cutoutAlpha, not List.isEmpty(m#texReads), glslUvGlobal(surface))
 
     /// WGSL の材質の部品 m の MaterialPart。
     pub def wgslMaterialPart(m: ShaderGen.Wgsl.MaterialWgsl): MaterialPart =
-        materialPartOf(ShaderAst.Lang.Wgsl, m#declarations + m#functions, m#cutoutAlpha, not List.isEmpty(m#texReads), Nil)
+        materialPartOf(ShaderAst.Lang.Wgsl, Render3d.ShaderLibrary.wgslPartText(m), m#cutoutAlpha, not List.isEmpty(m#texReads), Nil)
+
+    /// 材質の部品の所が空いた MaterialPart（部品の字は materialPartPlaceholder・cutout の α は名前 cutoutAlphaPlaceholder）。
+    /// readsTextures = 入れる部品が絵を読むか（sg_texMip の定義の在りかが変わる）。
+    pub def templateMaterialPart(lang: ShaderAst.Lang, surface: Render3d.ProgramKey.ProgramKind, readsTextures: Bool): MaterialPart =
+        let deps = if (lang == ShaderAst.Lang.Glsl) glslUvGlobal(surface) else Nil;
+        materialPartOf(lang, Render3d.ShaderLibrary.materialPartPlaceholder(), Render3d.ShaderLibrary.cutoutAlphaPlaceholder(), readsTextures, deps)
 
     /// uv つきで法線マップを当てる版か（uv の無い形は法線マップを読まない）。
     pub def isNormalMapped(surface: Render3d.ProgramKey.ProgramKind): Bool = surface#uv and surface#normalMap
@@ -532,7 +538,16 @@ pub mod Render3dShaders {
 
     /// 変種 v の feature（表の行の順に当てる）。
     pub def featureOf(v: Render3d.ProgramKey.ShaderVariant): ShaderFeature =
-        Render3d.ProgramKey.rowsOf(v) |> List.foldLeft((acc, row) -> andThen(acc, row#feature), noFeature())
+        Render3d.ProgramKey.rowsOf(v) |> List.foldLeft((acc, row) -> andThen(acc, featureOfFlag(row#flag)), noFeature())
+
+    /// 変種のフラグ flag の feature。
+    pub def featureOfFlag(flag: Render3d.ProgramKey.VariantFlag): ShaderFeature = match flag {
+        case Render3d.ProgramKey.VariantFlag.PointShadows     => pointShadowsFeature()
+        case Render3d.ProgramKey.VariantFlag.PhysicalUnits    => noFeature()
+        case Render3d.ProgramKey.VariantFlag.Psx              => psxFeature()
+        case Render3d.ProgramKey.VariantFlag.SkyIrradiance    => noFeature()
+        case Render3d.ProgramKey.VariantFlag.AmbientOcclusion => screenAoFeature()
+    }
 
     /// スポットの影を受けないプログラムの spotShadow（いつも 1）。
     pub def spotShadowUnlit(): Definition =
@@ -821,4 +836,54 @@ pub mod Render3dShaders {
     pub def blitFragment(): ShaderAst.FragmentEntry =
         { inputName = "R3dBlitIn", declarations = Nil, inputs = blitUvVarying() :: Nil, writesColor = true,
           body = ShaderAst.emit(imageTexel(ShaderAst.varying(Vec2.Vec2, blitUvVarying()))) :: Nil }
+
+    // ── 字を引く API（PC の実体） ──
+
+    /// その場で木から字を作る API（PC の描き手と、ブラウザ版の表を作る道具が使う）。材質の frag は部品の所が空いた字。
+    // WhyNot: 一度作った字を控えない — 描き手が組んだプログラムと shader module を鍵ごとに控えるので、同じ鍵を 2 度引かない。
+    pub def makeRuntimeProvider(): Render3d.ShaderSourceProvider = { glsl = glslSourceOf, wgsl = wgslSourceOf }
+
+    def glslSourceOf(key: Render3d.ShaderSourceKey): Option[String] = match key {
+        case Render3d.ShaderSourceKey.LitVertex(skinned, psx)   =>
+            Some(Render3dGlsl.litVertexSourceFor(skinned, { psx = psx | Render3d.ProgramKey.defaultShaderVariant() }))
+        case Render3d.ShaderSourceKey.LitFragment(v)            => Some(Render3dGlsl.litFragmentSourceFor(v))
+        case Render3d.ShaderSourceKey.BillboardVertex(v, right) =>
+            if (right == BillboardRight.ByUniform) Some(Render3dGlsl.billboardVertexSourceFor(v)) else None
+        case Render3d.ShaderSourceKey.BillboardFragment(v)      => Some(Render3dGlsl.billboardFragmentSourceFor(v))
+        case Render3d.ShaderSourceKey.BillboardShadowFragment   => None
+        case Render3d.ShaderSourceKey.SkyVertex                 => Some(Render3dGlsl.skyVertexSource())
+        case Render3d.ShaderSourceKey.SkyFragment               => Some(Render3dGlsl.skyFragmentSource())
+        case Render3d.ShaderSourceKey.DepthFragment             => Some(Render3dGlsl.depthFragmentSource())
+        case Render3d.ShaderSourceKey.BlitVertex                => Some(Render3dGlsl.blitVertexSource())
+        case Render3d.ShaderSourceKey.BlitFragment              => Some(Render3dGlsl.blitFragmentSource())
+        case Render3d.ShaderSourceKey.MeshVertex(skinned)       =>
+            Some(if (skinned) Render3dGlsl.skinnedMeshVertexSource() else Render3dGlsl.meshVertexSource())
+        case Render3d.ShaderSourceKey.MaterialVertex(k)         =>
+            Some(Render3dGlsl.materialVertexSourceFor({ skinned = k#skinned, uv = k#uv, lightmap = k#lightmap }, k#psx))
+        case Render3d.ShaderSourceKey.MaterialFragmentTemplate(kind, readsTextures) => Some(Render3dGlsl.materialFragmentTemplate(kind, readsTextures))
+        case Render3d.ShaderSourceKey.ScreenPassFragment(kind)  => Some(ShaderAst.Glsl.fragment(Render3d.ScreenPasses.fragment(kind, Nil)))
+    }
+
+    def wgslSourceOf(key: Render3d.ShaderSourceKey): Option[String] = match key {
+        case Render3d.ShaderSourceKey.LitVertex(skinned, psx)   => Some(Render3dWgsl.litVertexSourceFor(skinned, psx))
+        case Render3d.ShaderSourceKey.LitFragment(v)            => Some(Render3dWgsl.litFragmentSourceFor(v))
+        case Render3d.ShaderSourceKey.BillboardVertex(v, right) => match right {
+            case BillboardRight.Camera       => Some(Render3dWgsl.billboardVertexSourceFor(v))
+            case BillboardRight.PerBillboard =>
+                if (Render3d.ProgramKey.variantKeyOf(v) == "") Some(Render3dWgsl.billboardRowRightVertexSource()) else None
+            case BillboardRight.ByUniform    => None
+        }
+        case Render3d.ShaderSourceKey.BillboardFragment(v)      => Some(Render3dWgsl.billboardFragmentSourceFor(v))
+        case Render3d.ShaderSourceKey.BillboardShadowFragment   => Some(Render3dWgsl.billboardShadowFragmentSource())
+        case Render3d.ShaderSourceKey.SkyVertex                 => Some(Render3dWgsl.skyVertexSource())
+        case Render3d.ShaderSourceKey.SkyFragment               => Some(Render3dWgsl.skyFragmentSource())
+        case Render3d.ShaderSourceKey.DepthFragment             => Some(Render3dWgsl.depthFragmentSource())
+        case Render3d.ShaderSourceKey.BlitVertex                => None
+        case Render3d.ShaderSourceKey.BlitFragment              => None
+        case Render3d.ShaderSourceKey.MeshVertex(_)             => None
+        case Render3d.ShaderSourceKey.MaterialVertex(k)         => Some(Render3dWgsl.materialVertexSourceFor(k#uv, k#lightmap, k#skinned, k#psx))
+        case Render3d.ShaderSourceKey.MaterialFragmentTemplate(kind, readsTextures) => Some(Render3dWgsl.materialFragmentTemplate(kind, readsTextures))
+        case Render3d.ShaderSourceKey.ScreenPassFragment(kind)  =>
+            Some(ShaderAst.Wgsl.fragment(Render3d.ScreenPasses.fragment(kind, Render3d.ScreenPasses.wgslBindings() :: Nil)))
+    }
 }

@@ -443,6 +443,14 @@
       "hint": "3D の描き手のシェーダーの入口を字で手で書かない（GLSL と WGSL の式が分かれる）。本文は Render3dShaders に ShaderAst の木で書き、入口は ShaderAst の FragmentEntry / VertexEntry にして ShaderAst.Glsl / ShaderAst.Wgsl の fragment・vertex で出す（手書きのまま残すのは置いた物の頂点の Render3dGlsl.MeshVertex・Render3dWgsl.MeshVertex と、WebGPU の道具の pass の Render3d.WebGpuMipmaps・Render3d.WebGpuShadowCache）"
     },
     {
+      "id": "render3d-shader-source-direct",
+      "suffixes": [".flix"],
+      "prefixes": ["render_gl/src/Render3d/", "render_gl/src/Render3d.flix"],
+      "rawLine": true,
+      "pattern": "(?:Render3d(?:Glsl|Wgsl)\\.\\w+Source(?:For)?|Render3d(?:Glsl|Wgsl)\\.materialFragmentTemplate|ShaderAst\\.(?:Glsl|Wgsl)\\.(?:fragment|vertex|print))\\(",
+      "hint": "3D の描き手はシェーダーの字を直に作らない（ブラウザの wasm に木と printer が残る）。字は描き手が持つ API（Render3d.ShaderLibrary の glslOrBug・optionalWgsl・materialGlsl など）から鍵（Render3d.ShaderSourceKey）で引く。新しい pass は ShaderSourceKey に case を足し、Render3dShaders.makeRuntimeProvider の match に足す。PC の既定の APIを作るのは Render3d.makeRenderer と Render3d.WebGpuRenderer.createWith だけ"
+    },
+    {
       "id": "scene3d-linear-color-flag",
       "suffixes": ["project.json"],
       "skip": ["lib/", "build/"],

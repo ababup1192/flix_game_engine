@@ -79,7 +79,7 @@ pub mod WebLayer {
         let makeScenes = (gpu, pasteLayout, imageLayout) ->
             Render3d.WebGpuRenderer.makeScenesWithPlatformImages(
                 { has = (key, width, height) -> BrowserWebGpu.hasPlatformImage(key, width, height),
-                  copy = (key, texture) -> BrowserWebGpu.copyPlatformImage(gpu, key, texture) }, gpu, pasteLayout, imageLayout);
+                  copy = (key, texture) -> BrowserWebGpu.copyPlatformImage(gpu, key, texture) }, Render3dShaders.makeRuntimeProvider(), gpu, pasteLayout, imageLayout);
         if (Browser.backendRequest() == "webgpu") withWebGpuOrGl(makeRenderer, makeScenes, config, g)
         else withWeb(makeRenderer, config, g)
 

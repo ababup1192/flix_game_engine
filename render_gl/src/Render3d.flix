@@ -25,8 +25,7 @@
 mod Render3d {
     import fge.gl.GlConst
     import fge.gl.GlContext
-    use Render3dGlsl.{meshVertexSource, skinnedMeshVertexSource, litVertexSource, litFragmentSource,
-                       depthFragmentSource, billboardVertexSource, billboardFragmentSource, skyVertexSource, skyFragmentSource, blitVertexSource, blitFragmentSource}
+    use Render3d.ShaderLibrary.{ShaderSources, glslOrBug}
     use Render3d.Light.{lightDataOf, putLights}
     use Render3d.ProgramKey.{ProgramKind, ShaderVariant, defaultShaderVariant, shaderVariantOf, passVariantOf, billboardVariantOf, lightVariantOf, variantKeyOf, materialKey}
     use Render3d.Batch.{MaterialBatch, MeshBatch}
@@ -39,6 +38,30 @@ mod Render3d {
     use Render3d.Uniforms.{R3dUniform, UniformLocations, put1f, put1i, put2f, put3f, put4f, putMatrix4}
 
     // ── 型 ──
+
+    /// シェーダーの字の種類（言語を持たない鍵・鍵の字は Render3d.ShaderSourceKey.toKeyString）。新しい pass のシェーダーは case を足し、
+    /// 字を引く APIの 2 つの実体（Render3dShaders.makeRuntimeProvider と書き出しの表）の match に足す。LitVertex(骨つきか, PS1 風か)・LitFragment(場面の変種)・BillboardVertex(変種, 板の横の向き)・BillboardFragment(ビルボードの変種)・
+    /// MeshVertex(骨つきか)・MaterialVertex(材質の頂点の形)・MaterialFragmentTemplate(材質の形, 材質が絵を読むか)・ScreenPassFragment(画面の上の pass)。
+    /// MaterialFragmentTemplate の字は材質の部品の所が空いた物（Render3d.ShaderLibrary.withMaterialPart で埋める）。
+    pub enum ShaderSourceKey {
+        case LitVertex(Bool, Bool)
+        case LitFragment(Render3d.ProgramKey.ShaderVariant)
+        case BillboardVertex(Render3d.ProgramKey.ShaderVariant, Render3dShaders.BillboardRight)
+        case BillboardFragment(Render3d.ProgramKey.ShaderVariant)
+        case BillboardShadowFragment
+        case SkyVertex
+        case SkyFragment
+        case DepthFragment
+        case BlitVertex
+        case BlitFragment
+        case MeshVertex(Bool)
+        case MaterialVertex({ skinned = Bool, uv = Bool, lightmap = Bool, psx = Bool })
+        case MaterialFragmentTemplate(Render3d.ProgramKey.ProgramKind, Bool)
+        case ScreenPassFragment(Render3d.ScreenPasses.ScreenPassKind)
+    }
+
+    /// 鍵 → 字の API。その言語に無い種類（GL だけの blit・WebGPU だけのビルボードの影の frag など）と、表に無い鍵は None。
+    pub type alias ShaderSourceProvider = { glsl = ShaderSourceKey -> Option[String], wgsl = ShaderSourceKey -> Option[String] }
 
     /// GPU に置いたメッシュ 1 つ（Render3d.MeshTable の番号で引く）。vbo は位置・法線・色の 9 個ずつを交互に並べた物。
     /// skin = ジョイントの番号と重みの VBO（ジョイントの無い形は None）。
@@ -248,6 +271,8 @@ mod Render3d {
         planner = Render3d.ScenePlan.Planner,
         // 動かない物の集まりの持ち越し（Render3d.GlStatic）。
         statics = Render3d.GlStatic.StaticCache,
+        // シェーダーの字を引く API（PC はその場で作る・ブラウザは書き出しの時に作った表）。
+        shaders = ShaderSources,
         // 続けて描く MultiMesh の詰めた並びの控え（Render3d.InstanceValues.MultiCarry）。
         multiCarry = Render3d.InstanceValues.MultiCarry
     }
@@ -303,8 +328,8 @@ mod Render3d {
         { megabytes = config#scene3dTextureBudgetMB, count = config#scene3dTextureBudgetCount }
 
     /// 3D の描き手を、空の置き場で作る（textureBudget = 場面の絵の置き場の上限）。
-    def fresh(textureBudget: TextureBudget, drawMode: DrawMode): State \ IO =
-        { textureByteBudget = Int32.toInt64(Int32.max(1, textureBudget#megabytes)) * 1048576i64,
+    def fresh(textureBudget: TextureBudget, drawMode: DrawMode, shaders: ShaderSources): State \ IO =
+        { shaders = shaders, textureByteBudget = Int32.toInt64(Int32.max(1, textureBudget#megabytes)) * 1048576i64,
           textureCountBudget = Int32.max(1, textureBudget#count), meshes = Render3d.MeshTable.fresh(), meshEntriesRef = Ref.fresh(Static, Map.empty()),
           uploadStreak = Array#{0, 0, 0} @ Static, materialStreak = Array#{0, 0, 0} @ Static, programsRef = Ref.fresh(Static, None),
           skinnedRef = Ref.fresh(Static, None), skyRef = Ref.fresh(Static, None), screenPasses = Render3d.GlScreenPasses.fresh(),
@@ -322,8 +347,17 @@ mod Render3d {
           planner = Render3d.ScenePlan.freshPlanner(drawMode), statics = Render3d.GlStatic.fresh(), multiCarry = Render3d.InstanceValues.freshMultiCarry() }
 
     /// 2D の描き手へ渡す 3D の描き手を、空の置き場で作る。場面の絵の置き場の上限は config（project.json）から読む。
+    /// シェーダーの字はその場で木から作る（環境変数 FLIX_GE_SHADER_VARIANTS があれば使った鍵を記録する・Render3d.ShaderLibrary.recordingFromEnv）。
     pub def makeRenderer(gl: GlContext, config: GameEngine.EngineConfig, drawMode: DrawMode): Scene3dRenderer.Renderer \ IO =
-        let state = fresh(textureBudgetOf(config), drawMode);
+        makeRendererFrom(gl, config, drawMode, Render3d.ShaderLibrary.recordingFromEnv(Render3dShaders.makeRuntimeProvider()))
+
+    /// makeRenderer の、シェーダーの字を provider から引く版（ブラウザの描き手は書き出しの時に作った表を渡す。記録しない）。
+    // WhyNot: makeRenderer に provider の引数を足して 1 本にしない — ブラウザの束から木で字を作る道（makeRuntimeProvider）へ届くと、wasm に木と printer が残る。
+    pub def makeRendererWith(gl: GlContext, config: GameEngine.EngineConfig, drawMode: DrawMode, provider: ShaderSourceProvider): Scene3dRenderer.Renderer \ IO =
+        makeRendererFrom(gl, config, drawMode, Render3d.ShaderLibrary.withoutRecording(provider))
+
+    def makeRendererFrom(gl: GlContext, config: GameEngine.EngineConfig, drawMode: DrawMode, shaders: ShaderSources): Scene3dRenderer.Renderer \ IO =
+        let state = fresh(textureBudgetOf(config), drawMode, shaders);
         { prepare = (gen, textureOf, dest, cmds) -> prepareNumbered(gl, state, gen, textureOf, dest, cmds),
           endFrame = gen -> endFrame(gl, state, gen),
           takeCounts = () -> takeCounts(state),
@@ -971,7 +1005,7 @@ mod Render3d {
         match Ref.get(state#programsRef) {
             case Some(p) => p
             case None =>
-                let made = buildPrograms(gl);
+                let made = buildPrograms(gl, state#shaders);
                 gl.activeTexture(GlConst.TEXTURE0 + blankTextureUnit());
                 gl.bindTexture(GlConst.TEXTURE_2D, blankTextureId(gl, state));
                 gl.activeTexture(GlConst.TEXTURE0);
@@ -979,11 +1013,14 @@ mod Render3d {
                 made
         }
 
-    def buildPrograms(gl: GlContext): Programs \ IO =
-        let lit = compileProgram(gl, litVertexSource(false), litFragmentSource(), "scene3d:lit");
-        let depth = compileProgram(gl, meshVertexSource(), depthFragmentSource(), "scene3d:depth");
-        let billboard = compileProgram(gl, billboardVertexSource(), billboardFragmentSource(), "scene3d:billboard");
-        let blit = compileProgram(gl, blitVertexSource(), blitFragmentSource(), "scene3d:blit");
+    def buildPrograms(gl: GlContext, shaders: ShaderSources): Programs \ IO =
+        let v = defaultShaderVariant();
+        let glsl = glslOrBug(shaders);
+        let lit = compileProgram(gl, glsl(ShaderSourceKey.LitVertex(false, false)), glsl(ShaderSourceKey.LitFragment(v)), "scene3d:lit");
+        let depth = compileProgram(gl, glsl(ShaderSourceKey.MeshVertex(false)), glsl(ShaderSourceKey.DepthFragment), "scene3d:depth");
+        let billboard = compileProgram(gl, glsl(ShaderSourceKey.BillboardVertex(v, Render3dShaders.BillboardRight.ByUniform)), glsl(ShaderSourceKey.BillboardFragment(v)),
+                                       "scene3d:billboard");
+        let blit = compileProgram(gl, glsl(ShaderSourceKey.BlitVertex), glsl(ShaderSourceKey.BlitFragment), "scene3d:blit");
         bindDataTextureUnits(gl, lit);
         bindDataTextureUnits(gl, depth);
         bindUnits(gl, billboard, (R3dUniform.Image, 0) :: Nil);
@@ -997,7 +1034,7 @@ mod Render3d {
         match Ref.get(state#skyRef) {
             case Some(p) => p
             case None =>
-                let made = compileProgram(gl, skyVertexSource(), skyFragmentSource(), "scene3d:sky");
+                let made = compileProgram(gl, glslOrBug(state#shaders, ShaderSourceKey.SkyVertex), glslOrBug(state#shaders, ShaderSourceKey.SkyFragment), "scene3d:sky");
                 bindUnits(gl, made, (R3dUniform.EnvMap, environmentTextureUnit()) :: Nil);
                 Ref.put(Some(made), state#skyRef);
                 made
@@ -1008,14 +1045,16 @@ mod Render3d {
         match Ref.get(state#skinnedRef) {
             case Some(p) => p
             case None =>
-                let made = buildSkinnedPrograms(gl);
+                let made = buildSkinnedPrograms(gl, state#shaders);
                 Ref.put(Some(made), state#skinnedRef);
                 made
         }
 
-    def buildSkinnedPrograms(gl: GlContext): SkinnedPrograms \ IO =
-        let lit = compileProgram(gl, litVertexSource(true), litFragmentSource(), "scene3d:lit:skin");
-        let depth = compileProgram(gl, skinnedMeshVertexSource(), depthFragmentSource(), "scene3d:depth:skin");
+    def buildSkinnedPrograms(gl: GlContext, shaders: ShaderSources): SkinnedPrograms \ IO =
+        let glsl = glslOrBug(shaders);
+        let lit = compileProgram(gl, glsl(ShaderSourceKey.LitVertex(true, false)), glsl(ShaderSourceKey.LitFragment(defaultShaderVariant())), "scene3d:lit:skin");
+        let depth = compileProgram(gl, glsl(ShaderSourceKey.MeshVertex(true)), glsl(ShaderSourceKey.DepthFragment), "scene3d:depth:skin");
+
         bindDataTextureUnits(gl, lit);
         bindDataTextureUnits(gl, depth);
         { lit = lit, depth = depth }

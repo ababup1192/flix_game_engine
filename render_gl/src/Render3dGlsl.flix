@@ -76,6 +76,11 @@ pub mod Render3dGlsl {
     pub def materialFragmentSource(glsl: ShaderGen.MaterialGlsl, surface: Render3d.ProgramKey.ProgramKind): String =
         ShaderAst.Glsl.fragment(Render3dShaders.materialFragment(surface, Render3dShaders.glslMaterialPart(glsl, surface), Nil))
 
+    /// materialFragmentSource の、材質の部品の所が空いた字（Render3d.ShaderLibrary.withMaterialPart で GLSL の材質の部品を入れる）。
+    /// readsTextures = 入れる部品が絵を読むか。
+    pub def materialFragmentTemplate(surface: Render3d.ProgramKey.ProgramKind, readsTextures: Bool): String =
+        ShaderAst.Glsl.fragment(Render3dShaders.materialFragment(surface, Render3dShaders.templateMaterialPart(ShaderAst.Lang.Glsl, surface, readsTextures), Nil))
+
     /// metallic と roughness を持つ材質の色 pbrAt(p, n, albedo × tint, 拡散の光, vec3(metallic, roughness, 0), 映り込み)（LightModel3d.pbrModel の木から作る）と、
     /// それが読む環境マップの読みと、かすみ → emission の組み立て r3d_surfaceOutLit(pbrAt の色, emission, intensity, p)。
     /// 色 = albedo × (1 − metallic) × light + 鏡面 + 映り込みをかすみに通してから、線形へ戻した emission × intensity を足して画面の値へ戻した物

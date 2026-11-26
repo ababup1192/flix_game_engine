@@ -27,7 +27,7 @@ mod Render3d.WebGpuMipmaps.TestWebGpuMipmapsDawn {
         let src = gpu.createTexture("test mip source", tex#width, tex#height, TextureFormat.RGBA8_UNORM,
                                     Int32.bitwiseOr(TextureUsage.TEXTURE_BINDING, TextureUsage.COPY_DST), 1, 1);
         gpu.writeTexture(src, 0, 0, 0, tex#width, tex#height, rgbaBytes(tex#pixels), 0, tex#width * 4);
-        let mm = Render3d.WebGpuMipmaps.create(gpu);
+        let mm = Render3d.WebGpuMipmaps.create(gpu, Render3d.ShaderLibrary.withoutRecording(Render3dShaders.makeRuntimeProvider()));
         let encoder = gpu.createCommandEncoder("test mip");
         let copy = Render3d.WebGpuMipmaps.copyOf(mm, { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()) }, "test mip copy", src, average);
         gpu.submit(encoder.finish());
@@ -124,7 +124,7 @@ mod Render3d.WebGpuMipmaps.TestWebGpuMipmapsDawn {
     /// 写す口 images を付けた材質の置き場へ、Dawn で機種の側の絵 key（画素 tex）を上げた答え。
     /// levels = 上がればレベルごとに読み戻した ARGB の列・copied = copy へ渡った key の列・said = 標準エラーへ出た知らせ。
     def uploadPlatform(gpu: WebGpu, images: Option[Render3d.WebGpuMaterials.PlatformImages], key: String, tex: ShaderEval.TexData): { levels = Option[List[Vector[Int32]]], copied = List[String], said = String } \ IO =
-        let materials = Render3d.WebGpuMaterials.create(gpu, Render3d.WebGpuMaterials.ValuesBinding.Uniform);
+        let materials = Render3d.WebGpuMaterials.create(gpu, Render3d.WebGpuMaterials.ValuesBinding.Uniform, Render3d.ShaderLibrary.withoutRecording(Render3dShaders.makeRuntimeProvider()));
         let keys = Ref.fresh(Static, Nil);
         images |> Option.forEach(i -> Render3d.WebGpuMaterials.setPlatformImages({ copy = (k, texture) -> { Ref.put(k :: Ref.get(keys), keys); i#copy(k, texture) } | i }, materials));
         let encoder = gpu.createCommandEncoder("test platform image");

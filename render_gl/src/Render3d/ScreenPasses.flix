@@ -260,7 +260,4 @@ pub mod Render3d.ScreenPasses {
             case ScreenPassKind.ShowAo  => emitGray(screenMaskAt(maskTex(), p, zw(target()))) :: Nil
         };
         { inputName = "SsaoIn", declarations = bindings, inputs = Nil, body = body, writesColor = true }
-
-    /// 全部の画面の三角形の vertex の入口（空の vertex と同じ）。
-    pub def vertex(): ShaderAst.VertexEntry = Render3dShaders.skyVertex()
 }
