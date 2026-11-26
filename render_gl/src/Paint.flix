@@ -82,7 +82,7 @@ mod RenderPaint {
         // 最後に画面へ塗ったコマの命令（リサイズの描き直し・LRU の pin・注釈のスクショ）。
         lastFrameHolder = Array[Frame, Static],
         // 1 コマぶんの診断（setDiagnosticsEnabled の間だけ Some。consumeDiagnostics が取り出す）。
-        diagnosticsRef = Ref[Option[FrameDiagnostics.Diagnostics], Static],
+        diagnosticsRef = RenderPaint.Internal.DiagnosticsCollector.Collector,
         // 起動から作ったシェーダーと消したシェーダーの数（[作った, 消した]。診断の liveShaders の元）。
         shaderLifeHolder = Array[Int32, Static],
         // 同じ名前で作り直して鍵から外れた program（使われなくなったら evictShaderPrograms が消す）。
@@ -253,7 +253,7 @@ mod RenderPaint {
           targetWarnedRef = Ref.fresh(Static, Set.empty()), keepHistory = true,
           registryRef = registryRef, textureKeyRef = textureKeyRef,
           staticCache = staticCache, staticVbos = Ref.fresh(Static, Map.empty()), lastFrameHolder = Array#{emptyFrame()} @ Static,
-          diagnosticsRef = Ref.fresh(Static, None), shaderLifeHolder = Array#{0, 0} @ Static,
+          diagnosticsRef = RenderPaint.Internal.DiagnosticsCollector.fresh(), shaderLifeHolder = Array#{0, 0} @ Static,
           retiredProgramsRef = Ref.fresh(Static, Set.empty()), gpuTimer = cfg#gpuTimer }
 
     // ── 1 コマ塗る ──
@@ -716,27 +716,17 @@ mod RenderPaint {
 
     /// 診断を集めている時だけ、このコマの診断を f で書き換える（集めていなければ f を呼ばない）。
     pub def noteDiagnostics(paint: Paint, f: FrameDiagnostics.Diagnostics -> FrameDiagnostics.Diagnostics): Unit \ IO =
-        match Ref.get(paint#diagnosticsRef) {
-            case Some(d) => Ref.put(Some(f(d)), paint#diagnosticsRef)
-            case None    => ()
-        }
+        RenderPaint.Internal.DiagnosticsCollector.note(paint#diagnosticsRef, f)
 
     pub def setDiagnosticsEnabled(paint: Paint, on: Bool): Unit \ IO =
-        Ref.put(if (on) Some(FrameDiagnostics.empty()) else None, paint#diagnosticsRef)
+        RenderPaint.Internal.DiagnosticsCollector.setEnabled(paint#diagnosticsRef, on)
 
     /// 溜まった診断を取り出して空に戻す。liveShaders は起動からの作った数 − 消した数・draw2dCounts は前に取り出してから画面へ塗り終えたコマの数・scene3dCounts は前に取り出してからの数。
-    /// shaderBuilds は 2D のシェーダーの後ろに 3D の材質のプログラムを足す（liveShaders には 3D の材質を数えない）。
     pub def consumeDiagnostics(paint: Paint): FrameDiagnostics.Diagnostics \ IO =
         let counts = paint#scene3d#takeCounts();
         let draw2d = RenderDrawCounts.take(paint#frameArgsBase#drawCounts);
-        match Ref.get(paint#diagnosticsRef) {
-            case None    => FrameDiagnostics.empty()
-            case Some(d) =>
-                Ref.put(Some(FrameDiagnostics.empty()), paint#diagnosticsRef);
-                let live = Array.get(0, paint#shaderLifeHolder) - Array.get(1, paint#shaderLifeHolder);
-                { shaderBuilds = List.append(List.reverse(d#shaderBuilds), counts#materialBuilds), textureUploads = List.reverse(d#textureUploads), liveShaders = live,
-                  draw2dCounts = draw2d, scene3dCounts = counts | d }
-        }
+        let live = Array.get(0, paint#shaderLifeHolder) - Array.get(1, paint#shaderLifeHolder);
+        RenderPaint.Internal.DiagnosticsCollector.take(paint#diagnosticsRef, draw2d, counts, live)
 
     /// 塗り（submit = 命令を出し終えるまで）と入れ替え（swap）の時間を診断に足す。呼ぶのは renderCommands（塗り）と presentFrame（swap）。
     pub def noteFrame(paint: Paint, submitNs: Int64, swapNs: Int64, drawItems: Unit -> Int32): Unit \ IO =

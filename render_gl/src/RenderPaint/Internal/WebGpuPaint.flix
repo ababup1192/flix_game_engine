@@ -48,6 +48,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     use RenderFrame.Internal.RenderList
     use RenderFrame.Internal.RenderList.{DepthStencil, PassHistory, PassSpec}
     use RenderFrame.Internal.WebGpuRows
+    use RenderPaint.Internal.DiagnosticsCollector
     use RenderPaint.Internal.SkippedDraws
     use RenderPaint.Internal.TargetTable
     use RenderPaint.Internal.TextureTable
@@ -141,7 +142,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             msaaWarned = Ref[Set[String], Static],
             // まだ描けずに飛ばした物の種類ごとの回数。
             skips = SkippedDraws.Counts,
-            diagnosticsRef = Ref[Option[FrameDiagnostics.Diagnostics], Static],
+            diagnosticsRef = DiagnosticsCollector.Collector,
             drawCounts = RenderDrawCounts.Holder,
             // 3D の場面を描く所（2D の pass の前に場面を自分の texture へ描き、貼る行で貼る）。
             scenes3d = Render3d.WebGpuRenderer.Scenes,
@@ -229,7 +230,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             encoder = Array#{(None: Option[CommandEncoder])} @ Static,
             frameCounters = Array#{0, 0, 0, 0, 0, 0} @ Static,
             texWarnLog = Ref.fresh(Static, Set.empty()), msaaWarned = Ref.fresh(Static, Set.empty()), skips = SkippedDraws.fresh(),
-            diagnosticsRef = Ref.fresh(Static, None), drawCounts = RenderDrawCounts.fresh(),
+            diagnosticsRef = DiagnosticsCollector.fresh(), drawCounts = RenderDrawCounts.fresh(),
             scenes3d = (cfg#scene3d)(gpu, pipes#sceneLayout, imageLayout),
             keepHistory = true, gpuTimer = WebGpuTimer.off()
         });
@@ -1049,20 +1050,13 @@ pub mod RenderPaint.Internal.WebGpuPaint {
 
     def noteDiagnostics(paint: Paint, f: FrameDiagnostics.Diagnostics -> FrameDiagnostics.Diagnostics): Unit \ IO =
         let PaintData.PaintData(p) = paint;
-        match Ref.get(p#diagnosticsRef) {
-            case Some(d) => Ref.put(Some(f(d)), p#diagnosticsRef)
-            case None    => ()
-        }
+        DiagnosticsCollector.note(p#diagnosticsRef, f)
 
+    // WhyNot: liveShaders を数えない — WebGPU の 2D は pipeline を作った数と消した数を持っていない。
     def consumeDiagnostics(paint: Paint): FrameDiagnostics.Diagnostics \ IO =
         let PaintData.PaintData(p) = paint;
         let draw2d = RenderDrawCounts.take(p#drawCounts);
-        match Ref.get(p#diagnosticsRef) {
-            case None    => FrameDiagnostics.empty()
-            case Some(d) =>
-                Ref.put(Some(FrameDiagnostics.empty()), p#diagnosticsRef);
-                { textureUploads = List.reverse(d#textureUploads), draw2dCounts = draw2d, scene3dCounts = (p#scenes3d#takeCounts)() | d }
-        }
+        DiagnosticsCollector.take(p#diagnosticsRef, draw2d, (p#scenes3d#takeCounts)(), 0)
 
     // ── handler ──
 
@@ -1158,7 +1152,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         run f() with handler Platform.Diagnostics {
             def setDiagnosticsEnabled(on, k) = {
                 let PaintData.PaintData(p) = paint;
-                Ref.put(if (on) Some(FrameDiagnostics.empty()) else None, p#diagnosticsRef);
+                DiagnosticsCollector.setEnabled(p#diagnosticsRef, on);
                 WebGpuTimer.setOn(p#gpuTimer, on);
                 k(())
             }

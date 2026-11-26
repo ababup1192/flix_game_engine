@@ -638,18 +638,29 @@ pub mod LwjglLayer {
         finishAfterSwap = Bool, screenPainted = Ref[Option[(Int64, Int64)], Static]
     }
 
+    /// GL と WebGPU のウィンドウが共有する欄（WindowState の中の GLFW の分）。
+    type alias GlfwWindow[r: RecordRow] = {
+        window = Int64, config = GameEngine.EngineConfig, looping = Array[Bool, Static], devices = LwjglInput.Devices, design = Vec2.Vec2,
+        cursors = GameEngine.Cursor -> Int64, lastCursor = Array[GameEngine.Cursor, Static],
+        mouseCaptured = Array[Bool, Static], cursorVisible = Array[Bool, Static],
+        fullscreen = Array[Bool, Static], originalWindowRect = Array[(Int32, Int32, Int32, Int32), Static] | r
+    }
+
     /// Platform.Window を GLFW の窓で受ける。
     def handleWindow(ws: WindowState, f: Unit -> a \ ef): a \ (ef - Platform.Window) + IO =
+        // WhyNot: 隠しウィンドウでは 1 に戻さない — 見えないウィンドウの swap は 1 回が 1 秒級に落ちる（ウィンドウを作る所と同じ理由）。
+        let onLoopStart = () -> GLFW.glfwSwapInterval(if (ws#hidden or ws#noVsync) 0 else 1);
+        handleGlfwWindow(ws, onLoopStart, () -> presentScreen(ws#present), f)
+
+    /// Platform.Window を GLFW の窓で受ける（GL と WebGPU で同じ物）。onLoopStart = 最初の pollEvents で 1 回だけ呼ぶ・present = presentFrame の中身。
+    def handleGlfwWindow(ws: GlfwWindow[r], onLoopStart: Unit -> Unit \ IO, present: Unit -> Unit \ IO, f: Unit -> a \ ef): a \ (ef - Platform.Window) + IO =
         let window = ws#window;
         let config = ws#config;
-        let fullscreenHolder = ws#fullscreen;
-        let originalWindowRectHolder = ws#originalWindowRect;
         run f() with handler Platform.Window {
             def pollEvents(k) = {
-                // WhyNot: 隠しウィンドウでは 1 に戻さない — 見えないウィンドウの swap は 1 回が 1 秒級に落ちる（ウィンドウを作る所と同じ理由）。
                 if (not Array.get(0, ws#looping)) {
                     Array.put(true, 0, ws#looping);
-                    GLFW.glfwSwapInterval(if (ws#hidden or ws#noVsync) 0 else 1)
+                    onLoopStart()
                 } else ();
                 LwjglInput.poll(ws#devices);
                 k(())
@@ -662,7 +673,7 @@ pub mod LwjglLayer {
             def getViewportRect(k) = k({ position = Vec2.zero(), size = ws#design })
             def getDisplay(k) = k(LwjglInput.displayOf(window, ws#design))
             def presentFrame(k) = {
-                presentScreen(ws#present);
+                present();
                 k(())
             }
             def setCursor(cursor, k) = {
@@ -683,13 +694,12 @@ pub mod LwjglLayer {
                 k(())
             }
             def setFullscreen(on, k) = {
-                applyFullscreen(window, config, fullscreenHolder, originalWindowRectHolder, on);
+                applyFullscreen(window, config, ws#fullscreen, ws#originalWindowRect, on);
                 k(())
             }
-            def isFullscreen(k) = k(Array.get(0, fullscreenHolder))
+            def isFullscreen(k) = k(Array.get(0, ws#fullscreen))
             def setDebugBadge(enabled, k) = {
-                let title = if (enabled) "${config#title} (Debug)" else config#title;
-                GLFW.glfwSetWindowTitle(window, title);
+                GLFW.glfwSetWindowTitle(window, if (enabled) "${config#title} (Debug)" else config#title);
                 k(())
             }
         }

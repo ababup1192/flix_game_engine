@@ -24,7 +24,7 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
     import java.lang.Throwable
     import java.nio.ByteBuffer
     import javax.imageio.ImageIO
-    use LwjglLayer.{announceFixedDt, applyFullscreen, applyMouseCaptured, closeAudio, cursorModeOf, frameShotLimit,
+    use LwjglLayer.{announceFixedDt, closeAudio, frameShotLimit, handleGlfwWindow,
                     handleAudio, handleFrameClock, handleLoadProgress, handleTasks, isNativeImage, openAudio, openCursors, saveAnnotationWith}
     use RenderPaint.Internal.WebGpuPaint
 
@@ -452,54 +452,7 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
             def saveAnnotation(req, k) = k(saveAnnotationWith(config, design, shutterSource, () -> frameImage(ps), req))
         }
 
-    /// Platform.Window を GLFW のウィンドウで受ける（カーソル・キャプチャ・フルスクリーンは GL の枝と同じ関数）。
+    /// Platform.Window を GLFW のウィンドウで受ける（GL の枝と同じ handler・画面へ出すのは塗ったコマがある時だけ）。
     def handleWindow(ws: WindowState, f: Unit -> a \ ef): a \ (ef - Platform.Window) + IO =
-        let window = ws#window;
-        let config = ws#config;
-        run f() with handler Platform.Window {
-            def pollEvents(k) = {
-                if (not Array.get(0, ws#looping)) {
-                    Array.put(true, 0, ws#looping);
-                    ws#onLoopStart()
-                } else ();
-                LwjglInput.poll(ws#devices);
-                k(())
-            }
-            def shouldClose(k) = k(GLFW.glfwWindowShouldClose(window))
-            def setShouldClose(close, k) = {
-                GLFW.glfwSetWindowShouldClose(window, close);
-                k()
-            }
-            def getViewportRect(k) = k({ position = Vec2.zero(), size = ws#design })
-            def getDisplay(k) = k(LwjglInput.displayOf(window, ws#design))
-            def presentFrame(k) = {
-                presentIfPainted(ws#present);
-                k(())
-            }
-            def setCursor(cursor, k) = {
-                if (Array.get(0, ws#lastCursor) != cursor) {
-                    GLFW.glfwSetCursor(window, (ws#cursors)(cursor));
-                    Array.put(cursor, 0, ws#lastCursor)
-                } else ();
-                k(())
-            }
-            def setCursorVisible(visible, k) = {
-                Array.put(visible, 0, ws#cursorVisible);
-                if (Array.get(0, ws#mouseCaptured)) () else GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, cursorModeOf(visible));
-                k(())
-            }
-            def setMouseCaptured(captured, k) = {
-                applyMouseCaptured(window, ws#devices, ws#mouseCaptured, ws#cursorVisible, captured);
-                k(())
-            }
-            def setFullscreen(on, k) = {
-                applyFullscreen(window, config, ws#fullscreen, ws#originalWindowRect, on);
-                k(())
-            }
-            def isFullscreen(k) = k(Array.get(0, ws#fullscreen))
-            def setDebugBadge(enabled, k) = {
-                GLFW.glfwSetWindowTitle(window, if (enabled) "${config#title} (Debug)" else config#title);
-                k(())
-            }
-        }
+        handleGlfwWindow(ws, ws#onLoopStart, () -> presentIfPainted(ws#present), f)
 }
