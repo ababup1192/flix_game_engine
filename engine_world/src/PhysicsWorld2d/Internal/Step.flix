@@ -56,7 +56,7 @@ pub mod PhysicsWorld2d.Internal.Step {
         packAll(d, (bs, dyn, kin, kinMoving, asleep), n);
         let voff = Array.repeat(rc, n + 1, 0);
         fillOffsets(d#shapes, voff, 0, n);
-        let geo = (Array.repeat(rc, Array.get(n, voff) * 4, 0.0), voff, PhysicsWorld2d.Internal.Narrowphase.scratch(rc));
+        let geo = (Array.repeat(rc, Array.get(n, voff) * 4, 0.0), voff, PhysicsWorld2d.Internal.Narrowphase.newScratch(rc));
         let box = Array.repeat(rc, n * 4, 0.0);
         fillGeometry(d#shapes, bs, geo, box, 0, n);
         let keys = Array.repeat(rc, n, 0i64);
@@ -412,7 +412,7 @@ pub mod PhysicsWorld2d.Internal.Step {
         let v = Array.get(i, bits);
         (Int32.bitwiseAnd(v, bitDyn()) != 0 and Int32.bitwiseAnd(v, bitAsleep()) == 0) or Int32.bitwiseAnd(v, bitKinMoving()) != 0
 
-    // WhyNot: 組ごとに呼ぶ def（pairOf・sensorPair・contactPair・narrowPair）を別の def の呼び出しで終えない — 末尾呼び出しは呼ぶたびに続きの入れ物を作る（後ろに () を置く）。
+    // WhyNot: 組ごとに通る def（ここから下と Narrowphase の当たり）を別の def の呼び出しで終えない — 末尾呼び出しは呼ぶたびに続きの入れ物を作る（後ろに () を置く）。
     /// 組 1 つ（a < b の番号）: 当たり層で絞り、sensor の組と押し合う組に分ける。
     def pairOf(st: Sweep[r], a: Int32, b: Int32): Unit \ r =
         let (bits, layer, mask, _, _, _, _, _, _, _) = st;
@@ -438,7 +438,8 @@ pub mod PhysicsWorld2d.Internal.Step {
             collide(st, a, b);
             let sc = scratchOf(st);
             if (anyTouching(sc, 0, PhysicsWorld2d.Internal.Narrowphase.countOf(sc))) MutList.push(key, sensed) else ()
-        }
+        };
+        ()
 
     def anyTouching(sc: PhysicsWorld2d.Internal.Narrowphase.Scratch[r], k: Int32, count: Int32): Bool \ r =
         if (k >= count) false
@@ -452,7 +453,8 @@ pub mod PhysicsWorld2d.Internal.Step {
         let vb = Array.get(b, voff);
         PhysicsWorld2d.Internal.Narrowphase.collideInto(sc, wv,
             Vector.get(a, shapes), va, Array.get(a + 1, voff) - va, Array.get(a * bStride(), bs), Array.get(a * bStride() + 1, bs),
-            Vector.get(b, shapes), vb, Array.get(b + 1, voff) - vb, Array.get(b * bStride(), bs), Array.get(b * bStride() + 1, bs))
+            Vector.get(b, shapes), vb, Array.get(b + 1, voff) - vb, Array.get(b * bStride(), bs), Array.get(b * bStride() + 1, bs));
+        ()
 
     /// 押し合う組: どちらも Dynamic でなければ捨て、どちらも止まっている（眠りか止まった Kinematic・Fixed）なら島だけつないで触れたままと見る。
     def contactPair(st: Sweep[r], a: Int32, b: Int32): Unit \ r =
@@ -490,7 +492,8 @@ pub mod PhysicsWorld2d.Internal.Step {
             MutList.push(count, mSpans);
             pushPoints(found, sc, a, b, key, 0, count);
             MutList.push(nearestOf(sc, 0, count, Float64.maxValue()), mNearest)
-        }
+        };
+        ()
 
     def pushPoints(found: Found[r], sc: PhysicsWorld2d.Internal.Narrowphase.Scratch[r], a: Int32, b: Int32, key: Int64, k: Int32, count: Int32): Unit \ r =
         if (k >= count) ()

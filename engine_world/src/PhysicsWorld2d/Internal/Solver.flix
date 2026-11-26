@@ -267,7 +267,7 @@ pub mod PhysicsWorld2d.Internal.Solver {
     /// 点 k の法線（ばねで柔らかくした押し返し）と摩擦（法線の衝撃 × 摩擦係数で挟む・接線は (ny, −nx)）を 1 回ずつ解く。
     /// 今の離れ = 刻みの頭の離れ + (b の点の動き − a の点の動き)·n（体の点の動き = 刻みの頭の腕が刻みの頭から動いた量）。
     // WhyNot: 離れ・点の動き・相対の速さを小さな def に分けない — 値を返す def は呼ぶたびに戻り値の入れ物を、タプルを返す def はさらにタプルを作り、
-    // 点の数 × 解く回数（1 刻み 2 万回あまり）の割り当てがブラウザ版でそのまま時間に出る。式の並びは分けていた時と同じ（足す順を変えると指紋が変わる）。
+    // 点の数 × 解く回数（1 刻み 2 万回あまり）の割り当てがブラウザ版でそのまま時間に出る。式の並びも組み替えない — 足す順が変わると指紋が変わる。
     def solvePoint(bs: Array[Float64, r], ps: Array[Float64, r], pab: Array[Int32, r], soft: Soft, useBias: Bool, k: Int32): Unit \ r =
         let o = k * sStride();
         let oa = Array.get(k * 2, pab) * bStride();

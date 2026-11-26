@@ -9,12 +9,12 @@ pub mod PhysicsWorld2d.Internal.Narrowphase {
     // WhyNot: record にしない — 組ごとに作って欄を引くので、名前で探す重さが乗る。
     pub type alias Pose = (Float64, Float64, Float64, Float64)
 
-    /// 当たりの出し先: 点の欄（stride 5: nx・ny・px・py・separation。2 点まで）・整数の欄（0〜1 点ごとの特徴の番号・2 点の数・3〜4 切り取る線分の端の番号）・
-    /// 途中の値（0〜1 輪が返す値・2〜7 切り取る線分の x1・y1・(空き)・x2・y2・(空き)）。separation が負なら食い込み。特徴は warm start の鍵の片側。
-    // WhyNot: 点の List やタプル・Option を返さない — 値を返す def は呼ぶたびに入れ物を作り、組の数 × 辺の数だけの割り当てがブラウザ版でそのまま時間に出る。
+    /// 当たりの出し先: 点の欄（stride 5: nx・ny・px・py・separation。2 点まで）・整数の欄（0〜1 点ごとの特徴の番号・2 点の数）・
+    /// 途中の値（0 一番浅い辺の離れ・1 辺の一番内側の深さ・2〜5 切り取る線分の x1・y1・x2・y2）。separation が負なら食い込み。特徴は warm start の鍵の片側。
+    // WhyNot: 点の List やタプル・Option を返さない — 返すたびに入れ物を作り、組の数 × 辺の数だけの割り当てがブラウザ版でそのまま時間に出る。
     pub type alias Scratch[r: Region] = (Array[Float64, r], Array[Int32, r], Array[Float64, r])
 
-    pub def scratch(rc: Region[r]): Scratch[r] \ r = (Array.repeat(rc, 10, 0.0), Array.repeat(rc, 5, 0), Array.repeat(rc, 8, 0.0))
+    pub def newScratch(rc: Region[r]): Scratch[r] \ r = (Array.repeat(rc, 2 * contactStride(), 0.0), Array.repeat(rc, 3, 0), Array.repeat(rc, 6, 0.0))
 
     /// 出し先の点の欄の stride。
     pub def contactStride(): Int32 = 5
@@ -115,7 +115,8 @@ pub mod PhysicsWorld2d.Internal.Narrowphase {
             let mid = ra + sep / 2.0;
             putContact(sc, 0, false, nx, ny, ax + nx * mid, ay + ny * mid, sep, 0);
             setCount(sc, 1)
-        }
+        };
+        ()
 
     /// 多角形（頂点 v0 から n 個）と円（中心 cx cy・半径 rb）。flipped なら円の側が a（法線を返す向きに書く）。
     def polygonCircleInto(sc: Scratch[r], wv: Array[Float64, r], v0: Int32, n: Int32, rb: Float64, cx: Float64, cy: Float64, flipped: Bool): Unit \ r =
@@ -142,7 +143,8 @@ pub mod PhysicsWorld2d.Internal.Narrowphase {
                 putContact(sc, 0, flipped, nx, ny, cx - nx * (rb + sep / 2.0), cy - ny * (rb + sep / 2.0), sep, face);
                 setCount(sc, 1)
             }
-        }
+        };
+        ()
 
     /// 円の中心から一番離れた辺（同じ離れなら前の辺）。離れは tmp[0] へ。
     def shallowestFace(wv: Array[Float64, r], v0: Int32, n: Int32, cx: Float64, cy: Float64, tmp: Array[Float64, r],
@@ -167,7 +169,8 @@ pub mod PhysicsWorld2d.Internal.Narrowphase {
             let sep = d - rb;
             putContact(sc, 0, flipped, nx, ny, vx + nx * sep / 2.0, vy + ny * sep / 2.0, sep, feature);
             setCount(sc, 1)
-        }
+        };
+        ()
 
     /// a の辺の法線のうち、b を一番離す辺（同じ離れなら前の辺）。margin を超えて離れた軸が見つかったらそこで止める。離れは tmp[0] へ。
     def maxSeparation(wv: Array[Float64, r], va: Int32, na: Int32, vb: Int32, nb: Int32, tmp: Array[Float64, r],
@@ -190,23 +193,24 @@ pub mod PhysicsWorld2d.Internal.Narrowphase {
             deepestAlong(nx, ny, vx, vy, wv, vb, nb, tmp, k + 1, Float64.min(m, nx * (Array.get(o, wv) - vx) + ny * (Array.get(o + 1, wv) - vy)))
         }
 
+    /// a の辺で離れなかった時だけ b の辺を見る。
     def polygonsInto(sc: Scratch[r], wv: Array[Float64, r], va: Int32, na: Int32, vb: Int32, nb: Int32): Unit \ r =
         let (_, _, tmp) = sc;
         let edgeA = maxSeparation(wv, va, na, vb, nb, tmp, 0, 0, Float64.minValue());
         let sepA = Array.get(0, tmp);
         if (sepA > margin()) setCount(sc, 0)
         else {
-            // a の辺で離れなかった時だけ b の辺を見る。
             let edgeB = maxSeparation(wv, vb, nb, va, na, tmp, 0, 0, Float64.minValue());
             let sepB = Array.get(0, tmp);
             if (sepB > margin()) setCount(sc, 0)
             else if (sepB > sepA + 0.001) clipInto(sc, wv, vb, nb, edgeB, va, na, true)
             else clipInto(sc, wv, va, na, edgeA, vb, nb, false)
-        }
+        };
+        ()
 
     /// 基準の多角形（頂点 vr から nr 個）の辺 edge に、相手（頂点 vi から ni 個）の一番向かい合う辺を切り取って当てる。flipped なら法線を返す向きに直す。
     def clipInto(sc: Scratch[r], wv: Array[Float64, r], vr: Int32, nr: Int32, edge: Int32, vi: Int32, ni: Int32, flipped: Bool): Unit \ r =
-        let (_, ints, tmp) = sc;
+        let (_, _, tmp) = sc;
         let oe = (vr + edge) * 4;
         let nx = Array.get(oe + 2, wv);
         let ny = Array.get(oe + 3, wv);
@@ -223,15 +227,16 @@ pub mod PhysicsWorld2d.Internal.Narrowphase {
         let ty = (ry2 - ry1) / tlen;
         let oi1 = (vi + incEdge) * 4;
         let oi2 = (vi + i2) * 4;
-        Array.put(Array.get(oi1, wv), 2, tmp); Array.put(Array.get(oi1 + 1, wv), 3, tmp); Array.put(0, 3, ints);
-        Array.put(Array.get(oi2, wv), 5, tmp); Array.put(Array.get(oi2 + 1, wv), 6, tmp); Array.put(1, 4, ints);
+        Array.put(Array.get(oi1, wv), 2, tmp); Array.put(Array.get(oi1 + 1, wv), 3, tmp);
+        Array.put(Array.get(oi2, wv), 4, tmp); Array.put(Array.get(oi2 + 1, wv), 5, tmp);
         setCount(sc, 0);
         let kept = clipSegment(-tx, -ty, -(tx * rx1 + ty * ry1), tmp) and clipSegment(tx, ty, tx * rx2 + ty * ry2, tmp);
         if (kept) {
-            let edges = (edge, incEdge, flipped);
-            clipPoint(sc, nx, ny, rx1, ry1, edges, Array.get(2, tmp), Array.get(3, tmp), Array.get(3, ints));
-            clipPoint(sc, nx, ny, rx1, ry1, edges, Array.get(5, tmp), Array.get(6, tmp), Array.get(4, ints))
-        } else ()
+            let base = (if (flipped) 1000000 else 0) + edge * 10000 + incEdge * 100;
+            clipPoint(sc, nx, ny, rx1, ry1, flipped, base, Array.get(2, tmp), Array.get(3, tmp));
+            clipPoint(sc, nx, ny, rx1, ry1, flipped, base + 1, Array.get(4, tmp), Array.get(5, tmp))
+        } else ();
+        ()
 
     /// 相手の辺のうち、法線 (nx, ny) と一番向かい合う辺（同じなら前の辺）。
     def mostFacing(wv: Array[Float64, r], vi: Int32, ni: Int32, nx: Float64, ny: Float64, k: Int32, bestK: Int32, best: Float64): Int32 \ r =
@@ -242,26 +247,26 @@ pub mod PhysicsWorld2d.Internal.Narrowphase {
             if (d < best) mostFacing(wv, vi, ni, nx, ny, k + 1, k, d) else mostFacing(wv, vi, ni, nx, ny, k + 1, bestK, best)
         }
 
-    /// 切り取った点 1 つを接触の点として足す（margin より離れていれば捨てる）。
-    def clipPoint(sc: Scratch[r], nx: Float64, ny: Float64, rx1: Float64, ry1: Float64, edges: (Int32, Int32, Bool), px: Float64, py: Float64, id: Int32): Unit \ r =
-        let (edge, incEdge, flipped) = edges;
+    /// 切り取った点 1 つを接触の点として足す（margin より離れていれば捨てる）。feature は (b が基準なら 1000000) + 基準の辺 × 10000 + 相手の辺 × 100 + 線分の端（0・1）。
+    /// 切った点は外にあった端の番号のまま。
+    def clipPoint(sc: Scratch[r], nx: Float64, ny: Float64, rx1: Float64, ry1: Float64, flipped: Bool, feature: Int32, px: Float64, py: Float64): Unit \ r =
         let sep = nx * (px - rx1) + ny * (py - ry1);
         if (sep > margin()) ()
         else {
             let cx = px - nx * sep / 2.0;
             let cy = py - ny * sep / 2.0;
-            let feature = (if (flipped) 1000000 else 0) + edge * 10000 + incEdge * 100 + id;
             let k = countOf(sc);
             putContact(sc, k, flipped, nx, ny, cx, cy, sep, feature);
             setCount(sc, k + 1)
-        }
+        };
+        ()
 
-    /// 線分（tmp の 2・3 と 5・6）を「n·p <= offset」の側に切る（2 点とも外なら false）。
+    /// 線分（tmp の 2・3 と 4・5）を「n·p <= offset」の側に切る（2 点とも外なら false）。
     def clipSegment(nx: Float64, ny: Float64, offset: Float64, tmp: Array[Float64, r]): Bool \ r =
         let x1 = Array.get(2, tmp);
         let y1 = Array.get(3, tmp);
-        let x2 = Array.get(5, tmp);
-        let y2 = Array.get(6, tmp);
+        let x2 = Array.get(4, tmp);
+        let y2 = Array.get(5, tmp);
         let d1 = nx * x1 + ny * y1 - offset;
         let d2 = nx * x2 + ny * y2 - offset;
         if (d1 <= 0.0 and d2 <= 0.0) true
@@ -270,9 +275,8 @@ pub mod PhysicsWorld2d.Internal.Narrowphase {
             let t = d1 / (d1 - d2);
             let cx = x1 + t * (x2 - x1);
             let cy = y1 + t * (y2 - y1);
-            // 切った点は、外にあった端の番号を引き継ぐ（番号の欄はそのまま）。
             if (d1 > 0.0) { Array.put(cx, 2, tmp); Array.put(cy, 3, tmp) }
-            else { Array.put(cx, 5, tmp); Array.put(cy, 6, tmp) };
+            else { Array.put(cx, 4, tmp); Array.put(cy, 5, tmp) };
             true
         }
 

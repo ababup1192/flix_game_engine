@@ -256,6 +256,55 @@ mod TestPhysicsWorld2d {
         let hit = PhysicsWorld2d.castRay({ x = 0.0, y = -5.0 }, { x = 0.0, y = 1.0 }, 20.0, 1, w);
         Assert.assertEq(expected = Some(1), hit |> Option.map(h -> h#id))
 
+    /// 横 2 m・縦 1 m の箱を 90 度回した体（幅 1 m・高さ 2 m）。
+    def standingBox(): PhysicsWorld2d.PhysicsWorld2d =
+        emptyWorld() |> PhysicsWorld2d.insert(10, RigidBody2d.fixed(Vec2.zero(), Collider2d.box(1.0, 0.5)) |> RigidBody2d.withRotation(Rot2.fromCosSin(0.0, 1.0)))
+
+    /// 回した箱へ左から飛ばした光線は、左の面（x = −0.5）に外向きの法線で当たる
+    @Test
+    def testCastRayHitsRotatedBoxWithOutwardNormal(): Unit \ Assert =
+        let hit = PhysicsWorld2d.castRay({ x = -5.0, y = 0.0 }, { x = 1.0, y = 0.0 }, 20.0, -1, standingBox());
+        Assert.assertEq(expected = Some((4.5, -1.0, 0.0)), hit |> Option.map(h -> (h#distance, h#normal#x, h#normal#y)))
+
+    /// 起点が多角形の中にある光線は、その多角形に当てない
+    @Test
+    def testCastRayFromInsidePolygonMisses(): Unit \ Assert =
+        Assert.assertEq(expected = None, PhysicsWorld2d.castRay(Vec2.zero(), { x = 1.0, y = 0.0 }, 10.0, -1, standingBox()) |> Option.map(h -> h#id))
+
+    /// 回した箱の境目の上の点は中に入り、すぐ外の点は入らない
+    @Test
+    def testQueryPointOnRotatedBoxEdge(): Unit \ Assert =
+        let w = standingBox();
+        Assert.assertEq(expected = (10 :: Nil, Nil), (PhysicsWorld2d.queryPoint({ x = 0.5, y = 0.0 }, -1, w), PhysicsWorld2d.queryPoint({ x = 0.5001, y = 0.0 }, -1, w)))
+
+    /// 箱の上に小さい箱を少し食い込ませて置くと、下の箱の上の面を基準に点が 2 つでき、特徴の番号は「上の面 × 10000 + 相手の下の面 × 100 + 端」
+    @Test
+    def testBoxOnBoxGivesTwoClippedPoints(): Unit \ Assert = region rc {
+        let below = PhysicsWorld2d.Internal.Shape.box(1.0, 0.5);
+        let above = PhysicsWorld2d.Internal.Shape.box(0.5, 0.5);
+        let wv = Array.repeat(rc, 32, 0.0);
+        PhysicsWorld2d.Internal.Narrowphase.writeWorldVertices(below, 0.0, 0.0, 1.0, 0.0, wv, 0);
+        PhysicsWorld2d.Internal.Narrowphase.writeWorldVertices(above, 0.0, -0.99, 1.0, 0.0, wv, 4);
+        let sc = PhysicsWorld2d.Internal.Narrowphase.newScratch(rc);
+        PhysicsWorld2d.Internal.Narrowphase.collideInto(sc, wv, below, 0, 4, 0.0, 0.0, above, 4, 4, 0.0, -0.99);
+        let features = (PhysicsWorld2d.Internal.Narrowphase.featureOf(sc, 0), PhysicsWorld2d.Internal.Narrowphase.featureOf(sc, 1));
+        let normalY = PhysicsWorld2d.Internal.Narrowphase.contactOf(sc, 1, 1);
+        Assert.assertEq(expected = (2, (200, 201), -1.0), (PhysicsWorld2d.Internal.Narrowphase.countOf(sc), features, normalY))
+    }
+
+    /// 円を a・箱を b にした当たりの法線は、円から箱へ向く（箱を a にした時の逆）
+    @Test
+    def testCircleFirstFlipsNormalTowardBox(): Unit \ Assert = region rc {
+        let box = PhysicsWorld2d.Internal.Shape.box(1.0, 0.5);
+        let circle = PhysicsWorld2d.Internal.Shape.circle(0.5);
+        let wv = Array.repeat(rc, 16, 0.0);
+        PhysicsWorld2d.Internal.Narrowphase.writeWorldVertices(box, 0.0, 0.0, 1.0, 0.0, wv, 0);
+        let sc = PhysicsWorld2d.Internal.Narrowphase.newScratch(rc);
+        PhysicsWorld2d.Internal.Narrowphase.collideInto(sc, wv, circle, 0, 0, 0.0, -0.99, box, 0, 4, 0.0, 0.0);
+        let normal = (PhysicsWorld2d.Internal.Narrowphase.contactOf(sc, 0, 0), PhysicsWorld2d.Internal.Narrowphase.contactOf(sc, 0, 1));
+        Assert.assertEq(expected = (1, 0, (-0.0, 1.0)), (PhysicsWorld2d.Internal.Narrowphase.countOf(sc), PhysicsWorld2d.Internal.Narrowphase.featureOf(sc, 0), normal))
+    }
+
     // ── 材質と Doc ──
 
     /// 材質の表を差し替えると、もう居る体の摩擦も次の刻みから変わる（摩擦 0 で滑っていた箱が止まる）
