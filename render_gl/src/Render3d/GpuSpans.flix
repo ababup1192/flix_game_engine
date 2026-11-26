@@ -36,5 +36,8 @@ mod Render3d.GpuSpans {
     /// 今の環境で場面の pass の draw を積まないか。
     pub def skipsColorDraws(): Bool \ IO = isColorSkippedBy(skipText())
 
+    /// 試しの旗 FLIX_GE_SHADOW_CACHE=off なら、動かない物の影の地図を控えずに毎コマ描く（控えの有無で同じ絵かを比べる・控えの効き目を測る）。
+    pub def isShadowCacheOff(): Bool \ IO = Object.toOption(System.getenv("FLIX_GE_SHADOW_CACHE")) == Some("off")
+
     def skipText(): Option[String] \ IO = Object.toOption(System.getenv("FLIX_GE_SKIP_3D_DRAWS"))
 }

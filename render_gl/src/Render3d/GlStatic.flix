@@ -12,16 +12,27 @@ mod Render3d.GlStatic {
     use Render3d.StaticRows
     use Render3d.StaticRows.{CarriedRows}
 
-    /// 持ち越した集まり 1 つを GPU に置いた物。rows = 前半の行・orders = 作った時の材質の問い合わせへの答え（プログラムの番号）・texture = 1 体ごとの値のテクスチャ。
-    pub type alias Carried = { rows = CarriedRows, orders = Vector[Int32], texture = Int32 }
+    /// 持ち越した集まり 1 つを GPU に置いた物。rows = 前半の行・orders = 作った時の材質の問い合わせへの答え（プログラムの番号）・texture = 1 体ごとの値のテクスチャ・
+    /// serial = 置いた時の通し番号（影の地図の控えの鍵。テクスチャの番号は消した後に使い回されるので鍵にしない）。
+    pub type alias Carried = { rows = CarriedRows, orders = Vector[Int32], texture = Int32, serial = Int64 }
 
     /// 場面を描く時に使う、持ち越した集まり 1 つ。materials = このコマに引き直した材質の表（行の欄 1 で引く）。
     pub type alias CarriedDraw = { carried = Carried, materials = MaterialTable }
 
-    /// 状態。cache = 集まりの持ち越しの控え・retired = コマの終わりに消すテクスチャ。
-    pub type alias StaticCache = { cache = StaticRows.Cache[Carried], retired = Ref[List[Int32], Static] }
+    /// 状態。cache = 集まりの持ち越しの控え・retired = コマの終わりに消すテクスチャ・placed = 置いた集まりの数・shadowCache = 影の地図の動かない物だけの控え。
+    pub type alias StaticCache = { cache = StaticRows.Cache[Carried], retired = Ref[List[Int32], Static], placed = Array[Int64, Static], shadowCache = Render3d.GlShadowCache.Cache }
 
-    pub def fresh(): StaticCache \ IO = { cache = StaticRows.freshCache(), retired = Ref.fresh(Static, Nil) }
+    pub def fresh(): StaticCache \ IO =
+        { cache = StaticRows.freshCache(), retired = Ref.fresh(Static, Nil), placed = Array#{0i64} @ Static, shadowCache = Render3d.GlShadowCache.fresh() }
+
+    /// 持ち越した物の並び carried の識別（影の地図の控えの鍵 Render3d.ShadowMaps.cacheKeyOf の一部。集まりを作り直すと替わる）。
+    pub def keyOfCarried(carried: List[CarriedDraw]): String =
+        carried |> List.map(c -> Int64.toString(c#carried#serial)) |> String.intercalate("+")
+
+    def nextSerial(st: StaticCache): Int64 \ IO =
+        let n = Array.get(0, st#placed) + 1i64;
+        Array.put(n, 0, st#placed);
+        n
 
     /// この数のコマ描かなかった集まりの持ち越しは手放す（描き先の Render3d.idleTargetFrames と同じ）。
     def idleFrames(): Int64 = 128i64
@@ -67,7 +78,7 @@ mod Render3d.GlStatic {
         { tables = tables, resolve = resolve,
           prepareMesh = mesh -> discard Render3d.meshEntry(gl, state, gen, mesh),
           prepareMaterial = request -> discard resolveMaterials(gl, state, gen, Vector#{request}),
-          place = rows -> { rows = rows, orders = Ref.get(orders), texture = uploadValues(gl, state, rows) },
+          place = rows -> { rows = rows, orders = Ref.get(orders), texture = uploadValues(gl, state, rows), serial = nextSerial(st) },
           uploadCount = _ -> 0, uploadAt = (_, _) -> (), retire = retire(st) }
 
     /// rows の 1 体ごとの値を新しいテクスチャへ上げて番号を返す（1 体ごとの値の unit を使い、unit 0 へ戻す）。
@@ -114,7 +125,8 @@ mod Render3d.GlStatic {
         if (Set.isEmpty(droppedMeshes)) StaticRows.sweep(st#cache, gen, idleFrames(), retire(st))
         else StaticRows.clearWhere(st#cache, c -> Vector.exists(s -> Set.memberOf(s#handle, droppedMeshes), c#rows#meshSlots), retire(st));
         Ref.get(st#retired) |> List.forEach(tex -> gl.deleteTexture(tex));
-        Ref.put(Nil, st#retired)
+        Ref.put(Nil, st#retired);
+        Render3d.GlShadowCache.endFrame(gl, st#shadowCache)
 
     /// 控えにある集まりの物の数（テストが使い回しを見る）。
     pub def sizeOf(st: StaticCache): Int32 \ IO = StaticRows.sizeOf(st#cache)

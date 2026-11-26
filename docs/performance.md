@@ -516,7 +516,7 @@ World に写し、`FrameDiagnostics.summaryLines(d)` をゲームの字の部品
 測るコマは他のコマより長いので、`frame_p99` のような端の値には測るコマが混ざる。CPU の ms を比べる時は診断を付けない回（ベンチの `DIAG=0`）を基準にする。
 
 **3D の中の pass ごとの GPU の時間**: `gpuPasses` には描き先（Pass の名前・`screen`）に加え、3D の描き手の中の区間が入る:
-`shadow:sun`・`shadow:spot`・`shadow:point`（影の地図。点光源の atlas は面ごとの pass を足した値）・
+`shadow:sun`・`shadow:spot`・`shadow:point`（影の地図。点光源の atlas は面ごとの pass を足した値）・`shadow:cache`（動かない物だけの控えを描き直した分・WebGPU だけ）・
 `scene3d`・`scene3d:depth`（場面の色の pass・奥行きの書き出し）。GL では描き先の query をそこで閉じて区間を測り、描き先の名前で開き直すので、描き先の時間は中の区間を引いた残り。
 - **WebGPU（PC のウィンドウの既定）は `FLIX_GE_GPU_TIMER=1` を置いた時だけ測る**（timestamp-query の `timestampWrites`）。読み戻し（Dawn の mapAsync を待つ形）はそれまでの仕事を GPU が終えるまで返らず、
   測るコマが長くなる。1 コマの時間を比べる回はこれを置かずに流し、pass ごとの内訳を見る回だけ置く。ブラウザでは測らない（`gpuNs` は None）。
@@ -526,6 +526,8 @@ World に写し、`FrameDiagnostics.summaryLines(d)` をゲームの字の部品
 - 送る時間と塗る時間を分ける試しの旗: `FLIX_GE_SKIP_3D_DRAWS=shadow|color|all`（その pass を開いて閉じるだけにして draw を積まない・絵は欠ける）と
   `FLIX_GE_WINDOW_SIZE=<幅>x<高さ>`（ウィンドウの大きさを替えて描き先の画素の数を変える・design は替えない）。draw を飛ばして 1 コマが縮めば命令を積む分、
   画素を 1/4 にして縮めば GPU の塗りの分。
+- 影の地図の控え（staticGroup の物だけを描いた深度を控え、毎コマ写して動く物だけを上に描く）の効き目は `scene3dCounts` の `shadowMapsReused`・`shadowMapsRedrawn` と、
+  `FLIX_GE_SHADOW_CACHE=off`（控えずに毎コマ描く）との比べで見る。
 
 ### draw call がまとまらない時の読み方（draw2dCounts・scene3dCounts#batchBreaks）
 

@@ -102,12 +102,14 @@ pub mod FrameDiagnostics {
     /// - batchBreaks: draw call が 1 つにまとまらなかった理由ごとの数（欄の意味は Scene3dBatchBreaks）
     /// - billboardRuns / billboardImages: 場面の pass のビルボードの行の数（来た順で続く同じ絵の板を 1 行 = 1 draw call にまとめた数）/ その行が貼る絵の種類の数。
     ///   行の数が絵の種類の数よりずっと多いなら、違う絵の板が交互に来ている（同じ絵の板を続けて並べると行が減る）
+    /// - shadowMapsReused / shadowMapsRedrawn: 影の地図（点光源の atlas は面 1 つ）のうち、staticGroup の物だけを描いた控えを写して使った数 / 控えを描き直した数。
+    ///   描き直しが毎コマ続くなら、光の行列が毎コマ変わっている（太陽の向きを毎コマ回す・点光源が動く）
     /// 作る関数は emptyScene3dCounts（`{ instances = 3 | FrameDiagnostics.emptyScene3dCounts() }`）。
     pub type alias Scene3dCounts = {
         instances = Int32, drawn = Int32, drawCalls = Int32, droppedPointLights = Int32, droppedSpotLights = Int32,
         meshUploads = Int32, meshEvictions = Int32, texture3dUploads = Int32, mipCopies = Int32, materialBuilds = List[ShaderBuild],
         jointUploads = Int32, targetRebuilds = Int32, cpuPhases = List[(String, Int64)], batchBreaks = Scene3dBatchBreaks,
-        billboardRuns = Int32, billboardImages = Int32
+        billboardRuns = Int32, billboardImages = Int32, shadowMapsReused = Int32, shadowMapsRedrawn = Int32
     }
 
     /// 3D の draw call が分かれた理由ごとの数。3D は batch を鍵でまとめてから描くので、draw call 1 つを 1 つの理由に数える（合計は drawCalls）。
@@ -137,12 +139,14 @@ pub mod FrameDiagnostics {
     pub def emptyScene3dCounts(): Scene3dCounts =
         { instances = 0, drawn = 0, drawCalls = 0, droppedPointLights = 0, droppedSpotLights = 0,
           meshUploads = 0, meshEvictions = 0, texture3dUploads = 0, mipCopies = 0, materialBuilds = Nil,
-          jointUploads = 0, targetRebuilds = 0, cpuPhases = Nil, batchBreaks = emptyScene3dBatchBreaks(), billboardRuns = 0, billboardImages = 0 }
+          jointUploads = 0, targetRebuilds = 0, cpuPhases = Nil, batchBreaks = emptyScene3dBatchBreaks(), billboardRuns = 0, billboardImages = 0,
+          shadowMapsReused = 0, shadowMapsRedrawn = 0 }
 
     /// 上げ直した物と捨てた物の数を 1 行に（どれも 0 なら "-"）。並びは Scene3dCounts の欄の順。
     pub def uploadsText(c: Scene3dCounts): String =
         nonZeroText(("mesh", c#meshUploads) :: ("evict", c#meshEvictions) :: ("tex3d", c#texture3dUploads) :: ("mip", c#mipCopies) ::
-                    ("material", List.length(c#materialBuilds)) :: ("joints", c#jointUploads) :: ("targets", c#targetRebuilds) :: Nil)
+                    ("material", List.length(c#materialBuilds)) :: ("joints", c#jointUploads) :: ("targets", c#targetRebuilds) ::
+                    ("shadow redraws", c#shadowMapsRedrawn) :: Nil)
 
     /// CPU の区間を 1 行に（ms は小数 2 桁・区間が無ければ "-"）。
     pub def cpuPhasesText(c: Scene3dCounts): String =
@@ -161,7 +165,8 @@ pub mod FrameDiagnostics {
           targetRebuilds = a#targetRebuilds + b#targetRebuilds,
           cpuPhases = names |> List.map(n -> (n, Map.getWithDefault(n, 0i64, total))),
           batchBreaks = addScene3dBatchBreaks(a#batchBreaks, b#batchBreaks),
-          billboardRuns = a#billboardRuns + b#billboardRuns, billboardImages = a#billboardImages + b#billboardImages }
+          billboardRuns = a#billboardRuns + b#billboardRuns, billboardImages = a#billboardImages + b#billboardImages,
+          shadowMapsReused = a#shadowMapsReused + b#shadowMapsReused, shadowMapsRedrawn = a#shadowMapsRedrawn + b#shadowMapsRedrawn }
 
     /// 作ったシェーダー 1 つ。
     pub type alias ShaderBuild = { name = String, reason = BuildReason }

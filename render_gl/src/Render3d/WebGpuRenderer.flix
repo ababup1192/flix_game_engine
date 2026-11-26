@@ -581,7 +581,7 @@ pub mod Render3d.WebGpuRenderer {
                            emptyGroup = s#emptyGroup, poseLayout = s#poseLayout,
                            created = () -> Render3d.Counts.count(s, Render3d.Counts.Counter.TargetRebuilds, 1),
                            unbound = n -> host#skip("3D の付けられなかった行の物（pipeline か group が無い・飛ばす）", n),
-                           carried = List.map(c -> WebGpuStatic.shadowRunnerOf(s#statics, s#gpu, Array.get(0, s#gen), c, WebGpuShadows.depthFormat()), carried),
+                           carried = List.map(c -> WebGpuStatic.shadowRunnerOf(s#statics, s#gpu, Array.get(0, s#gen), c, WebGpuShadows.depthFormat()), carried), carriedKey = WebGpuStatic.keyOfCarried(carried), noteCache = Render3d.Counts.noteShadowCache(s),
                            billboard = drawShadowBillboardRow(r, host) };
         staged#shadows |> List.forEach(WebGpuShadows.encode(s#shadows, Array.get(0, s#gen), shadowDraw));
         let scene = plan#cmd#scene;

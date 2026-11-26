@@ -158,6 +158,33 @@ mod Render3d.ShadowMaps {
         let ry = f#size#y * reach(f#anchor#y);
         Frustum.intersectsSphere(frustum, f#position, Num.sqrt(rx * rx + ry * ry))
 
+    /// 動かない物だけを描いた深度の控え（Render3d.WebGpuShadowCache・Render3d.GlShadowCache）の鍵: 控えの一辺 size・光の行列 pass#map#view・
+    /// 持ち越した集まりの識別 carriedKey（作り直すと替わる）が同じなら、控えの中身は同じ。tint は影に効かないので入れない。
+    pub def cacheKeyOf(size: Int32, pass: ShadowPass, carriedKey: String): String \ IO =
+        let cells = Render3d.matrixArray(pass#map#view) |> Array.toList |> List.map(Float32.toString) |> String.intercalate(",");
+        "${Int32.toString(size)}|${cells}|${carriedKey}"
+
+    /// 控えを描き直したコマが続いた数 streak を進め（redrawn が偽なら 0 に戻す）、cacheMissHintFrames() に届いたら warned を立てて 1 回だけ知らせる（GL と WebGPU の控えがコマの終わりに呼ぶ）。
+    // WhyNot: 1 回描き直しただけで知らせない — 歩いて太陽の範囲の格子を越えた・灯りが入れ替わったコマは描き直すのが正しい。
+    pub def noteCacheMisses(streak: Ref[Int32, Static], warned: Ref[Bool, Static], redrawn: Bool): Unit \ IO =
+        let n = if (redrawn) Ref.get(streak) + 1 else 0;
+        Ref.put(n, streak);
+        if (n < cacheMissHintFrames() or Ref.get(warned)) ()
+        else {
+            Ref.put(true, warned);
+            Log.warn("scene3d: 影の地図の staticGroup の控えを ${Int32.toString(n)} コマ続けて描き直している（@shadow-cache-miss-hint）— 太陽の向きや点光源の位置を毎コマ変えると"
+                + "影の地図を持ち越せない。日の動きは数秒おきに段で動かす（engine の docs/scene3d.md の「動かない物をまとめる（staticGroup）」）")
+        }
+
+    /// noteCacheMisses が知らせるまでに続くコマの数（60 fps で約 2 秒）。
+    pub def cacheMissHintFrames(): Int32 = 120
+
+    /// 控えの一辺（atlas の面は面の一辺・ほかは地図の一辺）。
+    pub def cacheSizeOf(pass: ShadowPass): Int32 = match pass#map#tile {
+        case Some(t) => t#size
+        case None    => fst(extentOf(pass#map#key))
+    }
+
     /// 鍵 key の描き先を（無ければ allocator で作って）今の世代 gen で使ったと控える。作ったら真。
     pub def ensure(table: Table, allocator: Allocator, gen: Int64, key: Key): Bool \ IO =
         let held = Ref.get(table#lastUsed);
