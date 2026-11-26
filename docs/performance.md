@@ -603,7 +603,7 @@ GL・WebGPU・CPU の描き手は、カメラの視錐台の外の置いた物�
 | 内側のループで List を引く・レコードの欄を読む | ループの前に `Vector` へ 1 回写す | レコードの欄は読むたびに名前で探す |
 | 規則と描くのが直列で 60 fps を割る | `App.withPipelinedRendering` | §11 の「規則と描くのを重ねる」 |
 | 3D で動かない物（建物・木・家具）が数千〜1 万個あって毎コマ重い | 読み込みで 1 回 `Scene3d.staticGroup` を作って Resources に持ち、毎コマ `groups` に載せる | 毎コマ `staticGroup` を呼ばない。動かす物・色を変える物は `withoutItems` で外して `instances` へ。スマホのブラウザで 12,000 個が 1.6 fps → 60 fps（[scene3d.md](scene3d.md) の「動かない物をまとめる」） |
-| 3D で同じ形の動く物（群れ・弾・草）が 1,000 体以上あって毎コマ重い | `MultiMesh3d.build(形, n, i -> 行列)` で 1 つにして場面の `multiMeshes` に載せる | 1 体ずつ選ぶ・光らせる物は instances のまま。散らばる物は区画ごとに分ける。ブラウザで 1 万個が 1 コマ 20 ms → 5 ms（[scene3d.md](scene3d.md) の「物の置き方を選ぶ」） |
+| 3D で同じ形の動く物（群れ・弾・草）が 2,000 体以上あって毎コマ重い | `MultiMesh3d.build(形, n, i -> 行列)` で 1 つにして場面の `multiMeshes` に載せる | 1 体ずつ選ぶ・光らせる物は instances のまま。散らばる物は区画ごとに分ける。ブラウザで 1 万個が 1 コマ 20 ms → 5 ms（[scene3d.md](scene3d.md) の「物の置き方を選ぶ」） |
 | 2D の動かない絵（影・壁・地形の多角形）の一部だけが変わるたびにコマが止まる（置き物を壊す・掘る） | `App.withStaticLayers(w -> 区画ごとの { id, key, items = () -> .. })` | 下の「静的層を区画に分ける」。地図全体を 1 つの `withStaticLayer` に入れて key を変えると、多角形を全部 GPU へ上げ直す（約 8,000 個で 1 コマ 43 ms） |
 | 3D のビルボード（木・人・草）が多くて draw call が数百 | 同じ絵の板を続けて `billboards` に並べる（描き手が 1 回の instanced draw にまとめる） | 来た順は描き手が崩さない（重なりの前後が来た順で決まるため）。効き目は `drawCalls` の `billboard`（[scene3d.md](scene3d.md) の「ビルボードの draw の数」） |
 | 3D で初めて出る物のコマだけ跳ねる（mipmap 作り・材質のプログラムの組み立て） | `App.withPreload3d({ textures = .., variants = .. \| App.preload3d(key, instances) })` | 視錐台の外へ置いて毎コマ描かせない。点光源の影と Physical の場面は `variants` に `Scene3d.preloadVariantOf(場面)`（変種のプログラムも先に組む）。骨つきの物は姿勢を付けたまま渡す。`tex3d:` の絵は `textures` に渡す。上げるのは起動と読み直しのコマで、そのコマは長くなる。`key` に時刻を混ぜると毎コマ組み直す（300 コマの内に 30 回変わると知らせる） |

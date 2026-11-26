@@ -31,20 +31,20 @@ mod Render3d.TestCrowdHints {
         let said = saidOver(staticHintScenes(), sceneOf(placedOf(2100, 30)));
         Assert.assertEq(expected = (true, true, false), (has("Scene3d.staticGroup", said), has("MultiMesh3d.build で 1 つにする（engine", said), has("同じ形と材質の物が", said)))
 
-    /// 同じ形の物を 1,000 体 instances に置き続けると、同じ形の知らせが鳴る。
+    /// 同じ形の物を 2,000 体 instances に置き続けると、同じ形の知らせが鳴る。
     @Test
     def testSameShapeCrowdRingsSameShapeHint(): Unit \ {Assert, IO} =
-        Assert.assertTrue(has("同じ形と材質の物が 1000 体 instances にある", saidOver(staticHintScenes(), sceneOf(placedOf(1000, 1)))))
+        Assert.assertTrue(has("同じ形と材質の物が 2000 体 instances にある", saidOver(staticHintScenes(), sceneOf(placedOf(2000, 1)))))
 
-    /// 同じ形の物が 1,000 体に届かなければ、同じ形の知らせは鳴らない。
+    /// 同じ形の物が 2,000 体に届かなければ、同じ形の知らせは鳴らない。
     @Test
     def testFewSameShapesStayQuiet(): Unit \ {Assert, IO} =
-        Assert.assertFalse(has("同じ形と材質の物が", saidOver(staticHintScenes(), sceneOf(placedOf(999, 1)))))
+        Assert.assertFalse(has("同じ形と材質の物が", saidOver(staticHintScenes(), sceneOf(placedOf(1999, 1)))))
 
     /// 続く場面が 1 つ足りなければ、同じ形の知らせは鳴らない。
     @Test
     def testSameShapeNeedsTheFullStreak(): Unit \ {Assert, IO} =
-        Assert.assertFalse(has("同じ形と材質の物が", saidOver(staticHintScenes() - 1, sceneOf(placedOf(1000, 1)))))
+        Assert.assertFalse(has("同じ形と材質の物が", saidOver(staticHintScenes() - 1, sceneOf(placedOf(2000, 1)))))
 
     /// 同じ形の物 5,000 体を MultiMesh で渡すと、どの知らせも鳴らない（MultiMesh の体は置いた物に数えない）。
     @Test

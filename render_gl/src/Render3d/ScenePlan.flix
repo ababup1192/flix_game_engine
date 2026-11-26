@@ -51,8 +51,8 @@ mod Render3d.ScenePlan {
                 + "動かないなら Scene3d.staticGroup にまとめる（engine の docs/scene3d.md の「描く量」の質問の木）")
         else ()
 
-    /// noteSameShapeHint が多いと見る同じ形の物の数（推測の線。docs/scene3d.md の目安と同じ数）。
-    pub def sameShapeHintCount(): Int32 = 1000
+    /// noteSameShapeHint が多いと見る同じ形の物の数（docs/scene3d.md の目安と同じ数。ブラウザで MultiMesh3d が 1 コマ 1 ms 以上縮める境目）。
+    pub def sameShapeHintCount(): Int32 = 2000
 
     /// 場面の pass の draw call が drawCallHintCalls() を超え、その半分超が形の違い（Counts.BatchBreak.Mesh）で分かれた場面が staticHintScenes() 回続いたら、1 回だけ知らせる
     /// （GL と WebGPU が場面ごとに呼ぶ）。drawCalls と meshBreaks = その場面の pass の draw call の数と、そのうち形の違いで分かれた数（影の地図の pass は入れない）。
