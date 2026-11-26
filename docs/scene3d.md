@@ -420,6 +420,9 @@ let env = Scene3d.environmentMap(sky) |> Scene3d.withSkyContribution(1.0);
   環境マップは毎コマ作り直してよい（控えは絵の側にある）
 - **外から渡す**: 前に求めた係数を持つ・空の色から作る時は `SphericalHarmonics.fromCoefficients(9 個の Vec3)` → `Scene3d.withIrradiance(sh, env)`（絵から求める物より先に使う）
 - **向き**: 環境マップと同じ（Blender・Poly Haven のパノラマは左右を反転してから渡す。渡さないと東西の色が逆になる）
+- **太陽を 2 回足さない**: 太陽を `DirectionalLight` で照らす場面では、.hdr のパノラマの太陽の円盤を頭打ちにしてから渡す（空の明るさの 99.9 % 点ほど・
+  `oiiotool in.hdr --clamp:max=8 -o out.hdr` か書き出しの台本で）。円盤を残すと太陽の光が拡散の光にもう 1 回入り、影が持ち上がる
+  （Bistro の通りで木の影の暗さ（影と日なたの比）が 0.70 → 0.78 に薄まり、頭打ち 8 で 0.70 に戻った）。映り込みの太陽の光りは `DirectionalLight` の鏡面が描く
 - **知らせ**: 機種の側の絵で求められない時は ambient のまま描いて `@sky-irradiance-unavailable`・hemisphere も 0 より大きいと `@sky-irradiance-double`（どちらも 1 回）
 - **重さ**: k > 0 の場面だけシェーダーの変種 `+sh`（uniform 28 個）。k = 0 の場面はプログラムの字も CPU の絵も今と同じ
 
