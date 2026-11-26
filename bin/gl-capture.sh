@@ -8,7 +8,8 @@
 #   bin/gl-capture.sh --compare <A> <B> [--skip <フォルダ名> ...]       2 回の SHA を比べる（フォルダか SHA の一覧のファイル。違えば exit 1）
 #                                                                      --skip は撮った物のフォルダ名（例 scene3d・rpg-starter__title）と完全に一致する場面を比べない
 #   --only <名前>（撮る時は出力のフォルダの前・比べる時は --skip と同じ所。何度でも）  撮る場面と比べる行をその名前だけにする。名前は撮った物の
-#                                                                      フォルダ名（rpg-starter__title）か、その __ の前（rpg-starter = その場面全部）
+#                                                                      フォルダ名（rpg-starter__title）か、その __ の前（rpg-starter = その場面全部）。
+#                                                                      下の named_scenes（PS1 風の部屋 scene3d-psx など）は --only で名前を挙げた時だけ撮る
 #
 # 組む口: FLIX_GE_HIDDEN（framebuffer を design の大きさに固定）・FLIX_GE_FRAME_SHOT（swap の直前の絵を frame-N.png へ）・
 # FLIX_GE_FIXED_DT（dt を固定。2 コマ目以降もバイトで比べられる）・FLIX_GE_MUTE・START（App.withStarts の場面から起動）。
@@ -47,6 +48,31 @@ default_scenes=(
 	"templates/tidepool-starter:level"
 	"bench/scene3d:"
 )
+
+# 名前を --only で挙げた時だけ撮る場面。形は「<フォルダ>:<START>|<撮った物の名前>|<環境変数>=<値> …」（| の後ろは場面の引数でも書ける）。
+# WhyNot: PS1 風の部屋を default_scenes に入れない — 入れると make gl-capture-check の全部の回が今の基準のファイル（PS1 風を持たない）と
+#   食い違い、基準の全部を撮り直すことになる。PS1 風は別の基準のファイルで守る（Makefile の GL_CAPTURE_BASELINE_PSX）。
+# WhyNot: 名前を scene3d__psx にしない — __ の前が頭なので、--only scene3d が PS1 風まで拾い、scene3d の基準と食い違う。
+named_scenes=(
+	"bench/scene3d:|scene3d-psx__dither|PSX=dither"
+	"bench/scene3d:|scene3d-psx__full|PSX=full"
+)
+# 場面の字（<フォルダ>:<START>[|<名前>|<環境変数> …]）を割る。
+scene_game() { local s=${1%%|*}; echo "${s%%:*}"; }
+scene_start() { local s=${1%%|*}; echo "${s#*:}"; }
+scene_name() {
+	local start
+	start=$(scene_start "$1")
+	case $1 in
+	*'|'*) local rest=${1#*|}; echo "${rest%%|*}" ;;
+	*) echo "$(basename "$(scene_game "$1")")${start:+__${start// /_}}" ;;
+	esac
+}
+scene_env() {
+	case $1 in
+	*'|'*'|'*) local rest=${1#*|}; echo "${rest#*|}" ;;
+	esac
+}
 
 # 比べる相手はフォルダ（中の SHA256SUMS）か SHA の一覧のファイル（bench/baseline/<版>/gl-capture.sha256）。# の行と、
 # skipped（空白で区切ったフォルダ名。撮る時に START の空白は _ にしてある）に入る場面の行は読まない。
@@ -115,29 +141,33 @@ frames=${FRAMES:-6}
 if [ "$frames" -lt 1 ] || [ "$frames" -gt 63 ]; then echo "error: FRAMES は 1〜63（撮る口の上限が 64 枚）: $frames" >&2; exit 2; fi
 dt=${DT:-1/60}
 wait_seconds=${WAIT_SECONDS:-180}
-if [ $# -gt 0 ]; then all_scenes=("$@"); else all_scenes=("${default_scenes[@]}"); fi
+if [ $# -gt 0 ]; then all_scenes=("$@")
+elif [ -n "$only" ]; then all_scenes=("${default_scenes[@]}" "${named_scenes[@]}")
+else all_scenes=("${default_scenes[@]}"); fi
 scenes=()
 for scene in "${all_scenes[@]}"; do
-	start=${scene#*:}
-	if selected "$(basename "${scene%%:*}")${start:+__${start// /_}}"; then scenes+=("$scene"); fi
+	if selected "$(scene_name "$scene")"; then scenes+=("$scene"); fi
 done
-if [ ${#scenes[@]} -eq 0 ]; then echo "[gl-capture] --only $only に当たる場面がありません（名前は rpg-starter か rpg-starter__title の形）" >&2; exit 2; fi
+if [ ${#scenes[@]} -eq 0 ]; then echo "[gl-capture] --only $only に当たる場面がありません（名前は rpg-starter か rpg-starter__title の形・名前で選ぶ場面は $(for s in "${named_scenes[@]}"; do printf '%s ' "$(scene_name "$s")"; done)）" >&2; exit 2; fi
 
 # 絵・時間・起動の道を変えうる環境変数。撮る時は外して、誰が撮っても同じ条件にする。
 reset_env=(FLIX_GE_SPLASH_SHOT FLIX_GE_FRAME_STATS FLIX_GE_NO_SPLASH FLIX_GE_GLYPHS FLIX_GE_NO_FONT_CACHE
 	FGE_SOFT_SERIAL DEBUG FLOW_RECORD HEADLESS_RESIDENT HEADLESS_JAVA_OPTS JAVA_TOOL_OPTIONS FLIX_GE_CACHE_DIR START
-	FLIX_GE_BACKEND FLIX_GE_WEBGPU_FAIL)
+	FLIX_GE_BACKEND FLIX_GE_WEBGPU_FAIL PSX SCENE POST)
 # 起動の時に用意する字（FLIX_GE_GLYPHS）。--backend webgpu の既定は used（出しうる字を起動の時に先に作る。webgpu の基準と make webgpu-v1-check の GL との比べが、この並びのアトラスで撮ってある）。
 # GL と画素で比べる時は、GL の側も同じ CAPTURE_GLYPHS で撮る（字のアトラスの並びが変わるので、GLYPHS の無い撮り置きの SHA とは比べない）。
 glyphs=${CAPTURE_GLYPHS:-}
 if [ "$backend" = webgpu ] && [ -z "$glyphs" ]; then glyphs=used; fi
 
 capture_one() {
-	local game=$1 start=$2
-	local dir="$out/$(basename "$game")${start:+__${start// /_}}"
+	local game start env_pairs
+	game=$(scene_game "$1")
+	start=$(scene_start "$1")
+	env_pairs=$(scene_env "$1")
+	local dir="$out/$(scene_name "$1")"
 	rm -rf "$dir"
 	mkdir -p "$dir"
-	echo "[gl-capture] ${game} START=\"${start}\" → ${dir}"
+	echo "[gl-capture] ${game} START=\"${start}\"${env_pairs:+ ${env_pairs}} → ${dir}"
 	(
 		# WhyNot: set -e に任せない — `( … ) || { … }` の左のサブシェルでは bash が set -e を効かせない。
 		cd "$engine/$game" || exit 1
@@ -147,6 +177,8 @@ capture_one() {
 		if [ "$dt" = off ]; then unset FLIX_GE_FIXED_DT; else export FLIX_GE_FIXED_DT="$dt"; fi
 		export FLIX_GE_BACKEND="$backend"
 		if [ -n "$glyphs" ]; then export FLIX_GE_GLYPHS="$glyphs"; fi
+		local pair
+		for pair in $env_pairs; do export "$pair"; done
 		export FLIX_CMD="$engine/bin/flix"
 		# WhyNot: jar を作る時間を撮る時間の上限に入れない — 作り直しは 30 秒〜数分かかり、初回だけ撮れなかった扱いになる。
 		"$engine/bin/headless-run" --build-only > "$dir/build.log" 2>&1 || exit 1
@@ -193,7 +225,7 @@ capture_one() {
 # WhyNot: 撮る前にセーブを脇へ移して戻す形にしない — 途中で落ちると人のセーブが戻らない。見つけたら止めて、外すのは人に任せる。
 saves_found=
 for scene in "${scenes[@]}"; do
-	for f in "$engine/${scene%%:*}"/saves/*.json; do
+	for f in "$engine/$(scene_game "$scene")"/saves/*.json; do
 		[ -e "$f" ] && saves_found="$saves_found $f"
 	done
 done
@@ -205,9 +237,8 @@ fi
 
 captured=()
 for scene in "${scenes[@]}"; do
-	capture_one "${scene%%:*}" "${scene#*:}"
-	start=${scene#*:}
-	captured+=("$(basename "${scene%%:*}")${start:+__${start// /_}}")
+	capture_one "$scene"
+	captured+=("$(scene_name "$scene")")
 done
 
 # 今回撮った場面のフォルダだけを数える（同じ OUT に前の回の別の場面が残っていても混ぜない）。
