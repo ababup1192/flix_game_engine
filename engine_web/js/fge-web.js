@@ -1358,6 +1358,12 @@ function fgeRing(size) {
       var sum = s.reduce(function (a, b) { return a + b; }, 0);
       return { frames: n, mean: +(sum / n).toFixed(3), median: +at(0.5).toFixed(3), p95: +at(0.95).toFixed(3), max: +s[n - 1].toFixed(3) };
     },
+    // 通し番号 from 以降に入れた値の最大（輪に残っている分だけ）。
+    maxSince: function (from) {
+      var lo = Math.max(from, this.count - this.values.length), m = -1;
+      for (var i = lo; i < this.count; i++) m = Math.max(m, this.values[i % this.values.length]);
+      return m < 0 ? null : +m.toFixed(1);
+    },
     reset: function () { this.count = 0; }
   };
 }
@@ -1773,12 +1779,16 @@ function fgeWireFpsOverlay() {
   document.body.appendChild(el);
   // WhyNot: 頼んだ描き手（fgeWantWebGpu）を出さない — WebGPU を頼んでも準備で落ちれば WebGL2 で描いている。文脈を取れたかで言う。
   var backend = window.fgeWebGpuTaken ? "webgpu" : "webgl2";
-  var frames = 0, since = performance.now();
+  // WhyNot: cpu の中央値だけを出さない — 止まりのコマは中央値に出ず、コンソールで fgeStats.summary() を打たないと見えない（直近 2 秒の最大も出す）。
+  var frames = 0, since = performance.now(), marks = [];
   var tick = function (now) {
     frames++;
     if (now - since >= 500) {
-      var cpu = fgeStats.cpuRing.summary();
-      el.textContent = (frames * 1000 / (now - since)).toFixed(1) + " fps / cpu " + (cpu.frames ? cpu.median : "-") + " ms / " + backend;
+      var ring = fgeStats.cpuRing, cpu = ring.summary();
+      marks.push(ring.count);
+      if (marks.length > 5) marks.shift();
+      var peak = ring.maxSince(marks[0]);
+      el.textContent = (frames * 1000 / (now - since)).toFixed(1) + " fps / cpu " + (cpu.frames ? cpu.median : "-") + " ms (max " + (peak === null ? "-" : peak) + ") / " + backend;
       frames = 0; since = now;
     }
     requestAnimationFrame(tick);

@@ -203,5 +203,5 @@ pub mod App.Internal.AutoPreload {
     /// 自動を止めた時の知らせ。
     pub def stoppedText(): String =
         "[scene3d] staticGroup の名前か値が 300 コマに 20 回替わった — 名前に時刻を混ぜていないか・毎コマ作り直していないか（集まりは読み込みで 1 回作って Resources に持つ）。" +
-        "自動で先に作るのをやめ、描いたコマで作る（withPreload3d の宣言は今まで通り効く）"
+        "自動で先に作るのをやめ、描いたコマで作る（withPreload3d の宣言は有効なまま）"
 }
