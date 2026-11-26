@@ -31,13 +31,6 @@ mod Render3dGlsl.TestRender3dWgslPairs {
     def withoutUniforms(s: String): String =
         String.lines(s) |> List.filter(l -> not String.startsWith({ prefix = "uniform " }, l)) |> List.join("\n")
 
-    /// s の marker から後ろ（無ければ空）。
-    def startingAt(marker: String, s: String): String =
-        match String.indexOf({ substr = marker }, s) {
-            case Some(i) => String.slice({ start = i }, { end = String.length(s) }, s)
-            case None    => ""
-        }
-
     @Test
     def testShadowPcfHasTheSameNumbers(): Unit \ Assert =
         Assert.assertEq(expected = numbersIn(withoutUniforms(Render3dGlsl.shadowSource())), numbersIn(Render3dWgsl.shadowSource()))
@@ -45,11 +38,4 @@ mod Render3dGlsl.TestRender3dWgslPairs {
     @Test
     def testNormalMapHasTheSameNumbers(): Unit \ Assert =
         Assert.assertEq(expected = numbersIn(Render3dGlsl.applyNormalMapSource()), numbersIn(Render3dWgsl.applyNormalMapSource()))
-
-    /// 環境マップの読み（向き → 座標・mip のレベルを決めて読む所）。向きの式は木から作るので外す。
-    @Test
-    def testEnvironmentReadHasTheSameNumbers(): Unit \ Assert =
-        let glsl = startingAt("vec2 environmentUv(", Render3dGlsl.environmentSource());
-        let wgsl = startingAt("fn environmentUv(", Render3dWgsl.environmentSource());
-        Assert.assertEq(expected = (false, numbersIn(glsl)), (String.isEmpty(wgsl), numbersIn(wgsl)))
 }

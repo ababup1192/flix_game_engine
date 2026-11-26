@@ -53,15 +53,7 @@ pub mod Render3dWgsl {
     pub def drawBinding(): Int32 = 16
 
     /// 色の空間の変換（Render3dGlsl.colorSpaceSource と同じ）。
-    pub def colorSpaceSource(): String =
-        Texture3d.srgbToLinearWgsl("r3d_srgbToLinear") +
-        Texture3d.linearToSrgbWgsl("r3d_linearToSrgb") +
-        "fn r3d_srgbToLinear3(c: vec3f) -> vec3f {\n" +
-        "    return vec3f(r3d_srgbToLinear(c.r), r3d_srgbToLinear(c.g), r3d_srgbToLinear(c.b));\n" +
-        "}\n" +
-        "fn r3d_linearToSrgb3(c: vec3f) -> vec3f {\n" +
-        "    return vec3f(r3d_linearToSrgb(c.r), r3d_linearToSrgb(c.g), r3d_linearToSrgb(c.b));\n" +
-        "}\n"
+    pub def colorSpaceSource(): String = ShaderAst.Wgsl.printOnly(Render3dShaders.colorSpace())
 
     /// 光の式（lightAt）・かすみ（fogged）・影と、色を作る最後の組み立て（Render3dGlsl.lightSource と同じ）。sceneDeclarations と colorSpaceSource の後に置く。
     pub def lightSource(): String = lightSourceFor(Render3d.defaultShaderVariant())
@@ -82,51 +74,25 @@ pub mod Render3dWgsl {
         surfaceOutSource() +
         (if (v#psx) colorDepthSource() else "")
 
-    /// PS1 風の変種の色の丸め r3d_colorDepth(画面の値の色, 画素の位置)（Render3dGlsl.colorDepthSource と同じ式）。r3dLight.uPsx = (段の数, 表の番号, 強さ, アフィンの割合)。
+    /// PS1 風の変種の色の丸め r3d_colorDepth(画面の値の色, 画素の位置)（Render3dGlsl.colorDepthSource と同じ式）。r3dLight.uPsx = (色のレベルの数, 表の番号, 強さ, アフィンの割合)。
     /// 画素の位置は frag の @builtin(position)（場面ごとの描き先の左上が 0 なので、GLSL の uPsxTarget の原点を引かない）。
     // WhyNot: 表を const の配列で添字を引かない — 決まった値の配列を実行時の添字で引けない実装がある。関数の中の var の配列にする。
-    def colorDepthSource(): String =
-        let table = (xs: List[Int32]) -> String.intercalate(", ", xs |> List.map(x -> "${x}.0"));
-        "fn r3d_psxDither(p: vec2i) -> f32 {\n" +
-        "    let i = (p.y & 3) * 4 + (p.x & 3);\n" +
-        "    var psx = array<f32, 16>(${table(Scene3d.Psx.psxTable())});\n" +
-        "    var bayer = array<f32, 16>(${table(Scene3d.Psx.bayer4Table())});\n" +
-        "    if (r3dLight.uPsx.y < 0.5) { return psx[i] / 8.0; }\n" +
-        "    if (r3dLight.uPsx.y < 1.5) { return (bayer[i] + 0.5) / 16.0 - 0.5; }\n" +
-        "    return 0.0;\n" +
-        "}\n" +
-        "fn r3d_colorDepth(c: vec3f, at: vec4f) -> vec3f {\n" +
-        "    let q = r3dLight.uPsx;\n" +
-        "    if (q.x <= 0.0) { return c; }\n" +
-        "    let p = vec2i(i32(floor(at.x)), i32(floor(at.y)));\n" +
-        "    let step = 256.0 / (q.x + 1.0);\n" +
-        "    let v = floor(clamp(c, vec3f(0.0), vec3f(1.0)) * 255.0 + 0.5) + r3d_psxDither(p) * q.z * step;\n" +
-        "    return floor(clamp(v, vec3f(0.0), vec3f(255.0)) / step) / q.x;\n" +
-        "}\n"
+    def colorDepthSource(): String = ShaderAst.Wgsl.print(Render3dShaders.colorDepth() :: Nil)
 
-    /// 変種 v の frag の色の出口: v#psx なら r3d_colorDepth(c, at) の式、ほかは c のまま（at = 画素の位置の式）。
-    def colorOut(v: Render3d.ShaderVariant, c: String, at: String): String = if (v#psx) "r3d_colorDepth(" + c + ", " + at + ")" else c
+    /// 変種 v の frag の色の出口: v#psx なら r3d_colorDepth(c) の式、ほかは c のまま。
+    def colorOut(v: Render3d.ShaderVariant, c: String): String = if (v#psx) "r3d_colorDepth(" + c + ")" else c
+
+    /// 変種 v の frag の入口の頭: v#psx なら画素の位置（at = @builtin(position) の式）を r3d_fragCoord へ写す。
+    def fragCoordIn(v: Render3d.ShaderVariant, at: String): String = if (v#psx) "    r3d_fragCoord = " + at + ";\n" else ""
 
     /// PS1 風の変種の頂点を丸める式 r3d_vertexSnap(GL の clip の位置)（Render3dGlsl.vertexSnapSource と同じ式）。r3dCamera.uSnap = (描き先の幅, 高さ, 格子, 0)。
-    def vertexSnapSource(): String =
-        "fn r3d_vertexSnap(p: vec4f) -> vec4f {\n" +
-        "    let g = r3dCamera.uSnap.z;\n" +
-        "    if (g <= 0.0 || p.w <= 0.0) { return p; }\n" +
-        "    let size = r3dCamera.uSnap.xy;\n" +
-        "    let s = floor(vec2f((p.x / p.w + 1.0) * 0.5 * size.x, (1.0 - p.y / p.w) * 0.5 * size.y) / g + 0.5) * g;\n" +
-        "    return vec4f((s.x / size.x * 2.0 - 1.0) * p.w, (1.0 - s.y / size.y * 2.0) * p.w, p.z, p.w);\n" +
-        "}\n"
+    def vertexSnapSource(): String = ShaderAst.Wgsl.printOnly(Render3dShaders.vertexSnap() :: Nil)
 
     /// 変種 v の頂点シェーダーの clip の位置の出口（GL の clip の式 c を sg_clipFromGl へ。v#psx なら先に r3d_vertexSnap で丸める）。
     def clipOut(psx: Bool, c: String): String = if (psx) "sg_clipFromGl(r3d_vertexSnap(" + c + "))" else "sg_clipFromGl(" + c + ")"
 
     /// Render3dGlsl.surfaceOutSource と同じ式。
-    pub def surfaceOutSource(): String =
-        "fn r3d_surfaceOut(albedoLinear: vec3f, tint: vec3f, light: vec3f, emission: vec3f, intensity: f32, p: vec3f, fogOn: bool) -> vec3f {\n" +
-        "    var c = albedoLinear * tint * light;\n" +
-        "    if (fogOn) { c = fogged(c, p); }\n" +
-        "    return r3d_linearToSrgb3(c + r3d_srgbToLinear3(emission) * intensity);\n" +
-        "}\n"
+    pub def surfaceOutSource(): String = ShaderAst.Wgsl.printOnly(Render3dShaders.surfaceOut() :: Nil)
 
     /// 影の地図の PCF（Render3dGlsl.shadowSource と同じ約束 1〜5）と、スポットと太陽の影の割合。
     /// 地図の画素の数え方は GL と同じ（行 0 が NDC の y = −1）で、読む時だけ行を上下に返す: WebGPU で描いた地図は行 0 が NDC の y = +1。
@@ -190,10 +156,7 @@ pub mod Render3dWgsl {
         "fn spotShadow(i: i32, p: vec3f) -> f32 { return 1.0; }\n" +
         sunShadowSource()
 
-    def depthGraySource(): String =
-        "fn depthGray(p: vec3f) -> f32 {\n" +
-        "    return clamp((distance(p, r3d.uEye) - r3d.uDepthRange.x) / r3d.uDepthRange.y, 0.0, 1.0);\n" +
-        "}\n"
+    def depthGraySource(): String = ShaderAst.Wgsl.printOnly(Render3dShaders.depthGray() :: Nil)
 
     /// metallic と roughness を持つ材質の色 pbrAt と、環境マップの読み・かすみ → emission の組み立て（Render3dGlsl.metallicRoughnessSource と同じ）。
     pub def metallicRoughnessSource(): String = metallicRoughnessSourceFor(Render3d.defaultShaderVariant())
@@ -204,10 +167,7 @@ pub mod Render3dWgsl {
         LightModel3d.Codegen.toWgsl("pbrAt", Vec3Input.Position :: Vec3Input.Normal :: Vec3Input.Albedo :: Vec3Input.Light :: Vec3Input.MetallicRoughness ::
                                              Vec3Input.EnvironmentColor :: Nil,
                                     LightModel3d.pbrModelFor(Render3d.lightVariantOf(v))) +
-        "fn r3d_surfaceOutLit(lit: vec3f, emission: vec3f, intensity: f32, p: vec3f) -> vec3f {\n" +
-        "    let c = fogged(lit, p);\n" +
-        "    return r3d_linearToSrgb3(c + r3d_srgbToLinear3(emission) * intensity);\n" +
-        "}\n"
+        ShaderAst.Wgsl.printOnly(Render3dShaders.surfaceOutLit() :: Nil)
 
     /// 環境マップの読み environmentColorAt(p, n, albedo × tint, vec3(metallic, roughness, 0))（Render3dGlsl.environmentSource と同じ式。mip のレベルは roughness × (レベルの数 − 1)）。
     pub def environmentSource(): String =
@@ -223,12 +183,7 @@ pub mod Render3dWgsl {
 
     /// 向き d（長さ 1）で環境マップを読む座標 environmentUv(d)（Render3dGlsl.environmentUvSource と同じ式）。
     // WhyNot: 極で atan2 を選ばない形を if にしない — select は両側を計算するが、atan2(0, 0) の値は捨てられる（Flix の atan2 と同じ 0 を選ぶ）。
-    def environmentUvSource(): String =
-        "fn environmentUv(d: vec3f) -> vec2f {\n" +
-        "    let pole = abs(d.x) + abs(d.z) < 1e-12;\n" +
-        "    let azimuth = select(atan2(d.x, -d.z), 0.0, pole);\n" +
-        "    return vec2f(0.5 + azimuth / 6.283185307179586, 0.5 - asin(clamp(d.y, -1.0, 1.0)) / 3.141592653589793);\n" +
-        "}\n"
+    def environmentUvSource(): String = ShaderAst.Wgsl.printOnly(Render3dShaders.environmentUv() :: Nil)
 
     /// lightmap の読みと、lightmap のある面の光の式（Render3dGlsl.lightmapSource と同じ）。
     def lightmapSource(v: Render3d.ShaderVariant): String =
@@ -247,16 +202,7 @@ pub mod Render3dWgsl {
 
     /// Render3dGlsl.applyNormalMapSource と同じ式。
     // WhyNot: 長さ 0 の p の normalize を if で避けない — select は両側を計算するが、NaN の側は捨てられる。
-    pub def applyNormalMapSource(): String =
-        "fn applyNormalMap(n: vec3f, tangent: vec4f, strength: f32, c: vec3f) -> vec3f {\n" +
-        "    var t = tangent.xyz - n * dot(n, tangent.xyz);\n" +
-        "    if (dot(t, t) < 1e-12) { return n; }\n" +
-        "    t = normalize(t);\n" +
-        "    let b = cross(n, t) * tangent.w;\n" +
-        "    let m = vec3f((c.x * 2.0 - 1.0) * strength, (c.y * 2.0 - 1.0) * strength, c.z * 2.0 - 1.0);\n" +
-        "    let p = t * m.x + b * m.y + n * m.z;\n" +
-        "    return select(normalize(p), n, dot(p, p) < 1e-12);\n" +
-        "}\n"
+    pub def applyNormalMapSource(): String = ShaderAst.Wgsl.printOnly(Render3dShaders.applyNormalMap() :: Nil)
 
     /// frag が受ける varying（Render3dGlsl の in の並び）。uv・2 本目の uv・タンジェント・表裏は使う版だけ。
     // WhyNot: flat の値を最後の頂点から取る形（GL の既定）にそろえない — WGSL の flat は最初の頂点を取るが、vTint と vEmissionIntensity は置いた物 1 つで同じ値。
@@ -302,6 +248,7 @@ pub mod Render3dWgsl {
         (if (surface#lightmap) lightmapSource(v) else "") +
         (if (surface#metallicRoughness) metallicRoughnessSourceFor(v) else "") +
         "@fragment fn fs_main(i: R3dIn) -> @location(0) vec4f {\n" +
+        fragCoordIn(v, "i.fragPos") +
         "    let vWorld = i.vWorld;\n" +
         "    let vNormal = i.vNormal;\n" +
         "    let vColor = i.vColor;\n" +
@@ -328,9 +275,9 @@ pub mod Render3dWgsl {
             "    var envColor = vec3f(0.0);\n" +
             "    if (r3d.uEnvOn == 1) { envColor = environmentColorAt(vWorld, n, base, vec3f(metalRough, 0.0)); }\n" +
             "    let lit = pbrAt(vWorld, n, base, light, vec3f(metalRough, 0.0), envColor);\n" +
-            "    return vec4f(" + colorOut(v, "r3d_surfaceOutLit(lit, emission, vEmissionIntensity, vWorld)", "i.fragPos") + ", " + alpha + ");\n"
+            "    return vec4f(" + colorOut(v, "r3d_surfaceOutLit(lit, emission, vEmissionIntensity, vWorld)") + ", " + alpha + ");\n"
          else
-            "    return vec4f(" + colorOut(v, "r3d_surfaceOut(r3d_srgbToLinear3(albedo.rgb), vTint, light, emission, vEmissionIntensity, vWorld, true)", "i.fragPos") + ", " + alpha + ");\n") +
+            "    return vec4f(" + colorOut(v, "r3d_surfaceOut(r3d_srgbToLinear3(albedo.rgb), vTint, light, emission, vEmissionIntensity, vWorld, true)") + ", " + alpha + ");\n") +
         "}\n"
 
     /// 奥行きの書き出し（Output.Depth）の形だけの frag（Render3dGlsl.depthFragmentSource と同じ）。頂点シェーダーは litVertexSource で、読む varying は vWorld だけ。入口は fs_main。
@@ -359,10 +306,11 @@ pub mod Render3dWgsl {
         colorSpaceSource() +
         lightSourceFor(v) +
         "@fragment fn fs_main(i: R3dLitIn) -> @location(0) vec4f {\n" +
+        fragCoordIn(v, "i.fragPos") +
         "    let n = normalize(i.vNormal);\n" +
         "    r3d_sunLit = sunLitAt(i.vWorld, n, n);\n" +
         (if (v#pointShadows) "    r3d_pointShadowsAt(i.vWorld, n, n);\n" else "") +
-        "    return vec4f(" + colorOut(v, "r3d_surfaceOut(i.vColor, i.vTint, lightAt(i.vWorld, n), vec3f(0.0), 1.0, i.vWorld, true)", "i.fragPos") + ", 1.0);\n" +
+        "    return vec4f(" + colorOut(v, "r3d_surfaceOut(i.vColor, i.vTint, lightAt(i.vWorld, n), vec3f(0.0), 1.0, i.vWorld, true)") + ", 1.0);\n" +
         "}\n"
 
     /// 1 体ごとの値の 1 体のバイト数（Render3d.InstanceValues の 1 体 = 32 float）。
@@ -455,6 +403,7 @@ pub mod Render3dWgsl {
         lightSourceWith(billboardShadowSource(), bv) +
         depthGraySource() +
         "@fragment fn fs_main(i: R3dBillboardIn) -> @location(0) vec4f {\n" +
+        fragCoordIn(bv, "i.position") +
         "    let texel = textureSample(uImage, uImageSampler, i.vUv);\n" +
         "    if (texel.a < 0.5) { discard; }\n" +
         "    if (r3d.uDepthOut == 1) {\n" +
@@ -465,7 +414,7 @@ pub mod Render3dWgsl {
         "    if (i.vLit > 1.5) { r3d_sunLit = sunLitAt(i.vShadowBase + r3d.uSunDir * (i.vShadowOffset / max(length(r3d.uSunDir.xz), ${Scene3d.billboardShadowMinFlat()})), r3d.uSunDir, normalize(i.vFacing)); }\n" +
         "    var light = vec3f(1.0);\n" +
         "    if (lit) { light = lightAt(i.vWorld, normalize(i.vFacing)); }\n" +
-        "    return vec4f(" + colorOut(bv, "r3d_surfaceOut(r3d_srgbToLinear3(texel.rgb), i.vTint, light, vec3f(0.0), 1.0, i.vWorld, lit)", "i.position") + ", 1.0);\n" +
+        "    return vec4f(" + colorOut(bv, "r3d_surfaceOut(r3d_srgbToLinear3(texel.rgb), i.vTint, light, vec3f(0.0), 1.0, i.vWorld, lit)") + ", 1.0);\n" +
         "}\n"
 
     /// ビルボードを影の地図へ描く frag（色を出さず、絵の α < 0.5 の画素を捨てるだけ。GL は billboardFragmentSource の uDepthOut の枝で同じ事をする）。

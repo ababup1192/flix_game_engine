@@ -104,35 +104,16 @@ pub mod Render3dGlsl {
     def vertexSnapSource(): String =
         "uniform vec4 uPsxTarget;\n" +
         "uniform float uVertexSnap;\n" +
-        "vec4 r3d_vertexSnap(vec4 p) {\n" +
-        "    if (uVertexSnap <= 0.0 || p.w <= 0.0) return p;\n" +
-        "    vec2 s = floor(vec2((p.x / p.w + 1.0) * 0.5 * uPsxTarget.z, (1.0 - p.y / p.w) * 0.5 * uPsxTarget.w) / uVertexSnap + 0.5) * uVertexSnap;\n" +
-        "    return vec4((s.x / uPsxTarget.z * 2.0 - 1.0) * p.w, (1.0 - s.y / uPsxTarget.w * 2.0) * p.w, p.z, p.w);\n" +
-        "}\n"
+        ShaderAst.Glsl.printOnly(Render3dShaders.vertexSnap() :: Nil)
 
     /// PS1 風の変種の色の丸め r3d_colorDepth(画面の値の色)（式は Scene3d.Psx.quantize・CPU の描き手は SoftRaster3d.Psx.quantized）と、それが読む uniform。
     /// uPsx = (段の数 2^bits − 1（0 で丸めない）, ディザの表の番号 Scene3d.Psx.patternCode, ディザの強さ, アフィンの割合)・
     /// uPsxTarget = (描き先の左下の画素の x, y, 幅, 高さ)。ディザの格子は描き先の左上を 0 とする画素の x・y の下 2 ビット。
     // WhyNot: 表を uniform の配列で渡さない — 2 つの表は決まった値で、const の配列なら変種の uniform が 2 つで済む。
     def colorDepthSource(): String =
-        let table = (xs: List[Int32]) -> String.intercalate(", ", xs |> List.map(x -> "${x}.0"));
         "uniform vec4 uPsx;\n" +
         "uniform vec4 uPsxTarget;\n" +
-        "const float r3d_psxTable[16] = float[16](${table(Scene3d.Psx.psxTable())});\n" +
-        "const float r3d_bayerTable[16] = float[16](${table(Scene3d.Psx.bayer4Table())});\n" +
-        "float r3d_psxDither(ivec2 p) {\n" +
-        "    int i = (p.y & 3) * 4 + (p.x & 3);\n" +
-        "    if (uPsx.y < 0.5) return r3d_psxTable[i] / 8.0;\n" +
-        "    if (uPsx.y < 1.5) return (r3d_bayerTable[i] + 0.5) / 16.0 - 0.5;\n" +
-        "    return 0.0;\n" +
-        "}\n" +
-        "vec3 r3d_colorDepth(vec3 c) {\n" +
-        "    if (uPsx.x <= 0.0) return c;\n" +
-        "    ivec2 p = ivec2(int(floor(gl_FragCoord.x - uPsxTarget.x)), int(floor(uPsxTarget.y + uPsxTarget.w - gl_FragCoord.y)));\n" +
-        "    float step = 256.0 / (uPsx.x + 1.0);\n" +
-        "    vec3 v = floor(clamp(c, 0.0, 1.0) * 255.0 + 0.5) + r3d_psxDither(p) * uPsx.z * step;\n" +
-        "    return floor(clamp(v, 0.0, 255.0) / step) / uPsx.x;\n" +
-        "}\n"
+        ShaderAst.Glsl.print(Render3dShaders.colorDepth() :: Nil)
 
     /// 変種 v の frag の色の出口: v#psx なら r3d_colorDepth に通した式、ほかは c のまま。
     def colorOut(v: Render3d.ShaderVariant, c: String): String = if (v#psx) "r3d_colorDepth(" + c + ")" else c
@@ -256,24 +237,11 @@ pub mod Render3dGlsl {
     // WhyNot: albedo をここで戻さない — lit の頂点の色は頂点シェーダーで戻してあり、ここで戻すと 2 回かかる。
     // WhyNot: emission にかすみを掛けない — 自分で光る物（溶岩・目）は遠くでもかすみに沈まずに見えてほしい。
     // WhyNot: 光の式の木（LightModel3d）に入れない — かすみの有無・ビルボードの lit・Depth の枝まで木の入力にすることになる。
-    pub def surfaceOutSource(): String =
-        "vec3 r3d_surfaceOut(vec3 albedoLinear, vec3 tint, vec3 light, vec3 emission, float intensity, vec3 p, bool fogOn) {\n" +
-        "    vec3 c = albedoLinear * tint * light;\n" +
-        "    if (fogOn) c = fogged(c, p);\n" +
-        "    return r3d_linearToSrgb3(c + r3d_srgbToLinear3(emission) * intensity);\n" +
-        "}\n"
+    pub def surfaceOutSource(): String = ShaderAst.Glsl.printOnly(Render3dShaders.surfaceOut() :: Nil)
 
     /// 色の空間の変換: Texture3d の式のスカラーの r3d_srgbToLinear / r3d_linearToSrgb と、
     /// その vec3 の版 r3d_srgbToLinear3 / r3d_linearToSrgb3。frag と lit の頂点シェーダーが 1 回ずつ含める。
-    pub def colorSpaceSource(): String =
-        Texture3d.srgbToLinearGlsl("r3d_srgbToLinear") +
-        Texture3d.linearToSrgbGlsl("r3d_linearToSrgb") +
-        "vec3 r3d_srgbToLinear3(vec3 c) {\n" +
-        "    return vec3(r3d_srgbToLinear(c.r), r3d_srgbToLinear(c.g), r3d_srgbToLinear(c.b));\n" +
-        "}\n" +
-        "vec3 r3d_linearToSrgb3(vec3 c) {\n" +
-        "    return vec3(r3d_linearToSrgb(c.r), r3d_linearToSrgb(c.g), r3d_linearToSrgb(c.b));\n" +
-        "}\n"
+    pub def colorSpaceSource(): String = ShaderAst.Glsl.printOnly(Render3dShaders.colorSpace())
 
     /// 影の uniform と、スポット i の光に掛ける割合（Scene3d.shadowMatrix の doc の約束 1〜5。CPU の描き手と同じ）。
     /// 地図の画素は uv = NDC × 0.5 + 0.5 に大きさを掛けて切り捨てた所（行 0 が NDC の y = −1）。周りの画素は端へ寄せる。
@@ -358,9 +326,7 @@ pub mod Render3dGlsl {
     /// Output.Depth の灰色（目からの距離で near が黒・near + range が白）。uEye は呼ぶ側の frag が宣言する。
     def depthGraySource(): String =
         "uniform vec2 uDepthRange;\n" +
-        "float depthGray(vec3 p) {\n" +
-        "    return clamp((distance(p, uEye) - uDepthRange.x) / uDepthRange.y, 0.0, 1.0);\n" +
-        "}\n"
+        ShaderAst.Glsl.printOnly(Render3dShaders.depthGray() :: Nil)
 
     /// 頂点の色のプログラムの frag（vColor は litVertexSource が線形へ戻し済み）。
     pub def litFragmentSource(): String = litFragmentSourceFor(Render3d.defaultShaderVariant())
@@ -471,10 +437,7 @@ pub mod Render3dGlsl {
         LightModel3d.Codegen.toGlsl("pbrAt", Vec3Input.Position :: Vec3Input.Normal :: Vec3Input.Albedo :: Vec3Input.Light :: Vec3Input.MetallicRoughness ::
                                              Vec3Input.EnvironmentColor :: Nil,
                                     LightModel3d.pbrModelFor(Render3d.lightVariantOf(v))) +
-        "vec3 r3d_surfaceOutLit(vec3 lit, vec3 emission, float intensity, vec3 p) {\n" +
-        "    vec3 c = fogged(lit, p);\n" +
-        "    return r3d_linearToSrgb3(c + r3d_srgbToLinear3(emission) * intensity);\n" +
-        "}\n"
+        ShaderAst.Glsl.printOnly(Render3dShaders.surfaceOutLit() :: Nil)
 
     /// 環境マップの uniform と、跳ね返りの向き（LightModel3d.environmentDirection の木から作る environmentDirectionAt）で絵を読む
     /// environmentColorAt(p, n, albedo × tint, vec3(metallic, roughness, 0))（線形の量・強さを掛けた色。CPU の描き手は SoftRaster3d.Internal.environmentColorAt）。
@@ -503,11 +466,7 @@ pub mod Render3dGlsl {
         "}\n"
 
     /// 向き d（長さ 1）で環境マップを読む座標 environmentUv(d)（LightModel3d.environmentUvOf と同じ式）。
-    def environmentUvSource(): String =
-        "vec2 environmentUv(vec3 d) {\n" +
-        "    float azimuth = (abs(d.x) + abs(d.z) < 1e-12) ? 0.0 : atan(d.x, -d.z);\n" +
-        "    return vec2(0.5 + azimuth / 6.283185307179586, 0.5 - asin(clamp(d.y, -1.0, 1.0)) / 3.141592653589793);\n" +
-        "}\n"
+    def environmentUvSource(): String = ShaderAst.Glsl.printOnly(Render3dShaders.environmentUv() :: Nil)
 
     /// ベイクした光の uniform と、lightmap の絵の読み（lightmapColor）と、lightmap のある面の光の式（lightmapLightSource）。
     /// 段つきの Linear で読む（sg_texMip。段は Lightmap の maxLevels まで）。2 本目の uv の絵は場面の textures だけから引くので上下の反転は無い。
@@ -552,16 +511,7 @@ pub mod Render3dGlsl {
     /// CPU の描き手は SoftRaster3d.applyNormalMap）。
     // WhyNot: タンジェントを頂点の値のまま使わない — 補間で N との直交が崩れ、傾ける向きが法線の側へ漏れる。
     // WhyNot: 長さ 0 のタンジェントで傾けない — normalize が NaN を出し、画素が黒く抜ける。その画素は n のまま。
-    pub def applyNormalMapSource(): String =
-        "vec3 applyNormalMap(vec3 n, vec4 tangent, float strength, vec3 c) {\n" +
-        "    vec3 t = tangent.xyz - n * dot(n, tangent.xyz);\n" +
-        "    if (dot(t, t) < 1e-12) return n;\n" +
-        "    t = normalize(t);\n" +
-        "    vec3 b = cross(n, t) * tangent.w;\n" +
-        "    vec3 m = vec3((c.x * 2.0 - 1.0) * strength, (c.y * 2.0 - 1.0) * strength, c.z * 2.0 - 1.0);\n" +
-        "    vec3 p = t * m.x + b * m.y + n * m.z;\n" +
-        "    return dot(p, p) < 1e-12 ? n : normalize(p);\n" +
-        "}\n"
+    pub def applyNormalMapSource(): String = ShaderAst.Glsl.printOnly(Render3dShaders.applyNormalMap() :: Nil)
 
     pub def depthFragmentSource(): String =
         "#version 330 core\n" +
