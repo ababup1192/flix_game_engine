@@ -24,5 +24,6 @@
     }
   ],
   "sounds": [],
-  "scene3dTextureBudgetCount": 128
+  "scene3dTextureBudgetCount": 128,
+  "scene3dTextureBudgetMB": 512
 }

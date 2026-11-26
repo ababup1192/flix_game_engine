@@ -9,6 +9,7 @@ mod SceneDump {
         (Scenes.Scenario.K2, 500, 0.0) :: (Scenes.Scenario.K2, 500, 1.25) :: (Scenes.Scenario.K2, 4000, 0.7) ::
         (Scenes.Scenario.K3, 2000, 0.0) :: (Scenes.Scenario.K3, 2000, 2.5) ::
         (Scenes.Scenario.K5, 20000, 3.0) :: (Scenes.Scenario.K7, 500, 0.8) :: (Scenes.Scenario.K8, 10000, 0.0) ::
+        (Scenes.Scenario.K4, 0, 0.0) :: (Scenes.Scenario.K4, 0, 5.3) ::
         (Scenes.Scenario.K6, 25, 0.0) :: (Scenes.Scenario.K6, 400, 1.3) ::
         (Scenes.Scenario.K9, 250, 0.0) :: (Scenes.Scenario.K9, 250, 1.75) :: Nil
 
@@ -36,7 +37,7 @@ mod SceneDump {
             case Some(g) => "{\"count\":${g#count},\"parent\":${ints(g#parent)},\"position\":${numbers(g#position)},\"quat\":${numbers(quats(g#spin, t * g#timeScale, g#count))}}"
         };
         "{\"scenario\":\"${String.toLowerCase(ToString.toString(scenario))}\",\"level\":${level},\"t\":${t}," +
-        "\"camera\":{\"position\":${v3(camera#position)},\"target\":${v3(camera#target)},\"fovY\":${f#camera#fovY}}," +
+        "\"camera\":{\"position\":${v3(camera#position)},\"target\":${v3(camera#target)},\"fovY\":${f#camera#fovY},\"near\":${f#camera#near},\"far\":${f#camera#far}}," +
         "\"sun\":{\"direction\":${v3(f#sun#direction)},\"color\":${v3(f#sun#color)},\"intensity\":${f#sun#intensity}}," +
         "\"count\":${f#count},\"geom\":${ints(f#geom)},\"material\":${ints(f#material)},\"position\":${numbers(f#position)}," +
         "\"scale\":${numbers(f#scale)},\"quat\":${numbers(quats(f#spin, spinT, f#count))},\"materials\":[${materials}],\"groups\":${groups}," +

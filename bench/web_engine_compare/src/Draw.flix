@@ -5,7 +5,7 @@ mod Draw {
 
     /// 場面を描く材料（形と材質と、同じ形と材質の物の組は読み込みの時に 1 回だけ作る）。path = 物の置き方。
     pub type alias Kit = { field = Scenes.Field, meshes = Vector[Mesh3d.Mesh3d], materials = Vector[Scene3d.Material3d], batches = List[Batch], chunks = List[Chunk], fixed = Option[List[Scene3d.Instance3d]], path = Path,
-                              fox = Option[Fox] }
+                              fox = Option[Fox], scenery = List[Scene3d.Instance3d], sceneryTextures = List[Texture3d.Texture3d] }
 
     /// K6 の狐（比べる相手の Fox.glb）。baked = Walk を 1 秒 bakeRate 刻みで姿勢にした物（群れが Walk だけの時に読み込みで 1 回作る）。
     pub type alias Fox = { model = Model3d.Model3d, skin = Skin3d.Skin3d, walkClip = AnimationClip3d.AnimationClip3d, runClip = AnimationClip3d.AnimationClip3d, baked = Vector[Pose3d.Pose3d] }
@@ -24,6 +24,10 @@ mod Draw {
         case Batched
         case Chunks
     }
+
+    /// 動かない glb（K4 の Sponza）を読み込みで 1 回置く。engine の glTF の読み手は X を裏返すので、Z の裏返しと合わせて Y の半回転（Sz × Sx）で置く。
+    pub def withScenery(model: Model3d.Model3d, kit: Kit): Kit =
+        { scenery = Model3d.partInstances(Mat4.scale(Vec3.v3(-1.0, 1.0, -1.0)), model), sceneryTextures = model#textures | kit }
 
     /// 狐の Walk を姿勢にする刻み（1 秒の数）。
     pub def bakeRate(): Float64 = 30.0
@@ -66,9 +70,8 @@ mod Draw {
             Vector.get(Int32.modulo(Num.roundInt(at * bakeRate()), n), fox#baked)
         }
 
-    /// 体 i の根の行列（左手系）。右手系の 位置 × Y で yaw 回す × 倍率 を Z の裏返しで写し、狐の形の側で Y の半回転を掛けた物。
-    // WhyNot: 狐の形の側を Z で裏返さない — glb の形は右手系のまま読まれ、裏返すと三角形の表と裏が入れ替わる（Mesh3d の番号を並べ替える口は glb の部品に無い）。
-    //   左右が対称な狐なので、Z の裏返しの代わりに Y の半回転で向きをそろえる（違うのは左右の脚の歩みの順だけ）。
+    /// 体 i の根の行列（左手系）。engine の glTF の読み手は X を裏返して左手系にするので、右手系の 位置 × Y で yaw 回す × 倍率 を
+    /// 左から Z の裏返し・右から X の裏返しで挟む（Sz × M × Sx。裏返しが 2 回なので三角形の表と裏は入れ替わらない）。
     def foxWorld(c: Scenes.Crowd, i: Int32): Mat4.Mat4 =
         let yaw = Vector.get(i, c#yaw);
         let s = c#scale;
@@ -110,7 +113,7 @@ mod Draw {
 
     pub def kitOf(path: Path, field: Scenes.Field): Result[String, Kit] =
         Scenes.shapesOf(field#shapes) |> Vector.toList |> List.map(meshOf) |> Result.sequence
-            |> Result.map(meshes -> { field = field, meshes = List.toVector(meshes), materials = field#materials |> Vector.mapWithIndex(materialOf), chunks = Nil, fixed = None, fox = None,
+            |> Result.map(meshes -> { field = field, meshes = List.toVector(meshes), materials = field#materials |> Vector.mapWithIndex(materialOf), chunks = Nil, fixed = None, fox = None, scenery = Nil, sceneryTextures = Nil,
                                       batches = batchesOf(field), path = path })
             |> Result.map(kit -> if (path == Path.Chunks) { chunks = chunksOf(kit) | kit } else kit)
             |> Result.map(kit -> if (path == Path.PerObject and not field#animated) { fixed = Some(instances(kit, 0.0)) | kit } else kit)
@@ -252,9 +255,9 @@ mod Draw {
         let (ar, ag, ab) = f#ambient#color;
         let k = f#ambient#intensity;
         let sun = { color = screenColor(f#sun#color), intensity = f#sun#intensity * lightScale() | Scene3d.directionalLight(flip(f#sun#direction)) };
-        { instances = (if (kit#path == Path.PerObject) perObject() else Nil) ::: posed,
+        { instances = (if (kit#path == Path.PerObject) perObject() else Nil) ::: posed ::: kit#scenery,
           textures = (churn |> Option.map(c -> Map.valuesOf(c#looks) |> List.map(look -> look#texture)) |> Option.getWithDefault(Nil))
-                     ::: (kit#fox |> Option.map(fox -> fox#model#textures) |> Option.getWithDefault(Nil)),
+                     ::: (kit#fox |> Option.map(fox -> fox#model#textures) |> Option.getWithDefault(Nil)) ::: kit#sceneryTextures,
           multiMeshes = if (kit#path == Path.Batched) multiMeshes(kit, t) else Nil,
           groups = if (kit#path == Path.Chunks) visibleChunks(kit, t) else Nil,
           directionalLight = Some(sun),

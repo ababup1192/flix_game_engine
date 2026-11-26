@@ -5,6 +5,7 @@
 #   make upstream-quick … 比べる相手の 6 つの adapter を Chrome の WebGPU と WebGL2 で quick（1 回）で回す（結果は build/upstream/results/<session>）
 #   make compare ONLY='engine=flix,three;scenario=k1' [PROFILE=smoke|quick|full] … 比べる相手の harness に flix の adapter を足して回す
 #                       （patch を当て・本番で書き出して public/flix へ写す・結果は build/upstream/results/<session>）。engine の根の make web-engine-compare は同じ物
+#   make k4-export      … K4 の Sponza（比べる相手の .gltf を harness/pack-glb.mjs で glb にまとめ直す）を入れた別の書き出しを public/flix-k4 へ（make compare が ONLY に k4 がある時に流す）
 #   make compare-table [SESSION=<session>] … 回した結果から README の行の表（flix の CPU は場面の更新を差し引いた値）
 #   make scene-compare… Flix の場面（SceneDump）と比べる相手の buildScene の値を比べる（Float32 で相対 1e-5・整数は完全一致）
 #   make compare-assets … K6 の狐（Fox.glb・CC-BY）・K9 の字（Roboto・Apache-2.0）と icon の atlas（比べる相手の canvas が描く物の PNG）を assets/ へ置く（git の外。make compare が先に流す・make bench-web の前にも要る）
@@ -23,7 +24,7 @@ UPSTREAM  := build/upstream
 MINIMAL   := ../web_engine_compare_minimal
 FEATURED  := ../web_engine_compare_featured
 
-.PHONY: compare-assets compare compare-setup compare-table check test upstream upstream-quick scene-compare footprint footprint-export featured-assets spike common-fresh
+.PHONY: k4-export compare-assets compare compare-setup compare-table check test upstream upstream-quick scene-compare footprint footprint-export featured-assets spike common-fresh
 
 check: common-fresh
 	$(FLIX) check
@@ -81,6 +82,28 @@ compare-setup: compare-assets
 	cp harness/flix-adapter.ts $(UPSTREAM)/src/engines/flix/index.ts
 	$(FGE) export-web . --out $(CURDIR)/build/web-flix
 	cp -R build/web-flix/. $(UPSTREAM)/public/flix/
+	$(NODE) -e "$$RAW_WASM" $(UPSTREAM)/public/flix/bundle.json
+	$(if $(K4_NEEDED),$(MAKE) --no-print-directory k4-export)
+
+# 比べる相手の dev サーバーは .br を Content-Encoding: br で配らない。他の engine と同じく生のまま読む道（compileStreaming）にする（計画の 4.1）。
+define RAW_WASM
+const f = process.argv[1], fs = require('fs'), b = JSON.parse(fs.readFileSync(f, 'utf8')); delete b.wasmBrotli; fs.writeFileSync(f, JSON.stringify(b));
+endef
+export RAW_WASM
+
+# K4 の Sponza（約 53 MB）は別の書き出しに入れる。
+# WhyNot: assets/ に置いて 1 つの書き出しにしない — 書き出しの素材は起動で全部取るので、K1 の TTFF まで Sponza を取る時間が乗る。
+K4_NEEDED := $(if $(ONLY),$(findstring k4,$(ONLY)),k4)
+K4_GAME := build/k4-game
+k4-export: compare-assets
+	@test -f build/sponza/Sponza.glb || $(NODE) harness/pack-glb.mjs $(UPSTREAM)/public/assets/Sponza/Sponza.gltf build/sponza/Sponza.glb
+	@rm -rf $(K4_GAME) && mkdir -p $(K4_GAME)
+	rsync -aL src web flix.toml packages.lock project.json lib assets $(K4_GAME)/
+	cp build/sponza/Sponza.glb $(K4_GAME)/assets/Sponza.glb
+	$(FGE) export-web $(K4_GAME) --out $(CURDIR)/build/web-flix-k4
+	@mkdir -p $(UPSTREAM)/public/flix-k4
+	cp -R build/web-flix-k4/. $(UPSTREAM)/public/flix-k4/
+	$(NODE) -e "$$RAW_WASM" $(UPSTREAM)/public/flix-k4/bundle.json
 
 PROFILE ?= smoke
 compare: compare-setup

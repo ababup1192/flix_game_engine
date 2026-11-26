@@ -39,6 +39,8 @@ mod WebMain {
                     let field = Scenes.crowdField(level, blended, { min = (b#min#x, b#min#y, b#min#z), max = (b#max#x, b#max#y, b#max#z) });
                     Draw.kitOf(path, field) |> Result.flatMap(k -> Draw.foxOf(model, not blended) |> Result.map(fox -> { fox = Some(fox) | k }))
                 })
+            else if (scenario == Scenes.Scenario.K4)
+                Model3d.load(Model3d.loader(), "assets/Sponza.glb") |> Result.flatMap(model -> Draw.kitOf(path, Scenes.build(scenario, level)) |> Result.map(Draw.withScenery(model)))
             else Draw.kitOf(path, Scenes.build(scenario, level));
             match made {
                 case Err(why) => Browser.log("[web_engine_compare] 形を作れない: ${why}")

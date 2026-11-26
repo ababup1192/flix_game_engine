@@ -243,7 +243,7 @@ smoke（1 回・counters の回・WebGPU）:
 - optimized（計画の決め 8）: 比べる相手と同じく Walk だけ。読み込みで Walk を 1 秒 30 刻みの姿勢（`Pose3d`）にしておき、体ごとに一番近い刻みを使う（同じ姿勢の体は engine が姿勢の行を分け合う・Babylon.js の baked animation と同じ考え方）。path に刻みを書く。
 - 差し引く場面の更新は Run の重みだけ（比べる相手の scene.update と同じ）。姿勢を取り出して混ぜる所と置く所は engine の仕事（比べる相手の mixer）として CPU に残す。
   - Flix の最適化が純粋な let を測る thunk の中へ畳み、姿勢の値段が場面の更新に入っていた。姿勢を作る所も timed で包んで順を決めた（値は捨てる）。
-- glb の形は右手系のまま読まれるので、Z の裏返しの代わりに Y の半回転で向きをそろえた（左右が対称な狐なので、違うのは左右の脚の歩みの順だけ）。frame 60 の絵で向き・大きさ・間隔が three.js と同じ。
+- engine の glTF の読み手は X を裏返して左手系にするので、体の根の行列は Sz × M × Sx（裏返し 2 回で三角形の表と裏は入れ替わらない）。frame 60 の絵で向き・大きさ・間隔が three.js と同じ。
 - engine の助言の行（`scene3d: 同じ形と材質の物が …`）を hints に数える（HINT_PREFIXES に足した）。
 
 smoke（1 回・counters の回・WebGPU）の interval p50（ms）:
@@ -262,3 +262,28 @@ smoke（1 回・counters の回・WebGPU）の interval p50（ms）:
 - 60 fps に収まる最大: flix naive 約 350・three.js naive 約 790 ／ flix optimized 約 6.0k・three.js optimized 約 770（three.js は姿勢を分け合う道が無く、既定の道で回す）。
   README の M1 Pro の naive は 359〜2.9k、1 clip は 621〜32.8k。
 - naive の CPU は体 1 つに約 45 µs（姿勢の取り出し 2 回・混ぜ・行列 24 本）。GPU は 400 体で 1.3 ms と軽い。
+
+## S7: K4 の段 0（Sponza）と TTFF
+
+- 比べる相手の Sponza は `.gltf`（外の bin と画像 69 枚）で、engine の glb の読み手は読めない（X3）。`harness/pack-glb.mjs` で中身を変えずに 1 本の glb（52.6 MB）にまとめ直す（Blender で書き直さない）。
+- Sponza は**別の書き出し**（`make k4-export` → `public/flix-k4`・adapter が scenario で置き場を選ぶ）。書き出しの素材は起動で全部取るので、1 つにまとめると K1 の TTFF まで Sponza を取る時間が乗るため。
+  絵の予算は project.json で 64 枚 / 256 MB → 128 枚 / 512 MB（Sponza の 69 枚・多くが 1024²）。
+- 場面: カメラは建物の長い向きに 16 秒で行き来し、10 秒周期で左右を見る（`Scenes.Motion.Sweep`。建物の広がりは比べる相手の manifest の worldBounds）。
+  `make scene-compare` に K4 の 2 場面（t = 0・5.3）を足し、カメラの位置・注視点・fov・near・far と太陽まで **16 場面・555 の配列が一致**。
+  glb の部品は読み込みで 1 回置く（Sz × Sx = Y の半回転。glTF の読み手が X を裏返すため）。frame 60 の絵は three.js と同じ構図（金の紋の明るさだけ違う・X2）。
+- 段 1〜4 は `N/A`（カスケードの影・32 本を超える点光源が engine に無い）。init で止め、Sponza の書き出しを起こさない。
+- **TTFF の道**: 比べる相手の dev サーバーは `.br` を `Content-Encoding: br` で配らないので、書き出しの bundle.json から `wasmBrotli` を外し、生の classes.wasm（9.5 MB）を TeaVM の compileStreaming で読む（計画の 4.1）。
+  K1 を 2 回ずつ比べると、生の道 533・624 ms、.br を JS で解く道 561・542 ms で、差は揺れの中。
+- adapter の load は 60 コマ回して pipeline と形の初めての上げを済ませるので、その分（loadMs 110〜270 ms）が TTFF に入る（他の engine の load は素材の読み込みと pipeline の先作り）。
+
+smoke（1 回・counters の回・WebGPU）:
+
+| 場面 | flix | three | 注 |
+|---|---:|---:|---|
+| K1 TTFF ms | 753（init 604・load 113）| 72 | 2 回目以降の K1 は 533〜624 |
+| K4 段 0 TTFF ms | 1,879（init 1,593・load 267）| 262 | init に 52.6 MB の glb の解析と絵 69 枚の解きが入る |
+| K4 段 0 interval p50 ms | 3.7 | 0.6 | flix CPU p95 3.9・GPU p95 2.7 ／ three CPU p95 0.5・GPU p95 2.0 |
+| K4 段 0 draw / 三角形（1 コマの平均）| 47.5 / 165k | 53.5 / 180k | 間引く単位の違い |
+
+- 比べる相手の M4 Pro の quick（S0）は K4 段 0 が 1.4〜1.7 ms・Sponza の TTFF が 367〜826 ms。flix はどちらもその外。
+- TTFF の大半は init（wasm の compile と起動・glb の解析）。glb の Worker の計画（`plans/engine-web-glb-worker.md`）が効く所。

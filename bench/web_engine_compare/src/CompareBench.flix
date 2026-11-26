@@ -1,6 +1,6 @@
 // CompareBench — 場面を毎コマ描き、区間ごとに 1 行の JSON（BenchRun）を出す。
 // 2 つの回し方が同じ App を使う: engine の口（make bench-web）と、比べる相手の harness の adapter（harness/flix-adapter.ts）。
-// つまみ: scenario=k1|k2|k3|k5|k6|k7|k8|k9・variant=naive|optimized・level=<物の数>・frames=<1 区間のコマ数>・repeat=<区間の数>・diag=0。
+// つまみ: scenario=k1|k2|k3|k4|k5|k6|k7|k8|k9・variant=naive|optimized・level=<物の数>・frames=<1 区間のコマ数>・repeat=<区間の数>・diag=0。
 mod CompareBench {
     use fge::{App, Num, Render}
 
@@ -36,7 +36,7 @@ mod CompareBench {
         else Draw.Path.Batched
 
     pub def levelOf(scenario: Scenes.Scenario, knobs: Map[String, String]): Int32 =
-        BenchRun.intKnob("level", if (scenario == Scenes.Scenario.K1) 1 else 500, knobs)
+        BenchRun.intKnob("level", if (scenario == Scenes.Scenario.K1) 1 else if (scenario == Scenes.Scenario.K4) 0 else 500, knobs)
 
     def knobsOf(kit: Draw.Kit, scenario: Scenes.Scenario, segment: Int32): List[(String, String)] =
         ("bench", BenchRun.quoted("web_engine_compare")) :: ("segment", Int32.toString(segment)) ::

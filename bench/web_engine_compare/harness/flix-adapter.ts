@@ -5,7 +5,8 @@
 //   - 場面の時刻は頁の fgeQueryPairs を包んで渡し、場面の更新の ms は console の 1 行（[wec] sim <ms>）で受ける。
 import type { EngineAdapter, InitOptions, InitReport, LoadReport, SceneData, Variant } from '../../harness/types';
 
-const BASE = '/flix/';
+/** 書き出しの置き場（K4 は Sponza を入れた別の書き出し・Makefile の k4-export）。 */
+const BASE = new URLSearchParams(location.search).get('scenario') === 'k4' ? '/flix-k4/' : '/flix/';
 const SIM_LINE = '[wec] sim ';
 const PICK_LINE = '[wec] pick ';
 /** pick の答えを待つコマ数の上限。 */
@@ -48,6 +49,10 @@ class FlixAdapter implements EngineAdapter {
   private pickMs: number | null = null;
 
   async init(canvas: HTMLCanvasElement, opts: InitOptions): Promise<InitReport> {
+    const query = new URLSearchParams(location.search);
+    // WhyNot: load で止めない — 段 1〜4 の頁でも約 53 MB の書き出しを起こしてから止めることになる。
+    if (query.get('scenario') === 'k4' && Number(query.get('level')) > 0)
+      throw new Error('N/A: 段 1〜4 は engine に無い（カスケードの影・32 本を超える点光源）');
     this.backend = opts.backend;
     this.wrapPage();
     window.fgeDev = { backend: opts.backend === 'webgl2' ? 'webgl2' : 'webgpu', sw: false };
@@ -219,6 +224,7 @@ class FlixAdapter implements EngineAdapter {
 function pathOf(scenario: string | null, variant: Variant) {
   if (scenario === 'k5') return variant === 'optimized' ? '区画ごとの Scene3d.staticGroup（起動の時に先に作る）・見える区画をゲームの側で選ぶ' : 'Scene3d.meshInstance per object（物の列は読み込みで 1 回作る）';
   if (variant === 'optimized') return 'MultiMesh3d.build per (geometry, material)・毎コマ組み直す';
+  if (scenario === 'k4') return 'Model3d.load の glb（比べる相手の .gltf を 1 本にまとめ直した物）・partInstances を読み込みで 1 回置く';
   if (scenario === 'k6') return variant === 'optimized'
     ? 'Model3d.partInstances per character・Walk を読み込みで 1 秒 30 刻みの Pose3d にし、体ごとに一番近い刻みを分け合う'
     : 'Model3d.partInstances per character・毎コマ AnimationClip3d.sample（Walk・Run）× 2 と Pose3d.blend と Pose3d.compute';

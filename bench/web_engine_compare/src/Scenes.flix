@@ -21,12 +21,12 @@ mod Scenes {
     pub type alias Groups = { count = Int32, parent = Vector[Int32], position = Vector[Float64], spin = Spin, timeScale = Float64 }
 
     /// 物をたくさん置く場面。geom は Geometry.fieldShapes の番号・material は materials の番号・position は物ごとに 3 つ。
-    /// animated = 物が回るか（偽なら t = 0 の向きのまま）・turn = カメラの注視点が 1 周する秒（K5）。
+    /// animated = 物が回るか（偽なら t = 0 の向きのまま）・motion = カメラの動き。
     pub type alias Field = {
         camera = Camera, clearColor = V3, ambient = { color = V3, intensity = Float64 }, sun = Sun,
         materials = Vector[Pbr], count = Int32, geom = Vector[Int32], material = Vector[Int32],
         position = Vector[Float64], scale = Vector[Float64], spin = Spin, groups = Option[Groups],
-        animated = Bool, turn = Option[Float64], shapes = ShapeSet, pickPoints = Vector[Float64], hud = Option[Hud],
+        animated = Bool, motion = Motion, shapes = ShapeSet, pickPoints = Vector[Float64], hud = Option[Hud],
         crowd = Option[Crowd]
     }
 
@@ -50,6 +50,14 @@ mod Scenes {
     /// 時刻 t の名札（x, y = 字の上の真ん中・health = 0..1）。
     pub type alias Nameplate = { x = Float64, y = Float64, health = Float64 }
 
+    /// カメラの動き。Still = 動かない・Turn(秒) = 位置はそのままで注視点が y = 4 の半径 10 の輪を回る（K5）・
+    /// Sweep = 建物の中を長い向きに行き来しながら左右を見る（K4。center は床の真ん中・length は長い向きの長さ・height は高さ・alongX = 長い向きが X）。
+    pub enum Motion {
+        case Still
+        case Turn(Float64)
+        case Sweep({ center = V3, length = Float64, height = Float64, alongX = Bool })
+    }
+
     /// 物の形の組。Field = Geometry.fieldShapes の 8 つ・BigSphere = 三角形 1M の球 1 つ（K8 の 1M 三角形の pick）。
     pub enum ShapeSet with Eq {
         case Field
@@ -66,6 +74,7 @@ mod Scenes {
         case K1
         case K2
         case K3
+        case K4
         case K5
         case K6
         case K7
@@ -77,6 +86,7 @@ mod Scenes {
         case "k1" => Some(Scenario.K1)
         case "k2" => Some(Scenario.K2)
         case "k3" => Some(Scenario.K3)
+        case "k4" => Some(Scenario.K4)
         case "k5" => Some(Scenario.K5)
         case "k6" => Some(Scenario.K6)
         case "k7" => Some(Scenario.K7)
@@ -91,6 +101,7 @@ mod Scenes {
         case Scenario.K1 => startup()
         case Scenario.K2 => hierarchyField(level)
         case Scenario.K3 => frustumField(3, level, palette(2300, 8, 1.0))
+        case Scenario.K4 => sponzaField(sponzaExtent())
         case Scenario.K5 => worldField(level)
         case Scenario.K7 => frustumField(7, level, palette(2700, 16, 0.5))
         case Scenario.K8 => pickField(level)
@@ -183,7 +194,7 @@ mod Scenes {
           scale = Vector.range(0, count) |> Vector.map(i -> s * Rng.rangeAt(seed, i * draws + draws - 1, { min = 0.8, max = 1.2 })),
           position = scatterInFrustum(seed, count * draws, fieldCamera(), count, { near = 25.0, far = 55.0, margin = s }),
           spin = spinner(seed, count * draws + count * 3, count),
-          groups = None, animated = true, turn = None, shapes = ShapeSet.Field, pickPoints = Vector.empty(), hud = None, crowd = None }
+          groups = None, animated = true, motion = Motion.Still, shapes = ShapeSet.Field, pickPoints = Vector.empty(), hud = None, crowd = None }
 
     /// K1: 光の当たる箱 1 つ。
     def startup(): Field =
@@ -191,7 +202,7 @@ mod Scenes {
           clearColor = clear(), ambient = ambient(), sun = sun(),
           materials = Vector#{{ color = (0.8, 0.3, 0.1), roughness = 0.4, metalness = 0.0, opacity = 1.0 }},
           count = 1, geom = Vector#{0}, material = Vector#{0}, position = Vector#{0.0, 0.0, 0.0}, scale = Vector#{1.0},
-          spin = spinner(1, 0, 1), groups = None, animated = true, turn = None, shapes = ShapeSet.Field, pickPoints = Vector.empty(), hud = None, crowd = None }
+          spin = spinner(1, 0, 1), groups = None, animated = true, motion = Motion.Still, shapes = ShapeSet.Field, pickPoints = Vector.empty(), hud = None, crowd = None }
 
     /// K3 で 1 コマに作り直す物の数。
     pub def churnPerFrame(): Int32 = 20
@@ -251,15 +262,43 @@ mod Scenes {
               Rng.rangeAt(seed, at(i, 3), { min = 0.0 - side / 2.0, max = side / 2.0 }),
               Rng.rangeAt(seed, at(i, 4), { min = 0.5, max = 3.0 }),
               Rng.rangeAt(seed, at(i, 5), { min = 0.0 - side / 2.0, max = side / 2.0 })}),
-          spin = spinner(seed, count * 6, count), groups = None, animated = false, turn = Some(turnSeconds()), shapes = ShapeSet.Field, pickPoints = Vector.empty(), hud = None, crowd = None }
+          spin = spinner(seed, count * 6, count), groups = None, animated = false, motion = Motion.Turn(turnSeconds()), shapes = ShapeSet.Field, pickPoints = Vector.empty(), hud = None, crowd = None }
 
-    /// 時刻 t のカメラ（turn があれば注視点が y = 4 の半径 10 の輪を回る）。
-    pub def cameraAt(f: Field, t: Float64): Camera = match f#turn {
-        case Some(seconds) =>
+    /// K4 のカメラが 1 往復する秒。
+    def sweepSeconds(): Float64 = 16.0
+
+    /// 時刻 t のカメラ。
+    pub def cameraAt(f: Field, t: Float64): Camera = match f#motion {
+        case Motion.Still => f#camera
+        case Motion.Turn(seconds) =>
             let a = t / seconds * 2.0 * Num.pi();
             { target = (10.0 * Num.cos(a), 4.0, 10.0 * Num.sin(a)) | f#camera }
-        case None => f#camera
+        case Motion.Sweep(w) =>
+            let (cx, cy, cz) = w#center;
+            let s = Num.sin(t * Num.pi() * 2.0 / sweepSeconds()) * 0.35 * w#length;
+            let yaw = 0.6 * Num.sin(t * Num.pi() * 2.0 / 10.0);
+            let y = cy + 0.15 * w#height;
+            let (px, pz) = if (w#alongX) (cx + s, cz) else (cx, cz + s);
+            let (fx, fz) = if (w#alongX) (Num.cos(yaw), Num.sin(yaw)) else (Num.sin(yaw), Num.cos(yaw));
+            { position = (px, y, pz), target = (px + fx, y + 0.08, pz + fz) | f#camera }
     }
+
+    /// K4（段 0）: Sponza の中を行き来するカメラ。extent = 建物の world の広がり（node の置き方を掛けた後）。物を置く場面の欄は空。
+    pub def sponzaField(extent: Extent): Field =
+        let ((x0, y0, z0), (x1, y1, z1)) = (extent#min, extent#max);
+        let (lenX, lenZ) = (x1 - x0, z1 - z0);
+        let length = Float64.max(lenX, lenZ);
+        let base = startup();
+        { camera = { position = (0.0, 0.0, 0.0), target = (0.0, 0.0, 0.0), fovY = 60.0, near = length / 2000.0, far = length * 1.5 },
+          clearColor = (0.35, 0.45, 0.6), ambient = { color = (0.7, 0.75, 0.85), intensity = 0.5 },
+          sun = { direction = normalized((0.2, -1.0, 0.15)), color = (1.0, 0.97, 0.92), intensity = 3.0 },
+          count = 0, geom = Vector.empty(), material = Vector.empty(), position = Vector.empty(), scale = Vector.empty(),
+          motion = Motion.Sweep({ center = ((x0 + x1) / 2.0, y0, (z0 + z1) / 2.0), length = length, height = y1 - y0, alongX = lenX >= lenZ }) | base }
+
+    /// 比べる相手の素材の表（public/assets/manifest.json）の Sponza の worldBounds。
+    // WhyNot: 読んだ glb から量らない — 段 0 のカメラの道は建物に合わせて決めたデザインの値で、読み込みの前（場面を作る時）に要る。
+    pub def sponzaExtent(): Extent =
+        { min = (-15.367568112732783, -1.0115400260729146, -9.462457480692592), max = (14.399265332365871, 11.435466363467981, 8.84340862316435) }
 
     /// 物の向きを決める時刻（動かない場面は 0）。
     def spinTime(f: Field, t: Float64): Float64 = if (f#animated) t else 0.0
