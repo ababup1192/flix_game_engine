@@ -229,6 +229,8 @@ pub mod LwjglLayer {
             false
         else if (not Object.isNull(System.getProperty("game.relaunched")))
             false
+        else if (isNativeImage())
+            false
         else if (isStartedOnFirstThread())
             false
         else {
@@ -251,6 +253,12 @@ pub mod LwjglLayer {
             System.exit(code);
             true
         }
+
+    /// GraalVM の native image として動いているか（native image は main をプロセスの最初のスレッドで回す）。
+    // WhyNot: native image で java を起動し直さない — java.home が無く、起動し直す先の java も jar も無い。
+    def isNativeImage(): Bool \ IO =
+        let imageCode = System.getProperty("org.graalvm.nativeimage.imagecode");
+        not Object.isNull(imageCode) and imageCode == "runtime"
 
     /// java ランチャは -XstartOnFirstThread 付きの起動で、環境変数 `JAVA_STARTED_ON_FIRST_THREAD_<pid>` を "1" にする
     /// （LWJGL / GLFW が最初のスレッドで動いているかを見るのと同じ変数）。game.relaunched の無い起動でも二重に起動し直さない。

@@ -16,13 +16,13 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
     import org.lwjgl.glfw.GLFW
     import org.lwjgl.glfw.GLFWFramebufferSizeCallbackI
     import org.lwjgl.glfw.GLFWNativeCocoa
+    import org.lwjgl.stb.STBImageWrite
     import org.lwjgl.system.MemoryUtil
     import java.awt.image.BufferedImage
     import java.io.File
     import java.lang.System
     import java.lang.Throwable
     import java.nio.ByteBuffer
-    import javax.imageio.ImageIO
     use LwjglLayer.{announceFixedDt, applyFullscreen, applyMouseCaptured, closeAudio, cursorModeOf, frameShotLimit,
                     handleAudio, handleFrameClock, handleLoadProgress, handleTasks, openAudio, openCursors, saveAnnotationWith}
     use RenderPaint.Internal.WebGpuPaint
@@ -372,7 +372,7 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
         match ps#frameShotDir {
             case Some(dir) if count < frameShotLimit() =>
                 Array.put(count + 1, 0, ps#frameShotTaken);
-                writeShot(frameImage(ps), "${dir}/frame-${count + 1}.png")
+                writeShot(ps, "${dir}/frame-${count + 1}.png")
             case _ => ()
         }
 
@@ -396,12 +396,23 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
         image
     }
 
-    /// 画像を PNG に書く（フォルダが無ければ作る）。
-    def writeShot(image: BufferedImage, path: String): Unit \ IO =
+    /// 最後に描いたコマ（中間の texture）を左上原点の RGBA の PNG に書く（フォルダが無ければ作る）。
+    // WhyNot: imageOf の BufferedImage を ImageIO で書かない — macOS の native image には AWT（libawt）が無く、撮る口が落ちる。
+    def writeShot(ps: PresentState, path: String): Unit \ IO =
+        let (w, h) = Array.get(0, ps#size);
+        let stride = w * 4;
+        let pixels = ByteBuffer.allocateDirect(stride * h);
+        WebGpuPaint.readFrame(ps#paint, pixels);
+        let topDown = MemoryUtil.memAlloc(stride * h);
+        let bottomUpAt = MemoryUtil.memAddress(pixels);
+        let topDownAt = MemoryUtil.memAddress(topDown);
+        List.forEach(y -> MemoryUtil.memCopy(bottomUpAt + Int32.toInt64((h - 1 - y) * stride), topDownAt + Int32.toInt64(y * stride), Int32.toInt64(stride)),
+                     List.range(0, h));
         let file = new File(path);
         let parent = file.getParentFile();
         if (not Object.isNull(parent)) discard parent.mkdirs() else ();
-        discard ImageIO.write(image, "png", file)
+        discard STBImageWrite.stbi_write_png(path, w, h, 4, topDown, stride);
+        MemoryUtil.memFree(topDown)
 
     /// RGBA の 1 行（fromByte バイトから）を ARGB の int の列（toIndex から）へ並べる。
     def putRow(pixels: ByteBuffer, fromByte: Int32, argb: Array[Int32, r], toIndex: Int32, w: Int32, x: Int32): Unit \ r + IO =
