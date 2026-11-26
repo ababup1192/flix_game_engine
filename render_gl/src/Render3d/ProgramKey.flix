@@ -14,22 +14,28 @@ pub mod Render3d.ProgramKey {
         case PointShadows, PhysicalUnits, Psx, SkyIrradiance
     }
 
+    /// WebGPU の場面の group 0 に変種が足す binding（Render3dWgsl.variantDeclarations と WebGpuRenderer.sceneLayoutDesc が並べる順）。
+    /// LightBuffer = R3dLight の buffer・PointShadowAtlas = 点光源の影の atlas。
+    pub enum Group0Binding with Eq, Order {
+        case LightBuffer, PointShadowAtlas
+    }
+
     /// 変種のフラグの表の 1 行。key = 鍵の字（Scene3d.preloadVariantKey と同じ）・kindCodeBit = 材質の版を 1 つの数にする時の bit・
-    /// billboard = ビルボードのプログラムも受けるか・lightBuffer = WebGPU の group 0 に R3dLight の buffer を足すか・
-    /// pointShadowAtlas = WebGPU の group 0 に点光源の影の atlas を足すか・feature = シェーダーの名前のある点ごとの差し込み。
-    pub type alias FlagRow = { flag = VariantFlag, key = String, kindCodeBit = Int32, billboard = Bool, lightBuffer = Bool, pointShadowAtlas = Bool,
+    /// billboard = ビルボードのプログラムも受けるか・group0 = WebGPU の group 0 に足す binding（2 つのフラグが同じ binding を足しても 1 つ）・
+    /// feature = シェーダーの名前のある点ごとの差し込み。
+    pub type alias FlagRow = { flag = VariantFlag, key = String, kindCodeBit = Int32, billboard = Bool, group0 = List[Group0Binding],
                                feature = Render3dShaders.ShaderFeature }
 
     /// 変種のフラグの表（鍵の並びの順）。
     // WhyNot: ビルボードに点光源の影を受けさせない — 板は薄く、点光源の影の地図の 6 面を引くと 1 枚の板のために全部の面を読む。
     pub def flagRows(): List[FlagRow] =
-        { flag = VariantFlag.PointShadows,  key = "+ps",  kindCodeBit = 256,  billboard = false, lightBuffer = true, pointShadowAtlas = true,
+        { flag = VariantFlag.PointShadows,  key = "+ps",  kindCodeBit = 256,  billboard = false, group0 = Group0Binding.LightBuffer :: Group0Binding.PointShadowAtlas :: Nil,
           feature = Render3dShaders.pointShadowsFeature() } ::
-        { flag = VariantFlag.PhysicalUnits, key = "+pu",  kindCodeBit = 512,  billboard = true,  lightBuffer = true, pointShadowAtlas = false,
+        { flag = VariantFlag.PhysicalUnits, key = "+pu",  kindCodeBit = 512,  billboard = true,  group0 = Group0Binding.LightBuffer :: Nil,
           feature = Render3dShaders.noFeature() } ::
-        { flag = VariantFlag.Psx,           key = "+psx", kindCodeBit = 1024, billboard = true,  lightBuffer = true, pointShadowAtlas = false,
+        { flag = VariantFlag.Psx,           key = "+psx", kindCodeBit = 1024, billboard = true,  group0 = Group0Binding.LightBuffer :: Nil,
           feature = Render3dShaders.psxFeature() } ::
-        { flag = VariantFlag.SkyIrradiance, key = "+sh",  kindCodeBit = 2048, billboard = true,  lightBuffer = true, pointShadowAtlas = false,
+        { flag = VariantFlag.SkyIrradiance, key = "+sh",  kindCodeBit = 2048, billboard = true,  group0 = Group0Binding.LightBuffer :: Nil,
           feature = Render3dShaders.noFeature() } :: Nil
 
     /// 変種 v のフラグの集まり（render_gl へ入る所で 1 回だけ変える）。
@@ -42,6 +48,10 @@ pub mod Render3d.ProgramKey {
     pub def variantOf(flags: Set[VariantFlag]): ShaderVariant =
         { pointShadows = Set.memberOf(VariantFlag.PointShadows, flags), physicalUnits = Set.memberOf(VariantFlag.PhysicalUnits, flags),
           psx = Set.memberOf(VariantFlag.Psx, flags), skyIrradiance = Set.memberOf(VariantFlag.SkyIrradiance, flags) }
+
+    /// 変種 v が WebGPU の場面の group 0 に足す binding。
+    pub def group0Of(v: ShaderVariant): Set[Group0Binding] =
+        rowsOf(v) |> List.flatMap(row -> row#group0) |> List.toSet
 
     /// 変種 v の、表で row が真になるフラグの行。
     pub def rowsOf(v: ShaderVariant): List[FlagRow] =

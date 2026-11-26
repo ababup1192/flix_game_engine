@@ -469,9 +469,9 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
         let plain = Render3d.ProgramKey.defaultShaderVariant();
         discard Render3d.WebGpuBillboards.pipelineOf(s#billboards, RenderTarget.Format.Rgba8Unorm, 1, plain, (0, s#sceneLayout));
         discard Render3d.WebGpuBillboards.pipelineOf(s#billboards, RenderTarget.Format.Rgba8Unorm, 4, plain, (0, s#sceneLayout));
-        discard Render3d.WebGpuBillboards.pipelineOf(s#billboards, RenderTarget.Format.Rgba8Unorm, 1, { physicalUnits = true | plain }, (1, s#lightLayout));
-        discard Render3d.WebGpuBillboards.pipelineOf(s#billboards, RenderTarget.Format.Rgba8Unorm, 1, { pointShadows = true | plain }, (2, s#atlasLayout));
-        discard Render3d.WebGpuBillboards.pipelineOf(s#billboards, RenderTarget.Format.Rgba8Unorm, 1, { pointShadows = true, physicalUnits = true, psx = false, skyIrradiance = false }, (2, s#atlasLayout));
+        discard Render3d.WebGpuBillboards.pipelineOf(s#billboards, RenderTarget.Format.Rgba8Unorm, 1, { physicalUnits = true | plain }, (1, Render3d.WebGpuRenderer.sceneLayoutOf(renderer, 1)));
+        discard Render3d.WebGpuBillboards.pipelineOf(s#billboards, RenderTarget.Format.Rgba8Unorm, 1, { pointShadows = true | plain }, (3, Render3d.WebGpuRenderer.sceneLayoutOf(renderer, 3)));
+        discard Render3d.WebGpuBillboards.pipelineOf(s#billboards, RenderTarget.Format.Rgba8Unorm, 1, { pointShadows = true, physicalUnits = true, psx = false, skyIrradiance = false }, (3, Render3d.WebGpuRenderer.sceneLayoutOf(renderer, 3)));
         discard Render3d.WebGpuBillboards.shadowPipelineOf(s#billboards, Render3d.WebGpuShadows.layoutOf(s#shadows), Render3d.WebGpuShadows.depthFormat(), false);
         discard Render3d.WebGpuBillboards.shadowPipelineOf(s#billboards, Render3d.WebGpuShadows.layoutOf(s#shadows), Render3d.WebGpuShadows.depthFormat(), true);
         let errors = gpu.errorCount();

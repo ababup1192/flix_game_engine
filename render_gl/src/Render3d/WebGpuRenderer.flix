@@ -48,7 +48,7 @@ pub mod Render3d.WebGpuRenderer {
     import java.lang.Object
     import java.util.Objects
     use Render3d.{LightData, MeshDraw, PixelBox, TextureSlot, TextureSource, clipBox, matrixArray, sceneRect}
-    use Render3d.ProgramKey.{ShaderVariant, defaultShaderVariant, passVariantOf, variantKeyOf}
+    use Render3d.ProgramKey.{Group0Binding, ShaderVariant, defaultShaderVariant, passVariantOf, variantKeyOf}
     use Render3d.Batch.{MeshBatch, SpanBatch}
     use Render3d.InstanceValues.{PackMode, numberSpan}
     use Render3d.Light.{lightDataOf}
@@ -141,7 +141,7 @@ pub mod Render3d.WebGpuRenderer {
     /// 描き手の状態。欄の中身:
     /// vertexModule と skinnedModule = 頂点の色の頂点シェーダー（骨の無い版と骨つきの版）・poseLayout = group 2（姿勢）の layout・
     /// emptyLayout と emptyGroup = 骨つきの頂点の色の pipeline の group 1（材質を読まない版で、group 2 の前を埋める）・
-    /// lightLayout と atlasLayout = 変種の場面の group 0 の layout（sceneLayout に R3dLight を足した物・さらに点光源の影の atlas を足した物。layoutCodeOf）・
+    /// variantLayouts = 変種の場面の group 0 の layout（layoutCodeOf の番号 → sceneLayout に変種の binding を足した物。初めて要る時に作る）・
     /// variantFragments = 変種の鍵（Render3d.ProgramKey.variantKeyOf）→ 頂点の色の frag・cpuLight = R3dLight を詰める入れ物・sceneOffsets = R3dScene の欄の位置（作る時に 1 回求める）・
     /// pipelines = LitPipelineKey → 頂点の色の pipeline・depthModule = 奥行きの書き出しの frag・blankDepth と blankImage = 影の地図と環境マップの代わり（影は場面の値が切るので読まれない・環境マップは絵が見つからない時に透明な黒として読む）・
     /// written = 今の encoder（submit まで）で値を書いたか、貼る pass を積んだ描き先の鍵・instances = 1 体ごとの値の buffer（頂点の buffer の 1 番）・
@@ -154,8 +154,7 @@ pub mod Render3d.WebGpuRenderer {
             gpu = WebGpu,
             planner = Planner,
             sceneLayout = BindGroupLayout,
-            lightLayout = BindGroupLayout,
-            atlasLayout = BindGroupLayout,
+            variantLayouts = Ref[Map[Int32, BindGroupLayout], Static],
             variantFragments = Ref[Map[String, ShaderModule], Static],
             cpuLight = ByteBuffer, sceneOffsets = Map[Render3d.UniformLayout.SceneField, Int32],
             pasteLayout = BindGroupLayout,
@@ -229,7 +228,7 @@ pub mod Render3d.WebGpuRenderer {
 
     /// create の、材質の値の binding の形を選ぶ版（uniform と storage の比べ・bench/webgpu_v2）。
     pub def createWith(gpu: WebGpu, pasteLayout: BindGroupLayout, imageLayout: BindGroupLayout, binding: ValuesBinding): Renderer \ IO =
-        let layoutDesc = sceneLayoutDesc("fge scene3d", 0);
+        let layoutDesc = sceneLayoutDesc("fge scene3d", Set.empty());
         let poseDesc = new BindGroupLayoutDesc("fge scene3d poses");
         discard poseDesc.buffer(0, ShaderStage.VERTEX, BufferBindingType.READ_ONLY_STORAGE);
         let emptyLayout = gpu.createBindGroupLayout(new BindGroupLayoutDesc("fge scene3d empty"));
@@ -240,8 +239,7 @@ pub mod Render3d.WebGpuRenderer {
         let r = RendererData.RendererData({
             gpu = gpu, planner = freshPlanner(Render3d.DrawMode.Instanced),
             sceneLayout = sceneLayout, pasteLayout = pasteLayout,
-            lightLayout = gpu.createBindGroupLayout(sceneLayoutDesc("fge scene3d light", 1)),
-            atlasLayout = gpu.createBindGroupLayout(sceneLayoutDesc("fge scene3d point shadows", 2)),
+            variantLayouts = Ref.fresh(Static, Map.empty()),
             variantFragments = Ref.fresh(Static, Map.empty()), cpuLight = directBytes(Render3dWgsl.lightValueBytes()), sceneOffsets = Render3d.UniformLayout.sceneOffsets(),
             vertexModule = gpu.createShaderModule("fge scene3d lit vs", Render3dWgsl.litVertexSource(false)),
             skinnedModule = gpu.createShaderModule("fge scene3d skinned vs", Render3dWgsl.litVertexSource(true)),
@@ -278,27 +276,43 @@ pub mod Render3d.WebGpuRenderer {
         discard pipelineOf(r, RenderTarget.Format.Rgba8Unorm, 1, ScenePassSpec.Color, 36, None, defaultShaderVariant());
         r
 
-    /// 場面の group 0 の layout の作り方。code = layoutCodeOf の番号（0 = 既定・1 = R3dLight を足す・2 = R3dLight と点光源の影の atlas を足す）。
+    /// 場面の group 0 の layout の作り方。bindings = 変種が足す binding（Render3d.ProgramKey.group0Of。空なら既定）。
     // WhyNot: 既定の layout に変種の binding を足しておかない — 既定の pipeline の group 0 の layout が変わる（変種を使わない場面は今の layout のまま）。
-    def sceneLayoutDesc(label: String, code: Int32): BindGroupLayoutDesc \ IO =
+    def sceneLayoutDesc(label: String, bindings: Set[Group0Binding]): BindGroupLayoutDesc \ IO =
         let desc = new BindGroupLayoutDesc(label);
         discard desc.buffer(0, ShaderStage.FRAGMENT, BufferBindingType.UNIFORM);
         discard desc.texture(1, ShaderStage.FRAGMENT, TextureSampleType.DEPTH).texture(2, ShaderStage.FRAGMENT, TextureSampleType.DEPTH);
         discard desc.texture(3, ShaderStage.FRAGMENT, TextureSampleType.FLOAT).sampler(4, ShaderStage.FRAGMENT, SamplerBindingType.FILTERING);
         discard desc.buffer(5, ShaderStage.VERTEX, BufferBindingType.UNIFORM);
-        if (code >= 1) discard desc.buffer(Render3dWgsl.lightBinding(), ShaderStage.FRAGMENT, BufferBindingType.UNIFORM) else ();
-        if (code >= 2) discard desc.texture(Render3dWgsl.pointShadowMapBinding(), ShaderStage.FRAGMENT, TextureSampleType.DEPTH) else ();
+        bindings |> Set.forEach(b -> match b {
+            case Group0Binding.LightBuffer      => discard desc.buffer(Render3dWgsl.lightBinding(), ShaderStage.FRAGMENT, BufferBindingType.UNIFORM)
+            case Group0Binding.PointShadowAtlas => discard desc.texture(Render3dWgsl.pointShadowMapBinding(), ShaderStage.FRAGMENT, TextureSampleType.DEPTH)
+        });
         desc
 
-    /// 変種 v の場面の group 0 の形の番号（0 = 既定・1 = +pu か +psx か +sh だけ・2 = +ps がある。ビルボード・空も同じ場面の pass ではこの layout で作る）。
-    pub def layoutCodeOf(v: ShaderVariant): Int32 =
-        let rows = Render3d.ProgramKey.rowsOf(v);
-        if (rows |> List.exists(row -> row#pointShadowAtlas)) 2 else if (rows |> List.exists(row -> row#lightBuffer)) 1 else 0
+    /// group 0 の binding b の、形の番号の bit。
+    def group0Bit(b: Group0Binding): Int32 = match b {
+        case Group0Binding.LightBuffer      => 1
+        case Group0Binding.PointShadowAtlas => 2
+    }
 
-    /// 形の番号 code の group 0 の layout。
-    def sceneLayoutOf(r: Renderer, code: Int32): BindGroupLayout =
+    /// 変種 v の場面の group 0 の形の番号（足す binding の bit の和。0 = 既定。ビルボード・空も同じ場面の pass ではこの layout で作る）。
+    pub def layoutCodeOf(v: ShaderVariant): Int32 =
+        Render3d.ProgramKey.group0Of(v) |> Set.foldLeft((acc, b) -> acc + group0Bit(b), 0)
+
+    /// 形の番号 code の group 0 の layout（変種の物は初めて要る時に作って控える）。
+    def sceneLayoutOf(r: Renderer, code: Int32): BindGroupLayout \ IO =
         let RendererData.RendererData(s) = r;
-        if (code >= 2) s#atlasLayout else if (code == 1) s#lightLayout else s#sceneLayout
+        if (code == 0) s#sceneLayout
+        else match Map.get(code, Ref.get(s#variantLayouts)) {
+            case Some(layout) => layout
+            case None =>
+                let bindings = (Group0Binding.LightBuffer :: Group0Binding.PointShadowAtlas :: Nil)
+                    |> List.filter(b -> Int32.bitwiseAnd(code, group0Bit(b)) != 0) |> List.toSet;
+                let layout = s#gpu.createBindGroupLayout(sceneLayoutDesc("fge scene3d variant " + Int32.toString(code), bindings));
+                Ref.put(Map.insert(code, layout, Ref.get(s#variantLayouts)), s#variantLayouts);
+                layout
+        }
 
     /// 場面の描き先の深度の形式（描き先・pipeline・持ち越した集まりの bundle で同じ物）。
     def sceneDepthFormat(): TextureFormat = TextureFormat.DEPTH24_PLUS
@@ -340,8 +354,7 @@ pub mod Render3d.WebGpuRenderer {
         s#fragmentModule.release();
         s#depthModule.release();
         Map.forEach((_, m) -> m.release(), Ref.get(s#variantFragments));
-        s#lightLayout.release();
-        s#atlasLayout.release();
+        Map.forEach((_, layout) -> layout.release(), Ref.get(s#variantLayouts));
         s#sceneLayout.release()
 
     /// 場面のどれかのビルボードが、名前が isName に当たる絵を貼るか（GL の Render3d.readsTexture と同じ。2D の描き手が Pass の history の要否を決める）。

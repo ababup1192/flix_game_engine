@@ -49,7 +49,7 @@ mod Render3d.TestPsxVariant {
 
     @Test
     def testPsxWithPointShadowsUsesShadowLayout(): Unit \ Assert =
-        Assert.assertEq(expected = 2, Render3d.WebGpuRenderer.layoutCodeOf({ pointShadows = true | psx() }))
+        Assert.assertEq(expected = 3, Render3d.WebGpuRenderer.layoutCodeOf({ pointShadows = true | psx() }))
 
     // ── GLSL ──
 

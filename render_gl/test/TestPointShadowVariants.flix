@@ -152,7 +152,7 @@ mod Render3d.TestPointShadowVariants {
 
     @Test
     def testLayoutCodesAreDefaultLightAtlas(): Unit \ Assert =
-        Assert.assertEq(expected = 0 :: 1 :: 1 :: 2 :: 2 :: Nil,
+        Assert.assertEq(expected = 0 :: 1 :: 1 :: 3 :: 3 :: Nil,
             Render3d.WebGpuRenderer.layoutCodeOf(Render3d.ProgramKey.defaultShaderVariant()) :: Render3d.WebGpuRenderer.layoutCodeOf(physical())
                 :: Render3d.WebGpuRenderer.layoutCodeOf({ skyIrradiance = true | Render3d.ProgramKey.defaultShaderVariant() })
                 :: Render3d.WebGpuRenderer.layoutCodeOf(shadowed()) :: Render3d.WebGpuRenderer.layoutCodeOf({ pointShadows = true, physicalUnits = true, psx = false, skyIrradiance = false }) :: Nil)
