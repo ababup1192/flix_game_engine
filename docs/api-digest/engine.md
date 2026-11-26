@@ -1173,6 +1173,18 @@
 - スクリーン px の塗り潰しコマンドに変換する。`screenPos` は描画原点
   `pub def toRenderCmd(screenPos: Vec2.Vec2, scaleVec: Vec2.Vec2, poly: Polygon): GameEngine.PolygonRenderCmd`
 
+## PortableMath — `engine/src/core/PortableMath.flix`
+- π。
+  `pub def pi(): Float64`
+- 平方根（IEEE で正しく丸めるので JVM と wasm で同じ）。
+  `pub def sqrt(x: Float64): Float64`
+- sin。[-π, π) へ畳んでから四分円で [-π/4, π/4] の多項式へ寄せる。-360〜360 度で Math.sin との差は 1e-12 未満。
+  `pub def sin(x: Float64): Float64`
+- cos（sin を π/2 ずらす）。
+  `pub def cos(x: Float64): Float64`
+- atan2(y, x)。返す角は [-π, π]。(0, 0) は 0。y が -0.0 で x が負の時も π を返す（Math.atan2 は -π）。
+  `pub def atan2(y: Float64, x: Float64): Float64`
+
 ## Pose3d — `engine/src/scene3d/Pose3d.flix`
 - `pub type alias Pose3d = PoseData`
 - 局所の姿勢（AnimationClip3d.sample か blend の結果）を親から順に重ねる。
@@ -1389,6 +1401,32 @@
 - `pub def sinF(x: Float64): Float64`
 - `pub def cosF(x: Float64): Float64`
 - `pub def sqrtF(x: Float64): Float64`
+
+## Rot2 — `engine/src/core/Rot2.flix`
+- 向き。中身は cos・sin の読む口からだけ見える。
+  `pub type alias Rot2 = Rot2Of`
+- 回っていない向き。
+  `pub def identity(): Rot2`
+- 組 (c, s) を長さ 1 に戻して向きにする（長さ 0・NaN・無限大の組は identity）。
+  `pub def fromCosSin(c: Float64, s: Float64): Rot2`
+- 度から作る（Doc の角度・ゲームの入口）。y が下向きの画面の座標では、正の角は時計回りに見える。
+  `pub def fromDegrees(degrees: Float64): Rot2`
+- ラジアンから作る。
+  `pub def fromRadians(radians: Float64): Rot2`
+- `pub def cos(r: Rot2): Float64`
+- `pub def sin(r: Rot2): Float64`
+- 角（ラジアン・[-π, π]）。描く口（Render の回転）へ渡す時に使う。
+  `pub def toRadians(r: Rot2): Float64`
+- 角（度・[-180, 180]）。
+  `pub def toDegrees(r: Rot2): Float64`
+- a だけ回した後に b だけ回した向き（角の足し算）。
+  `pub def mul(a: Rot2, b: Rot2): Rot2`
+- 逆に回す向き。
+  `pub def inverse(r: Rot2): Rot2`
+- 点 v を原点のまわりに r だけ回す。
+  `pub def rotate(v: Vec2.Vec2, r: Rot2): Vec2.Vec2`
+- a と b の間を t（0〜1）でなめらかにつなぐ（組を混ぜて長さ 1 に戻す）。描く時の補間に使う。
+  `pub def nlerp(a: Rot2, b: Rot2, t: Float64): Rot2`
 
 ## Scene3d — `engine/src/scene3d/Scene3d.flix`
 - 点光源。range より遠い所には届かない。intensity の読み方は場面の LightUnits で決まる:
@@ -2089,6 +2127,19 @@
   `pub def frameTexture(name: String, frame: Int32, spriteFrames: SpriteFrames): Option[String]`
 - 指定アニメ・フレーム index の regionRect（切り出し矩形）を返す。
   `pub def frameRegion(name: String, frame: Int32, spriteFrames: SpriteFrames): Option[Rect2.Rect2]`
+
+## StateHash — `engine/src/core/StateHash.flix`
+- 流している途中の指紋。中身は toInt64 で読む。
+  `pub type alias StateHash = StateHashOf`
+- 何も流していない指紋（FNV-1a の 64 bit の初期値）。
+  `pub def start(): StateHash`
+- 64 bit の語を 1 つ流す。
+  `pub def mixInt64(word: Int64, h: StateHash): StateHash`
+- `pub def mixInt32(word: Int32, h: StateHash): StateHash`
+- `pub def mixBool(b: Bool, h: StateHash): StateHash`
+- Float64 のビットを流す（NaN は 1 つのビットに、-0.0 は 0.0 にまとめて流す）。
+  `pub def mixFloat64(x: Float64, h: StateHash): StateHash`
+- `pub def toInt64(h: StateHash): Int64`
 
 ## Text — `engine/src/render2d/Text.flix`
 - テキストとフォントアトラスから Text を生成する。

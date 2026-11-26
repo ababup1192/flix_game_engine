@@ -66,6 +66,9 @@
 | GL の uniform に渡す前の数値変換・丸めをしたい | RenderUtil |
 | 0〜1 に収める・小数部だけ残す（core 側の基礎計算） | Num |
 | 列を安定に並べ替える（同じ鍵は来た順・どんな入力でも n log n） | Sort |
+| 物理の向きを角度でなく cos・sin の組で持つ・回す・角度から作る（JVM と wasm で同じビット） | Rot2（docs/physics.md） |
+| sin・cos・atan2 を JVM と wasm で同じビットで出す（物理の中・物理へ渡す向き） | PortableMath |
+| 状態の Float64 のビットを 64 bit の指紋にする（決定性・巻き戻しのテスト） | StateHash |
 | 3D の位置・向きのベクトルを計算したい（左手系・X 東・Y 上・Z 北） | Vec3 |
 | 3D の 4×4 行列（移動・回転・拡大・視点・透視）を組みたい | Mat4 |
 | 3D の物の置き場所（位置・回転・拡大）を 1 つの値で持ちたい | Transform3d |
@@ -154,6 +157,9 @@
 - **GpuHandle** — バックエンドが割り当てる描画リソースのハンドル（タイル VBO やテクスチャの実体を 1 枚の型で包む）。
 - **JoyoKanji** — フォントアトラスに書き込む常用漢字 + UI 記号のコードポイント列。
 - **Num** — 数の小さな道具（0〜1 に収める・小数部だけ残す・周期で折り返す）。書き方の揺れをなくすため 1 箇所にまとめる。
+- **PortableMath** — 足し引き掛け割りと平方根だけで書いた sin・cos・atan2。JVM と wasm で同じビットを返す（物理の中で使う）。
+- **Rot2** — 2D の向き（cos・sin の組・長さ 1）。物理の体の向き。角度から作る口は PortableMath を通る。
+- **StateHash** — Float64 のビットを流す 64 bit の FNV-1a の指紋（物理の World の stateHash）。
 - **Sort** — 安定な並べ替え（マージソート）。標準の List.sort 族は並んだ入力で二乗になるので、エンジンはここを通す（sortStable・sortStableBy・sortStableWith）。
 - **ProjectLoader** — project.json を読み込んで engine 起動用の設定 + scene ファイル列挙を提供する。engine とゲームが共通で読む唯一の真実。
 - **Rect2** — 2D の矩形を「左上の座標」と「幅・高さ」で表し、当たり・包含・膨張などを計算する。

@@ -161,7 +161,7 @@ func TestEngineWorldSrcSkipsOtherLayers(t *testing.T) {
 	eq(t, lines(p), []string{
 		"make check",
 		"make check-docs-sync",
-		"make check-pkgs DIRS='bench/crowd2d bench/gl_parity bench/scene3d bench/shader_cache_soak bench/sprite_stress bench/texture_upload bench/webgpu_check bench/webgpu_v1 bench/webgpu_v2'",
+		"make check-pkgs DIRS='bench/crowd2d bench/gl_parity bench/physics2d bench/scene3d bench/shader_cache_soak bench/sprite_stress bench/texture_upload bench/webgpu_check bench/webgpu_v1 bench/webgpu_v2'",
 		"make gl-parity",
 		"make go-test FRESH=.,precommit PKG=apidigest,apiindex,apireleased,docrefs,f32,fallback,flixdecl,forbid,headlessrun,quadratic",
 		"make lint",

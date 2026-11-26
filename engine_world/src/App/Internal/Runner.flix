@@ -208,7 +208,7 @@ pub mod App.Internal.Runner {
     ///
     /// stepState は withFixedStep の持ち回し（持ち越し秒 + 未消費エッジ。未使用なら初期値のまま）。
     /// 一時停止中・リモート処理中・一時停止からの再開フレームはどの分岐でも world を進めないので
-    /// stepState も動かさず素通しする（巻き戻すのは World の見た目であって、貯まっていた
+    /// stepState も動かさず素通しする（物理の貯めだけは跳んだコマで 0 に戻す。巻き戻すのは World の見た目であって、貯まっていた
     /// 実時間の端数や取り置いたエッジではない）。保存検知（watchFile）も同じ扱い —
     /// World に触れない分岐では監視も動かさず素通しする。
     def loop(app: App[w, ef], hooks: App.Internal.DevTools.Hooks[w, ef, efTools], st0: LoopState[w]): (App.Internal.DevTools.State, w) \ (ef + efTools + Platform.Services + Fs.FileRead + Fs.FileWrite + IO) =
@@ -319,6 +319,8 @@ pub mod App.Internal.Runner {
                          resumed#world, st#tools);
         let (cache1, seen1, warned1) = App.Internal.Paint.renderFrame(app, st#warnOnce, st#lastDiagnostics, st#design, display, resumed#world, App.Internal.Paint.plainLook(App.Internal.Paint.fpsOverlayOf(r, st#design, resumed#anno)), st#tileCache, st#glyphSeen, st#budgetWarned);
         { world = resumed#world, anno = resumed#anno, history = resumed#history,
+          // 記録に rewind の行が残る跳び（scrub が 1 以上）だけ物理の貯めを 0 に戻す。再生（Flow の rewind）も同じ所で戻す。
+          stepState = if (st#anno#scrub > 0) App.Internal.Physics.afterJump(st#stepState) else st#stepState,
           tileCache = cache1, glyphSeen = seen1, budgetWarned = warned1,
           outputKeys = App.Internal.Output.keysAfterJump(app, resumed#world, st#outputKeys) | st }
 
@@ -381,7 +383,7 @@ pub mod App.Internal.Runner {
         let measuredAnno = if (r#debug) Annotate.recordDt(frame#dt, st#anno) else st#anno;
         let ((cache1, seen1, warned1), renderNs) = match paintedEarly {
             case Some(done) => done
-            case None       => paintAndPresent(app, { anno = measuredAnno | st }, frame, advanced, fired)
+            case None       => paintAndPresent(app, { anno = measuredAnno, stepState = nextStepState | st }, frame, advanced, fired)
         };
         // 診断はここで 1 回だけ引き取り、ヒッチの記録と次のフレームの Frame#diagnostics・ViewCtx#diagnostics へ配る。
         let diag = if (collecting) Some(Platform.Diagnostics.consumeDiagnostics()) else None;
@@ -508,8 +510,8 @@ pub mod App.Internal.Runner {
         let display = Platform.Window.getDisplay();
         let waiting = App.Internal.Paint.loadingOverlayOf(app, st#warnOnce, st#design, display, st#publishedWait, App.Internal.LoadWait.rippleOriginOf(waitState, st#design));
         let fps = App.Internal.Paint.fpsOverlayOf(r, st#design, st#anno);
-        App.Internal.Paint.buildPainted(app, st#warnOnce, frame#diagnostics, st#design, display, world,
-                                        App.Internal.Paint.plainLook(if (List.isEmpty(waiting)) fps else List.append(waiting, fps)), st#tileCache)
+        let look = { fixedAlpha = App.Internal.Physics.fixedAlphaOf(app, st#stepState), physicsAlpha = App.Internal.Physics.physicsAlphaOf(app, st#stepState) | App.Internal.Paint.plainLook(if (List.isEmpty(waiting)) fps else List.append(waiting, fps)) };
+        App.Internal.Paint.buildPainted(app, st#warnOnce, frame#diagnostics, st#design, display, world, look, st#tileCache)
 
     /// 組んだ World を描いて画面へ出す。後から取るコードがそろう前の例外で描けなかったら None（画面へは出さない）。
     def paintGuarded(app: App[w, ef], st: LoopState[w], built: Option[App.Internal.Paint.Built], world: w, bump: Bool):
@@ -523,7 +525,7 @@ pub mod App.Internal.Runner {
     def showSlow(app: App[w, ef], hooks: App.Internal.DevTools.Hooks[w, ef, efTools], frame: App.Frame, frameStart: Int64, st: LoopState[w],
                  opened: Opened[w], out: Shown[w]): LoopState[w] \ (ef + Platform.Window + Platform.Rendering + RenderTarget.Target + GameEngine.Audio + Platform.Diagnostics + Platform.Tasks + Fs.FileRead + Fs.FileWrite + IO) =
         let noticed = noticeShown(st, out);
-        let built = buildFor(app, noticed, frame, out#world, out#loadWait);
+        let built = buildFor(app, { stepState = out#stepState | noticed }, frame, out#world, out#loadWait);
         finishSlow(app, hooks, frame, frameStart, noticed, opened, out, paintGuarded(app, noticed, built, out#world, opened#fired))
 
     /// 待ちを見るコマの後半: 音・見張り・記録・履歴・出力・窓の宣言（ふつうのコマと同じ順）。painted が None（描けなかった）なら音を当てない。
@@ -594,7 +596,7 @@ pub mod App.Internal.Runner {
         let r = App.rec(app);
         let start = System.nanoTime();
         let painted = App.Internal.Paint.renderFrame(app, st#warnOnce, frame#diagnostics, st#design, Platform.Window.getDisplay(), world,
-                          App.Internal.Paint.plainLook(App.Internal.Paint.fpsOverlayOf(r, st#design, st#anno)),
+                          { fixedAlpha = App.Internal.Physics.fixedAlphaOf(app, st#stepState), physicsAlpha = App.Internal.Physics.physicsAlphaOf(app, st#stepState) | App.Internal.Paint.plainLook(App.Internal.Paint.fpsOverlayOf(r, st#design, st#anno)) },
                           App.Internal.Paint.bumpTileGen(bump, st#tileCache), st#glyphSeen, st#budgetWarned);
         Platform.Window.presentFrame();
         (painted, System.nanoTime() - start)

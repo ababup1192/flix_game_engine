@@ -131,6 +131,22 @@
           "why": "DevTools の Performance で手で CPU を絞る（同じ条件で何回も流せない）"
         }
       ]
+    },
+    {
+      "id": "physics2d-same-pc-browser",
+      "prompt": "engine の 2D の物理（PhysicsWorld2d）のソルバーを直した。PC（JVM）とブラウザ（wasm）で物理の結果が同じビットのままかと、ブラウザで CPU を 4 倍遅くした時の 1 刻みの重さを確かめたい。何を打つ？",
+      "expect": [
+        {
+          "re": "physics2d-same",
+          "why": "make physics2d-same（CPU=4）が bench/physics2d の 4 場面を PC とヘッドレスの Chrome で流し、指紋を比べて重さも出す"
+        }
+      ],
+      "avoid": [
+        {
+          "re": "(?i)devtools[^\\n]*(手|開いて)",
+          "why": "DevTools を手で開いて比べる（同じ条件で何回も流せない）"
+        }
+      ]
     }
   ]
 }

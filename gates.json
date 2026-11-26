@@ -47,6 +47,7 @@
     {"id": "gl-capture-check", "about": "既定の場面を WebGPU で 2 回撮り SHA を比べ、機械の基準とも比べる（SCENES=<名前> で絞れる）", "make": "gl-capture-check", "select": "package", "gui": true, "runs": ["pre-release"], "time": "12m"},
     {"id": "smoke-devtools", "about": "DEBUG 起動の開発の道具（rpg-starter と App）", "make": "smoke-devtools", "select": "package", "gui": true, "runs": ["pre-release"], "time": "?"},
     {"id": "webgpu-v1-check-web", "about": "ブラウザで撮って WebGPU の絵を比べる", "make": "webgpu-v1-check-web", "select": "package", "gui": true, "runs": ["pre-release"], "time": "23s"},
+    {"id": "physics2d-same", "about": "2D の物理の指紋が PC とブラウザで同じか（bench/physics2d の 4 場面・重さも出す）", "make": "physics2d-same", "select": "package", "gui": true, "runs": ["pre-release"], "time": "2m30s"},
     {"id": "docs-sync:claude-import", "about": "CLAUDE.md が AGENTS.md を import しているか", "make": "check-docs-sync", "vars": {"ONLY": "claude-import"}, "input": {"basenames": ["CLAUDE.md", "AGENTS.md"]}, "samples": ["CLAUDE.md", "AGENTS.md"], "runs": ["precommit", "manual"], "time": "0.1s"},
     {"id": "docs-sync:rules", "about": ".claude/rules・agents-pack/rules が docs/ と一致しているか", "make": "check-docs-sync", "vars": {"ONLY": "rules"}, "input": {"anyOf": [{"prefixes": ["docs/", ".claude/rules/", "agents-pack/rules/", "go/internal/genrules/"]}]}, "samples": ["docs/x.md", ".claude/rules/x.md", "agents-pack/rules/x.md", "go/internal/genrules/x.go"], "runs": ["precommit", "manual"], "time": "0.1s"},
     {"id": "docs-sync:px-ops", "about": "docs/px-ops.md と px のスキーマが op の登録と一致しているか", "make": "check-docs-sync", "vars": {"ONLY": "px-ops"}, "input": {"anyOf": [{"basenames": ["px-ops.md"]}, {"prefixes": ["go/internal/px/", "go/internal/pxlib/"]}]}, "samples": ["docs/px-ops.md"], "runs": ["precommit", "manual"], "time": "0.1s"},
@@ -73,7 +74,7 @@
     {"name": "quick", "about": "作業中の軽い確かめ（根の 4 パッケージの型検査・precommit の素振り・lint の既定の束・配線の検査の全部）", "gates": ["check", "precommit-dry", "lint", "check-docs-sync"]},
     {"name": "test", "about": "パッケージのテスト全部（engine の束を配り直してから、テンプレートを含めて並列）", "gates": ["sync-engine-full", "test-release"]},
     {"name": "release", "about": "リリースの全量（make release-verify と同じ。release/verified.txt を書く）", "gates": ["release-verify"]},
-    {"name": "gui", "about": "画面を開く門（release の前に手元で。約 21 分）", "gates": ["sync-engine-full", "determinism", "gl-capture-check", "smoke-devtools", "webgpu-v1-check-web"]},
+    {"name": "gui", "about": "画面を開く門（release の前に手元で。約 21 分）", "gates": ["sync-engine-full", "determinism", "gl-capture-check", "smoke-devtools", "webgpu-v1-check-web", "physics2d-same"]},
     {"name": "affected", "about": "差分から選んで流す（bin/fge test-select の答え。案 A: パッケージの単位・plans/test-selection.md の 11 節）", "select": true}
   ],
   "packages": [
@@ -82,7 +83,7 @@
     {"id": "render_gl", "dir": "render_gl/", "local": {"prefixes": ["render_gl/test/"]}, "reads": {"anyOf": [{"prefixes": ["engine/test/data/"]}, {"prefixes": ["templates/"], "suffixes": [".shader.json", ".ttf", ".otf"]}]}, "feeds": ["engine_full", "root"], "test": true, "gates": ["check"], "testTime": "47s"},
     {"id": "engine_world", "dir": "engine_world/", "local": {"prefixes": ["engine_world/test/"]}, "reads": {"prefixes": ["testdata/yarn/", "testdata/lint/flow-check/", "go/internal/yarn/testdata/"]}, "feeds": ["engine_full", "root"], "test": true, "gates": ["check"], "testTime": "48s"},
     {"id": "engine_tools", "dir": "engine_tools/", "local": {"prefixes": ["engine_tools/test/"]}, "reads": {"prefixes": ["templates/"], "suffixes": [".ttf", ".otf"]}, "feeds": ["engine_full", "root"], "test": true, "gates": ["check"], "testTime": "27s"},
-    {"id": "engine_full", "dir": "engine_full/", "feeds": ["hd2d-starter", "retro3d-horror-starter", "rpg-starter", "sound-novel-starter", "tidepool-starter", "game-starter", "hd2d_town", "gl_parity", "scene3d", "crowd2d", "sprite_stress", "texture_upload", "shader_cache_soak", "webgpu_check", "webgpu_v1", "webgpu_v2", "engine_web"], "gates": ["sync-engine-full", "refactor-smoke", "check-external", "baseline-check"]},
+    {"id": "engine_full", "dir": "engine_full/", "feeds": ["hd2d-starter", "retro3d-horror-starter", "rpg-starter", "sound-novel-starter", "tidepool-starter", "game-starter", "hd2d_town", "gl_parity", "scene3d", "crowd2d", "physics2d", "sprite_stress", "texture_upload", "shader_cache_soak", "webgpu_check", "webgpu_v1", "webgpu_v2", "engine_web"], "gates": ["sync-engine-full", "refactor-smoke", "check-external", "baseline-check"]},
     {"id": "engine_web", "dir": "engine_web/", "gates": ["sync-engine-full-web", "webgpu-v1-check-web"]},
     {"id": "hd2d-starter", "dir": "templates/hd2d-starter/", "test": true, "gates": ["lint:template-rules", "render-all"], "testTime": "45s", "checkTime": "7s"},
     {"id": "retro3d-horror-starter", "dir": "templates/retro3d-horror-starter/", "test": true, "gates": ["lint:template-rules", "render-all"], "testTime": "16s", "checkTime": "9s"},
@@ -97,6 +98,7 @@
     {"id": "scene3d", "dir": "bench/scene3d/", "reads": {"prefixes": ["templates/game-starter/assets/", "templates/retro3d-horror-starter/assets/"]}, "feeds": ["webgpu_v2"], "check": true, "gates": ["gl-capture-check"], "checkTime": "6s"},
     {"id": "sprite_stress", "dir": "bench/sprite_stress/", "reads": {"prefixes": ["templates/game-starter/assets/"]}, "check": true, "checkTime": "6s"},
     {"id": "crowd2d", "dir": "bench/crowd2d/", "check": true, "checkTime": "6s"},
+    {"id": "physics2d", "dir": "bench/physics2d/", "check": true, "gates": ["physics2d-same"], "checkTime": "6s"},
     {"id": "texture_upload", "dir": "bench/texture_upload/", "check": true, "checkTime": "6s"},
     {"id": "shader_cache_soak", "dir": "bench/shader_cache_soak/", "check": true, "checkTime": "6s"},
     {"id": "webgpu_check", "dir": "bench/webgpu_check/", "check": true, "checkTime": "6s"},
