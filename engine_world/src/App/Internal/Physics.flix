@@ -12,7 +12,7 @@ pub mod App.Internal.Physics {
                                     clockOf = w -> Clock.Clock[c], onEvents = (PhysicsWorld2d.Events, w) -> w }
 
     /// 1 コマに回す刻みの上限（これを超えた貯めは捨てる。処理落ちの後に追いつこうとして重くなるのを止める）。
-    def maxStepsPerFrame(): Int64 = 5i64
+    def maxStepsPerFrame(): Int32 = 5
 
     pub def add2d(spec: Spec2d[w, c], app: App.App[w, ef]): App.App[w, ef] =
         let r = App.rec(app);
@@ -22,13 +22,11 @@ pub mod App.Internal.Physics {
                          spec#onEvents(PhysicsWorld2d.events(stepped), spec#withPhysics(stepped, w))
                      },
                      stepSecondsOf = w -> PhysicsWorld2d.stepSecondsOf(spec#physicsOf(w)) };
-        App.App({ physics = Some(hook), fixedStep = Some(fixedStepOrBug(r#fixedStep)) | firstPhysicsOrBug(r) })
+        App.App({ physics = Some(hook) | firstPhysicsOrBug(fixedStepOrBug(r)) })
 
-    /// withFixedStep の刻み。無ければ止める（可変の dt で物理を進めない）。
-    def fixedStepOrBug(fixedStep: Option[Float64]): Float64 = match fixedStep {
-        case Some(dt) => dt
-        case None => bug!("App.addPhysics2d は App.withFixedStep の後に呼ぶ（物理は固定刻みでしか進めない）")
-    }
+    /// withFixedStep を宣言した App の中身。無ければ止める（可変の dt で物理を進めない）。
+    def fixedStepOrBug(r: App.Rec[w, ef]): App.Rec[w, ef] =
+        if (Option.nonEmpty(r#fixedStep)) r else bug!("App.addPhysics2d は App.withFixedStep の後に呼ぶ（物理は固定刻みでしか進めない）")
 
     /// まだ物理を繋いでいない App の中身。繋いであれば止める（2 つの物理の貯めを持たない）。
     def firstPhysicsOrBug(r: App.Rec[w, ef]): App.Rec[w, ef] =
@@ -49,7 +47,7 @@ pub mod App.Internal.Physics {
     pub def stepsFor(carry: Int64, dtNanos: Int64, stepNanos: Int64): (Int32, Int64) =
         let total = carry + Int64.max(0i64, dtNanos);
         let raw = if (stepNanos > 0i64) total / stepNanos else 0i64;
-        if (raw > maxStepsPerFrame()) (Int64.tryToInt32(maxStepsPerFrame()) |> Option.getWithDefault(5), 0i64)
+        if (raw > Int32.toInt64(maxStepsPerFrame())) (maxStepsPerFrame(), 0i64)
         else (Int64.tryToInt32(raw) |> Option.getWithDefault(0), total - raw * stepNanos)
 
     /// 系を回した後の World を、物理の貯めで 0〜5 刻み進める（addPhysics2d が無ければそのまま）。返すのは (World, 次の貯め)。
@@ -62,15 +60,19 @@ pub mod App.Internal.Physics {
                 (List.foldLeft((acc, _) -> hook#stepOnce(acc), world, List.range(0, steps)), next)
         }
 
-    /// ViewCtx#fixedAlpha: 物理の貯めの端数 ÷ 刻み（addPhysics2d があれば）、無ければ系の貯めの端数 ÷ 刻み（withFixedStep だけ）、どちらも無ければ 0。
-    pub def alphaOf(app: App.App[w, ef], state: App.StepState): Float64 =
+    /// ViewCtx#fixedAlpha: 系の貯め（実時間）の端数 ÷ 刻み。withFixedStep が無ければ 0。系で動かす主役とカメラをつなぐ。
+    pub def fixedAlphaOf(app: App.App[w, ef], state: App.StepState): Float64 = match App.rec(app)#fixedStep {
+        case None => 0.0
+        case Some(dt) => Num.clamp01(state#carry / dt)
+    }
+
+    /// ViewCtx#physicsAlpha: 物理の貯め（遊びの時計）の端数 ÷ 刻み。addPhysics2d が無ければ 0。物理の体をつなぐ。
+    // WhyNot: 2 つの貯めの割合を 1 つにまとめない — ポーズやヒットストップで遊びの時計だけが止まると、その後は 2 つの端数がずれたままになる。
+    pub def physicsAlphaOf(app: App.App[w, ef], state: App.StepState): Float64 =
         let r = App.rec(app);
-        match r#fixedStep {
-            case None => 0.0
-            case Some(dt) =>
-                let raw = if (Option.isEmpty(r#physics)) state#carry / dt
-                          else Int64.toFloat64(state#physicsCarry) / Int64.toFloat64(Int64.max(1i64, nanosOf(dt)));
-                Num.clamp01(raw)
+        match (r#fixedStep, r#physics) {
+            case (Some(dt), Some(_)) => Num.clamp01(Int64.toFloat64(state#physicsCarry) / Int64.toFloat64(Int64.max(1i64, nanosOf(dt))))
+            case _ => 0.0
         }
 
     /// 跳んだコマ（F8 の巻き戻し・命令口の差し替え）の後の StepState: 物理の貯めを 0 に戻す（跳ぶ前の端数で刻みが 1 つ多く回らないように）。

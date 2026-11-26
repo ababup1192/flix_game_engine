@@ -458,7 +458,7 @@ pub mod Flow {
             case Step.SaveLoad => saveLoadLine(ctx, line, c)
             case Step.Rewind(back) =>
                 match List.nth(back, c#history) {
-                    case Some(world) => Ok({ world = world, history = List.drop(back, c#history) | c })
+                    case Some(world) => Ok({ world = world, history = List.drop(back, c#history), state = App.Internal.Physics.afterJump(c#state) | c })
                     case None => Err({ cursor = c, at = line, why = "rewind ${Int32.toString(back)}: そこまでの履歴が無い", seen = "" })
                 }
         }

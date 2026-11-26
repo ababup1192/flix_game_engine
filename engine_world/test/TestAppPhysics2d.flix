@@ -77,19 +77,24 @@ mod TestAppPhysics2d {
         let (w, _) = frames(1, 1.0, app(), (world0(), App.freshStepState()));
         Assert.assertEq(expected = 5i64, PhysicsWorld2d.stepCount(w#physics))
 
-    /// 半刻みの所で ViewCtx#fixedAlpha は 0.5
+    /// 半刻みの所で ViewCtx#physicsAlpha は 0.5
     @Test
     def testAlphaIsHalfAtHalfStep(): Unit \ Assert =
         let (_, s) = frames(1, 1.5 / 60.0, app(), (world0(), App.freshStepState()));
-        Assert.assertTrue(Float64.abs(App.Internal.Physics.alphaOf(app(), s) - 0.5) < 1.0e-6)
+        Assert.assertTrue(Float64.abs(App.Internal.Physics.physicsAlphaOf(app(), s) - 0.5) < 1.0e-6)
 
-    /// 跳んだコマの後に流し直した指紋は、同じ World から貯め 0 で始めた指紋と同じ
+    /// flow の rewind（実機の F8 の巻き戻しの記録）を流した後は、物理の貯めが 0 に戻る
     @Test
-    def testJumpResetsCarry(): Unit \ Assert =
-        let (mid, s) = frames(10, 1.5 / 60.0, app(), (world0(), App.freshStepState()));
-        let (afterJump, _) = frames(30, 1.0 / 60.0, app(), (mid, App.Internal.Physics.afterJump(s)));
-        let (fresh, _) = frames(30, 1.0 / 60.0, app(), (mid, { physicsCarry = 0i64 | s }));
-        Assert.assertEq(expected = PhysicsWorld2d.stateHash(fresh#physics), PhysicsWorld2d.stateHash(afterJump#physics))
+    def testFlowRewindResetsCarry(): Unit \ {Assert, Fs.FileRead} =
+        let a = app() |> App.withFlow(Flow.emptyTable());
+        let carry = match Flow.Parse.parseText(Flow.vocabOf(a, world0()), "body", "fps 40\nwait 5f\nrewind 2") {
+            case Err(_) => -1i64
+            case Ok(script) => match Flow.play(a, { design = Vec2.zero(), limit = 100 }, script, { world = world0(), state = App.freshStepState() }) {
+                case Ok(outcome) => outcome#state#physicsCarry
+                case Err(_) => -2i64
+            }
+        };
+        Assert.assertEq(expected = 0i64, carry)
 
     // ── docs/physics.md の手本（同じ段の石が触れたら合わせる） ──
 

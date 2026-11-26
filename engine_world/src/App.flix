@@ -96,11 +96,11 @@ pub mod App {
     /// display は今の画面の情報（大きさ・倍率・最後の pointer・端末の区分）。小さい画面（sizeClass が Small）だけ字とボタンを
     /// 大きくする・指の時だけ案内を「タップ」にする、のように使う。当たりの並べ方を替えるなら、入力の側は Frame#sizeClass で
     /// 同じ並べ方を引く。画面なしの描き出しと pickCtx では Display.desktop(design)（Large・Mouse）で、小さい画面を描き出すなら
-    /// `{ display = { sizeClass = Display.SizeClass.Small | ctx#display } | ctx }` で差し替える。preload3d は先に作る集まりの進み具合（前のコマの値。暗転は engine が出すので View は読まなくてよい）。最初のコマと key が替わったコマは 0 / 1・描き出しと pickCtx は Scene3d.noPreload()。fixedAlpha は固定刻みの端数 ÷ 刻み（0〜1。addPhysics2d があれば物理の貯め・withFixedStep だけなら系の貯め・どちらも無ければ 0。描き出しと pickCtx は 0）で、前の刻みと今の刻みの間をなめらかにつなぐ（PhysicsWorld2d.interpolatedPoseOf）。
+    /// `{ display = { sizeClass = Display.SizeClass.Small | ctx#display } | ctx }` で差し替える。preload3d は先に作る集まりの進み具合（前のコマの値。暗転は engine が出すので View は読まなくてよい）。最初のコマと key が替わったコマは 0 / 1・描き出しと pickCtx は Scene3d.noPreload()。fixedAlpha は系の固定刻み（withFixedStep・実時間）の端数 ÷ 刻み、physicsAlpha は物理の刻み（addPhysics2d・遊びの時計）の端数 ÷ 刻み（どちらも 0〜1・無ければ 0・描き出しと pickCtx は 0）で、前の刻みと今の刻みの間をなめらかにつなぐ（主役とカメラは fixedAlpha・物理の体は physicsAlpha で PhysicsWorld2d.interpolatedPoseOf）。
     // WhyNot: 進み具合を Frame に置かない — 描き手の実時間で決まる値で、系が読むと遊んだ記録と再生（済んでいる）で World が食い違う。
     pub type alias ViewCtx = { atlas = FontAtlas, fontOf = String -> FontAtlas, visible = Rect2.Rect2,
                                warnOnce = String -> Unit, diagnostics = Option[FrameDiagnostics.Diagnostics],
-                               display = Display.Display, preload3d = Scene3d.PreloadProgress, fixedAlpha = Float64 }
+                               display = Display.Display, preload3d = Scene3d.PreloadProgress, fixedAlpha = Float64, physicsAlpha = Float64 }
 
     /// ヘッドレス描き出しから view を呼ぶときの ViewCtx。画面全体が見えている扱いにする。
     /// フォント 1 本だけの版 — どの名前で引いても同じ本が返る。
@@ -113,7 +113,7 @@ pub mod App {
     pub def viewCtxOfFonts(atlas: FontAtlas, fontOf: String -> FontAtlas, design: Vec2.Vec2): ViewCtx =
         { atlas = atlas, fontOf = fontOf,
           visible = { position = { x = 0.0, y = 0.0 }, size = design },
-          warnOnce = Log.warn, diagnostics = None, display = Display.desktop(design), preload3d = Scene3d.noPreload(), fixedAlpha = 0.0 }
+          warnOnce = Log.warn, diagnostics = None, display = Display.desktop(design), preload3d = Scene3d.noPreload(), fixedAlpha = 0.0, physicsAlpha = 0.0 }
 
     /// 入力の側（update・テスト）で、押せる物の当たりを出すために View の木を組むときの ViewCtx
     /// （`SortingLayer.pickFrom(点, View.layers(App.pickCtx(design), w))`）。字の形を持たないフォントで、
@@ -123,7 +123,7 @@ pub mod App {
                       lineGap = 0.0, glyphs = Map.empty() };
         { atlas = blank, fontOf = _ -> blank,
           visible = { position = { x = 0.0, y = 0.0 }, size = design },
-          warnOnce = _ -> (), diagnostics = None, display = Display.desktop(design), preload3d = Scene3d.noPreload(), fixedAlpha = 0.0 }
+          warnOnce = _ -> (), diagnostics = None, display = Display.desktop(design), preload3d = Scene3d.noPreload(), fixedAlpha = 0.0, physicsAlpha = 0.0 }
 
     /// 見た文面を seen に覚え、初めての文面だけ Log.warn する口（ViewCtx#warnOnce の実機の形）。
     /// View は純粋なので、効果は Log.warn と同じく `unsafe IO` で隠す。

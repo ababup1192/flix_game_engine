@@ -245,7 +245,7 @@ pub mod App.Internal.Runner {
                 // /halt・/resume が矢印とキャプチャを上書きするので、宣言は次に動くフレームで当て直す。
                 case Some(App.Internal.DevTools.RemoteOutcome.Jumped(next)) =>
                     loop(app, hooks, { world = next#world, anno = next#anno, history = next#history,
-                                       stepState = App.Internal.Physics.afterJump(next#stepState), tools = next#tools,
+                                       stepState = next#stepState, tools = next#tools,
                                        cursorShown = App.CursorLook.State.Stale, captureShown = None,
                                        outputKeys = App.Internal.Output.keysAfterJump(app, next#world, st#outputKeys) | carried })
                 case None => localStep(app, hooks, frame, iterStart, carried)
@@ -318,7 +318,9 @@ pub mod App.Internal.Runner {
         hooks#recordJump(if (st#anno#scrub > 0) Some("rewind ${Int32.toString(st#anno#scrub)}") else None,
                          resumed#world, st#tools);
         let (cache1, seen1, warned1) = App.Internal.Paint.renderFrame(app, st#warnOnce, st#lastDiagnostics, st#design, display, resumed#world, App.Internal.Paint.plainLook(App.Internal.Paint.fpsOverlayOf(r, st#design, resumed#anno)), st#tileCache, st#glyphSeen, st#budgetWarned);
-        { world = resumed#world, anno = resumed#anno, history = resumed#history, stepState = App.Internal.Physics.afterJump(st#stepState),
+        { world = resumed#world, anno = resumed#anno, history = resumed#history,
+          // 記録に rewind の行が残る跳び（scrub が 1 以上）だけ物理の貯めを 0 に戻す。再生（Flow の rewind）も同じ所で戻す。
+          stepState = if (st#anno#scrub > 0) App.Internal.Physics.afterJump(st#stepState) else st#stepState,
           tileCache = cache1, glyphSeen = seen1, budgetWarned = warned1,
           outputKeys = App.Internal.Output.keysAfterJump(app, resumed#world, st#outputKeys) | st }
 
@@ -508,7 +510,7 @@ pub mod App.Internal.Runner {
         let display = Platform.Window.getDisplay();
         let waiting = App.Internal.Paint.loadingOverlayOf(app, st#warnOnce, st#design, display, st#publishedWait, App.Internal.LoadWait.rippleOriginOf(waitState, st#design));
         let fps = App.Internal.Paint.fpsOverlayOf(r, st#design, st#anno);
-        let look = { fixedAlpha = App.Internal.Physics.alphaOf(app, st#stepState) | App.Internal.Paint.plainLook(if (List.isEmpty(waiting)) fps else List.append(waiting, fps)) };
+        let look = { fixedAlpha = App.Internal.Physics.fixedAlphaOf(app, st#stepState), physicsAlpha = App.Internal.Physics.physicsAlphaOf(app, st#stepState) | App.Internal.Paint.plainLook(if (List.isEmpty(waiting)) fps else List.append(waiting, fps)) };
         App.Internal.Paint.buildPainted(app, st#warnOnce, frame#diagnostics, st#design, display, world, look, st#tileCache)
 
     /// 組んだ World を描いて画面へ出す。後から取るコードがそろう前の例外で描けなかったら None（画面へは出さない）。
@@ -594,7 +596,7 @@ pub mod App.Internal.Runner {
         let r = App.rec(app);
         let start = System.nanoTime();
         let painted = App.Internal.Paint.renderFrame(app, st#warnOnce, frame#diagnostics, st#design, Platform.Window.getDisplay(), world,
-                          { fixedAlpha = App.Internal.Physics.alphaOf(app, st#stepState) | App.Internal.Paint.plainLook(App.Internal.Paint.fpsOverlayOf(r, st#design, st#anno)) },
+                          { fixedAlpha = App.Internal.Physics.fixedAlphaOf(app, st#stepState), physicsAlpha = App.Internal.Physics.physicsAlphaOf(app, st#stepState) | App.Internal.Paint.plainLook(App.Internal.Paint.fpsOverlayOf(r, st#design, st#anno)) },
                           App.Internal.Paint.bumpTileGen(bump, st#tileCache), st#glyphSeen, st#budgetWarned);
         Platform.Window.presentFrame();
         (painted, System.nanoTime() - start)

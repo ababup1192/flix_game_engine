@@ -369,7 +369,7 @@ pub mod PhysicsWorld2d {
               isSleeping = Vector.get(i, d#asleep), collider = Vector.get(i, d#colliders) }
         })
 
-    /// 前の刻みと今の刻みの間を alpha（0〜1。ViewCtx#fixedAlpha）でなめらかにつないだ姿勢。描くだけに使う（決定性は要らない）。
+    /// 前の刻みと今の刻みの間を alpha（0〜1。ViewCtx#physicsAlpha）でなめらかにつないだ姿勢。描くだけに使う（決定性は要らない）。
     pub def interpolatedPoseOf(id: EntityId, alpha: Float64, w: PhysicsWorld2d): Option[Pose2d] =
         let d = data(w);
         let t = Num.clamp01(alpha);

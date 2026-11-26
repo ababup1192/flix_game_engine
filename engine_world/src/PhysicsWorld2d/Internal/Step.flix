@@ -274,9 +274,11 @@ pub mod PhysicsWorld2d.Internal.Step {
     /// 左端を刻む細かさ（1 / 8192 m ≒ 0.12 mm）。
     def leftScale(): Float64 = 8192.0
 
-    /// 左端の刻み（下へ丸めた整数）。q(x) > q(y) なら x > y。
+    /// 左端の刻み（下へ丸めた整数・32 bit に収まる ±262,143 m で抑える）。q(x) > q(y) なら x > y。抑えた端の体は同じ刻みに潰れ、止めずに最後まで掃く。
+    // WhyNot: 抑える幅を 32 bit より広くしない — (刻み << 32) が Int64 を超えて並びが壊れ、当たる組を取りこぼす。
     def leftStep(x: Float64): Int64 =
-        Float64.tryToInt64(Float64.floor(Float64.max(-1.0e9, Float64.min(1.0e9, x)) * leftScale())) |> Option.getWithDefault(0i64)
+        let limit = 2147483647.0 / leftScale();
+        Float64.tryToInt64(Float64.floor(Float64.max(-limit, Float64.min(limit, x)) * leftScale())) |> Option.getWithDefault(0i64)
 
     /// AABB の左端の刻みで並べた番号（同じ刻みは番号 = id の順）。(刻み << 32 | 番号) を long のまま並べる。
     // WhyNot: 比べる関数を渡す並べ替え（Sort.sortStableWith の List）にしない — 毎刻み List と閉包を作る定まった代金が、物 100 個の小さい山の 1 刻みの重さの多くを占めた。
@@ -434,7 +436,6 @@ pub mod PhysicsWorld2d.Internal.Step {
     type alias Islands[r: Region] = (Array[Bool, r], Array[Bool, r], Array[Bool, r], Array[Bool, r], Array[Float64, r], Array[Int32, r])
 
     // WhyNot: 体ごとの輪で record の欄を引かない — 名前で探すので、体の数 × 欄の数だけ重さが乗る。配列は輪の外で 1 回だけ取り出す。
-
     /// 起きた体が 1 つでもある島（と動く Kinematic が触れた体の島）の、眠っていた体を次の刻みから起こす。
     def wakeIslands(rc: Region[r], il: Islands[r], n: Int32): Unit \ r =
         let (dyn, asleep, woken, touchWake, bs, parent) = il;

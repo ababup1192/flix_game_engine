@@ -131,7 +131,7 @@
 - 負方向・正方向のキーの押し下げを -1 / 0 / +1 にまとめる（両押しは打ち消して 0）。
   `pub def axis(negative: {negative = GameEngine.Key}, positive: {positive = GameEngine.Key}, frame: Frame): Float64`
 - view / hudView が受け取る「この 1 フレームの見え方」。atlas は文字描画用の既定フォント、
-  `pub type alias ViewCtx = { atlas = FontAtlas, fontOf = String -> FontAtlas, visible = Rect2.Rect2, warnOnce = String -> Unit, diagnostics = Option[FrameDiagnostics.Diagnostics], display = Display.Display, preload3d = Scene3d.PreloadProgress, fixedAlpha = Float64 }`
+  `pub type alias ViewCtx = { atlas = FontAtlas, fontOf = String -> FontAtlas, visible = Rect2.Rect2, warnOnce = String -> Unit, diagnostics = Option[FrameDiagnostics.Diagnostics], display = Display.Display, preload3d = Scene3d.PreloadProgress, fixedAlpha = Float64, physicsAlpha = Float64 }`
 - ヘッドレス描き出しから view を呼ぶときの ViewCtx。画面全体が見えている扱いにする。
   `pub def viewCtxOf(atlas: FontAtlas, design: Vec2.Vec2): ViewCtx`
 - viewCtxOf の複数フォント版。fontOf には実機と同じ名前で引ける関数を渡す
@@ -2007,7 +2007,7 @@
   `pub def awakeCount(w: PhysicsWorld2d): Int32`
 - 全部の体（id の順）。
   `pub def bodies(w: PhysicsWorld2d): Vector[BodyState]`
-- 前の刻みと今の刻みの間を alpha（0〜1。ViewCtx#fixedAlpha）でなめらかにつないだ姿勢。描くだけに使う（決定性は要らない）。
+- 前の刻みと今の刻みの間を alpha（0〜1。ViewCtx#physicsAlpha）でなめらかにつないだ姿勢。描くだけに使う（決定性は要らない）。
   `pub def interpolatedPoseOf(id: EntityId, alpha: Float64, w: PhysicsWorld2d): Option[Pose2d]`
 - origin から direction（長さは問わない）へ maxDistance（m）まで光線を飛ばし、一番近い当たり（sensor の形は的にしない）。
   `pub def castRay(origin: Vec2.Vec2, direction: Vec2.Vec2, maxDistance: Float64, mask: Int32, w: PhysicsWorld2d): Option[RayHit2d]`

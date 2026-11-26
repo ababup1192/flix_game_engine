@@ -31,7 +31,7 @@ App が固定刻みで進める。体の id は ECS の `EntityId`。3D（`Physi
 
 ## 2D の剛体を使う（PhysicsWorld2d）
 
-置き場は engine_world。体の id はゲームの `EntityId`。単位は m・秒・kg で、y は下が正（画面と同じ向き）。
+置き場は engine_world。体の id はゲームの `EntityId`。積む・転がす・押し合う剛体はこれを使う（今ある `Physics2D`・`CollisionShape2D` は、自分で動かす物の重なりと押し出しを聞く小さな道具で、積み重ねと眠りを持たない）。単位は m・秒・kg で、y は下が正（画面と同じ向き）。
 描く時は 1 m あたりの画素（ゲームが決める）を掛ける。形は円・箱・凸多角形（8 頂点まで）。関節・CCD・凹んだ形は無い。
 
 | 名前 | 何か |
@@ -46,7 +46,7 @@ App が固定刻みで進める。体の id は ECS の `EntityId`。3D（`Physi
 | `PhysicsWorld2d.castRay`・`queryPoint` | 光線・点の当たり（当たり層の mask で絞る） |
 | `PhysicsWorld2d.stateHash` | 状態のビットの指紋（体・触れている組・warm start の控え） |
 | `PhysicsMaterial`・`PhysicsWorld2d.withMaterials`・`withSettings`・`PhysicsDoc2d.load`・`loadOr`・`applyTo` | 材質と `physics2d.kind.json` |
-| `App.addPhysics2d({ physicsOf, withPhysics, clockOf, onEvents })`・`ViewCtx#fixedAlpha` | App が固定刻みで回す・補間の割合 |
+| `App.addPhysics2d({ physicsOf, withPhysics, clockOf, onEvents })`・`ViewCtx#physicsAlpha`・`fixedAlpha` | App が固定刻みで回す・補間の割合（物理の体・系で動かす主役とカメラ） |
 
 ### 手本: 同じ大きさの石が触れたら 1 つ上の石に合わせる
 
@@ -88,15 +88,15 @@ app |> App.withFixedStep(1.0 / 60.0)
 - `App.addPhysics2d` は `App.withFixedStep` の後に呼ぶ（先に呼ぶと組み立てで止まる）。`PhysicsWorld2d.empty` の刻みが
   `withFixedStep` と違っても止まる。時計は `App.addClock` で進めている物を渡す（進めていない時計では物理が動かない）。
 - 遊びの時計が止まっている間（ポーズ）は物理の貯めが貯まらず、系は回り続ける。`Scaled(k)` は物理だけが k 倍で進む。
-- 貯めは遊びの時計のナノ秒の整数で数え、5 刻みを超えた分は捨てる。F8 の巻き戻しと命令口の差し替えで跳んだコマでは 0 に戻す。
+- 貯めは遊びの時計のナノ秒の整数で数え、5 刻みを超えた分は捨てる。F8 の巻き戻し（記録に `rewind` の行が残る跳び）では 0 に戻し、flow の再生の `rewind` も同じく 0 に戻す。
 
 ### 描く（補間）
 
 固定刻みと画面のフレームはずれる（120 Hz の画面・揺れる間隔）。物理の体は
-`PhysicsWorld2d.interpolatedPoseOf(id, ctx#fixedAlpha, w#physics)` が前の刻みと今の刻みの間をなめらかにつないだ姿勢を返す
+`PhysicsWorld2d.interpolatedPoseOf(id, ctx#physicsAlpha, w#physics)` が前の刻みと今の刻みの間をなめらかにつないだ姿勢を返す
 （描くだけに使う・決定性は要らない）。向きを描く口が角度を受けるなら `Rot2.toRadians`。
-`ViewCtx#fixedAlpha` は addPhysics2d があれば物理の貯めの端数、無ければ系の貯めの端数。主役やカメラも固定刻みで動かすなら、
-前の刻みの位置をゲームの World に持ち、同じ割合でつなぐ（物理の時計を `Scaled(k)` にしている間は、物理の割合と系の割合がずれる）。
+`ViewCtx#physicsAlpha` は物理の貯め（遊びの時計）の端数、`ViewCtx#fixedAlpha` は系の貯め（実時間）の端数。主役やカメラも系の固定刻みで動かすなら、
+前の刻みの位置をゲームの World に持ち、`fixedAlpha` でつなぐ（ポーズやヒットストップで遊びの時計だけが止まると、2 つの端数はずれたままになるので混ぜない）。
 `setPosition`（瞬間移動）は補間の前の姿勢もそろえる。
 
 ### 出来事の決め方

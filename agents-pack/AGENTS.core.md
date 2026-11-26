@@ -108,7 +108,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 演出の待ちが先の拍で変わる（全部が済んでから始める・置き直さない） | `Timeline.afterAll`（基準ごとに間）→ `Timeline.build` |
 | 演出をスキップで飛ばす・読み終えを待つ・続きを後から足す（音は飛ばし、命令は飛ばした所の物も当てる） | `Timeline.PlaybackLog`（`resumeOn` / `skipToNextWait`）→ `playheadOn`・`soundsOnWall`・`startedOnWall`。表は毎フレーム組み直し、変えるのは後ろへ足すのと今より後ろを縮めるだけ |
 | ポーズ・ヒットストップで止める・遅くする（遊びと実時間を分ける） | `App.addClock` + `Clock.Pace`・`frame#realNow` |
-| 2D の剛体を積む・転がす・押し合う・触れたら合わせる（円・箱・凸多角形・眠り・sensor・光線） | World の欄に `PhysicsWorld2d`（`empty`・`insert(EntityId, RigidBody2d.dynamic(位置, Collider2d.circle(r)))`）→ `App.withFixedStep` の後に `App.addPhysics2d({ physicsOf, withPhysics, clockOf, onEvents })`（出来事は onEvents で `Emit.Events` に積み、系は `Emit.since` で `CollisionEvent2d.startedPair` を読む・step を自分で呼ばない・描くのは `positionOf` か `interpolatedPoseOf(id, ctx#fixedAlpha, w)`・向きは `Rot2`・engine の `docs/physics.md`） |
+| 2D の剛体を積む・転がす・押し合う・触れたら合わせる（円・箱・凸多角形・眠り・sensor・光線） | World の欄に `PhysicsWorld2d`（`empty`・`insert(EntityId, RigidBody2d.dynamic(位置, Collider2d.circle(r)))`）→ `App.withFixedStep` の後に `App.addPhysics2d({ physicsOf, withPhysics, clockOf, onEvents })`（出来事は onEvents で `Emit.Events` に積み、系は `Emit.since` で `CollisionEvent2d.startedPair` を読む・step を自分で呼ばない・描くのは `positionOf` か `interpolatedPoseOf(id, ctx#physicsAlpha, w#physics)`・向きは `Rot2`・engine の `docs/physics.md`） |
 | 規則の奥の出来事で鳴らす（固定刻みでも 1 回） | `Emit.emit` → `Emit.collectInto` で World に溜め `Emit.since` |
 | 粒（花びら・火の粉）に触れたかを規則で取る | `Fx.particlesOfAll(now, bursts)`（絵と同じ式の番号と中心）+ `Fx.touches` |
 | テストで系に渡す 1 コマ（押したキー・dt・カーソル）を組む | `{ down = Set#{Key.Space}, justPressed = Set#{Key.Space}, dt = 0.016 \| App.emptyFrame() }`（字で `App.Frame` の全部の欄を書かない。前のコマとの差から作るなら `App.frameOf`） |

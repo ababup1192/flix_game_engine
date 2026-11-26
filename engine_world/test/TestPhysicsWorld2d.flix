@@ -297,6 +297,15 @@ mod TestPhysicsWorld2d {
         let (_, evs) = advanceCollecting(60, w0, Nil);
         Assert.assertEq(expected = (-7, 1073741824) :: Nil, collisionsOf(evs) |> List.filterMap(CollisionEvent2d.startedPair))
 
+    /// 300 km 先の 2 つの球も当たる（左端の刻みを抑えた端でも組を取りこぼさない）
+    @Test
+    def testFarAwayBodiesStillCollide(): Unit \ Assert =
+        let w0 = PhysicsWorld2d.empty({ gravity = Vec2.zero() | PhysicsWorld2d.settings() }, dt())
+            |> PhysicsWorld2d.insert(10, RigidBody2d.dynamic({ x = 300000.0, y = 0.0 }, Collider2d.circle(0.5)) |> RigidBody2d.withLinearVelocity({ x = 2.0, y = 0.0 }))
+            |> PhysicsWorld2d.insert(11, RigidBody2d.dynamic({ x = 300001.5, y = 0.0 }, Collider2d.circle(0.5)));
+        let (_, evs) = advanceCollecting(60, w0, Nil);
+        Assert.assertEq(expected = (10, 11) :: Nil, collisionsOf(evs) |> List.filterMap(CollisionEvent2d.startedPair))
+
     /// 眠った 2 段の下の箱を消すと、上の箱が起きて落ちる
     @Test
     def testRemovingSupportWakesStack(): Unit \ Assert =

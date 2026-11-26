@@ -122,7 +122,7 @@ pub mod App.Internal.Halt {
               case Some(start) => Annotate.overlayItems(start, Annotate.toDesign(view, cursor))
               case None        => Nil
           },
-          fixed = List.append(toast, scrub), fixedAlpha = 0.0 }
+          fixed = List.append(toast, scrub), fixedAlpha = 0.0, physicsAlpha = 0.0 }
 
     /// debugView のゲームの一時停止フレームの締め: 矩形が確定していれば注釈を書き出してトーストを出し、凍結画面を描く。
     /// 返すのは次の停止の状態と、書き出したチケットのフォルダ（遊んだ記録の写しを入れる所）。
