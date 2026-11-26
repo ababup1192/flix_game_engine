@@ -699,7 +699,7 @@
 - Select の条件。
   `pub enum Cond with Eq { case Greater(ScalarExpr, ScalarExpr) case AtLeast(ScalarExpr, ScalarExpr) case And(Cond, Cond) }`
 - 画素ごと・場面ごとのスカラーの入力。
-  `pub enum ScalarInput with Eq, Order { case Hemisphere case ShadowLit case SunLit case FogNear case FogFar case SkyCurve case LightmapSrgb case LightmapIntensity case EnvironmentOn case EnvironmentBoxOn case PointShadowLit case PhysicalUnits case InverseUnitsPerMeterSquared case SkyContribution }`
+  `pub enum ScalarInput with Eq, Order { case Hemisphere case ShadowLit case SunLit case FogNear case FogFar case SkyCurve case LightmapSrgb case LightmapIntensity case EnvironmentOn case EnvironmentBoxOn case PointShadowLit case PhysicalUnits case InverseUnitsPerMeterSquared case SkyContribution case ScreenAmbientOcclusion case ScreenAmbientOcclusionDirect }`
 - 画素ごと・場面ごとの vec3 の入力。
   `pub enum Vec3Input with Eq, Order { case Position case Normal case Eye case Ambient case LightmapColor case Color case FogColor case SkyDirection case SkyZenith case SkyHorizon case SkyGround case Albedo case Light case MetallicRoughness case EnvironmentColor case EnvironmentBoxMin case EnvironmentBoxMax case EnvironmentBoxCenter case SunDirection case SunColor case IrradianceSh(Int32) }`
 - 光のループの中で読めるスカラーの欄。
@@ -707,10 +707,10 @@
 - 光のループの中で読める vec3 の欄。
   `pub enum Vec3LightField with Eq { case Position case Color case Direction }`
 - 木の変種（Unity の shader variant に当たる）。pointShadows = 点光源の光に影の割合（ScalarInput.PointShadowLit）を掛けるか・
-  `pub type alias LightVariant = { pointShadows = Bool, lightUnits = Option[Scene3d.LightUnits], skyIrradiance = Bool }`
+  `pub type alias LightVariant = { pointShadows = Bool, lightUnits = Option[Scene3d.LightUnits], skyIrradiance = Bool, ambientOcclusion = Bool }`
 - 点光源の影なし・Legacy の変種（lightingModel() などと同じ木）。
   `pub def legacyVariant(): LightVariant`
-- CPU の描き手が回す変種（点光源の影の割合を読み・光の量の読み方を入力で選ぶ・景色の拡散の光は SkyContribution が 0 なら ambient のまま）。
+- CPU の描き手が回す変種（点光源の影の割合を読み・光の量の読み方を入力で選ぶ・景色の拡散の光は SkyContribution が 0 なら ambient のまま・
   `pub def cpuVariant(): LightVariant`
 - 場面 scene に使う GPU の変種（pointShadows が Some なら影の割合を読む・光の量の読み方は場面のまま）。
   `pub def variantOf(scene: Scene3d.Scene3dCmd): LightVariant`
@@ -1643,7 +1643,15 @@
 - ビルボードの中身を読む（GL・CPU・鍵が使う）。
   `pub def billboardFieldsOf(b: Billboard3d): BillboardFields`
 - 場面 1 つ。size = 描き物の大きさ（位置は PlacedItem の at。Shader 面と同じ決まり）・zIndex = 2D の並びの中の重なり順・
-  `pub type alias Scene3dCmd = { size = Vec2.Vec2, camera = Camera3d.Camera3d, instances = List[Instance3d], groups = List[StaticGroup], multiMeshes = List[MultiMesh3d.MultiMesh3d], billboards = List[Billboard3d], pointLights = List[PointLight], spotLights = List[SpotLight], directionalLight = Option[DirectionalLight], environment = Environment3d, resolution = Resolution, output = Output, zIndex = Int32, time = Float64, textures = List[Texture3d.Texture3d], sky = Option[Sky3d], environmentMap = Option[EnvironmentMap], unitsPerMeter = Float64, pointShadows = Option[PointShadowMap], lightUnits = LightUnits, psx = PsxLook }`
+  `pub type alias Scene3dCmd = { size = Vec2.Vec2, camera = Camera3d.Camera3d, instances = List[Instance3d], groups = List[StaticGroup], multiMeshes = List[MultiMesh3d.MultiMesh3d], billboards = List[Billboard3d], pointLights = List[PointLight], spotLights = List[SpotLight], directionalLight = Option[DirectionalLight], environment = Environment3d, resolution = Resolution, output = Output, zIndex = Int32, time = Float64, textures = List[Texture3d.Texture3d], sky = Option[Sky3d], environmentMap = Option[EnvironmentMap], unitsPerMeter = Float64, pointShadows = Option[PointShadowMap], lightUnits = LightUnits, psx = PsxLook, screenInputs = Option[ScreenInputs] }`
+- 画面の上の技（SSAO）の入力（閉じた型。作るのは Scene3d.screenInputs）。
+  `pub type alias ScreenInputs = ScreenInputsData`
+- ScreenInputs の中身。depth = 奥行きの Pass の名前（R32Float・赤が目からの距離 / depthRange）・depthRange = その range（Scene3d.Internal.ScreenInputs.depthRangeOf）・
+  `pub type alias ScreenInputsFields = { depth = String, depthRange = Float64, ambientOcclusion = Option[ScreenEffects3d.AmbientOcclusion], show = Option[ScreenEffects3d.ScreenDebug] }`
+- 画面の上の技の入力を作る（PostStack が奥行きを描く場面に入れる。ゲームは呼ばない — PostStack.withAmbientOcclusion を使う）。
+  `pub def screenInputs(fields: ScreenInputsFields): ScreenInputs`
+- s の中身。
+  `pub def screenInputsFieldsOf(s: ScreenInputs): ScreenInputsFields`
 - 空の場面（環境光は白・光なし・かすみなし・地の色なし・Native・色を書き出す・zIndex 0・時刻 0・絵なし・空なし・1 m = 1・点光源の影なし・Legacy の光・PS1 風は切る）。
   `pub def scene(camera: Camera3d.Camera3d, size: Vec2.Vec2): Scene3dCmd`
 - 1 m が場面の長さのいくつかを言う（既定 1 = glTF・Blender と同じ）。Blender の 1 m を 16 で置いた場面は 16。
@@ -1755,10 +1763,10 @@
 - 進み具合 p が全部済んでいるか。
   `pub def isPreloaded(p: PreloadProgress): Bool`
 - 先に組むシェーダーの変種（場面の設定で決まる版）。pointShadows = 点光源の影を引く版（場面の pointShadows が Some・描き手の鍵の +ps）・
-  `pub type alias PreloadVariant = { pointShadows = Bool, physicalUnits = Bool, psx = Bool, skyIrradiance = Bool }`
+  `pub type alias PreloadVariant = { pointShadows = Bool, physicalUnits = Bool, psx = Bool, skyIrradiance = Bool, ambientOcclusion = Bool }`
 - 場面 scene を描く時に描き手が組む変種（先に上げる宣言に、遊びで出す場面の設定から渡す）。
   `pub def preloadVariantOf(scene: Scene3dCmd): PreloadVariant`
-- 変種 v の字（"" = 既定・+ps・+pu・+psx・+sh の組。描き手のプログラムの鍵と同じ並び）。
+- 変種 v の字（"" = 既定・+ps・+pu・+psx・+sh・+ao の組。描き手のプログラムの鍵と同じ並び）。
   `pub def preloadVariantKey(v: PreloadVariant): String`
 
 ## Scene3d.PointShadows — `engine/src/scene3d/Scene3d/PointShadows.flix`
@@ -1824,6 +1832,42 @@
   `pub def combineAll(items: List[Scene3d.Instance3d]): List[Scene3d.Instance3d]`
 - group（同じ単位の物・2 つ以上）を 1 つの形につないで置いた物。world は単位行列。
   `pub def combine(group: List[Scene3d.Instance3d]): Scene3d.Instance3d`
+
+## ScreenEffects3d — `engine/src/scene3d/ScreenEffects3d.flix`
+- SSAO の値（Godot の Environment の ssao_*・Unity URP の SSAO と同じ物）。
+  `pub type alias AmbientOcclusion = { radius = Float64, intensity = Float64, power = Float64, taps = Int32, thickness = Float64, scale = Float64, lightAffect = Float64 }`
+- 既定の SSAO（半径 1 m・強さ 2・曲線 1.5・12 点・2 m より離れた点は数えない・mask は半分の解像度・直接光には掛けない）。
+  `pub def ambientOcclusion(): AmbientOcclusion`
+- 場面の色の代わりに描き手が出す内側の絵（PostStack.DebugView の行き先）。AmbientOcclusion = SSAO の mask（灰色）。
+  `pub enum ScreenDebug with Eq, ToString { case AmbientOcclusion }`
+- taps を 4〜16 に丸めた数。
+  `pub def tapsOf(ao: AmbientOcclusion): Int32`
+- scale を 0.25〜1 に丸めた倍率（有限でない値は 1）。
+  `pub def scaleOf(ao: AmbientOcclusion): Float64`
+- power を 0.1 以上に丸めた曲線（0 以下の pow は値が決まらない）。
+  `pub def powerOf(ao: AmbientOcclusion): Float64`
+- lightAffect を 0..1 に丸めた割合。
+  `pub def lightAffectOf(ao: AmbientOcclusion): Float64`
+- 場面の描き先 width × height の画素に対する mask の大きさ（1 画素以上）。
+  `pub def maskSizeOf(ao: AmbientOcclusion, width: Int32, height: Int32): (Int32, Int32)`
+- 寄与から引く cos の閾（平らな面の小さな凹凸を数えない）。
+  `pub def bias(): Float64`
+- |Q − P|² に足す小さな値（場面の長さ²）。
+  `pub def epsilon(): Float64`
+- tap の渦の巻き数。
+  `pub def spiralTurns(): Float64`
+- 調べる半径の画素の上限（場面の高さに対する割合。目の前の面で tap が画面の端まで飛ばないように）。
+  `pub def maxRadiusFraction(): Float64`
+- interleaved gradient noise の 3 つの係数（Jimenez 2014）: ign = fract(c × fract(a × x + b × y))。
+  `pub def noiseA(): Float64`
+- `pub def noiseB(): Float64`
+- `pub def noiseC(): Float64`
+- ぼかしの重み（真ん中から 0・1・2 画素）。
+  `pub def blurCenterWeight(): Float64`
+- `pub def blurNearWeight(): Float64`
+- `pub def blurFarWeight(): Float64`
+- ぼかしで外す奥行きの違い（真ん中の奥行きに対する割合）。
+  `pub def blurDepthTolerance(): Float64`
 
 ## ShaderDoc — `engine/src/shader/ShaderDoc.flix`
 - 位置 (u,v) のどちらの軸を読むか。

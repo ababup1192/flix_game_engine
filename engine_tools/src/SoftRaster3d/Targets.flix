@@ -36,15 +36,18 @@ pub mod SoftRaster3d.Targets {
         }
 
     /// 場面 cmd を 1 画素 4 つの層に塗り、書く範囲の描き先の画素ごとに put(描き先の画素の番号, 層, 層の画素の番号 × 4) を呼ぶ。
+    /// floatPasses = R32Float の Pass の絵（画面の上の技の奥行き）。
     def drawLayerWith(size: (Int32, Int32), sf: Float64, textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]],
-                      time: Float64, cmd: Scene3d.RenderCmd, put: (Int32, Array[Float64, Static], Int32) -> Unit \ IO): Unit \ IO =
+                      floatPasses: Map[String, ShaderEval.HdrTexture], time: Float64, cmd: Scene3d.RenderCmd,
+                      put: (Int32, Array[Float64, Static], Int32) -> Unit \ IO): Unit \ IO =
         let (width, _) = size;
         sceneRegionOf(size, sf, cmd) |> Option.forEach(placed -> {
             let (rx0, ry0, dw, dh) = placed#rect;
             let (x0, y0, w, h) = placed#box;
             let (lw, lh) = placed#layer;
             let layer: Array[Float64, Static] = Array.repeat(Static, lw * lh * 4, 0.0);
-            SoftRaster3d.renderLayer(cmd#scene, lw, lh, textures, time, SoftRaster3d.LayerOut.Rgba(layer));
+            let ao = SoftRaster3d.ScreenEffects.maskFor(floatPasses, cmd#scene, placed#rect, placed#layer);
+            SoftRaster3d.renderLayerOrMask(cmd#scene, lw, lh, textures, time, ao, SoftRaster3d.LayerOut.Rgba(layer));
             List.range(0, h) |> List.forEach(j -> {
                 let ly = SoftRaster3d.nearestIndex(y0 + j - ry0, dh, lh);
                 List.range(0, w) |> List.forEach(i -> put((y0 + j) * width + x0 + i, layer, (ly * lw + SoftRaster3d.nearestIndex(x0 + i - rx0, dw, lw)) * 4))
@@ -54,8 +57,8 @@ pub mod SoftRaster3d.Targets {
     /// drawScene の Rgba16Float の描き先版。rgba = 描き先（1 画素に r, g, b, α の 4 つ）・size = その幅と高さ。
     /// 層は色を切らずに塗り（emission が 1 を超えて残る）、SoftRaster.blendPixelF の Normal で重ねる。
     pub def drawSceneHdr(rgba: Array[Float64, Static], size: (Int32, Int32), sf: Float64, textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]],
-                         time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO =
-        drawLayerWith(size, sf, textures, time, cmd, (at, layer, k) ->
+                         floatPasses: Map[String, ShaderEval.HdrTexture], time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO =
+        drawLayerWith(size, sf, textures, floatPasses, time, cmd, (at, layer, k) ->
             SoftRaster.blendPixelF(DrawCmd.BlendMode.Normal, Array.get(k, layer), Array.get(k + 1, layer), Array.get(k + 2, layer),
                                    Array.get(k + 3, layer), rgba, at))
 
@@ -63,7 +66,7 @@ pub mod SoftRaster3d.Targets {
     /// 層の α が 0 の画素（場面が何も描かない所）は描き先の値を残す。
     pub def drawSceneR32(rgba: Array[Float64, Static], size: (Int32, Int32), sf: Float64, textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]],
                          time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO =
-        drawLayerWith(size, sf, textures, time, cmd, (at, layer, k) ->
+        drawLayerWith(size, sf, textures, Map.empty(), time, cmd, (at, layer, k) ->
             if (Array.get(k + 3, layer) <= 0.0) ()
             else {
                 let o = at * 4;

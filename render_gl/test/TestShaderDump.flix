@@ -11,7 +11,7 @@ mod TestShaderDump {
 
     def allVariants(): List[Render3d.ProgramKey.ShaderVariant] =
         flags() |> List.flatMap(ps -> flags() |> List.flatMap(pu -> flags() |> List.flatMap(psx -> flags() |> List.map(sh ->
-            { pointShadows = ps, physicalUnits = pu, psx = psx, skyIrradiance = sh }))))
+            { pointShadows = ps, physicalUnits = pu, psx = psx, skyIrradiance = sh, ambientOcclusion = false }))))
 
     def variantLabel(v: Render3d.ProgramKey.ShaderVariant): String =
         let bit = (b: Bool, ch: String) -> if (b) ch else "-";
@@ -25,7 +25,7 @@ mod TestShaderDump {
             flags() |> List.flatMap(lightmap -> flags() |> List.flatMap(blend -> flags() |> List.flatMap(doubleSided ->
                 flags() |> List.flatMap(coverage -> flags() |> List.map(metallic ->
                     { skinned = false, uv = uv, normalMap = normalMap, lightmap = lightmap, blend = blend, doubleSided = doubleSided,
-                      coverage = coverage, metallicRoughness = metallic, variant = { pointShadows = v#pointShadows, physicalUnits = v#physicalUnits, psx = v#psx, skyIrradiance = v#skyIrradiance } })))))
+                      coverage = coverage, metallicRoughness = metallic, variant = { pointShadows = v#pointShadows, physicalUnits = v#physicalUnits, psx = v#psx, skyIrradiance = v#skyIrradiance, ambientOcclusion = v#ambientOcclusion } })))))
         })
 
     def kindLabel(k: Render3d.ProgramKey.ProgramKind): String =
@@ -163,7 +163,7 @@ mod TestShaderDump {
         let surfaces = (false, false) :: (true, false) :: (true, true) :: Nil;
         let d = Render3d.ProgramKey.defaultShaderVariant();
         flags() |> List.flatMap(psx -> {
-            let v = { pointShadows = d#pointShadows, physicalUnits = d#physicalUnits, psx = psx, skyIrradiance = d#skyIrradiance };
+            let v = { pointShadows = d#pointShadows, physicalUnits = d#physicalUnits, psx = psx, skyIrradiance = d#skyIrradiance, ambientOcclusion = d#ambientOcclusion };
             let materials = flags() |> List.flatMap(skinned -> surfaces |> List.flatMap(un -> {
                 let (uv, normalMap) = un;
                 (if (skinned) false :: Nil else flags()) |> List.map(lightmap -> {

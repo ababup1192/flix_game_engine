@@ -26,6 +26,7 @@ pub mod Render3d.Uniforms {
         case NormalMap, NormalStrength, NormalFlip, NormalLevels
         case Lightmap, LightmapLevels, LightmapUvRect, LightmapSrgb, LightmapIntensity
         case Right, Up, RightPerBillboard, Facing, Image, Viewport, Forward
+        case AoMask, AoValues
     }
 
     /// uniform の表の 1 行: name = GLSL の名前（location を引く字）・glsl = GLSL の宣言の型の字・length = 配列の長さ（GLSL の宣言の [N]）・
@@ -117,6 +118,8 @@ pub mod Render3d.Uniforms {
             case R3dUniform.DepthOut        => row("uDepthOut", "int", Ty.I32, scene("uDepthOut"))
             case R3dUniform.Cutout          => row("uCutout", "int", Ty.Bool, draw("uCutout"))
             case R3dUniform.Time            => row("uTime", "float", Ty.F32, None)
+            case R3dUniform.AoMask          => row("uAoMask", "sampler2D", Ty.Texture2d, at("uAoMask"))
+            case R3dUniform.AoValues        => row("uAo", "vec4", Ty.Vec4, at("r3dAo.uValues"))
             case R3dUniform.Param(i)        => row("uParam${i}", "float", Ty.F32, None)
             case R3dUniform.Tex(i)          => row("uTex${i}", "sampler2D", Ty.Texture2d, None)
             case R3dUniform.TexFlip(i)      => row("uTexFlip${i}", "float", Ty.F32, None)
@@ -155,7 +158,8 @@ pub mod Render3d.Uniforms {
         R3dUniform.DepthRange :: R3dUniform.DepthOut :: R3dUniform.Cutout :: R3dUniform.Time ::
         R3dUniform.NormalMap :: R3dUniform.NormalStrength :: R3dUniform.NormalFlip :: R3dUniform.NormalLevels ::
         R3dUniform.Lightmap :: R3dUniform.LightmapLevels :: R3dUniform.LightmapUvRect :: R3dUniform.LightmapSrgb :: R3dUniform.LightmapIntensity ::
-        R3dUniform.Right :: R3dUniform.Up :: R3dUniform.RightPerBillboard :: R3dUniform.Facing :: R3dUniform.Image :: R3dUniform.Viewport :: R3dUniform.Forward :: Nil
+        R3dUniform.Right :: R3dUniform.Up :: R3dUniform.RightPerBillboard :: R3dUniform.Facing :: R3dUniform.Image :: R3dUniform.Viewport :: R3dUniform.Forward ::
+        R3dUniform.AoMask :: R3dUniform.AoValues :: Nil
 
     /// GLSL の名前から番号の無い handle を引く表（handleIn に渡す）。
     pub type alias NameTable = Map[String, R3dUniform]

@@ -87,6 +87,9 @@ pub mod ShaderAst {
         case TextureSize
         /// GPU が描いた奥行きの描き先を画素で読む（行は GL の数え方: 行 0 が NDC の y = −1。WGSL は読む直前に行を返す）。
         case TargetDepthTexel
+        /// GPU が描いた色の描き先（R32Float・R8 など）の赤を画素で読む（行の数え方は TargetDepthTexel と同じ）。
+        case TargetTexel
+        case Fract, Sqrt, Pow, Cos, Sin
     }
 
     /// uniform の読み方の字（base に swizzle を付けて読む。swizzle は空でよい）。
@@ -572,6 +575,9 @@ pub mod ShaderAst {
     pub def atan2(y1: Expr[Float], x1: Expr[Float]): Expr[Float] = builtin(BuiltinFn.Atan2, nodeOf(y1) :: nodeOf(x1) :: Nil, Ty.F32)
     pub def max(a1: Expr[t], b1: Expr[t]): Expr[t] with FloatLike[t] = builtin(BuiltinFn.Max, nodeOf(a1) :: nodeOf(b1) :: Nil, tyOf(a1))
 
+    /// 2 つの小さい方。
+    pub def minOf(a1: Expr[t], b1: Expr[t]): Expr[t] with FloatLike[t] = builtin(BuiltinFn.Min, nodeOf(a1) :: nodeOf(b1) :: Nil, tyOf(a1))
+
     /// clamp(a1, lo, hi)（同じ型）。
     pub def clamp(a1: Expr[t], lo: Expr[t], hi: Expr[t]): Expr[t] with FloatLike[t] = builtin(BuiltinFn.Clamp, nodeOf(a1) :: nodeOf(lo) :: nodeOf(hi) :: Nil, tyOf(a1))
 
@@ -583,6 +589,30 @@ pub mod ShaderAst {
 
     /// 奥行きの絵 map の mip レベル 0 の大きさ（画素）。
     pub def textureSize(map: Expr[DepthTex]): Expr[IVec2] = builtin(BuiltinFn.TextureSize, nodeOf(map) :: Nil, Ty.IVec2)
+
+    /// 色の絵 map の mip レベル 0 の大きさ（画素）。
+    pub def textureSizeOf(map: Expr[Tex]): Expr[IVec2] = builtin(BuiltinFn.TextureSize, nodeOf(map) :: Nil, Ty.IVec2)
+
+    /// GPU が描いた色の描き先 map の画素 texel（GL の行の数え方）の赤。
+    pub def targetTexel(map: Expr[Tex], texel: Expr[IVec2]): Expr[Float] = builtin(BuiltinFn.TargetTexel, nodeOf(map) :: nodeOf(texel) :: Nil, Ty.F32)
+
+    /// 小数の部分（x − floor(x)）。
+    pub def fract(a1: Expr[Float]): Expr[Float] = same1(BuiltinFn.Fract, nodeOf(a1))
+
+    /// 平方根。
+    pub def sqrt(a1: Expr[Float]): Expr[Float] = same1(BuiltinFn.Sqrt, nodeOf(a1))
+
+    /// a1 の a2 乗（a1 は 0 以上）。
+    pub def pow(a1: Expr[Float], a2: Expr[Float]): Expr[Float] = builtin(BuiltinFn.Pow, nodeOf(a1) :: nodeOf(a2) :: Nil, Ty.F32)
+
+    /// cos（ラジアン）。
+    pub def cos(a1: Expr[Float]): Expr[Float] = same1(BuiltinFn.Cos, nodeOf(a1))
+
+    /// sin（ラジアン）。
+    pub def sin(a1: Expr[Float]): Expr[Float] = same1(BuiltinFn.Sin, nodeOf(a1))
+
+    /// 整数のベクトル v の各成分に整数 s を掛ける。
+    pub def mulIS(v: Expr[IVec2], s: Expr[Int]): Expr[IVec2] = bin(BinOp.Mul, nodeOf(v), nodeOf(s), Ty.IVec2)
 
     /// GPU が描いた奥行きの描き先 map の画素 texel の奥行き（行は GL の数え方。WGSL で描いた地図は行 0 が上なので、WGSL の字は読む直前に行を返す）。
     pub def targetDepthTexel(map: Expr[DepthTex], texel: Expr[IVec2]): Expr[Float] = builtin(BuiltinFn.TargetDepthTexel, nodeOf(map) :: nodeOf(texel) :: Nil, Ty.F32)

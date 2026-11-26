@@ -149,7 +149,7 @@ pub mod SoftRaster.Internal.DrawList {
                     blendedDraw(image, sf, hintsOf(req), p#blend, p#clip, polygonAabb(req#design, p),
                                 gs -> drawPolygon(rc, gs, sf, p))
             case RItem.RSurf(s) => drawSurface(image, sf, plan#texEnv, texels, memo, s)
-            case RItem.RScene(c) => SoftRaster3d.drawScene(image, sf, plan#sceneTextures, c#scene#time, c)
+            case RItem.RScene(c) => SoftRaster3d.drawSceneReading(image, sf, plan#sceneTextures, floatPassesOf(extraImages), c#scene#time, c)
         }, plan#items);
         g.dispose()
     }
@@ -177,7 +177,7 @@ pub mod SoftRaster.Internal.DrawList {
                     blendedDrawHdr(canvas, sf, hints, p#blend, p#clip, polygonAabb(req#design, p),
                                    gs -> drawPolygon(rc, gs, sf, p))
             case RItem.RSurf(s) => drawSurfaceHdr(canvas, sf, plan#texEnv, texels, s)
-            case RItem.RScene(c) => SoftRaster3d.Targets.drawSceneHdr(canvas#rgba, (canvas#width, canvas#height), sf, plan#sceneTextures, c#scene#time, c)
+            case RItem.RScene(c) => SoftRaster3d.Targets.drawSceneHdr(canvas#rgba, (canvas#width, canvas#height), sf, plan#sceneTextures, floatPassesOf(extraImages), c#scene#time, c)
         }, plan#items)
     }
 
@@ -204,6 +204,13 @@ pub mod SoftRaster.Internal.DrawList {
             case RItem.RScene(c) => SoftRaster3d.Targets.drawSceneR32(canvas#rgba, (canvas#width, canvas#height), sf, plan#sceneTextures, c#scene#time, c)
             case _               => ()
         }, scenes)
+
+    /// extraImages のうち R32Float の Pass の絵（3D の場面が画面の上の技の奥行きとして名前で読む）。
+    def floatPassesOf(extraImages: Map[String, PassImage]): Map[String, ShaderEval.HdrTexture] =
+        Map.foldLeftWithKey((acc, name, img) -> match img {
+            case PassImage.R32Float(hdr) => Map.insert(name, hdr, acc)
+            case _                       => acc
+        }, Map.empty(), extraImages)
 
     /// z 値取り出し（Drawable / Polygon / シェーダー面 / 3D の場面）。
     def zOf(item: RItem): Int32 =

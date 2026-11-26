@@ -46,7 +46,7 @@ mod Render3d.Light {
         let sun = sunUniforms(scene);
         let (skyContribution, sh) = Scene3d.Internal.SkyIrradiance.valuesOf(scene);
         { psx = psxValuesOf(scene), sh = Vector.toArray(Static, Vector.map(RenderUtil.f32, sh)), skyContribution = RenderUtil.f32(skyContribution),
-          psxTarget = Array.repeat(Static, 4, 0.0f32), vertexSnap = RenderUtil.f32(Scene3d.Psx.vertexSnapOf(scene#psx)),
+          psxTarget = Array.repeat(Static, 4, 0.0f32), aoValues = Array.repeat(Static, 4, 0.0f32), vertexSnap = RenderUtil.f32(Scene3d.Psx.vertexSnapOf(scene#psx)),
           sunDir = sun#direction, sunColor = sun#color, inverseUnitsPerMeterSquared = RenderUtil.f32(inverseUnitsPerMeterSquaredOf(scene)), ambient = ambient, hemisphere = RenderUtil.f32(env#hemisphere), toonSteps = env#toonSteps,
           pointCount = List.length(points), pointPos = pointPos, pointColor = pointColor, pointRange = pointRange,
           spotCount = List.length(spots), spotPos = spot#position, spotDir = spot#direction, spotColor = spot#color,
@@ -143,7 +143,15 @@ mod Render3d.Light {
         put1f(gl, locs, R3dUniform.VertexSnap, d#vertexSnap);
         put3fv(gl, locs, R3dUniform.Sh, d#sh);
         put1f(gl, locs, R3dUniform.SkyContribution, d#skyContribution);
+        putVec4(gl, locs, R3dUniform.AoValues, d#aoValues);
+        put1i(gl, locs, R3dUniform.AoMask, Render3d.GlScreenPasses.maskTextureUnit());
         putReflection(gl, locs, d)
+
+    /// 光の値 d の aoValues を、場面の描き先の大きさ width × height と scene の SSAO の lightAffect にする（+ao の frag の uAo）。
+    pub def withScreenAo(width: Int32, height: Int32, scene: Scene3d.Scene3dCmd, d: LightData): LightData \ IO =
+        let affect = scene#screenInputs |> Option.flatMap(s -> Scene3d.screenInputsFieldsOf(s)#ambientOcclusion)
+                     |> Option.map(ScreenEffects3d.lightAffectOf) |> Option.getWithDefault(0.0);
+        { aoValues = Array#{ Int32.toFloat32(width), Int32.toFloat32(height), RenderUtil.f32(affect), 0.0f32 } @ Static | d }
 
     def putVec4(gl: GlContext, locs: UniformLocations, u: R3dUniform, v: Array[Float32, Static]): Unit \ IO =
         put4f(gl, locs, u, Array.get(0, v), Array.get(1, v), Array.get(2, v), Array.get(3, v))

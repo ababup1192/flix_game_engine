@@ -5,7 +5,7 @@ mod TestProgramKey {
     def allVariants(): List[ShaderVariant] =
         let flags = false :: true :: Nil;
         flags |> List.flatMap(ps -> flags |> List.flatMap(pu -> flags |> List.flatMap(px -> flags |> List.map(sh ->
-            { pointShadows = ps, physicalUnits = pu, psx = px, skyIrradiance = sh }))))
+            { pointShadows = ps, physicalUnits = pu, psx = px, skyIrradiance = sh, ambientOcclusion = false }))))
 
     @Test
     def testTableKeysMatchEnginePreloadKeys(): Unit \ Assert =
@@ -18,5 +18,5 @@ mod TestProgramKey {
 
     @Test
     def testBillboardDropsOnlyPointShadows(): Unit \ Assert =
-        Assert.assertEq(expected = "+pu+psx+sh", variantKeyOf(billboardVariantOf({ pointShadows = true, physicalUnits = true, psx = true, skyIrradiance = true })))
+        Assert.assertEq(expected = "+pu+psx+sh", variantKeyOf(billboardVariantOf({ pointShadows = true, physicalUnits = true, psx = true, skyIrradiance = true, ambientOcclusion = false })))
 }

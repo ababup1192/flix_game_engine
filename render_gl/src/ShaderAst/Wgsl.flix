@@ -42,6 +42,11 @@ pub mod ShaderAst.Wgsl {
         case BuiltinFn.Determinant => "determinant"
         case BuiltinFn.Clamp       => "clamp"
         case BuiltinFn.Mix         => "mix"
+        case BuiltinFn.Fract       => "fract"
+        case BuiltinFn.Sqrt        => "sqrt"
+        case BuiltinFn.Pow         => "pow"
+        case BuiltinFn.Cos         => "cos"
+        case BuiltinFn.Sin         => "sin"
         case _                     => ShaderAst.invalidOrBug("ShaderAst.Wgsl: 組み込みの関数の名前が無い")
     }
 
@@ -78,6 +83,7 @@ pub mod ShaderAst.Wgsl {
         case BuiltinFn.Clamp            => clampText(xs, t)
         case BuiltinFn.TextureSize      => "vec2i(textureDimensions(" + args(xs) + ", 0))"
         case BuiltinFn.TargetDepthTexel => depthTexelLoad(xs)
+        case BuiltinFn.TargetTexel      => depthTexelLoad(xs) + ".r"
         case _                          => builtinName(fun) + "(" + args(xs) + ")"
     }
 

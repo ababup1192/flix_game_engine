@@ -51,9 +51,10 @@ pub mod PostStack.Internal.Doc {
               fxaa <- boolOr("fxaa", start#fxaa, top);
               distortion <- effectFrom("distortion", distortionFrom, PostStack.distortion(), top, start#distortion);
               heightFog <- effectFrom("heightFog", heightFogFrom, PostStack.heightFog(), top, start#heightFog);
-              crt <- effectFrom("crt", crtFrom, PostStack.crt(), top, start#crt))
+              crt <- effectFrom("crt", crtFrom, PostStack.crt(), top, start#crt);
+              ao <- effectFrom("ambientOcclusion", ambientOcclusionFrom, PostStack.ambientOcclusion(), top, start#ambientOcclusion))
         yield { exposure = exposure, viewTransform = vt, bloom = bloom, vignette = vignette, colorGrade = grade, depthOfField = dof, fxaa = fxaa, distortion = distortion,
-                heightFog = heightFog, crt = crt,
+                heightFog = heightFog, crt = crt, ambientOcclusion = ao,
                 quality = qualityFrom(top, start#quality), msaa = msaaFrom(top, start#msaa) | start }
 
     // ── 名前の欄 ──
@@ -124,6 +125,13 @@ pub mod PostStack.Internal.Doc {
         forM (threshold <- numOr("threshold", b#threshold, m); smoothness <- numOr("smoothness", b#smoothness, m);
               size <- numOr("size", b#size, m); strength <- numOr("strength", b#strength, m))
         yield { threshold = threshold, smoothness = smoothness, size = size, strength = strength }
+
+    def ambientOcclusionFrom(m: Map[String, Json], a: PostStack.AmbientOcclusion): Result[JsonError, PostStack.AmbientOcclusion] =
+        forM (radius <- numOr("radius", a#radius, m); intensity <- numOr("intensity", a#intensity, m); power <- numOr("power", a#power, m);
+              taps <- numOr("taps", Int32.toFloat64(a#taps), m); thickness <- numOr("thickness", a#thickness, m); scale <- numOr("scale", a#scale, m);
+              lightAffect <- numOr("lightAffect", a#lightAffect, m))
+        yield { radius = radius, intensity = intensity, power = power, taps = Float64.tryToInt32(Float64.round(taps)) |> Option.getWithDefault(a#taps),
+                thickness = thickness, scale = scale, lightAffect = lightAffect }
 
     def crtFrom(m: Map[String, Json], c: PostStack.Crt): Result[JsonError, PostStack.Crt] =
         forM (blur <- numOr("compositeBlur", c#compositeBlur, m); lines <- numOr("scanlines", c#scanlines, m); bleed <- numOr("chromaBleed", c#chromaBleed, m))

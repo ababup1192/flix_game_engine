@@ -411,6 +411,8 @@
   `pub def rowMajorOf(m: Mat4.Mat4): Vector[Float64]`
 - 場面 cmd を image へ重ねる。sf = design px → 出力の画素の倍率。textures = ビルボードと材質が引く絵（(名前, 段の平均の色空間) → 段の列。
   `pub def drawScene(image: BufferedImage, sf: Float64, textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]], time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO`
+- drawScene の、R32Float の Pass の絵 floatPasses（名前 → 絵）を読める版（画面の上の技の奥行き）。
+  `pub def drawSceneReading(image: BufferedImage, sf: Float64, textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]], floatPasses: Map[String, ShaderEval.HdrTexture], time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO`
 - 置いた物を光の目 eye から見た n × n の深度の地図（SoftRaster3d.ShadowMaps.buildShadowMap と同じ形。視錐台の間引きは eye の行列から作る）。
   `pub def depthMapOf(instances: List[Scene3d.Instance3d], eye: LightEye, n: Int32): Vector[Float64] \ IO`
 - 三角形の道の射影の種類。Perspective(near) は w = 目の座標の −z で w ≥ near の側を残す・Orthographic は w = 1 で z ≥ −w の側を残す。
@@ -447,6 +449,20 @@
 - 遠近で補正した uv (pu, pv) を、割合 k だけ画面の上でまっすぐつないだ uv へ寄せる（k が 0 なら (pu, pv) のまま）。
   `pub def affineUv(k: Float64, depth: Float64, perspective: (Float64, Float64), weighted: (Float64, Float64)): { x = Float64, y = Float64 }`
 
+## SoftRaster3d.ScreenEffects — `engine_tools/src/SoftRaster3d/ScreenEffects.flix`
+- 場面 1 つの SSAO の入力。depth = 奥行きの Pass（R32Float。赤が目からの距離 / depthRange）・rect = その中の場面の矩形（左上・幅・高さ）・
+  `pub type alias Input = { depth = ShaderEval.HdrTexture, rect = (Int32, Int32, Int32, Int32), layer = (Int32, Int32), scene = Scene3d.Scene3dCmd, depthRange = Float64, ao = ScreenEffects3d.AmbientOcclusion }`
+- 作った mask。width × height の値（行優先・左上から）・layer = 場面の描き先の大きさ・lightAffect = 直接光に掛ける割合。
+  `pub type alias Mask = { width = Int32, height = Int32, values = Vector[Float64], layer = (Int32, Int32), lightAffect = Float64 }`
+- 場面 scene の mask（+ao の Native の場面で、奥行きの Pass が floatPasses にある時だけ）。rect = 奥行きの Pass の中の場面の矩形（左上・幅・高さ）・
+  `pub def maskFor(floatPasses: Map[String, ShaderEval.HdrTexture], scene: Scene3d.Scene3dCmd, rect: (Int32, Int32, Int32, Int32), layer: (Int32, Int32)): Option[Mask] \ IO`
+- 場面の描き先の画素 (x, y)（m#layer の中）の SSAO の値（mask の画素の真ん中が乗る画素を読む。GPU の Render3d.ScreenPasses.screenMaskAt と同じ）。
+  `pub def valueAt(m: Mask, x: Int32, y: Int32): Float64`
+- 直接光に掛ける値 1 − lightAffect × (1 − ao)。
+  `pub def directOf(m: Mask, ao: Float64): Float64`
+- 場面の SSAO の mask（mask → 横 → 縦。各回の後で 1/255 に丸める）。
+  `pub def maskOf(input: Input): Mask \ IO`
+
 ## SoftRaster3d.ShadowMaps — `engine_tools/src/SoftRaster3d/ShadowMaps.flix`
 - spots（pickLights の後の並び）のうち shadow が Some の最初の 1 本の地図。mapSize が 0 以下なら影を落とさない。
   `pub def shadowOf(instances: List[Placed], spots: List[Scene3d.SpotLight]): SpotShadow \ IO`
@@ -482,15 +498,15 @@
 - 場面 cmd の SceneRegion（書く範囲が無ければ None）。
   `pub def sceneRegionOf(size: (Int32, Int32), sf: Float64, cmd: Scene3d.RenderCmd): Option[SceneRegion]`
 - drawScene の Rgba16Float の描き先版。rgba = 描き先（1 画素に r, g, b, α の 4 つ）・size = その幅と高さ。
-  `pub def drawSceneHdr(rgba: Array[Float64, Static], size: (Int32, Int32), sf: Float64, textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]], time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO`
+  `pub def drawSceneHdr(rgba: Array[Float64, Static], size: (Int32, Int32), sf: Float64, textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]], floatPasses: Map[String, ShaderEval.HdrTexture], time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO`
 - drawScene の R32Float の描き先版（奥行きの絵の Pass）。層の赤を置き換えで (赤, 0, 0, 1) に書く（GPU の R32Float の描き先は blend しない・half に丸めない）。
   `pub def drawSceneR32(rgba: Array[Float64, Static], size: (Int32, Int32), sf: Float64, textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]], time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO`
 
 ## SoftRaster3dLight — `engine_tools/src/gen/SoftRaster3dLight.flix`
-- lightingModel の光の量（toon の丸めまで済ませた値。sunLit = 太陽の影の割合・sh と skyContribution = Scene3d.Internal.SkyIrradiance.valuesOf の係数と割合）。
-  `pub def lightAt(steps: Int32, points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pointLit: Vector[Float64], pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, ambientX: Float64, ambientY: Float64, ambientZ: Float64, hemisphere: Float64, sunDirX: Float64, sunDirY: Float64, sunDirZ: Float64, sunColorX: Float64, sunColorY: Float64, sunColorZ: Float64, sunLit: Float64, physicalUnits: Float64, inverseUnitsPerMeterSquared: Float64, sh: Vector[Float64], skyContribution: Float64): (Float64, Float64, Float64)`
+- lightingModel の光の量（toon の丸めまで済ませた値。sunLit = 太陽の影の割合・sh と skyContribution = Scene3d.Internal.SkyIrradiance.valuesOf の係数と割合・ao と aoDirect = SSAO の値（無ければ 1））。
+  `pub def lightAt(steps: Int32, points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pointLit: Vector[Float64], pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, ambientX: Float64, ambientY: Float64, ambientZ: Float64, hemisphere: Float64, sunDirX: Float64, sunDirY: Float64, sunDirZ: Float64, sunColorX: Float64, sunColorY: Float64, sunColorZ: Float64, sunLit: Float64, physicalUnits: Float64, inverseUnitsPerMeterSquared: Float64, sh: Vector[Float64], skyContribution: Float64, ao: Float64, aoDirect: Float64): (Float64, Float64, Float64)`
 - lightmapLightingModel の光の量（lightmap は段つきで読んだ後の rgb を渡す）。
-  `pub def lightmapLightAt(steps: Int32, points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pointLit: Vector[Float64], pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, lightmapX: Float64, lightmapY: Float64, lightmapZ: Float64, lightmapSrgb: Float64, lightmapIntensity: Float64, physicalUnits: Float64, inverseUnitsPerMeterSquared: Float64): (Float64, Float64, Float64)`
+  `pub def lightmapLightAt(steps: Int32, points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pointLit: Vector[Float64], pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, lightmapX: Float64, lightmapY: Float64, lightmapZ: Float64, lightmapSrgb: Float64, lightmapIntensity: Float64, physicalUnits: Float64, inverseUnitsPerMeterSquared: Float64, ao: Float64, aoDirect: Float64): (Float64, Float64, Float64)`
 - fogModel の色（fog が無い場面では呼ばない）。
   `pub def fogAt(pX: Float64, pY: Float64, pZ: Float64, eyeX: Float64, eyeY: Float64, eyeZ: Float64, colorX: Float64, colorY: Float64, colorZ: Float64, fogColorX: Float64, fogColorY: Float64, fogColorZ: Float64, fogNear: Float64, fogFar: Float64): (Float64, Float64, Float64)`
 - skyModel の空の色。

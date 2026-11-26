@@ -2,7 +2,7 @@
 // ゲームからは呼ばない（PostStack の中身。入口は PostStack.build）。
 //
 // Pass の並び（無い効果の Pass は作らない）:
-//   ps_scene（View の絵・窓の画素・HDR）→ 自分の BeforeBloom → ps_depth（奥行きの絵・半分。霧があれば窓の画素）→ ps_fogdepth（DepthBand と霧の時だけ）→ ps_fog（霧を掛けた場面）→ ps_distort（歪めた場面）→ ps_soft（ぼかした場面・半分）
+//   ps_depth_far（SSAO がある時だけ・R32Float・目からの距離 / 遠い隅までの距離。場面の色より先）→ ps_scene（View の絵・窓の画素・HDR）→ 自分の BeforeBloom → ps_depth（奥行きの絵・半分。霧があれば窓の画素）→ ps_fogdepth（DepthBand と霧の時だけ）→ ps_fog（霧を掛けた場面）→ ps_distort（歪めた場面）→ ps_soft（ぼかした場面・半分）
 //   → ps_bright（明るい所）→ ps_bloomA → ps_bloomB（ぼかし 2 回）→ ps_post（本編の面・窓の画素の Rgba8）→ 自分の AfterViewTransform。
 // 画面へ置くのは、FXAA があれば最後の Pass をならした面・無ければ本編の面（ps_post を作らない）か最後の Pass の写し。
 pub mod PostStack.Internal.Passes {
@@ -22,6 +22,9 @@ pub mod PostStack.Internal.Passes {
     def fogPass(): String = "ps_fog"
     def fogDepthPass(): String = "ps_fogdepth"
 
+    /// 画面の上の技（SSAO）の奥行きの Pass（R32Float。霧と奥行きのぼかしもこの 1 枚を読む）。
+    def farDepthPass(): String = "ps_depth_far"
+
     /// 読む点の数と縮み（Quality から）。basis = 縮んだ Pass の倍率の基準。
     type alias Tuning = { bloomTaps = Int32, bloomScale = Float64, blurTaps = Int32, basis = RenderTarget.Basis }
 
@@ -33,8 +36,15 @@ pub mod PostStack.Internal.Passes {
         case _                => { bloomTaps = 12, bloomScale = 0.5, blurTaps = 12, basis = RenderTarget.Basis.Window }
     }
 
-    /// 奥行きのぼかしの、場面から作る奥行きの絵と、本編の面が読む離れ具合（0 = くっきり・1 = ぼかし切る）。
-    type alias Focus = { depthItem = Render.PlacedItem, amount = Field, blur = Float64, params = Map[String, Float64] }
+    /// 奥行きのぼかしの、場面から作る奥行きの絵（ps_depth_far を読む時は None）と、本編の面が ps_depth として読む奥行きの値・離れ具合（0 = くっきり・1 = ぼかし切る）。
+    type alias Focus = { depthItem = Option[Render.PlacedItem], depth = Field, amount = Field, blur = Float64, params = Map[String, Float64] }
+
+    /// 目からの距離の奥行きの絵の読み方。name = Pass の名前・range = 値に掛けて場面の長さへ戻す数・linear = Linear で読むか（R32Float は最も近い画素）。
+    type alias DepthSource = { name = String, range = Float64, linear = Bool }
+
+    def depthField(d: DepthSource): Field =
+        let t = Field.Tex({ name = d#name, chan = TexChan.R });
+        if (d#linear) linear(t) else t
 
     /// ぼかした場面の半径（Physical の F 値から出すぼけは、この半径を 1 とした割合で混ぜる）。
     def physicalBlur(): Float64 = 0.012
@@ -56,23 +66,30 @@ pub mod PostStack.Internal.Passes {
         let before = customs |> List.filter(c -> c#at == CustomAt.BeforeBloom);
         let after = customs |> List.filter(c -> c#at == CustomAt.AfterViewTransform);
         let scenes = scenesOf(input#world);
-        let largest = largestScene(scenes);
+        let largestAt = largestSceneIndex(scenes);
+        let largest = largestAt |> Option.flatMap(i -> List.nth(i, scenes));
         let customDepth = List.exists(c -> List.memberOf(Read.SceneDepth, c#reads), customs);
         let fog = f#heightFog |> Option.filter(isFogVisible);
-        let wantsDepth = Option.nonEmpty(f#depthOfField) or customDepth or Option.nonEmpty(fog);
+        let wantsDepth = Option.nonEmpty(f#depthOfField) or customDepth or Option.nonEmpty(fog) or Option.nonEmpty(f#ambientOcclusion);
         let afterCustom = before |> List.map(c -> c#name) |> List.last |> Option.getWithDefault(PostStack.sceneName());
-        let focus = forM (d <- f#depthOfField; s <- largest; fo <- focusOf(d, s)) yield fo;
+        // SSAO がある時は、目からの距離の奥行きを ps_depth_far の 1 枚にまとめ、霧と奥行きのぼかし（DepthBand でない物）もそれを読む。
+        let far = forM (_ <- f#ambientOcclusion; s <- largest)
+                  yield { name = farDepthPass(), range = Scene3d.Internal.ScreenInputs.depthRangeOf(snd(s)#camera, snd(s)#size), linear = false };
+        let focus = forM (d <- f#depthOfField; s <- largest; fo <- focusOf(d, s, far)) yield fo;
         // DepthBand の奥行きの絵は帯に切り出した値なので、霧は目からの距離の絵を別に描く。
-        let fogOwnDepth = Option.nonEmpty(fog) and Option.nonEmpty(focus) and isDepthBand(f#depthOfField);
-        let fogDepth = if (fogOwnDepth) fogDepthPass() else depthPass();
+        let fogOwnDepth = Option.isEmpty(far) and Option.nonEmpty(fog) and Option.nonEmpty(focus) and isDepthBand(f#depthOfField);
+        let fogSource = match far {
+            case Some(d) => d
+            case None    => { name = if (fogOwnDepth) fogDepthPass() else depthPass(), range = largest |> Option.map(cameraFar) |> Option.getWithDefault(1.0), linear = false }
+        };
         let sceneLikeTarget = if (isHdrNeeded(f)) RenderTarget.withHdr(RenderTarget.windowDescriptor()) else RenderTarget.windowDescriptor();
         let fogScene = forM (fo <- fog; s <- largest) yield (fo, s);
         let fogDepthPasses = if (fogOwnDepth) fogScene |> Option.map(e ->
-            ({ name = fogDepthPass(), clear = RenderTarget.LoadOp.Clear(Color.rgb(1.0, 1.0, 1.0)), items = depthItemOf(snd(e), 0.0, cameraFar(snd(e))) :: Nil }, hdrAt(1.0)) :: Nil)
+            ({ name = fogDepthPass(), clear = RenderTarget.LoadOp.Clear(Color.rgb(1.0, 1.0, 1.0)), items = depthItemOf(snd(e), 0.0, cameraFar(snd(e)), false) :: Nil }, hdrAt(1.0)) :: Nil)
             |> Option.getWithDefault(Nil) else Nil;
         let fogPasses = fogScene |> Option.map(e ->
             ({ name = fogPass(), clear = black,
-               items = PostStack.Internal.Fog.surface(fst(e), input#size, f#time, snd(e), afterCustom, fogDepth, isLinear(f#viewTransform)) :: Nil },
+               items = PostStack.Internal.Fog.surface(fst(e), input#size, f#time, snd(e), afterCustom, fogSource#name, fogSource#range, isLinear(f#viewTransform)) :: Nil },
              sceneLikeTarget) :: Nil)
             |> Option.getWithDefault(Nil);
         let afterFog = if (List.isEmpty(fogPasses)) afterCustom else fogPass();
@@ -83,7 +100,8 @@ pub mod PostStack.Internal.Passes {
              sceneLikeTarget) :: Nil)
             |> Option.getWithDefault(Nil);
         let current = if (Option.isEmpty(distortion)) afterFog else distortPass();
-        let depthOnly = if (Option.isEmpty(focus) and (customDepth or Option.nonEmpty(fog))) largest |> Option.map(s -> depthItemOf(s, 0.0, cameraFar(s))) else None;
+        let fogNeedsDepthPass = Option.nonEmpty(fog) and Option.isEmpty(far);
+        let depthOnly = if (Option.isEmpty(focus) and (customDepth or fogNeedsDepthPass)) largest |> Option.map(s -> depthItemOf(s, 0.0, cameraFar(s), false)) else None;
         let issues = List.flatten(
             (reserved |> List.map(c -> Issue.ReservedPassName(c#name)))
                 :: (if (wantsDepth and Option.isEmpty(largest)) Issue.NoScene3d :: Nil else Nil)
@@ -91,15 +109,22 @@ pub mod PostStack.Internal.Passes {
                 :: Nil);
         let sceneTarget = RenderTarget.withMsaa(samplesOf(f#msaa),
             if (isHdrNeeded(f)) RenderTarget.withHdr(RenderTarget.windowDescriptor()) else RenderTarget.windowDescriptor());
-        let scenePass = ({ name = PostStack.sceneName(), clear = RenderTarget.LoadOp.Clear(input#clear), items = input#world }, sceneTarget);
+        let screen = forM (d <- far; i <- largestAt)
+                     yield (i, Scene3d.screenInputs({ depth = d#name, depthRange = d#range, ambientOcclusion = f#ambientOcclusion,
+                                                      show = if (f#debugView == DebugView.AmbientOcclusion) Some(ScreenEffects3d.ScreenDebug.AmbientOcclusion) else None }));
+        let world = screen |> Option.map(match (i, inputs) -> withScreenInputsAt(i, inputs, input#world)) |> Option.getWithDefault(input#world);
+        let farPasses = forM (d <- far; s <- largest)
+                        yield ({ name = d#name, clear = RenderTarget.LoadOp.Clear(Color.rgb(1.0, 1.0, 1.0)), items = depthItemOf(s, 0.0, d#range, true) :: Nil },
+                               { format = RenderTarget.Format.R32Float | RenderTarget.windowDescriptor() });
+        let scenePass = ({ name = PostStack.sceneName(), clear = RenderTarget.LoadOp.Clear(input#clear), items = world }, sceneTarget);
         let beforePasses = before |> List.map(c ->
             ({ name = c#name, clear = black, items = fill(c#spec) :: Nil }, hdrAt(c#scale)));
         let depthItem = match focus {
-            case Some(fo) => Some(fo#depthItem)
+            case Some(fo) => fo#depthItem
             case None     => depthOnly
         };
         let depthPasses = depthItem |> Option.map(item ->
-            ({ name = depthPass(), clear = RenderTarget.LoadOp.Clear(Color.rgb(1.0, 1.0, 1.0)), items = item :: Nil }, if (Option.nonEmpty(fog) and not fogOwnDepth) hdrAt(1.0) else shrunk(0.5)) :: Nil)
+            ({ name = depthPass(), clear = RenderTarget.LoadOp.Clear(Color.rgb(1.0, 1.0, 1.0)), items = item :: Nil }, if (fogNeedsDepthPass and not fogOwnDepth) hdrAt(1.0) else shrunk(0.5)) :: Nil)
             |> Option.getWithDefault(Nil);
         let toLinear = isLinear(f#viewTransform);
         // WhyNot: ぼかしの中で線形へ戻さない — TexBlur は読む点ごとに式を挟めず、画面の値をぼかしてから戻すと明るい縁が細る。
@@ -117,7 +142,7 @@ pub mod PostStack.Internal.Passes {
         let focusParams = focus |> Option.map(fo -> fo#params) |> Option.getWithDefault(Map.empty());
         let main = Render.withShaderParams(Map.union(paramsOf(f), focusParams), fill(mainSpec(aspect, current, f, focus)));
         let finishing = finishingOf(input#size, f#fxaa, f#crt |> Option.filter(isCrtVisible), main, after);
-        let all = List.flatten((scenePass :: beforePasses) :: depthPasses :: fogDepthPasses :: fogPasses :: distortPasses :: softPasses :: bloomPasses :: finishing#passes :: Nil);
+        let all = List.flatten(Option.toList(farPasses) :: (scenePass :: beforePasses) :: depthPasses :: fogDepthPasses :: fogPasses :: distortPasses :: softPasses :: bloomPasses :: finishing#passes :: Nil);
         { plan = { targets = List.toMap(List.map(e -> (fst(e)#name, snd(e)), all)) | Render.passPlan(List.map(fst, all)) },
           present = finishing#present, issues = issues }
 
@@ -191,31 +216,58 @@ pub mod PostStack.Internal.Passes {
         case _                        => None
     }
 
-    def largestScene(scenes: List[(Vec2.Vec2, Scene3d.Scene3dCmd)]): Option[(Vec2.Vec2, Scene3d.Scene3dCmd)] =
-        scenes |> List.foldLeft((best, s) -> match best {
-            case Some(b) if area(snd(b)) >= area(snd(s)) => best
-            case _                                       => Some(s)
-        }, None)
+    /// 一番大きい場面の、scenesOf の並びの中の番号（同じ大きさなら先の物）。
+    def largestSceneIndex(scenes: List[(Vec2.Vec2, Scene3d.Scene3dCmd)]): Option[Int32] =
+        List.zipWithIndex(scenes) |> List.foldLeft((best, entry) -> {
+            let (i, s) = entry;
+            match best {
+                case Some((_, b)) if area(snd(b)) >= area(snd(s)) => best
+                case _                                           => Some((i, s))
+            }
+        }, None) |> Option.map(fst)
+
+    /// items の中の n 番目の 3D の場面（scenesOf と同じ数え方）に画面の上の技の入力 inputs を入れた物。
+    def withScreenInputsAt(n: Int32, inputs: Scene3d.ScreenInputs, items: List[Render.PlacedItem]): List[Render.PlacedItem] =
+        let (_, placed) = items |> List.foldLeft((acc, p) -> {
+            let (count, done) = acc;
+            let (next, item) = sceneInputsIn(n, inputs, count, p#item);
+            (next, { item = item | p } :: done)
+        }, (0, Nil));
+        List.reverse(placed)
+
+    def sceneInputsIn(n: Int32, inputs: Scene3d.ScreenInputs, count: Int32, item: Render.Item): (Int32, Render.Item) = match item {
+        case Render.Item.Scene3d(cmd) => (count + 1, if (count == n) Render.Item.Scene3d({ screenInputs = Some(inputs) | cmd }) else item)
+        case Render.Item.Clipped(c)   =>
+            let (next, inner) = sceneInputsIn(n, inputs, count, c#inner);
+            (next, Render.Item.Clipped({ inner = inner | c }))
+        case _                        => (count, item)
+    }
 
     def area(cmd: Scene3d.Scene3dCmd): Float64 = cmd#size#x * cmd#size#y
 
     def cameraFar(s: (Vec2.Vec2, Scene3d.Scene3dCmd)): Float64 = snd(s)#camera#far
 
     /// 場面 s の奥行きの絵（目からの距離が near で黒・near + range で白）。光・空・景色は持たない（奥行きに要らない）。
-    def depthItemOf(s: (Vec2.Vec2, Scene3d.Scene3dCmd), near: Float64, range: Float64): Render.PlacedItem =
+    /// withPsx = PS1 風の頂点の丸めも持ち越すか（SSAO の奥行きは色の場面と同じ形でないと輪郭に筋が出る）。
+    // WhyNot: 霧と奥行きのぼかしの奥行きの絵に psx を持ち越さない — 今の絵（丸めない奥行き）が変わる。
+    def depthItemOf(s: (Vec2.Vec2, Scene3d.Scene3dCmd), near: Float64, range: Float64, withPsx: Bool): Render.PlacedItem =
         let (at, cmd) = s;
+        let base = Scene3d.scene(cmd#camera, cmd#size);
         Render.scene3d(at, { instances = cmd#instances, groups = cmd#groups, multiMeshes = cmd#multiMeshes, billboards = cmd#billboards, textures = cmd#textures,
                              time = cmd#time, resolution = cmd#resolution, zIndex = cmd#zIndex, unitsPerMeter = cmd#unitsPerMeter,
-                             output = Scene3d.Output.Depth({ near = near, range = range }) | Scene3d.scene(cmd#camera, cmd#size) })
+                             psx = if (withPsx) cmd#psx else base#psx,
+                             output = Scene3d.Output.Depth({ near = near, range = range }) | base })
 
     /// 奥行きのぼかしの奥行きの絵と離れ具合。ぼかさない値（blur ≤ 0・F 値 ≤ 0・ピントが目の前）なら None。
-    def focusOf(d: DepthOfField, s: (Vec2.Vec2, Scene3d.Scene3dCmd)): Option[Focus] = match d {
+    /// far = SSAO の奥行きの Pass（Some なら Physical はそれを読み、自分の奥行きの絵を描かない。DepthBand は帯に切った自分の絵を描く）。
+    def focusOf(d: DepthOfField, s: (Vec2.Vec2, Scene3d.Scene3dCmd), far: Option[DepthSource]): Option[Focus] = match d {
         case DepthOfField.DepthBand(b) =>
             if (b#blur <= 0.0) None
             else {
                 // ピントの奥行き（灰色の 0.5）からの離れ具合（0 = ピント・1 = 帯の端）。
                 let away = mul(k(2.0), Field.Un({ op = UnOp.Abs, of = sub(Field.Ref("ps_depth"), k(0.5)) }));
-                Some({ depthItem = depthItemOf(s, b#focusDistance - b#range, 2.0 * b#range),
+                Some({ depthItem = Some(depthItemOf(s, b#focusDistance - b#range, 2.0 * b#range, false)),
+                       depth = depthField({ name = depthPass(), range = 1.0, linear = true }),
                        amount = Field.Smoothstep({ lo = b#band, hi = b#band + b#soft, of = away }), blur = b#blur, params = Map.empty() })
             }
         case DepthOfField.Physical(cam) =>
@@ -227,10 +279,10 @@ pub mod PostStack.Internal.Passes {
             else {
                 // 薄いレンズのぼけの径 c = f² / (N (s − f)) × |d − s| / d（mm）を、画面の高さの割合の半径にし、ぼかした場面の半径で割る。
                 let gain = focalMm * focalMm / (cam#fStop * (focusMm - focalMm)) / sensorHeightMm() / 2.0 / physicalBlur();
-                let far = cmd#camera#far;
-                let dist = mul(Field.Ref("ps_depth"), k(far));
+                let source = far |> Option.getWithDefault({ name = depthPass(), range = cmd#camera#far, linear = true });
+                let dist = mul(Field.Ref("ps_depth"), k(source#range));
                 let ratio = Field.Bin({ op = BinOp.Div, a = Field.Un({ op = UnOp.Abs, of = sub(dist, p("ps_focus")) }), b = dist });
-                Some({ depthItem = depthItemOf(s, 0.0, far), amount = Field.Un({ op = UnOp.Sat, of = mul(ratio, p("ps_cocGain")) }), blur = physicalBlur(),
+                Some({ depthItem = if (Option.isEmpty(far)) Some(depthItemOf(s, 0.0, cmd#camera#far, false)) else None, depth = depthField(source), amount = Field.Un({ op = UnOp.Sat, of = mul(ratio, p("ps_cocGain")) }), blur = physicalBlur(),
                        params = Map#{ "ps_focus" => cam#focusDistance * unit, "ps_cocGain" => gain } })
             }
     }
@@ -353,7 +405,7 @@ pub mod PostStack.Internal.Passes {
             case Some(_) => mul(x, Field.Ref("ps_vig"))
             case None    => x
         };
-        let focusBindings = focus |> Option.map(fo -> ("ps_depth", linear(Field.Tex({ name = depthPass(), chan = TexChan.R }))) :: ("ps_blurAmount", fo#amount) :: Nil)
+        let focusBindings = focus |> Option.map(fo -> ("ps_depth", fo#depth) :: ("ps_blurAmount", fo#amount) :: Nil)
             |> Option.getWithDefault(Nil);
         let vigBindings = f#vignette |> Option.map(v -> ("ps_vig", vignetteField(aspect, v)) :: Nil) |> Option.getWithDefault(Nil);
         let colorBindings = match f#colorGrade {
@@ -484,6 +536,10 @@ pub mod PostStack.Internal.Passes {
                 let t = chan -> linear(Field.Tex({ name = bloomPassB(), chan = chan }));
                 rgbOf(t(TexChan.R), t(TexChan.G), t(TexChan.B))
             case (DebugView.Depth, _, Some(_)) => rgbOf(ref("ps_depth"), ref("ps_depth"), ref("ps_depth"))
+            // 3D の描き手が場面の色の代わりに mask の灰色を描いた場面の Pass を、曲線を掛けずに出す。
+            case (DebugView.AmbientOcclusion, _, _) =>
+                let t = chan -> Field.Tex({ name = PostStack.sceneName(), chan = chan });
+                rgbOf(t(TexChan.R), t(TexChan.G), t(TexChan.B))
             case _                             => finalOut(f#viewTransform)
         }
 

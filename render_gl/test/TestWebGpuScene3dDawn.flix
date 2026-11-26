@@ -253,7 +253,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
         let RendererData.RendererData(s) = renderer;
         let encoder = gpu.createCommandEncoder("test");
         let host: Host = { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> checked_ecast(()), skip = (_, _) -> checked_ecast(()), textureOf = _ -> checked_ecast(None), textureById = _ -> checked_ecast(None), groupById = _ -> checked_ecast(None), stamp = (_, _) -> checked_ecast(()) };
-        let variants = { pointShadows = true, physicalUnits = false, psx = false, skyIrradiance = false } :: { pointShadows = false, physicalUnits = true, psx = false, skyIrradiance = false } :: Nil;
+        let variants = { pointShadows = true, physicalUnits = false, psx = false, skyIrradiance = false, ambientOcclusion = false } :: { pointShadows = false, physicalUnits = true, psx = false, skyIrradiance = false, ambientOcclusion = false } :: Nil;
         discard Render3d.WebGpuRenderer.preload(renderer, host, { variants = variants | preloadCmd("v") });
         let built = not Map.isEmpty(Ref.get(s#variantFragments));
         discard encoder.finish();
@@ -471,7 +471,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
         discard Render3d.WebGpuBillboards.pipelineOf(s#billboards, RenderTarget.Format.Rgba8Unorm, 4, plain, (0, s#sceneLayout));
         discard Render3d.WebGpuBillboards.pipelineOf(s#billboards, RenderTarget.Format.Rgba8Unorm, 1, { physicalUnits = true | plain }, (1, Render3d.WebGpuRenderer.sceneLayoutOf(renderer, 1)));
         discard Render3d.WebGpuBillboards.pipelineOf(s#billboards, RenderTarget.Format.Rgba8Unorm, 1, { pointShadows = true | plain }, (3, Render3d.WebGpuRenderer.sceneLayoutOf(renderer, 3)));
-        discard Render3d.WebGpuBillboards.pipelineOf(s#billboards, RenderTarget.Format.Rgba8Unorm, 1, { pointShadows = true, physicalUnits = true, psx = false, skyIrradiance = false }, (3, Render3d.WebGpuRenderer.sceneLayoutOf(renderer, 3)));
+        discard Render3d.WebGpuBillboards.pipelineOf(s#billboards, RenderTarget.Format.Rgba8Unorm, 1, { pointShadows = true, physicalUnits = true, psx = false, skyIrradiance = false, ambientOcclusion = false }, (3, Render3d.WebGpuRenderer.sceneLayoutOf(renderer, 3)));
         discard Render3d.WebGpuBillboards.shadowPipelineOf(s#billboards, Render3d.WebGpuShadows.layoutOf(s#shadows), Render3d.WebGpuShadows.depthFormat(), false);
         discard Render3d.WebGpuBillboards.shadowPipelineOf(s#billboards, Render3d.WebGpuShadows.layoutOf(s#shadows), Render3d.WebGpuShadows.depthFormat(), true);
         let errors = gpu.errorCount();

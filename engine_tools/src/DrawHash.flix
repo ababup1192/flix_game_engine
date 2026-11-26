@@ -196,7 +196,7 @@ pub mod DrawHash {
         case { size = size, camera = camera, instances = _, groups = _, multiMeshes = multiMeshes, billboards = billboards,
                pointLights = pointLights, spotLights = spotLights, directionalLight = _, environment = environment,
                resolution = resolution, output = output, zIndex = zIndex, time = time, textures = textures, sky = sky, environmentMap = environmentMap, unitsPerMeter = unitsPerMeter,
-               pointShadows = pointShadows, lightUnits = lightUnits, psx = psx } =>
+               pointShadows = pointShadows, lightUnits = lightUnits, psx = psx, screenInputs = screenInputs } =>
             out.writeDouble(time);
             putVec2(out, size);
             putCamera(out, camera);
@@ -230,8 +230,21 @@ pub mod DrawHash {
             Scene3d.directionalLightOf(scene) |> Option.forEach(putDirectionalLight(out));
             pointShadows |> Option.forEach(putPointShadowMap(out));
             if (lightUnits == Scene3d.LightUnits.Physical) { out.writeByte(0x55); putF(out, unitsPerMeter) } else ();
-            if (Scene3d.Psx.isOn(psx)) putPsx(out, psx) else ()
+            if (Scene3d.Psx.isOn(psx)) putPsx(out, psx) else ();
+            screenInputs |> Option.forEach(i -> putScreenInputs(out, Scene3d.screenInputsFieldsOf(i)))
     }
+
+    // WhyNot: 技の無い場面に印を書かない — 欄を足す前の鍵の字を保ち、キャッシュの PNG を塗り直させない。
+    def putScreenInputs(out: DataOutputStream, f: Scene3d.ScreenInputsFields): Unit \ IO =
+        out.writeByte(0x41);
+        out.writeUTF(f#depth);
+        putF(out, f#depthRange);
+        f#ambientOcclusion |> Option.forEach(ao -> {
+            out.writeByte(0x4f);
+            putF(out, ao#radius); putF(out, ao#intensity); putF(out, ao#power); out.writeInt(ao#taps);
+            putF(out, ao#thickness); putF(out, ao#scale); putF(out, ao#lightAffect)
+        });
+        f#show |> Option.forEach(_ -> out.writeByte(0x53))
 
     // WhyNot: PS1 風を切った場面に印を書かない — 欄を足す前の鍵の字を保ち、キャッシュの PNG を塗り直させない。
     def putPsx(out: DataOutputStream, look: Scene3d.PsxLook): Unit \ IO =

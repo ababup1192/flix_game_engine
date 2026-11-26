@@ -13,6 +13,6 @@ grep 代わりの重い作業になってしまうため）。調べたいモジ
 あるか分からないときは `make module Q=<やりたいこと>`（目次は [module-index.md](module-index.md)）を先に引く。
 | パッケージ | モジュール数 | 宣言数 | ファイル |
 |---|---|---|---|
-| engine | 88 | 1214 | [api-digest/engine.md](api-digest/engine.md) |
-| engine_world | 140 | 1821 | [api-digest/engine_world.md](api-digest/engine_world.md) |
-| engine_tools | 25 | 227 | [api-digest/engine_tools.md](api-digest/engine_tools.md) |
+| engine | 89 | 1237 | [api-digest/engine.md](api-digest/engine.md) |
+| engine_world | 140 | 1825 | [api-digest/engine_world.md](api-digest/engine_world.md) |
+| engine_tools | 26 | 234 | [api-digest/engine_tools.md](api-digest/engine_tools.md) |

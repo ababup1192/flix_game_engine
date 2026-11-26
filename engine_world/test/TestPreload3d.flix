@@ -29,7 +29,7 @@ mod TestPreload3d {
     /// 変種を足すと、ゲームの key が同じでも頼みの key が変わり、頼みに変種が乗る。
     @Test
     def testVariantsChangeTheKey(): Unit \ Assert =
-        let ps = { pointShadows = true, physicalUnits = false, psx = false, skyIrradiance = false };
+        let ps = { pointShadows = true, physicalUnits = false, psx = false, skyIrradiance = false, ambientOcclusion = false };
         let withVariants = App.make(0) |> App.withPreload3d({ variants = _ -> ps :: Nil | App.preload3d(_ -> "k", _ -> Nil) });
         let plain = App.make(0) |> App.withPreload3d(App.preload3d(_ -> "k", _ -> Nil));
         let variantsOf = (app: App[Int32, {}]) -> App.Internal.Paint.preloadCmd(app, 0, 1) |> Option.map(cmd -> List.map(Scene3d.preloadVariantKey, cmd#variants));

@@ -22,12 +22,13 @@ pub mod PostStack.Internal.Fog {
 
     def noisePhaseNames(): List[String] = List.range(0, 4) |> List.map(i -> "ps_fnph${i}")
 
-    /// 霧の面 1 枚（Param つき）。source = 場面の Pass・depth = 目からの距離を far で割った奥行きの絵・toLin = 画面の値を線形へ戻してから混ぜるか。
+    /// 霧の面 1 枚（Param つき）。source = 場面の Pass・depth = 目からの距離を range で割った奥行きの絵（camera の far か、SSAO の奥行きの Pass の遠い隅までの距離）・
+    /// toLin = 画面の値を線形へ戻してから混ぜるか。
     pub def surface(fog: HeightFog, size: Vec2.Vec2, time: Float64, scene: (Vec2.Vec2, Scene3d.Scene3dCmd),
-                    source: String, depth: String, toLin: Bool): Render.PlacedItem =
+                    source: String, depth: String, range: Float64, toLin: Bool): Render.PlacedItem =
         let (_, cmd) = scene;
         let lights = glowLightsOf(fog, cmd);
-        let spec = specOf(fog, size#x / size#y, cmd#camera#far, source, depth, toLin, List.length(lights));
+        let spec = specOf(fog, size#x / size#y, range, source, depth, toLin, List.length(lights));
         Render.withShaderParams(paramsOf(fog, size, time, scene, lights),
             Render.shaderFill(spec, { position = Vec2.zero(), size = size }, 0.0, 0))
 

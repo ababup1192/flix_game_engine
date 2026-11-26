@@ -29,7 +29,16 @@ pub mod Render3dWgsl {
             "@group(0) @binding(${lightBinding()}) var<uniform> r3dLight: R3dLight;\n"
         case Render3d.ProgramKey.Group0Binding.PointShadowAtlas =>
             "@group(0) @binding(${pointShadowMapBinding()}) var uPointShadowMap: texture_depth_2d;\n"
+        case Render3d.ProgramKey.Group0Binding.AoMask =>
+            "@group(0) @binding(${aoMaskBinding()}) var uAoMask: texture_2d<f32>;\n" +
+            "struct R3dAo { uValues: vec4f };\n@group(0) @binding(${aoMaskBinding() + 1}) var<uniform> r3dAo: R3dAo;\n"
     }
+
+    /// 変種 +ao の group 0 の SSAO の mask の binding（R3dAo の buffer はその次）。
+    pub def aoMaskBinding(): Int32 = 8
+
+    /// R3dAo のバイト数（uValues = (場面の描き先の幅, 高さ, lightAffect, 0)）。
+    pub def aoValueBytes(): Int32 = 16
 
     /// 変種の group 0 の R3dLight の binding。
     pub def lightBinding(): Int32 = 6

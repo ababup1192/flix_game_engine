@@ -105,6 +105,12 @@ pub mod PostStack {
     pub type alias HeightFog = { color = Color, density = Float64, baseHeight = Float64, heightFalloff = Float64, startDistance = Float64,
                                  maxOpacity = Float64, noise = Option[FogNoise], lightGlow = Float64 }
 
+    /// 画面の上の SSAO（家具の足元・部屋の隅・物の接する所を暗くする）。値は ScreenEffects3d.AmbientOcclusion（半径と thickness は m）。
+    /// 3D の場面の奥行きの絵（R32Float の Pass）から 3D の描き手が mask を作り、環境の光（ambient・hemisphere・lightmap の光）に掛ける。
+    /// View の絵の一番大きい 3D の場面 1 つにだけ掛かる（2 つ以上なら Issue.SeveralScenes）。半透明の物には掛からない。
+    /// 半径・強さを毎コマ動かしてよい（uniform で渡る）。taps と scale を動かすと mask の描き先を作り直す。
+    pub type alias AmbientOcclusion = ScreenEffects3d.AmbientOcclusion
+
     /// 場面の Pass の縁のならし（MSAA）。WebGPU は 1 か 4 しか持たない。
     pub enum Msaa with Eq, ToString {
         case Off
@@ -129,12 +135,14 @@ pub mod PostStack {
     /// BeforeBloom の Pass が並ぶと、後の効果は最後の Pass の絵を場面として読む。AfterViewTransform の Pass も同じで、画面へは最後の Pass を置く。
     pub type alias CustomPass = { name = String, at = CustomAt, spec = ShaderDoc.Spec, reads = List[Read], scale = Float64 }
 
-    /// 途中の絵を画面へ出す（make render で 1 枚見る用）。Final = 仕上がり・Scene = 露出と曲線の前の場面の値・Bloom = ブルームの絵・Depth = 奥行きの絵。
+    /// 途中の絵を画面へ出す（make render で 1 枚見る用）。Final = 仕上がり・Scene = 露出と曲線の前の場面の値・Bloom = ブルームの絵・Depth = 奥行きの絵・
+    /// AmbientOcclusion = SSAO の mask（灰色。白 = 暗くしない）。
     pub enum DebugView with Eq, ToString {
         case Final
         case Scene
         case Bloom
         case Depth
+        case AmbientOcclusion
     }
 
     /// 見た目の名前から引く出発点（docs/art-ref/visual-dict/reference-3d.md の行の名前と同じ）。値は PostStack.preset。
@@ -180,6 +188,9 @@ pub mod PostStack {
     /// size 8・amount 0.4・speed (0.5, 0.2) の霧のむら。
     pub def fogNoise(): FogNoise = { size = 8.0, amount = 0.4, speed = { x = 0.5, y = 0.2 } }
 
+    /// 半径 1 m・強さ 2・曲線 1.5・12 点の SSAO（ScreenEffects3d.ambientOcclusion）。
+    pub def ambientOcclusion(): AmbientOcclusion = ScreenEffects3d.ambientOcclusion()
+
     /// 青みの灰色・density 0.02・heightFalloff 0.2・むらと灯りのにじみ無しの高さの霧。
     pub def heightFog(): HeightFog =
         { color = Color.rgb(0.62, 0.66, 0.74), density = 0.02, baseHeight = 0.0, heightFalloff = 0.2, startDistance = 0.0, maxOpacity = 1.0,
@@ -201,14 +212,15 @@ pub mod PostStack {
     type alias Fields = { exposure = Float64, viewTransform = ViewTransform, bloom = Option[Bloom], colorGrade = Option[ColorGrade],
                           vignette = Option[Vignette], depthOfField = Option[DepthOfField], fxaa = Bool, custom = List[CustomPass],
                           quality = Quality, msaa = Msaa, debugView = DebugView, background = Option[Color],
-                          distortion = Option[Distortion], time = Float64, heightFog = Option[HeightFog], crt = Option[Crt] }
+                          distortion = Option[Distortion], time = Float64, heightFog = Option[HeightFog], crt = Option[Crt],
+                          ambientOcclusion = Option[AmbientOcclusion] }
 
     def fieldsOf(s: Stack): Fields = match s { case StackData.StackData(f) => f }
 
     def neutralFields(): Fields =
         { exposure = 0.0, viewTransform = ViewTransform.Standard, bloom = None, colorGrade = None, vignette = None,
           depthOfField = None, fxaa = false, custom = Nil, quality = Quality.Auto, msaa = Msaa.Off, debugView = DebugView.Final,
-          background = None, distortion = None, time = 0.0, heightFog = None, crt = None }
+          background = None, distortion = None, time = 0.0, heightFog = None, crt = None, ambientOcclusion = None }
 
     def presetVignette(strength: Float64): Option[Vignette] = Some({ strength = strength, inner = 0.35, outer = 1.05, center = { x = 0.5, y = 0.5 } })
 
@@ -272,6 +284,8 @@ pub mod PostStack {
     pub def withHeightFog(h: Option[HeightFog], s: Stack): Stack = mapFields(f -> { heightFog = h | f }, s)
 
     pub def withCrt(c: Option[Crt], s: Stack): Stack = mapFields(f -> { crt = c | f }, s)
+    /// 画面の上の SSAO（None で外す。`PostStack.withAmbientOcclusion(Some({ radius = 0.5 | PostStack.ambientOcclusion() }), s)`）。
+    pub def withAmbientOcclusion(a: Option[AmbientOcclusion], s: Stack): Stack = mapFields(f -> { ambientOcclusion = a | f }, s)
 
     /// 時間で動く後がけ（Distortion と HeightFog のむら）の時刻。陽炎と霧は遊びの時計（ポーズで止まる）を渡す。描き出しとテストは決まった時刻を渡す。
     // WhyNot: App が自分の時刻を配らない — App は遊びの時計と実時間のどちらで流すかを知らない（docs/clock.md）。
@@ -308,6 +322,7 @@ pub mod PostStack {
     pub def heightFogOf(s: Stack): Option[HeightFog] = fieldsOf(s)#heightFog
 
     pub def crtOf(s: Stack): Option[Crt] = fieldsOf(s)#crt
+    pub def ambientOcclusionOf(s: Stack): Option[AmbientOcclusion] = fieldsOf(s)#ambientOcclusion
 
     /// withTime の秒。
     pub def timeOf(s: Stack): Float64 = fieldsOf(s)#time
@@ -352,10 +367,20 @@ pub mod PostStack {
         PostStack.Internal.Passes.build(input, fieldsOf(s))
 
     /// Auto を画面の区分で決めた Stack（スマホは Low・ほかは Medium）。App.withPostStack は描く前にこれを通す。
-    pub def resolveQuality(sizeClass: Display.SizeClass, s: Stack): Stack = match fieldsOf(s)#quality {
-        case Quality.Auto => withQuality(if (sizeClass == Display.SizeClass.Small) Quality.Low else Quality.Medium, s)
-        case _            => s
-    }
+    /// Low の SSAO は mask を半分以下の解像度・6 点に抑える（ゲームが書いた値より重くはしない）。
+    pub def resolveQuality(sizeClass: Display.SizeClass, s: Stack): Stack =
+        let resolved = match fieldsOf(s)#quality {
+            case Quality.Auto => withQuality(if (sizeClass == Display.SizeClass.Small) Quality.Low else Quality.Medium, s)
+            case _            => s
+        };
+        match qualityOf(resolved) {
+            case Quality.Low => mapFields(f -> { ambientOcclusion = f#ambientOcclusion |> Option.map(lowAmbientOcclusion) | f }, resolved)
+            case _           => resolved
+        }
+
+    /// Low の SSAO（mask の倍率を 0.5 以下・点の数を 6 以下に）。
+    def lowAmbientOcclusion(a: AmbientOcclusion): AmbientOcclusion =
+        { scale = Float64.min(a#scale, 0.5), taps = Int32.min(a#taps, 6) | a }
 
     /// 問題 1 件の知らせの字。
     pub def issueText(issue: Issue): String = match issue {

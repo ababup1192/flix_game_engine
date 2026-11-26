@@ -39,6 +39,11 @@ pub mod ShaderAst.Glsl {
         case BuiltinFn.Determinant => "determinant"
         case BuiltinFn.Clamp       => "clamp"
         case BuiltinFn.Mix         => "mix"
+        case BuiltinFn.Fract       => "fract"
+        case BuiltinFn.Sqrt        => "sqrt"
+        case BuiltinFn.Pow         => "pow"
+        case BuiltinFn.Cos         => "cos"
+        case BuiltinFn.Sin         => "sin"
         case _                     => ShaderAst.invalidOrBug("ShaderAst.Glsl: 組み込みの関数の名前が無い")
     }
 
@@ -84,6 +89,7 @@ pub mod ShaderAst.Glsl {
     def builtin(fun: BuiltinFn, xs: List[Node]): String = match fun {
         case BuiltinFn.TextureSize      => "textureSize(" + args(xs) + ", 0)"
         case BuiltinFn.TargetDepthTexel => "texelFetch(" + args(xs) + ", 0).r"
+        case BuiltinFn.TargetTexel      => "texelFetch(" + args(xs) + ", 0).r"
         case _                          => builtinName(fun) + "(" + args(xs) + ")"
     }
 
