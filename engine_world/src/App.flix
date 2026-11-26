@@ -96,7 +96,7 @@ pub mod App {
     /// display は今の画面の情報（大きさ・倍率・最後の pointer・端末の区分）。小さい画面（sizeClass が Small）だけ字とボタンを
     /// 大きくする・指の時だけ案内を「タップ」にする、のように使う。当たりの並べ方を替えるなら、入力の側は Frame#sizeClass で
     /// 同じ並べ方を引く。画面なしの描き出しと pickCtx では Display.desktop(design)（Large・Mouse）で、小さい画面を描き出すなら
-    /// `{ display = { sizeClass = Display.SizeClass.Small | ctx#display } | ctx }` で差し替える。preload3d は withPreload3d の集まりの進み具合（前のコマの値。済むまで View が暗転を描く）。最初のコマと key が替わったコマは 0 / 1・描き出しと pickCtx は Scene3d.noPreload()。
+    /// `{ display = { sizeClass = Display.SizeClass.Small | ctx#display } | ctx }` で差し替える。preload3d は先に作る集まりの進み具合（前のコマの値。暗転は engine が出すので View は読まなくてよい）。最初のコマと key が替わったコマは 0 / 1・描き出しと pickCtx は Scene3d.noPreload()。
     // WhyNot: 進み具合を Frame に置かない — 描き手の実時間で決まる値で、系が読むと遊んだ記録と再生（済んでいる）で World が食い違う。
     pub type alias ViewCtx = { atlas = FontAtlas, fontOf = String -> FontAtlas, visible = Rect2.Rect2,
                                warnOnce = String -> Unit, diagnostics = Option[FrameDiagnostics.Diagnostics],
@@ -206,8 +206,7 @@ pub mod App {
         // 「1 度だけ GPU に生成して使い回す静的な絵」の層の宣言（無ければ None・層ごとの欄は StaticLayerSpec）。純粋関数に限るのは renderCommands の op を効果多相にしないため（静的な絵は World の
         // 純粋な投影から作れる）。
         staticLayers = Option[w -> List[StaticLayerSpec]],
-        // withPreload3d の宣言。
-        preload3d = Option[Preload3d[w]],
+        preload3d = Option[Preload3d[w]], autoPreload3d = AutoPreload3d, // withPreload3d の宣言と、withAutoPreload3d の見せ方
         // 「1 度だけ GPU に生成して 1 draw call で敷くタイルの層」の宣言（無ければ None）。
         // Spec の key が変わるとエンジンが作り直す。純粋関数に限る理由は staticLayer と同じ。
         // タイル層は動的な絵より必ず奥に描かれる — キャラを隠す絵（屋根・庇）は置けない。
@@ -297,7 +296,7 @@ pub mod App {
           hudView = None,
           letterboxView = None,
           staticLayers = None,
-          preload3d = None,
+          preload3d = None, autoPreload3d = AutoPreload3d.Cover,
           tileLayers = None,
           spriteAtlases = _ -> Nil,
           pixelSnap = _ -> 0.0,
@@ -447,20 +446,20 @@ pub mod App {
     pub def withStaticLayers(f: w -> List[StaticLayerSpec], app: App[w, ef]): App[w, ef] =
         App.App({ staticLayers = Some(f) | rec(app) })
 
-    /// 遊びの途中で初めて出る物（形・絵・材質のプログラム）を GPU へ先に上げる宣言。初めて出るコマに mipmap 作りとプログラムの組み立てが乗って
-    /// コマが跳ねるのを、起動（と読み直し）の 1 コマへまとめる。key は毎コマ読み、中身を決める全入力を 1 文字列にまとめた物。
-    /// instances と textures は key が変わった時と Doc の読み直しの時だけ読む純粋関数。instances は描かないので置く場所は何でもよい。
-    /// 骨つきの物は姿勢を付けたまま渡すと、骨つきの版のプログラムまで組める。view の中で後から作る絵と、材質が読まない絵は上がらない。
-    /// textures = 材質が "tex3d:" の名前で読む絵（Instance3d は名前しか持たない。その物を描く場面の textures にも載せる）。
-    /// 上げた物は置き場の上限で捨てられにくくなる。形と絵は上限に足りなければ捨て、1 回知らせる。
-    /// 描き手が GPU の 3D を持たない時（CPU の描き手・窓の無い描き手・WebLayer.withProject）は何もしない。view = None のゲームでは効かない。
-    /// variants = 足して組むシェーダーの変種（点光源の影・Physical の光の場面は `Scene3d.preloadVariantOf(場面)` を渡すと +ps・+pu の版も先に組む）。
-    /// groups と scenes = 先に作る動かない物の集まりと、それを描く場面（集まり × 場面ごとに 1 コマ数 ms ずつ作る・key が変わった時だけ読む・進み具合は ViewCtx#preload3d・docs/scene3d.md）。字で全部の欄を書かず、`{ textures = .., variants = .. | App.preload3d(key, instances) }` の形で書く。
+    /// 遊びの途中で初めて出る物を GPU へ先に上げる宣言（初めて出るコマの mipmap 作りとプログラムの組み立てを、起動と読み直しの 1 コマへまとめる）。key は毎コマ読む、中身を決める全入力の字。
+    /// instances（置く場所は何でもよい・骨つきは姿勢を付けると骨つきの版も組む）と textures（材質が "tex3d:" の名前で読む絵）は key が変わった時と Doc の読み直しの時だけ読む。上げた物は置き場の上限で捨てられにくい。
+    /// variants = 足して組むシェーダーの変種（`Scene3d.preloadVariantOf(場面)`）。groups と scenes = 先に作る動かない物の集まりと場面（View に出た集まりは書かなくても engine が先に作る。遊ぶ最中に初めて見せる階を起動の暗転にまとめる時だけ書く・docs/scene3d.md）。
+    /// 描き手が GPU の 3D を持たない時と view = None のゲームでは効かない。`{ textures = .., variants = .. | App.preload3d(key, instances) }` の形で書く。
     pub def withPreload3d(plan: Preload3d[w], app: App[w, ef]): App[w, ef] = App.App({ preload3d = Some(plan) | rec(app) })
 
     /// withPreload3d の宣言（欄の意味は withPreload3d の doc）。preload3d は textures と variants を空にして作る。
     pub type alias Preload3d[w] = { key = w -> GameEngine.StaticKey, instances = w -> List[Scene3d.Instance3d], textures = w -> List[Texture3d.Texture3d], variants = w -> List[Scene3d.PreloadVariant], groups = w -> List[Scene3d.StaticGroup], scenes = w -> List[Scene3d.Scene3dCmd] }
     pub def preload3d(key: w -> GameEngine.StaticKey, instances: w -> List[Scene3d.Instance3d]): Preload3d[w] = { key = key, instances = instances, textures = _ -> Nil, variants = _ -> Nil, groups = _ -> Nil, scenes = _ -> Nil }
+
+    /// View に初めて出た staticGroup（名前で見る）を engine が先に作る間の見せ方（withAutoPreload3d で替える）。Cover = 作り終えるまで場面から外して design 全体を黒で覆う（既定）・
+    /// PopIn = 外すだけ（作り終えたコマで現れる。区画を順に載せる場面向け）・Off = 先に作らず描いたコマで作る。withPreload3d の groups も一度済むまで同じ扱い（docs/scene3d.md）。
+    pub enum AutoPreload3d with Eq { case Cover, PopIn, Off }
+    pub def withAutoPreload3d(mode: AutoPreload3d, app: App[w, ef]): App[w, ef] = App.App({ autoPreload3d = mode | rec(app) })
 
     /// タイルの層（床・壁 1 行目など、格子に敷く静的な絵）を宣言する。エンジンが Spec ごとに
     /// 1 度だけ GPU に生成し、以後は毎フレーム 1 draw call で敷く（数百〜千マスでも軽い）。

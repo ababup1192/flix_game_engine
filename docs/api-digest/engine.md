@@ -2380,6 +2380,8 @@
   `pub def hudBase(): Int32`
 - 読み込み中の表示の範囲の底（ブラウザ版で App が届いていない物を待つ間の輪と、押した点からの波紋）。
   `pub def loadingBase(): Int32`
+- staticGroup を先に作る間の黒（App.withAutoPreload3d の Cover）の z。HUD の範囲より手前・待ちの表示より奥。
+  `pub def autoPreloadCover(): Int32`
 - エンジンデバッグの範囲の底（fps・矩形注釈・トースト・スクラブ表示）。
   `pub def debugBase(): Int32`
 - hud の z を HUD の範囲へ持ち上げる（範囲内は 0..innerMax に clamp）。

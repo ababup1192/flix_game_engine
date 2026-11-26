@@ -206,12 +206,14 @@ pub mod App.Internal.Paint {
     /// passTargets はこれまでに Pass として描いたターゲットの名前（GPU に残っている物。増えるだけ）—
     /// Pass の中で、このコマで宣言していない古いターゲットを読んだのを見分ける（Render.resolvePassReads）。
     /// preload3d = 前のコマに描き手が返した、先に上げる集まりの進み具合と、その宣言の key（次のコマの ViewCtx#preload3d）。
+    /// autoPreload = View に初めて出た staticGroup を先に作る所の状態（App.Internal.AutoPreload）。
     pub type alias TileCache =
         { gen = Int32, entries = Map[String, (Int32, String, GpuHandle.TileVao, Int32)], passTargets = Set[String],
-          preload3d = (Option[GameEngine.StaticKey], Scene3d.PreloadProgress) }
+          preload3d = (Option[GameEngine.StaticKey], Scene3d.PreloadProgress), autoPreload = App.Internal.AutoPreload.State }
 
     /// まだ何も生成していない起動時の持ち回し。
-    pub def freshTileCache(): TileCache = { gen = 0, entries = Map.empty(), passTargets = Set.empty(), preload3d = (None, Scene3d.noPreload()) }
+    pub def freshTileCache(): TileCache =
+        { gen = 0, entries = Map.empty(), passTargets = Set.empty(), preload3d = (None, Scene3d.noPreload()), autoPreload = App.Internal.AutoPreload.fresh() }
 
     /// camera 無しでも zoom があれば「画面中央の world 点 = design/2」を軸に据える正規化。
     /// App.composeScene・App.visibleOf・resolvedCamera が同じ規則を共有するための 1 点
@@ -462,16 +464,15 @@ pub mod App.Internal.Paint {
             case None        => (tileCache, glyphSeen, budgetWarned)
             case Some(frame) =>
                 uploadAtlases((r#spriteAtlases)(world));
-                let preloaded = preloadCmd(app, tileCache#gen, world) |> Option.map(cmd -> (Some(cmd#key), Platform.Draw3d.preload3d(cmd)))
-                                |> Option.getWithDefault((None, Scene3d.noPreload()));
-                let passList = frame#plan#passes;
-                renderPasses(warnOnce, design, frame#plan);
-                Option.forEach(drawLetterbox(warnOnce, design), frame#letterbox);
-                let letterboxItems = Option.getWithDefault(Nil, frame#letterbox);
+                let (shown, preloaded, auto) = preloadAndCover(app, warnOnce, design, world, frame, tileCache);
+                let passList = shown#plan#passes;
+                renderPasses(warnOnce, design, shown#plan);
+                Option.forEach(drawLetterbox(warnOnce, design), shown#letterbox);
+                let letterboxItems = Option.getWithDefault(Nil, shown#letterbox);
                 let cacheSeen = { passTargets = passList |> List.foldLeft((acc, p) -> Set.insert(p#name, acc), tileCache#passTargets)
-                                  | { preload3d = preloaded | tileCache } };
-                let retained = frame#retained;
-                let items = frame#items;
+                                  | { preload3d = preloaded, autoPreload = auto | tileCache } };
+                let retained = shown#retained;
+                let items = shown#items;
                 // 字の欠け照合はレンダーターゲットの中の字も一緒に見る（ターゲットも本編と
                 // 同じ「初めて出る字は 1 コマ遅れる」に乗せる）。
                 let itemsForGlyphs = List.append(List.append(List.flatMap(p -> p#items, passList), letterboxItems), items);
@@ -489,7 +490,7 @@ pub mod App.Internal.Paint {
                     if (Map.isEmpty(missing)) Some(fp) else None
                 };
                 // 面と 3D の場面は別チャンネル（Platform.Draw2d.drawSurface・Platform.Draw3d.drawScene3d）へ積み、残りの 2D と一緒に描き手が z で合流させる。
-                let (tileCmds, nextCache) = if (retained) tileLayerCmds(app, design, world, frame#tiles, cacheSeen) else (Nil, cacheSeen);
+                let (tileCmds, nextCache) = if (retained) tileLayerCmds(app, design, world, shown#tiles, cacheSeen) else (Nil, cacheSeen);
                 submitGpuItems(warnOnce, items, tileCmds, if (retained) staticLayerCmds(app, warnOnce, design, world) else Nil);
                 // 数えるのは itemsForGlyphs（本編 + レンダーターゲットの中）— headless の
                 // 検査と同じ量にそろえる。タイル層・静的層は GPU 側で 1 層 1 draw call に
@@ -498,6 +499,40 @@ pub mod App.Internal.Paint {
                 (nextCache, nextSeen,
                  if (budgetWarned) true
                  else warnOverBudget(List.length(itemsForGlyphs), budgetWarned))
+        }
+
+    /// 先に作る宣言（withPreload3d と、View に初めて出た staticGroup）を描き手へ渡し、作り終えていない集まりを外して黒を足したコマと、
+    /// 次のコマの ViewCtx#preload3d に渡す (宣言の key, 進み具合) と、自動の状態を返す。
+    // WhyNot: 控えの key に自動の分を入れない — progressFor が宣言だけの key と比べるので、毎コマ「済んでいない」になり ViewCtx#preload3d が済まなくなる。
+    // WhyNot: renderFrame へインライン展開させない — renderFrame を run で包むテストの閉包が JVM の 1 メソッドの上限（64KB）を超える。
+    @DontInline
+    def preloadAndCover(app: App[w, ef], warnOnce: String -> Unit, design: Vec2.Vec2, world: w, frame: Built, tileCache: TileCache):
+            (Built, (Option[GameEngine.StaticKey], Scene3d.PreloadProgress), App.Internal.AutoPreload.State) \ Platform.Rendering =
+        let declared = preloadCmd(app, tileCache#gen, world);
+        let declaredKey = Option.map(cmd -> cmd#key, declared);
+        let mode = App.rec(app)#autoPreload3d;
+        if (mode == App.AutoPreload3d.Off) {
+            let progress = declared |> Option.map(Platform.Draw3d.preload3d) |> Option.getWithDefault(Scene3d.noPreload());
+            (frame, (declaredKey, progress), tileCache#autoPreload)
+        } else {
+            let scenes = App.Internal.AutoPreload.scenesOf(List.append(List.flatMap(p -> p#items, frame#plan#passes), frame#items));
+            let prepared = App.Internal.AutoPreload.prepare(declared, tileCache#gen, scenes, tileCache#autoPreload);
+            let progress = prepared#cmd |> Option.map(Platform.Draw3d.preload3d) |> Option.getWithDefault(Scene3d.noPreload());
+            let outcome = App.Internal.AutoPreload.settle(mode == App.AutoPreload3d.Cover, progress, prepared);
+            match (if (prepared#stopped) warnOnce(App.Internal.AutoPreload.stoppedText()) else ()) {
+                case () => (coveredFrame(design, outcome#strip, outcome#cover, frame), (declaredKey, progress), outcome#state)
+            }
+        }
+
+    /// frame の 3D の場面（本編と Pass）から名前 strip の集まりを外し、cover なら design 全体を覆う黒を足した物。
+    def coveredFrame(design: Vec2.Vec2, strip: Set[String], cover: Bool, frame: Built): Built =
+        let stripped = if (Set.isEmpty(strip)) frame
+                       else { items = App.Internal.AutoPreload.withoutGroups(strip, frame#items),
+                              plan = { passes = frame#plan#passes |> List.map(p -> { items = App.Internal.AutoPreload.withoutGroups(strip, p#items) | p }) | frame#plan } | frame };
+        if (not cover) stripped
+        else {
+            let black: Render.PlacedItem = { at = Vec2.zero(), item = RawDraw.box(design, Color.rgb(0.0, 0.0, 0.0), ZBand.autoPreloadCover()) };
+            { items = List.append(stripped#items, black :: Nil) | stripped }
         }
 
     /// 1 コマだけ描く（窓なしで GPU に塗る 1 枚撮り・動画。render_gl の GlOffscreen.handle の下で呼ぶ）。
