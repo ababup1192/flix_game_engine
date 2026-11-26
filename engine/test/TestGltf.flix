@@ -63,7 +63,7 @@ mod TestGltf {
                               f32s(0.0 :: 0.0 :: 1.0 :: 0.0 :: 0.0 :: 1.0 :: 0.0 :: 0.0 :: 1.0 :: Nil)))
 
     /// triangleGlb と同じ三角に、uvs を TEXCOORD_0（VEC2・count = uvs の数 / 2）として足した .glb。
-    def triangleWithUvsGlb(uvs: List[Float64]): Vector[Int8] =
+    pub def triangleWithUvsGlb(uvs: List[Float64]): Vector[Int8] =
         let uvCount = List.length(uvs) / 2;
         let json = "{\"asset\":{\"version\":\"2.0\"},\"nodes\":[{\"mesh\":0}]," +
             "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0,\"NORMAL\":1,\"TEXCOORD_0\":2}}]}]," +
@@ -104,7 +104,7 @@ mod TestGltf {
     /// skin つきの三角の .glb。ノード 0 = child（root から (0, 1, 0)）・ノード 1 = root・skin.joints = [0, 1]（子が先）。
     /// JOINTS_0 は UNSIGNED_SHORT で 3 頂点とも [0, 0, 0, 0]（= child）、WEIGHTS_0 は normalized の UNSIGNED_BYTE で [51, 204, 0, 0]。
     /// アニメーション "lift" は child の平行移動を CUBICSPLINE で、時刻 0・1 の値が (0, 0, 0)・(0, 2, 0)（入りと出の接線は全部 9）。
-    def skinnedGlb(): Vector[Int8] =
+    pub def skinnedGlb(): Vector[Int8] =
         let json = "{\"asset\":{\"version\":\"2.0\"}," +
             "\"nodes\":[{\"name\":\"child\",\"translation\":[0,1,0]},{\"name\":\"root\",\"children\":[0]},{\"mesh\":0,\"skin\":0}]," +
             "\"skins\":[{\"joints\":[0,1]}]," +

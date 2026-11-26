@@ -642,6 +642,8 @@
   `pub def defaultLoadOptions(): LoadOptions`
 - .glb のバイトから、絵と材質つきで作る。ゲームは Model3d.loader / load / decode を使う（engine のテストと bench が選択肢を直に渡す時の API）。
   `pub def decodeWith(decoder: ImageData.ImageDecoder, options: LoadOptions, key: Option[String], bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO`
+- 材質の baseColorTexture・normalTexture・emissiveTexture（emissive が 0 でない材質だけ）・metallicRoughnessTexture（metallic・roughness を付ける材質だけ）が指す画像の番号 → その絵の長い辺の上限
+  `pub def usedImages(limits: TextureLimits, pbr: Bool, materials: Vector[Gltf.Internal.Parse.MaterialSpec]): Map[Int32, Int32]`
 
 ## GpuHandle — `engine/src/core/GpuHandle.flix`
 - タイルマップの GPU インスタンスバッファのハンドル（`initTileBuffer` が返す）。

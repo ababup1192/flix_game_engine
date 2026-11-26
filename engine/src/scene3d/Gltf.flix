@@ -11,40 +11,6 @@
 /// 絵で読み飛ばして 1 行ずつ知らせる物: texCoord ≠ 0・KHR_texture_transform・MIRRORED_REPEAT（REPEAT で読む）・外の uri の画像。
 // WhyNot: Mesh3d.fromObj と同じく反転せずに読まない — 左右の決まったキャラ（右手に剣）が鏡写しになる。
 pub mod Gltf {
-    use Util.Json.Json
-    use Util.Json.Json.{JObject, JArray, JNumber, JString}
-    use Gltf.Internal.{rowsOf, gather, flatXyz, component, copyRange, float32OfBits}
-
-    type alias Obj = Map[String, Json]
-
-    /// GLB の中身: JSON の木と、元のバイトの中の BIN チャンクの場所と、番号で引く JSON の配列（parseGlb で 1 回だけ取り出す）。
-    // WhyNot: 番号で引くたびに json から配列を取り出さない — 取り出すたびに配列全体を作り直すので、accessor 2,000 個の束で二乗になる。
-    type alias Glb = { json = Obj, bytes = Vector[Int8], bin = Option[{ start = Int32, length = Int32 }],
-                       accessors = Vector[Obj], bufferViews = Vector[Obj], images = Vector[Obj], meshes = Vector[Obj],
-                       materials = Vector[Obj], textures = Vector[Obj], samplers = Vector[Obj], skins = Vector[Obj] }
-
-    /// 読んだ accessor（成分を平らに並べた値。normalized の物は 0..1 / −1..1 に直してある）。
-    type alias Accessor = { count = Int32, width = Int32, componentType = Int32, values = Vector[Float64] }
-
-    /// 読んだスキン。jointOfNode = ノードの番号 → 並べ替えた後のジョイントの番号・newOfOld = skin.joints の何番目か → 並べ替えた後の番号・
-    /// bindWorlds = 並べ替えた後の番号ごとの、バインドの時のジョイントの world 行列（glTF の座標）。
-    type alias SkinBuild = { skin = Skin3d.Skin3d, jointOfNode = Map[Int32, Int32], newOfOld = Vector[Int32], bindWorlds = Vector[Mat4.Mat4] }
-
-    /// primitive の頂点をどのジョイントに付けるか。Skinned = JOINTS_0 / WEIGHTS_0 を読む・Rigid = 1 本に重み 1・NoSkin = 重みなし。
-    enum Binding {
-        case Skinned(Vector[Int32])
-        case Rigid(Int32)
-        case NoSkin
-    }
-
-    /// 頂点の欄（glTF の座標のまま）。uvs = TEXCOORD_0（無ければ None）・tangents = TANGENT（uv が無いか TANGENT が無ければ None）・
-    /// uvs2 = TEXCOORD_1（lightmap を読む 2 本目の uv。無ければ None）・material = primitive の材質の番号。
-    type alias Part = { positions = Vector[Float64], normals = Vector[Float64], colors = Vector[Float64], indices = Vector[Int32],
-                        joints = Vector[Int32], weights = Vector[Float64], uvs = Option[Vector[Float64]],
-                        tangents = Option[Vector[Float64]], uvs2 = Option[Vector[Float64]], material = Option[Int32] }
-
-    /// 組んだ Model3d と、parts の並びの材質の番号（decodeBy が材質を付ける）。
-    type alias Built = { model = Model3d.Model3d, jointOfNode = Map[Int32, Int32], partMaterials = List[Option[Int32]] }
 
     /// 材質の絵の長い辺の上限（px）。baseColor = baseColorTexture と emissiveTexture（同じ色の絵）・normal = normalTexture。
     /// 上限を超える絵は mip と同じ縮め方で半分にしていく。
@@ -79,39 +45,29 @@ pub mod Gltf {
     /// key = Some なら、形の中身の鍵を key から作り（part ごとに "key#part<番号>"・まとめた形は "key#all"）、絵は機種が持てるなら機種の側に解いて持つ
     /// （ImageData.ImageDecoder の platformImageOfBytes・id は "key#image<番号>"。上限より大きい絵は画素へ戻して縮める）。
     /// key は同じ key なら同じバイトだと呼ぶ側が約束できる字（ImageData.ImageDecoder の versionedKey）。None（デスクトップの開発中のファイル）なら頂点から鍵を作る。
-    // WhyNot: いつも頂点の SHA-256 を取らない — ブラウザでは 1 部屋の形 3 つで 30 ms を超え、部屋を読むたびに積もる。
+    /// 読み方は 2 段: parse（Gltf.Internal.Parse.parse。絵を使わない）と assemble（Gltf.Internal.assemble。絵と材質と鍵）。
     pub def decodeWith(decoder: ImageData.ImageDecoder, options: LoadOptions, key: Option[String], bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO =
-        match key {
-            case Some(k) => decodeBy(Gltf.Internal.keyedImageOf(k, decoder), options, bytes) |> Result.map(Gltf.Internal.withKeyedMeshes(k))
-            case None    => decodeBy((_, _, image) -> Texture3d.decodeUsing(decoder, image), options, bytes)
-        }
+        Gltf.Internal.Parse.parse(Gltf.Internal.Parse.readOptionsOf(options), bytes) |> Result.map(Gltf.Internal.assemble(decoder, options, key, bytes))
 
-    def decodeBy(decode: (Int32, Int32, Vector[Int8]) -> Result[String, Texture3d.Texture3d] \ IO, options: LoadOptions,
-                 bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO =
+    /// parsed に絵と材質を付ける（decode = 画像の番号・上限・バイト → 絵）。parse の知らせを先に、捨てた物の知らせと
+    /// 絵と材質の知らせ（同じ字は 1 行）を後に出す。
+    // WhyNot: parse の知らせを List.distinct しない — primitive ごとに同じ字の知らせが並ぶのが、どの primitive かを数える手がかり。
+    def assembleBy(decode: (Int32, Int32, Vector[Int8]) -> Result[String, Texture3d.Texture3d] \ IO, options: LoadOptions,
+                   bytes: Vector[Int8], parsed: Gltf.Internal.Parse.Parsed): Model3d.Model3d \ IO =
+        let p = Log.warnAllThen(parsed#lines, parsed);
         let pbr = options#pbr;
-        match parseAndBuild(options, bytes) {
-            case Err(e) => Err(e)
-            case Ok((glb, built)) =>
-                let used = usedImages(options#limits, pbr, glb);
-                let images = glb#images |> Vector.mapWithIndex((k, image) -> match Map.get(k, used) {
-                    case Some(maxSide) => decodeImage(decode(k, maxSide), glb, image) |> (decoded -> (Option.map(Texture3d.limitSize(maxSide), fst(decoded)), snd(decoded)))
-                    case None          => (None, Nil)
-                });
-                let decoded = images |> Vector.map(fst);
-                let materials = glb#materials |> Vector.mapWithIndex(materialOf(glb, decoded, pbr));
-                let (parts, attachLines) = attachMaterials(built, materials);
-                let lines = List.flatten((Vector.toList(images) |> List.flatMap(snd)) :: attachLines :: Nil) |> List.distinct;
-                Ok(Log.warnAllThen(List.append(warningsOf(glb#json, built#jointOfNode), lines),
-                                   { parts = parts, textures = Vector.toList(decoded) |> List.filterMap(identity) | built#model }))
-        }
-
-    /// read の pbr = baseColorFactor を線形の値として読む（偽なら画面の値として読む。baseColorOf の WhyNot）・vertexColors = COLOR_0 を読む。limits は読まない。
-    def parseAndBuild(read: LoadOptions, bytes: Vector[Int8]): Result[String, (Glb, Built)] =
-        forM (
-            glb <- parseGlb(bytes);
-            _ <- checkBuffers(glb#json);
-            built <- buildModel(read, glb)
-        ) yield (glb, built)
+        let used = usedImages(options#limits, pbr, p#materials);
+        let images = p#images |> Vector.mapWithIndex((k, source) -> match Map.get(k, used) {
+            case Some(maxSide) => decodeImage(decode(k, maxSide), bytes, source) |> (decoded -> (Option.map(Texture3d.limitSize(maxSide), fst(decoded)), snd(decoded)))
+            case None          => (None, Nil)
+        });
+        let decoded = images |> Vector.map(fst);
+        let materials = p#materials |> Vector.mapWithIndex(materialOf(decoded, pbr));
+        let (parts, attachLines) = attachMaterials(p#parts, materials);
+        let lines = List.flatten((Vector.toList(images) |> List.flatMap(snd)) :: attachLines :: Nil) |> List.distinct;
+        Log.warnAllThen(List.append(p#droppedLines, lines),
+                        { mesh = p#mesh, skin = p#skin, clips = p#clips, parts = parts,
+                          textures = Vector.toList(decoded) |> List.filterMap(identity), nodes = p#nodes })
 
     /// 材質の番号ごとに 1 回作った物。withUv = TEXCOORD_0 のある primitive に付ける材質・withoutUv = 無い primitive に付ける材質
     /// （emissiveTexture と metallicRoughnessTexture は uv で読むので、無い primitive には emission を外し、metallic・roughness は値だけにした材質）・
@@ -119,11 +75,11 @@ pub mod Gltf {
     type alias MaterialBuild = { withUv = Option[Scene3d.Material3d], withoutUv = Option[Scene3d.Material3d], info = Model3d.GltfMaterial,
                                  lines = List[String], noUvLines = List[String] }
 
-    /// built の parts に、材質の番号ごとの materials を付ける。材質の知らせと、uv の無い part に withoutUv を付けた知らせも返す。
-    def attachMaterials(built: Built, materials: Vector[MaterialBuild]): (List[Model3d.ModelPart], List[String]) =
-        let assigned = List.zip(built#model#parts, built#partMaterials) |> List.map(pm -> {
-            let (part, index) = pm;
-            assignMaterial(part, index |> Option.flatMap(k -> Vector.nth(k, materials)))
+    /// parsedParts に、材質の番号ごとの materials を付ける。材質の知らせと、uv の無い part に withoutUv を付けた知らせも返す。
+    def attachMaterials(parsedParts: List[Gltf.Internal.Parse.ParsedPart], materials: Vector[MaterialBuild]): (List[Model3d.ModelPart], List[String]) =
+        let assigned = parsedParts |> List.map(p -> {
+            let part = { mesh = p#mesh, material = None, node = Some(p#node), gltfMaterial = None };
+            assignMaterial(part, p#material |> Option.flatMap(k -> Vector.nth(k, materials)))
         });
         (List.map(fst, assigned), List.append(Vector.toList(materials) |> List.flatMap(m -> m#lines), assigned |> List.flatMap(snd)))
 
@@ -135,52 +91,40 @@ pub mod Gltf {
         ({ material = material, gltfMaterial = Option.map(b -> b#info, build) | part }, lines)
 
     /// emissive が 0 でなく texCoord が 0 の emissiveTexture（光らせるのに読む絵）と、その上限。
-    def emissiveImageOf(limits: TextureLimits, material: Obj): List[(Obj, Int32)] =
-        let info = objectOf("emissiveTexture", material);
-        if (isZeroColor(emissiveOf(material)) or Option.getWithDefault(0, intOf("texCoord", info)) != 0) Nil
-        else (info, limits#baseColor) :: Nil
+    def emissiveImageOf(limits: TextureLimits, material: Gltf.Internal.Parse.MaterialSpec): List[(Gltf.Internal.Parse.TextureInfo, Int32)] =
+        if (isZeroColor(emissiveOf(material)) or material#emissive#texCoord != 0) Nil
+        else (material#emissive, limits#baseColor) :: Nil
 
     /// metallic・roughness を付ける材質の texCoord が 0 の metallicRoughnessTexture（読む絵）と、その上限（baseColor と同じ）。
-    def metallicRoughnessImageOf(limits: TextureLimits, pbr: Bool, material: Obj): List[(Obj, Int32)] =
-        let info = objectOf("metallicRoughnessTexture", objectOf("pbrMetallicRoughness", material));
-        if (not pbr or not wantsMetallicRoughness(material) or Option.getWithDefault(0, intOf("texCoord", info)) != 0) Nil
-        else (info, limits#baseColor) :: Nil
+    def metallicRoughnessImageOf(limits: TextureLimits, pbr: Bool, material: Gltf.Internal.Parse.MaterialSpec): List[(Gltf.Internal.Parse.TextureInfo, Int32)] =
+        if (not pbr or not wantsMetallicRoughness(material) or material#metalRough#texCoord != 0) Nil
+        else (material#metalRough, limits#baseColor) :: Nil
 
     /// 材質の baseColorTexture・normalTexture・emissiveTexture（emissive が 0 でない材質だけ）・metallicRoughnessTexture（metallic・roughness を付ける材質だけ）が指す画像の番号 → その絵の長い辺の上限
     /// （2 つ以上から指されたら大きい方）。
     // WhyNot: 全部の画像を decode しない — occlusion の絵は描くのに使わず、2048² なら 1 枚 16 MB をヒープに持つ。metallicRoughnessTexture は
     //   metallic・roughness を付ける材質（wantsMetallicRoughness）だけ読む。
-    def usedImages(limits: TextureLimits, pbr: Bool, glb: Glb): Map[Int32, Int32] =
-        let textures = glb#textures;
-        glb#materials |> Vector.toList
-            |> List.flatMap(material -> (objectOf("baseColorTexture", objectOf("pbrMetallicRoughness", material)), limits#baseColor)
-                                        :: (objectOf("normalTexture", material), limits#normal)
+    pub def usedImages(limits: TextureLimits, pbr: Bool, materials: Vector[Gltf.Internal.Parse.MaterialSpec]): Map[Int32, Int32] =
+        materials |> Vector.toList
+            |> List.flatMap(material -> (material#base, limits#baseColor)
+                                        :: (material#normal, limits#normal)
                                         :: List.append(emissiveImageOf(limits, material), metallicRoughnessImageOf(limits, pbr, material)))
-            |> List.filterMap(entry -> { let (info, maxSide) = entry; intOf("index", info) |> Option.map(k -> (k, maxSide)) })
-            |> List.filterMap(entry -> { let (k, maxSide) = entry; Vector.nth(k, textures) |> Option.flatMap(texture -> intOf("source", texture)) |> Option.map(src -> (src, maxSide)) })
+            |> List.filterMap(entry -> { let (info, maxSide) = entry; info#source |> Option.map(src -> (src, maxSide)) })
             |> List.foldLeft((acc, entry) -> { let (src, maxSide) = entry; Map.insertWith((a, b) -> Int32.max(a, b), src, maxSide, acc) }, Map.empty())
 
     /// images[k] を絵に戻す（BIN の bufferView の PNG / JPEG）。外の uri・読めない画像は None と知らせる 1 行。
-    def decodeImage(decode: Vector[Int8] -> Result[String, Texture3d.Texture3d] \ IO, glb: Glb, image: Obj): (Option[Texture3d.Texture3d], List[String]) \ IO =
-        match (intOf("bufferView", image), stringOf("uri", image)) {
-            case (Some(view), _) =>
-                match Result.flatMap(decode, viewBytes(glb, view)) {
+    def decodeImage(decode: Vector[Int8] -> Result[String, Texture3d.Texture3d] \ IO, bytes: Vector[Int8], source: Gltf.Internal.Parse.ImageSource): (Option[Texture3d.Texture3d], List[String]) \ IO =
+        let unreadable = (e: String) -> (None, "glTF: 画像が読めないので、その絵の材質は頂点の色で描く（${e}）" :: Nil);
+        match source {
+            case Gltf.Internal.Parse.ImageSource.InBin(start, length) =>
+                match decode(Gltf.Internal.copyRange(start, start + length, bytes)) {
                     case Ok(t)  => (Some(t), Nil)
-                    case Err(e) => (None, "glTF: 画像が読めないので、その絵の材質は頂点の色で描く（${e}）" :: Nil)
+                    case Err(e) => unreadable(e)
                 }
-            case (None, Some(_)) => (None, "glTF: 外の uri の画像は読まない — その絵の材質は頂点の色で描く（画像は .glb に埋める）" :: Nil)
-            case (None, None)    => (None, "glTF: bufferView も uri も無い画像を読み飛ばした" :: Nil)
+            case Gltf.Internal.Parse.ImageSource.Unreadable(e) => unreadable(e)
+            case Gltf.Internal.Parse.ImageSource.ExternalUri   => (None, "glTF: 外の uri の画像は読まない — その絵の材質は頂点の色で描く（画像は .glb に埋める）" :: Nil)
+            case Gltf.Internal.Parse.ImageSource.NoSource      => (None, "glTF: bufferView も uri も無い画像を読み飛ばした" :: Nil)
         }
-
-    /// bufferView のバイト（BIN の中）。
-    def viewBytes(glb: Glb, viewIndex: Int32): Result[String, Vector[Int8]] =
-        forM (
-            view <- entryAt("bufferViews", viewIndex, glb#bufferViews);
-            bin <- glb#bin |> Option.toOk("glTF: BIN のチャンクが無い");
-            length <- intOf("byteLength", view) |> Option.toOk("glTF: bufferViews[${viewIndex}] に byteLength が無い");
-            offset <- Ok(Option.getWithDefault(0, intOf("byteOffset", view)));
-            _ <- require(offset >= 0 and length >= 0 and offset + length <= bin#length, "glTF: bufferViews[${viewIndex}] が BIN の外を指す")
-        ) yield copyRange(bin#start + offset, bin#start + offset + length, glb#bytes)
 
     /// 材質 index 1 つ（材質の番号ごとに 1 回）:
     ///
@@ -202,12 +146,11 @@ pub mod Gltf {
     /// 0.5 でなければ 1 行知らせる）・OPAQUE → そのまま。doubleSided は材質のある物にそのまま当てる（Blender の書き出しは全部の材質を真にする。
     /// 裏を描きたくない物は、ゲームが読んだ model#parts の material を Scene3d.withDoubleSided(false, ..) に替える）。
     // WhyNot: 材質の無い物（頂点の色で描く）に当てるため材質を作らない — 材質を作ると batch の鍵と tint の掛け方が替わり、絵が変わる。
-    def materialOf(glb: Glb, images: Vector[Option[Texture3d.Texture3d]], readPbr: Bool, index: Int32, material: Obj): MaterialBuild =
-        let pbr = objectOf("pbrMetallicRoughness", material);
-        let base = textureRefOf(glb, images, objectOf("baseColorTexture", pbr));
-        let normal = textureRefOf(glb, images, objectOf("normalTexture", material));
-        let emission = emissionOf(glb, images, readPbr, index, material);
-        let metal = metallicRoughnessOf(glb, images, readPbr, material);
+    def materialOf(images: Vector[Option[Texture3d.Texture3d]], readPbr: Bool, index: Int32, material: Gltf.Internal.Parse.MaterialSpec): MaterialBuild =
+        let base = textureRefOf(images, material#base);
+        let normal = textureRefOf(images, material#normal);
+        let emission = emissionOf(images, readPbr, index, material);
+        let metal = metallicRoughnessOf(images, readPbr, material);
         let names = { base = fst(base) |> Option.map(r -> Texture3d.name(r#texture)),
                       normal = fst(normal) |> Option.map(r -> Texture3d.name(r#texture)),
                       emissive = emission#texture |> Option.map(r -> Texture3d.name(r#texture)),
@@ -216,7 +159,7 @@ pub mod Gltf {
             let textured = Scene3d.texturedMaterial(Texture3d.name(ref#texture), ref#filter) |> Scene3d.withWrap(ref#wrap);
             match fst(normal) {
                 case Some(n) =>
-                    let strength = numberAt("scale", objectOf("normalTexture", material)) |> Option.getWithDefault(1.0);
+                    let strength = material#normalScale |> Option.getWithDefault(1.0);
                     textured |> Scene3d.withNormalMap({ texture = Texture3d.name(n#texture), strength = strength })
                 case None => textured
             }
@@ -243,24 +186,21 @@ pub mod Gltf {
           noUvLines = List.append(emissiveNoUv, metalNoUv) }
 
     /// metallic・roughness の付く材質か（式は materialOf の説明）。
-    def wantsMetallicRoughness(material: Obj): Bool =
-        let pbr = objectOf("pbrMetallicRoughness", material);
-        Map.memberOf("pbrMetallicRoughness", material)
-            and (Map.memberOf("metallicFactor", pbr) or Map.memberOf("roughnessFactor", pbr) or Option.nonEmpty(intOf("index", objectOf("metallicRoughnessTexture", pbr))))
+    def wantsMetallicRoughness(material: Gltf.Internal.Parse.MaterialSpec): Bool =
+        material#hasPbr and (material#hasMetallic or material#hasRoughness or Option.nonEmpty(material#metalRough#index))
 
     /// 材質に付ける metallic・roughness。metallic・roughness = metallicFactor・roughnessFactor（既定 1）・texture = 読めた metallicRoughnessTexture。
     type alias MetalBuild = { metallic = Float64, roughness = Float64, texture = Option[TextureRef], unreadable = Bool, lines = List[String] }
 
     /// material の metallic・roughness（付けない材質は None）。絵を指しているのに読めない時は texture = None・unreadable = true。
-    def metallicRoughnessOf(glb: Glb, images: Vector[Option[Texture3d.Texture3d]], enabled: Bool, material: Obj): Option[MetalBuild] =
+    def metallicRoughnessOf(images: Vector[Option[Texture3d.Texture3d]], enabled: Bool, material: Gltf.Internal.Parse.MaterialSpec): Option[MetalBuild] =
         if (not enabled or not wantsMetallicRoughness(material)) None
         else {
-            let pbr = objectOf("pbrMetallicRoughness", material);
-            let info = objectOf("metallicRoughnessTexture", pbr);
-            let (ref, lines) = textureRefOf(glb, images, info);
-            Some({ metallic = numberAt("metallicFactor", pbr) |> Option.getWithDefault(1.0),
-                   roughness = numberAt("roughnessFactor", pbr) |> Option.getWithDefault(1.0),
-                   texture = ref, unreadable = Option.nonEmpty(intOf("index", info)) and Option.isEmpty(ref), lines = lines })
+            let info = material#metalRough;
+            let (ref, lines) = textureRefOf(images, info);
+            Some({ metallic = material#metallicFactor |> Option.getWithDefault(1.0),
+                   roughness = material#roughnessFactor |> Option.getWithDefault(1.0),
+                   texture = ref, unreadable = Option.nonEmpty(info#index) and Option.isEmpty(ref), lines = lines })
         }
 
     /// 絵の無い材質（頂点の色の土台）の wrap は metallicRoughnessTexture の sampler に合わせる。
@@ -278,7 +218,7 @@ pub mod Gltf {
     }
 
     /// metallicRoughnessTexture が読めない時の知らせと、絵の読み飛ばしの知らせ。
-    def metalLines(index: Int32, material: Obj, metal: Option[MetalBuild]): List[String] = match metal {
+    def metalLines(index: Int32, material: Gltf.Internal.Parse.MaterialSpec, metal: Option[MetalBuild]): List[String] = match metal {
         case None    => Nil
         case Some(b) =>
             let unreadable = if (b#unreadable) "glTF: 材質 ${materialLabel(index, material)} の metallicRoughnessTexture が読めないので、metallicFactor・roughnessFactor の値だけで読む" :: Nil else Nil;
@@ -293,14 +233,14 @@ pub mod Gltf {
     }
 
     /// MASK の材質の alphaCutoff が 0.5 でない時の知らせ（0.5 で抜く）。
-    def alphaCutoffLine(index: Int32, material: Obj, info: Model3d.GltfMaterial): List[String] =
+    def alphaCutoffLine(index: Int32, material: Gltf.Internal.Parse.MaterialSpec, info: Model3d.GltfMaterial): List[String] =
         if (info#alphaMode == Model3d.AlphaMode.Mask and info#alphaCutoff != 0.5)
             "glTF: 材質 ${materialLabel(index, material)} の alphaCutoff ${Float64.toString(info#alphaCutoff)} は使わず、α 0.5 で抜く" :: Nil
         else Nil
 
     /// 材質を知らせの中で名指す字（name があれば name・無ければ番号）。
-    def materialLabel(index: Int32, material: Obj): String =
-        stringOf("name", material) |> Option.map(n -> "'${n}'") |> Option.getWithDefault("materials[${index}]")
+    def materialLabel(index: Int32, material: Gltf.Internal.Parse.MaterialSpec): String =
+        material#name |> Option.map(n -> "'${n}'") |> Option.getWithDefault("materials[${index}]")
 
     /// 頂点の色をそのまま光を当てる前の色にする材質（α 1）。emissive だけの材質の土台。
     def vertexColorMaterial(name: String): Scene3d.Material3d =
@@ -322,17 +262,17 @@ pub mod Gltf {
     /// （線形へ戻した後に掛ける倍率。強さだけ違う材質が同じプログラムを使う）。光るかどうかは emissiveFactor × strength が 0 でないかで決める。
     /// 指しているのに読めない時は付けない（Solid へ倒すと、Blender の書き出しの factor (1, 1, 1) × 強さで物全体が真っ白に光る）。
     /// linear が真（LoadOptions の pbr）なら emissiveFactor を線形の値として読み、画面の値へ戻して持つ（baseColorOf と同じ理由）。
-    def emissionOf(glb: Glb, images: Vector[Option[Texture3d.Texture3d]], linear: Bool, index: Int32, material: Obj): EmissionOf =
-        let raw = emissiveFactorOf(material);
+    def emissionOf(images: Vector[Option[Texture3d.Texture3d]], linear: Bool, index: Int32, material: Gltf.Internal.Parse.MaterialSpec): EmissionOf =
+        let raw = material#emissiveFactor;
         let screen = (v: Float64) -> if (linear) Texture3d.linearToSrgb(v) else v;
         let c = { r = screen(raw#r), g = screen(raw#g), b = screen(raw#b) };
-        let strength = emissiveStrengthOf(material);
-        let info = objectOf("emissiveTexture", material);
+        let strength = material#emissiveStrength;
+        let info = material#emissive;
         let digits = "(${Float64.toString(c#r)},${Float64.toString(c#g)},${Float64.toString(c#b)})";
         if (isZeroColor(emissiveOf(material))) { build = None, texture = None, lines = Nil }
-        else if (Option.isEmpty(intOf("index", info)))
+        else if (Option.isEmpty(info#index))
             { build = Some({ shade = ShaderDoc.Shade.Solid(Color.rgb(c#r, c#g, c#b)), name = "ec${digits}", wrap = Scene3d.Wrap.Repeat, strength = strength }), texture = None, lines = Nil }
-        else match textureRefOf(glb, images, info) {
+        else match textureRefOf(images, info) {
             case (Some(ref), lines) =>
                 let read = (chan: ShaderDoc.TexChan, k: Float64) ->
                     ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Mul, b = ShaderDoc.Field.Const(k),
@@ -347,30 +287,16 @@ pub mod Gltf {
 
     /// emissiveFactor（既定 (0, 0, 0)）× KHR_materials_emissive_strength の emissiveStrength（既定 1）。負と NaN は 0。
     /// emissiveFactor が 3 つの数でない材質は (0, 0, 0)（知らせは emissiveFactorLine が材質ごとに 1 行）。
-    def emissiveOf(material: Obj): { r = Float64, g = Float64, b = Float64 } =
-        let c = emissiveFactorOf(material);
-        let strength = emissiveStrengthOf(material);
+    def emissiveOf(material: Gltf.Internal.Parse.MaterialSpec): { r = Float64, g = Float64, b = Float64 } =
+        let c = material#emissiveFactor;
+        let strength = material#emissiveStrength;
         let at = (v: Float64) -> { let x = v * strength; if (x > 0.0) x else 0.0 };
         { r = at(c#r), g = at(c#g), b = at(c#b) }
 
-    /// emissiveFactor（既定 (0, 0, 0)）。負と NaN は 0。3 つの数でない材質は (0, 0, 0)。
-    def emissiveFactorOf(material: Obj): { r = Float64, g = Float64, b = Float64 } =
-        let factor = numbersOf("emissiveFactor", 3, material) |> Result.toOption |> Option.flatMap(identity)
-            |> Option.getWithDefault(Vector#{ 0.0, 0.0, 0.0 });
-        let at = (k: Int32) -> { let v = Vector.get(k, factor); if (v > 0.0) v else 0.0 };
-        { r = at(0), g = at(1), b = at(2) }
-
-    /// KHR_materials_emissive_strength の emissiveStrength（既定 1）。負と NaN は 0。
-    def emissiveStrengthOf(material: Obj): Float64 =
-        let s = numberAt("emissiveStrength", objectOf("KHR_materials_emissive_strength", objectOf("extensions", material)))
-            |> Option.getWithDefault(1.0);
-        if (s > 0.0) s else 0.0
-
     /// emissiveFactor が 3 つの数でない時の知らせ（emissiveOf が (0, 0, 0) にした事）。
-    def emissiveFactorLine(index: Int32, material: Obj): List[String] = match numbersOf("emissiveFactor", 3, material) {
-        case Err(e) => "${e}（材質 ${materialLabel(index, material)}）— emissive を (0, 0, 0) として読む" :: Nil
-        case Ok(_)  => Nil
-    }
+    def emissiveFactorLine(index: Int32, material: Gltf.Internal.Parse.MaterialSpec): List[String] =
+        material#emissiveFactorError |> Option.map(e -> "${e}（材質 ${materialLabel(index, material)}）— emissive を (0, 0, 0) として読む" :: Nil)
+            |> Option.getWithDefault(Nil)
 
     def isZeroColor(c: { r = Float64, g = Float64, b = Float64 }): Bool = c#r <= 0.0 and c#g <= 0.0 and c#b <= 0.0
 
@@ -378,774 +304,31 @@ pub mod Gltf {
     type alias TextureNames = { base = Option[String], normal = Option[String], emissive = Option[String], metallicRoughness = Option[String] }
 
     /// glTF の材質の欄を読む（alphaMode は MASK・BLEND の他は Opaque・alphaCutoff 既定 0.5・doubleSided 既定 偽）。
-    def gltfMaterialOf(names: TextureNames, material: Obj): Model3d.GltfMaterial =
-        let alphaMode = match stringOf("alphaMode", material) {
-            case Some("MASK")  => Model3d.AlphaMode.Mask
-            case Some("BLEND") => Model3d.AlphaMode.Blend
-            case _             => Model3d.AlphaMode.Opaque
-        };
-        { name = stringOf("name", material) |> Option.getWithDefault(""), alphaMode = alphaMode,
-          alphaCutoff = numberAt("alphaCutoff", material) |> Option.getWithDefault(0.5),
-          doubleSided = Map.get("doubleSided", material) == Some(Util.Json.Json.JBool(true)),
+    def gltfMaterialOf(names: TextureNames, material: Gltf.Internal.Parse.MaterialSpec): Model3d.GltfMaterial =
+        { name = material#name |> Option.getWithDefault(""), alphaMode = material#alphaMode,
+          alphaCutoff = material#alphaCutoff,
+          doubleSided = material#doubleSided,
           baseColorTexture = names#base, normalTexture = names#normal, emissiveTexture = names#emissive,
           emissive = emissiveOf(material),
-          metallic = numberAt("metallicFactor", objectOf("pbrMetallicRoughness", material)) |> Option.getWithDefault(1.0),
-          roughness = numberAt("roughnessFactor", objectOf("pbrMetallicRoughness", material)) |> Option.getWithDefault(1.0),
+          metallic = material#metallicFactor |> Option.getWithDefault(1.0),
+          roughness = material#roughnessFactor |> Option.getWithDefault(1.0),
           metallicRoughnessTexture = names#metallicRoughness }
 
     /// textureInfo（{ index, texCoord, extensions }）が指す絵と、sampler の読み方。
     type alias TextureRef = { texture = Texture3d.Texture3d, filter = ShaderDoc.FilterMode, wrap = Scene3d.Wrap }
 
-    def textureRefOf(glb: Glb, images: Vector[Option[Texture3d.Texture3d]], info: Obj): (Option[TextureRef], List[String]) =
-        let transformLine = if (Map.memberOf("KHR_texture_transform", objectOf("extensions", info)))
+    def textureRefOf(images: Vector[Option[Texture3d.Texture3d]], info: Gltf.Internal.Parse.TextureInfo): (Option[TextureRef], List[String]) =
+        let transformLine = if (info#transform)
             "glTF: KHR_texture_transform を読み飛ばした（uv をずらさず・回さずに読む）" :: Nil else Nil;
-        match intOf("index", info) {
+        match info#index {
             case None => (None, Nil)
-            case Some(_) if Option.getWithDefault(0, intOf("texCoord", info)) != 0 =>
+            case Some(_) if info#texCoord != 0 =>
                 (None, "glTF: texCoord が 0 でない絵を読み飛ばした（TEXCOORD_0 だけを読む）" :: transformLine)
-            case Some(k) =>
-                let texture = glb#textures |> Vector.nth(k) |> Option.getWithDefault(Map.empty());
-                let sampler = intOf("sampler", texture) |> Option.flatMap(sk -> Vector.nth(sk, glb#samplers))
-                    |> Option.getWithDefault(Map.empty());
-                let wraps = intOf("wrapS", sampler) :: intOf("wrapT", sampler) :: Nil;
-                let mirroredLine = if (List.exists(w -> w == Some(33648), wraps))
-                    "glTF: MIRRORED_REPEAT を REPEAT として読んだ" :: Nil else Nil;
-                let filter = if (intOf("magFilter", sampler) == Some(9728)) ShaderDoc.FilterMode.Nearest else ShaderDoc.FilterMode.Linear;
-                let wrap = if (List.exists(w -> w == Some(33071), wraps)) Scene3d.Wrap.Clamp else Scene3d.Wrap.Repeat;
-                let found = intOf("source", texture) |> Option.flatMap(src -> Vector.nth(src, images)) |> Option.flatMap(identity);
+            case Some(_) =>
+                let mirroredLine = if (info#mirrored) "glTF: MIRRORED_REPEAT を REPEAT として読んだ" :: Nil else Nil;
+                let filter = if (info#nearest) ShaderDoc.FilterMode.Nearest else ShaderDoc.FilterMode.Linear;
+                let wrap = if (info#clamp) Scene3d.Wrap.Clamp else Scene3d.Wrap.Repeat;
+                let found = info#source |> Option.flatMap(src -> Vector.nth(src, images)) |> Option.flatMap(identity);
                 (Option.map(t -> { texture = t, filter = filter, wrap = wrap }, found), List.append(transformLine, mirroredLine))
         }
-
-    def numberAt(key: String, o: Obj): Option[Float64] = Map.get(key, o) |> Option.flatMap(numberOf)
-
-    // ── バイト ──────────────────────────────────────────────
-
-    def u8(bytes: Vector[Int8], i: Int32): Int32 = Int32.bitwiseAnd(Int8.toInt32(Vector.get(i, bytes)), 0xFF)
-
-    def u16(bytes: Vector[Int8], i: Int32): Int32 = u8(bytes, i) + u8(bytes, i + 1) * 256
-
-    /// 4 バイトのリトルエンディアン（2^31 以上は負の数になる。長さとして読む所は負を Err にする）。
-    def u32Bits(bytes: Vector[Int8], i: Int32): Int32 = Int32.bitwiseOr(u16(bytes, i), Int32.leftShift(u16(bytes, i + 2), 16))
-
-    def i16(bytes: Vector[Int8], i: Int32): Int32 = let v = u16(bytes, i); if (v >= 32768) v - 65536 else v
-
-    def require(cond: Bool, message: String): Result[String, Unit] = if (cond) Ok(()) else Err(message)
-
-    // ── チャンク ─────────────────────────────────────────────
-
-    def parseGlb(bytes: Vector[Int8]): Result[String, Glb] =
-        let n = Vector.length(bytes);
-        if (n < 12) Err("GLB: 頭の 12 バイトが無い")
-        else if (u32Bits(bytes, 0) != 0x46546C67) Err("GLB: magic が glTF でない")
-        else if (u32Bits(bytes, 4) != 2) Err("GLB: version が 2 でない（${u32Bits(bytes, 4)}）")
-        else {
-            let total = u32Bits(bytes, 8);
-            if (total < 12 or total > n) Err("GLB: 全体の長さ ${total} がバイトの数 ${n} と合わない（途中で切れている）")
-            else readChunks(bytes, total, 12, None, None)
-        }
-
-    def readChunks(bytes: Vector[Int8], total: Int32, at: Int32, json: Option[Obj], bin: Option[{ start = Int32, length = Int32 }]): Result[String, Glb] =
-        if (at >= total) match json {
-            case Some(j) => Ok(glbOf(j, bytes, bin))
-            case None => Err("GLB: JSON のチャンクが無い")
-        }
-        else if (total - at < 8) Err("GLB: チャンクの頭が途中で切れている")
-        else {
-            let length = u32Bits(bytes, at);
-            let kind = u32Bits(bytes, at + 4);
-            let start = at + 8;
-            if (length < 0 or length > total - start) Err("GLB: チャンクが途中で切れている")
-            else if (kind == 0x4E4F534A and Option.isEmpty(json))
-                Result.flatMap(j -> readChunks(bytes, total, start + length, Some(j), bin), parseJson(bytes, start, length))
-            else if (kind == 0x004E4942 and Option.isEmpty(bin))
-                readChunks(bytes, total, start + length, json, Some({ start = start, length = length }))
-            else readChunks(bytes, total, start + length, json, bin)
-        }
-
-    def glbOf(json: Obj, bytes: Vector[Int8], bin: Option[{ start = Int32, length = Int32 }]): Glb =
-        { json = json, bytes = bytes, bin = bin,
-          accessors = objectsOf("accessors", json), bufferViews = objectsOf("bufferViews", json), images = objectsOf("images", json),
-          meshes = objectsOf("meshes", json), materials = objectsOf("materials", json), textures = objectsOf("textures", json),
-          samplers = objectsOf("samplers", json), skins = objectsOf("skins", json) }
-
-    // 後ろの空白の詰め物は trim で落ちる。
-    def parseJson(bytes: Vector[Int8], start: Int32, length: Int32): Result[String, Obj] =
-        let text = String.fromBytes(copyRange(start, start + length, bytes)) |> String.trim;
-        match Util.Json.parse(text) {
-            case Ok(JObject(m)) => Ok(m)
-            case Ok(_) => Err("GLB: JSON の頭がオブジェクトでない")
-            case Err(e) => Err("GLB: JSON が読めない（${e}）")
-        }
-
-    def checkBuffers(json: Obj): Result[String, Unit] =
-        if (objectsOf("buffers", json) |> Vector.exists(b -> Map.memberOf("uri", b)))
-            Err("glTF: uri を持つバッファ（外のファイル・data URI）は読まない（.glb の BIN だけを読む）")
-        else Ok(())
-
-    // ── JSON ────────────────────────────────────────────────
-
-    def objectsOf(key: String, o: Obj): Vector[Obj] = match Map.get(key, o) {
-        case Some(JArray(items)) => Vector.map(item -> match item {
-            case JObject(m) => m
-            case _ => Map.empty()
-        }, items)
-        case _ => Vector.empty()
-    }
-
-    def objectOf(key: String, o: Obj): Obj = match Map.get(key, o) {
-        case Some(JObject(m)) => m
-        case _ => Map.empty()
-    }
-
-    /// items（Glb の配列）の index 番目。kind は知らせに書く配列の名前。
-    def entryAt(kind: String, index: Int32, items: Vector[Obj]): Result[String, Obj] =
-        Vector.nth(index, items) |> Option.toOk("glTF: ${kind}[${index}] が無い")
-
-    def intOf(key: String, o: Obj): Option[Int32] = match Map.get(key, o) {
-        case Some(JNumber(d)) => BigDecimal.tryToInt32(d)
-        case _ => None
-    }
-
-    def stringOf(key: String, o: Obj): Option[String] = match Map.get(key, o) {
-        case Some(JString(s)) => Some(s)
-        case _ => None
-    }
-
-    def numberOf(j: Json): Option[Float64] = match j {
-        case JNumber(d) => BigDecimal.tryToFloat64(d)
-        case _ => None
-    }
-
-    def intsOf(key: String, o: Obj): Vector[Int32] = match Map.get(key, o) {
-        case Some(JArray(items)) => Vector.filterMap(item -> match item {
-            case JNumber(d) => BigDecimal.tryToInt32(d)
-            case _ => None
-        }, items)
-        case _ => Vector.empty()
-    }
-
-    /// 数の並び（無ければ None・数でない物や長さ違いは Err）。
-    def numbersOf(key: String, width: Int32, o: Obj): Result[String, Option[Vector[Float64]]] = match Map.get(key, o) {
-        case None => Ok(None)
-        case Some(JArray(items)) =>
-            let nums = Vector.filterMap(numberOf, items);
-            if (Vector.length(nums) != width or Vector.length(items) != width) Err("glTF: ${key} が ${width} 個の数でない")
-            else Ok(Some(nums))
-        case Some(_) => Err("glTF: ${key} が数の並びでない")
-    }
-
-    // ── accessor ────────────────────────────────────────────
-
-    def widthOfType(t: Option[String]): Result[String, Int32] = match t {
-        case Some("SCALAR") => Ok(1)
-        case Some("VEC2") => Ok(2)
-        case Some("VEC3") => Ok(3)
-        case Some("VEC4") => Ok(4)
-        case Some("MAT4") => Ok(16)
-        case Some(other) => Err("glTF: accessor の type ${other} は読まない")
-        case None => Err("glTF: accessor に type が無い")
-    }
-
-    def componentSize(componentType: Int32): Result[String, Int32] = match componentType {
-        case 5120 => Ok(1)
-        case 5121 => Ok(1)
-        case 5122 => Ok(2)
-        case 5123 => Ok(2)
-        case 5125 => Ok(4)
-        case 5126 => Ok(4)
-        case other => Err("glTF: componentType ${other} は読まない")
-    }
-
-    /// 1 つの成分。normalized なら仕様の式で 0..1（符号なし）/ −1..1（符号つき）に直す。
-    def readComponent(bytes: Vector[Int8], componentType: Int32, normalized: Bool, at: Int32): Float64 = match componentType {
-        case 5126 => float32OfBits(u32Bits(bytes, at))
-        case 5121 => let v = Int32.toFloat64(u8(bytes, at)); if (normalized) v / 255.0 else v
-        case 5123 => let v = Int32.toFloat64(u16(bytes, at)); if (normalized) v / 65535.0 else v
-        case 5120 => let v = Int32.toFloat64(Int8.toInt32(Vector.get(at, bytes))); if (normalized) Float64.max(v / 127.0, -1.0) else v
-        case 5122 => let v = Int32.toFloat64(i16(bytes, at)); if (normalized) Float64.max(v / 32767.0, -1.0) else v
-        case _ => Int64.toFloat64(Int64.bitwiseAnd(Int32.toInt64(u32Bits(bytes, at)), 0xFFFFFFFFi64))
-    }
-
-    def readAccessor(glb: Glb, index: Int32): Result[String, Accessor] =
-        forM (
-            acc <- entryAt("accessors", index, glb#accessors);
-            _ <- require(not Map.memberOf("sparse", acc), "glTF: accessors[${index}] の sparse は読まない");
-            viewIndex <- intOf("bufferView", acc) |> Option.toOk("glTF: accessors[${index}] に bufferView が無い");
-            view <- entryAt("bufferViews", viewIndex, glb#bufferViews);
-            _ <- require(Option.getWithDefault(0, intOf("buffer", view)) == 0, "glTF: bufferViews[${viewIndex}] が buffers[0] 以外を指す");
-            bin <- glb#bin |> Option.toOk("glTF: BIN のチャンクが無い");
-            width <- widthOfType(stringOf("type", acc));
-            componentType <- intOf("componentType", acc) |> Option.toOk("glTF: accessors[${index}] に componentType が無い");
-            size <- componentSize(componentType);
-            count <- intOf("count", acc) |> Option.toOk("glTF: accessors[${index}] に count が無い");
-            values <- readValues(glb#bytes, bin, view, acc, { index = index, count = count, width = width, componentType = componentType, size = size })
-        ) yield { count = count, width = width, componentType = componentType, values = values }
-
-    def readValues(bytes: Vector[Int8], bin: { start = Int32, length = Int32 }, view: Obj, acc: Obj,
-                   shape: { index = Int32, count = Int32, width = Int32, componentType = Int32, size = Int32 }): Result[String, Vector[Float64]] =
-        let viewOffset = Option.getWithDefault(0, intOf("byteOffset", view));
-        let viewLength = Option.getWithDefault(-1, intOf("byteLength", view));
-        let accOffset = Option.getWithDefault(0, intOf("byteOffset", acc));
-        let elementSize = shape#size * shape#width;
-        let stride = Option.getWithDefault(elementSize, intOf("byteStride", view));
-        let need = if (shape#count == 0) 0i64
-                   else Int32.toInt64(accOffset) + Int32.toInt64(stride) * Int32.toInt64(shape#count - 1) + Int32.toInt64(elementSize);
-        let normalized = Map.get("normalized", acc) == Some(Util.Json.Json.JBool(true));
-        let base = bin#start + viewOffset + accOffset;
-        if (viewOffset < 0 or viewLength < 0 or accOffset < 0 or shape#count < 0 or viewOffset > bin#length or viewLength > bin#length - viewOffset)
-            Err("glTF: accessors[${shape#index}] の bufferView が BIN の外を指す（途中で切れている）")
-        else if (stride < elementSize) Err("glTF: accessors[${shape#index}] の byteStride ${stride} が 1 頂点の大きさ ${elementSize} より小さい")
-        else if (need > Int32.toInt64(viewLength)) Err("glTF: accessors[${shape#index}] が bufferView の外まで続く（途中で切れている）")
-        else
-            Ok(Vector.range(0, shape#count * shape#width) |> Vector.map(k -> {
-                let i = k / shape#width;
-                let c = k - i * shape#width;
-                readComponent(bytes, shape#componentType, normalized, base + i * stride + c * shape#size)
-            }))
-
-    def readAccessorWidth(glb: Glb, index: Int32, width: Int32, what: String): Result[String, Accessor] =
-        Result.flatMap(a -> if (a#width == width) Ok(a) else Err("glTF: ${what} の accessor の幅が ${a#width}（${width} のはず）"),
-                       readAccessor(glb, index))
-
-    // ── ノードと座標の写し方 ─────────────────────────────────
-
-    /// ノードの局所の姿勢（glTF の座標）。matrix のノードは平行移動・回転・倍率に分ける。
-    def nodePose(node: Obj): Result[String, Skin3d.JointPose] =
-        forM (
-            matrix <- numbersOf("matrix", 16, node);
-            t <- numbersOf("translation", 3, node);
-            r <- numbersOf("rotation", 4, node);
-            s <- numbersOf("scale", 3, node)
-        ) yield match matrix {
-            case Some(cells) => Gltf.Internal.decompose(cells)
-            case None =>
-                { translation = Option.map(v -> Gltf.Internal.vec3At(v, 0), t) |> Option.getWithDefault(Vec3.zero()),
-                  rotation = Option.map(v -> Gltf.Internal.quatOf(v), r) |> Option.getWithDefault(Quat.identity()),
-                  scale = Option.map(v -> Gltf.Internal.vec3At(v, 0), s) |> Option.getWithDefault(Vec3.one()) }
-        }
-
-    def nodeMatrix(node: Obj): Result[String, Mat4.Mat4] =
-        Result.flatMap(matrix -> match matrix {
-            case Some(cells) => Mat4.ofColumns(cells)
-            case None => Result.map(Skin3d.jointPoseToMat4, nodePose(node))
-        }, numbersOf("matrix", 16, node))
-
-    /// ノードの番号 → 親のノードの番号。
-    def parentsOfNodes(nodes: Vector[Obj]): Map[Int32, Int32] =
-        Vector.range(0, Vector.length(nodes)) |> Vector.foldLeft((m, i) ->
-            intsOf("children", Vector.get(i, nodes)) |> Vector.foldLeft((acc, child) -> Map.insert(child, i, acc), m), Map.empty())
-
-    /// 根からノードまでの祖先の列（根が先・自分を含む）。輪になった木は Err。
-    def chainOf(parentOf: Map[Int32, Int32], limit: Int32, node: Int32): Result[String, List[Int32]] =
-        chainLoop(parentOf, limit, node, Nil)
-
-    def chainLoop(parentOf: Map[Int32, Int32], limit: Int32, node: Int32, acc: List[Int32]): Result[String, List[Int32]] =
-        if (List.length(acc) > limit) Err("glTF: ノードの木が輪になっている")
-        else match Map.get(node, parentOf) {
-            case Some(p) => chainLoop(parentOf, limit, p, node :: acc)
-            case None => Ok(node :: acc)
-        }
-
-    /// 並んだノードの局所の行列を根から掛けた物（glTF の座標）。
-    def productOf(nodes: Vector[Obj], chain: List[Int32]): Result[String, Mat4.Mat4] =
-        chain
-            |> Result.traverse(i -> Vector.nth(i, nodes) |> Option.toOk("glTF: nodes[${i}] が無い") |> Result.flatMap(nodeMatrix))
-            |> Result.map(List.foldLeft(Mat4.mul, Mat4.identity()))
-
-    // ── スキン ──────────────────────────────────────────────
-
-    def buildSkin(glb: Glb, nodes: Vector[Obj], parentOf: Map[Int32, Int32], skinIndex: Int32): Result[String, SkinBuild] =
-        forM (
-            skinObj <- entryAt("skins", skinIndex, glb#skins);
-            jointNodes <- Ok(intsOf("joints", skinObj));
-            _ <- require(Vector.length(jointNodes) > 0, "glTF: skins[${skinIndex}] にジョイントが無い");
-            _ <- require(Vector.length(jointNodes) <= Skin3d.maxJoints(),
-                         "glTF: skins[${skinIndex}] のジョイントが ${Vector.length(jointNodes)} 本（上限 ${Skin3d.maxJoints()} 本）");
-            oldOfNode <- Ok(Vector.range(0, Vector.length(jointNodes)) |> Vector.foldLeft((m, k) -> Map.insert(Vector.get(k, jointNodes), k, m), Map.empty()));
-            chains <- Vector.toList(jointNodes) |> Result.traverse(chainOf(parentOf, Vector.length(nodes)));
-            links <- List.zip(List.range(0, Vector.length(jointNodes)), chains) |> Result.traverse(pair -> linkOf(oldOfNode, snd(pair)));
-            rootGl <- rootTransformOf(nodes, links);
-            ibmsGl <- inverseBindsOf(glb, skinObj, Vector.length(jointNodes));
-            built <- assembleSkin(nodes, jointNodes, List.toVector(links), rootGl, ibmsGl)
-        ) yield built
-
-    /// ジョイント 1 本の、親のジョイント（skin.joints の何番目か）と、根なら上のジョイントでないノード。
-    /// depth = 上にあるジョイントの数。
-    type alias Link = { parent = Option[Int32], above = Option[Int32], depth = Int32 }
-
-    // chain は根が先で、最後が自分。
-    def linkOf(oldOfNode: Map[Int32, Int32], chain: List[Int32]): Result[String, Link] =
-        let ancestors = List.reverse(chain) |> List.drop(1);
-        let depth = ancestors |> List.count(n -> Map.memberOf(n, oldOfNode));
-        match ancestors {
-            case Nil => Ok({ parent = None, above = None, depth = 0 })
-            case p :: _ =>
-                match Map.get(p, oldOfNode) {
-                    case Some(k) => Ok({ parent = Some(k), above = None, depth = depth })
-                    case None =>
-                        if (depth > 0) Err("glTF: ジョイントとその親のジョイントの間に、ジョイントでないノード（nodes[${p}]）が挟まる")
-                        else Ok({ parent = None, above = Some(p), depth = 0 })
-                }
-        }
-
-    def rootTransformOf(nodes: Vector[Obj], links: List[Link]): Result[String, Mat4.Mat4] =
-        let aboves = links |> List.filter(l -> Option.isEmpty(l#parent)) |> List.map(l -> l#above) |> List.toSet;
-        if (Set.size(aboves) > 1) Err("glTF: 根のジョイントが複数あり、それぞれ別のジョイントでない祖先を持つ")
-        else match Set.toList(aboves) {
-            case Some(above) :: _ => Result.flatMap(chain -> productOf(nodes, chain), chainOf(parentsOfNodes(nodes), Vector.length(nodes), above))
-            case _ => Ok(Mat4.identity())
-        }
-
-    def inverseBindsOf(glb: Glb, skinObj: Obj, count: Int32): Result[String, Vector[Mat4.Mat4]] =
-        match intOf("inverseBindMatrices", skinObj) {
-            case None => Ok(Vector.range(0, count) |> Vector.map(_ -> Mat4.identity()))
-            case Some(index) =>
-                forM (
-                    acc <- readAccessorWidth(glb, index, 16, "inverseBindMatrices");
-                    _ <- require(acc#count == count, "glTF: inverseBindMatrices の数 ${acc#count} がジョイントの数 ${count} と違う");
-                    mats <- Vector.toList(Vector.range(0, count)) |> Result.traverse(k ->
-                                Mat4.ofColumns(copyRange(k * 16, k * 16 + 16, acc#values)))
-                ) yield List.toVector(mats)
-        }
-
-    def assembleSkin(nodes: Vector[Obj], jointNodes: Vector[Int32], links: Vector[Link],
-                     rootGl: Mat4.Mat4, ibmsGl: Vector[Mat4.Mat4]): Result[String, SkinBuild] =
-        let count = Vector.length(jointNodes);
-        let order = List.range(0, count) |> Sort.sortStableBy(k -> Vector.get(k, links)#depth) |> List.toVector;
-        let newOfOld = order |> Vector.mapWithIndex((newIndex, old) -> (old, newIndex))
-                             |> Vector.foldLeft((m, pair) -> Map.insert(fst(pair), snd(pair), m), Map.empty());
-        let newOf = (old: Int32) -> Map.getWithDefault(old, 0, newOfOld);
-        let names = order |> Vector.map(old -> {
-            let node = Vector.get(Vector.get(old, jointNodes), nodes);
-            stringOf("name", node) |> Option.getWithDefault("joint${old}")
-        });
-        let parents = order |> Vector.map(old -> Vector.get(old, links)#parent |> Option.map(newOf) |> Option.getWithDefault(-1));
-        let bindsGl = order |> Vector.map(old -> Vector.get(old, ibmsGl));
-        forM (
-            restGl <- Vector.toList(order) |> Result.traverse(old ->
-                          Vector.nth(Vector.get(old, jointNodes), nodes) |> Option.toOk("glTF: ジョイントのノードが無い") |> Result.flatMap(nodePose));
-            bindWorlds <- Vector.toList(bindsGl) |> Result.traverse(m ->
-                              Mat4.inverse(m) |> Option.toOk("glTF: 逆バインド行列に逆行列が無い"));
-            skin <- Skin3d.make({ names = names, parents = parents, rest = List.toVector(List.map(Gltf.Internal.mirrorPose, restGl)),
-                                  inverseBinds = Some(Vector.map(Gltf.Internal.mirrorMat4, bindsGl)), rootTransform = Gltf.Internal.mirrorMat4(rootGl) })
-        ) yield {
-            skin = skin,
-            jointOfNode = Vector.range(0, count) |> Vector.foldLeft((m, old) -> Map.insert(Vector.get(old, jointNodes), newOf(old), m), Map.empty()),
-            newOfOld = Vector.range(0, count) |> Vector.map(newOf),
-            bindWorlds = List.toVector(bindWorlds)
-        }
-
-    // ── メッシュ ────────────────────────────────────────────
-
-    def buildModel(read: LoadOptions, glb: Glb): Result[String, Built] =
-        let nodes = objectsOf("nodes", glb#json);
-        let parentOf = parentsOfNodes(nodes);
-        let meshNodes = Vector.range(0, Vector.length(nodes)) |> Vector.filter(i -> Map.memberOf("mesh", Vector.get(i, nodes)));
-        let skinIndices = meshNodes |> Vector.filterMap(i -> intOf("skin", Vector.get(i, nodes))) |> Vector.toList |> List.toSet;
-        if (Set.size(skinIndices) > 1) Err("glTF: スキンのあるメッシュのノードが、別々のスキンを指す")
-        else {
-            let skinR = match Set.toList(skinIndices) {
-                case k :: _ => Result.map(Some, buildSkin(glb, nodes, parentOf, k))
-                case Nil => Ok(None)
-            };
-            forM (
-                skinBuild <- skinR;
-                nested <- Vector.toList(meshNodes) |> Result.traverse(i -> nodeParts(read, glb, nodes, parentOf, skinBuild, i) |> Result.map(ps -> (i, ps)));
-                parts <- Ok(nested |> List.flatMap(snd));
-                mesh <- meshOfParts(parts, Option.nonEmpty(skinBuild));
-                partMeshes <- parts |> Result.traverse(part -> partMeshOf(part, Option.nonEmpty(skinBuild)));
-                clips <- readAnimations(glb, Option.map(b -> b#jointOfNode, skinBuild) |> Option.getWithDefault(Map.empty()))
-            ) yield {
-                let partNodes = nested |> List.flatMap(np -> List.map(_ -> fst(np), snd(np)));
-                { model = { mesh = mesh, skin = Option.map(b -> b#skin, skinBuild), clips = clips,
-                            parts = List.zip(partMeshes, partNodes) |> List.map(mn -> { mesh = fst(mn), material = None, node = Some(snd(mn)), gltfMaterial = None }),
-                            textures = Nil, nodes = modelNodesOf(glb, nodes, parentOf, partNodes) },
-                  jointOfNode = Option.map(b -> b#jointOfNode, skinBuild) |> Option.getWithDefault(Map.empty()),
-                  partMaterials = parts |> List.map(p -> p#material) }
-            }
-        }
-
-    // ── ノードの一覧（Model3d.nodes）──
-
-    /// glTF の nodes の全部を ModelNode にする（world は根から親の順に 1 巡で掛ける）。parentOf = parentsOfNodes(nodes)・partNodes = parts の並びの、各 part のノードの番号。
-    /// 行列が読めないノード（matrix が 16 個の数でない等）は単位行列で続けて 1 行知らせる。根から辿れないノード（木が輪になっている）は world = local。
-    // WhyNot: nodeParts の chainOf / productOf で world を出さない — ノードごとに根まで辿るので、ノード n 個・深さ d で n·d 回掛ける。
-    // WhyNot: 部品の形の焼き込み（nodeParts）をこの 1 巡に寄せない — 骨つきの glb の部品の頂点が 1 bit でも変わると、描き出しの鍵が変わる。
-    def modelNodesOf(glb: Glb, nodes: Vector[Obj], parentOf: Map[Int32, Int32], partNodes: List[Int32]): List[Model3d.ModelNode] =
-        let count = Vector.length(nodes);
-        let localsGl = nodes |> Vector.mapWithIndex((i, node) -> match nodeMatrix(node) {
-            case Ok(m)  => m
-            case Err(e) => Log.warnThen("glTF: nodes[${i}] の行列を単位行列として読む（${e}）", Mat4.identity())
-        });
-        let children = nodes |> Vector.map(node -> intsOf("children", node) |> Vector.filter(c -> c >= 0 and c < count));
-        let roots = Vector.range(0, count) |> Vector.filter(i -> not Map.memberOf(i, parentOf)) |> Vector.toList;
-        let worldsGl = roots |> List.foldLeft((acc, root) -> worldsFrom(localsGl, children, root, Mat4.identity(), acc), Map.empty());
-        let partsOf = List.zipWithIndex(partNodes) |> List.foldRight((kn, acc) -> {
-            let (k, n) = kn;
-            Map.insertWith((fresh, old) -> List.append(fresh, old), n, k :: Nil, acc)
-        }, Map.empty());
-        Vector.range(0, count) |> Vector.toList |> List.map(i -> {
-            let node = Vector.get(i, nodes);
-            let local = Vector.get(i, localsGl);
-            { name = stringOf("name", node) |> Option.getWithDefault(""), parent = Map.get(i, parentOf),
-              local = Gltf.Internal.mirrorMat4(local), world = Gltf.Internal.mirrorMat4(Map.getWithDefault(i, local, worldsGl)),
-              localBounds = intOf("mesh", node) |> Option.flatMap(localBoundsOfMesh(glb)),
-              parts = Map.getWithDefault(i, Nil, partsOf) }
-        })
-
-    /// ノード i から下の world（glTF の座標）を acc に足す（parentWorld = 親の world）。一度足したノードは辿らない（輪で止まる）。
-    def worldsFrom(locals: Vector[Mat4.Mat4], children: Vector[Vector[Int32]], i: Int32, parentWorld: Mat4.Mat4,
-                   acc: Map[Int32, Mat4.Mat4]): Map[Int32, Mat4.Mat4] =
-        if (Map.memberOf(i, acc)) acc
-        else {
-            let world = Mat4.mul(parentWorld, Vector.get(i, locals));
-            Vector.get(i, children) |> Vector.foldLeft((m, c) -> worldsFrom(locals, children, c, world, m), Map.insert(i, world, acc))
-        }
-
-    /// mesh の全部の primitive の POSITION の min と max（engine の座標）。accessor の min / max があればそれを、無ければ頂点から求める。
-    /// X の反転で min と max の x が入れ替わるので、反転した後で組み直す。読めない primitive は数えない（全部読めなければ None）。
-    def localBoundsOfMesh(glb: Glb, meshIndex: Int32): Option[Mesh3d.Bounds] =
-        let prims = entryAt("meshes", meshIndex, glb#meshes) |> Result.toOption |> Option.map(m -> objectsOf("primitives", m))
-            |> Option.getWithDefault(Vector.empty());
-        prims |> Vector.toList
-            |> List.filterMap(prim -> intOf("POSITION", objectOf("attributes", prim)) |> Option.flatMap(positionBoundsOf(glb)))
-            |> List.reduceLeft((a, b) -> { min = Vec3.v3(Float64.min(a#min#x, b#min#x), Float64.min(a#min#y, b#min#y), Float64.min(a#min#z, b#min#z)),
-                                           max = Vec3.v3(Float64.max(a#max#x, b#max#x), Float64.max(a#max#y, b#max#y), Float64.max(a#max#z, b#max#z)) })
-
-    def positionBoundsOf(glb: Glb, accessorIndex: Int32): Option[Mesh3d.Bounds] =
-        let declared = forM (
-            acc <- entryAt("accessors", accessorIndex, glb#accessors) |> Result.toOption;
-            low <- numbersOf("min", 3, acc) |> Result.toOption |> Option.flatMap(identity);
-            high <- numbersOf("max", 3, acc) |> Result.toOption |> Option.flatMap(identity)
-        ) yield (Gltf.Internal.vec3At(low, 0), Gltf.Internal.vec3At(high, 0));
-        let glBounds = match declared {
-            case Some(b) => Some(b)
-            case None    => readAccessorWidth(glb, accessorIndex, 3, "POSITION") |> Result.toOption |> Option.flatMap(a -> scannedBounds(a#values))
-        };
-        glBounds |> Option.map(b -> {
-            let (low, high) = b;
-            { min = Vec3.v3(0.0 - high#x, low#y, low#z), max = Vec3.v3(0.0 - low#x, high#y, high#z) }
-        })
-
-    /// 頂点ごとに 3 つの並びの min と max（glTF の座標）。頂点が無ければ None。
-    def scannedBounds(values: Vector[Float64]): Option[(Vec3.Vec3, Vec3.Vec3)] =
-        let count = Vector.length(values) / 3;
-        if (count == 0) None
-        else {
-            let axis = (c: Int32, f: (Float64, Float64) -> Float64, start: Float64) ->
-                Vector.range(0, count) |> Vector.foldLeft((acc, v) -> f(acc, Vector.get(v * 3 + c, values)), start);
-            Some((Vec3.v3(axis(0, Float64.min, Float64.maxValue()), axis(1, Float64.min, Float64.maxValue()), axis(2, Float64.min, Float64.maxValue())),
-                  Vec3.v3(axis(0, Float64.max, 0.0 - Float64.maxValue()), axis(1, Float64.max, 0.0 - Float64.maxValue()), axis(2, Float64.max, 0.0 - Float64.maxValue()))))
-        }
-
-    /// メッシュのノード 1 つの primitive の列。
-    ///   - skin のあるノード: 変換を無視し（仕様の MUST）、JOINTS_0 / WEIGHTS_0 を読む
-    ///   - ジョイントの子孫: バインドの時のジョイントの world 行列 × ジョイントから下の局所の鎖で写し、そのジョイントに重み 1
-    ///   - ほか: world 行列を焼き込む（スキンがあれば根のジョイントに重み 1）
-    def nodeParts(read: LoadOptions, glb: Glb, nodes: Vector[Obj], parentOf: Map[Int32, Int32], skinBuild: Option[SkinBuild], i: Int32): Result[String, List[Part]] =
-        let node = Vector.get(i, nodes);
-        let jointOfNode = Option.map(b -> b#jointOfNode, skinBuild) |> Option.getWithDefault(Map.empty());
-        let placementR: Result[String, (Mat4.Mat4, Binding)] = match (skinBuild, intOf("skin", node)) {
-            case (Some(b), Some(_)) => Ok((Mat4.identity(), Binding.Skinned(b#newOfOld)))
-            case _ =>
-                Result.flatMap(chain -> {
-                    let fromTop = List.reverse(chain);
-                    let below = List.takeWhile(n -> not Map.memberOf(n, jointOfNode), fromTop);
-                    match (skinBuild, List.drop(List.length(below), fromTop)) {
-                        case (Some(b), joint :: _) =>
-                            let j = Map.getWithDefault(joint, 0, jointOfNode);
-                            Result.map(local -> (Mat4.mul(Vector.get(j, b#bindWorlds), local), Binding.Rigid(j)), productOf(nodes, List.reverse(below)))
-                        case (Some(_), Nil) => Result.map(world -> (world, Binding.Rigid(0)), productOf(nodes, chain))
-                        case (None, _) => Result.map(world -> (world, Binding.NoSkin), productOf(nodes, chain))
-                    }
-                }, chainOf(parentOf, Vector.length(nodes), i))
-        };
-        forM (
-            placement <- placementR;
-            meshIndex <- intOf("mesh", node) |> Option.toOk("glTF: nodes[${i}] の mesh が数でない");
-            meshObj <- entryAt("meshes", meshIndex, glb#meshes);
-            parts <- objectsOf("primitives", meshObj) |> Vector.toList |> Result.traverse(prim -> readPrimitive(read, glb, fst(placement), snd(placement), prim))
-        ) yield parts
-
-    def readPrimitive(read: LoadOptions, glb: Glb, transform: Mat4.Mat4, binding: Binding, prim: Obj): Result[String, Part] =
-        let attributes = objectOf("attributes", prim);
-        let mode = Option.getWithDefault(4, intOf("mode", prim));
-        forM (
-            _ <- require(mode == 4, "glTF: primitive の mode ${mode} は読まない（三角形 = 4 だけ）");
-            positionIndex <- intOf("POSITION", attributes) |> Option.toOk("glTF: primitive に POSITION が無い");
-            positions <- readAccessorWidth(glb, positionIndex, 3, "POSITION");
-            normals <- traverseOpt(intOf("NORMAL", attributes), k -> readAccessorWidth(glb, k, 3, "NORMAL"));
-            indices <- traverseOpt(intOf("indices", prim), k -> readAccessorWidth(glb, k, 1, "indices"));
-            skin <- readSkinAttributes(glb, attributes, binding, positions#count);
-            color <- baseColorOf(read#pbr, glb, prim)
-        ) yield {
-            let count = positions#count;
-            let vertexColors = if (read#vertexColors) vertexColorsOf(glb, attributes, count) |> Option.map(a -> (a#width, a#values)) else None;
-            let uvs = optionalAttribute(glb, attributes, "TEXCOORD_0", 2, count);
-            let uvs2 = optionalAttribute(glb, attributes, "TEXCOORD_1", 2, count);
-            let tangents = optionalAttribute(glb, attributes, "TANGENT", 4, count);
-            let indexList = match indices {
-                case Some(a) => Vector.map(toIndex, a#values)
-                case None => Vector.range(0, count)
-            };
-            let normalMat = Mat4.normalMatrix(transform);
-            let placedPositions = flatXyz(Vector.range(0, count) |> Vector.map(v -> Mat4.apply(transform, Gltf.Internal.vec3At(positions#values, v * 3))));
-            let placedNormals = Option.map(n -> flatXyz(Vector.range(0, count) |> Vector.map(v ->
-                Vec3.normalized(Mat4.applyDir(normalMat, Gltf.Internal.vec3At(n#values, v * 3))))), normals);
-            let placedTangents = forM (_ <- uvs; t <- tangents) yield placeTangents(transform, t#values);
-            let part = { positions = placedPositions, normals = Option.getWithDefault(Vector.empty(), placedNormals),
-                         colors = Gltf.Internal.colorsOf(count, color, vertexColors), indices = indexList,
-                         joints = fst(skin), weights = snd(skin), uvs = Option.map(a -> a#values, uvs), tangents = placedTangents,
-                         uvs2 = Option.map(a -> a#values, uvs2), material = intOf("material", prim) };
-            if (Option.nonEmpty(normals)) part else flatShaded(part)
-        }
-
-    /// COLOR_0 を読む（読める形と型は Gltf.Internal.colorAccessorProblem）。無ければ None・読めない時は使わずに 1 行知らせる。
-    def vertexColorsOf(glb: Glb, attributes: Obj, count: Int32): Option[Accessor] =
-        intOf("COLOR_0", attributes) |> Option.flatMap(k -> {
-            let normalized = entryAt("accessors", k, glb#accessors) |> Result.toOption |> Option.exists(acc -> Map.get("normalized", acc) == Some(Util.Json.Json.JBool(true)));
-            let checked = readAccessor(glb, k) |> Result.flatMap(a ->
-                Gltf.Internal.colorAccessorProblem(a#width, a#componentType, normalized) |> Option.map(Err) |> Option.getWithDefault(Ok(a)));
-            match checked {
-                case Ok(a)  => usableAttribute("COLOR_0", count, a)
-                case Err(e) => Log.warnThen("${e} — COLOR_0 を使わずに読む", None)
-            }
-        })
-
-    /// 無くても形は描ける頂点の欄（TEXCOORD_0・TANGENT）を読む。読めない・数が頂点の数と違う・NaN か無限がある時は、
-    /// その欄を使わずに続けて 1 行知らせる（None）。
-    // WhyNot: Err にしない — uv を使わない形（当たり判定の形など）まで読めなくなる。形（POSITION・indices）が読めれば描ける。
-    def optionalAttribute(glb: Glb, attributes: Obj, key: String, width: Int32, count: Int32): Option[Accessor] =
-        match traverseOpt(intOf(key, attributes), k -> readAccessorWidth(glb, k, width, key)) {
-            case Ok(None)    => None
-            case Ok(Some(a)) => usableAttribute(key, count, a)
-            case Err(e)      => Log.warnThen("${e} — ${key} を使わずに読む", None)
-        }
-
-    /// 読めた欄 a が頂点の数 count とそろい、全部が有限の数なら Some。違えば 1 行知らせて None。
-    def usableAttribute(key: String, count: Int32, a: Accessor): Option[Accessor] =
-        if (a#count != count) Log.warnThen("glTF: ${key} の数 ${a#count} が頂点の数 ${count} と違う — ${key} を使わずに読む", None)
-        else if (Vector.exists(x -> Float64.isNan(x) or Float64.isInfinite(x), a#values))
-            Log.warnThen("glTF: ${key} に NaN か無限がある — ${key} を使わずに読む", None)
-        else Some(a)
-
-    /// TANGENT を置き場所の行列 transform で写す（xyz は左上 3×3 を掛けて長さ 1 に・行列が裏返すなら w の符号も裏返す）。
-    // WhyNot: 法線の行列で写さない — タンジェントは面の上の向きで、置き場所の行列のまま写る。
-    def placeTangents(transform: Mat4.Mat4, values: Vector[Float64]): Vector[Float64] =
-        let c = Mat4.toColumns(transform);
-        let col = (j: Int32) -> Vec3.v3(Vector.get(j * 4, c), Vector.get(j * 4 + 1, c), Vector.get(j * 4 + 2, c));
-        let flip = if (Vec3.dot(col(0), Vec3.cross(col(1), col(2))) < 0.0) -1.0 else 1.0;
-        let count = Vector.length(values) / 4;
-        let placed = Vector.range(0, count) |> Vector.map(v -> Vec3.normalized(Mat4.applyDir(transform, Gltf.Internal.vec3At(values, v * 4))));
-        rowsOf(count, 4, (v, axis) -> if (axis == 3) Vector.get(v * 4 + 3, values) * flip else component(axis, Vector.get(v, placed)))
-
-    def traverseOpt(o: Option[Int32], f: Int32 -> Result[String, a]): Result[String, Option[a]] = match o {
-        case Some(k) => Result.map(Some, f(k))
-        case None => Ok(None)
-    }
-
-    /// 頂点ごとの 4 つのジョイントの番号（並べ替えた後）と重み。重みの無い形は空。
-    def readSkinAttributes(glb: Glb, attributes: Obj, binding: Binding, count: Int32): Result[String, (Vector[Int32], Vector[Float64])] =
-        let rigid = (j: Int32) -> Ok((rowsOf(count, 4, (_, c) -> if (c == 0) j else 0),
-                                      rowsOf(count, 4, (_, c) -> if (c == 0) 1.0 else 0.0)));
-        match binding {
-            case Binding.NoSkin => Ok((Vector.empty(), Vector.empty()))
-            case Binding.Rigid(j) => rigid(j)
-            case Binding.Skinned(newOfOld) => match (intOf("JOINTS_0", attributes), intOf("WEIGHTS_0", attributes)) {
-                case (Some(jk), Some(wk)) =>
-                    forM (
-                        joints <- readAccessorWidth(glb, jk, 4, "JOINTS_0");
-                        _ <- require(joints#componentType == 5121 or joints#componentType == 5123,
-                                     "glTF: JOINTS_0 の componentType ${joints#componentType} は読まない（UNSIGNED_BYTE か UNSIGNED_SHORT）");
-                        weights <- readAccessorWidth(glb, wk, 4, "WEIGHTS_0");
-                        _ <- require(joints#count == count and weights#count == count, "glTF: JOINTS_0 / WEIGHTS_0 の数が頂点の数と違う");
-                        remapped <- Vector.toList(joints#values) |> Result.traverse(old ->
-                                        Vector.nth(toIndex(old), newOfOld) |> Option.toOk("glTF: JOINTS_0 の番号 ${old} がジョイントの数の外"))
-                    ) yield (List.toVector(remapped), weights#values)
-                case _ => rigid(0)
-            }
-        }
-
-    /// baseColorFactor を頂点の色にする。材質や baseColorFactor が無ければ白。linear が偽なら値をそのまま（画面の値として）、
-    /// 真なら glTF の決まりどおり線形の値として読み、頂点の色（画面の値）へ戻して書く（描き手は頂点の色を線形へ戻すので、元の線形の値に戻る）。
-    // WhyNot: pbr が偽の時は線形として読まない — OBJ の Kd も Blender の値を画面の値（sRGB の値）として読む。
-    //   片方だけ直すと同じ Blender の色が形式で違って見え、既存のゲームの色が変わる。emissiveFactor も同じく画面の値として読む（COLOR_0 は Gltf.Internal.colorsOf）。
-    // WhyNot: pbr が真の時は線形として読む — 画面の値として読むと、金・赤が濃く、暗い色が黒く潰れて Blender の手本と合わない。
-    def baseColorOf(linear: Bool, glb: Glb, prim: Obj): Result[String, Vector[Float64]] =
-        let white = Vector#{ 1.0, 1.0, 1.0 };
-        match intOf("material", prim) {
-            case None => Ok(white)
-            case Some(k) => Result.flatMap(material ->
-                Result.map(factor -> match factor {
-                    case Some(rgba) => Vector.take(3, rgba) |> Vector.map(c -> Float64.max(0.0, Float64.min(1.0, c)))
-                        |> Vector.map(c -> if (linear) Texture3d.linearToSrgb(c) else c)
-                    case None => white
-                }, numbersOf("baseColorFactor", 4, objectOf("pbrMetallicRoughness", material))), entryAt("materials", k, glb#materials))
-        }
-
-    /// 法線の無い primitive は、三角形ごとに頂点を分けて面の法線を付ける（glTF の表は外から見て反時計回り）。
-    def flatShaded(part: Part): Part =
-        let tris = Vector.length(part#indices) / 3;
-        let corner = (t: Int32, c: Int32) -> Vector.get(t * 3 + c, part#indices);
-        let corners = Vector.range(0, tris * 3) |> Vector.map(k -> corner(k / 3, k - (k / 3) * 3));
-        let faceNormals = Vector.range(0, tris) |> Vector.map(t -> {
-            let p = c -> Gltf.Internal.vec3At(part#positions, corner(t, c) * 3);
-            Vec3.normalized(Vec3.cross(Vec3.sub(p(1), p(0)), Vec3.sub(p(2), p(0))))
-        });
-        let hasSkin = not Vector.isEmpty(part#joints);
-        { positions = gather(3, part#positions, corners),
-          normals = rowsOf(tris * 3, 3, (k, c) -> component(c, Vector.get(k / 3, faceNormals))),
-          colors = gather(3, part#colors, corners),
-          indices = Vector.range(0, tris * 3),
-          joints = if (hasSkin) gather(4, part#joints, corners) else Vector.empty(),
-          weights = if (hasSkin) gather(4, part#weights, corners) else Vector.empty(),
-          uvs = Option.map(uv -> gather(2, uv, corners), part#uvs),
-          tangents = Option.map(t -> gather(4, t, corners), part#tangents),
-          uvs2 = Option.map(uv -> gather(2, uv, corners), part#uvs2),
-          material = part#material }
-
-    def concatOf(f: Part -> Vector[a], parts: List[Part]): Vector[a] = Vector.flatten(List.toVector(List.map(f, parts)))
-
-    /// 番号として読む（Int32 に入らない値は -1 にして、後の範囲の確かめで Err にする）。
-    def toIndex(x: Float64): Int32 = Float64.tryToInt32(x) |> Option.getWithDefault(-1)
-
-    /// primitive をつなぎ、X を反転して巡りを逆にする。
-    def meshOfParts(parts: List[Part], skinned: Bool): Result[String, Mesh3d.Mesh3d] =
-        let (_, revIndices) = parts |> List.foldLeft((acc, part) -> {
-            let (base, out) = acc;
-            (base + Vector.length(part#positions) / 3, Vector.map(i -> i + base, part#indices) :: out)
-        }, (0, Nil));
-        let flipX = (v: Vector[Float64]) -> Vector.mapWithIndex((k, x) -> if (Int32.remainder(k, 3) == 0) 0.0 - x else x, v);
-        let indices = Vector.flatten(List.toVector(List.reverse(revIndices)));
-        let rewound = Vector.range(0, Vector.length(indices)) |> Vector.map(k -> {
-            let corner = Int32.remainder(k, 3);
-            let at = if (corner == 1) k + 1 else if (corner == 2) k - 1 else k;
-            Vector.get(at, indices)
-        });
-        Mesh3d.fromArrays({
-            positions = flipX(concatOf(p -> p#positions, parts)),
-            normals = flipX(concatOf(p -> p#normals, parts)),
-            colors = concatOf(p -> p#colors, parts),
-            indices = rewound,
-            skin = if (skinned) Some({ joints = concatOf(p -> p#joints, parts), weights = concatOf(p -> p#weights, parts) }) else None
-        }) |> Result.mapErr(e -> "glTF: ${e}")
-
-    /// primitive 1 つの形（meshOfParts と同じ写し方）。uv があれば uv つきにし、TANGENT があれば x と w の符号を反転して使う
-    /// （X の反転で cross(N, T) の向きが裏返るので、w も裏返すと絵の上の向きが保たれる）。無ければ Mesh3d が uv から求める。
-    /// uv を付けられなければ uv なしの形で続けて 1 行知らせる（uv は形を描くのに要らない）。
-    /// 2 本目の uv（TEXCOORD_1）があれば付ける（X の反転は受けない — uv と同じく絵の上の位置）。付けられなければ 2 本目の uv なしで続けて 1 行知らせる。
-    def partMeshOf(part: Part, skinned: Bool): Result[String, Mesh3d.Mesh3d] =
-        Result.map(mesh -> part#uvs |> Option.map(uv -> withPartUvs(part, uv, mesh)) |> Option.getWithDefault(mesh)
-                               |> withPartUvs2(part),
-                   meshOfParts(part :: Nil, skinned))
-
-    def withPartUvs2(part: Part, mesh: Mesh3d.Mesh3d): Mesh3d.Mesh3d =
-        part#uvs2 |> Option.map(uv -> attachUvs2(uv, mesh)) |> Option.getWithDefault(mesh)
-
-    def attachUvs2(uv: Vector[Float64], mesh: Mesh3d.Mesh3d): Mesh3d.Mesh3d =
-        match Mesh3d.withUvs2(uv, mesh) {
-            case Ok(withSecond) => withSecond
-            case Err(e)         => Log.warnThen("glTF: TEXCOORD_1 を使わずに読む（${e}）", mesh)
-        }
-
-    /// mesh に uv を付け、part に TANGENT があればそれも付ける。uv を付けられなければ mesh のまま。
-    def withPartUvs(part: Part, uv: Vector[Float64], mesh: Mesh3d.Mesh3d): Mesh3d.Mesh3d =
-        match Mesh3d.withUvs(uv, mesh) {
-            case Ok(textured) => part#tangents |> Option.map(t -> withPartTangents(t, textured)) |> Option.getWithDefault(textured)
-            case Err(e)       => Log.warnThen("glTF: uv を使わずに読む（${e}）", mesh)
-        }
-
-    /// TANGENT の x と w の符号を反転して付ける。付けられなければ uv から求めた物のまま。
-    def withPartTangents(tangents: Vector[Float64], textured: Mesh3d.Mesh3d): Mesh3d.Mesh3d =
-        let mirrored = Vector.mapWithIndex((k, x) -> if (Int32.remainder(k, 4) == 0 or Int32.remainder(k, 4) == 3) 0.0 - x else x, tangents);
-        match Mesh3d.withTangents(mirrored, textured) {
-            case Ok(m)  => m
-            case Err(e) => Log.warnThen("glTF: TANGENT を使えないので uv から求め直した（${e}）", textured)
-        }
-
-    // ── アニメーション ──────────────────────────────────────
-
-    def readAnimations(glb: Glb, jointOfNode: Map[Int32, Int32]): Result[String, Map[String, AnimationClip3d.AnimationClip3d]] =
-        objectsOf("animations", glb#json)
-            |> Vector.toList
-            |> List.zip(List.range(0, Vector.length(objectsOf("animations", glb#json))))
-            |> Result.traverse(pair -> {
-                let (k, anim) = pair;
-                let name = stringOf("name", anim) |> Option.getWithDefault("animation${k}");
-                Result.flatMap(channels -> AnimationClip3d.make(name, List.filterMap(identity, channels)) |> Result.mapErr(e -> "glTF: ${e}"),
-                               objectsOf("channels", anim) |> Vector.toList |> Result.traverse(readChannel(glb, jointOfNode, anim)))
-            })
-            |> Result.map(clips -> List.foldLeft((m, c) -> Map.insert(AnimationClip3d.name(c), c, m), Map.empty(), clips))
-
-    def pathOf(s: Option[String]): Option[AnimationClip3d.Path] = match s {
-        case Some("translation") => Some(AnimationClip3d.Path.Translation)
-        case Some("rotation") => Some(AnimationClip3d.Path.Rotation)
-        case Some("scale") => Some(AnimationClip3d.Path.Scale)
-        case _ => None
-    }
-
-    /// 1 本の欄。weights・ジョイントでないノードの欄は None（捨てる）。
-    def readChannel(glb: Glb, jointOfNode: Map[Int32, Int32], anim: Obj, ch: Obj): Result[String, Option[AnimationClip3d.Channel]] =
-        let target = objectOf("target", ch);
-        let joint = intOf("node", target) |> Option.flatMap(n -> Map.get(n, jointOfNode));
-        match (pathOf(stringOf("path", target)), joint) {
-            case (Some(path), Some(j)) =>
-                let width = match path {
-                    case AnimationClip3d.Path.Rotation => 4
-                    case _ => 3
-                };
-                forM (
-                    samplerIndex <- intOf("sampler", ch) |> Option.toOk("glTF: channel に sampler が無い");
-                    sampler <- Vector.nth(samplerIndex, objectsOf("samplers", anim)) |> Option.toOk("glTF: samplers[${samplerIndex}] が無い");
-                    inputIndex <- intOf("input", sampler) |> Option.toOk("glTF: sampler に input が無い");
-                    outputIndex <- intOf("output", sampler) |> Option.toOk("glTF: sampler に output が無い");
-                    times <- readAccessorWidth(glb, inputIndex, 1, "sampler の input");
-                    output <- readAccessorWidth(glb, outputIndex, width, "sampler の output");
-                    keyed <- keyValuesOf(stringOf("interpolation", sampler), width, times#count, output#values)
-                ) yield {
-                    let (interpolation, values) = keyed;
-                    Some({ joint = j, path = path, times = times#values, values = mirrorValues(path, values), interpolation = interpolation })
-                }
-            case _ => Ok(None)
-        }
-
-    /// つなぎ方とキーフレームの値。CUBICSPLINE は (入り, 値, 出) の 3 つ組の真ん中を取って Linear にする。
-    def keyValuesOf(interpolation: Option[String], width: Int32, count: Int32, values: Vector[Float64]): Result[String, (AnimationClip3d.Interpolation, Vector[Float64])] =
-        match interpolation {
-            case None => Ok((AnimationClip3d.Interpolation.Linear, values))
-            case Some("LINEAR") => Ok((AnimationClip3d.Interpolation.Linear, values))
-            case Some("STEP") => Ok((AnimationClip3d.Interpolation.Step, values))
-            case Some("CUBICSPLINE") =>
-                if (Vector.length(values) != count * 3 * width) Err("glTF: CUBICSPLINE の output が times の数 × 3 でない")
-                else Ok((AnimationClip3d.Interpolation.Linear,
-                         Vector.range(0, count) |> Vector.flatMap(k -> copyRange((k * 3 + 1) * width, (k * 3 + 2) * width, values))))
-            case Some(other) => Err("glTF: interpolation ${other} は読まない")
-        }
-
-    def mirrorValues(path: AnimationClip3d.Path, values: Vector[Float64]): Vector[Float64] = match path {
-        case AnimationClip3d.Path.Translation => Vector.mapWithIndex((k, v) -> if (Int32.remainder(k, 3) == 0) 0.0 - v else v, values)
-        case AnimationClip3d.Path.Rotation =>
-            Vector.mapWithIndex((k, v) -> { let c = Int32.remainder(k, 4); if (c == 1 or c == 2) 0.0 - v else v }, values)
-        case AnimationClip3d.Path.Scale => values
-    }
-
-    // ── 知らせ ──────────────────────────────────────────────
-
-    /// 捨てた物を種類ごとに 1 行。
-    def warningsOf(json: Obj, jointOfNode: Map[Int32, Int32]): List[String] =
-        let prims = objectsOf("meshes", json) |> Vector.flatMap(m -> objectsOf("primitives", m));
-        let extraWeights = prims |> Vector.exists(p -> {
-            let a = objectOf("attributes", p);
-            Map.memberOf("JOINTS_1", a) or Map.memberOf("WEIGHTS_1", a)
-        });
-        let anims = objectsOf("animations", json);
-        let strayTarget = anims |> Vector.flatMap(a -> objectsOf("channels", a)) |> Vector.exists(ch -> {
-            let target = objectOf("target", ch);
-            Option.nonEmpty(pathOf(stringOf("path", target))) and
-                not (intOf("node", target) |> Option.exists(n -> Map.memberOf(n, jointOfNode)))
-        });
-        let cubic = anims |> Vector.flatMap(a -> objectsOf("samplers", a)) |> Vector.exists(s -> stringOf("interpolation", s) == Some("CUBICSPLINE"));
-        (if (extraWeights) "glTF: JOINTS_1 / WEIGHTS_1 を捨てた（1 頂点 4 本のジョイントまで読む）" :: Nil else Nil) :::
-        (if (strayTarget) "glTF: ジョイントでないノードを動かすアニメーションの欄を捨てた" :: Nil else Nil) :::
-        (if (cubic) "glTF: CUBICSPLINE のアニメーションを、接線を捨てて Linear として読んだ" :: Nil else Nil)
 }

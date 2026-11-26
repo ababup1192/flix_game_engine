@@ -98,6 +98,15 @@ pub mod Gltf.Internal {
     pub def withKeyedMeshes(key: String, model: Model3d.Model3d): Model3d.Model3d =
         { mesh = Mesh3d.withContentKey("${key}#all", model#mesh), parts = model#parts |> List.mapWithIndex((k, part) -> { mesh = Mesh3d.withContentKey("${key}#part${k}", part#mesh) | part }) | model }
 
+    /// parse の結果 parsed に、絵と材質と形の鍵を付けて Model3d にする（bytes = parse に渡したのと同じ glb のバイト。絵を切り出す）。
+    /// key の意味は Gltf.decodeWith のとおり。
+    pub def assemble(decoder: ImageData.ImageDecoder, options: Gltf.LoadOptions, key: Option[String], bytes: Vector[Int8],
+                     parsed: Gltf.Internal.Parse.Parsed): Model3d.Model3d \ IO =
+        match key {
+            case Some(k) => Gltf.assembleBy(keyedImageOf(k, decoder), options, bytes, parsed) |> withKeyedMeshes(k)
+            case None    => Gltf.assembleBy((_, _, image) -> Texture3d.decodeUsing(decoder, image), options, bytes, parsed)
+        }
+
     /// 鍵つきの読み方の、images[k] のバイト image の絵（上限 maxSide）。機種の側に持てて（id は "key#image<番号>"）上限の内なら画素を読まず、ほかは画素へ戻す。
     // WhyNot: 上限より大きい機種の側の絵を使わない — Texture3d.limitSize は機種の側の絵を縮めず、場面の絵の置き場を上限の外の大きさで食う。
     pub def keyedImageOf(key: String, decoder: ImageData.ImageDecoder, k: Int32, maxSide: Int32, image: Vector[Int8]): Result[String, Texture3d.Texture3d] \ IO =
