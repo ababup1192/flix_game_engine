@@ -615,7 +615,10 @@ if [ "$gl" = 1 ]; then
     java_flags="$java_gl_flags -Xss32m -XX:MaxRAMPercentage=50 $java_enc_flags"
     if [ "$(uname)" = Darwin ]; then java_flags="$java_flags -XstartOnFirstThread"; fi
 else
-    java_flags="-Xss32m -XX:MaxRAMPercentage=50 -Djava.awt.headless=true $java_enc_flags"
+    # WhyNot: 窓なしに G1（JVM の既定）を使わない — 描き出しとテープの比べを並べると、1 本ずつがゴミで物理メモリの半分まで
+    # 膨らみ足し算で溢れる（render-all 4 本で 28.7 → 3.1 GB・時間は +1〜2 %。plans/engine-native-image.md の 2.3）。
+    # 窓ありは付けない: 1 コマの p99 が少し伸びる（遊ぶ手触りに出る）。
+    java_flags="-Xss32m -XX:MaxRAMPercentage=50 -XX:+UseSerialGC -Djava.awt.headless=true $java_enc_flags"
 fi
 # HEADLESS_JAVA_OPTS は空白で分けて既定の後ろに足す（同じ旗は後ろが勝つ）。
 # shellcheck disable=SC2086

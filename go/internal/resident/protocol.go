@@ -377,8 +377,9 @@ func SpawnEnv(mine map[string]string, residentEntry, entries string) []string {
 //
 // WhyNot: -XstartOnFirstThread を付けないのは、常駐は窓を開かず、付けると主スレッドを
 // AWT が取って HTTP の糸と並べられなくなるため（取り決めの起動）。
+// WhyNot: G1 にしないのは、bin/headless-run の窓なしの道と同じく、並べた常駐がゴミで膨らんで溢れるため。
 func JavaArgs(opts string, heapMB int, jar string) []string {
-	args := []string{"-Xss32m", "-XX:MaxRAMPercentage=50", "-Djava.awt.headless=true"}
+	args := []string{"-Xss32m", "-XX:MaxRAMPercentage=50", "-XX:+UseSerialGC", "-Djava.awt.headless=true"}
 	fields := strings.Fields(opts)
 	if !hasXmx(fields) && heapMB > 0 {
 		args = append(args, fmt.Sprintf("-Xmx%dm", heapMB))

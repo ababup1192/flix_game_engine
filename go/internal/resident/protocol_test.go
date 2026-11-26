@@ -371,3 +371,9 @@ func TestSettleNeedsGLReturnsItsOwnCode(t *testing.T) {
 		t.Fatalf("%d %q", code, notice)
 	}
 }
+
+func TestJavaArgsUsesSerialGC(t *testing.T) {
+	if got := strings.Join(JavaArgs("", 1, "build/headless/headless.jar"), " "); !strings.Contains(got, "-XX:+UseSerialGC") {
+		t.Fatalf("常駐の java に SerialGC が無い: %s", got)
+	}
+}
