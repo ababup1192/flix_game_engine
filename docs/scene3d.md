@@ -25,6 +25,9 @@ GL と WebGPU（窓・ブラウザ）と CPU（画面なしの描き出し・テ
 - [金属っぽさと粗さ（鏡面ハイライトと空の映り込み）](#金属っぽさと粗さ鏡面ハイライトと空の映り込み)
 - [周りの景色を映す（環境マップと箱の補正）](#周りの景色を映す環境マップと箱の補正)
 - [描く量（視錐台の外を間引く）](#描く量視錐台の外を間引く)
+  - [物の置き方を選ぶ（instances / staticGroup / MultiMesh3d）](#物の置き方を選ぶinstances--staticgroup--multimesh3d)
+  - [同じ形の動く物をたくさん（MultiMesh3d）](#同じ形の動く物をたくさんmultimesh3d)
+  - [視錐台の外を間引く](#視錐台の外を間引く)
   - [ビルボードの draw の数（同じ絵の板をまとめる）](#ビルボードの-draw-の数同じ絵の板をまとめる)
   - [動かない物をまとめる（staticGroup）](#動かない物をまとめるstaticgroup)
 - [空（グラデーション）](#空グラデーション)
@@ -395,6 +398,51 @@ let env = Scene3d.environmentMap(panorama)                      // Texture3d の
   向きは画素の NDC を通る向き（空と同じ）・絵は段 0 で読み、強さも掛かる。`sky` があれば `sky` が勝つ（環境マップの背景は描かず、映り込みだけに使う）
 
 ## 描く量（視錐台の外を間引く）
+
+### 物の置き方を選ぶ（instances / staticGroup / MultiMesh3d）
+
+数が多い物は、次の質問の木で置き方を決める（葉 3 つ = 口 3 つ）。
+
+1. **動くか** → 動かない → `Scene3d.staticGroup`（下の「動かない物をまとめる」。形が同じ物は描き手が 1 回の draw にまとめて持ち越す）
+2. 動く → **同じ形と材質の物が 1,000 体以上か**（推測の線。測り直して決める） → いいえ → 場面の `instances`（1 体ずつ色・材質・名前・骨を変えられる）
+3. はい → `MultiMesh3d.build`（下の「同じ形の動く物をたくさん」）
+
+一部だけ動く物は、動く物を MultiMesh・残りを staticGroup に分ける。
+
+| 口 | 目安 | 向かない物 |
+|---|---|---|
+| `instances` | 同じ形が 1,000 体未満・1 体ずつ違う物 | 同じ形の動く物が 1,000 体以上（`@same-shape-hint` が知らせる） |
+| `staticGroup` | 動かない物（数の上限は無い） | 毎コマ動く物（毎コマ作り直しになる） |
+| `MultiMesh3d` | 同じ形の動く物が 1,000 体以上（群れ・弾・草・雨・火の粉） | 1 体ずつ選ぶ・光らせる・材質を変える物（番号でしか呼べない）・透けて重なる大きな板（不透明で描く）・骨で動く物（バインドポーズで描く）・マップ全体に散らばった 1 つ（区画に分ける）・遠近で細かさ（LOD）を変えたい物 |
+
+置き方を誤ると、描き手が場面の様子から 1 回だけ知らせる（どれも 120 場面続いたら・散らばりは 600 場面）:
+`@static-group-hint`（置いた物が 2,000 超で staticGroup が無い → 動かないなら staticGroup・同じ形で動くなら MultiMesh3d）・
+`@same-shape-hint`（instances に同じ形と材質の物が 1,000 体以上）・`@multimesh-spread-hint`（MultiMesh の境界が far の 2 倍超）・
+半透明の材質と骨つきの形を MultiMesh3d に渡した時（初めて描くコマ）。
+
+### 同じ形の動く物をたくさん（MultiMesh3d）
+
+Godot の MultiMesh・three.js の InstancedMesh に当たる。形 1 つと i 体目の行列を返す関数を渡し、場面の `multiMeshes` に載せる。
+GL と WebGPU は 1 体ずつの計画と詰めをせず、並びを直に上げて 1 回の instanced draw で描く（ブラウザで 1 万個の箱が 1 コマの CPU 20 ms → 5 ms・M4 Pro の Chrome）。
+
+```flix
+let fish = MultiMesh3d.build(fishMesh, n, i -> Mat4.mul(Mat4.translate(posOf(i)), Mat4.rotateY(yawOf(i))))
+    |> MultiMesh3d.withMaterial(scales)               // 材質は全部の体で 1 つ
+    |> MultiMesh3d.withColors(i -> teamColorOf(i));   // 頂点の色に掛ける（instances の withTint と同じ）
+{ multiMeshes = fish :: Nil | Scene3d.scene(camera, size) }
+```
+
+- 毎コマ作り直してよい（参照が同じ値を続けて渡すコマは、描き手が詰めた並びを持ち越す。ポーズ中は詰めない）
+- 群れ全体の境界で視錐台の外を間引く（1 体ずつは間引かない）。マップ全体に散らばる物（草・木）は区画（数十 m 角）ごとに分け、弾は届かない距離で消す
+- 影は落とす（スポット・太陽・点光源。並びは 1 回だけ詰めて影の pass と共有する）。奥行きの書き出し（`Output.Depth`）にも書く
+- 半透明の材質は不透明として描く（中の 1 体ずつを奥から手前に並べられないため。細い粒は cutout の材質にする）
+- 骨の重みを持つ形はバインドポーズで描く（骨で動く物は instances に `withPose` で置く）
+- 名前を持たない（F8 の注釈に出ない）・`Scene3dCheck.check` は見ない（当たりはゲームが持つ）
+- 先に用意する時は、形を 1 つ置いた物を `App.preload3d(key, Scene3d.meshInstance(形, Mat4.identity()) |> Scene3d.withMaterial(材質) :: Nil)` に渡す
+  （`MultiMesh3d.toInstances` は全部の体を作るので使わない）
+- CPU の描き手（描き出し）は 1 体ずつに開いて描く（絵は instances に置いた時と同じ）
+
+### 視錐台の外を間引く
 
 GL・WebGPU・CPU の描き手は、場面のカメラの視錐台の外の置いた物とビルボードを描かない（ゲームは何も書かなくてよい）。
 判定は外れる側に倒してある（画素を 1 つも出さない物だけを間引く）ので、絵は間引かない時と同じ。

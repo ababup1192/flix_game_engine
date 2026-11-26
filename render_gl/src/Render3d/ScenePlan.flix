@@ -13,18 +13,21 @@ mod Render3d.ScenePlan {
     /// 計画の側の状態（GL の物を持たない）。drawMode = 置いた物の描き方・sceneWarnedRef = 場面について知らせ済みの鍵（見つからない絵・上限を超えた材質と光・
     /// 場面の絵の置き場あふれ・空・lightmap・uv の無い法線マップ）・skinWarnedRef = ジョイントの数の食い違いを知らせた形（contentHash）・shadowWarnedRef = 影について知らせ済みの種類・
     /// crowdedScenesRef = 置いた物が多いのに staticGroup の無い場面が続いた数（noteStaticGroupHint）・
-    /// shapeSplitScenesRef = draw call が多く、その半分超が形の違いで分かれた場面が続いた数（noteDrawCallHint）。
+    /// shapeSplitScenesRef = draw call が多く、その半分超が形の違いで分かれた場面が続いた数（noteDrawCallHint）・
+    /// sameShapeScenesRef = instances に同じ形と材質の物が多い場面が続いた数（noteSameShapeHint）・
+    /// spreadScenesRef = 散らばりすぎた MultiMesh のある場面が続いた数（Render3d.MultiMeshPlan.noteSpreadHint）。
     pub type alias Planner = {
         drawMode = DrawMode, sceneWarnedRef = Ref[Set[String], Static], skinWarnedRef = Ref[Set[String], Static], shadowWarnedRef = Ref[Set[String], Static],
-        crowdedScenesRef = Ref[Int32, Static], shapeSplitScenesRef = Ref[Int32, Static]
+        crowdedScenesRef = Ref[Int32, Static], shapeSplitScenesRef = Ref[Int32, Static], sameShapeScenesRef = Ref[Int32, Static], spreadScenesRef = Ref[Int32, Static]
     }
 
     pub def freshPlanner(drawMode: DrawMode): Planner \ IO =
         { drawMode = drawMode, sceneWarnedRef = Ref.fresh(Static, Set.empty()), skinWarnedRef = Ref.fresh(Static, Set.empty()),
-          shadowWarnedRef = Ref.fresh(Static, Set.empty()), crowdedScenesRef = Ref.fresh(Static, 0), shapeSplitScenesRef = Ref.fresh(Static, 0) }
+          shadowWarnedRef = Ref.fresh(Static, Set.empty()), crowdedScenesRef = Ref.fresh(Static, 0), shapeSplitScenesRef = Ref.fresh(Static, 0),
+          sameShapeScenesRef = Ref.fresh(Static, 0), spreadScenesRef = Ref.fresh(Static, 0) }
 
     /// 置いた物が staticHintInstances() 個を超え、staticGroup が 1 つも無い場面が staticHintScenes() 回続いたら、1 回だけ知らせる（GL と WebGPU が場面ごとに呼ぶ）。
-    /// placed = 場面の置いた物の数（Scene3dCounts#instances に足す数と同じ）。
+    /// placed = 場面の instances と集まりの物の数（MultiMesh の体は入れない・Render3d.StaticRows.placedCountOf / itemCountOf）。
     // WhyNot: 1 回超えただけで知らせない — 人の多い場面を一瞬通るだけのゲームにまで、まとめ直しを勧めることになる。
     pub def noteStaticGroupHint(planner: Planner, placed: Int32, scene: Scene3d.Scene3dCmd): Unit \ IO =
         let crowded = placed > staticHintInstances() and List.isEmpty(scene#groups);
@@ -32,8 +35,24 @@ mod Render3d.ScenePlan {
         Ref.put(streak, planner#crowdedScenesRef);
         if (streak >= staticHintScenes())
             warnOnce(planner, "@static-group-hint", "scene3d: 置いた物が ${placed} 個あり staticGroup の無い場面が続いている — 動かない物は Scene3d.staticGroup にまとめると"
-                + "計画と 1 体ごとの値を持ち越して CPU が減る（engine の docs/scene3d.md の「動かない物をまとめる（staticGroup）」）")
+                + "計画と 1 体ごとの値を持ち越して CPU が減る。同じ形で毎コマ動く物は MultiMesh3d.build で 1 つにする（engine の docs/scene3d.md の「描く量」の質問の木）")
         else ()
+
+    /// instances の中の同じ形と材質の物（1 つの候補にまとまった物）が sameShapeHintCount() 体以上ある場面が staticHintScenes() 回続いたら、1 回だけ知らせる
+    /// （groupScenesWith が場面ごとに呼ぶ）。largest = 場面の候補の描く物の数の一番大きい物（間引いた物と集まりの物は入らない）。
+    // WhyNot: noteStaticGroupHint に足して 1 つの文にしない — あちらは置いた物の数だけで鳴り、形の違う町（30 種 × 数百）でも鳴る。こちらは同じ形が多い時だけで、勧める口が違う。
+    // WhyNot: 材質を中身で比べて数えない — 候補は材質の値と形でまとまった物で、毎コマ材質を作り直すゲームでは分かれて鳴らないが、その時は noteStaticGroupHint が数だけで鳴る。
+    pub def noteSameShapeHint(planner: Planner, largest: Int32): Unit \ IO =
+        let crowded = largest >= sameShapeHintCount();
+        let streak = if (crowded) Ref.get(planner#sameShapeScenesRef) + 1 else 0;
+        Ref.put(streak, planner#sameShapeScenesRef);
+        if (streak >= staticHintScenes())
+            warnOnce(planner, "@same-shape-hint", "scene3d: 同じ形と材質の物が ${largest} 体 instances にある — 毎コマ動くなら MultiMesh3d.build で 1 つにする（1 体ずつの計画と詰めが消える）。"
+                + "動かないなら Scene3d.staticGroup にまとめる（engine の docs/scene3d.md の「描く量」の質問の木）")
+        else ()
+
+    /// noteSameShapeHint が多いと見る同じ形の物の数（推測の線。docs/scene3d.md の目安と同じ数）。
+    pub def sameShapeHintCount(): Int32 = 1000
 
     /// 場面の pass の draw call が drawCallHintCalls() を超え、その半分超が形の違い（Counts.BatchBreak.Mesh）で分かれた場面が staticHintScenes() 回続いたら、1 回だけ知らせる
     /// （GL と WebGPU が場面ごとに呼ぶ）。drawCalls と meshBreaks = その場面の pass の draw call の数と、そのうち形の違いで分かれた数（影の地図の pass は入れない）。
@@ -187,6 +206,7 @@ mod Render3d.ScenePlan {
     pub def groupScenesWith(planner: Planner, caps: PlanCaps, samples: Int32, cmds: List[(Scene3d.RenderCmd, List[Scene3d.Instance3d])]): Grouped \ IO =
         let tables = freshTables();
         let scenes = cmds |> List.map(groupScene(planner, tables, caps, samples));
+        scenes |> List.forEach(s -> noteSameShapeHint(planner, List.foldLeft((acc, g) -> Int32.max(acc, g#batch#count), 0, s#groups)));
         { scenes = scenes, requests = MutList.toArray(Static, tables#requests) |> Array.toVector, members = tables#members }
 
     /// 場面 scene の持ち越す物 items を、視錐台で間引かずに候補に分ける（場面の pass の候補と、影の地図の形だけの候補）。
@@ -302,6 +322,7 @@ mod Render3d.ScenePlan {
                 groupWith(grouping(planner, tables, outside, materialWantedIn(mainPass), false, variant), solidInstances)
         };
         let multis = Render3d.MultiMeshPlan.groupedOf(planner, tables, materialWantedIn(mainPass), coverage, variant, scene#multiMeshes);
+        Render3d.MultiMeshPlan.noteSpreadHint(planner, scene);
         { cmd = cmd, mainPass = mainPass, groups = groups, shadowPlans = shadowPlansOf(planner, tables, scene, drawn), multis = multis }
 
     /// instances を候補に分ける。候補の並びは、(形, batch の鍵) が初めて来た順・その中は材質の絵の名前の並びが初めて来た順（Render3d.Batch.groupInOrder と

@@ -37,6 +37,28 @@ pub mod Render3d.MultiMeshPlan {
             warnOnce(planner, "multimesh-skin:" + shape, "scene3d: 骨の重みを持つ形を MultiMesh3d に渡した — 骨で曲げずにバインドポーズで描く。骨で動く物は instances に Scene3d.withPose で置く")
         else ()
 
+    /// 群れ全体の境界の対角がカメラの far の spreadHintFarRatio() 倍を超える MultiMesh のある場面が spreadHintScenes() 回続いたら、1 回だけ知らせる（場面ごとに呼ぶ）。
+    // WhyNot: 1 体ずつ視錐台の外を数えて知らせない — 1 体ずつ間引かないための口で、数えると詰めるのと同じ代金になる。境界の大きさだけで見る。
+    // WhyNot: 続く場面の数を noteStaticGroupHint と同じ 120 にしない — 弾のように遠くへ飛んでから消える群れは、境界が一時だけ広がる。
+    pub def noteSpreadHint(planner: Planner, scene: Scene3d.Scene3dCmd): Unit \ IO =
+        let reach = spreadHintFarRatio() * scene#camera#far;
+        let widest = scene#multiMeshes |> List.foldLeft((acc, mm) -> Float64.max(acc, diagonalOf(mm)), 0.0);
+        let streak = if (widest > reach) Ref.get(planner#spreadScenesRef) + 1 else 0;
+        Ref.put(streak, planner#spreadScenesRef);
+        if (streak >= spreadHintScenes())
+            warnOnce(planner, "@multimesh-spread-hint", "scene3d: MultiMesh の群れの広がりがカメラの far の ${spreadHintFarRatio()} 倍を超えている — 群れ全体で間引くので、"
+                + "見えない所の物まで描いている。区画（数十 m 角）ごとの MultiMesh に分ける・弾は届かない距離で消す（engine の docs/scene3d.md の「描く量」）")
+        else ()
+
+    def diagonalOf(mm: MultiMesh3d.MultiMesh3d): Float64 =
+        MultiMesh3d.fieldsOf(mm)#bounds |> Option.map(b -> Vec3.length(Vec3.sub(b#max, b#min))) |> Option.getWithDefault(0.0)
+
+    /// noteSpreadHint が広すぎると見る、境界の対角とカメラの far の比（推測の線）。
+    pub def spreadHintFarRatio(): Float64 = 2.0
+
+    /// noteSpreadHint が知らせるまでに続く場面の数（60 fps で約 10 秒）。
+    pub def spreadHintScenes(): Int32 = 600
+
     /// backend の答え orders（聞いた番号で引く順の番号・0 なら頂点の色で描く）を当てる。
     pub def plannedOf(orders: Vector[Int32], g: Grouped): Planned =
         let material = g#surface |> Option.flatMap(mk -> {
