@@ -76,6 +76,19 @@
       },
       "required": ["kind"]
     },
+    "ambientOcclusion": {
+      "type": ["object", "null"], "label": "画面の上の SSAO",
+      "description": "家具の足元・部屋の隅を暗くする。3D の場面（Native の解像度の一番大きい物）の環境の光と lightmap の光に掛かる。null で外す",
+      "properties": {
+        "radius": { "type": "number", "minimum": 0.05, "maximum": 5, "label": "調べる半径（m）" },
+        "intensity": { "type": "number", "minimum": 0, "maximum": 8, "label": "暗くする強さ" },
+        "power": { "type": "number", "minimum": 0.1, "maximum": 4, "label": "暗さの曲線", "description": "大きいほど隅だけが暗い" },
+        "taps": { "type": "integer", "minimum": 4, "maximum": 16, "label": "1 画素で調べる点の数" },
+        "thickness": { "type": "number", "minimum": 0.05, "maximum": 10, "label": "数える距離の上限（m）", "description": "手前の物の輪郭の後ろが縁取られるのを抑える" },
+        "scale": { "type": "number", "minimum": 0.25, "maximum": 1, "label": "mask の解像度の倍率" },
+        "lightAffect": { "type": "number", "minimum": 0, "maximum": 1, "label": "直接光にも掛ける割合" }
+      }
+    },
     "crt": {
       "type": ["object", "null"], "label": "CRT のにじみ",
       "description": "ブラウン管にコンポジット映像で映した見え方。仕上がりの一番後に掛ける。null で外す",

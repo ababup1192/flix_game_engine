@@ -546,6 +546,42 @@
       "rawLine": true,
       "pattern": "Texture3d\\.decode[A-Za-z]*\\([^\\n]*\\.exr\\b|\"[^\"]*\\.exr\"[^\\n]*Texture3d\\.decode",
       "hint": "EXR は読まない。Blender（Compositor で Radiance HDR に書き出す）か `oiiotool in.exr -o out.hdr` で .hdr に替え、Texture3d.decodeHdr で読む（Blender・Poly Haven のパノラマは左右の鏡を --flop で直す）"
+    },
+    {
+      "id": "scene3d-screen-inputs-in-game",
+      "suffixes": [
+        ".flix"
+      ],
+      "skip": [
+        "engine/",
+        "engine_world/",
+        "engine_tools/",
+        "engine_full/",
+        "render_gl/",
+        "src/engine/",
+        "src/engine_world/",
+        "src/engine_tools/",
+        "src/render_gl/",
+        "lib/",
+        "build/",
+        "plans/"
+      ],
+      "pattern": "\\bScene3d\\.screenInputs\\s*\\(",
+      "hint": "画面の上の技の入力（Scene3d.screenInputs）は PostStack が奥行きを描く場面にだけ入れる。ゲームは PostStack.withAmbientOcclusion(Some({ radius = .. | PostStack.ambientOcclusion() }), stack) を書く（engine の docs/scene3d.md の「画面の上の技（SSAO）」）"
+    },
+    {
+      "id": "ssao-custom-spec",
+      "suffixes": [
+        ".flix"
+      ],
+      "skip": [
+        "lib/",
+        "build/",
+        "plans/"
+      ],
+      "rawLine": true,
+      "pattern": "name\\s*=\\s*\"ssao[A-Za-z_]*\"",
+      "hint": "SSAO を自分の Spec（PostStack.withCustom）で書かない。PostStack.withAmbientOcclusion は 3 つの描き手が同じ式で描き、環境の光と lightmap の光にだけ掛かる（engine の docs/scene3d.md の「画面の上の技（SSAO）」）"
     }
   ],
   "exempt": {
