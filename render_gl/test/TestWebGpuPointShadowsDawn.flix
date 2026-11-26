@@ -71,7 +71,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuPointShadowsDawn {
         let encoder = gpu.createCommandEncoder("test");
         let passes = Ref.fresh(Static, 0);
         let host: Host = { encoder = () -> checked_ecast(encoder), notePass = () -> Ref.put(Ref.get(passes) + 1, passes), flush = () -> checked_ecast(()),
-                           skip = (_, _) -> checked_ecast(()), textureOf = name -> checked_ecast(textureOf(name)), textureById = _ -> checked_ecast(None), groupById = _ -> checked_ecast(None) };
+                           skip = (_, _) -> checked_ecast(()), textureOf = name -> checked_ecast(textureOf(name)), textureById = _ -> checked_ecast(None), groupById = _ -> checked_ecast(None), stamp = (_, _) -> checked_ecast(()) };
         discard prepare(renderer, host, dest(), cmd :: Nil);
         gpu.submit(encoder.finish());
         let errors = gpu.errorCount();

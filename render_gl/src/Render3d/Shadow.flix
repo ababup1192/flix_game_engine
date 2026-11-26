@@ -26,7 +26,8 @@ mod Render3d.Shadow {
     /// ビルボードの行は行に入れた絵の番号（行を作る時に全体の登録から引いた物）で描く。
     /// 点光源の影の atlas は鍵ごとに初めの面の前に 1 回だけ全体を消し、面ごとに viewport と scissor を面の塊に置いて描く。
     /// passes の組の 2 つ目 = 場面の持ち越した集まり（影の行を場面の行の後に描く）・instanceTexture = その prepare の 1 体ごとの値のテクスチャ（集まりの行を描いた後に貼り直す）。
-    pub def renderShadows(gl: GlContext, state: State, gen: Int64, instanceTexture: Option[Int32],
+    /// measure = 地図 1 枚（atlas は面 1 つ）を描く GPU の時間を光の種類の区間（Render3d.GpuSpans.shadowSpanOf）として測る関数（Scene3dRenderer.Dest#measure）。
+    pub def renderShadows(gl: GlContext, state: State, gen: Int64, instanceTexture: Option[Int32], measure: (String, Unit -> Unit \ IO) -> Unit \ IO,
                           passes: List[(List[ShadowPass], List[Render3d.GlStatic.CarriedDraw])]): List[SceneShadows] \ IO =
         let cleared = Ref.fresh(Static, (Set.empty(): Set[Key]));
         let shadows = passes |> List.map(pc -> {
@@ -34,7 +35,8 @@ mod Render3d.Shadow {
             let casts = scenePasses |> List.filterMap(pass -> shadowTarget(gl, state, gen, pass#map#key) |> Option.map(target -> {
                 let first = not Set.memberOf(pass#map#key, Ref.get(cleared));
                 Ref.put(Set.insert(pass#map#key, Ref.get(cleared)), cleared);
-                renderShadowMap(gl, state, gen, target, pass, first, { carried = carried, restore = instanceTexture });
+                measure(Render3d.GpuSpans.shadowSpanOf(pass#map#sampling), () ->
+                    renderShadowMap(gl, state, gen, target, pass, first, { carried = carried, restore = instanceTexture }));
                 castOf(target, pass#map#sampling)
             }));
             { spot = List.findMap(spotOf, casts), sun = List.findMap(sunOf, casts), point = List.findMap(pointOf, casts) }
@@ -98,7 +100,7 @@ mod Render3d.Shadow {
     /// 深度テクスチャだけを付けた FBO を作る（作った FBO を bind したまま返す）。
     // WhyNot: 深度を renderbuffer にしない — 塗りのシェーダーが標本として読む。
     // WhyNot: 比べを sampler2DShadow（GL_COMPARE_REF_TO_TEXTURE）に任せない — 比べ方と周りの数え方を CPU の描き手とそろえる。
-    def createShadowTarget(gl: GlContext, extent: (Int32, Int32)): ShadowTarget \ IO =
+    pub def createShadowTarget(gl: GlContext, extent: (Int32, Int32)): ShadowTarget \ IO =
         let (width, height) = extent;
         // 作る間の bind で unit 0（sprite・font が共用する）の中身を替えない。
         gl.activeTexture(GlConst.TEXTURE0 + shadowTextureUnit());
@@ -128,30 +130,68 @@ mod Render3d.Shadow {
     /// 影の地図を描く: 光から見た置いた物の一番近い面の深度。行は骨の無い物 → 骨つきの物 → castShadows のビルボードの順（Render3d.SceneList.buildShadowList）。
     /// first = この描き先へ今の renderShadows で初めて描くか（atlas は初めての面の前だけ全体を消す）・
     /// carried = 場面の持ち越した集まり（場面の行の後にその影の行を描く）と、描いた後に貼り直す 1 体ごとの値のテクスチャ restore。
+    /// 集まりの行は、動かない物だけの控え（Render3d.GlShadowCache）に描いて写す。鍵が前と同じなら控えを描き直さずに写すだけ。
     def renderShadowMap(gl: GlContext, state: State, gen: Int64, target: ShadowTarget, pass: ShadowPass, first: Bool,
                         carried: { carried = List[Render3d.GlStatic.CarriedDraw], restore = Option[Int32] }): Unit \ IO =
         let locs = programsOf(gl, state)#depth;
+        let drawable = locs#mesh#program != 0 and not Render3d.GpuSpans.skipsShadowDraws();
+        let frame = { list = pass#list, lightView = matrixArray(pass#map#view), identity = matrixArray(Mat4.identity()), bound = Array#{locs#mesh#program} @ Static };
+        let cached = if (drawable) cacheOf(gl, state, gen, pass, carried#carried) else None;
+        cached |> Option.forEach(match (e, made) -> if (made) drawStaticsInto(gl, state, gen, e, frame, carried) else ());
         gl.bindFramebuffer(GlConst.FRAMEBUFFER, target#fbo);
         match pass#map#tile {
             case None    => clearWholeTarget(gl, target)
             case Some(t) => beginTile(gl, t, first)
         };
-        if (locs#mesh#program == 0) ()
+        let (ox, oy) = pass#map#tile |> Option.map(t -> (t#x, t#y)) |> Option.getWithDefault((0, 0));
+        cached |> Option.forEach(match (e, _) -> Render3d.GlShadowCache.copyInto(gl, e, target, ox, oy));
+        if (not drawable) ()
         else {
-            gl.enable(GlConst.DEPTH_TEST);
-            gl.depthFunc(GlConst.LESS);
-            // WhyNot: 背面を捨てない — 厚みの無い板を裏から照らすと面が全部捨てられ、影が抜ける。
-            gl.disable(GlConst.CULL_FACE);
-            // WhyNot: 深度だけのプログラムを影のために別に組まない — 色の出力は描き先が無いので捨てられる。
-            let frame = { list = pass#list, lightView = matrixArray(pass#map#view), identity = matrixArray(Mat4.identity()), bound = Array#{locs#mesh#program} @ Static };
+            beginDepthOnly(gl);
             useMeshProgram(gl, locs#mesh, frame#lightView, frame#identity);
+            Array.put(locs#mesh#program, 0, frame#bound);
             drawShadowRows(gl, state, gen, frame, 0, firstBillboardRowOf(pass#list));
-            Render3d.GlStatic.withValues(gl, carried#restore, c -> {
-                let shadowList = c#carried#rows#shadowList;
-                drawShadowRows(gl, state, gen, { list = shadowList | frame }, 0, rowCountOf(shadowList))
-            }, carried#carried);
+            if (Option.isEmpty(cached)) drawCarriedShadows(gl, state, gen, frame, carried) else ();
             drawShadowBillboards(gl, state, frame, pass)
         }
+
+    /// 深度だけを LESS で描く状態にする。
+    // WhyNot: 深度だけのプログラムを影のために別に組まない — 色の出力は描き先が無いので捨てられる。
+    def beginDepthOnly(gl: GlContext): Unit \ IO =
+        gl.enable(GlConst.DEPTH_TEST);
+        gl.depthFunc(GlConst.LESS);
+        // WhyNot: 背面を捨てない — 厚みの無い板を裏から照らすと面が全部捨てられ、影が抜ける。
+        gl.disable(GlConst.CULL_FACE)
+
+    /// 持ち越した集まりの影の行を描く（今の描き先・今のプログラムのまま）。
+    def drawCarriedShadows(gl: GlContext, state: State, gen: Int64, frame: ShadowFrame,
+                           carried: { carried = List[Render3d.GlStatic.CarriedDraw], restore = Option[Int32] }): Unit \ IO =
+        Render3d.GlStatic.withValues(gl, carried#restore, c -> {
+            let shadowList = c#carried#rows#shadowList;
+            drawShadowRows(gl, state, gen, { list = shadowList | frame }, 0, rowCountOf(shadowList))
+        }, carried#carried)
+
+    /// 場面に持ち越した集まりがあれば、pass の地図（atlas は面）の動かない物だけの控えと、今作ったか（作った控えは中身が無い）。
+    /// 集まりが無い場面と、試しの旗 FLIX_GE_SHADOW_CACHE=off の時は None（毎コマ集まりも描く）。
+    def cacheOf(gl: GlContext, state: State, gen: Int64, pass: ShadowPass, carried: List[Render3d.GlStatic.CarriedDraw]): Option[(Render3d.GlShadowCache.Entry, Bool)] \ IO =
+        if (List.isEmpty(carried) or Render3d.GpuSpans.isShadowCacheOff()) None
+        else {
+            let size = Render3d.ShadowMaps.cacheSizeOf(pass);
+            let key = Render3d.ShadowMaps.cacheKeyOf(size, pass, Render3d.GlStatic.keyOfCarried(carried));
+            let found = Render3d.GlShadowCache.ensure(gl, state#statics#shadowCache, gen, key, size);
+            Render3d.Counts.noteShadowCache(state, snd(found));
+            Some(found)
+        }
+
+    /// 控え e へ動かない物だけを描く（深度を 1 で消し、控えの全体を viewport にする）。
+    def drawStaticsInto(gl: GlContext, state: State, gen: Int64, e: Render3d.GlShadowCache.Entry, frame: ShadowFrame,
+                        carried: { carried = List[Render3d.GlStatic.CarriedDraw], restore = Option[Int32] }): Unit \ IO =
+        gl.bindFramebuffer(GlConst.FRAMEBUFFER, e#target#fbo);
+        clearWholeTarget(gl, e#target);
+        beginDepthOnly(gl);
+        useMeshProgram(gl, programsOf(gl, state)#depth#mesh, frame#lightView, frame#identity);
+        Array.put(programsOf(gl, state)#depth#mesh#program, 0, frame#bound);
+        drawCarriedShadows(gl, state, gen, frame, carried)
 
     def clearWholeTarget(gl: GlContext, target: ShadowTarget): Unit \ IO =
         gl.viewport(0, 0, target#width, target#height);

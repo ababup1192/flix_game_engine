@@ -83,11 +83,11 @@ pub mod Render3d.WebGpuRenderer {
     /// 2D の描き手から借りる物。encoder = 今のコマの encoder・notePass = encoder に pass を 1 つ積んだと知らせる・
     /// flush = 積んだ pass があれば submit する（submit したら afterSubmit が呼ばれる）・skip(種類, 回数) = 描かずに飛ばした物を種類ごとに数える・
     /// textureOf = 2D の絵の登録（材質が名前で読む全体の登録の絵）・textureById = 登録の絵の番号 → 2D の描き手の texture・
-    /// groupById = 登録の絵の番号 → 2D の描き手がその絵を読む group（絵と sampler・ビルボードが group 1 に借りる）。
+    /// groupById = 登録の絵の番号 → 2D の描き手がその絵を読む group（絵と sampler・ビルボードが group 1 に借りる）・stamp(desc, 名前) = 開く pass の GPU の時間を区間として測る。
     pub type alias Host = {
         encoder = Unit -> CommandEncoder \ IO, notePass = Unit -> Unit \ IO, flush = Unit -> Unit \ IO, skip = (String, Int32) -> Unit \ IO,
         textureOf = String -> Option[Scene3dRenderer.RegisteredTexture] \ IO, textureById = Int32 -> Option[Texture] \ IO,
-        groupById = Int32 -> Option[BindGroup] \ IO
+        groupById = Int32 -> Option[BindGroup] \ IO, stamp = (RenderPassDesc, String) -> Unit \ IO
     }
 
     /// 場面を描く描き先。key = 2D の描き手の描き先の鍵（画面は 0）・format・samples = 2D の pass の形式と標本（WebGPU の描き先の標本は 1 か 4）・
@@ -576,12 +576,12 @@ pub mod Render3d.WebGpuRenderer {
         let staged = stageScene(r, host, target, inputs, plan, uses, carried);
         let encoder = host#encoder();
         let instances = Array.get(0, s#instances);
-        let shadowDraw = { encoder = encoder, notePass = host#notePass, meshStore = s#meshStore, instances = instances, instanceBase = staged#instanceBase,
+        let shadowDraw = { encoder = encoder, notePass = host#notePass, stamp = host#stamp, meshStore = s#meshStore, instances = instances, instanceBase = staged#instanceBase,
                            poseGroup = staged#poseGroup, vertexModule = s#vertexModule, skinnedModule = s#skinnedModule, emptyLayout = s#emptyLayout,
                            emptyGroup = s#emptyGroup, poseLayout = s#poseLayout,
                            created = () -> Render3d.Counts.count(s, Render3d.Counts.Counter.TargetRebuilds, 1),
                            unbound = n -> host#skip("3D の付けられなかった行の物（pipeline か group が無い・飛ばす）", n),
-                           carried = List.map(c -> WebGpuStatic.shadowRunnerOf(s#statics, s#gpu, Array.get(0, s#gen), c, WebGpuShadows.depthFormat()), carried),
+                           carried = List.map(c -> WebGpuStatic.shadowRunnerOf(s#statics, s#gpu, Array.get(0, s#gen), c, WebGpuShadows.depthFormat()), carried), carriedKey = WebGpuStatic.keyOfCarried(carried), noteCache = Render3d.Counts.noteShadowCache(s),
                            billboard = drawShadowBillboardRow(r, host) };
         staged#shadows |> List.forEach(WebGpuShadows.encode(s#shadows, Array.get(0, s#gen), shadowDraw));
         let scene = plan#cmd#scene;
@@ -762,7 +762,7 @@ pub mod Render3d.WebGpuRenderer {
     /// 場面の pass 1 つの行を onto へ描く pass を積む（pipeline は行ごとに RowDrawer が付ける・場面の値は staged の group 0）。
     def encodeScene(r: Renderer, host: Host, target: SceneTarget, staged: StagedPass, onto: PassTarget): Unit \ IO =
         let RendererData.RendererData(s) = r;
-        let desc = new RenderPassDesc("fge scene3d");
+        let desc = new RenderPassDesc("fge scene3d"); host#stamp(desc, Render3d.GpuSpans.passSpanOf(staged#spec));
         match onto#clear {
             case Some((cr, cg, cb, ca)) => discard desc.clearColor(onto#color, cr, cg, cb, ca)
             case None                   => discard desc.loadColor(onto#color)
@@ -790,7 +790,7 @@ pub mod Render3d.WebGpuRenderer {
         let bundleKey = "color:${staged#targetKey}:${WebGpuPipelines.formatCode(target#format)}:${target#samples}:${passCodeOf(staged#spec)}${variantKeyOf(staged#variant)}";
         let epoch = WebGpuMaterials.textureEpochOf(s#materials);
         // WhyNot: 持ち越した物を場面の行の後に描かない — 半透明の行は場面の行の末尾にあり、持ち越した不透明の物より後に重ねる。同じ深さで重なる面の勝ち方は GL（集まりを instances の後ろに並べる）と逆になりうる。
-        staged#carried |> List.forEach(c -> WebGpuStatic.runBundle(s#statics, s#gpu, Array.get(0, s#gen), c, bundleKey, staged#sceneGroup, epoch, bundleTarget, (commands, groups) -> {
+        (if (Render3d.GpuSpans.skipsColorDraws()) Nil else staged#carried) |> List.forEach(c -> WebGpuStatic.runBundle(s#statics, s#gpu, Array.get(0, s#gen), c, bundleKey, staged#sceneGroup, epoch, bundleTarget, (commands, groups) -> {
             commands.setVertexBuffer(1, c#instances, 0i64, c#instances.size());
             drawRows(commands, s#meshStore, rowDrawerOf(r, host, target, staged, materialPass(0, c#values, c#programs, groups)), c#rows#list, 0)
         }, pass));
@@ -803,7 +803,7 @@ pub mod Render3d.WebGpuRenderer {
         let drawer = rowDrawerOf(r, host, target, staged, mp);
         // WhyNot: 不透明の行・ビルボードの行・半透明の行を GL の drawPass のように 3 回に分けて流さない — 行の順（SceneList の頭）がその 3 つの順で、
         //   GL が分ける理由の深度の書き込みと blend は WebGPU では pipeline ごとに決まっている。
-        drawRows(checked_cast(pass), s#meshStore, drawer, staged#list, staged#instanceBase);
+        if (Render3d.GpuSpans.skipsColorDraws()) () else drawRows(checked_cast(pass), s#meshStore, drawer, staged#list, staged#instanceBase);
         pass.end()
 
     /// 場面の pass の行を描く時に pipeline と group を付ける関数の組（材質の行は mp の値と program で付ける）。

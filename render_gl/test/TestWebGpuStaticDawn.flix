@@ -64,7 +64,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuStaticDawn {
             let encoder = gpu.createCommandEncoder("test");
             let host: Host = { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> checked_ecast(()),
                                skip = (_, _) -> checked_ecast(()), textureOf = _ -> checked_ecast(None), textureById = _ -> checked_ecast(None),
-                               groupById = _ -> checked_ecast(None) };
+                               groupById = _ -> checked_ecast(None), stamp = (_, _) -> checked_ecast(()) };
             discard prepare(renderer, host, dest(), cmds);
             let cached = Render3d.StaticRows.sizeOf(s#statics#cache);
             let retired = Render3d.WebGpuStatic.retiredCountOf(s#statics);
@@ -149,6 +149,44 @@ mod Render3d.WebGpuRenderer.TestWebGpuStaticDawn {
         let frame = lit(sceneWith(town())) :: Nil;
         let (seen, (recorded, _, errors)) = framesOf(gpu, 4000000, frame :: frame :: frame :: Nil);
         Assert.assertEq(expected = (1 :: 1 :: 1 :: Nil, 7, 0), (cachedOf(seen), recorded, errors))
+    })
+
+    /// frames を 1 コマずつ描き、コマごとの影の地図の控えの (使い回した数, 描き直した数) と device の誤りの数。
+    def shadowCacheCountsOf(gpu: WebGpu, frames: List[List[Scene3d.RenderCmd]]): (List[(Int32, Int32)], Int32) \ IO =
+        let paste = layoutOf(gpu, true);
+        let renderer = Render3d.WebGpuRenderer.create(gpu, paste, layoutOf(gpu, false));
+        let seen = frames |> List.map(cmds -> {
+            let encoder = gpu.createCommandEncoder("test");
+            let host: Host = { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> checked_ecast(()),
+                               skip = (_, _) -> checked_ecast(()), textureOf = _ -> checked_ecast(None), textureById = _ -> checked_ecast(None),
+                               groupById = _ -> checked_ecast(None), stamp = (_, _) -> checked_ecast(()) };
+            discard prepare(renderer, host, dest(), cmds);
+            gpu.submit(encoder.finish());
+            let counts = takeCounts(renderer);
+            afterSubmit(renderer);
+            endFrameWithin(renderer, { vertices = 4000000, textures = { count = 64, size = 67108864i64 } });
+            (counts#shadowMapsReused, counts#shadowMapsRedrawn)
+        });
+        Render3d.WebGpuRenderer.release(renderer);
+        paste.release();
+        (seen, gpu.errorCount())
+
+    /// 点光源 1 本の影（atlas の面 6 つ）の場面を 3 コマ描くと、動かない物の控えは最初のコマに 6 面とも描き、続くコマは 6 面とも使い回す（device の誤りは無い）。
+    @Test
+    def testPointShadowCacheIsReusedAcrossFrames(): Unit \ {Assert, IO} = withDawn(gpu -> {
+        let lamp = { position = Vec3.v3(0.0, 0.0, 6.0), color = { r = 1.0, g = 1.0, b = 1.0 }, intensity = 1.0, range = 20.0 };
+        let shadowed = { maxShadowedLights = 1, mapSize = 32 | Scene3d.pointShadowMap() };
+        let frame = { scene = Scene3d.withPointShadows(shadowed, { pointLights = lamp :: Nil | sceneWith(town())#scene }) | sceneWith(town()) } :: Nil;
+        Assert.assertEq(expected = ((0, 6) :: (6, 0) :: (6, 0) :: Nil, 0), shadowCacheCountsOf(gpu, frame :: frame :: frame :: Nil))
+    })
+
+    /// 灯りが動いたコマは、その灯りの面の控えを描き直す。
+    @Test
+    def testPointShadowCacheRedrawsWhenLightMoves(): Unit \ {Assert, IO} = withDawn(gpu -> {
+        let lampAt = (z: Float64) -> { position = Vec3.v3(0.0, 0.0, z), color = { r = 1.0, g = 1.0, b = 1.0 }, intensity = 1.0, range = 20.0 };
+        let shadowed = { maxShadowedLights = 1, mapSize = 32 | Scene3d.pointShadowMap() };
+        let frameAt = (z: Float64) -> { scene = Scene3d.withPointShadows(shadowed, { pointLights = lampAt(z) :: Nil | sceneWith(town())#scene }) | sceneWith(town()) } :: Nil;
+        Assert.assertEq(expected = ((0, 6) :: (0, 6) :: Nil, 0), shadowCacheCountsOf(gpu, frameAt(6.0) :: frameAt(5.0) :: Nil))
     })
 
     /// 持ち越した物も描いた物の数に入る（つないで 1 つの形にした物も 1 つずつ数える）。

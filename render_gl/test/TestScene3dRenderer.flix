@@ -20,7 +20,7 @@ mod TestScene3dRenderer {
     /// 何も描かない描き手は、積んだ場面を捨てて番号を 1 つも返さない。
     @Test
     def testNonePreparesNoNumbers(): Unit \ {Assert, IO} =
-        let prepared = Scene3dRenderer.none()#prepare(0i64, _ -> checked_ecast(None), { framebuffer = 0, format = RenderTarget.Format.Rgba8Unorm, samples = 1 },
+        let prepared = Scene3dRenderer.none()#prepare(0i64, _ -> checked_ecast(None), { framebuffer = 0, format = RenderTarget.Format.Rgba8Unorm, samples = 1, measure = (_, f) -> f() },
                                                       sceneWithBillboard("hist") :: Nil);
         Assert.assertEq(expected = 0, Vector.length(prepared#zIndexes))
 

@@ -56,6 +56,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     use RenderPaint.Internal.WebGpuPipelines
     use RenderPaint.Internal.WebGpuShader
     use RenderPaint.Internal.WebGpuSurfaces
+    use RenderPaint.Internal.WebGpuTimer
 
     /// 絵の表の 1 枚（番号 → texture と、それを読む bind group）。
     type alias TextureSlot = { texture = Texture, group = BindGroup, width = Int32, height = Int32 }
@@ -145,7 +146,9 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             // 3D の場面を描く所（2D の pass の前に場面を自分の texture へ描き、貼る行で貼る）。
             scenes3d = Render3d.WebGpuRenderer.Scenes,
             // Pass の history に前のコマの絵を写すか（偽なら毎回透明。GL の RenderPaint の keepHistory と同じ）。
-            keepHistory = Bool
+            keepHistory = Bool,
+            // pass ごとの GPU の時間を測る物（作る時は測らない物・ウィンドウの層が withGpuTimer で入れる）。
+            gpuTimer = WebGpuTimer.Timer
         })
     }
 
@@ -156,6 +159,16 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     pub def withoutHistory(paint: Paint): Paint =
         let PaintData.PaintData(p) = paint;
         PaintData.PaintData({ keepHistory = false | p })
+
+    /// pass ごとの GPU の時間を timestamp-query で測る paint（device が持つ時だけ。診断を集めている間だけ測る）。
+    pub def withGpuTimer(paint: Paint): Paint \ IO =
+        let PaintData.PaintData(p) = paint;
+        PaintData.PaintData({ gpuTimer = WebGpuTimer.create(p#gpu) | p })
+
+    /// 前に呼んでから読めた GPU の時間（古い順。FrameStats の行が中央値を出す）。
+    pub def takeGpuSamples(paint: Paint): List[GpuTimer.FrameTime] \ IO =
+        let PaintData.PaintData(p) = paint;
+        WebGpuTimer.takeSamples(p#gpuTimer)
 
     /// instance の 1 体のバイト数（RenderFrame.writeInstAt の float の並び）。
     def instanceBytes(): Int32 = 4 * RenderList.instanceFloats()
@@ -218,7 +231,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             texWarnLog = Ref.fresh(Static, Set.empty()), msaaWarned = Ref.fresh(Static, Set.empty()), skips = SkippedDraws.fresh(),
             diagnosticsRef = Ref.fresh(Static, None), drawCounts = RenderDrawCounts.fresh(),
             scenes3d = (cfg#scene3d)(gpu, pipes#sceneLayout, imageLayout),
-            keepHistory = true
+            keepHistory = true, gpuTimer = WebGpuTimer.off()
         });
         installBuiltins(paint);
         paint
@@ -401,6 +414,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         Map.forEach((_, group) -> group.release(), Ref.get(p#copyGroups));
         Ref.put(Map.empty(), p#copyGroups);
         TargetTable.clear(p#targets);
+        WebGpuTimer.release(p#gpuTimer);
         p#blank#group.release();
         p#blank#texture.destroy();
         Option.forEach(g -> g.release(), Ref.get(p#presentGroup));
@@ -573,6 +587,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             case RenderTarget.LoadOp.Keep             => new RenderPassDesc("fge pass").loadColor(view)
         };
         if (Option.isEmpty(msaa)) () else discard desc.resolveTo(texture.defaultView());
+        WebGpuTimer.stamp(p#gpuTimer, desc, TargetTable.activeSpec(p#targets) |> Option.map(t -> t#name) |> Option.getWithDefault("screen"));
         match spec#depthStencil {
             case DepthStencil.DepthAndStencil =>
                 let samples = msaa |> Option.map(snd) |> Option.getWithDefault(1);
@@ -893,7 +908,9 @@ pub mod RenderPaint.Internal.WebGpuPaint {
                 pass.end();
                 Array.put(Array.get(0, p#frameCounters) + 1, 0, p#frameCounters)
         };
+        WebGpuTimer.beforeSubmit(p#gpuTimer, p#gpu, () -> encoderOf(paint));
         submitEncoder(paint);
+        WebGpuTimer.afterSubmit(p#gpuTimer, p#gpu) |> Option.forEach(t -> noteDiagnostics(paint, d -> { gpuNs = Some(t#gpuNs), gpuPasses = t#passes | d }));
         warnTable(SkippedDraws.endFrame(p#skips));
         (p#scenes3d#endFrame)();
         WebGpuSurfaces.endFrame(p#surfaces, Array.get(0, p#lastFrame)#surfaces |> List.map(cmd -> GpuHandle.shaderProgramInt(cmd#program)) |> List.toSet);
@@ -1142,6 +1159,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             def setDiagnosticsEnabled(on, k) = {
                 let PaintData.PaintData(p) = paint;
                 Ref.put(if (on) Some(FrameDiagnostics.empty()) else None, p#diagnosticsRef);
+                WebGpuTimer.setOn(p#gpuTimer, on);
                 k(())
             }
             def consumeDiagnostics(k) = k(consumeDiagnostics(paint))

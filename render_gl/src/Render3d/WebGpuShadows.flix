@@ -42,10 +42,11 @@ mod Render3d.WebGpuShadows {
     type alias ShadowTarget = { depth = Texture, width = Int32, height = Int32, camera = Buffer, group = BindGroup, tiles = Ref[Map[(Int32, Int32), (Buffer, BindGroup)], Static] }
 
     /// 影の地図の backend の状態。table = 前半の寿命の表・targets = 鍵 → 描き先・layout = group 0 の layout・pipelines = (頂点のバイト数, ジョイントの番号の位置) → pipeline・
-    /// written = 今の encoder（submit まで）で描いた描き先の鍵・cpuCamera = 光の目の値を詰める入れ物。
+    /// written = 今の encoder（submit まで）で描いた描き先の鍵・cpuCamera = 光の目の値を詰める入れ物・cache = 動かない物だけの深度の控え。
     pub type alias Shadows = {
         gpu = WebGpu, table = Render3d.ShadowMaps.Table, targets = Ref[Map[Key, ShadowTarget], Static], layout = BindGroupLayout,
-        pipelines = Ref[Map[(Int32, Option[Int32]), RenderPipeline], Static], written = Ref[Set[Key], Static], cpuCamera = ByteBuffer
+        pipelines = Ref[Map[(Int32, Option[Int32]), RenderPipeline], Static], written = Ref[Set[Key], Static], cpuCamera = ByteBuffer,
+        cache = Render3d.WebGpuShadowCache.Cache
     }
 
     /// 影の地図の pass を積む材料（どれも 3D の描き手 Render3d.WebGpuRenderer の持ち物）。encoder と notePass = 2D の描き手から借りる encoder と、pass を積んだ知らせ・
@@ -53,11 +54,13 @@ mod Render3d.WebGpuShadows {
     /// vertexModule と skinnedModule = 頂点の色の頂点シェーダー（骨の無い版と骨つきの版）・emptyLayout と emptyGroup = 空の group 1・poseLayout = group 2 の layout・
     /// created = 描き先を作った知らせ（診断の数）・unbound = 付けられずに飛ばした行の物の数の知らせ・
     /// carried = 場面の持ち越した集まりの影の地図の行を流す関数（pass, 地図の鍵の字, 地図の group 0, 行を積む関数 (積み先, 行, 1 体ごとの値の buffer)）（Render3d.WebGpuStatic.shadowRunnerOf）。
+    /// stamp = 開く pass の GPU の時間を区間として測る関数（Render3d.WebGpuRenderer.Host#stamp）。
     pub type alias ShadowDraw = {
-        encoder = CommandEncoder, notePass = Unit -> Unit \ IO, meshStore = MeshStore, instances = Buffer, instanceBase = Int32, poseGroup = Option[BindGroup],
+        encoder = CommandEncoder, notePass = Unit -> Unit \ IO, stamp = (RenderPassDesc, String) -> Unit \ IO, meshStore = MeshStore, instances = Buffer, instanceBase = Int32, poseGroup = Option[BindGroup],
         vertexModule = ShaderModule, skinnedModule = ShaderModule, emptyLayout = BindGroupLayout, emptyGroup = BindGroup, poseLayout = BindGroupLayout,
         created = Unit -> Unit \ IO, unbound = Int32 -> Unit \ IO,
-        carried = List[(RenderPass, String, BindGroup, (RenderCommands, SceneList, Buffer) -> Unit \ IO) -> Unit \ IO],
+        carried = List[(RenderPass, String, BindGroup, (RenderCommands, SceneList, Buffer) -> Unit \ IO) -> Unit \ IO], carriedKey = String,
+        noteCache = Bool -> Unit \ IO,
         billboard = (RenderCommands, SceneList, Int32, Int32, Bool) -> Bool \ IO
     }
 
@@ -73,13 +76,15 @@ mod Render3d.WebGpuShadows {
         discard layoutDesc.buffer(5, ShaderStage.VERTEX, BufferBindingType.UNIFORM);
         { gpu = gpu, table = Render3d.ShadowMaps.fresh(), targets = Ref.fresh(Static, Map.empty()), layout = gpu.createBindGroupLayout(layoutDesc),
           pipelines = Ref.fresh(Static, Map.empty()), written = Ref.fresh(Static, Set.empty()),
-          cpuCamera = ByteBuffer.allocateDirect(Render3dWgsl.cameraBytes()).order(ByteOrder.LITTLE_ENDIAN) }
+          cpuCamera = ByteBuffer.allocateDirect(Render3dWgsl.cameraBytes()).order(ByteOrder.LITTLE_ENDIAN),
+          cache = Render3d.WebGpuShadowCache.create(gpu) }
 
     /// device の上に作った物を全部手放す。この後 sh は使えない。
     pub def release(sh: Shadows): Unit \ IO =
         Render3d.ShadowMaps.release(sh#table, allocatorOf(sh, () -> checked_ecast(())));
         Map.forEach((_, p) -> p.release(), Ref.get(sh#pipelines));
         Ref.put(Map.empty(), sh#pipelines);
+        Render3d.WebGpuShadowCache.release(sh#cache);
         sh#layout.release()
 
     /// group 0（光の目）の layout（ビルボードの影の地図の pipeline も同じ layout で作る）。
@@ -96,7 +101,9 @@ mod Render3d.WebGpuShadows {
         List.exists(p -> Set.memberOf(p#map#key, written), passes)
 
     /// 使わなくなった描き先を捨て、捨てた数を返す（画面のコマを submit した後に 1 回）。
-    pub def endFrame(sh: Shadows, gen: Int64): Int32 \ IO = Render3d.ShadowMaps.sweep(sh#table, allocatorOf(sh, () -> checked_ecast(())), gen)
+    pub def endFrame(sh: Shadows, gen: Int64): Int32 \ IO =
+        Render3d.WebGpuShadowCache.endFrame(sh#cache);
+        Render3d.ShadowMaps.sweep(sh#table, allocatorOf(sh, () -> checked_ecast(())), gen)
 
     /// 鍵 key の描き先の深度の view（作っていなければ None）。
     pub def viewOf(sh: Shadows, key: Key): Option[TextureView] \ IO = Map.get(key, Ref.get(sh#targets)) |> Option.map(t -> t#depth.defaultView())
@@ -163,24 +170,56 @@ mod Render3d.WebGpuShadows {
                 case None    => (0, 0, target#width, target#height)
                 case Some(t) => { let (x, y, size) = tileViewportOf(target#height, t); (x, y, size, size) }
             };
-            let desc = new RenderPassDesc("fge scene3d shadow map");
-            if (first) discard desc.clearDepth(target#depth.defaultView(), 1.0) else discard desc.loadDepthStencil(target#depth.defaultView(), false);
-            let rp = draw#encoder.beginRenderPass(desc);
-            draw#notePass();
-            rp.setViewport(Int32.toFloat64(vx), Int32.toFloat64(vy), Int32.toFloat64(vw), Int32.toFloat64(vh), 0.0, 1.0);
-            rp.setScissorRect(vx, vy, vw, vh);
-            rp.setBindGroup(0, group);
-            Option.forEach(g -> rp.setBindGroup(2, g), draw#poseGroup);
-            rp.setVertexBuffer(1, draw#instances, 0i64, draw#instances.size());
-            drawRows(checked_cast(rp), draw#meshStore, drawerOf(sh, draw, staged#valuesBase, pass#rightPerBillboard), pass#list, draw#instanceBase);
+            let skipped = Render3d.GpuSpans.skipsShadowDraws();
             let drawCarried = (commands: RenderCommands, list: SceneList, instances: Buffer) -> {
                 commands.setVertexBuffer(1, instances, 0i64, instances.size());
                 drawRows(commands, draw#meshStore, drawerOf(sh, draw, -1, false), list, 0)
             };
             let bundleKey = ToString.toString(key) + (pass#map#tile |> Option.map(t -> ":${t#x}:${t#y}") |> Option.getWithDefault(""));
-            draw#carried |> List.forEach(runCarried -> runCarried(rp, bundleKey, group, drawCarried));
+            let statics = (rp: RenderPass) -> draw#carried |> List.forEach(runCarried -> runCarried(rp, bundleKey, group, drawCarried));
+            let cached = if (skipped) None else cacheOf(sh, gen, draw, pass);
+            cached |> Option.forEach(match (entry, made) -> if (made) drawStatics(draw, entry, group, statics) else ());
+            let desc = new RenderPassDesc("fge scene3d shadow map");
+            if (first) discard desc.clearDepth(target#depth.defaultView(), 1.0) else discard desc.loadDepthStencil(target#depth.defaultView(), false);
+            draw#stamp(desc, Render3d.GpuSpans.shadowSpanOf(pass#map#sampling));
+            let rp = draw#encoder.beginRenderPass(desc);
+            draw#notePass();
+            rp.setViewport(Int32.toFloat64(vx), Int32.toFloat64(vy), Int32.toFloat64(vw), Int32.toFloat64(vh), 0.0, 1.0);
+            rp.setScissorRect(vx, vy, vw, vh);
+            cached |> Option.forEach(match (entry, _) -> Render3d.WebGpuShadowCache.copyInto(sh#cache, entry, rp, vx, vy, depthFormat()));
+            rp.setBindGroup(0, group);
+            Option.forEach(g -> rp.setBindGroup(2, g), draw#poseGroup);
+            rp.setVertexBuffer(1, draw#instances, 0i64, draw#instances.size());
+            if (skipped) () else drawRows(checked_cast(rp), draw#meshStore, drawerOf(sh, draw, staged#valuesBase, pass#rightPerBillboard), pass#list, draw#instanceBase);
+            if (skipped or Option.nonEmpty(cached)) () else statics(rp);
             rp.end()
         })
+
+    /// 場面に持ち越した集まりがあれば、pass の地図（atlas は面）の動かない物だけの控えと、今作ったか（作った控えは中身が無い）。
+    /// 集まりが無い場面と、試しの旗 FLIX_GE_SHADOW_CACHE=off の時は None（毎コマ集まりも描く）。
+    def cacheOf(sh: Shadows, gen: Int64, draw: ShadowDraw, pass: ShadowPass): Option[(Render3d.WebGpuShadowCache.Entry, Bool)] \ IO =
+        if (List.isEmpty(draw#carried) or Render3d.GpuSpans.isShadowCacheOff()) None
+        else {
+            let size = Render3d.ShadowMaps.cacheSizeOf(pass);
+            let found = Render3d.WebGpuShadowCache.ensure(sh#cache, gen, Render3d.ShadowMaps.cacheKeyOf(size, pass, draw#carriedKey), size, depthFormat());
+            draw#noteCache(snd(found));
+            Some(found)
+        }
+
+    /// 控え entry へ動かない物だけを描く pass を積む（深度を 1 で消し、控えの全体を viewport にする。光の目は地図と同じ group 0）。
+    def drawStatics(draw: ShadowDraw, entry: Render3d.WebGpuShadowCache.Entry, group: BindGroup, statics: RenderPass -> Unit \ IO): Unit \ IO =
+        let depth = Render3d.WebGpuShadowCache.depthOf(entry);
+        let size = depth.width();
+        let desc = new RenderPassDesc("fge scene3d shadow cache");
+        discard desc.clearDepth(depth.defaultView(), 1.0);
+        draw#stamp(desc, "shadow:cache");
+        let rp = draw#encoder.beginRenderPass(desc);
+        draw#notePass();
+        rp.setViewport(0.0, 0.0, Int32.toFloat64(size), Int32.toFloat64(size), 0.0, 1.0);
+        rp.setScissorRect(0, 0, size, size);
+        rp.setBindGroup(0, group);
+        statics(rp);
+        rp.end()
 
     /// 変種の場面の R3dLight の値（Render3d.UniformLayout.lightFields の並び）を buf へ詰める: samplings の点光源の影の atlas の値（無ければ全部の slot が −1）と
     /// 場面の 1 / unitsPerMeter²（GL の Render3d.Shadow.putPointShadow と Render3d.Light.putLights が渡す値と同じ）。

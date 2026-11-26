@@ -518,6 +518,20 @@ World に写し、`FrameDiagnostics.summaryLines(d)` をゲームの字の部品
 毎コマの値が要る時（GPU のスパイクを 1 コマずつ追う時）は `FLIX_GE_GPU_TIMER_EVERY=1` で起動する（数は何コマに 1 回か）。
 測るコマは他のコマより長いので、`frame_p99` のような端の値には測るコマが混ざる。CPU の ms を比べる時は診断を付けない回（ベンチの `DIAG=0`）を基準にする。
 
+**3D の中の pass ごとの GPU の時間**: `gpuPasses` には描き先（Pass の名前・`screen`）に加え、3D の描き手の中の区間が入る:
+`shadow:sun`・`shadow:spot`・`shadow:point`（影の地図。点光源の atlas は面ごとの pass を足した値）・`shadow:cache`（動かない物だけの控えを描き直した分・WebGPU だけ）・
+`scene3d`・`scene3d:depth`（場面の色の pass・奥行きの書き出し）。GL では描き先の query をそこで閉じて区間を測り、描き先の名前で開き直すので、描き先の時間は中の区間を引いた残り。
+- **WebGPU（PC のウィンドウの既定）は `FLIX_GE_GPU_TIMER=1` を置いた時だけ測る**（timestamp-query の `timestampWrites`）。読み戻し（Dawn の mapAsync を待つ形）はそれまでの仕事を GPU が終えるまで返らず、
+  測るコマが長くなる。1 コマの時間を比べる回はこれを置かずに流し、pass ごとの内訳を見る回だけ置く。ブラウザでは測らない（`gpuNs` は None）。
+- タイル型の GPU（M 系・Mali）は次の pass を前の pass の終わりを待たずに始めるので、WebGPU の pass の時間は「前の pass の終わりから自分の終わりまで」で数える（重なった分は先の pass に入る・`GpuTimer.exclusiveTimes`）。
+  Chrome の timestamp は 100 µs に丸められる。
+- `FLIX_GE_FRAME_STATS=1` の行の末尾に、その行の間に読めた GPU の時間の中央値（全体と区間ごと）が出る（例 `GPU 26.0ms（shadow:point 12.1, scene3d 12.3, …・38 回）`）。
+- 送る時間と塗る時間を分ける試しの旗: `FLIX_GE_SKIP_3D_DRAWS=shadow|color|all`（その pass を開いて閉じるだけにして draw を積まない・絵は欠ける）と
+  `FLIX_GE_WINDOW_SIZE=<幅>x<高さ>`（ウィンドウの大きさを替えて描き先の画素の数を変える・design は替えない）。draw を飛ばして 1 コマが縮めば命令を積む分、
+  画素を 1/4 にして縮めば GPU の塗りの分。
+- 影の地図の控え（staticGroup の物だけを描いた深度を控え、毎コマ写して動く物だけを上に描く）の効き目は `scene3dCounts` の `shadowMapsReused`・`shadowMapsRedrawn` と、
+  `FLIX_GE_SHADOW_CACHE=off`（控えずに毎コマ描く）との比べで見る。
+
 ### draw call がまとまらない時の読み方（draw2dCounts・scene3dCounts#batchBreaks）
 
 描き手は、続けて来た同じ状態の物を 1 つの draw call にまとめる。まとまらなかった所は、理由ごとに数えて診断に出る

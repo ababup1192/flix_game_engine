@@ -30,10 +30,10 @@ mod Render3d.WebGpuStatic {
     /// 持ち越した集まり 1 つを GPU に置いた物。rows = 前半の行・programs = 行の欄 1 が引く材質の program・instances = 1 体ごとの値の buffer（頭から）・
     /// values = 材質の値の buffer（rows#list#values を頭から）・textureRows = 毎コマ材質の絵を使った物にする行（値を分け合わない材質の行）・
     /// bundles = 積んだ bundle（鍵 = 描き先・形式・標本・pass の字）・litCounts と shadowCounts = 色の pass の行と影の地図の行の診断の数（作った時に 1 回数える）・
-    /// textureHandles = 行が読む材質の絵の表の番号（作った時に 1 回集める）。
+    /// textureHandles = 行が読む材質の絵の表の番号（作った時に 1 回集める）・serial = 置いた時の通し番号（影の地図の控えの鍵）。
     pub type alias Carried = {
         rows = CarriedRows, programs = Vector[Option[WebGpuMaterials.Program]], instances = Buffer, values = Buffer, textureRows = Vector[Int32],
-        bundles = Ref[Map[String, Bundle], Static], litCounts = RowCounts, shadowCounts = RowCounts, textureHandles = Set[Int32]
+        bundles = Ref[Map[String, Bundle], Static], litCounts = RowCounts, shadowCounts = RowCounts, textureHandles = Set[Int32], serial = Int64
     }
 
     /// 行の診断の数。counts = Render3d.Counts の入れ物と同じ並びの足す数・drawn = 描く物の数。
@@ -53,10 +53,10 @@ mod Render3d.WebGpuStatic {
     /// groups = 積んだ行の group 1（bundle と一緒に手放す）・lastUsed = 最後に流したコマの世代（要素 1 つ）。
     pub type alias Bundle = { bundle = RenderBundle, group = BindGroup, epoch = Int64, groups = List[BindGroup], lastUsed = Array[Int64, Static] }
 
-    /// 状態。cache = 集まりの持ち越しの控え・retired = コマを締めた後に手放す物・recorded = bundle を積んだ回数（要素 1 つ・テストが使い回しを見る）。
-    pub type alias StaticCache = { cache = StaticRows.Cache[Carried], retired = Ref[List[Unit -> Unit \ IO], Static], recorded = Array[Int32, Static] }
+    /// 状態。cache = 集まりの持ち越しの控え・retired = コマを締めた後に手放す物・recorded = bundle を積んだ回数（要素 1 つ・テストが使い回しを見る）・placed = 置いた集まりの数。
+    pub type alias StaticCache = { cache = StaticRows.Cache[Carried], retired = Ref[List[Unit -> Unit \ IO], Static], recorded = Array[Int32, Static], placed = Array[Int64, Static] }
 
-    pub def fresh(): StaticCache \ IO = { cache = StaticRows.freshCache(), retired = Ref.fresh(Static, Nil), recorded = Array#{0} @ Static }
+    pub def fresh(): StaticCache \ IO = { cache = StaticRows.freshCache(), retired = Ref.fresh(Static, Nil), recorded = Array#{0} @ Static, placed = Array#{0i64} @ Static }
 
     /// 集まりの行を作る材料（どれも 3D の描き手の持ち物）。tables = 前半の行の番号を振る表・allocator = 形を作る関数の組・
     /// noteBuild = 材質の program を初めて組んだ知らせ・sourceOf = 場面の材質の絵の引き先・registered = 登録の絵の引き先。
@@ -107,7 +107,7 @@ mod Render3d.WebGpuStatic {
         { tables = b#tables, resolve = resolve,
           prepareMesh = mesh -> discard MeshTable.ensure(b#tables#meshes, b#allocator, b#tables#gen, mesh),
           prepareMaterial = request -> discard WebGpuMaterials.programsFor(b#materials, b#noteBuild, Vector#{request}),
-          place = rows -> placeCarried(b, Ref.get(programs), rows),
+          place = rows -> placeCarried(b, nextSerial(st), Ref.get(programs), rows),
           uploadCount = c -> Vector.length(c#textureRows),
           uploadAt = (c, k) -> {
               keepOnce(c);
@@ -116,7 +116,7 @@ mod Render3d.WebGpuStatic {
           retire = retire(st) }
 
     /// 作った行 rows を GPU に置く（形を作り、1 体ごとの値と材質の値の buffer を作って書く）。programs = 行の欄 1 が引く材質の program。
-    def placeCarried(b: Builder, programs: Vector[Option[WebGpuMaterials.Program]], rows: StaticRows.CarriedRows): Carried \ IO =
+    def placeCarried(b: Builder, serial: Int64, programs: Vector[Option[WebGpuMaterials.Program]], rows: StaticRows.CarriedRows): Carried \ IO =
         uploadRows(b#tables#meshes, b#allocator, b#tables#gen, rows#list);
         uploadRows(b#tables#meshes, b#allocator, b#tables#gen, rows#shadowList);
         let instanceBytes = rows#instanceCount * Render3dWgsl.instanceBytes();
@@ -125,7 +125,13 @@ mod Render3d.WebGpuStatic {
         if (instanceBytes > 0) b#gpu.writeBuffer(instances, 0i64, rows#instances, 0, instanceBytes) else ();
         { rows = rows, programs = programs, instances = instances, values = WebGpuMaterials.createValuesOf(b#materials, "fge scene3d static values", rows#list#values),
           textureRows = ownBindingRows(rows#list), bundles = Ref.fresh(Static, Map.empty()), litCounts = rowCountsOf(rows#list), shadowCounts = rowCountsOf(rows#shadowList),
-          textureHandles = Set.union(textureHandlesOf(rows#list), textureHandlesOf(rows#shadowList)) }
+          textureHandles = Set.union(textureHandlesOf(rows#list), textureHandlesOf(rows#shadowList)), serial = serial }
+
+    /// 置いた集まりの通し番号（作り直すたびに増える）。
+    def nextSerial(st: StaticCache): Int64 \ IO =
+        let n = Array.get(0, st#placed) + 1i64;
+        Array.put(n, 0, st#placed);
+        n
 
     /// 行の並び list の材質の絵の表の番号（絵の組の欄 0・無い絵の -1 は除く）。
     def textureHandlesOf(list: SceneList): Set[Int32] \ IO =
@@ -245,6 +251,10 @@ mod Render3d.WebGpuStatic {
 
     /// bundle を積んだ回数。
     pub def recordedCountOf(st: StaticCache): Int32 \ IO = Array.get(0, st#recorded)
+
+    /// 持ち越した物の並び cs の識別（影の地図の控えの鍵 Render3d.ShadowMaps.cacheKeyOf の一部）。集まりを作り直すと 1 体ごとの値の buffer が替わり、字も替わる。
+    pub def keyOfCarried(cs: List[Carried]): String \ IO =
+        cs |> List.map(c -> Int64.toString(c#serial)) |> String.intercalate("+")
 
     /// 持ち越した物 c の影の地図の行を、地図の鍵 key ごとの bundle で流す関数（Render3d.WebGpuShadows.ShadowDraw の carried）。
     /// 渡される drawWith(積み先, 行, 1 体ごとの値の buffer) が行を積む。

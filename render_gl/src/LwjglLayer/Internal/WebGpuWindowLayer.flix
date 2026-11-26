@@ -231,9 +231,9 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
         // 読み込みの間は画面の垂直同期を待たない（GL の枝の glfwSwapInterval(0) と同じ所）。
         let presentMode = Ref.fresh(Static, PresentMode.IMMEDIATE);
         Option.forEach(s -> Ref.put(configureSurface(gpu, s, opened#format, fbSize, PresentMode.IMMEDIATE, warnedImmediate), presentMode), opened#surface);
-        let paint = WebGpuPaint.create(gpu, { designWidth = config#designWidth, designHeight = config#designHeight,
+        let paint = WebGpuPaint.withGpuTimer(WebGpuPaint.create(gpu, { designWidth = config#designWidth, designHeight = config#designHeight,
                                               clearColor = config#clearColor, width = fst(fbSize), height = snd(fbSize),
-                                              scene3d = Render3d.WebGpuRenderer.makeScenes });
+                                              scene3d = Render3d.WebGpuRenderer.makeScenes }));
         let frameStats = if (env#frameStats) Some(RenderFrameStats.fresh()) else None;
         let present = { gpu = gpu, paint = paint, opened = opened, size = sizeHolder, presentMode = presentMode, frameStats = frameStats,
                         frameShotDir = env#frameShotDir, frameShotTaken = Array#{0} @ Static, screenPainted = Ref.fresh(Static, None),
@@ -349,7 +349,7 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
                 Ref.put(None, ps#screenPainted);
                 discard showOnScreen(ps);
                 Option.forEach(stats -> RenderFrameStats.record(stats, paintFrom, paintTo, counts,
-                                                                () -> submitsText(WebGpuPaint.takeSubmitCounts(ps#paint))), ps#frameStats);
+                                                                () -> submitsText(WebGpuPaint.takeSubmitCounts(ps#paint)) + GpuTimer.samplesText(WebGpuPaint.takeGpuSamples(ps#paint))), ps#frameStats);
                 noteNewErrors(ps);
                 frameShot(ps)
         }

@@ -26,8 +26,8 @@ mod Scene3dRenderer {
     pub type alias Viewport = { x = Int32, y = Int32, width = Int32, height = Int32, scaleX = Float64, scaleY = Float64 }
 
     /// 3D の場面を描く描き先。framebuffer = 描き終えた後に戻す FBO（今開いているレンダーターゲットの描く FBO か画面）・
-    /// format = その形式・samples = その標本の数（1 なら MSAA なし）。
-    pub type alias Dest = { framebuffer = Int32, format = RenderTarget.Format, samples = Int32 }
+    /// format = その形式・samples = その標本の数（1 なら MSAA なし）・measure(name, f) = f の GPU の時間を区間 name として測る（診断を集めていない間は f だけ呼ぶ）。
+    pub type alias Dest = { framebuffer = Int32, format = RenderTarget.Format, samples = Int32, measure = (String, Unit -> Unit \ IO) -> Unit \ IO }
 
     /// 2D の絵の登録にある絵（ビルボードと 3D の材質が貼る）。flipped = レンダーターゲット（行 0 が下）で、v を上下反転して読む。
     /// version = 中身の版（実行中に画素を差し替えた絵は字が変わる。3D の材質が mip を作り直す合図）。

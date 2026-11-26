@@ -106,6 +106,25 @@ mod LwjglEnv {
         case _                                        => Err("<幅>x<高さ> の数として読めない（例 390x844）")
     }
 
+    /// FLIX_GE_WINDOW_SIZE の字（"<幅>x<高さ>"・ウィンドウの点の数）があれば、config のウィンドウの大きさをそれに替える（design は替えない）。
+    /// 描き先の画素の数を変えて GPU の塗りの分を見る試しの旗（docs/performance.md の §11）。読めない字は無視して 1 行言う。
+    pub def withWindowSize(text: Option[String], config: GameEngine.EngineConfig): GameEngine.EngineConfig \ IO =
+        let wanted = text |> Option.filter(t -> String.trim(t) != "");
+        match (wanted, wanted |> Option.flatMap(windowSizeOf)) {
+            case (_, Some((w, h))) => { windowWidth = w, windowHeight = h | config }
+            case (Some(t), None)   =>
+                checked_ecast(Log.fellBack("lwjgl", "FLIX_GE_WINDOW_SIZE=${t}", "project.json のウィンドウの大きさ", "<幅>x<高さ>（例 960x540）を書く"));
+                config
+            case (None, None)      => config
+        }
+
+    /// "<幅>x<高さ>" を正の 2 つの数にする（読めなければ None）。
+    pub def windowSizeOf(text: String): Option[(Int32, Int32)] =
+        match String.splitOn({ substr = "x" }, String.trim(text)) |> List.map(s -> Int32.fromString(String.trim(s))) {
+            case Some(w) :: Some(h) :: Nil if w > 0 and h > 0 => Some((w, h))
+            case _ => None
+        }
+
     /// 1 コマの dt（秒）。fixedDt があれば実時間（elapsedNanos）の代わりにそれを使う。どちらも maxDt で切る（Platform.FrameClock.getDeltaTime の約束）。
     // WhyNot: dt の計算を LwjglLayer の handler の中に書かない — 固定と実時間の分かれ目をテストで固定したい。
     pub def frameDt(fixedDt: Option[Float64], maxDt: Float64, elapsedNanos: Int64): Float64 =

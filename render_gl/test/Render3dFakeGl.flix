@@ -188,10 +188,10 @@ mod Render3d.FakeGl {
         { position = Vec3.v3(0.0, 5.0, 0.0), target = Vec3.zero(), fovY = 1.0, innerFovY = None, color = { r = 1.0, g = 1.0, b = 1.0 },
           intensity = 1.0, range = 40.0, shadow = Some({ mapSize = 64, bias = 0.001, pcfRadius = 0, strength = 1.0 }) }
 
-    pub def dest(): Scene3dRenderer.Dest = { framebuffer = 0, format = RenderTarget.Format.Rgba8Unorm, samples = 1 }
+    pub def dest(): Scene3dRenderer.Dest = { framebuffer = 0, format = RenderTarget.Format.Rgba8Unorm, samples = 1, measure = (_, f) -> f() }
 
     /// HDR の Pass の中で準備する時の描き先。
-    pub def passDest(): Scene3dRenderer.Dest = { framebuffer = 7, format = RenderTarget.Format.Rgba16Float, samples = 4 }
+    pub def passDest(): Scene3dRenderer.Dest = { framebuffer = 7, format = RenderTarget.Format.Rgba16Float, samples = 4, measure = (_, f) -> f() }
 
     pub def noTexture(_name: String): Option[Scene3dRenderer.RegisteredTexture] \ IO = checked_ecast(None)
 

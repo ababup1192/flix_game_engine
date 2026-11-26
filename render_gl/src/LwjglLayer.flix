@@ -266,7 +266,9 @@ pub mod LwjglLayer {
     pub def withProject(rootDir: String, f: Unit -> a \ ef):
             a \ ef - Platform.Services - Platform.Annotation - LoadProgress + IO + Fs.FileRead =
         match ProjectLoader.loadProject(rootDir) {
-            case Ok(proj)  => withLwjgl(bootConfigOf(proj, LwjglEnv.fromMap(LwjglEnv.snapshot())#portraitView), f)
+            case Ok(proj)  =>
+                let env = LwjglEnv.snapshot();
+                withLwjgl(LwjglEnv.withWindowSize(Map.get("FLIX_GE_WINDOW_SIZE", env), bootConfigOf(proj, LwjglEnv.fromMap(env)#portraitView)), f)
             case Err(msg) => bug!("Failed to load project.json: ${msg}")
         }
 
@@ -753,7 +755,7 @@ pub mod LwjglLayer {
                 Ref.put(None, ws#screenPainted);
                 let swapFrom = System.nanoTime();
                 let (fbW, fbH) = Array.get(0, ws#framebufferSize);
-                Option.forEach(stats -> RenderFrameStats.record(stats, paintFrom, paintTo, () -> RenderPaint.lastDraw2dCounts(ws#paint), () -> ""), ws#frameStats);
+                Option.forEach(stats -> RenderFrameStats.record(stats, paintFrom, paintTo, () -> RenderPaint.lastDraw2dCounts(ws#paint), () -> GpuTimer.samplesText(ws#paint#gpuTimer#takeSamples())), ws#frameStats);
                 frameShot(ws#frameShotDir, fbW, fbH, ws#frameShotTaken);
                 GLFW.glfwSwapBuffers(ws#window);
                 if (ws#finishAfterSwap) GL11.glFinish() else ();

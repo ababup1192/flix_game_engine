@@ -17,7 +17,8 @@ mod Render3d.Counts {
     /// 数える物。並びは countsHolder の添え字（slotOf）。
     pub enum Counter {
         case Instances, Drawn, DrawCalls, DroppedPointLights, DroppedSpotLights,
-             MeshUploads, MeshEvictions, Texture3dUploads, MipCopies, JointUploads, TargetRebuilds, BillboardRuns, BillboardImages
+             MeshUploads, MeshEvictions, Texture3dUploads, MipCopies, JointUploads, TargetRebuilds, BillboardRuns, BillboardImages,
+             ShadowMapsReused, ShadowMapsRedrawn
     }
 
     /// draw call が分かれた理由（FrameDiagnostics.Scene3dBatchBreaks の欄）。並びは countsHolder の添え字（breakSlotOf）。
@@ -56,10 +57,12 @@ mod Render3d.Counts {
         case Counter.TargetRebuilds     => 10
         case Counter.BillboardRuns      => 19
         case Counter.BillboardImages    => 20
+        case Counter.ShadowMapsReused   => 21
+        case Counter.ShadowMapsRedrawn  => 22
     }
 
     /// countsHolder の長さ。
-    pub def counterSlots(): Int32 = 21
+    pub def counterSlots(): Int32 = 23
 
     def phaseSlotOf(p: Phase): Int32 = match p {
         case Phase.Shadows  => 0
@@ -118,12 +121,17 @@ mod Render3d.Counts {
             batchBreaks = { shadowPass = breakAt(BatchBreak.ShadowPass), billboard = breakAt(BatchBreak.Billboard), sky = breakAt(BatchBreak.Sky),
                             transparent = breakAt(BatchBreak.Transparent), lightmap = breakAt(BatchBreak.Lightmap), skinned = breakAt(BatchBreak.Skinned),
                             material = breakAt(BatchBreak.Material), mesh = breakAt(BatchBreak.Mesh) },
-            billboardRuns = at(Counter.BillboardRuns), billboardImages = at(Counter.BillboardImages)
+            billboardRuns = at(Counter.BillboardRuns), billboardImages = at(Counter.BillboardImages),
+            shadowMapsReused = at(Counter.ShadowMapsReused), shadowMapsRedrawn = at(Counter.ShadowMapsRedrawn)
         };
         Ref.put(Nil, state#materialBuildsRef);
         List.range(0, Array.length(h)) |> List.forEach(i -> Array.put(0, i, h));
         List.range(0, Array.length(ns)) |> List.forEach(i -> Array.put(0i64, i, ns));
         counts
+
+    /// 影の地図（atlas は面）の動かない物の控えを使い回したか（made が偽）、描き直したか（made が真）を 1 つ数える。
+    pub def noteShadowCache(state: { countsHolder = Array[Int32, Static] | r }, made: Bool): Unit \ IO =
+        count(state, if (made) Counter.ShadowMapsRedrawn else Counter.ShadowMapsReused, 1)
 
     /// 場面の置いた物 placed 個と、そのうち視錐台の外で間引かずに描いた drawn 個を数える。
     pub def countInstances(state: { countsHolder = Array[Int32, Static] | r }, placed: Int32, drawn: Int32): Unit \ IO =
