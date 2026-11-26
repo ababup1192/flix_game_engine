@@ -28,29 +28,24 @@ mod Render3d.WebGpuShadowCache {
     import fge.webgpu.WebGpu
     import java.nio.ByteBuffer
     import java.nio.ByteOrder
+    use Render3d.ShadowCacheTable
 
-    /// 控え 1 つ。depth = 動かない物だけの深度・size = 一辺の画素・origin = 写す先の原点を書く buffer・group = 写す三角形の group 0・lastUsed = 最後に使った世代。
-    pub type alias Entry = { depth = Texture, size = Int32, origin = Buffer, group = BindGroup, lastUsed = Ref[Int64, Static] }
+    /// 控え 1 つ。depth = 動かない物だけの深度・size = 一辺の画素・origin = 写す先の原点を書く buffer・group = 写す三角形の group 0。
+    pub type alias Entry = { depth = Texture, size = Int32, origin = Buffer, group = BindGroup }
 
-    /// 状態。entries = 鍵 → 控え・retired = コマを締めた後に手放す控え・usedThisFrame = 今のコマに使った控えの数（残す数の目安）・
-    /// layout・pipeline = 写す三角形の物（初めて写す時に作る）・cpuOrigin = 原点を詰める入れ物・
-    /// redrawnThisFrame = 今のコマに描き直したか・missStreak と missWarned = 描き直しが続いた数と知らせたか（Render3d.ShadowMaps.noteCacheMisses）。
+    /// 状態。table = 鍵 → 控えの表と描き直しの数え（Render3d.ShadowCacheTable）・retired = コマを締めた後に手放す控え・
+    /// layout・pipeline = 写す三角形の物（初めて写す時に作る）・cpuOrigin = 原点を詰める入れ物。
     pub type alias Cache = {
-        gpu = WebGpu, entries = Ref[Map[String, Entry], Static], retired = Ref[List[Entry], Static], usedThisFrame = Ref[Int32, Static],
-        layout = BindGroupLayout, module = ShaderModule, pipeline = Ref[Option[RenderPipeline], Static], cpuOrigin = ByteBuffer,
-        redrawnThisFrame = Ref[Bool, Static], missStreak = Ref[Int32, Static], missWarned = Ref[Bool, Static]
+        gpu = WebGpu, table = ShadowCacheTable.Table[Entry], retired = Ref[List[Entry], Static],
+        layout = BindGroupLayout, module = ShaderModule, pipeline = Ref[Option[RenderPipeline], Static], cpuOrigin = ByteBuffer
     }
-
-    /// 控えを残す数の下限（点光源 2 本の 6 面と太陽が入る）。
-    def minKept(): Int32 = 16
 
     pub def create(gpu: WebGpu): Cache \ IO =
         let layoutDesc = new BindGroupLayoutDesc("fge scene3d shadow cache");
         discard layoutDesc.texture(0, ShaderStage.FRAGMENT, TextureSampleType.DEPTH).buffer(1, ShaderStage.FRAGMENT, BufferBindingType.UNIFORM);
-        { gpu = gpu, entries = Ref.fresh(Static, Map.empty()), retired = Ref.fresh(Static, Nil), usedThisFrame = Ref.fresh(Static, 0),
+        { gpu = gpu, table = ShadowCacheTable.fresh(), retired = Ref.fresh(Static, Nil),
           layout = gpu.createBindGroupLayout(layoutDesc), module = gpu.createShaderModule("fge scene3d shadow cache", copyWgsl()),
-          pipeline = Ref.fresh(Static, None), cpuOrigin = ByteBuffer.allocateDirect(16).order(ByteOrder.LITTLE_ENDIAN),
-          redrawnThisFrame = Ref.fresh(Static, false), missStreak = Ref.fresh(Static, 0), missWarned = Ref.fresh(Static, false) }
+          pipeline = Ref.fresh(Static, None), cpuOrigin = ByteBuffer.allocateDirect(16).order(ByteOrder.LITTLE_ENDIAN) }
 
     /// 写す三角形の WGSL。描き先の画素の位置から原点を引いた所の控えの深度を、そのまま frag_depth に書く。
     def copyWgsl(): String =
@@ -67,27 +62,17 @@ mod Render3d.WebGpuShadowCache {
 
     /// 鍵 key・一辺 size の控え（無ければ作る）と、今作ったか。作った控えは中身が無いので、呼ぶ側が動かない物を描く。
     pub def ensure(c: Cache, gen: Int64, key: String, size: Int32, depthFormat: TextureFormat): (Entry, Bool) \ IO =
-        Ref.put(Ref.get(c#usedThisFrame) + 1, c#usedThisFrame);
-        match Map.get(key, Ref.get(c#entries)) {
-            case Some(e) =>
-                Ref.put(gen, e#lastUsed);
-                (e, false)
-            case None =>
-                Ref.put(true, c#redrawnThisFrame);
-                let made = createEntry(c, gen, size, depthFormat);
-                Ref.put(Map.insert(key, made, Ref.get(c#entries)), c#entries);
-                (made, true)
-        }
+        ShadowCacheTable.ensure(c#table, gen, key, () -> createEntry(c, size, depthFormat))
 
     /// 控え e の深度の texture（動かない物を描く pass の描き先）。
     pub def depthOf(e: Entry): Texture = e#depth
 
-    def createEntry(c: Cache, gen: Int64, size: Int32, depthFormat: TextureFormat): Entry \ IO =
+    def createEntry(c: Cache, size: Int32, depthFormat: TextureFormat): Entry \ IO =
         let depth = c#gpu.createTexture("fge scene3d shadow cache", size, size, depthFormat, Int32.bitwiseOr(TextureUsage.RENDER_ATTACHMENT, TextureUsage.TEXTURE_BINDING), 1, 1);
         let origin = c#gpu.createBuffer("fge scene3d shadow cache origin", 16i64, Int32.bitwiseOr(BufferUsage.UNIFORM, BufferUsage.COPY_DST));
         let desc = new BindGroupDesc("fge scene3d shadow cache", c#layout);
         discard desc.textureView(0, depth.defaultView()).buffer(1, origin, 0i64, 16i64);
-        { depth = depth, size = size, origin = origin, group = c#gpu.createBindGroup(desc), lastUsed = Ref.fresh(Static, gen) }
+        { depth = depth, size = size, origin = origin, group = c#gpu.createBindGroup(desc) }
 
     /// 開いている影の地図の pass rp の、今の viewport（原点 (x, y)・WebGPU の左上が原点）へ控え e を写す。pass の group 0 と pipeline は付け直す事。
     pub def copyInto(c: Cache, e: Entry, rp: RenderPass, x: Int32, y: Int32, depthFormat: TextureFormat): Unit \ IO =
@@ -110,24 +95,11 @@ mod Render3d.WebGpuShadowCache {
                 made
         }
 
-    /// 画面のコマを submit した後に 1 回: 前のコマで手放すと決めた控えを手放し、使った数の 2 倍（下限 minKept()）を超える控えを、古く使った物から手放す物に回す。
+    /// 画面のコマを submit した後に 1 回: 前のコマで手放すと決めた控えを手放し、残す数（Render3d.ShadowCacheTable.endFrame）を超える控えを、古く使った物から手放す物に回す。
     // WhyNot: 超えた控えをその場で手放さない — 同じコマの後の場面の pass がまだ submit されずに読んでいる事がある（Render3d.WebGpuStatic と同じ）。
     pub def endFrame(c: Cache): Unit \ IO =
         Ref.get(c#retired) |> List.forEach(destroyEntry);
-        Ref.put(Nil, c#retired);
-        if (Ref.get(c#usedThisFrame) > 0) Render3d.ShadowMaps.noteCacheMisses(c#missStreak, c#missWarned, Ref.get(c#redrawnThisFrame)) else ();
-        Ref.put(false, c#redrawnThisFrame);
-        let kept = Int32.max(minKept(), 2 * Ref.get(c#usedThisFrame));
-        Ref.put(0, c#usedThisFrame);
-        let all = Ref.get(c#entries);
-        let over = Map.size(all) - kept;
-        if (over <= 0) ()
-        else {
-            let byAge = Map.toList(all) |> List.map(kv -> (Ref.get(snd(kv)#lastUsed), kv)) |> Sort.sortStableBy(fst);
-            let dropped = List.take(over, byAge) |> List.map(snd);
-            Ref.put(List.append(List.map(snd, dropped), Ref.get(c#retired)), c#retired);
-            Ref.put(List.foldLeft((m, kv) -> Map.remove(fst(kv), m), all, dropped), c#entries)
-        }
+        Ref.put(ShadowCacheTable.endFrame(c#table), c#retired)
 
     def destroyEntry(e: Entry): Unit \ IO =
         e#group.release();
@@ -135,14 +107,13 @@ mod Render3d.WebGpuShadowCache {
         e#depth.destroy()
 
     /// 控えの数（テストと診断）。
-    pub def sizeOf(c: Cache): Int32 \ IO = Map.size(Ref.get(c#entries))
+    pub def sizeOf(c: Cache): Int32 \ IO = ShadowCacheTable.sizeOf(c#table)
 
     /// 全部を手放す（描き手を手放す時。encoder は submit 済み）。
     pub def release(c: Cache): Unit \ IO =
         Ref.get(c#retired) |> List.forEach(destroyEntry);
         Ref.put(Nil, c#retired);
-        Map.forEach((_, e) -> destroyEntry(e), Ref.get(c#entries));
-        Ref.put(Map.empty(), c#entries);
+        ShadowCacheTable.takeAll(c#table) |> List.forEach(destroyEntry);
         Ref.get(c#pipeline) |> Option.forEach(p -> p.release());
         c#module.release();
         c#layout.release()
