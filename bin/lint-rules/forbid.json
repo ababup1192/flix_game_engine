@@ -179,6 +179,13 @@
       "hint": "中で javax.imageio・ProcessBuilder を呼ぶ古い口は 0.84.0 で消えた: 読み込みの頭で let dec = LoadProgress.imageDecoder() を受け取り Gltf.fromGlbTexturedUsing(dec, limits, bytes)・Gltf.loadTexturedUsing(dec, limits, path)・Texture3d.decodeUsing(dec, bytes)（上限なしは Gltf.noTextureLimits()）。main の頭は LwjglLayer.ensureMainThread()。画面なしとテストの入口は HeadlessLoad.handle（engine の docs/migrations/0.81.0.md）"
     },
     {
+      "id": "headless-imageio-decoder",
+      "suffixes": [".flix"],
+      "skip": ["lib/", "build/"],
+      "pattern": "\\bHeadlessLoad\\.imageIoDecoder\\b",
+      "hint": "画面なしの絵の解き方は実機の窓と同じ stb_image になり、名前は HeadlessLoad.stbDecoder() に替わった（javax.imageio の解き方は JPEG の画素が窓とずれた）。読み込みの頭で受けるなら LoadProgress.imageDecoder() のまま"
+    },
+    {
       "id": "hand-tonemap",
       "suffixes": [
         ".flix"

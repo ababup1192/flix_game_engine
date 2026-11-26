@@ -571,8 +571,8 @@ case "$resolve_rc" in
 esac
 # WhyNot: --sun-misc-unsafe-memory-access を無条件に付けない — JDK 22 以前（Studio が同梱する 21 も）は
 # この旗を知らず起動しない。版は上の -version の出力から読み、JVM を別に起こさない（bin/flix と同じ）。
-# WhyNot: 窓なしの経路には付けない — LWJGL の native を読まないので警告が出ず、常駐（resident の JavaArgs）と旗がずれる。
-# 版の切り出しは bin/flix と同じ字。片方を直したらもう片方も直す。
+# 窓なしの経路も付ける（HeadlessLoad が絵を stb_image で解くので LWJGL の native を読む）。常駐（resident の JavaArgs）は
+# 版を知らないので --enable-native-access だけを付ける。版の切り出しは bin/flix と同じ字。片方を直したらもう片方も直す。
 java_major="${java_version_out#*version \"}"
 java_major="${java_major%%[!0-9]*}"
 java_gl_flags="--enable-native-access=ALL-UNNAMED"
@@ -589,7 +589,7 @@ if [ "${built_ok:-0}" = 1 ]; then
     # pipefail と set -e で何も言わずに抜ける。
     printf '%s\n' "$entries" | { grep -E '\.vocab$' || true; } | while IFS= read -r vocab; do
         [ "$vocab" = "$entry" ] && continue
-        FGE_ENTRY="$vocab" "$java_cmd" -Xss32m -Djava.awt.headless=true $java_enc_flags -jar "$(jar_target)" >&2 || true
+        FGE_ENTRY="$vocab" "$java_cmd" $java_gl_flags -Xss32m -Djava.awt.headless=true $java_enc_flags -jar "$(jar_target)" >&2 || true
     done
 fi
 if [ "$mode" = build ]; then
@@ -618,7 +618,7 @@ else
     # WhyNot: 窓なしに G1（JVM の既定）を使わない — 描き出しとテープの比べを並べると、1 本ずつがゴミで物理メモリの半分まで
     # 膨らみ足し算で溢れる（render-all 4 本で 28.7 → 3.1 GB・時間は +1〜2 %。plans/engine-native-image.md の 2.3）。
     # 窓ありは付けない: 1 コマの p99 が少し伸びる（遊ぶ手触りに出る）。
-    java_flags="-Xss32m -XX:MaxRAMPercentage=50 -XX:+UseSerialGC -Djava.awt.headless=true $java_enc_flags"
+    java_flags="$java_gl_flags -Xss32m -XX:MaxRAMPercentage=50 -XX:+UseSerialGC -Djava.awt.headless=true $java_enc_flags"
 fi
 # HEADLESS_JAVA_OPTS は空白で分けて既定の後ろに足す（同じ旗は後ろが勝つ）。
 # shellcheck disable=SC2086

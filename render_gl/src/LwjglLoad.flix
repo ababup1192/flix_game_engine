@@ -25,7 +25,7 @@ mod LwjglLoad {
     /// PNG / JPEG を stb_image で画素に戻すデコーダー（スレッドをまたいで使える）。
     pub def stbDecoder(): ImageData.ImageDecoder = ImageData.decoderOf(decodeStb)
 
-    // WhyNot: javax.imageio で読まない — macOS の native image には AWT（libawt）が無く、絵が 1 枚も読めない。
+    // WhyNot: javax.imageio で読まない — 画面なしの道と実機の窓で JPEG の解き方がずれて画素が違う。macOS の native image にも AWT（libawt）が無い。
     // WhyNot: 読めない絵で投げない — 並列の仕事の中で投げると、読み込みの全部が止まる（壊れた 1 枚は Err で既定値へ）。
     def decodeStb(bytes: Vector[Int8]): Result[String, ImageData.ImageData] \ IO =
         let input = MemoryUtil.memAlloc(Vector.length(bytes));

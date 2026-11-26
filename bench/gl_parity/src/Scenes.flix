@@ -1042,7 +1042,7 @@ mod Scenes {
     // WhyNot: Scenes.all を IO にしない — 場面の宣言は GL と SoftRaster と名前の付け替えの 3 か所から何度も引く純粋な列で、
     //   1 枚の資材を読むために全部の呼び手の効果を広げることになる。読むのは小さな glb 1 つで、何度読んでも同じ物になる。
     def texturedModel(path: String): Model3d.Model3d =
-        let loaded = unsafe IO { run Fs.FileRead.readBytes(path) |> Result.mapErr(e -> "${path}: 読めない（${e}）") |> Result.flatMap(Gltf.decodeWith(HeadlessLoad.imageIoDecoder(), Gltf.defaultLoadOptions(), None)) with Fs.FileRead.runWithIO };
+        let loaded = unsafe IO { run Fs.FileRead.readBytes(path) |> Result.mapErr(e -> "${path}: 読めない（${e}）") |> Result.flatMap(Gltf.decodeWith(HeadlessLoad.stbDecoder(), Gltf.defaultLoadOptions(), None)) with Fs.FileRead.runWithIO };
         match loaded {
             case Ok(m)  => m
             case Err(e) => bug!(e)
@@ -1050,7 +1050,7 @@ mod Scenes {
 
     /// texturedModel の、metallic・roughness も読む（pbr = true）版。
     def texturedPbrModel(path: String): Model3d.Model3d =
-        let loaded = unsafe IO { run Fs.FileRead.readBytes(path) |> Result.mapErr(e -> "${path}: 読めない（${e}）") |> Result.flatMap(Gltf.decodeWith(HeadlessLoad.imageIoDecoder(), { pbr = true | Gltf.defaultLoadOptions() }, None)) with Fs.FileRead.runWithIO };
+        let loaded = unsafe IO { run Fs.FileRead.readBytes(path) |> Result.mapErr(e -> "${path}: 読めない（${e}）") |> Result.flatMap(Gltf.decodeWith(HeadlessLoad.stbDecoder(), { pbr = true | Gltf.defaultLoadOptions() }, None)) with Fs.FileRead.runWithIO };
         match loaded {
             case Ok(m)  => m
             case Err(e) => bug!(e)

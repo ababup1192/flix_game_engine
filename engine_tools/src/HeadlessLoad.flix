@@ -1,20 +1,20 @@
 // HeadlessLoad — 画面なしの道（e2e・動画・gallery・テスト）で読み込みを流す LoadProgress の handler。
-// 仕事をスレッドの pool で回し、javax.imageio のデコーダーを返す（実機の LwjglLayer と同じ決まり。知らせは捨てるか onReport へ）。
+// 仕事をスレッドの pool で回し、stb_image のデコーダーを返す（実機の LwjglLayer と同じ決まり。知らせは捨てるか onReport へ）。
 // 絵を解く読み込みの関数を画面なしで流すなら LoadProgress.runNoop ではなく HeadlessLoad.handle で包む（runNoop は順に回し、絵を解こうとすると bug! で止まる）。
 // 決まり（知らせの並び・50 ms ごとの知らせ・例外で抜ける）は LoadProgress.Conformance で確かめる。
 // WhyNot: render_gl の LwjglLoad と 1 つにしない — 層は engine と自分のソースしか見ないので、engine_tools から
-// render_gl は見えない。engine に置くと契約層へ java.util.concurrent と javax.imageio が戻る。
+// render_gl は見えない。engine に置くと契約層へ java.util.concurrent と stb が戻る。
 pub mod HeadlessLoad {
-    import java.awt.image.BufferedImage
-    import java.io.{ByteArrayInputStream, IOException}
     import java.lang.{Object => JObject, Runnable, Runtime, Thread, Throwable}
+    import java.nio.{ByteBuffer, ByteOrder}
     import java.util.concurrent.{Callable, ExecutionException, ExecutorCompletionService, Executors, Future, ThreadFactory, TimeUnit}
-    import javax.imageio.ImageIO
+    import org.lwjgl.stb.STBImage
+    import org.lwjgl.system.MemoryUtil
 
     /// 何も届かない間に知らせる間隔（ミリ秒）。
     def pollMillis(): Int64 = 50i64
 
-    /// f を流す（知らせは捨てる・仕事は並列・絵は javax.imageio で解く）。
+    /// f を流す（知らせは捨てる・仕事は並列・絵は stb_image で解く）。
     /// `HeadlessLoad.handle(Controls.loadDocs)` のように、LoadProgress.runNoop の代わりに使う。
     pub def handle(f: Unit -> a \ ef): a \ (ef - LoadProgress) + IO = handleWith((_, _, _) -> (), f)
 
@@ -23,29 +23,54 @@ pub mod HeadlessLoad {
         run f() with handler LoadProgress {
             def report(phase, done, total, k) = { onReport(phase, done, total); k(()) }
             def runTasks(phase, tasks, k) = { runOnPool(onReport, phase, tasks); k(()) }
-            def imageDecoder(k) = k(imageIoDecoder())
+            def imageDecoder(k) = k(stbDecoder())
             def downloads(k) = k(LoadProgress.localDownloads())
         }
 
-    /// PNG / JPEG を javax.imageio で画素に戻すデコーダー（スレッドをまたいで使える）。
-    pub def imageIoDecoder(): ImageData.ImageDecoder = ImageData.decoderOf(decodeImageIo)
+    /// PNG / JPEG を stb_image で画素に戻すデコーダー（スレッドをまたいで使える）。
+    pub def stbDecoder(): ImageData.ImageDecoder = ImageData.decoderOf(decodeStb)
 
-    // WhyNot: ImageIO の IOException を投げたままにしない — 並列の仕事の中で投げると、読み込みの全部が止まる（壊れた 1 枚は Err で既定値へ）。
-    def decodeImageIo(bytes: Vector[Int8]): Result[String, ImageData.ImageData] \ IO =
-        let read = try { Ok(ImageIO.read(new ByteArrayInputStream(unchecked_cast(bytes as Array[Int8, Static])))) } catch {
-            case e: IOException => Err("PNG / JPEG として読めない（${e.getMessage()}）")
-        };
-        Result.flatMap(image ->
-            if (Object.isNull(image)) Err("PNG / JPEG として読めない")
-            else Ok({ width = image.getWidth(), height = image.getHeight(), argb = argbOf(image) }), read)
+    // WhyNot: javax.imageio で読まない — 画面なしの道と実機の窓で JPEG の解き方がずれて画素が違う。macOS の native image にも AWT（libawt）が無い。
+    // WhyNot: 読めない絵で投げない — 並列の仕事の中で投げると、読み込みの全部が止まる（壊れた 1 枚は Err で既定値へ）。
+    def decodeStb(bytes: Vector[Int8]): Result[String, ImageData.ImageData] \ IO =
+        let input = MemoryUtil.memAlloc(Vector.length(bytes));
+        discard input.put(unchecked_cast(bytes as Array[Int8, Static]));
+        discard input.flip();
+        let width = MemoryUtil.memAllocInt(1);
+        let height = MemoryUtil.memAllocInt(1);
+        let channels = MemoryUtil.memAllocInt(1);
+        let rgba = STBImage.stbi_load_from_memory(input, width, height, channels, 4);
+        let decoded =
+            if (Object.isNull(rgba)) Err("PNG / JPEG として読めない（${STBImage.stbi_failure_reason()}）")
+            else {
+                let image = imageOfRgba(rgba, width.get(0), height.get(0));
+                STBImage.stbi_image_free(rgba);
+                Ok(image)
+            };
+        MemoryUtil.memFree(input);
+        MemoryUtil.memFree(width);
+        MemoryUtil.memFree(height);
+        MemoryUtil.memFree(channels);
+        decoded
 
-    def argbOf(image: BufferedImage): Vector[Int32] \ IO = region rc {
-        let w = image.getWidth();
-        let h = image.getHeight();
-        let buf: Array[Int32, rc] = Array.empty(rc, w * h);
-        discard image.getRGB(0, 0, w, h, buf, 0, w);
-        Array.toVector(buf)
+    /// stb の RGBA（1 画素 4 バイト）を ARGB の int の並びにする。
+    def imageOfRgba(rgba: ByteBuffer, w: Int32, h: Int32): ImageData.ImageData \ IO = region rc {
+        let argb: Array[Int32, rc] = Array.empty(rc, w * h);
+        discard rgba.order(ByteOrder.LITTLE_ENDIAN).asIntBuffer().get(argb);
+        swapRedBlue(argb, 0, w * h);
+        { width = w, height = h, argb = Array.toVector(argb) }
     }
+
+    /// リトルエンディアンで読んだ ABGR を ARGB にする（赤と青を入れ替える）。
+    def swapRedBlue(pixels: Array[Int32, r], i: Int32, n: Int32): Unit \ r =
+        if (i >= n) ()
+        else {
+            let abgr = Array.get(i, pixels);
+            let red = Int32.bitwiseAnd(abgr, 255);
+            let blue = Int32.bitwiseAnd(Int32.rightShift(abgr, 16), 255);
+            Array.put(Int32.bitwiseOr(Int32.bitwiseAnd(abgr, -16711936), Int32.bitwiseOr(Int32.leftShift(red, 16), blue)), i, pixels);
+            swapRedBlue(pixels, i + 1, n)
+        }
 
     /// tasks を CPU の数までのスレッドで回し、最初に (phase, 0, n)・1 つ終わるたびと pollMillis ごとに
     /// (phase, 終わった数, n) を onReport へ渡す（本体のスレッドから）。仕事が例外を投げたら残りを止め、同じ例外で抜ける。

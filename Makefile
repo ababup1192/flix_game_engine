@@ -685,7 +685,7 @@ refactor-smoke: ### | engine の新しい型を使う小さな場面で checkd�
 #   anim           コマ間の飛び・体積・接地と 4 方向のそろい
 #   ui             ui.json の text の折り返し宣言漏れ（固定幅の枠 + wrap/fit なし。実寸は測らない）
 #   loop           ループ GIF の継ぎ目（最終コマ→0 コマ）。描き出し済みのコマが前提なので手で回す
-#   load-copy      render_gl の LwjglLoad と engine_tools の HeadlessLoad の写し（仕事の pool）が同じか
+#   load-copy      render_gl の LwjglLoad と engine_tools の HeadlessLoad の写し（pool とデコーダー）が同じか
 #   huge-methods   JVM が JIT しない大きさ（8,000 バイト超）の関数を jar から数える（JARS=<jar…>）
 #
 # 名前ごとの bin/fge のサブコマンドと引数。LINT_SELF_TEST の物は先に --self-test を通す（自己テストが壊れた lint には門番をさせない）。
@@ -721,9 +721,9 @@ LINT_SH_huge-methods = jars="$(if $(JARS),$(JARS),$(HUGE_METHODS_JARS))"; \
 	bin/fge huge-methods $$jars
 
 # LwjglLoad と HeadlessLoad は層が互いを見ないので同じ部分を 2 つ持つ。毎コミットの precommit-local もこの 1 文を使う。
-LINT_SH_load-copy = copy_of() { sed -n -e '/def pollMillis/p' -e '/tasks を CPU の数までのスレッドで回し/,$$p' "$$1"; }; \
+LINT_SH_load-copy = copy_of() { sed -n -e '/def pollMillis/p' -e '/PNG \/ JPEG を stb_image/,$$p' "$$1"; }; \
 	if [ "$$(copy_of render_gl/src/LwjglLoad.flix)" != "$$(copy_of engine_tools/src/HeadlessLoad.flix)" ]; then \
-	  echo "[lint load-copy] NG: LwjglLoad と HeadlessLoad の写し（pollMillis と「tasks を CPU の数までのスレッドで回し」から下）が違います。片方を直したらもう片方へ写す（層が互いに見えないので 2 つ持つ）"; exit 1; \
+	  echo "[lint load-copy] NG: LwjglLoad と HeadlessLoad の写し（pollMillis と「PNG / JPEG を stb_image」から下）が違います。片方を直したらもう片方へ写す（層が互いに見えないので 2 つ持つ）"; exit 1; \
 	fi; echo "[lint load-copy] OK"
 
 # テンプレートの lint/rules.flix（依存の向き・View が World を受けない・テストの形）を、そのテンプレートの make lint-flixlint で見る。

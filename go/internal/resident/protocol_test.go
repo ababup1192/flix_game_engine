@@ -377,3 +377,9 @@ func TestJavaArgsUsesSerialGC(t *testing.T) {
 		t.Fatalf("常駐の java に SerialGC が無い: %s", got)
 	}
 }
+
+func TestJavaArgsAllowsNativeAccess(t *testing.T) {
+	if got := strings.Join(JavaArgs("", 1, "build/headless/headless.jar"), " "); !strings.Contains(got, "--enable-native-access=ALL-UNNAMED") {
+		t.Fatalf("常駐の java に --enable-native-access が無い（HeadlessLoad の stb が警告を出す）: %s", got)
+	}
+}

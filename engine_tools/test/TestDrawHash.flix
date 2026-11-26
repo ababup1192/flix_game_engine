@@ -407,7 +407,7 @@ mod TestDrawHash {
     /// テストは .layers/engine_tools で流れる。
     def keyWithTexturedGlb(): String \ IO =
         let path = "../../engine/test/data/textured_two_materials.glb";
-        let loaded = run Fs.FileRead.readBytes(path) |> Result.mapErr(e -> "${path}: 読めない（${e}）") |> Result.flatMap(Gltf.decodeWith(HeadlessLoad.imageIoDecoder(), Gltf.defaultLoadOptions(), None)) with Fs.FileRead.runWithIO;
+        let loaded = run Fs.FileRead.readBytes(path) |> Result.mapErr(e -> "${path}: 読めない（${e}）") |> Result.flatMap(Gltf.decodeWith(HeadlessLoad.stbDecoder(), Gltf.defaultLoadOptions(), None)) with Fs.FileRead.runWithIO;
         let model = match loaded {
             case Ok(m)  => m
             case Err(e) => bug!(e)

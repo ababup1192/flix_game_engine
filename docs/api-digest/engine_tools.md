@@ -70,12 +70,12 @@
   `pub def buildAtlas(name: String, ttfPath: String): FontAtlas \ IO`
 
 ## HeadlessLoad — `engine_tools/src/HeadlessLoad.flix`
-- f を流す（知らせは捨てる・仕事は並列・絵は javax.imageio で解く）。
+- f を流す（知らせは捨てる・仕事は並列・絵は stb_image で解く）。
   `pub def handle(f: Unit -> a \ ef): a \ (ef - LoadProgress) + IO`
 - handle の、知らせを onReport へ渡す版（進み具合を見るテスト・自前の進み具合の表示）。
   `pub def handleWith(onReport: (String, Int32, Int32) -> Unit \ ef1, f: Unit -> a \ ef): a \ (ef - LoadProgress) + ef1 + IO`
-- PNG / JPEG を javax.imageio で画素に戻すデコーダー（スレッドをまたいで使える）。
-  `pub def imageIoDecoder(): ImageData.ImageDecoder`
+- PNG / JPEG を stb_image で画素に戻すデコーダー（スレッドをまたいで使える）。
+  `pub def stbDecoder(): ImageData.ImageDecoder`
 
 ## HeadlessRender — `engine_tools/src/HeadlessRender.flix`
 - ゲームごとに 1 回宣言する生成設定。design を `scale` 倍に拡大して出力する。

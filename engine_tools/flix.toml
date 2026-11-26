@@ -10,3 +10,21 @@ repository  = "github:ababup1192/flix_engine_tools"
 
 # engine のソースは依存ではなく .layers/<層>/ の作業場で同じ木に束ねて組む（make sync-layers）。
 # Flix 0.78 から依存パッケージの名前は mount 経由でしか届かず、ルートと engine_full の木と両立しないため。
+
+# 絵の読み込み（HeadlessLoad の stb_image）。実機の窓（render_gl の LwjglLoad）と同じ解き方にそろえる。
+# ネイティブは render_gl と同じく全機種を同居させる（実行時に自分の OS に合う 1 つだけが選ばれる）。
+[mvn-dependencies]
+"org.lwjgl:lwjgl"     = "3.4.1"
+"org.lwjgl:lwjgl-stb" = "3.4.1"
+
+[jar-dependencies]
+"lwjgl-3.4.1-natives-macos-arm64.jar"     = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1-natives-macos-arm64.jar"
+"lwjgl-stb-3.4.1-natives-macos-arm64.jar" = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl-stb/3.4.1/lwjgl-stb-3.4.1-natives-macos-arm64.jar"
+"lwjgl-3.4.1-natives-windows.jar"         = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1-natives-windows.jar"
+"lwjgl-stb-3.4.1-natives-windows.jar"     = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl-stb/3.4.1/lwjgl-stb-3.4.1-natives-windows.jar"
+"lwjgl-3.4.1-natives-macos.jar"           = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1-natives-macos.jar"
+"lwjgl-stb-3.4.1-natives-macos.jar"       = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl-stb/3.4.1/lwjgl-stb-3.4.1-natives-macos.jar"
+"lwjgl-3.4.1-natives-linux.jar"           = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1-natives-linux.jar"
+"lwjgl-stb-3.4.1-natives-linux.jar"       = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl-stb/3.4.1/lwjgl-stb-3.4.1-natives-linux.jar"
+"lwjgl-3.4.1-natives-linux-arm64.jar"     = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1-natives-linux-arm64.jar"
+"lwjgl-stb-3.4.1-natives-linux-arm64.jar" = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl-stb/3.4.1/lwjgl-stb-3.4.1-natives-linux-arm64.jar"
