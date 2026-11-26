@@ -1,4 +1,4 @@
-// Render3d.ShadowCacheTable — 影の地図の控え（Render3d.GlShadowCache・Render3d.WebGpuShadowCache）の表を、GL と WebGPU が同じ関数で育てる。
+// Render3d.ShadowCacheTable — 影の地図の控え（Render3d.GlShadowCache・Render3d.WebGpuShadowCache）の表を、GL と WebGPU が同じ関数で引く・外す。
 // 鍵（Render3d.ShadowMaps.cacheKeyOf）→ 控えを引く・コマの終わりに残す数を超えた古い物を選ぶ・描き直しが続いたら知らせる、をここに置く。
 // 控えの中身（GL の FBO・WebGPU の texture と group）を作る・捨てるのは backend。
 // WhyNot: 選んだ控えをここで捨てない — WebGPU は同じコマの後の pass がまだ読んでいる事があり、1 コマ遅らせて捨てる。捨て方は backend ごとに違う。

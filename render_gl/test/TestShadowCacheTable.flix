@@ -32,6 +32,26 @@ mod Render3d.TestShadowCacheTable {
         discard ShadowCacheTable.endFrame(t);
         Assert.assertEq(expected = "old1" :: "old2" :: Nil, Sort.sortStable(ShadowCacheTable.endFrame(t)))
 
+    /// 引き直した控えは世代が新しくなり、古い順に外す時に外されない。
+    @Test
+    def testTouchedEntryIsKept(): Unit \ {Assert, IO} =
+        let t = ShadowCacheTable.fresh();
+        touchAll(t, 0i64, "old" :: "touched" :: Nil);
+        touchAll(t, 1i64, keyRange(0, 15));
+        touchAll(t, 2i64, "touched" :: Nil);
+        discard ShadowCacheTable.endFrame(t);
+        Assert.assertEq(expected = "old" :: Nil, ShadowCacheTable.endFrame(t))
+
+    /// 使った数が下限を超えたコマは、使った数の 2 倍まで残す。
+    @Test
+    def testKeepsTwiceTheUsedCount(): Unit \ {Assert, IO} =
+        let t = ShadowCacheTable.fresh();
+        touchAll(t, 0i64, keyRange(0, 30));
+        discard ShadowCacheTable.endFrame(t);
+        touchAll(t, 1i64, keyRange(0, 10));
+        discard ShadowCacheTable.endFrame(t);
+        Assert.assertEq(expected = 20, ShadowCacheTable.sizeOf(t))
+
     /// 外した控えは表から消え、残る数は下限になる。
     @Test
     def testDroppedEntriesLeaveTable(): Unit \ {Assert, IO} =
