@@ -11,7 +11,7 @@ const PICK_LINE = '[wec] pick ';
 /** pick の答えを待つコマ数の上限。 */
 const PICK_FRAMES = 4;
 /** engine が置き方を勧める行の頭（数えて counters の hints に出す）。 */
-const HINT_PREFIXES = ['scene3d: 置いた物が', 'scene3d: 場面の draw call が', '[scene3d] staticGroup の名前か値が', 'budget: この 1 フレームで'];
+const HINT_PREFIXES = ['scene3d: 置いた物が', 'scene3d: 同じ形と材質の物が', 'scene3d: 場面の draw call が', '[scene3d] staticGroup の名前か値が', 'budget: この 1 フレームで'];
 /** load の中で回すコマ数（pipeline と形の初めての上げを済ませる）。 */
 const LOAD_FRAMES = 60;
 /** 起動（wasm の compile と main）を待つ上限。 */
@@ -219,6 +219,9 @@ class FlixAdapter implements EngineAdapter {
 function pathOf(scenario: string | null, variant: Variant) {
   if (scenario === 'k5') return variant === 'optimized' ? '区画ごとの Scene3d.staticGroup（起動の時に先に作る）・見える区画をゲームの側で選ぶ' : 'Scene3d.meshInstance per object（物の列は読み込みで 1 回作る）';
   if (variant === 'optimized') return 'MultiMesh3d.build per (geometry, material)・毎コマ組み直す';
+  if (scenario === 'k6') return variant === 'optimized'
+    ? 'Model3d.partInstances per character・Walk を読み込みで 1 秒 30 刻みの Pose3d にし、体ごとに一番近い刻みを分け合う'
+    : 'Model3d.partInstances per character・毎コマ AnimationClip3d.sample（Walk・Run）× 2 と Pose3d.blend と Pose3d.compute';
   if (scenario === 'k9') return '下の 1,000 個は Scene3d.meshInstance per object・HUD は App.withHudView の 2D（RawDraw.box・atlas の Sprite・font-bake の字。名札ごとに z を 4 つ）';
   if (scenario === 'k3') return 'Scene3d.meshInstance per object・作り直した組は Texture3d.fromArgb（128×128）＋ texturedMaterial と withMetallicRoughness と tint';
   return 'Scene3d.meshInstance per object（同じ形と材質は engine が自動でまとめる）';

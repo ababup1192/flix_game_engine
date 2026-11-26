@@ -1,2 +1,2 @@
-# K9 の字（Roboto）と icon の atlas は make hud-assets が置く（比べる相手の素材・git に入れない）。
+# K6 の狐・K9 の字（Roboto）と icon の atlas は make compare-assets が置く（比べる相手の素材・git に入れない）。
 assets/

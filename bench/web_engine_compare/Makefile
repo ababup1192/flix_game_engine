@@ -7,7 +7,7 @@
 #                       （patch を当て・本番で書き出して public/flix へ写す・結果は build/upstream/results/<session>）。engine の根の make web-engine-compare は同じ物
 #   make compare-table [SESSION=<session>] … 回した結果から README の行の表（flix の CPU は場面の更新を差し引いた値）
 #   make scene-compare… Flix の場面（SceneDump）と比べる相手の buildScene の値を比べる（Float32 で相対 1e-5・整数は完全一致）
-#   make hud-assets     … K9 の字（Roboto・Apache-2.0）と icon の atlas（比べる相手の canvas が描く物の PNG）を assets/ へ置く（git の外。make compare が先に流す・make bench-web の前にも要る）
+#   make compare-assets … K6 の狐（Fox.glb・CC-BY）・K9 の字（Roboto・Apache-2.0）と icon の atlas（比べる相手の canvas が描く物の PNG）を assets/ へ置く（git の外。make compare が先に流す・make bench-web の前にも要る）
 #   make footprint      … ../web_engine_compare_minimal（光の当たる箱）と ../web_engine_compare_featured（glTF・骨・影・bloom）を本番で書き出し、配る大きさ（brotli・quality 11）を出す
 #   make spike          … X1 案 c のスパイク（minimal を書き出した頁で rAF を包み、外から 1 コマずつ回して submit まで戻るかを数える）
 # ブラウザ版の測り（engine の口）は engine の根で make bench-web BENCH=web_engine_compare ARGS='scenario=k2&level=4000'。
@@ -23,7 +23,7 @@ UPSTREAM  := build/upstream
 MINIMAL   := ../web_engine_compare_minimal
 FEATURED  := ../web_engine_compare_featured
 
-.PHONY: hud-assets compare compare-setup compare-table check test upstream upstream-quick scene-compare footprint footprint-export featured-assets spike common-fresh
+.PHONY: compare-assets compare compare-setup compare-table check test upstream upstream-quick scene-compare footprint footprint-export featured-assets spike common-fresh
 
 check: common-fresh
 	$(FLIX) check
@@ -66,14 +66,15 @@ spike:
 	@test -f build/footprint/minimal/classes.wasm || $(FGE) export-web $(MINIMAL) --out $(CURDIR)/build/footprint/minimal
 	$(NODE) harness/spike/run-spike.mjs build/footprint/minimal
 
-hud-assets:
+compare-assets:
 	@test -f $(UPSTREAM)/public/assets/fonts/Roboto-Regular.ttf || { echo "Roboto が無い。先に make upstream"; exit 1; }
 	@mkdir -p assets
 	cp $(UPSTREAM)/public/assets/fonts/Roboto-Regular.ttf assets/Roboto-Regular.ttf
+	cp $(UPSTREAM)/public/assets/Fox/Fox.glb assets/Fox.glb
 	@test -f assets/hud-atlas.png || $(NODE) harness/hud-atlas.mjs $(UPSTREAM) assets/hud-atlas.png
 
 # 当たっていれば（逆に当てられれば）飛ばす。2 回当てると git apply が止まる。
-compare-setup: hud-assets
+compare-setup: compare-assets
 	@test -d $(UPSTREAM)/node_modules || { echo "比べる相手のリポが無い。先に make upstream"; exit 1; }
 	cd $(UPSTREAM) && (git apply --reverse --check ../../harness/upstream.patch 2>/dev/null || git apply ../../harness/upstream.patch)
 	@mkdir -p $(UPSTREAM)/src/engines/flix $(UPSTREAM)/public/flix

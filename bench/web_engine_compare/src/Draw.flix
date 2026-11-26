@@ -1,10 +1,14 @@
 // Draw — Scenes の場面（右手系・線形の色）を engine の 3D の場面（左手系・画面の値の色）にして描く。
 // 右手系から左手系へは Z を裏返す（形の頂点・行列・カメラ・光の向き）。
 mod Draw {
-    use fge::{Camera3d, Color, Mat4, Mesh3d, MultiMesh3d, Num, Ray3d, PostStack, Render, Scene3d, ShaderDoc, Texture3d, Vec2, Vec3}
+    use fge::{AnimationClip3d, Camera3d, Color, Mat4, Mesh3d, Model3d, MultiMesh3d, Num, Pose3d, Ray3d, PostStack, Render, Scene3d, ShaderDoc, Skin3d, Texture3d, Vec2, Vec3}
 
     /// 場面を描く材料（形と材質と、同じ形と材質の物の組は読み込みの時に 1 回だけ作る）。path = 物の置き方。
-    pub type alias Kit = { field = Scenes.Field, meshes = Vector[Mesh3d.Mesh3d], materials = Vector[Scene3d.Material3d], batches = List[Batch], chunks = List[Chunk], fixed = Option[List[Scene3d.Instance3d]], path = Path }
+    pub type alias Kit = { field = Scenes.Field, meshes = Vector[Mesh3d.Mesh3d], materials = Vector[Scene3d.Material3d], batches = List[Batch], chunks = List[Chunk], fixed = Option[List[Scene3d.Instance3d]], path = Path,
+                              fox = Option[Fox] }
+
+    /// K6 の狐（比べる相手の Fox.glb）。baked = Walk を 1 秒 bakeRate 刻みで姿勢にした物（群れが Walk だけの時に読み込みで 1 回作る）。
+    pub type alias Fox = { model = Model3d.Model3d, skin = Skin3d.Skin3d, walkClip = AnimationClip3d.AnimationClip3d, runClip = AnimationClip3d.AnimationClip3d, baked = Vector[Pose3d.Pose3d] }
 
     /// 同じ形と材質の物の番号の組。
     pub type alias Batch = { geom = Int32, material = Int32, members = Vector[Int32] }
@@ -20,6 +24,58 @@ mod Draw {
         case Batched
         case Chunks
     }
+
+    /// 狐の Walk を姿勢にする刻み（1 秒の数）。
+    pub def bakeRate(): Float64 = 30.0
+
+    /// 読んだ狐から骨と Walk・Run を取り出す（誤りの文は ASCII — font-bake が src の文字列の字を HUD の字のアトラスへ集める）。bake = Walk を刻みで姿勢にしておく（Babylon.js の baked animation と同じく、時刻を刻みに丸めて体どうしで姿勢を分け合う）。
+    pub def foxOf(model: Model3d.Model3d, bake: Bool): Result[String, Fox] =
+        let clip = name -> Map.get(name, model#clips) |> Option.toOk("Fox.glb: no clip ${name}");
+        Option.toOk("Fox.glb: no skin", model#skin) |> Result.flatMap(skin -> clip("Walk") |> Result.flatMap(walk -> clip("Run") |> Result.map(running -> {
+            let steps = Int32.max(1, Num.roundInt(AnimationClip3d.duration(walk) * bakeRate()));
+            { model = model, skin = skin, walkClip = walk, runClip = running,
+              baked = if (bake) Vector.range(0, steps) |> Vector.map(k -> Pose3d.compute(skin, AnimationClip3d.sample(skin, walk, Int32.toFloat64(k) / bakeRate(), true))) else Vector.empty() }
+        })))
+
+    /// K6: 時刻 t の体ごとの Run の重み（比べる相手の scene.update に当たる・混ぜない群れは空）。
+    pub def crowdWeights(kit: Kit, t: Float64): Vector[Float64] = match kit#field#crowd {
+        case Some(c) if c#blended => Vector.range(0, c#count) |> Vector.map(Scenes.runWeightAt(c, t))
+        case _ => Vector.empty()
+    }
+
+    /// K6: 時刻 t の狐全部（体ごとに姿勢を付けて glb の部品を置く）。
+    pub def crowdInstances(kit: Kit, weights: Vector[Float64], t: Float64): List[Scene3d.Instance3d] =
+        match (kit#fox, kit#field#crowd) {
+            case (Some(fox), Some(c)) =>
+                List.range(0, c#count) |> List.flatMap(i -> {
+                    let pose = poseOf(fox, c, weights, t, i);
+                    Model3d.partInstances(foxWorld(c, i), fox#model) |> List.map(Scene3d.withPose(pose))
+                })
+            case _ => Nil
+        }
+
+    /// 体 i の時刻 t の姿勢。混ぜる群れは Walk と Run を毎コマ取り出して重みで混ぜ、混ぜない群れは刻みの姿勢から一番近い物を使う。
+    def poseOf(fox: Fox, c: Scenes.Crowd, weights: Vector[Float64], t: Float64, i: Int32): Pose3d.Pose3d =
+        let at = t + Vector.get(i, c#phase);
+        if (c#blended) {
+            let walk = AnimationClip3d.sample(fox#skin, fox#walkClip, at, true);
+            let running = AnimationClip3d.sample(fox#skin, fox#runClip, at, true);
+            Pose3d.compute(fox#skin, Pose3d.blend(walk, running, Vector.get(i, weights)))
+        } else {
+            let n = Vector.length(fox#baked);
+            Vector.get(Int32.modulo(Num.roundInt(at * bakeRate()), n), fox#baked)
+        }
+
+    /// 体 i の根の行列（左手系）。右手系の 位置 × Y で yaw 回す × 倍率 を Z の裏返しで写し、狐の形の側で Y の半回転を掛けた物。
+    // WhyNot: 狐の形の側を Z で裏返さない — glb の形は右手系のまま読まれ、裏返すと三角形の表と裏が入れ替わる（Mesh3d の番号を並べ替える口は glb の部品に無い）。
+    //   左右が対称な狐なので、Z の裏返しの代わりに Y の半回転で向きをそろえる（違うのは左右の脚の歩みの順だけ）。
+    def foxWorld(c: Scenes.Crowd, i: Int32): Mat4.Mat4 =
+        let yaw = Vector.get(i, c#yaw);
+        let s = c#scale;
+        let (cs, sn) = (Num.cos(yaw) * s, Num.sin(yaw) * s);
+        Mat4.ofColumns(Vector#{0.0 - cs, 0.0, 0.0 - sn, 0.0, 0.0, s, 0.0, 0.0, sn, 0.0, 0.0 - cs, 0.0,
+                               Vector.get(i * 3, c#position), Vector.get(i * 3 + 1, c#position), 0.0 - Vector.get(i * 3 + 2, c#position), 1.0})
+            |> Result.getWithDefault(Mat4.identity())
 
     /// K3 の作り直しの状態。field = 今の場面の写し・frame = 最後に作り直したコマ・looks = 組の番号 → その組を最後に作り直したコマの絵と材質
     /// （生きている絵は組の数まで。組が回ってくると前の絵は looks から落ちる）。
@@ -54,7 +110,7 @@ mod Draw {
 
     pub def kitOf(path: Path, field: Scenes.Field): Result[String, Kit] =
         Scenes.shapesOf(field#shapes) |> Vector.toList |> List.map(meshOf) |> Result.sequence
-            |> Result.map(meshes -> { field = field, meshes = List.toVector(meshes), materials = field#materials |> Vector.mapWithIndex(materialOf), chunks = Nil, fixed = None,
+            |> Result.map(meshes -> { field = field, meshes = List.toVector(meshes), materials = field#materials |> Vector.mapWithIndex(materialOf), chunks = Nil, fixed = None, fox = None,
                                       batches = batchesOf(field), path = path })
             |> Result.map(kit -> if (path == Path.Chunks) { chunks = chunksOf(kit) | kit } else kit)
             |> Result.map(kit -> if (path == Path.PerObject and not field#animated) { fixed = Some(instances(kit, 0.0)) | kit } else kit)
@@ -186,7 +242,8 @@ mod Draw {
                 |> MultiMesh3d.withMaterial(Vector.get(b#material, kit#materials)))
 
     /// 時刻 t の場面（churn があれば K3 の今の場面の写しと組の絵で描く）。
-    pub def scene(kit: Kit, churn: Option[Churn], t: Float64): Scene3d.Scene3dCmd =
+    /// posed = 姿勢を付けた骨つきの物（K6 の狐）。
+    pub def scene(kit: Kit, churn: Option[Churn], posed: List[Scene3d.Instance3d], t: Float64): Scene3d.Scene3dCmd =
         let f = kit#field;
         let perObject = () -> match churn {
             case Some(c) => churnInstances(kit, c, t)
@@ -195,8 +252,9 @@ mod Draw {
         let (ar, ag, ab) = f#ambient#color;
         let k = f#ambient#intensity;
         let sun = { color = screenColor(f#sun#color), intensity = f#sun#intensity * lightScale() | Scene3d.directionalLight(flip(f#sun#direction)) };
-        { instances = if (kit#path == Path.PerObject) perObject() else Nil,
-          textures = churn |> Option.map(c -> Map.valuesOf(c#looks) |> List.map(look -> look#texture)) |> Option.getWithDefault(Nil),
+        { instances = (if (kit#path == Path.PerObject) perObject() else Nil) ::: posed,
+          textures = (churn |> Option.map(c -> Map.valuesOf(c#looks) |> List.map(look -> look#texture)) |> Option.getWithDefault(Nil))
+                     ::: (kit#fox |> Option.map(fox -> fox#model#textures) |> Option.getWithDefault(Nil)),
           multiMeshes = if (kit#path == Path.Batched) multiMeshes(kit, t) else Nil,
           groups = if (kit#path == Path.Chunks) visibleChunks(kit, t) else Nil,
           directionalLight = Some(sun),
@@ -206,7 +264,7 @@ mod Draw {
             |> Scene3d.withLightUnits(Scene3d.LightUnits.Physical)
             |> Scene3d.withUnitsPerMeter(1.0)
 
-    pub def items(kit: Kit, churn: Option[Churn], t: Float64): List[Render.PlacedItem] = Render.scene3d(Vec2.zero(), scene(kit, churn, t)) :: Nil
+    pub def items(kit: Kit, churn: Option[Churn], posed: List[Scene3d.Instance3d], t: Float64): List[Render.PlacedItem] = Render.scene3d(Vec2.zero(), scene(kit, churn, posed, t)) :: Nil
 
     /// 比べる相手と同じ条件の後がけ（MSAA 4×・ACES）。
     // WhyNot: 線形で掛ける ACES にしない — engine に無い（ViewTransform に足すのは X2 の相談の後）。今ある AcesNarkowicz は画面の値に掛けるので、明るい所の色が比べる相手とずれる。

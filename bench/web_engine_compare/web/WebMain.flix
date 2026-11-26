@@ -2,7 +2,7 @@
 // 比べる相手の harness の頁で開かれた時（query に engine=flix）は、場面の時刻を harness から受け、場面の更新の ms を console の 1 行で返す
 // （受け渡しは harness/flix-adapter.ts が頁の fgeQueryPairs と console.log を包んで行う）。
 mod WebMain {
-    use fge::{App, WebFs, WebLayer}
+    use fge::{App, Mesh3d, Model3d, WebFs, WebLayer}
 
     import fge.web.Browser
 
@@ -29,8 +29,18 @@ mod WebMain {
     pub def main(): Unit \ IO =
         let knobs = BenchRun.knobsOfPairs(Array.toList(Browser.queryPairs()));
         let scenario = CompareBench.scenarioOf(knobs);
+        let path = CompareBench.pathOf(scenario, knobs);
+        let level = CompareBench.levelOf(scenario, knobs);
+        let blended = Map.get("variant", knobs) != Some("optimized");
         run {
-            match Draw.kitOf(CompareBench.pathOf(scenario, knobs), Scenes.build(scenario, CompareBench.levelOf(scenario, knobs))) {
+            let made = if (scenario == Scenes.Scenario.K6)
+                Model3d.load(Model3d.loader(), "assets/Fox.glb") |> Result.flatMap(model -> {
+                    let b = Mesh3d.bounds(model#mesh);
+                    let field = Scenes.crowdField(level, blended, { min = (b#min#x, b#min#y, b#min#z), max = (b#max#x, b#max#y, b#max#z) });
+                    Draw.kitOf(path, field) |> Result.flatMap(k -> Draw.foxOf(model, not blended) |> Result.map(fox -> { fox = Some(fox) | k }))
+                })
+            else Draw.kitOf(path, Scenes.build(scenario, level));
+            match made {
                 case Err(why) => Browser.log("[web_engine_compare] 形を作れない: ${why}")
                 case Ok(kit)  =>
                     CompareBench.app(CompareBench.planOf(knobs), line -> Browser.log(line), hooksOf(knobs), kit, scenario)

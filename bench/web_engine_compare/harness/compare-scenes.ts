@@ -3,7 +3,7 @@
 // 小数は Float32 へ丸めてから相対 1e-5（絶対 1e-6 まで）で比べる。整数の配列は完全一致。
 import { readFileSync } from 'node:fs';
 import { buildScene, fieldWorldMatrices } from '../build/upstream/src/harness/scenes.ts';
-import type { FieldScene, Geometry } from '../build/upstream/src/harness/types.ts';
+import type { CharactersScene, FieldScene, Geometry } from '../build/upstream/src/harness/types.ts';
 
 // K9 の icon の atlas は canvas に描く（node には無い）。絵は比べないので、何もしない canvas を渡す。
 const noop: any = new Proxy(() => noop, { get: () => noop, set: () => true });
@@ -58,9 +58,26 @@ function shape(label: string, ours: any, theirs: Geometry) {
   exact(`${label}.indices`, ours.indices, theirs.indices);
 }
 
+const manifest = JSON.parse(readFileSync(new URL('../build/upstream/public/assets/manifest.json', import.meta.url), 'utf8'));
+
+function crowd(tag: string, ours: any) {
+  const theirs = buildScene('k6', ours.level, manifest, 'naive') as CharactersScene;
+  theirs.update(ours.t);
+  const c = ours.crowd;
+  floats(`${tag} camera.position`, ours.camera.position, theirs.camera.position);
+  floats(`${tag} camera.target`, ours.camera.target, theirs.camera.target);
+  exact(`${tag} count`, [c.count], [theirs.count]);
+  floats(`${tag} scale`, [c.scale], [theirs.scale]);
+  floats(`${tag} position`, c.position, theirs.position);
+  floats(`${tag} yaw`, c.yaw, theirs.yaw);
+  floats(`${tag} phase`, c.phase, theirs.phase);
+  floats(`${tag} blend.weight`, c.weight, theirs.blend!.weight);
+}
+
 const lines = readFileSync(process.argv[2], 'utf8').split('\n').filter((l) => l.startsWith('{'));
 for (const line of lines) {
   const ours = JSON.parse(line);
+  if (ours.scenario === 'k6') { crowd(`k6@${ours.level} t=${ours.t}`, ours); continue; }
   const theirs = buildScene(ours.scenario, ours.level, null) as FieldScene;
   // K3 は状態を持つ（コマごとに 20 個を作り直す）ので、harness と同じくコマ 0 から順に update を回す。
   if (theirs.churn) for (let k = 0; k < Math.round(ours.t * 60); k++) theirs.update(k / 60);

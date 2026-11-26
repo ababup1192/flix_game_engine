@@ -1,6 +1,6 @@
 // CompareBench — 場面を毎コマ描き、区間ごとに 1 行の JSON（BenchRun）を出す。
 // 2 つの回し方が同じ App を使う: engine の口（make bench-web）と、比べる相手の harness の adapter（harness/flix-adapter.ts）。
-// つまみ: scenario=k1|k2|k3|k5|k7|k8|k9・variant=naive|optimized・level=<物の数>・frames=<1 区間のコマ数>・repeat=<区間の数>・diag=0。
+// つまみ: scenario=k1|k2|k3|k5|k6|k7|k8|k9・variant=naive|optimized・level=<物の数>・frames=<1 区間のコマ数>・repeat=<区間の数>・diag=0。
 mod CompareBench {
     use fge::{App, Num, Render}
 
@@ -29,9 +29,9 @@ mod CompareBench {
     pub def scenarioOf(knobs: Map[String, String]): Scenes.Scenario =
         Map.get("scenario", knobs) |> Option.flatMap(Scenes.scenarioOf) |> Option.getWithDefault(Scenes.Scenario.K1)
 
-    /// 物の置き方（variant=optimized なら K5 は区画ごとの staticGroup・ほかは形と材質の組ごとの MultiMesh3d）。
+    /// 物の置き方（variant=optimized なら K5 は区画ごとの staticGroup・ほかは形と材質の組ごとの MultiMesh3d。K6 は物を置かず、optimized は狐の刻みの姿勢）。
     pub def pathOf(scenario: Scenes.Scenario, knobs: Map[String, String]): Draw.Path =
-        if (Map.get("variant", knobs) != Some("optimized")) Draw.Path.PerObject
+        if (Map.get("variant", knobs) != Some("optimized") or scenario == Scenes.Scenario.K6) Draw.Path.PerObject
         else if (scenario == Scenes.Scenario.K5) Draw.Path.Chunks
         else Draw.Path.Batched
 
@@ -74,17 +74,20 @@ mod CompareBench {
         if (w#progress#done) { t = w#t + frame#dt | w }
         else { t = w#t + frame#dt, progress = BenchRun.advance(plan, emit, knobsOf(kit, scenario), BenchRun.sampleOf(frame, 0.0), w#progress) | w }
 
-    /// 場面の更新（物ごとの行列を作る）だけを測って知らせる。
+    /// 場面の更新（物ごとの行列・K6 の重み）だけを測って知らせる。K6 の姿勢を取り出して混ぜる所は engine の仕事（比べる相手の mixer）として CPU に残す。
     def timedItems(hooks: Hooks, kit: Draw.Kit, w: World): List[Render.PlacedItem] \ IO =
         let t = (hooks#sceneTime)(w#t);
-        let (items, ms) = BenchRun.timed(hooks#now, () -> Draw.items(kit, w#churn, t));
-        (hooks#noteSim)(ms);
+        let (weights, weightMs) = BenchRun.timed(hooks#now, () -> Draw.crowdWeights(kit, t));
+        // WhyNot: 姿勢を素の let で作らない — 純粋な let は使う所（場面の更新を測る下の thunk）へ畳まれ、姿勢を取り出す値段が場面の更新に入る。
+        let (posed, _) = BenchRun.timed(hooks#now, () -> Draw.crowdInstances(kit, weights, t));
+        let (items, ms) = BenchRun.timed(hooks#now, () -> Draw.items(kit, w#churn, posed, t));
+        (hooks#noteSim)(weightMs + ms);
         items
 
     /// 区画の staticGroup を全部、起動の時に先に作らせる（見える区画を出し入れしても、初めて出るコマで作らない）。
     def withChunkPreload(kit: Draw.Kit, app0: App.App[World, IO]): App.App[World, IO] =
         if (kit#path == Draw.Path.Chunks)
-            app0 |> App.withPreload3d({ groups = _ -> kit#chunks |> List.map(c -> c#group), scenes = _ -> Draw.scene(kit, None, 0.0) :: Nil | App.preload3d(_ -> "wec_chunks", _ -> Nil) })
+            app0 |> App.withPreload3d({ groups = _ -> kit#chunks |> List.map(c -> c#group), scenes = _ -> Draw.scene(kit, None, Nil, 0.0) :: Nil | App.preload3d(_ -> "wec_chunks", _ -> Nil) })
         else app0
 
     /// K9: HUD の絵。名札の位置（比べる相手の scene.update に当たる）は場面の更新として知らせ、絵の列を組む所は CPU に残す。

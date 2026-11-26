@@ -26,8 +26,16 @@ mod Scenes {
         camera = Camera, clearColor = V3, ambient = { color = V3, intensity = Float64 }, sun = Sun,
         materials = Vector[Pbr], count = Int32, geom = Vector[Int32], material = Vector[Int32],
         position = Vector[Float64], scale = Vector[Float64], spin = Spin, groups = Option[Groups],
-        animated = Bool, turn = Option[Float64], shapes = ShapeSet, pickPoints = Vector[Float64], hud = Option[Hud]
+        animated = Bool, turn = Option[Float64], shapes = ShapeSet, pickPoints = Vector[Float64], hud = Option[Hud],
+        crowd = Option[Crowd]
     }
+
+    /// K6 の骨つきの群れ（物を置く場面の欄は空で、カメラと光だけを使う）。position は 1 体に 3 つ・yaw はラジアン・phase は clip の時刻に足す秒。
+    /// blended = Walk と Run を体ごとの重みで混ぜる（偽なら Walk だけ）。
+    pub type alias Crowd = { count = Int32, scale = Float64, position = Vector[Float64], yaw = Vector[Float64], phase = Vector[Float64], blended = Bool }
+
+    /// 形の頂点の広がり（node の置き方を掛けない）。
+    pub type alias Extent = { min = V3, max = V3 }
 
     /// K9 の HUD（座標は canvas の画素・左上が 0・y は下向き・色は sRGB の rgba）。
     /// icons = 動かない絵（左上と atlas の升の番号）・units = 名札の基の位置と揺れの位相と icon の升・labels = 名札の字。
@@ -59,6 +67,7 @@ mod Scenes {
         case K2
         case K3
         case K5
+        case K6
         case K7
         case K8
         case K9
@@ -69,14 +78,16 @@ mod Scenes {
         case "k2" => Some(Scenario.K2)
         case "k3" => Some(Scenario.K3)
         case "k5" => Some(Scenario.K5)
+        case "k6" => Some(Scenario.K6)
         case "k7" => Some(Scenario.K7)
         case "k8" => Some(Scenario.K8)
         case "k9" => Some(Scenario.K9)
         case _    => None
     }
 
-    /// 場面と段（K2 は物の数）から場面を作る。
+    /// 場面と段（K2 は物の数）から場面を作る。K6 は狐の広がりが要るので crowdField で作る（ここでは空の群れ）。
     pub def build(scenario: Scenario, level: Int32): Field = match scenario {
+        case Scenario.K6 => crowdField(level, true, { min = (0.0, 0.0, 0.0), max = (1.0, 1.0, 1.0) })
         case Scenario.K1 => startup()
         case Scenario.K2 => hierarchyField(level)
         case Scenario.K3 => frustumField(3, level, palette(2300, 8, 1.0))
@@ -103,6 +114,8 @@ mod Scenes {
     def fieldCamera(): Camera = { position = (0.0, 0.0, 40.0), target = (0.0, 0.0, 0.0), fovY = 50.0, near = 0.5, far = 200.0 }
 
     def i2f(i: Int32): Float64 = Int32.toFloat64(i)
+
+    def ceilInt(x: Float64): Int32 = 0 - Num.floorInt(0.0 - x)
 
     /// HSV（sRGB の値）を線形の色へ。
     pub def hsvToLinear(h: Float64, s: Float64, v: Float64): V3 =
@@ -170,7 +183,7 @@ mod Scenes {
           scale = Vector.range(0, count) |> Vector.map(i -> s * Rng.rangeAt(seed, i * draws + draws - 1, { min = 0.8, max = 1.2 })),
           position = scatterInFrustum(seed, count * draws, fieldCamera(), count, { near = 25.0, far = 55.0, margin = s }),
           spin = spinner(seed, count * draws + count * 3, count),
-          groups = None, animated = true, turn = None, shapes = ShapeSet.Field, pickPoints = Vector.empty(), hud = None }
+          groups = None, animated = true, turn = None, shapes = ShapeSet.Field, pickPoints = Vector.empty(), hud = None, crowd = None }
 
     /// K1: 光の当たる箱 1 つ。
     def startup(): Field =
@@ -178,7 +191,7 @@ mod Scenes {
           clearColor = clear(), ambient = ambient(), sun = sun(),
           materials = Vector#{{ color = (0.8, 0.3, 0.1), roughness = 0.4, metalness = 0.0, opacity = 1.0 }},
           count = 1, geom = Vector#{0}, material = Vector#{0}, position = Vector#{0.0, 0.0, 0.0}, scale = Vector#{1.0},
-          spin = spinner(1, 0, 1), groups = None, animated = true, turn = None, shapes = ShapeSet.Field, pickPoints = Vector.empty(), hud = None }
+          spin = spinner(1, 0, 1), groups = None, animated = true, turn = None, shapes = ShapeSet.Field, pickPoints = Vector.empty(), hud = None, crowd = None }
 
     /// K3 で 1 コマに作り直す物の数。
     pub def churnPerFrame(): Int32 = 20
@@ -238,7 +251,7 @@ mod Scenes {
               Rng.rangeAt(seed, at(i, 3), { min = 0.0 - side / 2.0, max = side / 2.0 }),
               Rng.rangeAt(seed, at(i, 4), { min = 0.5, max = 3.0 }),
               Rng.rangeAt(seed, at(i, 5), { min = 0.0 - side / 2.0, max = side / 2.0 })}),
-          spin = spinner(seed, count * 6, count), groups = None, animated = false, turn = Some(turnSeconds()), shapes = ShapeSet.Field, pickPoints = Vector.empty(), hud = None }
+          spin = spinner(seed, count * 6, count), groups = None, animated = false, turn = Some(turnSeconds()), shapes = ShapeSet.Field, pickPoints = Vector.empty(), hud = None, crowd = None }
 
     /// 時刻 t のカメラ（turn があれば注視点が y = 4 の半径 10 の輪を回る）。
     pub def cameraAt(f: Field, t: Float64): Camera = match f#turn {
@@ -267,6 +280,27 @@ mod Scenes {
             { camera = fieldCamera(), materials = grey, scale = Vector#{30.0}, spin = { axis = Vector#{0.0, 0.0, 0.0}, speed = Vector#{0.0}, phase = Vector#{0.0} }, shapes = ShapeSet.BigSphere | startup() }
             else frustumFieldPicking(seed, level, grey, false);
         { animated = false, pickPoints = points | base }
+
+    /// K6: 狐 count 体を格子に並べた群れ。extent = 狐の形の頂点の広がり（高さを 1.6 m にそろえる）。
+    pub def crowdField(count: Int32, blended: Bool, extent: Extent): Field =
+        let seed = 8;
+        let ((x0, y0, z0), (x1, y1, z1)) = (extent#min, extent#max);
+        let scale = 1.6 / (y1 - y0);
+        let spacing = Float64.max(1.4, Float64.max(x1 - x0, z1 - z0) * scale * 1.1);
+        let cols = ceilInt(Num.sqrt(i2f(count) * 1.6));
+        let rows = ceilInt(i2f(count) / i2f(cols));
+        let dist = Float64.max(i2f(cols) * spacing / aspect(), i2f(rows) * spacing) * 0.95 + 4.0;
+        let base = startup();
+        { camera = { position = (0.0, dist * 0.55, dist * 0.8), target = (0.0, 0.5, 0.0), fovY = 50.0, near = 0.1, far = dist * 4.0 },
+          count = 0, geom = Vector.empty(), material = Vector.empty(), position = Vector.empty(), scale = Vector.empty(),
+          crowd = Some({ count = count, scale = scale, blended = blended,
+                         position = Vector.range(0, count) |> Vector.flatMap(i -> Vector#{
+                             (i2f(Int32.remainder(i, cols)) - i2f(cols - 1) / 2.0) * spacing, 0.0, (i2f(i / cols) - i2f(rows - 1) / 2.0) * spacing}),
+                         yaw = Vector.range(0, count) |> Vector.map(i -> Rng.rangeAt(seed, i * 2, { min = -0.6, max = 0.6 })),
+                         phase = Vector.range(0, count) |> Vector.map(i -> Rng.rangeAt(seed, i * 2 + 1, { min = 0.0, max = 3.0 })) }) | base }
+
+    /// K6: 時刻 t の体 i の Run の重み（Walk は 1 − 重み）。
+    pub def runWeightAt(c: Crowd, t: Float64, i: Int32): Float64 = 0.5 + 0.5 * Num.sin(t * 0.5 + Vector.get(i, c#phase) * 2.0)
 
     /// K9: 回る 1,000 個の上の HUD（units = 名札の数・0 なら HUD なし）。
     def hudField(units: Int32): Field =

@@ -9,6 +9,7 @@ mod SceneDump {
         (Scenes.Scenario.K2, 500, 0.0) :: (Scenes.Scenario.K2, 500, 1.25) :: (Scenes.Scenario.K2, 4000, 0.7) ::
         (Scenes.Scenario.K3, 2000, 0.0) :: (Scenes.Scenario.K3, 2000, 2.5) ::
         (Scenes.Scenario.K5, 20000, 3.0) :: (Scenes.Scenario.K7, 500, 0.8) :: (Scenes.Scenario.K8, 10000, 0.0) ::
+        (Scenes.Scenario.K6, 25, 0.0) :: (Scenes.Scenario.K6, 400, 1.3) ::
         (Scenes.Scenario.K9, 250, 0.0) :: (Scenes.Scenario.K9, 250, 1.75) :: Nil
 
     def numbers(v: Vector[Float64]): String = "[${v |> Vector.map(Float64.toString) |> Vector.join(",")}]"
@@ -23,7 +24,7 @@ mod SceneDump {
     /// 場面 1 つの JSON（欄の名前は比べる相手の FieldScene と同じ）。
     pub def jsonOf(scenario: Scenes.Scenario, level: Int32, t: Float64): String =
         let frame = Num.roundInt(t * 60.0);
-        let seeded = Scenes.build(scenario, level);
+        let seeded = if (scenario == Scenes.Scenario.K6) Scenes.crowdField(level, true, foxExtent()) else Scenes.build(scenario, level);
         let churned = scenario == Scenes.Scenario.K3;
         let f = if (churned) Scenes.churnedUpTo(frame, seeded) else seeded;
         let texture = if (churned and frame > 0) ints(Scenes.churnPixels(frame)) else "null";
@@ -40,7 +41,16 @@ mod SceneDump {
         "\"count\":${f#count},\"geom\":${ints(f#geom)},\"material\":${ints(f#material)},\"position\":${numbers(f#position)}," +
         "\"scale\":${numbers(f#scale)},\"quat\":${numbers(quats(f#spin, spinT, f#count))},\"materials\":[${materials}],\"groups\":${groups}," +
         "\"worldColumns\":${numbers(Vector.range(0, f#count) |> Vector.flatMap(i -> Scenes.worldColumns(f, t, i)))}," +
-        "\"pickPoints\":${numbers(f#pickPoints)},\"texture\":${texture},\"hud\":${f#hud |> Option.map(hudJson(t)) |> Option.getWithDefault("null")},\"shapes\":[${Scenes.shapesOf(f#shapes) |> Vector.map(shapeJson) |> Vector.join(",")}]}"
+        "\"pickPoints\":${numbers(f#pickPoints)},\"texture\":${texture},\"hud\":${f#hud |> Option.map(hudJson(t)) |> Option.getWithDefault("null")},\"crowd\":${f#crowd |> Option.map(crowdJson(t)) |> Option.getWithDefault("null")},\"shapes\":[${Scenes.shapesOf(f#shapes) |> Vector.map(shapeJson) |> Vector.join(",")}]}"
+
+    /// 比べる相手の素材の表（public/assets/manifest.json）の Fox の bounds。
+    // WhyNot: 狐の glb を読んで量らない — この dump は画面なしの desktop で流すので素材を読む道（LoadProgress）が無い。読んだ形の広がりから作る大きさと間隔が同じかは、frame 60 の絵を比べる相手と並べて確かめた。
+    def foxExtent(): Scenes.Extent =
+        { min = (-12.592718124389648, -0.12174476683139801, -88.09500122070312), max = (12.592718124389648, 78.90718841552734, 66.62486267089844) }
+
+    def crowdJson(t: Float64, c: Scenes.Crowd): String =
+        "{\"count\":${c#count},\"scale\":${c#scale},\"position\":${numbers(c#position)},\"yaw\":${numbers(c#yaw)},\"phase\":${numbers(c#phase)}," +
+        "\"weight\":${numbers(Vector.range(0, c#count) |> Vector.map(Scenes.runWeightAt(c, t)))}}"
 
     def strings(v: Vector[String]): String = "[${v |> Vector.map(x -> "\"${x}\"") |> Vector.join(",")}]"
 

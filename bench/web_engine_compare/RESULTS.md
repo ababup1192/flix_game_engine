@@ -213,7 +213,7 @@ smoke（1 回・counters の回・WebGPU・2,000 個）:
 
 - 場面: 回る 1,000 個（種 9・材質 4）の上に、板 4 枚 → 動かない icon 50 → 名札（下地 → bar → icon → 字）→ 毎コマ変わる字 30。名札の位置・体力・字は比べる相手と同じ乱数（種 99）と式。
   `make scene-compare` に K9 の 2 場面（250 枚・t = 0 と 1.75）を足し、HUD の値（板・icon・名札の位置と体力と升と字・毎コマ変わる字）まで **12 場面・531 の配列が一致**。
-- icon の atlas は比べる相手の `buildScene` が canvas に描いた物を、そのまま PNG にした（`make hud-assets` が vite と Chrome で描かせる・git の外）。描き方を写していないので、PNG どうしの比べはしない。
+- icon の atlas は比べる相手の `buildScene` が canvas に描いた物を、そのまま PNG にした（`make compare-assets` が vite と Chrome で描かせる・git の外）。描き方を写していないので、PNG どうしの比べはしない。
 - 字は比べる相手の Roboto（Apache-2.0）を project.json の fonts に置き、書き出しの font-bake でアトラスにする（engine の字の道はこれだけ）。`App.withFonts` で名前を宣言しないと既定の字（起動の字）へ落ちる。
 - 描き方（naive）: `App.withHudView` の 2D で、名札ごとに z を 4 つ（下地・bar・icon・字）続けて置く（HudSpec の描く順のとおり）。名札の字の幅は初めのコマで 1 回量って控える。
   名札の位置（比べる相手の scene.update に当たる）は場面の更新として差し引き、絵の列を組む所は CPU に残す。HUD は PostStack の外なので tone map も bloom も掛からない。
@@ -234,3 +234,31 @@ smoke（1 回・counters の回・WebGPU）:
 - **重い所は engine の 2D**（`make bench-web` の 1,000 枚: 2D の draw 3,003 本・切れ目は全部が絵の替わり（texture 3,001）。3D の区間は split・draw とも 1 ms）。
   名札の中で 色の矩形 → icon の atlas → 字のアトラス と絵が替わるたびに batch が切れ、1 枚に約 3 本・CPU 約 22 µs。→ 相談の候補（絵を跨いでまとめる・HUD 用に字と icon を 1 枚に寄せる口）。
 - 絵（frame 60）は名札・icon・板の置き方が three.js と同じ。字の縦の置き方は flix が数画素下（engine の字の置き場所は行の上・three.js は canvas の textBaseline top）。
+
+## S6: K6（骨つきの狐の群れ・crossfade）
+
+- 場面: 比べる相手の Fox.glb（CC-BY・`make compare-assets` が assets/ へ写す・git の外）を格子に並べる。高さを 1.6 m にそろえる倍率と間隔は、読んだ形の頂点の広がり（`Mesh3d.bounds`）から同じ式で出す。
+  `make scene-compare` に K6 の 2 場面（25 体・400 体）を足し、カメラ・位置・yaw・位相・Run の重みまで **14 場面・547 の配列が一致**（広がりは比べる相手の manifest の値を渡す）。
+- naive: 毎コマ体ごとに `AnimationClip3d.sample`（Walk・Run）× 2 → `Pose3d.blend` → `Pose3d.compute`、`Model3d.partInstances` に `Scene3d.withPose`。
+- optimized（計画の決め 8）: 比べる相手と同じく Walk だけ。読み込みで Walk を 1 秒 30 刻みの姿勢（`Pose3d`）にしておき、体ごとに一番近い刻みを使う（同じ姿勢の体は engine が姿勢の行を分け合う・Babylon.js の baked animation と同じ考え方）。path に刻みを書く。
+- 差し引く場面の更新は Run の重みだけ（比べる相手の scene.update と同じ）。姿勢を取り出して混ぜる所と置く所は engine の仕事（比べる相手の mixer）として CPU に残す。
+  - Flix の最適化が純粋な let を測る thunk の中へ畳み、姿勢の値段が場面の更新に入っていた。姿勢を作る所も timed で包んで順を決めた（値は捨てる）。
+- glb の形は右手系のまま読まれるので、Z の裏返しの代わりに Y の半回転で向きをそろえた（左右が対称な狐なので、違うのは左右の脚の歩みの順だけ）。frame 60 の絵で向き・大きさ・間隔が three.js と同じ。
+- engine の助言の行（`scene3d: 同じ形と材質の物が …`）を hints に数える（HINT_PREFIXES に足した）。
+
+smoke（1 回・counters の回・WebGPU）の interval p50（ms）:
+
+| 体 | flix naive | three naive | flix optimized | three optimized |
+|---:|---:|---:|---:|---:|
+| 25 | 2.9 | 0.9 | — | — |
+| 100 | 6.2 | 1.7 | — | — |
+| 200 | 10.5 | 2.9 | 2.9 | 2.5 |
+| 400 | 18.8 | 7.3 | 3.3 | 7.6 |
+| 800 | — | 16.9 | 4.2 | 17.7 |
+| 1,600 | — | 33.8 | 6.5 | — |
+| 3,200 | — | — | 10.5 | — |
+| 6,400 | — | — | 17.6 | — |
+
+- 60 fps に収まる最大: flix naive 約 350・three.js naive 約 790 ／ flix optimized 約 6.0k・three.js optimized 約 770（three.js は姿勢を分け合う道が無く、既定の道で回す）。
+  README の M1 Pro の naive は 359〜2.9k、1 clip は 621〜32.8k。
+- naive の CPU は体 1 つに約 45 µs（姿勢の取り出し 2 回・混ぜ・行列 24 本）。GPU は 400 体で 1.3 ms と軽い。

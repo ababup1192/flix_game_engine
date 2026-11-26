@@ -1,5 +1,5 @@
 // K9 の icon の atlas（比べる相手が canvas に描く 8×8 マス × 32 px）を、比べる相手の buildScene に描かせて PNG に書く。
-//   node harness/hud-atlas.mjs <比べる相手のリポ> <出す PNG>   （make hud-assets）
+//   node harness/hud-atlas.mjs <比べる相手のリポ> <出す PNG>   （make compare-assets）
 // 比べる相手の vite の dev サーバーで scenes.ts を読む頁を開き、ヘッドレスの Chrome の canvas の PNG を受け取る。サーバーと Chrome はこの中で止める。
 // WhyNot: 描き方を Flix や自前の JS に写さない — 比べる相手のリポに LICENSE が無く、コードを写せない。字の形も Chrome の sans-serif に任せる。
 import { writeFileSync, mkdtempSync, rmSync, mkdirSync } from 'node:fs';
