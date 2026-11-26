@@ -138,7 +138,7 @@ pub mod WebLayer.Internal.WebGpuLayer {
             handleAudio(state, () ->
             WebGpuPaint.handleTarget(paint, () ->
             WebGpuPaint.handleDiagnostics(paint, () ->
-            WebGpuPaint.handleDraw3d(paint, () ->
+            WebGpuPaint.handleDraw3d(not Browser.isFrameCapture(), paint, () ->
             Platform.runTasksInPlace(() ->
             handleFrameClock(state, () ->
             handleWindow(state, screen, onPoll, () ->

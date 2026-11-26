@@ -294,7 +294,7 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
             handleAnnotation(config, design, audio#shutterSource, present, () ->
             WebGpuPaint.handleDiagnostics(paint, () ->
             handleTasks(() ->
-            WebGpuPaint.handleDraw3d(paint, () ->
+            WebGpuPaint.handleDraw3d(LwjglEnv.isPreloadAhead(env), paint, () ->
             handleFrameClock({ fixedDt = env#fixedDt, maxDeltaTime = config#maxDeltaTime, last = timeHolder }, () ->
             handleWindow(windowState, () ->
             WebGpuPaint.handleDraw2d(paint, (paintFrom, paintTo, counts) -> Ref.put(Some((paintFrom, paintTo, counts)), present#screenPainted), () ->

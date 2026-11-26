@@ -548,7 +548,7 @@ pub mod LwjglLayer {
             handleAnnotation(annotation, () ->
             RenderPaintHandlers.handleDiagnostics(paint, () ->
             handleTasks(() ->
-            RenderPaintHandlers.handleDraw3d(paint, () ->
+            RenderPaintHandlers.handleDraw3d(LwjglEnv.isPreloadAhead(env), paint, () ->
             handleFrameClock({ fixedDt = env#fixedDt, maxDeltaTime = config#maxDeltaTime, last = timeHolder }, () ->
             handleWindow(windowState, () ->
             RenderPaintHandlers.handleDraw2d(gl, paint, framebufferSize, (paintFrom, paintTo) -> { Ref.put(Some((paintFrom, paintTo)), present#screenPainted); opened#onScreenFrame() }, () ->

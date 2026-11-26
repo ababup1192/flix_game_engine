@@ -227,7 +227,7 @@ pub mod WebLayer {
             handleAudio(state, () ->
             RenderPaintHandlers.handleTarget(gl, paint, framebufferSize, () ->
             RenderPaintHandlers.handleDiagnostics(paint, () ->
-            RenderPaintHandlers.handleDraw3d(paint, () ->
+            RenderPaintHandlers.handleDraw3d(not Browser.isFrameCapture(), paint, () ->
             Platform.runTasksInPlace(() ->
             handleFrameClock(state, () ->
             handleScreen(gl, paint, framebufferSize, state, onPoll, fonts, f))))))));
