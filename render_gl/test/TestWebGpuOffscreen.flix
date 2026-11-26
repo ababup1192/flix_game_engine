@@ -10,6 +10,8 @@ mod WebGpuOffscreen.TestWebGpuOffscreen {
     import fge.webgpu.Buffer
     import fge.webgpu.CommandBuffer
     import fge.webgpu.CommandEncoder
+    import fge.webgpu.ComputePipeline
+    import fge.webgpu.ComputePipelineDesc
     import fge.webgpu.FilterMode
     import fge.webgpu.Limits
     import fge.webgpu.QuerySet
@@ -87,6 +89,7 @@ mod WebGpuOffscreen.TestWebGpuOffscreen {
             def createBindGroupLayout(_this: WebGpu, _d: BindGroupLayoutDesc): BindGroupLayout = unused()
             def createBindGroup(_this: WebGpu, _d: BindGroupDesc): BindGroup = unused()
             def createRenderPipeline(_this: WebGpu, _d: RenderPipelineDesc): RenderPipeline = unused()
+            def createComputePipeline(_this: WebGpu, _d: ComputePipelineDesc): ComputePipeline = unused()
             def createTimestampQuerySet(_this: WebGpu, _label: String, _count: Int32): QuerySet = unused()
             def createCommandEncoder(_this: WebGpu, _label: String): CommandEncoder = unused()
             def createRenderBundleEncoder(_this: WebGpu, _label: String, _color: TextureFormat, _depth: TextureFormat, _samples: Int32): RenderBundleEncoder = unused()

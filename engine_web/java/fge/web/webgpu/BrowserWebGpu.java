@@ -294,6 +294,10 @@ public final class BrowserWebGpu implements WebGpu {
         return new BrowserRenderPipeline(device.createRenderPipeline(d));
     }
 
+    @Override public fge.webgpu.ComputePipeline createComputePipeline(ComputePipelineDesc desc) {
+        return BrowserCompute.createPipeline(device, desc);
+    }
+
     private static GPUDescriptor.VertexState vertexState(RenderPipelineDesc desc) {
         List<RenderPipelineDesc.VertexBuffer> list = desc.vertexBuffers();
         GPUDescriptor.VertexBufferLayout[] buffers = new GPUDescriptor.VertexBufferLayout[list.size()];

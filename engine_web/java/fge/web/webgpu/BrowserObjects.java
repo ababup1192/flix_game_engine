@@ -390,6 +390,14 @@ final class BrowserObjects {
             return new BrowserRenderPass(encoder.beginRenderPass(BrowserWebGpu.renderPass(desc)));
         }
 
+        @Override public fge.webgpu.ComputePass beginComputePass(String label, fge.webgpu.QuerySet timestamps, int beginIndex, int endIndex) {
+            return BrowserCompute.beginPass(encoder, label, timestamps, beginIndex, endIndex);
+        }
+
+        @Override public void clearBuffer(fge.webgpu.Buffer buffer, long offset, long size) {
+            encoder.clearBuffer(((BrowserBuffer) buffer).buffer, offset, size);
+        }
+
         @Override public void copyBufferToBuffer(fge.webgpu.Buffer src, long srcOffset, fge.webgpu.Buffer dst, long dstOffset, long size) {
             encoder.copyBufferToBuffer(((BrowserBuffer) src).buffer, srcOffset, ((BrowserBuffer) dst).buffer, dstOffset, size);
         }

@@ -323,6 +323,14 @@ final class DawnObjects {
             return gpu.beginRenderPass(encoder, desc);
         }
 
+        @Override public fge.webgpu.ComputePass beginComputePass(String label, fge.webgpu.QuerySet timestamps, int beginIndex, int endIndex) {
+            return DawnCompute.beginPass(encoder, label, timestamps, beginIndex, endIndex);
+        }
+
+        @Override public void clearBuffer(fge.webgpu.Buffer buffer, long offset, long size) {
+            encoder.clearBuffer(((DawnBuffer) buffer).buffer, Math.toIntExact(offset), Math.toIntExact(size));
+        }
+
         @Override public void copyBufferToBuffer(fge.webgpu.Buffer src, long srcOffset, fge.webgpu.Buffer dst, long dstOffset, long size) {
             encoder.copyBufferToBuffer(((DawnBuffer) src).buffer, Math.toIntExact(srcOffset),
                 ((DawnBuffer) dst).buffer, Math.toIntExact(dstOffset), Math.toIntExact(size));

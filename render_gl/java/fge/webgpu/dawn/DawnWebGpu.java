@@ -518,6 +518,10 @@ public final class DawnWebGpu implements WebGpu {
         return new DawnRenderPipeline(pipeline);
     }
 
+    @Override public fge.webgpu.ComputePipeline createComputePipeline(ComputePipelineDesc desc) {
+        return DawnCompute.createPipeline(device, desc);
+    }
+
     private static void setBlend(WGPUBlendComponent c, RenderPipelineDesc.BlendComponent b) {
         c.setSrcFactor(DawnFormats.blendFactor(b.src));
         c.setDstFactor(DawnFormats.blendFactor(b.dst));
