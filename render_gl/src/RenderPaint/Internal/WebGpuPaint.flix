@@ -1052,6 +1052,11 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         let PaintData.PaintData(p) = paint;
         DiagnosticsCollector.note(p#diagnosticsRef, f)
 
+    /// 画面へ出すのに掛かった時間（getCurrentTexture から present まで）を診断の swap に足す。
+    /// WebGPU は GPU の終わりをここ（present の中の queue.submit と次の絵の待ち）で待つので、GL の swap と同じ意味になる。
+    pub def noteSwap(paint: Paint, swapNs: Int64): Unit \ IO =
+        noteDiagnostics(paint, d -> { swapNs = d#swapNs + swapNs | d })
+
     // WhyNot: liveShaders を数えない — WebGPU の 2D は pipeline を作った数と消した数を持っていない。
     def consumeDiagnostics(paint: Paint): FrameDiagnostics.Diagnostics \ IO =
         let PaintData.PaintData(p) = paint;

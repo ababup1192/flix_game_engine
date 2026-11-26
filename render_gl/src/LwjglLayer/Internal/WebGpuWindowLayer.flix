@@ -348,7 +348,7 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
             case None => ()
             case Some((paintFrom, paintTo, counts)) =>
                 Ref.put(None, ps#screenPainted);
-                discard showOnScreen(ps);
+                WebGpuPaint.noteSwap(ps#paint, showOnScreen(ps));
                 Option.forEach(stats -> RenderFrameStats.record(stats, paintFrom, paintTo, counts,
                                                                 () -> submitsText(WebGpuPaint.takeSubmitCounts(ps#paint)) + GpuTimer.samplesText(WebGpuPaint.takeGpuSamples(ps#paint))), ps#frameStats);
                 noteNewErrors(ps);

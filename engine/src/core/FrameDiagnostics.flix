@@ -5,8 +5,9 @@
 pub mod FrameDiagnostics {
 
     /// 1 コマの診断。時間はナノ秒。
-    /// - submitNs: renderCommands が GL へ命令を出し終えるまで
-    /// - swapNs: 画面の入れ替え（vsync の待ち・ドライバが後回しにした GPU の仕事もここに出る）
+    /// - submitNs: renderCommands が命令を出し終えるまで（GL はドライバが draw の中で GPU を待つとその時間も入る・WebGPU は命令を積むだけ）
+    /// - swapNs: 画面へ出すまで（vsync の待ち・GPU の終わりの待ちもここに出る。WebGPU は present の中の queue.submit と次の絵の待ち）
+    ///   GPU を待つ時間が submit と swap のどちらに入るかは描き手で違うので、描き手どうしは submit・swap でなく 1 コマの間隔と GPU の時間で比べる
     /// - shaderBuilds: このコマで作ったシェーダー（名前と理由）
     /// - shaderDeletes: このコマで GPU から消したシェーダーの数
     /// - liveShaders: 起動から作った数 − 消した数（増え続けるなら漏れ）
