@@ -22,12 +22,14 @@ mod CompareBench {
     pub def scenarioOf(knobs: Map[String, String]): Scenes.Scenario =
         Map.get("scenario", knobs) |> Option.flatMap(Scenes.scenarioOf) |> Option.getWithDefault(Scenes.Scenario.K1)
 
-    /// 物の置き方（variant=optimized なら形と材質の組ごとの MultiMesh3d）。
-    pub def pathOf(knobs: Map[String, String]): Draw.Path =
-        if (Map.get("variant", knobs) == Some("optimized")) Draw.Path.Batched else Draw.Path.PerObject
+    /// 物の置き方（variant=optimized なら K5 は区画ごとの staticGroup・ほかは形と材質の組ごとの MultiMesh3d）。
+    pub def pathOf(scenario: Scenes.Scenario, knobs: Map[String, String]): Draw.Path =
+        if (Map.get("variant", knobs) != Some("optimized")) Draw.Path.PerObject
+        else if (scenario == Scenes.Scenario.K5) Draw.Path.Chunks
+        else Draw.Path.Batched
 
     pub def levelOf(scenario: Scenes.Scenario, knobs: Map[String, String]): Int32 =
-        BenchRun.intKnob("level", if (scenario == Scenes.Scenario.K2) 500 else 1, knobs)
+        BenchRun.intKnob("level", if (scenario == Scenes.Scenario.K1) 1 else 500, knobs)
 
     def knobsOf(kit: Draw.Kit, scenario: Scenes.Scenario, segment: Int32): List[(String, String)] =
         ("bench", BenchRun.quoted("web_engine_compare")) :: ("segment", Int32.toString(segment)) ::

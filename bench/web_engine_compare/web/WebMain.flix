@@ -22,7 +22,7 @@ mod WebMain {
         let knobs = BenchRun.knobsOfPairs(Array.toList(Browser.queryPairs()));
         let scenario = CompareBench.scenarioOf(knobs);
         run {
-            match Draw.kitOf(CompareBench.pathOf(knobs), Scenes.build(scenario, CompareBench.levelOf(scenario, knobs))) {
+            match Draw.kitOf(CompareBench.pathOf(scenario, knobs), Scenes.build(scenario, CompareBench.levelOf(scenario, knobs))) {
                 case Err(why) => Browser.log("[web_engine_compare] 形を作れない: ${why}")
                 case Ok(kit)  =>
                     CompareBench.app(CompareBench.planOf(knobs), line -> Browser.log(line), hooksOf(knobs), kit, scenario)

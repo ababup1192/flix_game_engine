@@ -21,21 +21,27 @@ mod Scenes {
     pub type alias Groups = { count = Int32, parent = Vector[Int32], position = Vector[Float64], spin = Spin, timeScale = Float64 }
 
     /// 物をたくさん置く場面。geom は Geometry.fieldShapes の番号・material は materials の番号・position は物ごとに 3 つ。
+    /// animated = 物が回るか（偽なら t = 0 の向きのまま）・turn = カメラの注視点が 1 周する秒（K5）。
     pub type alias Field = {
         camera = Camera, clearColor = V3, ambient = { color = V3, intensity = Float64 }, sun = Sun,
         materials = Vector[Pbr], count = Int32, geom = Vector[Int32], material = Vector[Int32],
-        position = Vector[Float64], scale = Vector[Float64], spin = Spin, groups = Option[Groups]
+        position = Vector[Float64], scale = Vector[Float64], spin = Spin, groups = Option[Groups],
+        animated = Bool, turn = Option[Float64]
     }
 
     /// 測る場面。
     pub enum Scenario with Eq, ToString {
         case K1
         case K2
+        case K5
+        case K7
     }
 
     pub def scenarioOf(name: String): Option[Scenario] = match name {
         case "k1" => Some(Scenario.K1)
         case "k2" => Some(Scenario.K2)
+        case "k5" => Some(Scenario.K5)
+        case "k7" => Some(Scenario.K7)
         case _    => None
     }
 
@@ -43,6 +49,8 @@ mod Scenes {
     pub def build(scenario: Scenario, level: Int32): Field = match scenario {
         case Scenario.K1 => startup()
         case Scenario.K2 => hierarchyField(level)
+        case Scenario.K5 => worldField(level)
+        case Scenario.K7 => frustumField(7, level, palette(2700, 16, 0.5))
     }
 
     pub def width(): Float64 = 1920.0
@@ -105,13 +113,13 @@ mod Scenes {
     def coverageScale(n: Int32): Float64 = Float64.min(2.0, Float64.max(0.2, Num.sqrt(3000.0 / i2f(n))))
 
     /// 種 seed の列から n 個の材質（1 つに 5 つ引く）。
-    def palette(seed: Int32, n: Int32): Vector[Pbr] =
+    def palette(seed: Int32, n: Int32, opacity: Float64): Vector[Pbr] =
         Vector.range(0, n) |> Vector.map(i -> {
             let k = i * 5;
             { color = hsvToLinear(Rng.at(seed, k), Rng.rangeAt(seed, k + 1, { min = 0.4, max = 0.9 }), Rng.rangeAt(seed, k + 2, { min = 0.5, max = 0.95 })),
               roughness = Rng.rangeAt(seed, k + 3, { min = 0.2, max = 0.9 }),
               metalness = if (Rng.at(seed, k + 4) < 0.3) 0.6 else 0.0,
-              opacity = 1.0 }
+              opacity = opacity }
         })
 
     /// 視錐台に count 個の物を散らした場面（材質は materials から 1 つずつ選ぶ）。
@@ -125,7 +133,7 @@ mod Scenes {
           scale = Vector.range(0, count) |> Vector.map(i -> s * Rng.rangeAt(seed, i * 3 + 2, { min = 0.8, max = 1.2 })),
           position = scatterInFrustum(seed, count * 3, fieldCamera(), count, { near = 25.0, far = 55.0, margin = s }),
           spin = spinner(seed, count * 6, count),
-          groups = None }
+          groups = None, animated = true, turn = None }
 
     /// K1: 光の当たる箱 1 つ。
     def startup(): Field =
@@ -133,14 +141,45 @@ mod Scenes {
           clearColor = clear(), ambient = ambient(), sun = sun(),
           materials = Vector#{{ color = (0.8, 0.3, 0.1), roughness = 0.4, metalness = 0.0, opacity = 1.0 }},
           count = 1, geom = Vector#{0}, material = Vector#{0}, position = Vector#{0.0, 0.0, 0.0}, scale = Vector#{1.0},
-          spin = spinner(1, 0, 1), groups = None }
+          spin = spinner(1, 0, 1), groups = None, animated = true, turn = None }
+
+    /// K5 のカメラの注視点が 1 周する秒。
+    def turnSeconds(): Float64 = 10.0 * Num.pi()
+
+    /// K5: 見えるより広い動かない世界（密度は同じなので、見える物は世界の大きさによらず約 2,000）。カメラは位置を変えず向きだけ 1 周する。
+    def worldField(count: Int32): Field =
+        let seed = 5;
+        let materials = palette(2500, 8, 1.0);
+        let side = Num.sqrt(i2f(count) / 0.8);
+        let at = (i, j) -> i * 6 + j;
+        { camera = { position = (0.0, 6.0, 0.0), target = (10.0, 4.0, 0.0), fovY = 50.0, near = 0.5, far = 60.0 },
+          clearColor = clear(), ambient = ambient(), sun = sun(), materials = materials, count = count,
+          geom = Vector.range(0, count) |> Vector.map(i -> Rng.intAt(seed, at(i, 0), 8)),
+          material = Vector.range(0, count) |> Vector.map(i -> Rng.intAt(seed, at(i, 1), Vector.length(materials))),
+          scale = Vector.range(0, count) |> Vector.map(i -> Rng.rangeAt(seed, at(i, 2), { min = 0.6, max = 1.4 })),
+          position = Vector.range(0, count) |> Vector.flatMap(i -> Vector#{
+              Rng.rangeAt(seed, at(i, 3), { min = 0.0 - side / 2.0, max = side / 2.0 }),
+              Rng.rangeAt(seed, at(i, 4), { min = 0.5, max = 3.0 }),
+              Rng.rangeAt(seed, at(i, 5), { min = 0.0 - side / 2.0, max = side / 2.0 })}),
+          spin = spinner(seed, count * 6, count), groups = None, animated = false, turn = Some(turnSeconds()) }
+
+    /// 時刻 t のカメラ（turn があれば注視点が y = 4 の半径 10 の輪を回る）。
+    pub def cameraAt(f: Field, t: Float64): Camera = match f#turn {
+        case Some(seconds) =>
+            let a = t / seconds * 2.0 * Num.pi();
+            { target = (10.0 * Num.cos(a), 4.0, 10.0 * Num.sin(a)) | f#camera }
+        case None => f#camera
+    }
+
+    /// 物の向きを決める時刻（動かない場面は 0）。
+    def spinTime(f: Field, t: Float64): Float64 = if (f#animated) t else 0.0
 
     /// 1 つの親に入る子の数（K2）。
     def groupSize(): Int32 = 8
 
     /// K2: 8 個ずつの親の 2 段。子も親も回る。
     def hierarchyField(count: Int32): Field =
-        let base = frustumField(2, count, palette(2100, 16));
+        let base = frustumField(2, count, palette(2100, 16, 1.0));
         let seed = 22;
         let s = coverageScale(count);
         let groups = (count + groupSize() - 1) / groupSize();
@@ -162,7 +201,7 @@ mod Scenes {
 
     /// 物 i の world の行列を 1 つの Vector に詰める。親の無い場面は回転なし・位置 0 の親として同じ式を通す。
     def columnsOf(mirror: Bool, f: Field, t: Float64, i: Int32): Vector[Float64] =
-        let (x, y, z, w) = quatAt(f#spin, t, i);
+        let (x, y, z, w) = quatAt(f#spin, spinTime(f, t), i);
         let sc = Vector.get(i, f#scale);
         let (x2, y2, z2) = (x + x, y + y, z + z);
         let (xx, xy, xz, yy, yz, zz) = (x * x2, x * y2, x * z2, y * y2, y * z2, z * z2);

@@ -5,7 +5,8 @@ mod SceneDump {
     /// (場面, 段, 時刻) の組。
     pub def cases(): List[(Scenes.Scenario, Int32, Float64)] =
         (Scenes.Scenario.K1, 1, 0.0) :: (Scenes.Scenario.K1, 1, 1.25) ::
-        (Scenes.Scenario.K2, 500, 0.0) :: (Scenes.Scenario.K2, 500, 1.25) :: (Scenes.Scenario.K2, 4000, 0.7) :: Nil
+        (Scenes.Scenario.K2, 500, 0.0) :: (Scenes.Scenario.K2, 500, 1.25) :: (Scenes.Scenario.K2, 4000, 0.7) ::
+        (Scenes.Scenario.K5, 20000, 3.0) :: (Scenes.Scenario.K7, 500, 0.8) :: Nil
 
     def numbers(v: Vector[Float64]): String = "[${v |> Vector.map(Float64.toString) |> Vector.join(",")}]"
 
@@ -19,16 +20,18 @@ mod SceneDump {
     /// 場面 1 つの JSON（欄の名前は比べる相手の FieldScene と同じ）。
     pub def jsonOf(scenario: Scenes.Scenario, level: Int32, t: Float64): String =
         let f = Scenes.build(scenario, level);
-        let materials = f#materials |> Vector.map(m -> "{\"color\":${v3(m#color)},\"roughness\":${m#roughness},\"metalness\":${m#metalness}}") |> Vector.join(",");
+        let camera = Scenes.cameraAt(f, t);
+        let spinT = if (f#animated) t else 0.0;
+        let materials = f#materials |> Vector.map(m -> "{\"color\":${v3(m#color)},\"roughness\":${m#roughness},\"metalness\":${m#metalness},\"opacity\":${m#opacity}}") |> Vector.join(",");
         let groups = match f#groups {
             case None    => "null"
             case Some(g) => "{\"count\":${g#count},\"parent\":${ints(g#parent)},\"position\":${numbers(g#position)},\"quat\":${numbers(quats(g#spin, t * g#timeScale, g#count))}}"
         };
         "{\"scenario\":\"${String.toLowerCase(ToString.toString(scenario))}\",\"level\":${level},\"t\":${t}," +
-        "\"camera\":{\"position\":${v3(f#camera#position)},\"target\":${v3(f#camera#target)},\"fovY\":${f#camera#fovY}}," +
+        "\"camera\":{\"position\":${v3(camera#position)},\"target\":${v3(camera#target)},\"fovY\":${f#camera#fovY}}," +
         "\"sun\":{\"direction\":${v3(f#sun#direction)},\"color\":${v3(f#sun#color)},\"intensity\":${f#sun#intensity}}," +
         "\"count\":${f#count},\"geom\":${ints(f#geom)},\"material\":${ints(f#material)},\"position\":${numbers(f#position)}," +
-        "\"scale\":${numbers(f#scale)},\"quat\":${numbers(quats(f#spin, t, f#count))},\"materials\":[${materials}],\"groups\":${groups}," +
+        "\"scale\":${numbers(f#scale)},\"quat\":${numbers(quats(f#spin, spinT, f#count))},\"materials\":[${materials}],\"groups\":${groups}," +
         "\"worldColumns\":${numbers(Vector.range(0, f#count) |> Vector.flatMap(i -> Scenes.worldColumns(f, t, i)))}," +
         "\"shapes\":[${Geometry.fieldShapes() |> Vector.map(shapeJson) |> Vector.join(",")}]}"
 

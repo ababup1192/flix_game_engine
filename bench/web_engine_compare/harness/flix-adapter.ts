@@ -8,7 +8,7 @@ import type { EngineAdapter, InitOptions, InitReport, LoadReport, SceneData, Var
 const BASE = '/flix/';
 const SIM_LINE = '[wec] sim ';
 /** engine が置き方を勧める行の頭（数えて counters の hints に出す）。 */
-const HINT_PREFIXES = ['scene3d: 置いた物が'];
+const HINT_PREFIXES = ['scene3d: 置いた物が', 'scene3d: 場面の draw call が', '[scene3d] staticGroup の名前か値が'];
 /** load の中で回すコマ数（pipeline と形の初めての上げを済ませる）。 */
 const LOAD_FRAMES = 60;
 /** 起動（wasm の compile と main）を待つ上限。 */

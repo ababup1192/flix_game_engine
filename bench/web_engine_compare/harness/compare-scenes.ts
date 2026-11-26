@@ -61,6 +61,8 @@ for (const line of lines) {
   theirs.update(ours.t);
   const tag = `${ours.scenario}@${ours.level} t=${ours.t}`;
   floats(`${tag} camera.position`, ours.camera.position, theirs.camera.position);
+  floats(`${tag} camera.target`, ours.camera.target, theirs.camera.target);
+  floats(`${tag} materials.opacity`, ours.materials.map((m: any) => m.opacity), theirs.materials.map((m) => m.opacity ?? 1));
   floats(`${tag} sun.direction`, ours.sun.direction, theirs.sun!.direction);
   exact(`${tag} count`, [ours.count], [theirs.count]);
   exact(`${tag} geom`, ours.geom, theirs.geom);
