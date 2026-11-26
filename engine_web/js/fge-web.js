@@ -1022,7 +1022,8 @@ function fgeWireMouseCapture() {
     if (!locked) c.releasing = false;
   });
   document.addEventListener("pointerlockerror", function () { fgeMouseCapture.asking = false; });
-  window.addEventListener("mousedown", fgeRequestMouseCapture);
+  // WhyNot: mousedown で頼まない — Android の Chrome は指のタップにも互換の mousedown を出し、lock が掛かると指が全部 canvas へ吸われて画面のパッドに届かない。
+  window.addEventListener("pointerdown", function (e) { if (e.pointerType === "mouse") fgeRequestMouseCapture(); });
   // WhyNot: Esc で頼み直さない — Esc で放した状態の Esc（メニューの閉じる）で、また掛かる。
   window.addEventListener("keydown", function (e) { if (e.code !== "Escape") fgeRequestMouseCapture(); });
 }
