@@ -228,7 +228,7 @@
   },
   "web": {
     "startPrompt": "タッチして開始",
-    "// deferred": "押してから取る物（取る順）。起動で読むのは 1 階の建物（bundle/floor1）と昇降口のまわりの小物（bundle/entrance）・足音。1 階のほかの小物・人物・空気と戸の音・2〜3 階（bundle/upper_a・upper_b）・時計と風と紙の音は届いた物から足す。2〜3 階へ上がる・人物に話す時は、届くまで engine が前の場面で待つ（Controls.loadGate）。",
+    "// deferred": "押してから取る物（取る順）。起動で読むのは 1 階の建物（bundle/floor1）と昇降口のまわりの小物（bundle/entrance）・足音。1 階のほかの小物・人物・空気と戸の音・2〜3 階（bundle/upper_a・upper_b）・時計と風と紙の音は届いた物から足す。2〜3 階へ上がる・人物に話す時は、届くまで engine が前の場面で待つ（Controls.loadGate）。メニュー（地図・持ち物）で使う絵は頭へ（4G で押してから 10 秒より後に届く待つ物は書き出しが知らせる）。",
     "deferred": [
       "assets/school/bundle/props_1f_a.glb",
       "assets/school/bundle/props_1f_b.glb",

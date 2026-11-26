@@ -185,6 +185,73 @@ func TestGateUsesLargerOfMeasuredAndGroupEstimate(t *testing.T) {
 	}
 }
 
+// lateWaitFixture は entries の後ろに、4G で押してから約 11 秒目に届く絵 assets/map.webp を足した束。
+func lateWaitFixture(t *testing.T, late webDeferredEntry, entries ...webDeferredEntry) (string, webBundle) {
+	out, b := tapWaitFixture(t, entries...)
+	writeServed(t, out, "assets/map.webp", 2200000)
+	b.Images = append(b.Images, "assets/map.webp")
+	late.Path = "assets/map.webp"
+	b.Deferred = append(b.Deferred, late)
+	return out, b
+}
+
+func TestGateFindsWaitingImageArrivingAfterTenSeconds(t *testing.T) {
+	out, b := lateWaitFixture(t, webDeferredEntry{}, webDeferredEntry{Path: "assets/a.webp"})
+	g := webGateOf(newWebSizeTable(out), &b, defaultWebStartupBudget())
+	if len(g.LateWaits) != 1 || g.LateWaits[0].Path != "assets/map.webp" {
+		t.Errorf("10 秒より後に届く待つ絵だけを拾うはず: %+v", g.LateWaits)
+	}
+}
+
+func TestGateSaysLateWaitWithTheThreeFixes(t *testing.T) {
+	out, b := lateWaitFixture(t, webDeferredEntry{})
+	g := webGateOf(newWebSizeTable(out), &b, defaultWebStartupBudget())
+	all := strings.Join(append(append([]string{}, g.Red...), g.Notes...), "\n") + strings.Join(g.Advice, "\n")
+	for _, want := range []string{"4G で押してから 10 秒より後に届く", "assets/map.webp", "web.deferred の頭", "placeholder", "why を書いて許す"} {
+		if !strings.Contains(all, want) {
+			t.Errorf("遅く届く待つ物の行に %q が無い: %s", want, all)
+		}
+	}
+}
+
+func TestGateLateWaitIsOnlyANoteForNow(t *testing.T) {
+	out, b := lateWaitFixture(t, webDeferredEntry{})
+	if g := webGateOf(newWebSizeTable(out), &b, defaultWebStartupBudget()); g.green() == webLateWaitIsRed {
+		t.Errorf("赤にするかは webLateWaitIsRed（%v）に従うはず: %+v", webLateWaitIsRed, g.Red)
+	}
+}
+
+func TestGateLateWaitAllowedByPolicyWhy(t *testing.T) {
+	out, b := lateWaitFixture(t, webDeferredEntry{Why: "地図はメニューから開く"})
+	if g := webGateOf(newWebSizeTable(out), &b, defaultWebStartupBudget()); len(g.LateWaits) != 0 {
+		t.Errorf("deferredPolicy の why がある物は許すはず: %+v", g.LateWaits)
+	}
+}
+
+func TestGateLateWaitSkipsPlaceholderImage(t *testing.T) {
+	out, b := lateWaitFixture(t, webDeferredEntry{OnMissing: "placeholder"})
+	if g := webGateOf(newWebSizeTable(out), &b, defaultWebStartupBudget()); len(g.LateWaits) != 0 {
+		t.Errorf("placeholder の絵は待たないので数えないはず: %+v", g.LateWaits)
+	}
+}
+
+func TestGateLateWaitSkipsSoundThatIsSkipped(t *testing.T) {
+	out, b := lateWaitFixture(t, webDeferredEntry{})
+	b.Images = b.Images[:len(b.Images)-1]
+	b.Sounds = append(b.Sounds, webSound{Name: "map", Path: "assets/map.webp"})
+	if g := webGateOf(newWebSizeTable(out), &b, defaultWebStartupBudget()); len(g.LateWaits) != 0 {
+		t.Errorf("鳴らさず進む音は待たないので数えないはず: %+v", g.LateWaits)
+	}
+}
+
+func TestGateLateWaitLeavesLogoGroupToTheBudget(t *testing.T) {
+	out, b := lateWaitFixture(t, webDeferredEntry{Group: "start"})
+	withLogo(&b, "engine", "start")
+	if g := webGateOf(newWebSizeTable(out), &b, defaultWebStartupBudget()); len(g.LateWaits) != 0 {
+		t.Errorf("ロゴが待つ group の物は遊べるまでの秒に入るので、遅く届く物に数えないはず: %+v", g.LateWaits)
+	}
+}
+
 func TestGateRedWhenOverBudget(t *testing.T) {
 	out, b := tapWaitFixture(t)
 	if g := webGateOf(newWebSizeTable(out), &b, webStartupBudget{Seconds: 1}); g.green() {

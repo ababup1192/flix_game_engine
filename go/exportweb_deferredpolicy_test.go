@@ -41,6 +41,15 @@ func TestDeferredPolicyWritesGroupOfFirstMatchingRow(t *testing.T) {
 	}
 }
 
+func TestDeferredPolicyCopiesWhyOfMatchingRow(t *testing.T) {
+	b := deferredFixtureBundle()
+	pol := mustDeferredPolicy(t, `{"deferredPolicy": [{"match": "assets/bg/*.png", "onMissing": "wait", "why": " 2 章から使う "}]}`)
+	out, _, err := applyWebDeferredPolicy(policyFixtureEntries(), pol, &b)
+	if err != nil || out[1].Why != "2 章から使う" {
+		t.Errorf("当たった行の why を前後の空白を落として写すはず: %+v %v", out[1], err)
+	}
+}
+
 func TestDeferredPolicyMatchesFontByName(t *testing.T) {
 	b := deferredFixtureBundle()
 	pol := mustDeferredPolicy(t, `{"deferredPolicy": [{"match": "font:gothic", "onMissing": "placeholder"}]}`)

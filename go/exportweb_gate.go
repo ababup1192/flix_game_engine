@@ -120,7 +120,8 @@ type webGate struct {
 	LogoCover     float64
 	Playable      float64
 	Budget        webStartupBudget
-	BudgetDefault bool // 束に予算が無く既定の 16 秒を使った
+	BudgetDefault bool          // 束に予算が無く既定の 16 秒を使った
+	LateWaits     []webLateWait // 4G で押してから遅く届く待つ物（webLateWaitsOf）
 	Red           []string
 	Notes         []string
 	Advice        []string
@@ -212,6 +213,14 @@ func webGateOf(sizes *webSizeTable, b *webBundle, budget webStartupBudget) webGa
 	case !g.Measured && t.Count > 0:
 		g.Notes = append(g.Notes, "★ 押した後は測っていない（group が届くまでの見積もり）— Chrome のある機械で書き出すか web-check --browser で測る")
 	}
+	g.LateWaits = webLateWaitsOf(sizes, b, waitFor)
+	if len(g.LateWaits) > 0 {
+		if webLateWaitIsRed {
+			g.Red = append(g.Red, webLateWaitLine(g.LateWaits))
+		} else {
+			g.Notes = append(g.Notes, "★ "+webLateWaitLine(g.LateWaits)+"（今は知らせだけ・次の版から止める）— "+webLateWaitFix)
+		}
+	}
 	if n := webPlaceholderImages(b); n > 0 {
 		g.Notes = append(g.Notes, fmt.Sprintf("★ placeholder の後回しの絵 %d 枚（届くまで描かずに進む）", n))
 	}
@@ -255,6 +264,9 @@ func (g webGate) advise(b *webBundle, t webTapWait, est webStartupEstimate) []st
 		}
 		out = append(out, fmt.Sprintf("押した後の待ち %.1f 秒（ロゴで覆えない分 %.1f 秒）→ %s", g.TapWait, over, hint))
 	}
+	if webLateWaitIsRed && len(g.LateWaits) > 0 {
+		out = append(out, "遅く届く待つ物 → "+webLateWaitFix)
+	}
 	if b.WasmBrotli == "" {
 		br := int64(float64(est.Boot.WasmWire) * webBrotliToGzipRatio)
 		out = append(out, fmt.Sprintf("wasm を gzip の大きさで配っている → web.compress の wasmBrotli: false を外すと wasm が 約 -%.1f 秒", webSecondsFor(est.Boot.WasmWire-br)))
@@ -286,4 +298,53 @@ func webPlaceholderImages(b *webBundle) int {
 		}
 	}
 	return n
+}
+
+// webLateWaitSeconds は、後回しの待つ物が 4G で押してから届いてよい秒の上限。
+// WhyNot: 押した後のロゴの上限（3 秒）で数えない — 最初の場面が使わない物（地図・2 階の絵）まで止まり、後回しにする意味が消える。
+// 10 秒は、押してすぐメニューを開く・次の部屋へ入る人がそこに着くまでの短い方の見込み。
+const webLateWaitSeconds = 10.0
+
+// webLateWaitIsRed は遅く届く待つ物を門の赤にするか（false の間は ★ の知らせだけ）。
+// WhyNot: 最初の版から赤にしない — 今のゲームの多くが当たり、直す手（並べ替え・placeholder・why）を入れる間もなく書き出しが止まる。
+const webLateWaitIsRed = false
+
+// webLateWaitFix は遅く届く待つ物を直す 3 つの手。
+const webLateWaitFix = "(1) 早く使う物を web.deferred の頭へ並べ替える (2) 描かずに進んでよい絵は deferredPolicy の行で onMissing: placeholder（why も要る） (3) 使う場面がもっと後なら deferredPolicy の行に why を書いて許す"
+
+// webLateWait は遅く届く待つ物 1 本（後回しの道と、4G で押してから届く秒）。
+type webLateWait struct {
+	Path    string
+	Seconds float64
+}
+
+// webLateWaitsOf は、届く前に使うと engine が待つ後回しの物のうち、4G で押してから webLateWaitSeconds より後に届き、
+// deferredPolicy の行に why の無い物（取る順）。waitFor の group の物は押した後のロゴが待ち、遊べるまでの秒に入るので数えない。
+func webLateWaitsOf(sizes *webSizeTable, b *webBundle, waitFor []string) []webLateWait {
+	covered := map[string]bool{}
+	for _, g := range waitFor {
+		covered[g] = true
+	}
+	arrivals := webDeferredArrivals(sizes, b)
+	var out []webLateWait
+	for i, e := range b.Deferred {
+		if arrivals[i] <= webLateWaitSeconds || e.Why != "" || (e.Group != "" && covered[e.Group]) {
+			continue
+		}
+		if webWaitsWhenMissing(e, webDeferredKindOf(e.Path, b)) {
+			out = append(out, webLateWait{Path: e.Path, Seconds: arrivals[i]})
+		}
+	}
+	return out
+}
+
+// webLateWaitLine は遅く届く待つ物の門の 1 行（最初と最後の物と秒）。
+func webLateWaitLine(late []webLateWait) string {
+	first, last := late[0], late[len(late)-1]
+	span := fmt.Sprintf("%s が %.1f 秒目", first.Path, first.Seconds)
+	if len(late) > 1 {
+		span += fmt.Sprintf("〜%s が %.1f 秒目", last.Path, last.Seconds)
+	}
+	return fmt.Sprintf("届く前に使うと engine が前の場面のまま止まる後回しの物 %d 本が、4G で押してから %.0f 秒より後に届く（%s）",
+		len(late), webLateWaitSeconds, span)
 }

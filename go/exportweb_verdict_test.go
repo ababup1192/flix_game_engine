@@ -172,17 +172,17 @@ func TestStartupEstimateLineNamesSecondsAndPrelude(t *testing.T) {
 
 func TestTapWaitEstimateWithoutWaitsIsZero(t *testing.T) {
 	var w strings.Builder
-	writeTapWaitEstimate(&w, webTapWait{}, webAfterTapMaxSeconds)
+	writeTapWaitEstimate(&w, webTapWait{})
 	if !strings.Contains(w.String(), ": 0 秒（届く前に使うと engine が待つ後回しの物が無い）") {
 		t.Errorf("待つ物が無ければ 0 秒のはず: %q", w.String())
 	}
 }
 
-func TestTapWaitEstimateOverLogoWarns(t *testing.T) {
+func TestTapWaitEstimateLeavesLateWaitsToTheGate(t *testing.T) {
 	var w strings.Builder
-	writeTapWaitEstimate(&w, webTapWait{Group: []string{"start"}, Count: 2, Seconds: 5}, 3)
-	if !strings.Contains(w.String(), "ロゴの上限 3.0 秒を超える") {
-		t.Errorf("ロゴの上限を超えたら知らせるはず: %q", w.String())
+	writeTapWaitEstimate(&w, webTapWait{Group: []string{"start"}, Count: 2, Seconds: 5})
+	if strings.Contains(w.String(), "知らせ") {
+		t.Errorf("遅く届く物は門の 1 行で言い、見積もりの行に並べないはず: %q", w.String())
 	}
 }
 
