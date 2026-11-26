@@ -443,7 +443,7 @@ mod V2Main {
         windowless(paint, () ->
         WebGpuPaint.handleDiagnostics(paint, () ->
         Platform.runTasksInPlace(() ->
-        WebGpuPaint.handleDraw3d(paint, () ->
+        WebGpuPaint.handleDraw3d(false, paint, () ->
         WebGpuPaint.handleDraw2d(paint, (_, _, _) -> (), () ->
         WebGpuPaint.handleGpuResources(paint, fonts, f)))))))
 
