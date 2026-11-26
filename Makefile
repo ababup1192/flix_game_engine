@@ -553,11 +553,11 @@ physics2d-same: ### [CPU=<倍>] | 2D の物理の指紋を PC とブラウザ（
 	[ -z "$$bad" ] || { echo "[physics2d-same] 違う:$$bad"; exit 1; }; \
 	echo "[physics2d-same] OK"
 
-# 3 つのベンチが共通に使う BenchRun.flix・BenchEnv.flix (bench/common) を各ベンチの src へ写す。直すのは bench/common の物。
+# 4 つのベンチが共通に使う BenchRun.flix・BenchEnv.flix (bench/common) を各ベンチの src へ写す。直すのは bench/common の物。
 .PHONY: bench-common
-bench-common: ### | bench/common の BenchRun.flix・BenchEnv.flix を 3 つのベンチの src へ写す
-	@for b in sprite_stress crowd2d scene3d; do cp bench/common/BenchRun.flix bench/common/BenchEnv.flix bench/$$b/src/; done
-	@echo "[bench-common] bench/common の 2 本を 3 つのベンチの src へ写した"
+bench-common: ### | bench/common の BenchRun.flix・BenchEnv.flix を 4 つのベンチの src へ写す
+	@for b in sprite_stress crowd2d scene3d web_engine_compare; do cp bench/common/BenchRun.flix bench/common/BenchEnv.flix bench/$$b/src/; done
+	@echo "[bench-common] bench/common の 2 本を 4 つのベンチの src へ写した"
 
 # ベンチのブラウザ版。bench-web-export は bench/<BENCH> を build/bench-web/<BENCH> へ書き出し、結果を頁の上と window.__bench に出す
 # script (bench/common/bench-overlay.js) を index.html に差し込む。bench-web は書き出してからヘッドレスの Chrome で開き、測り終えた結果を JSON で出す。
@@ -568,6 +568,7 @@ BENCH_WEB_DIR     = build/bench-web/$(BENCH)
 BENCH_WEB_SIZE_sprite_stress := 960x720
 BENCH_WEB_SIZE_crowd2d       := 1280x720
 BENCH_WEB_SIZE_scene3d       := 960x540
+BENCH_WEB_SIZE_web_engine_compare := 1920x1080
 BENCH_WEB_SIZE   ?= $(or $(BENCH_WEB_SIZE_$(BENCH)),960x540)
 BENCH_WEB_WAIT_webgpu_check := 120
 BENCH_WEB_WAIT   ?= $(or $(BENCH_WEB_WAIT_$(BENCH)),600)
