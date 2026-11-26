@@ -479,7 +479,7 @@ WEB_LOAD_OUT     := build/web-load-check
 WEB_LOAD_FRAMES  ?= 10
 .PHONY: web-load-check
 web-load-check: SHELL := /bin/bash
-web-load-check: ### [WEB_LOAD_GAMES=<ゲーム…>] [WEB_EXPORT=off] | 3D のテンプレートをブラウザ版へ書き出し、ヘッドレスの Chrome の WebGPU と WebGL2 で数コマ描けて console の誤りが 0 件か
+web-load-check: ### [WEB_LOAD_GAMES=<ゲーム…>] [WEB_EXPORT=off] | 3D のテンプレートをブラウザ版へ書き出し、ヘッドレスの Chrome の WebGPU と WebGL2 で数コマ描けて console の誤りが 0 件か・wasm にシェーダーの木が残っていないか
 	@mkdir -p $(WEB_LOAD_OUT)
 	@set -e -o pipefail; for game in $(WEB_LOAD_GAMES); do \
 		name=$$(basename $$game); dir=$(WEB_LOAD_OUT)/$$name; \
@@ -498,6 +498,7 @@ web-load-check: ### [WEB_LOAD_GAMES=<ゲーム…>] [WEB_EXPORT=off] | 3D のテ
 			echo "[web-load-check] $$name $$backend: $$(grep -m1 'renderer:' $$log | sed 's/^ *//') ・$$(grep -m1 'console.error:' $$log | sed 's/^ *//')"; \
 		done; \
 		bin/web-size-check.sh $$name $$dir; \
+		bin/web-shader-tree-check.sh $$name $$dir; \
 	done
 	@echo "[web-load-check] OK"
 

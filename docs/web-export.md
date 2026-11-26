@@ -13,6 +13,20 @@
 - 書き出しの最後にヘッドレスの Chrome で頁を開き、wasm の compile と最初の数コマで止まれば exit 1（TeaVM は通るのに真っ白になる形を止める）。
   JSO を `Object` を受ける所へ渡さず Java の類に包む。Chrome が無ければ知らせて飛ばす。飛ばすなら `--no-browser-check`（門の中身は [web-capture.md](web-capture.md) の「書き出しの門」）
 
+### 3D のシェーダーの記録（`web/shader-variants.json`）
+
+3D の入口（`WebLayer.withProject3d`）のゲームは、ブラウザで使うシェーダーの字を書き出しの時に作って wasm へ埋める
+（Unreal の ShaderLibrary・Unity の ShaderVariantCollection と同じ考え）。ブラウザは字を作らないので、字を作るコードは wasm に載らない。
+
+- 作るのは記録 `web/shader-variants.json` にある分だけ: 使った場面の変種（`+psx`・`+ps` など）と材質の形（uv・cutout・両面など）。
+  `make run`・`make debug`（`fge run`・`fge debug`。Studio から走らせた時も）で 3D の場面を通すと、描き手が新しい鍵を見た時に書き足す。git に入れる
+- 記録が無い 3D のゲームの書き出しは止まる。`--draft` の時だけ既定の一式で書き出し、draft の理由に「web/shader-variants.json が無い」が付く
+- 記録に無い鍵の場面は、その物を描かずに `shader: <鍵> は 描かない（web/shader-variants.json に無い…）` を console に 1 回出す
+  （材質は頂点の色で描き、SSAO は掛けない）。直し方は PC でその場面を一度通してから書き出し直す
+- 遊ばずに出る場面の漏れは、ゲームのテスト（`test/TestShaderVariants.flix`・`ShaderVariants.missingFrom("web/shader-variants.json", SceneRender.shaderScenes())`）で止める。
+  環境変数 `FLIX_GE_SHADER_VARIANTS=<ゲーム>/web/shader-variants.json` を付けて流すと、足りない鍵を書き足す
+- 2D の入口のゲームは何もしない（表を作らない）
+
 ### 旗と環境変数
 
 全部の一覧は `bin/fge export-web --help`。この頁のほかの節で扱わない物:
