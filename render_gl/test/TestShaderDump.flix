@@ -104,6 +104,7 @@ mod TestShaderDump {
         ("glsl/frag-sky.frag", Render3dGlsl.skyFragmentSource()) ::
         ("wgsl/frag-sky.wgsl", Render3dWgsl.skyFragmentSource()) ::
         ("wgsl/vertex-sky.wgsl", Render3dWgsl.skyVertexSource()) ::
+        ("glsl/vertex-sky.vert", Render3dGlsl.skyVertexSource()) ::
         ("glsl/sky-light.glsl", Render3dGlsl.skyLightSource()) ::
         ("wgsl/sky-light.wgsl", Render3dWgsl.skyLightSource()) ::
         ("glsl/vertex-blit.vert", Render3dGlsl.blitVertexSource()) ::
@@ -143,7 +144,18 @@ mod TestShaderDump {
                 println("[shader-dump] ${List.length(sources)} 本・${total} 字・組んだ時間 ${elapsed} ms → ${dir}")
             case None => ()
         };
-        Assert.assertEq(expected = 1506, List.length(sources))
+        Assert.assertEq(expected = 1507, List.length(sources))
+
+    /// vertex と frag の入口の全部の組（ビルボードの変種と横の向き・影の地図の frag・空・blit）で、frag が受ける varying が vertex の表に同じ形であり、location が重ならない。
+    @Test
+    def testEveryStagePairLinks(): Unit \ Assert =
+        let rights = Render3dShaders.BillboardRight.Camera :: Render3dShaders.BillboardRight.PerBillboard :: Render3dShaders.BillboardRight.ByUniform :: Nil;
+        let billboards = allVariants() |> List.flatMap(v -> rights |> List.flatMap(r -> {
+            let vertex = Render3dShaders.billboardVertex(v, r, Nil);
+            (vertex, Render3dShaders.billboardFragment(v, Nil)) :: (vertex, Render3dShaders.billboardShadowFragment(Nil)) :: Nil
+        }));
+        let pairs = billboards ::: (Render3dShaders.skyVertex(), Render3dShaders.skyFragment(Nil)) :: (Render3dShaders.blitVertex(), Render3dShaders.blitFragment()) :: Nil;
+        Assert.assertEq(expected = Nil, pairs |> List.flatMap(vf -> ShaderAst.linkErrors(fst(vf), snd(vf))))
 
     /// GLSL の全部の版が宣言する uniform は、どれも handle の表（Render3d.Uniforms）にある（GL の location を handle で引くため）。
     @Test

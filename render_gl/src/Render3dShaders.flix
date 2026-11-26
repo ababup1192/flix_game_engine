@@ -27,10 +27,14 @@ pub mod Render3dShaders {
     /// 頂点を丸める格子の大きさ（画素。0 で丸めない）。
     pub def vertexSnapGrid(): Expr[Float] = u(Float.Float, R3dUniform.VertexSnap)
 
+    /// 言語ごとに置き場の違う値を読む uniform（GLSL は glslBase の glslSwizzle・宣言の型 glslType、WGSL は wgslBase の wgslSwizzle）。
+    // WhyNot: handle の表（Render3d.Uniforms）に足さない — 同じ GLSL の uniform を WGSL では別の struct の別の欄の w などに詰めてあり、表の 1 行が 1 つの読み方しか持てない。
+    def pairedRef(ty: ShaderAst.Ty, glslBase: String, glslSwizzle: String, glslType: String, wgslBase: String, wgslSwizzle: String): ShaderAst.UniformRef =
+        { name = glslBase, ty = ty, glsl = Some({ base = glslBase, swizzle = glslSwizzle }), wgsl = Some({ base = wgslBase, swizzle = wgslSwizzle }),
+          glslType = glslType, length = None }
+
     /// 場面の描き先の幅と高さ（画素。GLSL は描き先の矩形の zw・WGSL はカメラの値の uSnap の xy）。
-    pub def vertexSnapTarget(): Expr[Vec2] =
-        uniform(Vec2.Vec2, { name = "uPsxTarget", ty = ShaderAst.Ty.Vec2, glsl = Some({ base = "uPsxTarget", swizzle = "zw" }),
-                                    wgsl = Some({ base = "r3dCamera.uSnap", swizzle = "xy" }), glslType = "vec4", length = None })
+    pub def vertexSnapTarget(): Expr[Vec2] = uniform(Vec2.Vec2, pairedRef(ShaderAst.Ty.Vec2, "uPsxTarget", "zw", "vec4", "r3dCamera.uSnap", "xy"))
 
     // ── 色の空間 ──
 
@@ -475,27 +479,32 @@ pub mod Render3dShaders {
     pub type alias LightPoint = { point = Expr[Vec3], shift = Expr[Vec3], normal = Expr[Vec3] }
 
     /// シェーダーの名前のある点ごとの差し込み（木 → 木）。declarations = 光の式の定義の並びを差し替える・beforeLight = 光の計算の前の文を差し替える・
-    /// colorOut = 画面の値の色を出す前に通す式・spotShadow = スポットの影の割合の関数を差し替える。
+    /// colorOut = 画面の値の色を出す前に通す式・spotShadow = スポットの影の割合の関数を差し替える・clipOut = vertex が出す clip の位置（GL の clip）を通す式。
     pub type alias ShaderFeature = { declarations = List[Definition] -> List[Definition], beforeLight = (LightPoint, List[ShaderAst.Statement]) -> List[ShaderAst.Statement],
-                                     colorOut = Expr[Vec3] -> Expr[Vec3], spotShadow = Definition -> Definition }
+                                     colorOut = Expr[Vec3] -> Expr[Vec3], spotShadow = Definition -> Definition, clipOut = Expr[Vec4] -> Expr[Vec4] }
 
     /// 何も差し込まない feature。
     pub def noFeature(): ShaderFeature =
-        { declarations = ds -> ds, beforeLight = (_, ss) -> ss, colorOut = c -> c, spotShadow = d -> d }
+        { declarations = ds -> ds, beforeLight = (_, ss) -> ss, colorOut = c -> c, spotShadow = d -> d, clipOut = c -> c }
 
     /// 点光源の影（+ps）: 光の計算の前に r3d_pointShadowsAt で r3d_pointLit を埋める。
     pub def pointShadowsFeature(): ShaderFeature =
         { declarations = ds -> ds ::: pointShadowsAt() :: Nil,
           beforeLight = (at, ss) -> ss ::: ShaderAst.callStmt(pointShadowsAt(), arg(at#point) :: arg(at#shift) :: arg(at#normal) :: Nil) :: Nil | noFeature() }
 
-    /// PS1 風（+psx）: 出す色を r3d_colorDepth で丸める。
+    /// PS1 風（+psx）: 出す色を r3d_colorDepth で丸め、clip の位置を r3d_vertexSnap で丸める。
     pub def psxFeature(): ShaderFeature =
-        { declarations = ds -> ds ::: colorDepth() :: Nil, colorOut = c -> call(Vec3.Vec3, colorDepth(), arg(c) :: Nil) | noFeature() }
+        { declarations = ds -> ds ::: colorDepth() :: Nil, colorOut = c -> call(Vec3.Vec3, colorDepth(), arg(c) :: Nil),
+          clipOut = c -> call(Vec4.Vec4, vertexSnap(), arg(c) :: Nil) | noFeature() }
+
+    /// スポットの影を受けない（ビルボード）: spotShadow をいつも 1 の spotShadowUnlit に差し替える。
+    // WhyNot: スポットの影の on の uniform を 0 にしてスポットの影を切らない — WebGPU の場面の group 0 は同じ場面の物の影の地図と on を持ち、ビルボードだけ値を替える binding が無い。
+    pub def noSpotShadowFeature(): ShaderFeature = { spotShadow = _ -> spotShadowUnlit() | noFeature() }
 
     /// a の後に b を当てる feature。
     def andThen(a1: ShaderFeature, b1: ShaderFeature): ShaderFeature =
         { declarations = ds -> b1#declarations(a1#declarations(ds)), beforeLight = (at, ss) -> b1#beforeLight(at, a1#beforeLight(at, ss)),
-          colorOut = c -> b1#colorOut(a1#colorOut(c)), spotShadow = d -> b1#spotShadow(a1#spotShadow(d)) }
+          colorOut = c -> b1#colorOut(a1#colorOut(c)), spotShadow = d -> b1#spotShadow(a1#spotShadow(d)), clipOut = c -> b1#clipOut(a1#clipOut(c)) }
 
     /// 変種 v の feature（表の行の順に当てる）。
     pub def featureOf(v: Render3d.ProgramKey.ShaderVariant): ShaderFeature =
@@ -616,13 +625,174 @@ pub mod Render3dShaders {
 
     /// 材質の frag の入口。bindings = WGSL の binding の宣言（wgslDeclarations。GL の描き手は空）。
     pub def materialFragment(surface: Render3d.ProgramKey.ProgramKind, part: MaterialPart, bindings: List[Definition]): ShaderAst.FragmentEntry =
-        { inputName = "R3dIn", declarations = bindings ::: part#definition :: Nil, inputs = materialInputs(surface), body = materialFragmentBody(surface, part) }
+        { inputName = "R3dIn", declarations = bindings ::: part#definition :: Nil, inputs = materialInputs(surface), body = materialFragmentBody(surface, part), writesColor = true }
 
     /// 頂点の色のプログラムの frag の入口。
     pub def litFragment(v: Render3d.ProgramKey.ShaderVariant, bindings: List[Definition]): ShaderAst.FragmentEntry =
-        { inputName = "R3dLitIn", declarations = bindings, inputs = litInputs(), body = litFragmentBody(v) }
+        { inputName = "R3dLitIn", declarations = bindings, inputs = litInputs(), body = litFragmentBody(v), writesColor = true }
 
     /// 奥行きの書き出し（Output.Depth）の形だけの frag の入口（読む varying は vWorld だけ）。
     pub def depthFragment(bindings: List[Definition]): ShaderAst.FragmentEntry =
-        { inputName = "R3dDepthIn", declarations = bindings, inputs = worldVarying() :: Nil, body = depthGrayOut(ShaderAst.varying(Vec3.Vec3, worldVarying()), false) }
+        { inputName = "R3dDepthIn", declarations = bindings, inputs = worldVarying() :: Nil, body = depthGrayOut(ShaderAst.varying(Vec3.Vec3, worldVarying()), false),
+          writesColor = true }
+
+    // ── ビルボード ──
+
+    /// 貼る絵 uImage を uv で読む式（GLSL は texture・WGSL は 2D の描き手の絵の sampler uImageSampler で textureSample）。
+    def imageTexel(uv: Expr[Vec2]): Expr[Vec4] =
+        let image = arg(u(Tex.Tex, R3dUniform.Image));
+        ShaderAst.callIn(Vec4.Vec4, "texture", image :: arg(uv) :: Nil, "textureSample", image :: ShaderAst.samplerArg("uImageSampler") :: arg(uv) :: Nil, Nil, true)
+
+    /// 板ごとの値の属性 index 番目（並びは Render3d.SceneList.billboardValueFloats。GLSL は四角の角が location 0 なので 1 から・WGSL は角を頂点の番号で引くので 0 から）。
+    def billboardAttribute(name: String, index: Int32): ShaderAst.Attribute =
+        { name = name, ty = ShaderAst.Ty.Vec4, glslLocation = Some(index + 1), wgslLocation = Some(index) }
+
+    // ビルボードの varying の表（vertex と frag で共有。location は WGSL の @location）。
+
+    /// 貼る範囲の uv。
+    pub def billboardUvVarying(): ShaderAst.Varying = varyingOf("vUv", ShaderAst.Ty.Vec2, 1, ShaderAst.Interp.Smooth)
+
+    /// 板の tint。
+    def billboardTintVarying(): ShaderAst.Varying = varyingOf("vTint", ShaderAst.Ty.Vec3, 2, ShaderAst.Interp.Flat)
+
+    /// 光の当て方（Render3d.SceneList.billboardValueFloats の 0 = 当てない・1 = 当てる・2 = 当てて太陽の影も受ける）。
+    // WhyNot: WGSL だけ f32 で送って 0.5・1.5 と比べない — 整数の flat な varying は両方の言語にあり、同じ型にそろえると比べ方を言語で分けずに済む。
+    def billboardLitVarying(): ShaderAst.Varying = varyingOf("vLit", ShaderAst.Ty.I32, 3, ShaderAst.Interp.Flat)
+
+    /// 板の向き（カメラへ向く向き・光の計算の法線）。
+    // WhyNot: GL だけ frag の uniform で読まない — WebGPU のカメラの値はvertex shader だけから見え、frag で読むと layout の可視範囲が変わる。GL も同じ varying にそろえる。
+    def billboardFacingVarying(): ShaderAst.Varying = varyingOf("vFacing", ShaderAst.Ty.Vec3, 4, ShaderAst.Interp.Flat)
+
+    /// 太陽の影を受ける点を太陽の方へ進める前の点（Scene3d.billboardShadowPointOf）。
+    def billboardShadowBaseVarying(): ShaderAst.Varying = varyingOf("vShadowBase", ShaderAst.Ty.Vec3, 5, ShaderAst.Interp.Smooth)
+
+    /// 太陽の影を受ける点を板から水平に離す長さ。
+    def billboardShadowOffsetVarying(): ShaderAst.Varying = varyingOf("vShadowOffset", ShaderAst.Ty.F32, 6, ShaderAst.Interp.Flat)
+
+    /// ビルボードの varying の表。
+    pub def billboardVaryings(): List[ShaderAst.Varying] =
+        worldVarying() :: billboardUvVarying() :: billboardTintVarying() :: billboardLitVarying() :: billboardFacingVarying() ::
+        billboardShadowBaseVarying() :: billboardShadowOffsetVarying() :: Nil
+
+    /// 板の横の向き: Camera = カメラの right・PerBillboard = 板ごとの値の tint の欄（点光源の影の面）・ByUniform = uRightPerBillboard が 1 なら板ごとの値・0 ならカメラの right。
+    // WhyNot: GL も板ごとの横の向きを別のプログラムにしない — GL は色の pass と影の地図の pass で 1 つのビルボードのプログラムを共有し、分けるとプログラムと location の表が 1 組増える。
+    // WhyNot: WebGPU で uniform の欄を足して切り替えない — 影の地図の pass ごとに別の pipeline を持ち、別のシェーダーにすればカメラの値の struct の並びを変えずに済む。
+    pub enum BillboardRight with Eq { case Camera, PerBillboard, ByUniform }
+
+    /// ビルボードの vertex の入口（四角の角 quadCorner を、カメラの up と right の向き（right）で立てる。v の feature の clipOut で clip の位置を通す）。
+    /// bindings = WGSL のカメラの値の宣言（GL の描き手は空）。
+    pub def billboardVertex(v: Render3d.ProgramKey.ShaderVariant, right: BillboardRight, bindings: List[Definition]): ShaderAst.VertexEntry =
+        let centerLit = billboardAttribute("aCenterLit", 0);
+        let anchorSize = billboardAttribute("aAnchorSize", 1);
+        let uvRect = billboardAttribute("aUvRect", 2);
+        let tintOffset = billboardAttribute("aTintOffset", 3);
+        let centerLitIn = ShaderAst.attribute(Vec4.Vec4, centerLit);
+        let anchorSizeIn = ShaderAst.attribute(Vec4.Vec4, anchorSize);
+        let uvRectIn = ShaderAst.attribute(Vec4.Vec4, uvRect);
+        let tintOffsetIn = ShaderAst.attribute(Vec4.Vec4, tintOffset);
+        let perBillboard = xyz(tintOffsetIn);
+        let cameraRight = u(Vec3.Vec3, R3dUniform.Right);
+        let (declCorner, corner) = let_("corner", ShaderAst.quadCorner());
+        let (declCenter, center) = let_("center", xyz(centerLitIn));
+        let (declAnchor, anchor) = let_("anchor", ShaderAst.xy(anchorSizeIn));
+        let (declSize, size) = let_("size", ShaderAst.zw(anchorSizeIn));
+        let sideOf = match right {
+            case BillboardRight.Camera       => cameraRight
+            case BillboardRight.PerBillboard => perBillboard
+            case BillboardRight.ByUniform    => ternary(ShaderAst.eq(u(Int.Int, R3dUniform.RightPerBillboard), i(1)), perBillboard, cameraRight)
+        };
+        let (declRight, side) = let_("right", sideOf);
+        let height = mul(sub(y(anchor), y(corner)), y(size));
+        let (declWorld, world) = let_("world", add(add(center, mulS(side, mul(sub(x(corner), x(anchor)), x(size)))), mulS(u(Vec3.Vec3, R3dUniform.Up), height)));
+        let clip = ShaderAst.mulMV(ShaderAst.mulMM(u(Mat4.Mat4, R3dUniform.Proj), u(Mat4.Mat4, R3dUniform.View)), ShaderAst.vec4FromVec3(world, f("1.0")));
+        { inputName = "R3dBillboardIn", outputName = "R3dBillboardOut", declarations = bindings,
+          attributes = centerLit :: anchorSize :: uvRect :: tintOffset :: Nil, outputs = billboardVaryings(),
+          body = declCorner :: declCenter :: declAnchor :: declSize :: declRight :: declWorld ::
+                 ShaderAst.output(worldVarying(), world) ::
+                 ShaderAst.output(billboardUvVarying(), add(ShaderAst.xy(uvRectIn), mul(corner, ShaderAst.zw(uvRectIn)))) ::
+                 ShaderAst.output(billboardShadowBaseVarying(), add(center, vec3Of(f("0.0"), height, f("0.0")))) ::
+                 ShaderAst.output(billboardTintVarying(), perBillboard) ::
+                 ShaderAst.output(billboardLitVarying(), ShaderAst.toInt(add(w(centerLitIn), f("0.5")))) ::
+                 ShaderAst.output(billboardShadowOffsetVarying(), w(tintOffsetIn)) ::
+                 ShaderAst.output(billboardFacingVarying(), u(Vec3.Vec3, R3dUniform.Facing)) ::
+                 ShaderAst.clipOut(featureOf(v)#clipOut(clip)) :: Nil }
+
+    /// ビルボードの frag の入口（billboardVariantOf(v) の変種。点光源の影とスポットの影は受けない）。光の当て方が 2 なら太陽の影を受け、受ける点は vShadowBase を
+    /// 太陽の方へ vShadowOffset / max(太陽への向きの水平の長さ, Scene3d.billboardShadowMinFlat()) だけ進めた点。
+    /// 影の地図に描く時（GL の Render3d.Shadow）は uDepthOut = 1 で、α で捨てた後に灰色を出して返る（影の地図の描き先に色は無い）。bindings = WGSL の binding の宣言（GL の描き手は空）。
+    pub def billboardFragment(v: Render3d.ProgramKey.ShaderVariant, bindings: List[Definition]): ShaderAst.FragmentEntry =
+        let bv = Render3d.ProgramKey.billboardVariantOf(v);
+        let feature = andThen(featureOf(bv), noSpotShadowFeature());
+        let world = ShaderAst.varying(Vec3.Vec3, worldVarying());
+        let lit = ShaderAst.varying(Int.Int, billboardLitVarying());
+        let facing = normalize(ShaderAst.varying(Vec3.Vec3, billboardFacingVarying()));
+        let sunDir = u(Vec3.Vec3, R3dUniform.SunDir);
+        let (declTexel, texel) = let_("texel", imageTexel(ShaderAst.varying(Vec2.Vec2, billboardUvVarying())));
+        let shift = div(ShaderAst.varying(Float.Float, billboardShadowOffsetVarying()), ShaderAst.max(ShaderAst.length(ShaderAst.xz(sunDir)), f("${Scene3d.billboardShadowMinFlat()}")));
+        let shadowPoint = add(ShaderAst.varying(Vec3.Vec3, billboardShadowBaseVarying()), mulS(sunDir, shift));
+        let (declLit, litOn) = let_("lit", ShaderAst.ge(lit, i(1)));
+        let (declLight, light) = var_("light", ShaderAst.vec3Splat(f("1.0")));
+        let color = call(Vec3.Vec3, surfaceOut(), arg(toLinear3(ShaderAst.rgb(texel))) :: arg(ShaderAst.varying(Vec3.Vec3, billboardTintVarying())) :: arg(light) ::
+                         arg(ShaderAst.vec3Splat(f("0.0"))) :: arg(f("1.0")) :: arg(world) :: arg(litOn) :: Nil);
+        { inputName = "R3dBillboardIn", declarations = bindings, inputs = billboardVaryings(), writesColor = true,
+          body = declTexel ::
+                 ifInline(lt(ShaderAst.a(texel), f("0.5")), ShaderAst.discard_()) ::
+                 ShaderAst.ifBlock(ShaderAst.eq(u(Int.Int, R3dUniform.DepthOut), i(1)), depthGrayOut(world, true)) ::
+                 declLit ::
+                 ifInline(ShaderAst.eq(lit, i(2)), assign(ShaderAst.readGlobal(Float.Float, sunLit()), call(Float.Float, sunLitAt(), arg(shadowPoint) :: arg(sunDir) :: arg(facing) :: Nil))) ::
+                 declLight ::
+                 ifInline(litOn, assign(light, call(Vec3.Vec3, lightAt(bv, feature#spotShadow(spotShadow())), arg(world) :: arg(facing) :: Nil))) ::
+                 ShaderAst.emit(ShaderAst.vec4FromVec3(feature#colorOut(color), f("1.0"))) :: Nil }
+
+    /// ビルボードを影の地図へ描く frag の入口（色を出さず、絵の α < 0.5 の画素を捨てるだけ。WGSL だけ。GL は billboardFragment の uDepthOut の枝で同じ事をする）。
+    pub def billboardShadowFragment(bindings: List[Definition]): ShaderAst.FragmentEntry =
+        { inputName = "R3dBillboardShadowIn", declarations = bindings, inputs = billboardUvVarying() :: Nil, writesColor = false,
+          body = ifInline(lt(ShaderAst.a(imageTexel(ShaderAst.varying(Vec2.Vec2, billboardUvVarying()))), f("0.5")), ShaderAst.discard_()) :: Nil }
+
+    // ── 空・blit ──
+
+    /// 空の vertex の入口（頂点の buffer を読まず、描き先いっぱいを覆う三角形）。
+    pub def skyVertex(): ShaderAst.VertexEntry =
+        { inputName = "R3dSkyIn", outputName = "R3dSkyOut", declarations = Nil, attributes = Nil, outputs = Nil,
+          body = ShaderAst.clipOut(ShaderAst.fullscreenPosition()) :: Nil }
+
+    /// 空の frag の入口（式は LightModel3d.skyModel・向きは Scene3d.skyDirectionOf。NDC は画素の真ん中と描き先の大きさから・y は上へ）。
+    /// 景色を背景に描く場面（GLSL は uEnvOn・WGSL は uSkyUp.w）は空の代わりに環境マップの絵を mip のレベル 0 で読む（Scene3d.backgroundEnvironmentOf。
+    /// CPU の描き手は SoftRaster3d.Internal.environmentBackgroundAt）。bindings = WGSL の binding の宣言（GL の描き手は空）。
+    // WhyNot: 奥行きの書き出しの枝（uDepthOut）を WGSL に置かない — WebGPU の奥行きの書き出しの pass は空を描かず、地の色の白で消す（WebGpuRenderer.clearOf）。
+    pub def skyFragment(bindings: List[Definition]): ShaderAst.FragmentEntry =
+        let white = vec4Of(f("1.0"), f("1.0"), f("1.0"), f("1.0"));
+        let width = uniform(Float.Float, pairedRef(ShaderAst.Ty.F32, "uViewport", "z", "vec4", "r3d.uSkyForward", "w"));
+        let height = uniform(Float.Float, pairedRef(ShaderAst.Ty.F32, "uViewport", "w", "vec4", "r3d.uSkyRight", "w"));
+        let (declNdc, ndc) = let_("ndc", ShaderAst.pixelNdc(Render3d.Uniforms.refOf(R3dUniform.Viewport), width, height));
+        let axis = (glslBase: String, wgslBase: String) -> uniform(Vec3.Vec3, pairedRef(ShaderAst.Ty.Vec3, glslBase, "", "vec3", wgslBase, "xyz"));
+        let (declD, d) = let_("d", normalize(add(add(axis("uForward", "r3d.uSkyForward"), mulS(axis("uRight", "r3d.uSkyRight"), x(ndc))), mulS(axis("uUp", "r3d.uSkyUp"), y(ndc)))));
+        let background = uniform(Boolean.Boolean, pairedRef(ShaderAst.Ty.Bool, "uEnvOn", "", "int", "r3d.uSkyUp", "w"));
+        let map = u(Tex.Tex, R3dUniform.EnvMap);
+        let uvOf = call(Vec2.Vec2, environmentUv(), arg(d) :: Nil);
+        let texel = ShaderAst.callIn(Vec4.Vec4, "textureLod", arg(map) :: arg(uvOf) :: arg(f("0.0")) :: Nil,
+                                     "textureSampleLevel", arg(map) :: ShaderAst.samplerArg("uEnvSampler") :: arg(uvOf) :: arg(f("0.0")) :: Nil, Nil, false);
+        let (declC, c) = let_("c", ShaderAst.rgb(texel));
+        let environment = mulS(ternary(ShaderAst.eq(u(Int.Int, R3dUniform.EnvSrgb), i(1)), toLinear3(c), c), u(Float.Float, R3dUniform.EnvIntensity));
+        { inputName = "R3dSkyIn", declarations = bindings, inputs = Nil, writesColor = true,
+          body = ShaderAst.onlyIn(ShaderAst.Lang.Glsl, ShaderAst.ifBlock(ShaderAst.eq(u(Int.Int, R3dUniform.DepthOut), i(1)), ShaderAst.emitAndReturn(white) :: Nil) :: Nil) ::
+                 declNdc :: declD ::
+                 ShaderAst.ifBlock(background, declC :: ShaderAst.emitAndReturn(ShaderAst.vec4FromVec3(toSrgb3(environment), f("1.0"))) :: Nil) ::
+                 ShaderAst.emit(ShaderAst.vec4FromVec3(toSrgb3(call(Vec3.Vec3, skyAt(), arg(d) :: Nil)), f("1.0"))) :: Nil }
+
+    /// blit の uv（四角の上を v = 1 に当てる）。
+    def blitUvVarying(): ShaderAst.Varying = varyingOf("vUv", ShaderAst.Ty.Vec2, 0, ShaderAst.Interp.Smooth)
+
+    /// Design の FBO を viewport 全面へ貼る vertex の入口（FBO は行 0 が下なので、四角の上を v = 1 に当てる。GL だけ）。
+    // WhyNot: 空と同じ描き先いっぱいの三角形にしない — 最も近い画素で読む blit は、大きな三角形で uv をつなぎ直すと丸めが変わり、描き先と FBO の大きさが違う時に画素の境目で読む画素が替わりうる。
+    pub def blitVertex(): ShaderAst.VertexEntry =
+        let c = ShaderAst.quadCorner();
+        { inputName = "R3dBlitIn", outputName = "R3dBlitOut", declarations = Nil, attributes = Nil, outputs = blitUvVarying() :: Nil,
+          body = ShaderAst.output(blitUvVarying(), vec2Of(x(c), sub(f("1.0"), y(c)))) ::
+                 ShaderAst.clipOut(vec4Of(sub(mul(x(c), f("2.0")), f("1.0")), sub(f("1.0"), mul(y(c), f("2.0"))), f("0.0"), f("1.0"))) :: Nil }
+
+    /// blit の frag の入口（FBO の絵をそのまま出す。GL だけ）。
+    pub def blitFragment(): ShaderAst.FragmentEntry =
+        { inputName = "R3dBlitIn", declarations = Nil, inputs = blitUvVarying() :: Nil, writesColor = true,
+          body = ShaderAst.emit(imageTexel(ShaderAst.varying(Vec2.Vec2, blitUvVarying()))) :: Nil }
 }

@@ -60,13 +60,6 @@ pub mod Render3dWgsl {
     /// 変種 v の lightSource（Render3dGlsl.lightSourceFor と同じ定義）。
     pub def lightSourceFor(v: Render3d.ProgramKey.ShaderVariant): String = ShaderAst.Wgsl.print(Render3dShaders.lightDefinitions(v, Render3dShaders.featureOf(v)))
 
-    /// 変種 v の frag の色の出口の字（c は画面の値の色の式の字。v の feature の colorOut に通す）。
-    def colorOut(v: Render3d.ProgramKey.ShaderVariant, c: String): String =
-        ShaderAst.Wgsl.expression(Render3dShaders.featureOf(v)#colorOut(ShaderAst.rawExpr(ShaderAst.Vec3.Vec3, c, c, Nil, false)))
-
-    /// 変種 v の frag の入口の頭: v#psx なら画素の位置（at = @builtin(position) の式）を r3d_fragCoord へ写す。
-    def fragCoordIn(v: Render3d.ProgramKey.ShaderVariant, at: String): String = if (v#psx) "    r3d_fragCoord = " + at + ";\n" else ""
-
     /// PS1 風の変種の頂点を丸める式 r3d_vertexSnap(GL の clip の位置)（Render3dGlsl.vertexSnapSource と同じ式）。r3dCamera.uSnap = (描き先の幅, 高さ, 格子, 0)。
     def vertexSnapSource(): String = ShaderAst.Wgsl.print(Render3dShaders.vertexSnap() :: Nil)
 
@@ -122,11 +115,21 @@ pub mod Render3dWgsl {
 
     /// psx（PS1 風の変種）なら末尾に uSnap（描き先の幅・高さ・頂点を丸める格子・0）を足し、r3d_vertexSnap も置く版の cameraDeclarations。
     // WhyNot: 既定の struct に uSnap を足さない — 既定の頂点シェーダーの字が変わる。buffer は cameraBytes() の大きさで作るので、短い struct の版もそのまま読める。
-    def cameraDeclarationsFor(psx: Bool): String =
+    def cameraDeclarationsFor(psx: Bool): String = cameraStructFor(psx) + (if (psx) vertexSnapSource() else "")
+
+    /// R3dCamera の struct と binding の宣言（psx なら uSnap つき）。
+    def cameraStructFor(psx: Bool): String =
         (if (psx) "struct R3dCamera { uView: mat4x4f, uProj: mat4x4f, uRight: vec4f, uUp: vec4f, uFacing: vec4f, uSnap: vec4f };\n"
          else "struct R3dCamera { uView: mat4x4f, uProj: mat4x4f, uRight: vec4f, uUp: vec4f, uFacing: vec4f };\n") +
-        "@group(0) @binding(5) var<uniform> r3dCamera: R3dCamera;\n" +
-        (if (psx) vertexSnapSource() else "")
+        "@group(0) @binding(5) var<uniform> r3dCamera: R3dCamera;\n"
+
+    /// ビルボードの vertex の入口の binding の宣言（psx なら uSnap つきのカメラの値）。
+    def billboardCameraBindings(psx: Bool): List[ShaderAst.Definition] = Render3dShaders.wgslDeclarations("r3d_camera", cameraStructFor(psx)) :: Nil
+
+    /// 貼る絵の宣言（group 1。2D の描き手の絵の group: binding 0 = 絵・1 = sampler）。
+    def imageDeclarations(): String =
+        "@group(1) @binding(0) var uImage: texture_2d<f32>;\n" +
+        "@group(1) @binding(1) var uImageSampler: sampler;\n"
 
     /// R3dCamera の buffer のバイト数（PS1 風の変種の uSnap まで。既定の struct は前の 176 バイトだけを読む）。
     pub def cameraBytes(): Int32 = 192
@@ -134,97 +137,30 @@ pub mod Render3dWgsl {
     /// R3dCamera の uSnap のバイトの位置。
     pub def cameraSnapAt(): Int32 = 176
 
-    /// ビルボードの頂点シェーダー（Render3dGlsl.billboardVertexSource と同じ式）。入口は vs_main。
+    /// ビルボードの頂点シェーダー（本文は Render3dShaders.billboardVertex）。入口は vs_main。
     /// 四角の角は vertex_index の 6 点（GL の Render3d.buildQuad と同じ並び・y は下向き）。ビルボードの値は buffer 0（instance ごと・stride は値 1 つ）の location 0〜3
     /// （並びは Render3d.SceneList.billboardValueFloats: 点と光の当て方・anchor と size・貼る範囲の uv・tint と影を受ける点を板から離す長さ）。影の地図へ描く時も同じ（group 0 が光の目と板の向き）。
-    pub def billboardVertexSource(): String = billboardVertexSourceWith("r3dCamera.uRight.xyz", false)
+    pub def billboardVertexSource(): String = billboardVertexSourceFor(Render3d.ProgramKey.defaultShaderVariant())
 
     /// 変種 v の billboardVertexSource（v#psx なら四角の角を丸める）。
-    pub def billboardVertexSourceFor(v: Render3d.ProgramKey.ShaderVariant): String = billboardVertexSourceWith("r3dCamera.uRight.xyz", v#psx)
+    pub def billboardVertexSourceFor(v: Render3d.ProgramKey.ShaderVariant): String =
+        ShaderAst.Wgsl.vertex(Render3dShaders.billboardVertex(v, Render3dShaders.BillboardRight.Camera, billboardCameraBindings(v#psx)))
 
     /// 板の横の向きを行の値の tint の rgb から読む billboardVertexSource（点光源の影の面へ描く時。Render3d.SceneList.putBillboardValues）。
-    pub def billboardRowRightVertexSource(): String = billboardVertexSourceWith("v.tint.xyz", false)
+    pub def billboardRowRightVertexSource(): String =
+        ShaderAst.Wgsl.vertex(Render3dShaders.billboardVertex(Render3d.ProgramKey.defaultShaderVariant(), Render3dShaders.BillboardRight.PerBillboard, billboardCameraBindings(false)))
 
-    /// right = 板の横の向きの式・psx = 角を丸めるか。
-    def billboardVertexSourceWith(right: String, psx: Bool): String =
-        cameraDeclarationsFor(psx) +
-        "struct R3dBillboardIn {\n" +
-        "    @location(0) center: vec4f,\n" +
-        "    @location(1) anchorSize: vec4f,\n" +
-        "    @location(2) uvRect: vec4f,\n" +
-        "    @location(3) tint: vec4f,\n" +
-        "};\n" +
-        billboardVaryings("R3dBillboardOut", true) +
-        ShaderGen.Wgsl.clipFromGlSource() +
-        "@vertex fn vs_main(@builtin(vertex_index) i: u32, v: R3dBillboardIn) -> R3dBillboardOut {\n" +
-        "    var corners = array<vec2f, 6>(vec2f(0.0, 0.0), vec2f(1.0, 0.0), vec2f(1.0, 1.0), vec2f(0.0, 0.0), vec2f(1.0, 1.0), vec2f(0.0, 1.0));\n" +
-        "    let corner = corners[i];\n" +
-        "    let world = v.center.xyz + " + right + " * ((corner.x - v.anchorSize.x) * v.anchorSize.z)\n" +
-        "                             + r3dCamera.uUp.xyz * ((v.anchorSize.y - corner.y) * v.anchorSize.w);\n" +
-        "    var o: R3dBillboardOut;\n" +
-        "    o.vWorld = world;\n" +
-        "    o.vUv = v.uvRect.xy + corner * v.uvRect.zw;\n" +
-        "    o.vTint = v.tint.rgb;\n" +
-        "    o.vLit = v.center.w;\n" +
-        "    o.vFacing = r3dCamera.uFacing.xyz;\n" +
-        "    o.vShadowBase = v.center.xyz + vec3f(0.0, (v.anchorSize.y - corner.y) * v.anchorSize.w, 0.0);\n" +
-        "    o.vShadowOffset = v.tint.w;\n" +
-        "    o.position = " + clipOut(psx, "r3dCamera.uProj * r3dCamera.uView * vec4f(world, 1.0)") + ";\n" +
-        "    return o;\n" +
-        "}\n"
-
-    /// ビルボードの varying（頂点シェーダーの出口は position つき）。vLit = 光の当て方（Render3d.SceneList.billboardValueFloats）・
-    /// vShadowBase と vShadowOffset = 太陽の影を受ける点を太陽の方へ進める前の点と、板から水平に離す長さ（Render3dGlsl の vShadowBase・uShadowOffset）。
-    def billboardVaryings(name: String, withPosition: Bool): String =
-        "struct ${name} {\n" +
-        (if (withPosition) "    @builtin(position) position: vec4f,\n" else "") +
-        "    @location(0) vWorld: vec3f,\n" +
-        "    @location(1) vUv: vec2f,\n" +
-        "    @location(2) @interpolate(flat) vTint: vec3f,\n" +
-        "    @location(3) @interpolate(flat) vLit: f32,\n" +
-        "    @location(4) @interpolate(flat) vFacing: vec3f,\n" +
-        "    @location(5) vShadowBase: vec3f,\n" +
-        "    @location(6) @interpolate(flat) vShadowOffset: f32,\n" +
-        "};\n"
-
-    /// ビルボードの frag（Render3dGlsl.billboardFragmentSource と同じ式）。貼る絵は group 1（2D の描き手の絵の group: binding 0 = 絵・1 = sampler）。入口は fs_main。
-    /// vLit が 2（光を当てて太陽の影も受ける）の物だけ、太陽の影の地図を引く。
+    /// ビルボードの frag（本文は Render3dShaders.billboardFragment）。貼る絵は group 1。入口は fs_main。
     pub def billboardFragmentSource(): String = billboardFragmentSourceFor(Render3d.ProgramKey.defaultShaderVariant())
 
-    /// 変種 v の billboardFragmentSource（点光源の影を受けないので billboardVariantOf(v) の字）。スポットは遮らない（spotShadow はいつも 1）。
-    // WhyNot: 場面の値の uShadowOn でスポットの影を切らない — 場面の group 0 は同じ場面の物の影の地図と on を持ち、ビルボードだけ値を替える binding が無い。
+    /// 変種 v の billboardFragmentSource（点光源の影を受けないので billboardVariantOf(v) の字）。
     pub def billboardFragmentSourceFor(v: Render3d.ProgramKey.ShaderVariant): String =
-        let bv = Render3d.ProgramKey.billboardVariantOf(v);
-        sceneDeclarations() +
-        variantDeclarations(bv) +
-        "@group(1) @binding(0) var uImage: texture_2d<f32>;\n" +
-        "@group(1) @binding(1) var uImageSampler: sampler;\n" +
-        billboardVaryings("R3dBillboardIn", bv#psx) +
-        ShaderAst.Wgsl.print(Render3dShaders.colorSpace() ::: Render3dShaders.depthGray() ::
-                             Render3dShaders.lightDefinitions(bv, { spotShadow = _ -> Render3dShaders.spotShadowUnlit() | Render3dShaders.featureOf(bv) })) +
-        "@fragment fn fs_main(i: R3dBillboardIn) -> @location(0) vec4f {\n" +
-        fragCoordIn(bv, "i.position") +
-        "    let texel = textureSample(uImage, uImageSampler, i.vUv);\n" +
-        "    if (texel.a < 0.5) { discard; }\n" +
-        "    if (r3d.uDepthOut == 1) {\n" +
-        "        let g = depthGray(i.vWorld);\n" +
-        "        return vec4f(g, g, g, 1.0);\n" +
-        "    }\n" +
-        "    let lit = i.vLit > 0.5;\n" +
-        "    if (i.vLit > 1.5) { r3d_sunLit = sunLitAt(i.vShadowBase + r3d.uSunDir * (i.vShadowOffset / max(length(r3d.uSunDir.xz), ${Scene3d.billboardShadowMinFlat()})), r3d.uSunDir, normalize(i.vFacing)); }\n" +
-        "    var light = vec3f(1.0);\n" +
-        "    if (lit) { light = lightAt(i.vWorld, normalize(i.vFacing)); }\n" +
-        "    return vec4f(" + colorOut(bv, "r3d_surfaceOut(r3d_srgbToLinear3(texel.rgb), i.vTint, light, vec3f(0.0), 1.0, i.vWorld, lit)") + ", 1.0);\n" +
-        "}\n"
+        ShaderAst.Wgsl.fragment(Render3dShaders.billboardFragment(v, sceneBindings(Render3d.ProgramKey.billboardVariantOf(v), imageDeclarations())))
 
-    /// ビルボードを影の地図へ描く frag（色を出さず、絵の α < 0.5 の画素を捨てるだけ。GL は billboardFragmentSource の uDepthOut の枝で同じ事をする）。
+    /// ビルボードを影の地図へ描く frag（本文は Render3dShaders.billboardShadowFragment。色を出さない）。
     /// 頂点シェーダーは billboardVertexSource（group 0 は影の地図の光の目・R3dCamera の uRight と uUp に板の向き）。貼る絵は group 1。入口は fs_main。
     pub def billboardShadowFragmentSource(): String =
-        "@group(1) @binding(0) var uImage: texture_2d<f32>;\n" +
-        "@group(1) @binding(1) var uImageSampler: sampler;\n" +
-        "@fragment fn fs_main(@location(1) vUv: vec2f) {\n" +
-        "    if (textureSample(uImage, uImageSampler, vUv).a < 0.5) { discard; }\n" +
-        "}\n"
+        ShaderAst.Wgsl.fragment(Render3dShaders.billboardShadowFragment(Render3dShaders.wgslDeclarations("r3d_bindings", imageDeclarations()) :: Nil))
 
     /// 姿勢の行列（group 2 の binding 0・読むだけの storage）。詰める側（Render3d.WebGpuRenderer）は頭の 16 バイトに 1 行のジョイントの数（u32）、
     /// その後に行の順に 1 行 jointsPerRow 本の mat4（列優先・Render3d.PoseRows.packRows の並び）。
@@ -376,30 +312,12 @@ pub mod Render3dWgsl {
     /// R3dScene の uSkyForward のバイトの位置（光の配列の後ろ・uSkyRight と uSkyUp が 16 バイトずつ続く）。
     pub def skyValuesAt(): Int32 = Render3d.UniformLayout.offsetOf(Render3d.UniformLayout.sceneOffsets(), Render3d.UniformLayout.SceneField.SkyForward)
 
-    /// 空の頂点シェーダー: 頂点の buffer を読まず、vertex_index の 3 点で描き先いっぱいを覆う三角形を出す。入口は vs_main。
-    // WhyNot: GL と同じ 6 点の四角の buffer を持たない — 覆う画素は同じで、buffer と頂点の属性の宣言が要らない。
-    pub def skyVertexSource(): String =
-        "@vertex fn vs_main(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {\n" +
-        "    let x = f32((i << 1u) & 2u);\n" +
-        "    let y = f32(i & 2u);\n" +
-        "    return vec4f(x * 2.0 - 1.0, y * 2.0 - 1.0, 0.0, 1.0);\n" +
-        "}\n"
+    /// 空の頂点シェーダー（本文は Render3dShaders.skyVertex）: 頂点の buffer を読まず、vertex_index の 3 点で描き先いっぱいを覆う三角形を出す。入口は vs_main。
+    pub def skyVertexSource(): String = ShaderAst.Wgsl.vertex(Render3dShaders.skyVertex())
 
-    /// 空の frag（Render3dGlsl.skyFragmentSource と同じ式）。空の 3 色と曲がりは場面の値（group 0 の uZenith・uHorizon・uGround・uCurve。
+    /// 空の frag（本文は Render3dShaders.skyFragment）。空の 3 色と曲がりは場面の値（group 0 の uZenith・uHorizon・uGround・uCurve。
     /// 空のある場面では LightModel3d.reflectionSkyOf が空の色を線形へ戻した物）、画素の向きの材料と描き先の大きさは同じ R3dScene の末尾の uSky*。
     /// uSkyUp.w が 1（景色を背景に描く場面）なら、空の代わりに環境マップの絵を mip のレベル 0 で読み、uEnvIntensity を掛ける。入口は fs_main。
-    // WhyNot: NDC の y を GLSL と同じ（画素の y − 原点）÷ 高さで作らない — 描き先の画素の y は上の行が 0 で、GL の gl_FragCoord と向きが逆。
-    // WhyNot: 奥行きの書き出しの枝（GLSL の uDepthOut）を持たない — 奥行きの書き出しの pass は空を描かず、地の色の白で消す（WebGpuRenderer.clearOf）。
     pub def skyFragmentSource(): String =
-        sceneDeclarations() +
-        ShaderAst.Wgsl.print(Render3dShaders.colorSpace() ::: Render3dShaders.skyAt() :: Render3dShaders.environmentUv() :: Nil) +
-        "@fragment fn fs_main(@builtin(position) at: vec4f) -> @location(0) vec4f {\n" +
-        "    let ndc = vec2f(at.x / r3d.uSkyForward.w * 2.0 - 1.0, 1.0 - at.y / r3d.uSkyRight.w * 2.0);\n" +
-        "    let d = normalize(r3d.uSkyForward.xyz + r3d.uSkyRight.xyz * ndc.x + r3d.uSkyUp.xyz * ndc.y);\n" +
-        "    if (r3d.uSkyUp.w > 0.5) {\n" +
-        "        let c = textureSampleLevel(uEnvMap, uEnvSampler, environmentUv(d), 0.0).rgb;\n" +
-        "        return vec4f(r3d_linearToSrgb3(select(c, r3d_srgbToLinear3(c), r3d.uEnvSrgb == 1) * r3d.uEnvIntensity), 1.0);\n" +
-        "    }\n" +
-        "    return vec4f(r3d_linearToSrgb3(skyAt(d)), 1.0);\n" +
-        "}\n"
+        ShaderAst.Wgsl.fragment(Render3dShaders.skyFragment(Render3dShaders.wgslDeclarations("r3d_bindings", sceneDeclarations()) :: Nil))
 }

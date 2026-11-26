@@ -110,6 +110,9 @@ pub mod ShaderAst {
         /// 描き先の左上を 0 とする画素の位置（ivec2）。GLSL は gl_FragCoord を描き先の矩形（x, y, 幅, 高さ）の uniform で直す・
         /// WGSL は入口が @builtin(position) を写す r3d_fragCoord（場面の描き先の左上が 0）。
         case PixelFromTopLeft(UniformKey)
+        /// 描き先の画素の真ん中の NDC（vec2・−1..1・y は上へ。(描き先の矩形の uniform, 幅, 高さ)）。GLSL は gl_FragCoord（左下が原点）を矩形で直す・
+        /// WGSL は r3d_fragCoord（左上が原点）の y を返す。
+        case PixelNdc(UniformKey, Node, Node)
         /// 描き先いっぱいを覆う三角形の頂点の clip の位置（vertex_index の 3 点）。
         case FullscreenPosition
         /// 四角の角（0〜1・y は下向き。6 点で 2 つの三角形）。GLSL は頂点の属性 aCorner・WGSL は vertex_index の表。
@@ -138,6 +141,7 @@ pub mod ShaderAst {
         case Raw(Option[String], Option[String], Ty, List[Def], Bool)
         case CallIn(String, List[Node], String, List[Node], Ty, List[Def], Bool)
         case Varying(String, Ty, Interp)
+        case Attribute(String, Ty)
     }
 
     /// 文の置き方: Inline = 1 行（GLSL は波かっこを付けない）・Block = 波かっこのブロック。
@@ -156,6 +160,9 @@ pub mod ShaderAst {
         case Emit(Node, Bool)
         case Headed(String, String, Node)
         case RawStmt(String, String)
+        case Output(String, Ty, Interp, Node)
+        case ClipOut(Node)
+        case Only(Lang, List[Stmt])
     }
 
     /// print する時に初めて作る字（光の式の木の生成のように重い字）と、その字が読む定義（deps）と uniform。
@@ -274,6 +281,7 @@ pub mod ShaderAst {
         case Node.Raw(_, _, t, _, _)          => t
         case Node.CallIn(_, _, _, _, t, _, _) => t
         case Node.Varying(_, t, _)            => t
+        case Node.Attribute(_, t)             => t
     }
 
     /// 式の型。
@@ -302,6 +310,7 @@ pub mod ShaderAst {
         case Node.Select(c, a1, b1, _) => c :: a1 :: b1 :: Nil
         case Node.Paren(a1)            => a1 :: Nil
         case Node.CallIn(_, ga, _, wa, _, _, _) => ga ::: wa
+        case Node.Intrinsic(Intrinsic.PixelNdc(_, w1, h1), _) => w1 :: h1 :: Nil
         case _                         => Nil
     }
 
@@ -316,6 +325,8 @@ pub mod ShaderAst {
         case Stmt.Eval(e)                  => e :: Nil
         case Stmt.Emit(e, _)               => e :: Nil
         case Stmt.Headed(_, _, e)          => e :: Nil
+        case Stmt.Output(_, _, _, e)       => e :: Nil
+        case Stmt.ClipOut(e)               => e :: Nil
         case _                             => Nil
     }
 
@@ -323,6 +334,7 @@ pub mod ShaderAst {
     def stmtChildren(s: Stmt): List[Stmt] = match s {
         case Stmt.If(_, t, e, _)          => t ::: e
         case Stmt.For(_, _, _, _, body, _) => body
+        case Stmt.Only(_, body)            => body
         case _                            => Nil
     }
 
@@ -390,6 +402,11 @@ pub mod ShaderAst {
     pub def pixelFromTopLeft(targetRect: UniformRef): Expr[IVec2] =
         if (targetRect#ty != Ty.Vec4) invalidOrBug("ShaderAst.pixelFromTopLeft: ${targetRect#name} は vec4 でない")
         else wrap(Node.Intrinsic(Intrinsic.PixelFromTopLeft(keyOf(targetRect)), Ty.IVec2))
+
+    /// 描き先の画素の真ん中の NDC（−1..1・y は上へ）。targetRect = 描き先の矩形 (左下の x, y, 幅, 高さ) の uniform（GLSL の gl_FragCoord は描き先の左下が原点なので、この矩形で直す。WGSL では読まない）・width と height = 描き先の大きさ（画素）。
+    pub def pixelNdc(targetRect: UniformRef, width: Expr[Float], height: Expr[Float]): Expr[Vec2] =
+        if (targetRect#ty != Ty.Vec4) invalidOrBug("ShaderAst.pixelNdc: ${targetRect#name} は vec4 でない")
+        else wrap(Node.Intrinsic(Intrinsic.PixelNdc(keyOf(targetRect), nodeOf(width), nodeOf(height)), Ty.Vec2))
 
     /// 描き先いっぱいを覆う三角形の頂点の clip の位置（vertex の入口で使う）。
     pub def fullscreenPosition(): Expr[Vec4] = wrap(Node.Intrinsic(Intrinsic.FullscreenPosition, Ty.Vec4))
@@ -648,10 +665,21 @@ pub mod ShaderAst {
     pub type alias Varying = { name = String, ty = Ty, location = Int32, interp = Interp }
 
     /// frag の入口: inputName = WGSL の入口の引数の struct の名前・declarations = 本文から辿れない定義（材質の部品・WGSL の binding の宣言）・
-    /// inputs = 受ける varying・body = main の本文（最後は emit）。本文と declarations が辿って使う定義と GLSL の uniform の行は printer が集める。
-    pub type alias FragmentEntry = { inputName = String, declarations = List[Definition], inputs = List[Varying], body = List[Statement] }
+    /// inputs = 受ける varying（vertex の varying の表の一部）・body = main の本文・writesColor = 色を出すか（偽なら出口が無く、本文は捨てるか抜けるだけ）。
+    /// 本文と declarations が辿って使う定義と GLSL の uniform の行は printer が集める。
+    pub type alias FragmentEntry = { inputName = String, declarations = List[Definition], inputs = List[Varying], body = List[Statement], writesColor = Bool }
 
-    /// varying v の読み（入口の本文の中だけ。GLSL は名前・Affine は w で割り戻す・WGSL は入口の引数の欄）。
+    /// 頂点の属性 1 つ。glslLocation = GLSL の `layout (location = n) in`・wgslLocation = WGSL の入口の struct の @location（None はその言語では属性で受けない。
+    /// データのテクスチャから読む値のように、属性でない所から読む言語の側は None にして extern の関数で読む）。
+    pub type alias Attribute = { name = String, ty = Ty, glslLocation = Option[Int32], wgslLocation = Option[Int32] }
+
+    /// vertex の入口: inputName・outputName = WGSL の入口の引数と返り値の struct の名前・declarations = 本文から辿れない定義（WGSL の binding の宣言）・
+    /// attributes = 受ける頂点の属性（四角の角 quadCorner の GLSL の属性は printer が足す）・outputs = 書く varying の表（frag の inputs はこの一部）・
+    /// body = main の本文（output で varying を書き、clipOut で clip の位置をif・for の外に 1 回だけ出す。Affine の varying は clipOut の後に書く）。
+    pub type alias VertexEntry = { inputName = String, outputName = String, declarations = List[Definition], attributes = List[Attribute],
+                                   outputs = List[Varying], body = List[Statement] }
+
+    /// varying v の読み（frag の入口の本文の中だけ。GLSL は名前・Affine は w で割り戻す・WGSL は入口の引数の欄）。
     pub def varying(w1: TyWitness[t], v: Varying): Expr[t] with Marker[t] = wrap(varyingNode(tyOfWitness(w1), v))
 
     def varyingNode(t: Ty, v: Varying): Node =
@@ -663,55 +691,35 @@ pub mod ShaderAst {
         if (v#interp == Interp.Affine) invalidOrBug("ShaderAst.varyingAsLocal: ${v#name} は Affine（GLSL の字が w で割る式で、名前で読めない）")
         else Stmt.RawStmt("", "let ${v#name} = " + ShaderAst.Wgsl.expression((wrap(Node.Varying(v#name, v#ty, v#interp)): Expr[Float])) + ";")
 
-    /// 入口の本文 body を関数として見た物（検査と、本文が辿る定義を集めるため）。
-    def entryAsFunction(body: List[Stmt]): Def = Def.Fn("main", Ty.Void, Nil, body)
+    /// 頂点の属性 a の読み（vertex の入口の本文の中だけ。GLSL は名前・WGSL は入口の引数の欄）。
+    pub def attribute(w1: TyWitness[t], a: Attribute): Expr[t] with Marker[t] = wrap(attributeNode(tyOfWitness(w1), a))
 
-    /// 入口 e の本文と declarations が辿って使う定義（main を除き、使う前に 1 回ずつ）。組む時の検査と入口の置き場の検査に通す（誤りがあれば止める）。
-    def entryDefinitionsOrBug(lang: Lang, e: FragmentEntry): List[Def] =
-        let main = entryAsFunction(e#body);
-        let defs = checkOrBug(collectOrBug(lang, e#declarations ::: directDeps(lang, main)));
-        let errors = errorsOf(main) ::: entryPlacementErrors(e#body, defs);
-        if (List.isEmpty(errors)) defs else invalidOrBug("ShaderAst: " + String.intercalate("; ", errors))
+    def attributeNode(t: Ty, a: Attribute): Node =
+        if (a#ty != t) invalidOrBug("ShaderAst.attribute: ${a#name} の型 ${a#ty} とマーカー ${t} が違う")
+        else Node.Attribute(a#name, a#ty)
 
-    /// 入口だけで使える文と式の置き場の誤り（emit は本文の最後だけ・if と for の中に emit を置かない・入口が辿る関数の中で emit・frontFacing・varying を使わない）。
-    def entryPlacementErrors(body: List[Stmt], defs: List[Def]): List[String] =
-        let isEmitEnd = (s: Stmt) -> match s {
-            case Stmt.Emit(_, false) => true
-            case _                   => false
-        };
-        let early = List.take(List.length(body) - 1, body) |> List.exists(isEmitEnd);
-        let nested = body |> List.flatMap(stmtChildren) |> List.exists(containsStmt(isEmitEnd));
-        let helpers = defs |> List.filterMap(d -> match d {
-            case Def.Fn(name, _, _, fb) if List.exists(usesEntryOnly, fb) => Some(name)
-            case _                                                         => None
-        });
-        (if (early) "emit が本文の最後の文でない" :: Nil else Nil) :::
-        (if (nested) "emit が if・for の中にある（emitAndReturn を使う）" :: Nil else Nil) :::
-        (helpers |> List.map(name -> "${name} が入口の本文の外で emit・frontFacing・varying を使う"))
+    /// varying v に値 e を書く文（vertex の入口の本文の中だけ）。
+    pub def output(v: Varying, e: Expr[t]): Statement =
+        if (v#ty != tyOf(e)) invalidOrBug("ShaderAst.output: ${v#name} の型 ${v#ty} に ${tyOf(e)} を書いた")
+        else Stmt.Output(v#name, v#ty, v#interp, nodeOf(e))
 
-    /// 文 s（中のブロックの文も）に p が真の文があるか。
-    def containsStmt(p: Stmt -> Bool, s: Stmt): Bool = p(s) or List.exists(containsStmt(p), stmtChildren(s))
+    /// clip の位置 e（GL の clip: z は −w..w）を出す文（vertex の入口の本文のif・for の外に 1 回だけ）。WGSL は sg_clipFromGl で z を 0..w へ移す。
+    pub def clipOut(e: Expr[Vec4]): Statement = Stmt.ClipOut(nodeOf(e))
 
-    def isEntryOnlyNode(n: Node): Bool = match n {
-        case Node.Intrinsic(Intrinsic.FrontFacing, _) => true
-        case Node.Varying(_, _, _)                    => true
-        case _                                        => false
-    }
+    /// 言語 lang でだけ置く文の並び（入口の本文の中だけ。ほかの言語では何も置かない）。
+    pub def onlyIn(lang: Lang, body: List[Statement]): Statement = Stmt.Only(lang, body)
 
-    def isEmit(s: Stmt): Bool = match s {
-        case Stmt.Emit(_, _) => true
-        case _               => false
-    }
+    /// GLSL の四角の角の属性 aCorner の location（GL の描き手の四角の buffer）。
+    pub def quadCornerLocation(): Int32 = 0
 
-    /// 文 s が入口の本文の中だけで使える物（emit・frontFacing・varying）を使うか。
-    def usesEntryOnly(s: Stmt): Bool = containsStmt(isEmit, s) or anyStmt(isEntryOnlyNode, s)
-
-    /// 入口が辿る定義 defs が画素の位置（r3d_fragCoord）を読むか。
-    def readsFragCoord(defs: List[Def]): Bool = List.exists(d -> nameOf(d) == nameOf(fragCoord()), defs)
-
-    /// 入口の本文が表裏（frontFacing）を読むか（入口が辿る関数の中では使えないので本文だけを見る）。
-    def readsFrontFacing(body: List[Stmt]): Bool =
-        body |> List.exists(anyStmt(n -> n == Node.Intrinsic(Intrinsic.FrontFacing, Ty.Bool)))
+    /// vertex v と frag f の組の誤り（f が受ける varying が v の表に同じ型・location・補間で無い・どちらかの表で location が重なる）。
+    pub def linkErrors(v: VertexEntry, f: FragmentEntry): List[String] =
+        let written = v#outputs |> List.map(o -> (o#name, (o#ty, o#location, o#interp))) |> List.toMap;
+        let missing = f#inputs |> List.filter(i1 -> Map.get(i1#name, written) != Some((i1#ty, i1#location, i1#interp)));
+        let overlaps = (vs: List[Varying]) -> List.length(vs |> List.map(x1 -> x1#location) |> List.distinct) != List.length(vs);
+        (missing |> List.map(i1 -> "frag の ${i1#name} が vertex の varying の表に同じ形で無い")) :::
+        (if (overlaps(v#outputs)) "vertex の varying の location が重なる" :: Nil else Nil) :::
+        (if (overlaps(f#inputs)) "frag の varying の location が重なる" :: Nil else Nil)
 
     // ── 定義の組み立て ──
 
@@ -788,6 +796,7 @@ pub mod ShaderAst {
     /// 組み込みの式が読む大域の値（片方の言語だけの物は Private と Extern の本文で分かれる）。
     def depsOfIntrinsic(k: Intrinsic): List[Def] = match k {
         case Intrinsic.PixelFromTopLeft(_) => fragCoord() :: Nil
+        case Intrinsic.PixelNdc(_, _, _)   => fragCoord() :: Nil
         case Intrinsic.FullscreenPosition  => vertexIndex() :: Nil
         case Intrinsic.QuadCorner          => vertexIndex() :: quadCornerTable() :: Nil
         case Intrinsic.FrontFacing         => Nil
@@ -852,6 +861,7 @@ pub mod ShaderAst {
     def ownUniform(n: Node): Option[UniformKey] = match n {
         case Node.Uniform(k)                                  => Some(k)
         case Node.Intrinsic(Intrinsic.PixelFromTopLeft(k), _) => Some(k)
+        case Node.Intrinsic(Intrinsic.PixelNdc(k, _, _), _)   => Some(k)
         case _                                                => None
     }
 
@@ -1054,6 +1064,7 @@ pub mod ShaderAst {
         case Node.Not(_)                      => unaryPrec()
         case Node.Uniform((_, Ty.Bool, _, _, _, _)) => if (lang == Lang.Glsl) precOf(BinOp.EqOp) else precOf(BinOp.Gt)
         case Node.Varying(_, _, Interp.Affine) => if (lang == Lang.Glsl) precOf(BinOp.Div) else atomPrec()
+        case Node.Intrinsic(Intrinsic.PixelNdc(_, _, _), _) => if (lang == Lang.Glsl) precOf(BinOp.Sub) else atomPrec()
         case Node.Raw(glsl, wgsl, _, _, _)    =>
             let text = if (lang == Lang.Glsl) glsl else wgsl;
             if (text |> Option.forAll(isAtomText)) atomPrec() else 0

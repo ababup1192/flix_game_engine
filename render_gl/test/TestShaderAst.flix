@@ -235,7 +235,7 @@ mod TestShaderAst {
     def red(): Expr[ShaderAst.Vec4] = ShaderAst.vec4Of(f("1.0"), f("0.0"), f("0.0"), f("1.0"))
 
     def entryOf(inputs: List[ShaderAst.Varying], body: List[ShaderAst.Statement]): ShaderAst.FragmentEntry =
-        { inputName = "In", declarations = Nil, inputs = inputs, body = body }
+        { inputName = "In", declarations = Nil, inputs = inputs, body = body, writesColor = true }
 
     def varyingOf(name: String, ty: ShaderAst.Ty, location: Int32, interp: ShaderAst.Interp): ShaderAst.Varying =
         { name = name, ty = ty, location = location, interp = interp }
@@ -387,4 +387,115 @@ mod TestShaderAst {
         let helper = function("uv", ShaderAst.Ty.Vec2, Nil, ret(ShaderAst.varying(ShaderAst.Vec2.Vec2, affineUv())) :: Nil);
         let (declU, _) = let_("u", call(ShaderAst.Vec2.Vec2, helper, Nil));
         Assert.assertTrue(stops(_ -> ShaderAst.Glsl.fragment(entryOf(affineUv() :: Nil, declU :: ShaderAst.emit(red()) :: Nil))))
+
+    // ── vertex の入口・vertex と frag の組 ──
+
+    def sizeAttribute(): ShaderAst.Attribute = { name = "aSize", ty = ShaderAst.Ty.Vec4, glslLocation = Some(2), wgslLocation = Some(5) }
+
+    def wgslOnly(): ShaderAst.Attribute = { name = "aModel0", ty = ShaderAst.Ty.Vec4, glslLocation = None, wgslLocation = Some(3) }
+
+    def tintOut(): ShaderAst.Varying = varyingOf("vTint", ShaderAst.Ty.Vec3, 3, ShaderAst.Interp.Flat)
+
+    def origin(): Expr[ShaderAst.Vec4] = ShaderAst.vec4Of(f("0.0"), f("0.0"), f("0.0"), f("1.0"))
+
+    def vertexOf(attributes: List[ShaderAst.Attribute], outputs: List[ShaderAst.Varying], body: List[ShaderAst.Statement]): ShaderAst.VertexEntry =
+        { inputName = "VIn", outputName = "VOut", declarations = Nil, attributes = attributes, outputs = outputs, body = body }
+
+    def sized(): Expr[ShaderAst.Vec4] = ShaderAst.attribute(ShaderAst.Vec4.Vec4, sizeAttribute())
+
+    @Test
+    def testGlslVertexDeclaresAttributeAtItsLocation(): Unit \ Assert =
+        Assert.assertTrue(String.contains(substr = "layout (location = 2) in vec4 aSize;\n",
+            ShaderAst.Glsl.vertex(vertexOf(sizeAttribute() :: Nil, Nil, ShaderAst.clipOut(sized()) :: Nil))))
+
+    @Test
+    def testGlslVertexSkipsAttributeOfTheOtherLanguage(): Unit \ Assert =
+        Assert.assertFalse(String.contains(substr = "aModel0", ShaderAst.Glsl.vertex(vertexOf(wgslOnly() :: Nil, Nil, ShaderAst.clipOut(origin()) :: Nil))))
+
+    @Test
+    def testWgslVertexReadsAttributeFromTheInput(): Unit \ Assert =
+        Assert.assertTrue(String.contains(substr = "    o.position = sg_clipFromGl(v.aSize);\n",
+            ShaderAst.Wgsl.vertex(vertexOf(sizeAttribute() :: Nil, Nil, ShaderAst.clipOut(sized()) :: Nil))))
+
+    @Test
+    def testWgslVertexDeclaresAttributeAtItsLocation(): Unit \ Assert =
+        Assert.assertTrue(String.contains(substr = "    @location(5) aSize: vec4f,\n",
+            ShaderAst.Wgsl.vertex(vertexOf(sizeAttribute() :: Nil, Nil, ShaderAst.clipOut(sized()) :: Nil))))
+
+    @Test
+    def testGlslClipOutAssignsGlPosition(): Unit \ Assert =
+        Assert.assertTrue(String.endsWith(suffix = "void main() {\n    gl_Position = vec4(0.0, 0.0, 0.0, 1.0);\n}\n",
+            ShaderAst.Glsl.vertex(vertexOf(Nil, Nil, ShaderAst.clipOut(origin()) :: Nil))))
+
+    @Test
+    def testGlslOutputIsDeclaredFlat(): Unit \ Assert =
+        Assert.assertTrue(String.contains(substr = "flat out vec3 vTint;\n",
+            ShaderAst.Glsl.vertex(vertexOf(Nil, tintOut() :: Nil, ShaderAst.output(tintOut(), v3("c")) :: ShaderAst.clipOut(origin()) :: Nil))))
+
+    @Test
+    def testWgslOutputWritesTheOutputStruct(): Unit \ Assert =
+        Assert.assertTrue(String.contains(substr = "    o.vTint = c;\n",
+            ShaderAst.Wgsl.vertex(vertexOf(Nil, tintOut() :: Nil, ShaderAst.output(tintOut(), v3("c")) :: ShaderAst.clipOut(origin()) :: Nil))))
+
+    @Test
+    def testGlslQuadCornerDeclaresCornerAttribute(): Unit \ Assert =
+        Assert.assertTrue(String.contains(substr = "layout (location = 0) in vec2 aCorner;\n",
+            ShaderAst.Glsl.vertex(vertexOf(Nil, Nil, ShaderAst.clipOut(ShaderAst.vec4Of(x(ShaderAst.quadCorner()), f("0.0"), f("0.0"), f("1.0"))) :: Nil))))
+
+    @Test
+    def testWgslFullscreenCopiesVertexIndex(): Unit \ Assert =
+        Assert.assertTrue(String.contains(substr = "    r3d_vertexIndex = v.vertexIndex;\n",
+            ShaderAst.Wgsl.vertex(vertexOf(Nil, Nil, ShaderAst.clipOut(ShaderAst.fullscreenPosition()) :: Nil))))
+
+    @Test
+    def testGlslAffineOutputCarriesW(): Unit \ Assert =
+        Assert.assertTrue(String.contains(substr = "    vUvAffine = vec3(uv * gl_Position.w, gl_Position.w);\n",
+            ShaderAst.Glsl.vertex(vertexOf(Nil, affineUv() :: Nil, ShaderAst.clipOut(origin()) :: ShaderAst.output(affineUv(), ref(ShaderAst.Vec2.Vec2, "uv")) :: Nil))))
+
+    @Test
+    def testAffineOutputBeforeClipOutStops(): Unit \ {Assert, IO} =
+        Assert.assertTrue(stops(_ -> ShaderAst.Glsl.vertex(vertexOf(Nil, affineUv() :: Nil, ShaderAst.output(affineUv(), ref(ShaderAst.Vec2.Vec2, "uv")) :: ShaderAst.clipOut(origin()) :: Nil))))
+
+    @Test
+    def testSecondClipOutStops(): Unit \ {Assert, IO} =
+        Assert.assertTrue(stops(_ -> ShaderAst.Wgsl.vertex(vertexOf(Nil, Nil, ShaderAst.clipOut(origin()) :: ShaderAst.clipOut(origin()) :: Nil))))
+
+    @Test
+    def testOutputMissingFromTheTableStops(): Unit \ {Assert, IO} =
+        Assert.assertTrue(stops(_ -> ShaderAst.Glsl.vertex(vertexOf(Nil, Nil, ShaderAst.output(tintOut(), v3("c")) :: ShaderAst.clipOut(origin()) :: Nil))))
+
+    @Test
+    def testFragmentReadingVaryingMissingFromInputsStops(): Unit \ {Assert, IO} =
+        Assert.assertTrue(stops(_ -> ShaderAst.Glsl.fragment(entryOf(Nil, ShaderAst.emit(ShaderAst.vec4FromVec3(ShaderAst.varying(ShaderAst.Vec3.Vec3, tintOut()), f("1.0"))) :: Nil))))
+
+    @Test
+    def testWgslFragmentWithoutColorHasNoOutput(): Unit \ Assert =
+        Assert.assertTrue(String.contains(substr = "@fragment fn fs_main(i: In) {\n",
+            ShaderAst.Wgsl.fragment({ writesColor = false, body = ifInline(lt(s("a"), f("0.5")), ShaderAst.discard_()) :: Nil | entryOf(tintOut() :: Nil, Nil) })))
+
+    @Test
+    def testFragmentWithoutColorEmittingStops(): Unit \ {Assert, IO} =
+        Assert.assertTrue(stops(_ -> ShaderAst.Glsl.fragment({ writesColor = false | entryOf(Nil, ShaderAst.emit(red()) :: Nil) })))
+
+    @Test
+    def testOnlyInLeavesOutTheOtherLanguage(): Unit \ Assert =
+        let body = ShaderAst.onlyIn(ShaderAst.Lang.Glsl, ShaderAst.discard_() :: Nil) :: ShaderAst.emit(red()) :: Nil;
+        Assert.assertFalse(String.contains(substr = "discard", ShaderAst.Wgsl.fragment(entryOf(Nil, body))))
+
+    @Test
+    def testLinkFindsVaryingTheVertexDoesNotWrite(): Unit \ Assert =
+        Assert.assertEq(expected = 1, List.length(ShaderAst.linkErrors(vertexOf(Nil, Nil, Nil), entryOf(tintOut() :: Nil, Nil))))
+
+    @Test
+    def testLinkFindsOverlappingLocations(): Unit \ Assert =
+        let same = varyingOf("vOther", ShaderAst.Ty.Vec3, 3, ShaderAst.Interp.Smooth);
+        Assert.assertEq(expected = 1, List.length(ShaderAst.linkErrors(vertexOf(Nil, tintOut() :: same :: Nil, Nil), entryOf(Nil, Nil))))
+
+    @Test
+    def testGlslPixelNdcCountsFromTheBottom(): Unit \ Assert =
+        Assert.assertEq(expected = "(gl_FragCoord.xy - uRect.xy) / vec2(w, h) * 2.0 - 1.0", glsl(ShaderAst.pixelNdc(rect(), s("w"), s("h"))))
+
+    @Test
+    def testWgslPixelNdcFlipsTheRow(): Unit \ Assert =
+        Assert.assertEq(expected = "vec2f(r3d_fragCoord.x / w * 2.0 - 1.0, 1.0 - r3d_fragCoord.y / h * 2.0)", wgsl(ShaderAst.pixelNdc(rect(), s("w"), s("h"))))
 }

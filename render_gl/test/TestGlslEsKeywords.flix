@@ -54,6 +54,7 @@ mod Render3d.TestGlslEsKeywords {
             ("meshVertex", Render3dGlsl.meshVertexSource()) ::
             ("skinnedMeshVertex", Render3dGlsl.skinnedMeshVertexSource()) ::
             ("depthFragment", Render3dGlsl.depthFragmentSource()) ::
+            ("skyVertex", Render3dGlsl.skyVertexSource()) ::
             ("skyFragment", Render3dGlsl.skyFragmentSource()) ::
             ("blitVertex", Render3dGlsl.blitVertexSource()) ::
             ("blitFragment", Render3dGlsl.blitFragmentSource()) ::

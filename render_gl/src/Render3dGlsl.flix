@@ -103,10 +103,6 @@ pub mod Render3dGlsl {
     // WhyNot: w が 0 以下（目の後ろ）の頂点を丸めない — 画素へ写せず、GPU が手前の面で切る前の形を壊す。
     def vertexSnapSource(): String = ShaderAst.Glsl.print(Render3dShaders.vertexSnap() :: Nil)
 
-    /// 変種 v の frag の色の出口の字（c は画面の値の色の式の字。v の feature の colorOut に通す）。
-    def colorOut(v: Render3d.ProgramKey.ShaderVariant, c: String): String =
-        ShaderAst.Glsl.expression(Render3dShaders.featureOf(v)#colorOut(ShaderAst.rawExpr(ShaderAst.Vec3.Vec3, c, c, Nil, false)))
-
     /// 頂点シェーダーへ数を渡すテクスチャの幅（texel）。
     pub def dataTextureWidth(): Int32 = Skin3d.maxJoints() * 4
 
@@ -240,116 +236,32 @@ pub mod Render3dGlsl {
     /// 奥行きの書き出し（Output.Depth）の形だけの frag（本文は Render3dShaders.depthFragment）。
     pub def depthFragmentSource(): String = ShaderAst.Glsl.fragment(Render3dShaders.depthFragment(Nil))
 
-    /// ビルボードの頂点シェーダー: カメラの right / up で四角を立てる（aCorner は 0〜1・y は下向き）。板ごとの値は instance の attribute（location 1〜4・
+    /// ビルボードの頂点シェーダー（本文は Render3dShaders.billboardVertex）: カメラの right / up で四角を立てる（aCorner は 0〜1・y は下向き）。板ごとの値は instance の attribute（location 1〜4・
     /// 並びは Render3d.SceneList.billboardValueFloats: 点と光の当て方・anchor と size・貼る範囲の uv・tint と影を受ける点を離す長さ）。
     /// uRightPerBillboard = 1 なら板の横の向きを tint の欄から読む（影の地図の点光源の面）。
     pub def billboardVertexSource(): String = billboardVertexSourceFor(Render3d.ProgramKey.defaultShaderVariant())
 
     /// 変種 v の billboardVertexSource（v#psx なら四角の角を丸める）。
     pub def billboardVertexSourceFor(v: Render3d.ProgramKey.ShaderVariant): String =
-        "#version 330 core\n" +
-        "layout (location = 0) in vec2 aCorner;\n" +
-        "layout (location = 1) in vec4 aCenterLit;\n" +
-        "layout (location = 2) in vec4 aAnchorSize;\n" +
-        "layout (location = 3) in vec4 aUvRect;\n" +
-        "layout (location = 4) in vec4 aTintOffset;\n" +
-        Render3d.Uniforms.glslDeclarations(R3dUniform.View :: R3dUniform.Proj :: R3dUniform.Right :: R3dUniform.Up :: R3dUniform.RightPerBillboard :: Nil) +
-        (if (v#psx) vertexSnapSource() else "") +
-        "out vec3 vWorld;\n" +
-        "out vec2 vUv;\n" +
-        "out vec3 vShadowBase;\n" +
-        "flat out vec3 vTint;\n" +
-        "flat out int vLit;\n" +
-        "flat out float vShadowOffset;\n" +
-        "void main() {\n" +
-        "    vec3 center = aCenterLit.xyz;\n" +
-        "    vec2 anchor = aAnchorSize.xy;\n" +
-        "    vec2 size = aAnchorSize.zw;\n" +
-        "    vec3 right = uRightPerBillboard == 1 ? aTintOffset.xyz : uRight;\n" +
-        "    vec3 world = center + right * ((aCorner.x - anchor.x) * size.x)\n" +
-        "                        + uUp * ((anchor.y - aCorner.y) * size.y);\n" +
-        "    vWorld = world;\n" +
-        "    vUv = aUvRect.xy + aCorner * aUvRect.zw;\n" +
-        "    vShadowBase = center + vec3(0.0, (anchor.y - aCorner.y) * size.y, 0.0);\n" +
-        "    vTint = aTintOffset.xyz;\n" +
-        "    vLit = int(aCenterLit.w + 0.5);\n" +
-        "    vShadowOffset = aTintOffset.w;\n" +
-        (if (v#psx) "    gl_Position = r3d_vertexSnap(uProj * uView * vec4(world, 1.0));\n" else "    gl_Position = uProj * uView * vec4(world, 1.0);\n") +
-        "}\n"
+        ShaderAst.Glsl.vertex(Render3dShaders.billboardVertex(v, Render3dShaders.BillboardRight.ByUniform, Nil))
 
-    /// vLit（光の当て方）が 2 なら太陽の影を受ける。受ける点は vShadowBase（Scene3d.billboardShadowPointOf の太陽の方へ進める前の点）を
-    /// 太陽の方へ vShadowOffset / max(太陽への向きの水平の長さ, Scene3d.billboardShadowMinFlat()) だけ進めた点。影の地図に描く時（Render3d.Shadow）は uDepthOut = 1 で、α で捨てた後に色を出さずに返る。
+    /// ビルボードの frag（本文は Render3dShaders.billboardFragment）。影の地図に描く時（Render3d.Shadow）は uDepthOut = 1 で、α で捨てた後に返る。
     pub def billboardFragmentSource(): String = billboardFragmentSourceFor(Render3d.ProgramKey.defaultShaderVariant())
 
     /// 変種 v の billboardFragmentSource。ビルボードは点光源の影を受けないので v#pointShadows は読まない（Physical の光だけを変える）。
-    pub def billboardFragmentSourceFor(v: Render3d.ProgramKey.ShaderVariant): String =
-        let bv = Render3d.ProgramKey.billboardVariantOf(v);
-        "#version 330 core\n" +
-        "in vec3 vWorld;\n" +
-        "in vec2 vUv;\n" +
-        "in vec3 vShadowBase;\n" +
-        "flat in vec3 vTint;\n" +
-        "flat in int vLit;\n" +
-        "flat in float vShadowOffset;\n" +
-        "out vec4 fragColor;\n" +
-        Render3d.Uniforms.glslDeclarations(R3dUniform.Image :: R3dUniform.Facing :: R3dUniform.DepthOut :: Nil) +
-        ShaderAst.Glsl.print(Render3dShaders.colorSpace() ::: Render3dShaders.depthGray() ::
-                             Render3dShaders.lightDefinitions(bv, Render3dShaders.featureOf(bv))) +
-        "void main() {\n" +
-        "    vec4 texel = texture(uImage, vUv);\n" +
-        "    if (texel.a < 0.5) discard;\n" +
-        "    if (uDepthOut == 1) {\n" +
-        "        float g = depthGray(vWorld);\n" +
-        "        fragColor = vec4(g, g, g, 1.0);\n" +
-        "        return;\n" +
-        "    }\n" +
-        "    if (vLit == 2) r3d_sunLit = sunLitAt(vShadowBase + uSunDir * (vShadowOffset / max(length(uSunDir.xz), ${Scene3d.billboardShadowMinFlat()})), uSunDir, normalize(uFacing));\n" +
-        "    vec3 light = vLit >= 1 ? lightAt(vWorld, normalize(uFacing)) : vec3(1.0);\n" +
-        "    fragColor = vec4(" + colorOut(bv, "r3d_surfaceOut(r3d_srgbToLinear3(texel.rgb), vTint, light, vec3(0.0), 1.0, vWorld, vLit >= 1)") + ", 1.0);\n" +
-        "}\n"
+    pub def billboardFragmentSourceFor(v: Render3d.ProgramKey.ShaderVariant): String = ShaderAst.Glsl.fragment(Render3dShaders.billboardFragment(v, Nil))
 
-    /// 空の frag（式は LightModel3d.skyModel・向きは Scene3d.skyDirectionOf。NDC は画素の真ん中の gl_FragCoord と viewport から）。
-    /// uEnvOn = 1 なら空の代わりに環境マップの絵を段 0 で読む（Scene3d.backgroundEnvironmentOf。CPU の描き手は SoftRaster3d.Internal.environmentBackgroundAt）。
-    pub def skyFragmentSource(): String =
-        "#version 330 core\n" +
-        "in vec2 vUv;\n" +
-        "out vec4 fragColor;\n" +
-        Render3d.Uniforms.glslDeclarations(R3dUniform.Viewport :: R3dUniform.Forward :: R3dUniform.Right :: R3dUniform.Up :: R3dUniform.DepthOut :: R3dUniform.EnvOn :: R3dUniform.EnvMap :: R3dUniform.EnvIntensity :: R3dUniform.EnvSrgb :: Nil) +
-        ShaderAst.Glsl.print(Render3dShaders.colorSpace() ::: Render3dShaders.skyAt() :: Render3dShaders.environmentUv() :: Nil) +
-        "void main() {\n" +
-        "    if (uDepthOut == 1) {\n" +
-        "        fragColor = vec4(1.0, 1.0, 1.0, 1.0);\n" +
-        "        return;\n" +
-        "    }\n" +
-        "    vec2 ndc = (gl_FragCoord.xy - uViewport.xy) / uViewport.zw * 2.0 - 1.0;\n" +
-        "    vec3 d = normalize(uForward + uRight * ndc.x + uUp * ndc.y);\n" +
-        "    if (uEnvOn == 1) {\n" +
-        "        vec3 c = textureLod(uEnvMap, environmentUv(d), 0.0).rgb;\n" +
-        "        fragColor = vec4(r3d_linearToSrgb3((uEnvSrgb == 1 ? r3d_srgbToLinear3(c) : c) * uEnvIntensity), 1.0);\n" +
-        "        return;\n" +
-        "    }\n" +
-        "    fragColor = vec4(r3d_linearToSrgb3(skyAt(d)), 1.0);\n" +
-        "}\n"
+    /// 空の頂点シェーダー（頂点の buffer を読まず、gl_VertexID の 3 点で描き先いっぱいを覆う三角形）。
+    pub def skyVertexSource(): String = ShaderAst.Glsl.vertex(Render3dShaders.skyVertex())
+
+    /// 空の frag（本文は Render3dShaders.skyFragment。NDC は画素の真ん中と uViewport から）。
+    pub def skyFragmentSource(): String = ShaderAst.Glsl.fragment(Render3dShaders.skyFragment(Nil))
 
     /// 空の色の式 skyAt(向き)（LightModel3d の木から作る）と、それが読む uniform。
     pub def skyLightSource(): String = ShaderAst.Glsl.print(Render3dShaders.skyAt() :: Nil)
 
-    /// Design の FBO を viewport 全面へ貼る（FBO は行 0 が下なので、四角の上を v = 1 に当てる）。
-    pub def blitVertexSource(): String =
-        "#version 330 core\n" +
-        "layout (location = 0) in vec2 aCorner;\n" +
-        "out vec2 vUv;\n" +
-        "void main() {\n" +
-        "    vUv = vec2(aCorner.x, 1.0 - aCorner.y);\n" +
-        "    gl_Position = vec4(aCorner.x * 2.0 - 1.0, 1.0 - aCorner.y * 2.0, 0.0, 1.0);\n" +
-        "}\n"
+    /// Design の FBO を viewport 全面へ貼る（本文は Render3dShaders.blitVertex）。
+    pub def blitVertexSource(): String = ShaderAst.Glsl.vertex(Render3dShaders.blitVertex())
 
-    pub def blitFragmentSource(): String =
-        "#version 330 core\n" +
-        "in vec2 vUv;\n" +
-        "out vec4 fragColor;\n" +
-        Render3d.Uniforms.glslDeclarations(R3dUniform.Image :: Nil) +
-        "void main() {\n" +
-        "    fragColor = texture(uImage, vUv);\n" +
-        "}\n"
+    pub def blitFragmentSource(): String = ShaderAst.Glsl.fragment(Render3dShaders.blitFragment())
 }

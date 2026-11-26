@@ -120,6 +120,7 @@ pub mod ShaderAst.Wgsl {
         case Node.Raw(_, text, _, _, _) => ShaderAst.rawTextOrBug(Lang.Wgsl, text)
         case Node.CallIn(_, _, name, xs, _, _, _) => name + "(" + args(xs) + ")"
         case Node.Varying(name, _, _)  => "i." + name
+        case Node.Attribute(name, _)   => "v." + name
     }
 
     def intrinsic(k: Intrinsic): String =
@@ -127,6 +128,9 @@ pub mod ShaderAst.Wgsl {
         let index = ShaderAst.nameOf(ShaderAst.vertexIndex());
         match k {
             case Intrinsic.PixelFromTopLeft(_) => "vec2i(i32(floor(${frag}.x)), i32(floor(${frag}.y)))"
+            case Intrinsic.PixelNdc(_, w, h)   =>
+                let size = (n: Node) -> exprAt(ShaderAst.precOf(BinOp.Div) + 1, n);
+                "vec2f(${frag}.x / ${size(w)} * 2.0 - 1.0, 1.0 - ${frag}.y / ${size(h)} * 2.0)"
             case Intrinsic.FullscreenPosition  => "vec4f(f32((${index} << 1u) & 2u) * 2.0 - 1.0, f32(${index} & 2u) * 2.0 - 1.0, 0.0, 1.0)"
             case Intrinsic.QuadCorner          => "r3d_quadCorner(${index})"
             case Intrinsic.FrontFacing         => "i.frontFacing"
@@ -146,6 +150,8 @@ pub mod ShaderAst.Wgsl {
         case Stmt.Eval(e)                       => exprAt(0, e) + ";"
         case Stmt.Emit(e, _)                    => "return " + exprAt(0, e) + ";"
         case Stmt.Headed(_, head, e)            => head + exprAt(0, e) + ";"
+        case Stmt.Output(name, _, _, e)         => "o." + name + " = " + exprAt(0, e) + ";"
+        case Stmt.ClipOut(e)                    => "o.position = sg_clipFromGl(" + exprAt(0, e) + ");"
         case _                                  => ShaderAst.invalidOrBug("ShaderAst.Wgsl: if・for は 1 行の文の中に置けない")
     }
 
@@ -217,18 +223,32 @@ pub mod ShaderAst.Wgsl {
         };
         "    @location(${v#location}) " + interp + v#name + ": " + tyName(v#ty) + ",\n"
 
+    /// 入口の引数の struct の字と引数の字（欄が無ければ struct を置かず引数も無い）。fields = 欄の行・param = 引数の名前。
+    def inputOf(name: String, param: String, fields: List[String]): (String, String) =
+        if (List.isEmpty(fields)) ("", "")
+        else ("struct ${name} {\n" + ShaderAst.joinParts(fields) + "};\n", param + ": " + name)
+
     /// frag の入口の字（辿った定義・入口の引数の struct・fs_main）。画素の位置を読む本文は入口の頭で r3d_fragCoord へ写す。
     pub def fragment(e: ShaderAst.FragmentEntry): String =
-        let defs = ShaderAst.entryDefinitionsOrBug(Lang.Wgsl, e);
-        let fragPos = ShaderAst.readsFragCoord(defs);
-        let facing = ShaderAst.readsFrontFacing(e#body);
-        ShaderAst.joinParts(defs |> List.map(definition)) +
-        "struct ${e#inputName} {\n" +
-        (if (fragPos) "    @builtin(position) fragPos: vec4f,\n" else "") +
-        ShaderAst.joinParts(e#inputs |> List.map(varyingField)) +
-        (if (facing) "    @builtin(front_facing) frontFacing: bool,\n" else "") +
-        "};\n" +
-        "@fragment fn fs_main(i: ${e#inputName}) -> @location(0) vec4f {\n" +
+        let (defs, body) = ShaderAst.Entry.fragmentOrBug(Lang.Wgsl, e);
+        let fragPos = ShaderAst.Entry.readsFragCoord(defs);
+        let fields = (if (fragPos) "    @builtin(position) fragPos: vec4f,\n" :: Nil else Nil) ::: (e#inputs |> List.map(varyingField)) :::
+                     (if (ShaderAst.Entry.readsFrontFacing(body)) "    @builtin(front_facing) frontFacing: bool,\n" :: Nil else Nil);
+        let (structText, paramText) = inputOf(e#inputName, "i", fields);
+        ShaderAst.joinParts(defs |> List.map(definition)) + structText +
+        "@fragment fn fs_main(${paramText})" + (if (e#writesColor) " -> @location(0) vec4f" else "") + " {\n" +
         (if (fragPos) "    " + ShaderAst.nameOf(ShaderAst.fragCoord()) + " = i.fragPos;\n" else "") +
-        stmts(1, e#body) + "}\n"
+        stmts(1, body) + "}\n"
+
+    /// vertex の入口の字（辿った定義・入口の引数と返り値の struct・vs_main）。頂点の番号を読む本文は入口の頭で r3d_vertexIndex へ写す。
+    pub def vertex(e: ShaderAst.VertexEntry): String =
+        let (defs, body) = ShaderAst.Entry.vertexOrBug(Lang.Wgsl, e);
+        let index = ShaderAst.Entry.readsVertexIndex(defs);
+        let attrs = e#attributes |> List.filterMap(a -> a#wgslLocation |> Option.map(at -> "    @location(${at}) ${a#name}: ${tyName(a#ty)},\n"));
+        let (structText, paramText) = inputOf(e#inputName, "v", (if (index) "    @builtin(vertex_index) vertexIndex: u32,\n" :: Nil else Nil) ::: attrs);
+        ShaderAst.joinParts(defs |> List.map(definition)) + structText +
+        "struct ${e#outputName} {\n    @builtin(position) position: vec4f,\n" + ShaderAst.joinParts(e#outputs |> List.map(varyingField)) + "};\n" +
+        "@vertex fn vs_main(${paramText}) -> ${e#outputName} {\n" +
+        (if (index) "    " + ShaderAst.nameOf(ShaderAst.vertexIndex()) + " = v.vertexIndex;\n" else "") +
+        "    var o: ${e#outputName};\n" + stmts(1, body) + "    return o;\n}\n"
 }

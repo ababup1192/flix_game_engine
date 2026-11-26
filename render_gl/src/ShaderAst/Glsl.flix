@@ -78,6 +78,7 @@ pub mod ShaderAst.Glsl {
         case Node.CallIn(name, xs, _, _, _, _, _) => name + "(" + args(xs) + ")"
         case Node.Varying(name, _, ShaderAst.Interp.Affine) => name + ".xy / " + name + ".z"
         case Node.Varying(name, _, _)  => name
+        case Node.Attribute(name, _)   => name
     }
 
     def builtin(fun: BuiltinFn, xs: List[Node]): String = match fun {
@@ -90,6 +91,8 @@ pub mod ShaderAst.Glsl {
         case Intrinsic.PixelFromTopLeft(rect) =>
             let at = (s: String) -> ShaderAst.accessFor(Lang.Glsl, rect, s);
             "ivec2(int(floor(gl_FragCoord.x - ${at("x")})), int(floor(${at("y")} + ${at("w")} - gl_FragCoord.y)))"
+        case Intrinsic.PixelNdc(rect, w, h) =>
+            "(gl_FragCoord.xy - ${ShaderAst.accessFor(Lang.Glsl, rect, "xy")}) / vec2(${exprAt(0, w)}, ${exprAt(0, h)}) * 2.0 - 1.0"
         case Intrinsic.FullscreenPosition => "vec4(float((gl_VertexID << 1) & 2) * 2.0 - 1.0, float(gl_VertexID & 2) * 2.0 - 1.0, 0.0, 1.0)"
         case Intrinsic.QuadCorner         => "aCorner"
         case Intrinsic.FrontFacing        => "gl_FrontFacing"
@@ -103,6 +106,7 @@ pub mod ShaderAst.Glsl {
         case Stmt.If(_, _, _, _)         => false
         case Stmt.For(_, _, _, _, _, _)  => false
         case Stmt.RawStmt(_, _)          => false
+        case Stmt.Only(_, _)             => false
         case _                           => true
     }
 
@@ -118,6 +122,10 @@ pub mod ShaderAst.Glsl {
         case Stmt.Eval(e)                   => exprAt(0, e) + ";"
         case Stmt.Emit(e, false)            => "fragColor = " + exprAt(0, e) + ";"
         case Stmt.Headed(head, _, e)        => head + exprAt(0, e) + ";"
+        case Stmt.Output(name, _, ShaderAst.Interp.Affine, e) =>
+            name + " = vec3(" + exprAt(ShaderAst.precOf(ShaderAst.BinOp.Mul), e) + " * gl_Position.w, gl_Position.w);"
+        case Stmt.Output(name, _, _, e)     => name + " = " + exprAt(0, e) + ";"
+        case Stmt.ClipOut(e)                => "gl_Position = " + exprAt(0, e) + ";"
         case _                              => ShaderAst.invalidOrBug("ShaderAst.Glsl: 1 行に置けない文")
     }
 
@@ -189,9 +197,25 @@ pub mod ShaderAst.Glsl {
     def varyingTy(v: ShaderAst.Varying): Ty =
         if (v#interp == ShaderAst.Interp.Affine and v#ty == Ty.Vec2) Ty.Vec3 else v#ty
 
+    /// varying の宣言の行（dir = in か out）。
+    def varyingLines(dir: String, vs: List[ShaderAst.Varying]): String =
+        vs |> List.map(v -> (if (v#interp == ShaderAst.Interp.Flat) "flat " else "") + dir + " " + tyName(varyingTy(v)) + " " + v#name + ";\n") |> ShaderAst.joinParts
+
+    /// 入口の main の字（uniform の宣言・辿った定義・main）。
+    def mainOf(defs: List[Def], body: List[Stmt]): String = withUniforms(defs, body) + "void main() {\n" + stmts(1, body) + "}\n"
+
     /// frag の入口の字（#version・in の宣言・fragColor・uniform の宣言・辿った定義・main）。
     pub def fragment(e: ShaderAst.FragmentEntry): String =
-        let defs = ShaderAst.entryDefinitionsOrBug(Lang.Glsl, e);
-        let ins = e#inputs |> List.map(v -> (if (v#interp == ShaderAst.Interp.Flat) "flat " else "") + "in " + tyName(varyingTy(v)) + " " + v#name + ";\n");
-        "#version 330 core\n" + ShaderAst.joinParts(ins) + "out vec4 fragColor;\n" + withUniforms(defs, e#body) + "void main() {\n" + stmts(1, e#body) + "}\n"
+        let (defs, body) = ShaderAst.Entry.fragmentOrBug(Lang.Glsl, e);
+        "#version 330 core\n" + varyingLines("in", e#inputs) + (if (e#writesColor) "out vec4 fragColor;\n" else "") + mainOf(defs, body)
+
+    /// 属性の宣言の行（name・型・location）。
+    def attributeLine(name: String, t: Ty, location: Int32): String = "layout (location = ${location}) in ${tyName(t)} ${name};\n"
+
+    /// vertex の入口の字（#version・属性・out の宣言・uniform の宣言・辿った定義・main）。四角の角を読む本文は aCorner の属性を先に置く。
+    pub def vertex(e: ShaderAst.VertexEntry): String =
+        let (defs, body) = ShaderAst.Entry.vertexOrBug(Lang.Glsl, e);
+        let corner = if (ShaderAst.Entry.readsQuadCorner(defs, body)) attributeLine("aCorner", Ty.Vec2, ShaderAst.quadCornerLocation()) else "";
+        let attrs = e#attributes |> List.filterMap(a -> a#glslLocation |> Option.map(at -> attributeLine(a#name, a#ty, at)));
+        "#version 330 core\n" + corner + ShaderAst.joinParts(attrs) + varyingLines("out", e#outputs) + mainOf(defs, body)
 }

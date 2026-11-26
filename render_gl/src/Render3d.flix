@@ -26,7 +26,7 @@ mod Render3d {
     import fge.gl.GlConst
     import fge.gl.GlContext
     use Render3dGlsl.{meshVertexSource, skinnedMeshVertexSource, litVertexSource, litFragmentSource,
-                       depthFragmentSource, billboardVertexSource, billboardFragmentSource, skyFragmentSource, blitVertexSource, blitFragmentSource}
+                       depthFragmentSource, billboardVertexSource, billboardFragmentSource, skyVertexSource, skyFragmentSource, blitVertexSource, blitFragmentSource}
     use Render3d.Light.{lightDataOf, putLights}
     use Render3d.ProgramKey.{ProgramKind, ShaderVariant, defaultShaderVariant, shaderVariantOf, passVariantOf, billboardVariantOf, lightVariantOf, variantKeyOf, materialKey}
     use Render3d.Batch.{MaterialBatch, MeshBatch}
@@ -623,8 +623,9 @@ mod Render3d {
                     case Scene3d.Output.Color    => 0
                     case Scene3d.Output.Depth(_) => 1
                 });
+                // WhyNot: 空の三角形のために空の VAO を作らない — GL core は draw の時に何かの VAO を求め、四角の VAO の属性は空の頂点シェーダーが読まない。
                 gl.bindVertexArray(programsOf(gl, state)#quadVao);
-                gl.drawArrays(GlConst.TRIANGLES, 0, 6);
+                gl.drawArrays(GlConst.TRIANGLES, 0, 3);
                 countDrawCall(state, BatchBreak.Sky);
                 gl.bindVertexArray(0);
                 gl.useProgram(0);
@@ -984,7 +985,7 @@ mod Render3d {
         match Ref.get(state#skyRef) {
             case Some(p) => p
             case None =>
-                let made = compileProgram(gl, blitVertexSource(), skyFragmentSource(), "scene3d:sky");
+                let made = compileProgram(gl, skyVertexSource(), skyFragmentSource(), "scene3d:sky");
                 bindUnits(gl, made, (R3dUniform.EnvMap, environmentTextureUnit()) :: Nil);
                 Ref.put(Some(made), state#skyRef);
                 made
