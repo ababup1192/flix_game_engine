@@ -163,3 +163,24 @@ smoke（1 回・counters の回・WebGPU）の flix の値（ms）:
   - engine は console に 2 行出す: 「staticGroup の名前か値が 300 コマに 20 回替わった」（区画の出し入れを作り直しと読み、先に作る仕組みを止める）と「draw call が 1,300 あり形が違うので分かれた」。
   - 2 行とも adapter が consoleErrors から外して hints に数える。1 行目は、区画を `App.withPreload3d` で先に宣言すれば消える見込み。
 - **K7**: 半透明の物は 1 体ずつ遠い順に描く（draw = 物の数）。500 個で CPU 9.4 ms と重い。比べる相手の「60 fps に収まる最大」は 2.5k〜16k なので、flix は約 1k の見込み（ladder を流して確かめる）。
+
+## S4（続き）: K8 と K5 の区画の先作り
+
+- `make scene-compare` に K8（1 万）を足し、8 場面・322 の配列が一致（pick の 64 点も比べる）。
+- **K8 の pick の道**: adapter が頼み（番号・x・y）を `fgeQueryPairs` に載せて engine の 1 コマを回し、Flix の側（`Draw.pick`）が答えを console の 1 行で返す。
+  - Flix の側は `Camera3d.screenPointToRay` と `Ray3d.hitMesh` で 1 つずつ当てる（engine の pick の口）。
+  - harness の patch で、adapter が `takePickMs()` を持つ時は、Flix の側でレイを当てた ms を pick の時間にする（描くコマの時間は含めない）。
+  - optimized は `N/A (as naive)`（engine の pick の口は 1 つだけ）。
+- **K5 の区画**: 全部の区画を `App.withPreload3d` の groups で起動の時に先に作る宣言にした。
+
+smoke（1 回・WebGPU）:
+
+| 場面 | 段 | flix | three.js | 注 |
+|---|---|---:|---:|---|
+| K8 pick 1 万の中 | 1 回の ms（p50） | 24.9 | 0.41 | 64 点の答えは three.js と全部一致（当たり 47） |
+| K8 pick 1M 三角形 | 1 回の ms（p50） | 656 | 30.6 | 64 点とも球（slot 0）に当たる |
+| K5 naive | 2 万 / 10 万の interval ms | 18.0 / 72.2 | 9.8 / 34.2 | 物の列は読み込みで 1 回作る |
+| K5 optimized | 2 万 / 10 万の interval ms | 2.5 / 4.5 | 1.7 / 5.0 | 区画の staticGroup・先に作る宣言つき |
+
+- K8 の pick は、比べる相手の M4 Pro（1 万の中 0.2〜14 ms・1M 三角形 0.8〜36 ms）より 1 桁以上遅い。BVH が無く、物ごとに境界の箱を見て三角形を全部当てる（計画の「今は足さない物」の BVH の相談の候補）。
+- K5 optimized の hints は先に作る宣言の後も 1（draw call の助言の行）。

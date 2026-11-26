@@ -7,6 +7,9 @@ import type { EngineAdapter, InitOptions, InitReport, LoadReport, SceneData, Var
 
 const BASE = '/flix/';
 const SIM_LINE = '[wec] sim ';
+const PICK_LINE = '[wec] pick ';
+/** pick の答えを待つコマ数の上限。 */
+const PICK_FRAMES = 4;
 /** engine が置き方を勧める行の頭（数えて counters の hints に出す）。 */
 const HINT_PREFIXES = ['scene3d: 置いた物が', 'scene3d: 場面の draw call が', '[scene3d] staticGroup の名前か値が'];
 /** load の中で回すコマ数（pipeline と形の初めての上げを済ませる）。 */
@@ -39,6 +42,10 @@ class FlixAdapter implements EngineAdapter {
   private pairs: (() => string[]) | null = null;
   private patched = false;
   private hints = 0;
+  private pickSeq = 0;
+  private pickReq: { seq: number; x: number; y: number } | null = null;
+  private pickAnswer: { seq: number; slot: number; ms: number } | null = null;
+  private pickMs: number | null = null;
 
   async init(canvas: HTMLCanvasElement, opts: InitOptions): Promise<InitReport> {
     this.backend = opts.backend;
@@ -58,6 +65,8 @@ class FlixAdapter implements EngineAdapter {
 
   async load(_scene: SceneData, variant: Variant, opt?: string): Promise<LoadReport> {
     if (opt) throw new Error(`N/A: optimized の候補 ${opt} は無い`);
+    const scenario = new URLSearchParams(location.search).get('scenario');
+    if (variant === 'optimized' && scenario === 'k8') throw new Error('N/A (as naive): engine の pick の口は Ray3d（1 つずつ当てる）だけ');
     await this.runFrames(LOAD_FRAMES, BOOT_TIMEOUT_MS, false);
     this.capturing = false;
     this.simMs = 0;
@@ -73,6 +82,25 @@ class FlixAdapter implements EngineAdapter {
   takeSimMs() {
     const ms = this.simMs;
     this.simMs = 0;
+    return ms;
+  }
+
+  /**
+   * K8: canvas の画素の下の物の場面の slot の番号（無ければ -1）。頼みを fgeQueryPairs に載せて engine の 1 コマを回し、Flix の側の答えを console の 1 行で受ける。
+   */
+  pick(x: number, y: number) {
+    this.pickSeq++;
+    this.pickReq = { seq: this.pickSeq, x, y };
+    for (let k = 0; k < PICK_FRAMES && this.pickAnswer?.seq !== this.pickSeq; k++) this.pump();
+    const answer = this.pickAnswer?.seq === this.pickSeq ? this.pickAnswer : null;
+    this.pickMs = answer ? answer.ms : null;
+    return answer ? answer.slot : -1;
+  }
+
+  /** 直前の pick の、Flix の側でレイを当てた ms（harness が pick の時間にこちらを使う。描くコマの時間を含めない）。 */
+  takePickMs() {
+    const ms = this.pickMs;
+    this.pickMs = null;
     return ms;
   }
 
@@ -132,6 +160,11 @@ class FlixAdapter implements EngineAdapter {
     const log = console.log.bind(console);
     console.log = (...args: unknown[]) => {
       const first = args[0];
+      if (typeof first === 'string' && first.startsWith(PICK_LINE)) {
+        const [seq, slot, ms] = first.slice(PICK_LINE.length).split(' ').map(Number);
+        self.pickAnswer = { seq, slot, ms };
+        return;
+      }
       if (typeof first === 'string' && first.startsWith(SIM_LINE)) {
         self.simMs += Number(first.slice(SIM_LINE.length)) || 0;
         return;
@@ -165,6 +198,7 @@ class FlixAdapter implements EngineAdapter {
       const out: string[] = [];
       new URLSearchParams(location.search).forEach((v, k) => out.push(k, v));
       out.push('harness_t', String(self.sceneTime));
+      if (self.pickReq) out.push('pick_seq', String(self.pickReq.seq), 'pick_x', String(self.pickReq.x), 'pick_y', String(self.pickReq.y));
       return out;
     };
     for (const s of Array.from(doc.querySelectorAll('script'))) {

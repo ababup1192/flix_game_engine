@@ -6,7 +6,7 @@ mod SceneDump {
     pub def cases(): List[(Scenes.Scenario, Int32, Float64)] =
         (Scenes.Scenario.K1, 1, 0.0) :: (Scenes.Scenario.K1, 1, 1.25) ::
         (Scenes.Scenario.K2, 500, 0.0) :: (Scenes.Scenario.K2, 500, 1.25) :: (Scenes.Scenario.K2, 4000, 0.7) ::
-        (Scenes.Scenario.K5, 20000, 3.0) :: (Scenes.Scenario.K7, 500, 0.8) :: Nil
+        (Scenes.Scenario.K5, 20000, 3.0) :: (Scenes.Scenario.K7, 500, 0.8) :: (Scenes.Scenario.K8, 10000, 0.0) :: Nil
 
     def numbers(v: Vector[Float64]): String = "[${v |> Vector.map(Float64.toString) |> Vector.join(",")}]"
 
@@ -33,7 +33,7 @@ mod SceneDump {
         "\"count\":${f#count},\"geom\":${ints(f#geom)},\"material\":${ints(f#material)},\"position\":${numbers(f#position)}," +
         "\"scale\":${numbers(f#scale)},\"quat\":${numbers(quats(f#spin, spinT, f#count))},\"materials\":[${materials}],\"groups\":${groups}," +
         "\"worldColumns\":${numbers(Vector.range(0, f#count) |> Vector.flatMap(i -> Scenes.worldColumns(f, t, i)))}," +
-        "\"shapes\":[${Geometry.fieldShapes() |> Vector.map(shapeJson) |> Vector.join(",")}]}"
+        "\"pickPoints\":${numbers(f#pickPoints)},\"shapes\":[${Scenes.shapesOf(f#shapes) |> Vector.map(shapeJson) |> Vector.join(",")}]}"
 
     def shapeJson(s: Geometry.Shape): String =
         "{\"name\":\"${s#name}\",\"positions\":${numbers(s#positions)},\"normals\":${numbers(s#normals)},\"uvs\":${numbers(s#uvs)},\"indices\":${ints(s#indices)}}"

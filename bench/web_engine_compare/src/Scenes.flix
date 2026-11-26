@@ -26,7 +26,18 @@ mod Scenes {
         camera = Camera, clearColor = V3, ambient = { color = V3, intensity = Float64 }, sun = Sun,
         materials = Vector[Pbr], count = Int32, geom = Vector[Int32], material = Vector[Int32],
         position = Vector[Float64], scale = Vector[Float64], spin = Spin, groups = Option[Groups],
-        animated = Bool, turn = Option[Float64]
+        animated = Bool, turn = Option[Float64], shapes = ShapeSet, pickPoints = Vector[Float64]
+    }
+
+    /// 物の形の組。Field = Geometry.fieldShapes の 8 つ・BigSphere = 三角形 1M の球 1 つ（K8 の 1M 三角形の pick）。
+    pub enum ShapeSet with Eq {
+        case Field
+        case BigSphere
+    }
+
+    pub def shapesOf(set: ShapeSet): Vector[Geometry.Shape] = match set {
+        case ShapeSet.Field     => Geometry.fieldShapes()
+        case ShapeSet.BigSphere => Vector#{Geometry.sphere(0.5, 1024, 512)}
     }
 
     /// 測る場面。
@@ -35,6 +46,7 @@ mod Scenes {
         case K2
         case K5
         case K7
+        case K8
     }
 
     pub def scenarioOf(name: String): Option[Scenario] = match name {
@@ -42,6 +54,7 @@ mod Scenes {
         case "k2" => Some(Scenario.K2)
         case "k5" => Some(Scenario.K5)
         case "k7" => Some(Scenario.K7)
+        case "k8" => Some(Scenario.K8)
         case _    => None
     }
 
@@ -51,6 +64,7 @@ mod Scenes {
         case Scenario.K2 => hierarchyField(level)
         case Scenario.K5 => worldField(level)
         case Scenario.K7 => frustumField(7, level, palette(2700, 16, 0.5))
+        case Scenario.K8 => pickField(level)
     }
 
     pub def width(): Float64 = 1920.0
@@ -123,17 +137,21 @@ mod Scenes {
         })
 
     /// 視錐台に count 個の物を散らした場面（材質は materials から 1 つずつ選ぶ）。
-    def frustumField(seed: Int32, count: Int32, materials: Vector[Pbr]): Field =
+    def frustumField(seed: Int32, count: Int32, materials: Vector[Pbr]): Field = frustumFieldPicking(seed, count, materials, true)
+
+    /// pickMaterial が偽なら材質を引かず、全部を材質 0 にする（乱数の列も 1 つに 2 つだけ引く）。
+    def frustumFieldPicking(seed: Int32, count: Int32, materials: Vector[Pbr], pickMaterial: Bool): Field =
         let s = coverageScale(count);
         let shapeCount = 8;
+        let draws = if (pickMaterial) 3 else 2;
         { camera = fieldCamera(), clearColor = clear(), ambient = ambient(), sun = sun(),
           materials = materials, count = count,
-          geom = Vector.range(0, count) |> Vector.map(i -> Rng.intAt(seed, i * 3, shapeCount)),
-          material = Vector.range(0, count) |> Vector.map(i -> Rng.intAt(seed, i * 3 + 1, Vector.length(materials))),
-          scale = Vector.range(0, count) |> Vector.map(i -> s * Rng.rangeAt(seed, i * 3 + 2, { min = 0.8, max = 1.2 })),
-          position = scatterInFrustum(seed, count * 3, fieldCamera(), count, { near = 25.0, far = 55.0, margin = s }),
-          spin = spinner(seed, count * 6, count),
-          groups = None, animated = true, turn = None }
+          geom = Vector.range(0, count) |> Vector.map(i -> Rng.intAt(seed, i * draws, shapeCount)),
+          material = Vector.range(0, count) |> Vector.map(i -> if (pickMaterial) Rng.intAt(seed, i * draws + 1, Vector.length(materials)) else 0),
+          scale = Vector.range(0, count) |> Vector.map(i -> s * Rng.rangeAt(seed, i * draws + draws - 1, { min = 0.8, max = 1.2 })),
+          position = scatterInFrustum(seed, count * draws, fieldCamera(), count, { near = 25.0, far = 55.0, margin = s }),
+          spin = spinner(seed, count * draws + count * 3, count),
+          groups = None, animated = true, turn = None, shapes = ShapeSet.Field, pickPoints = Vector.empty() }
 
     /// K1: 光の当たる箱 1 つ。
     def startup(): Field =
@@ -141,7 +159,7 @@ mod Scenes {
           clearColor = clear(), ambient = ambient(), sun = sun(),
           materials = Vector#{{ color = (0.8, 0.3, 0.1), roughness = 0.4, metalness = 0.0, opacity = 1.0 }},
           count = 1, geom = Vector#{0}, material = Vector#{0}, position = Vector#{0.0, 0.0, 0.0}, scale = Vector#{1.0},
-          spin = spinner(1, 0, 1), groups = None, animated = true, turn = None }
+          spin = spinner(1, 0, 1), groups = None, animated = true, turn = None, shapes = ShapeSet.Field, pickPoints = Vector.empty() }
 
     /// K5 のカメラの注視点が 1 周する秒。
     def turnSeconds(): Float64 = 10.0 * Num.pi()
@@ -161,7 +179,7 @@ mod Scenes {
               Rng.rangeAt(seed, at(i, 3), { min = 0.0 - side / 2.0, max = side / 2.0 }),
               Rng.rangeAt(seed, at(i, 4), { min = 0.5, max = 3.0 }),
               Rng.rangeAt(seed, at(i, 5), { min = 0.0 - side / 2.0, max = side / 2.0 })}),
-          spin = spinner(seed, count * 6, count), groups = None, animated = false, turn = Some(turnSeconds()) }
+          spin = spinner(seed, count * 6, count), groups = None, animated = false, turn = Some(turnSeconds()), shapes = ShapeSet.Field, pickPoints = Vector.empty() }
 
     /// 時刻 t のカメラ（turn があれば注視点が y = 4 の半径 10 の輪を回る）。
     pub def cameraAt(f: Field, t: Float64): Camera = match f#turn {
@@ -173,6 +191,26 @@ mod Scenes {
 
     /// 物の向きを決める時刻（動かない場面は 0）。
     def spinTime(f: Field, t: Float64): Float64 = if (f#animated) t else 0.0
+
+    /// K8: pick の 64 点（canvas の画素・左上が 0）と、1 万の物（level 1 なら半径 15 m の 1M 三角形の球 1 つ）。物は動かない。
+    def pickField(level: Int32): Field =
+        let seed = 8;
+        let points = Vector.range(0, 64) |> Vector.flatMap(i -> {
+            let k = i * 2;
+            if (level == 1) {
+                let a = Rng.rangeAt(seed, k, { min = 0.0, max = Num.tau() });
+                let rad = 380.0 * Num.sqrt(Rng.at(seed, k + 1));
+                Vector#{roundHalfUp(width() / 2.0 + rad * Num.cos(a)), roundHalfUp(height() / 2.0 + rad * Num.sin(a))}
+            } else Vector#{roundHalfUp(Rng.rangeAt(seed, k, { min = 100.0, max = width() - 100.0 })), roundHalfUp(Rng.rangeAt(seed, k + 1, { min = 100.0, max = height() - 100.0 }))}
+        });
+        let grey = Vector#{{ color = (0.72, 0.72, 0.72), roughness = 0.5, metalness = 0.0, opacity = 1.0 }};
+        let base = if (level == 1)
+            { camera = fieldCamera(), materials = grey, scale = Vector#{30.0}, spin = { axis = Vector#{0.0, 0.0, 0.0}, speed = Vector#{0.0}, phase = Vector#{0.0} }, shapes = ShapeSet.BigSphere | startup() }
+            else frustumFieldPicking(seed, level, grey, false);
+        { animated = false, pickPoints = points | base }
+
+    /// JS の Math.round と同じ丸め（.5 は大きい方へ）。
+    def roundHalfUp(x: Float64): Float64 = Float64.floor(x + 0.5)
 
     /// 1 つの親に入る子の数（K2）。
     def groupSize(): Int32 = 8

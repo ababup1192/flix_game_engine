@@ -12,7 +12,7 @@ index 29b4d90..936dd33 100644
  export const SCENARIOS: ScenarioDef[] = [
    { id: 'k1', key: 'K1', title: 'Startup: minimal lit cube', levels: [1], levelLabel: 'objects', variants: ['naive'], backends: BOTH },
 diff --git a/src/harness/run.ts b/src/harness/run.ts
-index eba9111..ed27d31 100644
+index eba9111..b9037ec 100644
 --- a/src/harness/run.ts
 +++ b/src/harness/run.ts
 @@ -51,6 +51,7 @@ const ENGINES: Record<EngineId, () => Promise<{ createAdapter(): EngineAdapter }
@@ -41,7 +41,17 @@ index eba9111..ed27d31 100644
    };
  
    // First frame, synchronously after load: TTFF includes any first-draw pipeline compilation.
-@@ -376,6 +379,7 @@ async function main() {
+@@ -301,7 +304,8 @@ async function main() {
+       for (let k = 0; k < pts.length / 2; k++) {
+         const t0 = performance.now();
+         const id = await adapter.pick(pts[k * 2], pts[k * 2 + 1]);
+-        ms.push(performance.now() - t0);
++        const inner = (adapter as { takePickMs?: () => number | null }).takePickMs?.() ?? null;
++        ms.push(inner ?? performance.now() - t0);
+         if (rep === 0) ids.push(id);
+       }
+     }
+@@ -376,6 +380,7 @@ async function main() {
        count: recs.length,
        interval: summarize(intervals),
        cpu: summarize(recs.map((r) => r.cpu)),

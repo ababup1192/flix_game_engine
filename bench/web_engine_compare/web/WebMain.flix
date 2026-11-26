@@ -13,9 +13,17 @@ mod WebMain {
         BenchRun.knobsOfPairs(Array.toList(Browser.queryPairs()))
             |> Map.get(harnessTimeKey()) |> Option.flatMap(Float64.fromString) |> Option.getWithDefault(fallback)
 
+    /// harness の pick の頼み（鍵 pick_seq・pick_x・pick_y）。
+    def harnessPick(): Option[CompareBench.PickRequest] \ IO =
+        let pairs = BenchRun.knobsOfPairs(Array.toList(Browser.queryPairs()));
+        let num = key -> Map.get(key, pairs) |> Option.flatMap(Float64.fromString);
+        Map.get("pick_seq", pairs) |> Option.flatMap(Int32.fromString)
+            |> Option.flatMap(seq -> num("pick_x") |> Option.flatMap(x -> num("pick_y") |> Option.map(y -> { seq = seq, x = x, y = y })))
+
     def hooksOf(knobs: Map[String, String]): CompareBench.Hooks =
         if (Map.get("engine", knobs) == Some("flix"))
-            { sceneTime = harnessTime, now = () -> Browser.now(), noteSim = ms -> Browser.log("[wec] sim ${ms}") }
+            { sceneTime = harnessTime, now = () -> Browser.now(), noteSim = ms -> Browser.log("[wec] sim ${ms}"),
+              pickRequest = harnessPick, notePick = (seq, slot, ms) -> Browser.log("[wec] pick ${seq} ${slot} ${ms}") }
         else CompareBench.standalone(() -> Browser.now())
 
     pub def main(): Unit \ IO =

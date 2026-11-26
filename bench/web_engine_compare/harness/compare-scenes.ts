@@ -78,6 +78,7 @@ for (const line of lines) {
     floats(`${tag} groups.position`, ours.groups.position, theirs.groups.position);
     floats(`${tag} groups.quat`, ours.groups.quat, theirs.groups.quat);
   }
+  if (theirs.pick) floats(`${tag} pick.points`, ours.pickPoints, theirs.pick.points);
   if (ours.worldColumns) {
     const world = new Float32Array(theirs.count * 16);
     fieldWorldMatrices(theirs, world);
