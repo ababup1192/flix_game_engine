@@ -1,6 +1,15 @@
 {
   "exempt": {
     "RenderUtil.f32": "Float64 → Float32 の変換そのもの。GL の uniform へ渡す境界の入り口で、ここが Float32 を返さないと境界の内側が書けない",
-    "ShaderEval.hdrTextureOfHalves": "Rgba16Float の Pass を CPU で持つ値（half の精度の Float32）をそのまま受ける口。作るのは CPU の描き手（SoftRaster）だけで、ゲームは呼ばない。Float64 で受けると 2,000,000 個を写し直す輪が要り、それが遅さの元"
+    "ShaderEval.hdrTextureOfHalves": "Rgba16Float の Pass を CPU で持つ値（half の精度の Float32）をそのまま受ける口。作るのは CPU の描き手（SoftRaster）だけで、ゲームは呼ばない。Float64 で受けると 2,000,000 個を写し直す輪が要り、それが遅さの元",
+    "Simulation3d.Internal.Vec3f": "GPU の compute（f32）と同じ丸めで解く CPU の群れの規則の口。Float64 で持つと GPU と 1 演算ごとに丸めがずれ、許し幅で比べられなくなる。Internal でゲームは呼ばない",
+    "Simulation3d.Internal.FlockParams": "GPU の compute（f32）と同じ丸めで解く CPU の群れの規則の口。Float64 で持つと GPU と 1 演算ごとに丸めがずれ、許し幅で比べられなくなる。Internal でゲームは呼ばない",
+    "Simulation3d.Internal.Cpu.initialState": "GPU の compute（f32）と同じ丸めで解く CPU の群れの規則の口。Float64 で持つと GPU と 1 演算ごとに丸めがずれ、許し幅で比べられなくなる。Internal でゲームは呼ばない",
+    "Simulation3d.Internal.Cpu.stepFlock": "GPU の compute（f32）と同じ丸めで解く CPU の群れの規則の口。Float64 で持つと GPU と 1 演算ごとに丸めがずれ、許し幅で比べられなくなる。Internal でゲームは呼ばない",
+    "Simulation3d.Internal.Cpu.stepFlockBrute": "GPU の compute（f32）と同じ丸めで解く CPU の群れの規則の口。Float64 で持つと GPU と 1 演算ごとに丸めがずれ、許し幅で比べられなくなる。Internal でゲームは呼ばない",
+    "Simulation3d.Internal.Cpu.advance": "GPU の compute（f32）と同じ丸めで解く CPU の群れの規則の口。Float64 で持つと GPU と 1 演算ごとに丸めがずれ、許し幅で比べられなくなる。Internal でゲームは呼ばない",
+    "Simulation3d.Internal.Cpu.computeState": "GPU の compute（f32）と同じ丸めで解く CPU の群れの規則の口。Float64 で持つと GPU と 1 演算ごとに丸めがずれ、許し幅で比べられなくなる。Internal でゲームは呼ばない",
+    "Simulation3d.Internal.Cpu.stateAt": "GPU の compute（f32）と同じ丸めで解く CPU の群れの規則の口。Float64 で持つと GPU と 1 演算ごとに丸めがずれ、許し幅で比べられなくなる。Internal でゲームは呼ばない",
+    "Simulation3d.Internal.Cpu.transformsOf": "GPU の compute（f32）と同じ丸めで解く CPU の群れの規則の口。Float64 で持つと GPU と 1 演算ごとに丸めがずれ、許し幅で比べられなくなる。Internal でゲームは呼ばない"
   }
 }

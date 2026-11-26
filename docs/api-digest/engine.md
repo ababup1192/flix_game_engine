@@ -2025,6 +2025,16 @@
 - loadOr の「色を名前で書ける」版。
   `pub def loadOrWith(palette: Map[String, Color], fallback: ShaderDoc.Spec, path: String): ShaderDoc.Spec \ Fs.FileRead`
 
+## Simulation3d — `engine/src/scene3d/Simulation3d.flix`
+- 要素（count 個）の仕事の目印。出口は 1 体ごとの値の表（MultiMesh と同じ描く道）。
+  `pub enum Elements { case Elements }`
+- 群れ（Boids）の規則。毎コマ変えてよい（作り直さない）。長さは world の単位・速さは単位 / 秒・力は単位 / 秒²。
+  `pub type alias FlockRules = { neighborRadius = Float64, separationRadius = Float64, cohesion = Float64, alignment = Float64, separation = Float64, maxSpeed = Float64, maxForce = Float64, margin = Float64, target = Option[Vec3.Vec3], targetWeight = Float64 }`
+- 仕事の規則（閉じた型。中身はデータで、関数も kernel の名前も持たない）。
+  `pub type alias Preset[k] = PresetData[k]`
+- 仕事の宣言（閉じた型）。
+  `pub type alias Simulation3d[k] = SimulationData[k]`
+
 ## Skin3d — `engine/src/scene3d/Skin3d.flix`
 - ジョイント 1 本の局所の姿勢（親のジョイントの座標で。根は rootTransform の座標で）。
   `pub type alias JointPose = { translation = Vec3.Vec3, rotation = Quat.Quat, scale = Vec3.Vec3 }`

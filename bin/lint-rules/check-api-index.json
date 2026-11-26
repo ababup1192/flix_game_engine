@@ -5,7 +5,8 @@
   ],
   "extraDefSources": ["engine_tools/src"],
   "exempt": {
-    "BootFontData": "生成物（make boot-font）。索引は BootFont の行が案内する"
+    "BootFontData": "生成物（make boot-font）。索引は BootFont の行が案内する",
+    "Simulation3d": "ゲームが値を作る関数がまだ無い（pub は Internal だけ）。作る関数を足す段（計画 engine-gpu-compute の C6a）で索引に行を足し、ここから外す"
   },
   "skipDirs": ["legacy"],
   "fileExts": ["flix", "json", "md", "png", "py", "sh"]
