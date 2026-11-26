@@ -480,6 +480,23 @@ webgpu-check-same: webgpu-check-web ### | PC とブラウザの門を同じ機�
 	[ -z "$$bad" ] || { echo "[webgpu-check-same] 違う:$$bad"; exit 1; }; \
 	echo "[webgpu-check-same] OK"
 
+# 2D の物理（PhysicsWorld2d）の指紋が PC（JVM）とブラウザ（wasm）で同じかを、bench/physics2d の 4 場面で比べる。重さも同じ行に出る。
+PHYSICS2D_PC_OUT  ?= build/physics2d-same/pc.txt
+PHYSICS2D_WEB_OUT ?= build/physics2d-same/web.json
+.PHONY: physics2d-same
+physics2d-same: ### [CPU=<倍>] | 2D の物理の指紋を PC とブラウザ（ヘッドレスの Chrome）で比べる（場面ごとの 1 刻みの ms も出す）
+	@mkdir -p $(dir $(PHYSICS2D_PC_OUT))
+	@$(MAKE) --no-print-directory -C bench/physics2d run > $(PHYSICS2D_PC_OUT) 2>&1 || { echo "[physics2d-same] PC の場面が NG ($(PHYSICS2D_PC_OUT))"; exit 1; }
+	@$(MAKE) --no-print-directory bench-web BENCH=physics2d OUT=$(PHYSICS2D_WEB_OUT) > /dev/null || { echo "[physics2d-same] ブラウザの場面が NG"; exit 1; }
+	@bad=; for s in fall100 awake500 awake1000 asleep1000; do \
+		pc=$$(grep -oE "\"scene\":\"$$s\"[^}]*" $(PHYSICS2D_PC_OUT) | tail -1 | grep -oE '"hash":"-?[0-9]+"'); \
+		web=$$(grep -oE "\"scene\":\"$$s\"[^}]*" $(PHYSICS2D_WEB_OUT) | tail -1 | grep -oE '"hash":"-?[0-9]+"'); \
+		echo "[physics2d-same] $$s PC $${pc:-無い} ブラウザ $${web:-無い}"; \
+		if [ -z "$$pc" ] || [ "$$pc" != "$$web" ]; then bad="$$bad $$s"; fi; \
+	done; \
+	[ -z "$$bad" ] || { echo "[physics2d-same] 違う:$$bad"; exit 1; }; \
+	echo "[physics2d-same] OK"
+
 # 3 つのベンチが共通に使う BenchRun.flix・BenchEnv.flix (bench/common) を各ベンチの src へ写す。直すのは bench/common の物。
 .PHONY: bench-common
 bench-common: ### | bench/common の BenchRun.flix・BenchEnv.flix を 3 つのベンチの src へ写す
@@ -500,9 +517,11 @@ BENCH_WEB_WAIT_webgpu_check := 120
 BENCH_WEB_WAIT   ?= $(or $(BENCH_WEB_WAIT_$(BENCH)),600)
 # WhyNot: webgpu_check の書き出しで ⑨ を流さない — ⑨ は App のコマ（?capture）を待つが、この頁はコマを回さず門を流して終わる。wasm を読めるかは門そのものが見る。
 BENCH_WEB_EXPORT_FLAGS_webgpu_check := --no-browser-check
+# WhyNot: physics2d の書き出しで ⑨ を流さない — この頁はコマを回さず場面を続けて流して結果を出すだけで、流している間は頁の主のスレッドが空かない。
+BENCH_WEB_EXPORT_FLAGS_physics2d := --no-browser-check
 .PHONY: bench-web-export bench-web
 bench-web-export: ### BENCH=<名前> | ベンチをブラウザ版へ書き出し、結果を出す script を差し込む（build/bench-web/<名前>）
-	@if [ ! -d "bench/$(BENCH)/web" ]; then echo "usage: make bench-web-export BENCH=<sprite_stress|crowd2d|scene3d|webgpu_check>"; exit 2; fi
+	@if [ ! -d "bench/$(BENCH)/web" ]; then echo "usage: make bench-web-export BENCH=<sprite_stress|crowd2d|scene3d|webgpu_check|physics2d>"; exit 2; fi
 	@bin/fge export-web bench/$(BENCH) --out $(BENCH_WEB_DIR) $(BENCH_WEB_EXPORT_FLAGS_$(BENCH))
 	@cp bench/common/bench-overlay.js $(BENCH_WEB_DIR)/bench-overlay.js
 	@perl -0pi -e 's|</body>|<script src="bench-overlay.js"></script>\n</body>|' $(BENCH_WEB_DIR)/index.html

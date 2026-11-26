@@ -9,6 +9,10 @@
 |---|---|
 | ホイールの生 delta を目盛りにまとめる | InputMap（wheelSteps） |
 | 重なり判定・物理（2D） | Collision / Physics2D |
+| 2D の剛体を積む・転がす・押し合う（円・箱・凸多角形・摩擦・跳ね返り・眠り。JVM と wasm で同じ結果・巻き戻せる） | PhysicsWorld2d + RigidBody2d + Collider2d・App.addPhysics2d で回す（docs/physics.md） |
+| 2D の剛体が触れた・離れた・領域に入った・出たを読む（合わさる積み物・ゴールの領域） | CollisionEvent2d・SensorEvent2d（App.addPhysics2d の onEvents で受けて Emit.Events に積む） |
+| 2D の剛体の世界へ光線を飛ばす・点の下の体を引く | PhysicsWorld2d.castRay / queryPoint |
+| 剛体の摩擦・跳ね返り・密度を名前で決め、Doc の読み直しで効かせる | PhysicsMaterial + PhysicsWorld2d.withMaterials（Doc は PhysicsDoc2d） |
 | 3D の部屋を一人称で歩く（壁で止まる・段差を上る・坂・落ちる・扉に押される） | CharacterBody3d.moveAndSlide（箱は engine の CollisionShape3d.boxOfNode → CollisionWorld3d.build・docs/scene3d.md の「一人称で歩く」） |
 | 3D の部屋の見た目と当たりの食い違い（見えない壁・見えるのに通れる物・外へ抜ける穴）をテストで止める | Scene3dCheck.check（docs/scene3d.md の「置いた物と当たりの食い違いを調べる」） |
 | 当たり判定を JSON で宣言する | HitDoc + Hit |
@@ -32,6 +36,12 @@
 - **CharacterBody3d** — 3D の部屋を一人称で歩く体（Godot の CharacterBody3D・Unity の CharacterController）。足元の点と足の着き方だけを持ち、向き・足音はゲームが持つ。壁は向きのある箱。
 - **Scene3dCheck** — 3D の部屋の見た目（置いた物）と当たり（CollisionWorld3d）の食い違いと外への抜け穴を、ゲームのテストが 1 行で調べる。
 - **Physics2D** — 物理を「積分・検出・反射・分離」の 4 つの純関数に切り出して合成する。
+- **PhysicsWorld2d** — 2D の剛体の物理の World（不変の値・Box2D の b2World）。体の id は EntityId。
+- **RigidBody2d** — 2D の剛体の作り（Dynamic・Kinematic・Fixed・向きは Rot2）。
+- **Collider2d** — 剛体の中の形（円・箱・凸多角形）と材質の名前・sensor・当たり層・重さ。
+- **PhysicsMaterial** — 剛体の材質（摩擦・跳ね返り・密度）。
+- **CollisionEvent2d** — 2D の剛体の当たり始め・離れた（removed の印つき）。
+- **SensorEvent2d** — sensor の形に体が入った・出た。
 - **Collision** — たくさんの物体の中から、実際に重なっている組を見つけて返す。
 - **Hit** — JSON で宣言した形（円・箱の列）で「触れているか」だけを聞く照会専用の判定。
 - **HitDoc** — 当たりの形の宣言（hitbox.json）を読む codec。欠け・間違いは位置付きで断る。

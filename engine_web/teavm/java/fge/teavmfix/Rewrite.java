@@ -20,6 +20,7 @@ import org.teavm.asm.Opcodes;
  *   Thread.startVirtualThread         → VirtualThreads.startVirtualThread（TeaVM の Thread は緑スレッド）
  *   Checksum.update(byte[])           → Checksums.update（interface の default の関数が TeaVM の classlib に無い）
  *   Reference.refersTo                → References.refersTo（Java 16 の関数が無い）
+ *   Float.float16ToFloat・floatToFloat16 → HalfFloats の同じ名前（Java 20 の関数が無い。.hdr の half の bit）
  *   ByteBuffer.allocateDirect         → DirectBuffers.allocateDirect（64 KiB の倍数の大きさで memory に余裕があっても落ちる）
  *   正規表現の字 "\R"                  → "\r\n|[\n\r]"（TeaVM の正規表現に無い。Flix 標準の String.lines が使う）
  *   instanceof dev/flix/runtime/Thunk$ → FlixThunks.isThunk（Flix の関数の呼び出しのたびに通る型の検査を、final の類 2 つの検査へ）
@@ -146,6 +147,9 @@ public final class Rewrite {
             } else if (name.equals("refersTo") && desc.equals("(Ljava/lang/Object;)Z") && owner.startsWith("java/lang/ref/")) {
                 note("refersTo");
                 super.visitMethodInsn(Opcodes.INVOKESTATIC, FIX + "References", "refersTo", "(Ljava/lang/ref/Reference;Ljava/lang/Object;)Z", false);
+            } else if (owner.equals("java/lang/Float") && (name.equals("float16ToFloat") || name.equals("floatToFloat16"))) {
+                note(name);
+                super.visitMethodInsn(Opcodes.INVOKESTATIC, FIX + "HalfFloats", name, desc, false);
             } else if (owner.equals("java/nio/ByteBuffer") && name.equals("allocateDirect")) {
                 note("allocateDirect");
                 super.visitMethodInsn(Opcodes.INVOKESTATIC, FIX + "DirectBuffers", name, desc, false);

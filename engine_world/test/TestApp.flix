@@ -565,7 +565,7 @@ mod TestApp {
     def testAdvanceFrameVariableDtIgnoresPending(): Unit \ Assert =
         let app = App.make(0)
             |> App.addSystem((f, n) -> n + Set.size(f#justPressed));
-        let seeded = { carry = 0.0, real = Clock.start(),
+        let seeded = { carry = 0.0, real = Clock.start(), physicsCarry = 0i64,
                        pending = App.Internal.Frame.pendingOf(stepFrame(Set#{}, Set#{GameEngine.Key.Z}, 0.016, 0.0)) };
         let (w1, s1) = App.advanceFrame(app, stepFrame(Set#{}, Set#{}, 0.016, 0.0), seeded, 0);
         Assert.assertEq(

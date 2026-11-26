@@ -131,7 +131,7 @@
 - 負方向・正方向のキーの押し下げを -1 / 0 / +1 にまとめる（両押しは打ち消して 0）。
   `pub def axis(negative: {negative = GameEngine.Key}, positive: {positive = GameEngine.Key}, frame: Frame): Float64`
 - view / hudView が受け取る「この 1 フレームの見え方」。atlas は文字描画用の既定フォント、
-  `pub type alias ViewCtx = { atlas = FontAtlas, fontOf = String -> FontAtlas, visible = Rect2.Rect2, warnOnce = String -> Unit, diagnostics = Option[FrameDiagnostics.Diagnostics], display = Display.Display, preload3d = Scene3d.PreloadProgress }`
+  `pub type alias ViewCtx = { atlas = FontAtlas, fontOf = String -> FontAtlas, visible = Rect2.Rect2, warnOnce = String -> Unit, diagnostics = Option[FrameDiagnostics.Diagnostics], display = Display.Display, preload3d = Scene3d.PreloadProgress, fixedAlpha = Float64, physicsAlpha = Float64 }`
 - ヘッドレス描き出しから view を呼ぶときの ViewCtx。画面全体が見えている扱いにする。
   `pub def viewCtxOf(atlas: FontAtlas, design: Vec2.Vec2): ViewCtx`
 - viewCtxOf の複数フォント版。fontOf には実機と同じ名前で引ける関数を渡す
@@ -143,7 +143,7 @@
 - 生成したドット絵アトラス 1 枚ぶんの受け渡し。
   `pub type alias AtlasUpload = { texture = String, key = String, baked = PxSpriteAtlas.Baked }`
 - App の中身（欄の意味は右の // コメント）。ゲームからは読まず、ビルダー（addSystem / withView など）で組む。
-  `pub type alias Rec[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], reloadPaths = Option[List[String]], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> Render.PassPlan \ ef, postStack = Option[App.Internal.Paint.PostInput[w] -> App.Internal.Paint.FramePlan \ ef], screenClear = Color, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], letterboxView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Table \ ef], staticLayers = Option[w -> List[StaticLayerSpec]], preload3d = Option[Preload3d[w]], autoPreload3d = AutoPreload3d, tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], shot = Option[w -> String \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64], pipelinedRendering = Bool, clocks = List[(Float64, w) -> w], backgroundSteps = List[(LoadProgress.DecodeBudget, Float64, w) -> App.Internal.BackgroundLoad.StepResult[w] \ {IO, Fs.FileRead}], decodeBudget = w -> LoadProgress.DecodeBudget, loadWaitView = Option[(Option[LoadProgress.LoadWait], w) -> w], loadWaitStyle = w -> LoadWaitStyle, loadingIndicator = LoadingIndicator, loadGate = Option[w -> List[String]], loadWaitCancelKeys = Option[Set[GameEngine.Key]], cursor = Option[w -> CursorSpec], fullscreen = Option[w -> Bool], mouseCapture = Option[w -> Bool], diagnostics = Bool, outputs = List[Output[w]], starts = List[Start[w]], shots = List[Start[w]], flow = Flow.Table[w], fingerprint = Option[w -> String], summaryMask = w -> w }`
+  `pub type alias Rec[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], reloadPaths = Option[List[String]], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> Render.PassPlan \ ef, postStack = Option[App.Internal.Paint.PostInput[w] -> App.Internal.Paint.FramePlan \ ef], screenClear = Color, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], letterboxView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Table \ ef], staticLayers = Option[w -> List[StaticLayerSpec]], preload3d = Option[Preload3d[w]], autoPreload3d = AutoPreload3d, tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], shot = Option[w -> String \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64], physics = Option[App.Internal.Physics.Hook[w]], pipelinedRendering = Bool, clocks = List[(Float64, w) -> w], backgroundSteps = List[(LoadProgress.DecodeBudget, Float64, w) -> App.Internal.BackgroundLoad.StepResult[w] \ {IO, Fs.FileRead}], decodeBudget = w -> LoadProgress.DecodeBudget, loadWaitView = Option[(Option[LoadProgress.LoadWait], w) -> w], loadWaitStyle = w -> LoadWaitStyle, loadingIndicator = LoadingIndicator, loadGate = Option[w -> List[String]], loadWaitCancelKeys = Option[Set[GameEngine.Key]], cursor = Option[w -> CursorSpec], fullscreen = Option[w -> Bool], mouseCapture = Option[w -> Bool], diagnostics = Bool, outputs = List[Output[w]], starts = List[Start[w]], shots = List[Start[w]], flow = Flow.Table[w], fingerprint = Option[w -> String], summaryMask = w -> w }`
 - 初期 World だけを持つ空の App。絵はまだ無い（withView で繋ぐまで何も描かない）。
   `pub def make(init: w): App[w, ef]`
 - 初期 World を design 解像度（project.json の designWidth/Height）から組む入口。
@@ -234,6 +234,8 @@
   `pub def onRequest(path: String, f: (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead}, app: App[w, ef]): App[w, ef]`
 - 物理・当たり判定を固定刻み（dtSeconds 秒）で進める accumulator 方式を有効にする。
   `pub def withFixedStep(dtSeconds: Float64, app: App[w, ef]): App[w, ef]`
+- World の欄の PhysicsWorld2d を、clockOf の遊びの時計で貯めた固定刻みで系の後に 0〜5 回 step し、刻みごとの出来事を onEvents へ渡す（withFixedStep の後に呼ぶ・ポーズで止まる・docs/physics.md）。
+  `pub def addPhysics2d(spec: App.Internal.Physics.Spec2d[w, c], app: App[w, ef]): App[w, ef]`
 - 実機のループで、次のコマの World を別のスレッドで進めながら、1 つ前の World を描いて画面へ出す（Bevy の pipelined rendering と同じ考え）。
   `pub def withPipelinedRendering(app: App[w, {}]): App[w, {}]`
 - World の欄にある遊びの時計（Clock.Clock[c]）を、App が毎フレーム 1 回だけ進めるよう宣言する。
@@ -325,7 +327,7 @@
 - 0 サブステップのフレームで捨てられそうになったエッジのバッファ。エッジは prev との
   `pub type alias PendingEdges = { justPressed = Set[GameEngine.Key], mouseClicked = Bool, mouseClickedButtons = Set[GameEngine.MouseButton], mouseMoved = Bool, wheel = Float64, mouseDelta = Vec2.Vec2 }`
 - withFixedStep がフレームをまたいで持ち回す状態（持ち越し秒 + 未消費エッジ）。
-  `pub type alias StepState = { carry = Float64, pending = PendingEdges, real = Clock.Clock[Clock.Real] }`
+  `pub type alias StepState = { carry = Float64, pending = PendingEdges, real = Clock.Clock[Clock.Real], physicsCarry = Int64 }`
 - 起動直後の StepState（貯金ゼロ・未消費エッジなし）。
   `pub def freshStepState(): StepState`
 - 1 実フレームぶんの updateSystems 適用。fixedStep 未指定なら現行どおり frame を 1 回
@@ -923,11 +925,51 @@
 - pace のスローがこの時計の今まだ掛かっているか（ヒットストップの光・揺れの出し入れに）。
   `pub def isSlowed(pace: Pace[c, r], clock: Clock[c]): Bool`
 
+## Collider2d — `engine_world/src/Collider2d.flix`
+- 体の中の形。作るのは circle・box・convex、差し替えるのは with*。
+  `pub type alias Collider2d = ColliderOf`
+- 半径 radius（m）の円。0 以下・NaN は 0.01 m にして 1 行言う。
+  `pub def circle(radius: Float64): Collider2d`
+- 半分の幅・半分の高さ（m）の箱。中心が体の位置。
+  `pub def box(halfWidth: Float64, halfHeight: Float64): Collider2d`
+- 点の列の凸包（体の座標）。凸包の重心が体の位置になるよう頂点を動かして持つ（重心と体の位置を分けない）。
+  `pub def convex(points: List[Vec2.Vec2]): Collider2d`
+- 材質の名前（PhysicsWorld2d.withMaterials の表の鍵。引けない名前は既定の材質で続けて 1 回だけ言う）。
+  `pub def withMaterial(name: String, c: Collider2d): Collider2d`
+- sensor にする（押し返さず、SensorEvent2d の Started・Stopped だけを出す。Godot の Area2D）。
+  `pub def withSensor(sensor: Bool, c: Collider2d): Collider2d`
+- 当たり層（Godot と同じ 32 bit）。layer = 自分が居る層・mask = 当たる相手の層。2 つの形は「a の層が b の mask に入り、かつ b の層が a の mask に入る」時だけ当たる。
+  `pub def withCollisionLayers(layer: Int32, mask: Int32, c: Collider2d): Collider2d`
+- 重さ（kg）を直に決める（密度 × 面積の代わり。慣性も同じ割合で直す）。0 以下・NaN は効かせず 1 行言う。
+  `pub def withMass(mass: Float64, c: Collider2d): Collider2d`
+- 円なら半径。
+  `pub def circleRadius(c: Collider2d): Option[Float64]`
+- 多角形なら体の座標の頂点（反時計回り。円は空）。描く時は Rot2.rotate して体の位置を足す。
+  `pub def vertices(c: Collider2d): List[Vec2.Vec2]`
+- `pub def materialName(c: Collider2d): String`
+- `pub def isSensor(c: Collider2d): Bool`
+- `pub def collisionLayer(c: Collider2d): Int32`
+- `pub def collisionMask(c: Collider2d): Int32`
+- `pub def massOverride(c: Collider2d): Option[Float64]`
+- 形（PhysicsWorld2d の中身が使う）。
+  `pub def shapeOf(c: Collider2d): Shape`
+
 ## Collision — `engine_world/src/Collision.flix`
 - 衝突の形（engine の CollisionShape2D を再利用）＋ layer/mask（engine と同じ意味論）。
   `pub type alias Collider = { shape = CollisionShape2D, layer = Int32, mask = Int32 }`
 - position と collider を両方持つ entity から、衝突しているペアを列挙する。
   `pub def detectCollisions(positions: Map[EntityId, Vec2.Vec2], colliders: Map[EntityId, Collider]): List[(EntityId, EntityId)]`
+
+## CollisionEvent2d — `engine_world/src/CollisionEvent2d.flix`
+- `pub enum CollisionEvent2d with Eq, Order, ToString { case Started(EntityId, EntityId) case Stopped(EntityId, EntityId, Bool) }`
+- Started なら組。
+  `pub def startedPair(e: CollisionEvent2d): Option[(EntityId, EntityId)]`
+- Stopped なら組（消した体の組も入る）。
+  `pub def stoppedPair(e: CollisionEvent2d): Option[(EntityId, EntityId)]`
+- 組（どちらの出来事でも）。
+  `pub def pairOf(e: CollisionEvent2d): (EntityId, EntityId)`
+- 体を消したので出た Stopped か。
+  `pub def isRemoved(e: CollisionEvent2d): Bool`
 
 ## Curve — `engine_world/src/Curve.flix`
 - 進行度0から始まり、中央で1、進行度1で0へ戻る放物線。
@@ -1882,6 +1924,98 @@
 - 各接触のめり込みを解消するよう位置を押し出す。動かせる側（velocities に居る側）だけを動かし、
   `pub def separate(contacts: List[Contact], velocities: Map[EntityId, Vec2.Vec2], positions: Map[EntityId, Vec2.Vec2]): Map[EntityId, Vec2.Vec2]`
 
+## PhysicsDoc2d — `engine_world/src/PhysicsDoc2d.flix`
+- 読んだ中身: World の設定と、名前 → 材質の表。
+  `pub type alias PhysicsDoc2d = { settings = PhysicsWorld2d.Settings, materials = Map[String, PhysicsMaterial.PhysicsMaterial] }`
+- Doc が無い時の中身（既定の設定・材質の表は空）。
+  `pub def default(): PhysicsDoc2d`
+- JSON を中身にする。摩擦・跳ね返りが負・密度が 0 以下・NaN、solverSubsteps が 1 未満は Err（どの欄か付きで）。
+  `pub def parse(json: Json): Result[JsonError, PhysicsDoc2d]`
+- path を読んで中身にする（読めない・崩れている・値が使えない時は Err）。
+  `pub def load(path: String): Result[JsonError, PhysicsDoc2d] \ Fs.FileRead`
+- path を読んで中身にする。無ければ黙って既定、有るのに読めない・値が使えない時は既定で続けて 1 行言う。
+  `pub def loadOr(path: String): PhysicsDoc2d \ Fs.FileRead`
+- 中身を物理の World へ当てる（設定と材質の表。もう居る体にも次の刻みから効く）。
+  `pub def applyTo(doc: PhysicsDoc2d, w: PhysicsWorld2d.PhysicsWorld2d): PhysicsWorld2d.PhysicsWorld2d`
+
+## PhysicsMaterial — `engine_world/src/PhysicsMaterial.flix`
+- friction = 摩擦の係数（2 つの形は掛けた物の平方根）・restitution = 跳ね返り（0 = 跳ねない・2 つの形は大きい方）・
+  `pub type alias PhysicsMaterial = { friction = Float64, restitution = Float64, density = Float64 }`
+- 名前を引けない時と、表を渡していない時の材質（摩擦 0.5・跳ね返り 0・密度 1）。
+  `pub def default(): PhysicsMaterial`
+- 値が使える形か（摩擦と跳ね返りは 0 以上・密度は 0 より大きい・どれも有限）。
+  `pub def isValid(m: PhysicsMaterial): Bool`
+
+## PhysicsWorld2d — `engine_world/src/PhysicsWorld2d.flix`
+- 物理の World。作るのは empty、変えるのは insert・remove・with*・set*（どれも新しい World を返す）。
+  `pub type alias PhysicsWorld2d = WorldOf`
+- gravity = 重力（m/s²・y は下が正）・solverSubsteps = 1 刻みを割る回数（soft step）・
+  `pub type alias Settings = PhysicsWorld2d.Internal.Data.Settings`
+- 1 刻みの出来事。collisions = 当たり始め・離れた（鍵の順）・sensors = sensor に入った・出た。
+  `pub type alias Events = PhysicsWorld2d.Internal.Data.Events`
+- 読む口が返す体 1 つ（bodies）。
+  `pub type alias BodyState = { id = EntityId, bodyType = RigidBody2d.BodyType, position = Vec2.Vec2, rotation = Rot2.Rot2, linearVelocity = Vec2.Vec2, angularVelocity = Float64, isSleeping = Bool, collider = Collider2d.Collider2d }`
+- 描く用の姿勢（interpolatedPoseOf）。
+  `pub type alias Pose2d = { position = Vec2.Vec2, rotation = Rot2.Rot2 }`
+- 光線の当たり（castRay）。normal は当たった面の外向き（長さ 1）。
+  `pub type alias RayHit2d = { id = EntityId, point = Vec2.Vec2, normal = Vec2.Vec2, distance = Float64 }`
+- 既定の設定: 重力 (0, 9.8)・substep 4 回・眠りのしきい 0.01 m/s・0.02 rad/s。
+  `pub def settings(): Settings`
+- 空の World。stepSeconds は 1 刻みの秒（App.withFixedStep と同じ値。App.addPhysics2d がこの値と合っているか確かめる）。
+  `pub def empty(s: Settings, stepSeconds: Float64): PhysicsWorld2d`
+- 1 刻みの秒。
+  `pub def stepSecondsOf(w: PhysicsWorld2d): Float64`
+- 進めた刻みの数。
+  `pub def stepCount(w: PhysicsWorld2d): Int64`
+- `pub def settingsOf(w: PhysicsWorld2d): Settings`
+- 設定を差し替える（次の刻みから効く。Doc の読み直し）。
+  `pub def withSettings(s: Settings, w: PhysicsWorld2d): PhysicsWorld2d`
+- 材質の表（名前 → 材質）を差し替える。もう居る体の摩擦と跳ね返りにも次の刻みから効く（重さは体を作った時に出すので変わらない）。
+  `pub def withMaterials(table: Map[String, PhysicsMaterial.PhysicsMaterial], w: PhysicsWorld2d): PhysicsWorld2d`
+- 体を足す。重さは材質の密度 × 形の面積（Collider2d.withMass で直に決めた時はその値）。近くで眠っている体は起こす。
+  `pub def insert(id: EntityId, body: RigidBody2d.RigidBody2d, w: PhysicsWorld2d): PhysicsWorld2d`
+- 体を消す（居なければそのまま）。その体の組に removed = true の Stopped を出し（次の刻みの出来事）、近くで眠っている体を起こす。
+  `pub def remove(id: EntityId, w: PhysicsWorld2d): PhysicsWorld2d`
+- 1 刻み進める（刻みは empty で決めた秒）。ゲームは呼ばない — App.addPhysics2d が遊びの時計で貯めた固定刻みで呼ぶ（lint-forbid の physics-step-direct）。
+  `pub def step(w: PhysicsWorld2d): PhysicsWorld2d`
+- 直前の 1 刻みの出来事（step のたびに入れ替わる）。App.addPhysics2d の onEvents が刻みごとに受け取るので、ゲームの系はふつう読まない。
+  `pub def events(w: PhysicsWorld2d): Events`
+- 重心に衝撃（kg·m/s）を掛ける（Dynamic の体だけ・起こす）。set* と同じく 1 回で体の数ぶんの写しがかかるので、
+  `pub def applyImpulse(id: EntityId, impulse: Vec2.Vec2, w: PhysicsWorld2d): PhysicsWorld2d`
+- 衝撃をまとめて掛ける（同じ id が 2 回あれば足す・居ない id は飛ばす・NaN の衝撃は捨てて 1 回言う）。体の数ぶんの写しは 1 回だけ。
+  `pub def applyImpulses(impulses: List[(EntityId, Vec2.Vec2)], w: PhysicsWorld2d): PhysicsWorld2d`
+- 速さ（m/s）を置く（Fixed の体には効かない・起こす）。
+  `pub def setLinearVelocity(id: EntityId, v: Vec2.Vec2, w: PhysicsWorld2d): PhysicsWorld2d`
+- 回る速さ（rad/s）を置く（Fixed の体には効かない・起こす）。
+  `pub def setAngularVelocity(id: EntityId, av: Float64, w: PhysicsWorld2d): PhysicsWorld2d`
+- Kinematic の体を、次の刻みで position・rotation へ着くように動かす（Rapier の set_next_kinematic_position）。
+  `pub def setKinematicTarget(id: EntityId, position: Vec2.Vec2, rotation: Rot2.Rot2, w: PhysicsWorld2d): PhysicsWorld2d`
+- 瞬間移動（Rapier の set_position）。描く時の補間の前の姿勢も同じ所へそろえる（Godot の reset_physics_interpolation）。起こす。
+  `pub def setPosition(id: EntityId, position: Vec2.Vec2, rotation: Rot2.Rot2, w: PhysicsWorld2d): PhysicsWorld2d`
+- 眠っている体を起こす。
+  `pub def wakeUp(id: EntityId, w: PhysicsWorld2d): PhysicsWorld2d`
+- `pub def contains(id: EntityId, w: PhysicsWorld2d): Bool`
+- `pub def bodyCount(w: PhysicsWorld2d): Int32`
+- 重心の位置（m）。
+  `pub def positionOf(id: EntityId, w: PhysicsWorld2d): Option[Vec2.Vec2]`
+- `pub def rotationOf(id: EntityId, w: PhysicsWorld2d): Option[Rot2.Rot2]`
+- `pub def linearVelocityOf(id: EntityId, w: PhysicsWorld2d): Option[Vec2.Vec2]`
+- `pub def angularVelocityOf(id: EntityId, w: PhysicsWorld2d): Option[Float64]`
+- `pub def isSleeping(id: EntityId, w: PhysicsWorld2d): Bool`
+- `pub def colliderOf(id: EntityId, w: PhysicsWorld2d): Option[Collider2d.Collider2d]`
+- 起きている Dynamic の体の数。
+  `pub def awakeCount(w: PhysicsWorld2d): Int32`
+- 全部の体（id の順）。
+  `pub def bodies(w: PhysicsWorld2d): Vector[BodyState]`
+- 前の刻みと今の刻みの間を alpha（0〜1。ViewCtx#physicsAlpha）でなめらかにつないだ姿勢。描くだけに使う（決定性は要らない）。
+  `pub def interpolatedPoseOf(id: EntityId, alpha: Float64, w: PhysicsWorld2d): Option[Pose2d]`
+- origin から direction（長さは問わない）へ maxDistance（m）まで光線を飛ばし、一番近い当たり（sensor の形は的にしない）。
+  `pub def castRay(origin: Vec2.Vec2, direction: Vec2.Vec2, maxDistance: Float64, mask: Int32, w: PhysicsWorld2d): Option[RayHit2d]`
+- 点を含む体の id（id の順・sensor の形も入る）。mask は当たり層。
+  `pub def queryPoint(point: Vec2.Vec2, mask: Int32, w: PhysicsWorld2d): List[EntityId]`
+- 各体の id・位置・向き・速さ・眠りの時計・眠りと、触れている組・warm start の控えを、Float64 のビットのまま id の順に流した 64 bit の指紋（StateHash）。
+  `pub def stateHash(w: PhysicsWorld2d): Int64`
+
 ## PostStack — `engine_world/src/PostStack.flix`
 - ブルーム（明るい所をにじませて足す）。threshold = にじみ始める明るさ（1 を超える所が光る所）・smoothness = threshold から
   `pub type alias Bloom = { threshold = Float64, smoothness = Float64, size = Float64, strength = Float64 }`
@@ -2427,6 +2561,30 @@
 - ルビつきの字を置く。親字の上に rubySize の字でふりがなを中央そろえで載せる（親字より広ければ親字を中央へ寄せる）。
   `pub def placeRuby(p: Placement, rubySize: Float64, rubies: List[Ruby], visible: Int32, spans: List[Span]): List[Render.PlacedItem]`
 
+## RigidBody2d — `engine_world/src/RigidBody2d.flix`
+- Dynamic = 重力と押し合いで動く・Kinematic = 重さ無限で、ゲームが setKinematicTarget か速さで動かす・Fixed = 動かない（床・壁）。
+  `pub enum BodyType with Eq, ToString { case Dynamic case Kinematic case Fixed }`
+- 体の作り。作るのは dynamic・kinematic・fixed、差し替えるのは with*。
+  `pub type alias RigidBody2d = BodyOf`
+- 重力と押し合いで動く体（位置は m・重心の位置）。
+  `pub def dynamic(position: Vec2.Vec2, collider: Collider2d.Collider2d): RigidBody2d`
+- 重さ無限で、ゲームが動かす体（動く床・押す主役）。
+  `pub def kinematic(position: Vec2.Vec2, collider: Collider2d.Collider2d): RigidBody2d`
+- 動かない体（床・壁）。
+  `pub def fixed(position: Vec2.Vec2, collider: Collider2d.Collider2d): RigidBody2d`
+- `pub def withRotation(rotation: Rot2.Rot2, b: RigidBody2d): RigidBody2d`
+- 速さ（m/s）。
+  `pub def withLinearVelocity(v: Vec2.Vec2, b: RigidBody2d): RigidBody2d`
+- 回る速さ（rad/s。y が下向きの座標では正が時計回りに見える）。
+  `pub def withAngularVelocity(w: Float64, b: RigidBody2d): RigidBody2d`
+- `pub def withCollider(c: Collider2d.Collider2d, b: RigidBody2d): RigidBody2d`
+- `pub def bodyTypeOf(b: RigidBody2d): BodyType`
+- `pub def positionOf(b: RigidBody2d): Vec2.Vec2`
+- `pub def rotationOf(b: RigidBody2d): Rot2.Rot2`
+- `pub def linearVelocityOf(b: RigidBody2d): Vec2.Vec2`
+- `pub def angularVelocityOf(b: RigidBody2d): Float64`
+- `pub def colliderOf(b: RigidBody2d): Collider2d.Collider2d`
+
 ## SaveFormat — `engine_world/src/SaveFormat.flix`
 - 版 `fromVersion` の中身を版 `fromVersion + 1` の形へ書き換える。
   `pub type alias SaveMigration = { fromVersion = Int32, migrate = Json -> Result[String, Json] }`
@@ -2534,6 +2692,14 @@
   `pub def toJson(schema: Schema): Json`
 - FieldType を JSON 表現に戻す。fromJson が受け取る形とちょうど対になる。
   `pub def typeToJson(fieldType: FieldType): Json`
+
+## SensorEvent2d — `engine_world/src/SensorEvent2d.flix`
+- `pub enum SensorEvent2d with Eq, Order, ToString { case Started(EntityId, EntityId) case Stopped(EntityId, EntityId, Bool) }`
+- Started なら (sensor, 入った体)。
+  `pub def startedPair(e: SensorEvent2d): Option[(EntityId, EntityId)]`
+- Stopped なら (sensor, 出た体)。
+  `pub def stoppedPair(e: SensorEvent2d): Option[(EntityId, EntityId)]`
+- `pub def isRemoved(e: SensorEvent2d): Bool`
 
 ## Sfx — `engine_world/src/Sfx.flix`
 - 一発で鳴り切る効果音の effect。s はゲームが選ぶ音の型。

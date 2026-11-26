@@ -34,7 +34,7 @@ pub mod App.Internal.Paint {
     def baseCtx(app: App[w, ef], design: Vec2.Vec2, display: Display.Display, atlas: FontAtlas, warnOnce: String -> Unit,
                 diagnostics: Option[FrameDiagnostics.Diagnostics]): App.ViewCtx \ Platform.GpuResources =
         { atlas = atlas, fontOf = fontResolver(App.rec(app), atlas),
-          visible = App.visibleOf(None, 1.0, design), warnOnce = warnOnce, diagnostics = diagnostics, display = display, preload3d = Scene3d.noPreload() }
+          visible = App.visibleOf(None, 1.0, design), warnOnce = warnOnce, diagnostics = diagnostics, display = display, preload3d = Scene3d.noPreload(), fixedAlpha = 0.0, physicsAlpha = 0.0 }
 
     /// view・視差レイヤの絵に camera を掛けた物（world）と、HUD の範囲へ持ち上げた hudView の絵（hud）。
     /// base の visible は層ごとに見えている矩形へ置き換わり、ほかの欄（字・知らせ・診断）はどの層にも同じ値で渡る。
@@ -326,12 +326,14 @@ pub mod App.Internal.Paint {
     pub type alias Look = {
         view = Annotate.View,                  // 絵に掛けるズーム・パン（等倍なら掛けない）
         inspected = List[Render.PlacedItem],   // 見え方と一緒に動く重ね物（ドラッグ中の矩形）
-        fixed = List[Render.PlacedItem]        // 見え方の後に重ねる物（fps・トースト・スクラブの位置）
+        fixed = List[Render.PlacedItem],       // 見え方の後に重ねる物（fps・トースト・スクラブの位置）
+        fixedAlpha = Float64,                  // ViewCtx#fixedAlpha に渡す系の固定刻みの端数（止めた画面は 0）
+        physicsAlpha = Float64                 // ViewCtx#physicsAlpha に渡す物理の刻みの端数（止めた画面は 0）
     }
 
     /// 等倍の見え方に fixed を重ねるだけの Look。design は等倍なので使われず、0 で足りる。
     pub def plainLook(fixed: List[Render.PlacedItem]): Look =
-        { view = { zoom = 1.0, pan = Vec2.zero(), design = Vec2.zero() }, inspected = Nil, fixed = fixed }
+        { view = { zoom = 1.0, pan = Vec2.zero(), design = Vec2.zero() }, inspected = Nil, fixed = fixed, fixedAlpha = 0.0, physicsAlpha = 0.0 }
 
     /// フレームをまたいで持ち回す、描き方の覚え（タイル層の VAO・欠けの無かった字の指紋・予算を知らせたか）。
     pub type alias Painted = { tileCache = TileCache, glyphSeen = Option[Int64], budgetWarned = Bool }
@@ -435,7 +437,7 @@ pub mod App.Internal.Paint {
         let r = App.rec(app);
         r#view |> Option.map(toItems -> {
             let atlas = Platform.GpuResources.getFontAtlas("default");
-            let ctx = { preload3d = progressFor(app, tileCache, world) | baseCtx(app, design, display, atlas, warnOnce, diagnostics) };
+            let ctx = { preload3d = progressFor(app, tileCache, world), fixedAlpha = look#fixedAlpha, physicsAlpha = look#physicsAlpha | baseCtx(app, design, display, atlas, warnOnce, diagnostics) };
             let frame = buildFrame(app, design, ctx, world, toItems);
             let plan = notePassIssues(warnOnce, Render.resolvePassReads(tileCache#passTargets, frame#plan));
             let letterboxItems = letterboxItemsOf(app, design, ctx, world);
