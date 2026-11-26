@@ -38,13 +38,13 @@ pub mod Render3dWgsl {
     pub def lightValueBytes(): Int32 = Render3d.UniformLayout.bytesOf(Render3d.UniformLayout.lightFields())
 
     /// 物ごとの値（group 1 の drawBinding() から）。uCutout = cutout の材質か（1.0）・法線マップの強さと mip のレベルの数・lightmap の mip のレベルの数と
-    /// 色空間（sRGB なら 1.0）と強さ（LightModel3d.Codegen の WGSL が r3dDraw.uLightmapSrgb・uLightmapIntensity で読む）。
+    /// 色空間（sRGB なら 1.0）と強さ（LightModel3d.Codegen の WGSL が r3dDraw.uLightmapSrgb・uLightmapIntensity で読む）と atlas の矩形（uLightmapUvRect）。
     /// 法線マップは drawBinding() + 1・+ 2、lightmap は + 3・+ 4（使う版だけ宣言する）。並びは Render3d.MaterialValues の物ごとの値の区画と同じ。
     // WhyNot: 法線マップの読みの v を上下に返す値（GLSL の uNormalFlip）を持たない — WebGPU の描き先の texture は上の行が先で、ほかの絵と同じ向き。
     // WhyNot: uCutout を i32 にしない — 値は計画の Float32 の values から読み、整数の bit で書く道を持たない。
     def drawDeclarations(normalMapped: Bool, lightmap: Bool): String =
         let b = drawBinding();
-        "struct R3dDraw { uCutout: f32, uNormalStrength: f32, uNormalLevels: f32, uLightmapLevels: f32, uLightmapSrgb: f32, uLightmapIntensity: f32 };\n" +
+        "struct R3dDraw { uCutout: f32, uNormalStrength: f32, uNormalLevels: f32, uLightmapLevels: f32, uLightmapSrgb: f32, uLightmapIntensity: f32, uLightmapUvRect: vec4f };\n" +
         "@group(1) @binding(${b}) var<uniform> r3dDraw: R3dDraw;\n" +
         (if (normalMapped) "@group(1) @binding(${b + 1}) var uNormalMap: texture_2d<f32>;\n@group(1) @binding(${b + 2}) var uNormalMapSampler: sampler;\n" else "") +
         (if (lightmap) "@group(1) @binding(${b + 3}) var uLightmap: texture_2d<f32>;\n@group(1) @binding(${b + 4}) var uLightmapSampler: sampler;\n" else "")
@@ -233,7 +233,7 @@ pub mod Render3dWgsl {
     /// lightmap の読みと、lightmap のある面の光の式（Render3dGlsl.lightmapSource と同じ）。
     def lightmapSource(v: Render3d.ShaderVariant): String =
         "fn lightmapColor(uv2: vec2f) -> vec3f {\n" +
-        "    return sg_texMip(uLightmap, uLightmapSampler, r3dDraw.uLightmapLevels, uv2).rgb;\n" +
+        "    return sg_texMip(uLightmap, uLightmapSampler, r3dDraw.uLightmapLevels, uv2 * r3dDraw.uLightmapUvRect.zw + r3dDraw.uLightmapUvRect.xy).rgb;\n" +
         "}\n" +
         LightModel3d.Codegen.toWgsl("lightmapLightAt", Vec3Input.Position :: Vec3Input.Normal :: Vec3Input.LightmapColor :: Nil,
                                     LightModel3d.lightmapLightingModelFor(Render3d.lightVariantOf(v)))

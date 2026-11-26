@@ -155,7 +155,7 @@ mod Render3d {
         mesh = MeshLocs, light = LightLocs, shadow = ShadowLocs, sunShadow = SunShadowLocs, pointShadow = PointShadowLocs, time = Int32, cutout = Int32,
         depthOut = Int32, depthRange = Int32, params = List[Int32], texFlips = List[Int32],
         normalStrength = Int32, normalFlip = Int32, texLevels = List[Int32], normalLevels = Int32,
-        lightmapLevels = Int32, lightmapSrgb = Int32, lightmapIntensity = Int32
+        lightmapLevels = Int32, lightmapSrgb = Int32, lightmapIntensity = Int32, lightmapUvRect = Int32
     }
 
     /// 組んだ材質のプログラム 1 つ。spec・emission・metallicRoughness（材質の metallicRoughnessShade）は組んだ時の物（次に来た材質と比べる）。

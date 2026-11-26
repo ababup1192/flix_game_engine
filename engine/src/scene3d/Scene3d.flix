@@ -532,9 +532,11 @@ pub mod Scene3d {
     /// 3D のベイクした光（Blender などで前もって計算した光の絵。2D の Light.lightMapPass とは別）。
     /// texture = 絵の名前（Texture3d.name。場面の textures から引く）・colorSpace = 8bit の絵の値の意味・
     /// intensity = 線形の光の量に戻した後に掛ける倍率（PointLight の intensity と同じ意味。露出の stop の数ではない）・
-    /// maxLevels = 読む mip のレベルの数の上限（UV の島の間が狭い lightmap は lightmapLevelsForGap で小さくする）。
+    /// maxLevels = 読む mip のレベルの数の上限（UV の島の間が狭い lightmap は lightmapLevelsForGap で小さくする）・
+    /// uvRect = 絵の中で読む矩形（0..1。読む uv = 2 本目の uv × 大きさ + 位置。Godot の LightmapGI のように物ごとの 0..1 の uv2 を 1 枚の atlas に並べた時に、
+    /// 物ごとの矩形を渡す。Bevy の Lightmap::uv_rect）。half の絵（Texture3d.decodeHdr）は colorSpace を見ず線形の量として読む。
     /// 欄は後から増えうるので、{ intensity = 2.0 | Scene3d.lightmap(name) } のようにレコードの更新で書く。
-    pub type alias Lightmap = { texture = String, colorSpace = Texture3d.ColorSpace, intensity = Float64, maxLevels = Int32 }
+    pub type alias Lightmap = { texture = String, colorSpace = Texture3d.ColorSpace, intensity = Float64, maxLevels = Int32, uvRect = Rect2.Rect2 }
 
     enum InstanceData { case InstanceData(InstanceFields) }
 
@@ -656,9 +658,10 @@ pub mod Scene3d {
     pub def lightmapLevelsForGap(gapPx: Int32): Int32 =
         if (gapPx < 4) 1 else 1 + lightmapLevelsForGap(gapPx / 2)
 
-    /// colorSpace = Srgb・intensity = 1・maxLevels = lightmapMaxLevels() の lightmap。ほかの値は { intensity = 2.0 | Scene3d.lightmap(name) } の形で替える。
+    /// colorSpace = Srgb・intensity = 1・maxLevels = lightmapMaxLevels()・uvRect = 絵の全部（位置 (0, 0)・大きさ (1, 1)）の lightmap。ほかの値は { intensity = 2.0 | Scene3d.lightmap(name) } の形で替える。
     pub def lightmap(texture: String): Lightmap =
-        { texture = texture, colorSpace = Texture3d.ColorSpace.Srgb, intensity = 1.0, maxLevels = lightmapMaxLevels() }
+        { texture = texture, colorSpace = Texture3d.ColorSpace.Srgb, intensity = 1.0, maxLevels = lightmapMaxLevels(),
+          uvRect = Scene3d.Internal.LightmapRect.whole() }
 
     /// 置いた物にベイクした光を付ける（2 本目の uv で読む）。付けた物は環境光と hemisphere を足さず、動く光（点光源・スポット）は足す。
     /// ベイクに入れた光は pointLights に入れない（二重に照らす）。骨つき・材質の無い物・2 本目の uv の無い形には使われない（lightmapWarning）。
@@ -673,11 +676,18 @@ pub mod Scene3d {
     pub def lightmapOfFields(f: InstanceFields): Option[Lightmap] =
         if (Option.nonEmpty(lightmapProblem(f))) None
         else f#lightmap |> Option.map(lm -> { intensity = if (lm#intensity > 0.0 and not Float64.isInfinite(lm#intensity)) lm#intensity else 0.0,
-                                              maxLevels = Int32.max(1, lm#maxLevels) | lm })
+                                              maxLevels = Int32.max(1, lm#maxLevels),
+                                              uvRect = if (Scene3d.Internal.LightmapRect.isUsable(lm#uvRect)) lm#uvRect else Scene3d.Internal.LightmapRect.whole() | lm })
 
     /// 付けたのに使わない理由（1 行）。理由が重なる時は 1 行だけ（材質が無い → 骨つき → 2 本目の uv が無い → tex3d: でない の順）。
     /// 毎コマ通るので、呼ぶ側が名前ごとに初回 1 回だけ出す。
-    pub def lightmapWarning(i: Instance3d): Option[String] = lightmapProblem(instanceFieldsOf(i))
+    /// 使える lightmap の uvRect が誤り（大きさが 0 以下・NaN・無限）なら、絵の全部で読んで最後にその 1 行。
+    pub def lightmapWarning(i: Instance3d): Option[String] =
+        let f = instanceFieldsOf(i);
+        match lightmapProblem(f) {
+            case Some(line) => Some(line)
+            case None       => f#lightmap |> Option.flatMap(lm -> Scene3d.Internal.LightmapRect.problemOf(lm#texture, lm#uvRect))
+        }
 
     def lightmapProblem(f: InstanceFields): Option[String] =
         f#lightmap |> Option.flatMap(lm ->

@@ -1,6 +1,6 @@
 // Render3d.MaterialValues — 不透明の材質の行の draw ごとの値（Render3d.SceneList の values）と絵の組（reads）を計画の側で書く所。
 // 値の並びは材質ごとに 2 つの区画: 頭の drawValueFloats() 個 = 物ごとの値（Render3dWgsl の R3dDraw: cutout・法線マップの強さ・法線マップの段の数・lightmap の段の数・
-// lightmap の色空間（sRGB なら 1）・lightmap の強さ）、
+// lightmap の色空間（sRGB なら 1）・lightmap の強さ・2 つ空けて lightmap の atlas の矩形（x・y・幅・高さ。R3dDraw の vec4 の 16 バイトそろえ））、
 // 続く区画 = ShaderGen.Wgsl.compile3d の slots の並び（uTime・uTexLevelsN・uParamN）。どちらの区画の頭も valueAlign() 個（256 バイト）の倍数の位置。
 // 絵の組は 1 つ readStride() 個: 0 = 絵の表の番号（Render3d.TextureTable3d。無い絵・上下を返して読む全体の登録の絵は -1）・1 = 補間（0 Nearest・1 Linear）・2 = 読み方（0 Repeat・1 Clamp）。
 // 並びは材質の絵（ShaderDoc.materialTexReads を上限で切った物）→ 法線マップ（法線マップの版だけ）→ lightmap（lightmap の版だけ・Clamp と段つきの Linear で読む）。
@@ -87,19 +87,24 @@ mod Render3d.MaterialValues {
             let k = lightmapReadAt(layout#readCount, d#kind#normalMap);
             let levels = putRead(naming, lm#texture, Texture3d.TextureUse.Lightmap(lm#colorSpace), (1, 1), reads, readAt + readStride() * k);
             Array.put(Int32.toFloat32(lightmapLevelsOf(lm, levels)), at + 3, values);
-            Array.put(if (lm#colorSpace == Texture3d.ColorSpace.Srgb) 1.0f32 else 0.0f32, at + 4, values);
-            Array.put(RenderUtil.f32(lm#intensity), at + 5, values)
+            Array.put(if (lightmapSrgbOf(naming#source, lm)) 1.0f32 else 0.0f32, at + 4, values);
+            Array.put(RenderUtil.f32(lm#intensity), at + 5, values);
+            Array.put(RenderUtil.f32(lm#uvRect#position#x), at + 8, values);
+            Array.put(RenderUtil.f32(lm#uvRect#position#y), at + 9, values);
+            Array.put(RenderUtil.f32(lm#uvRect#size#x), at + 10, values);
+            Array.put(RenderUtil.f32(lm#uvRect#size#y), at + 11, values)
         }) else ()
+
+    /// lightmap lm の絵を sRGB から線形へ戻して読むか（half の絵は colorSpace を見ず戻さない。GL の uniform と WebGPU の values が同じ判定を使う）。
+    pub def lightmapSrgbOf(source: TextureSource, lm: Scene3d.Lightmap): Bool \ IO =
+        lm#colorSpace == Texture3d.ColorSpace.Srgb and not TextureTable3d.isHalfTexture(source, lm#texture)
 
     /// 絵 name の組を reads の at へ書き、段の数を返す（無い絵は番号 -1・段 1）。how = (補間, 読み方)。
     def putRead(naming: Naming, name: String, textureUse: Texture3d.TextureUse, how: (Int32, Int32), reads: Array[Int32, Static], at: Int32): Int32 \ IO =
         let (filter, wrap) = how;
         // WhyNot: half の絵を材質の色と法線マップの読みに貼らない — 環境マップと lightmap の絵の約束で、GL と CPU の描き手は 0 で読む。
         let hdrInMaterial = textureUse != Texture3d.TextureUse.Lightmap(Texture3d.ColorSpace.Srgb) and textureUse != Texture3d.TextureUse.Lightmap(Texture3d.ColorSpace.Linear)
-            and (TextureTable3d.findTexture(naming#source, name) |> Option.exists(hit -> match hit {
-                case TextureTable3d.TextureHit.Own(t) => Texture3d.formatOf(t) == Texture3d.Format.Rgba16Float
-                case _                                => false
-            }));
+            and TextureTable3d.isHalfTexture(naming#source, name);
         let found = if (hdrInMaterial) None else TextureTable3d.readOf(naming#gpuMip, naming#source, name, textureUse);
         let handle = found |> Option.map(sl -> TextureTable3d.numberOf(naming#textures, naming#gen, fst(sl))) |> Option.getWithDefault(-1);
         Array.put(handle, at, reads);

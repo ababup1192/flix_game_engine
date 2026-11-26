@@ -51,7 +51,7 @@ mod Scenes {
             :: lightmapBaked3d() :: lightmapNormal3d() :: spotSoftEdge3d() :: gltfEmissive3d() :: cullOffscreen3d()
             :: skyGradient3d() :: glassPane3d() :: doubleSided3d() :: msaaEdges()
             :: linearOverlap3d() :: mipSrgbAverage3d() :: emissionIntensity3d() :: skinCrowd() :: skinCrowdRows() :: instanceRows() :: batchKeys3d() :: sameDepthOrder3d()
-            :: pbrSpheres3d() :: pbrNoSky3d() :: pbrMapped3d() :: gltfPbr3d() :: pbrEnvironment3d() :: pbrEnvironmentBox3d() :: pbrEnvironmentSky3d() :: skyIrradiance3d() :: hdrEnvironment3d()
+            :: pbrSpheres3d() :: pbrNoSky3d() :: pbrMapped3d() :: gltfPbr3d() :: pbrEnvironment3d() :: pbrEnvironmentBox3d() :: pbrEnvironmentSky3d() :: skyIrradiance3d() :: hdrEnvironment3d() :: lightmapHdrRect3d()
             :: sunLit3d() :: sunShadow3d() :: sunSpotShadow3d() :: sunPbr3d() :: pointShadowPhysical3d()
             :: billboardShadowOf(BillboardShadowYard.SunSide.Axis, "billboardShadowAxis")
             :: billboardShadowOf(BillboardShadowYard.SunSide.Diagonal, "billboardShadowDiagonal")
@@ -94,6 +94,7 @@ mod Scenes {
     /// texel の境が画面の上で長い斜めの線になり、その線の上の画素が GPU の補間の丸めで隣の texel を読む（max ±214 は色の違う texel どうし）。
     /// 色の丸めかアフィンを取り違えると床の面（数万 px）が丸ごと違う。
     /// postStackCrt（Apple Silicon で 54 px ±63）: 元の psxBox3d の縁の割れ（6 px）を横のぼかしが 5 点に広げた物。ぼかしの向きか半径を取り違えると面の縁の全部（千 px の桁）が違う。
+    /// lightmapHdrRect3d（Apple Silicon で 28 px ±1）: 縞の縁の補間の丸め。矩形か half の読みを取り違えると板の面（千 px の桁）が違う。
     /// hdrEnvironment3d（Apple Silicon で 267 px ±2）: 球の縁と粗い球の段の混ぜの丸め（half と Float64）。sRGB から戻すのを取り違えると球と背景の全部が違う。
     /// skyIrradiance3d（Apple Silicon で 3 px ±1）: 球の坂の丸めの ±1。基底の並びを取り違えると球と床の面（千 px の桁）が違う。
     /// vertexColorTexture3d（Apple Silicon で 32 px ±1）: 頂点の色の坂の補間の丸め。頂点の色を掛け忘れる・2 倍を取り違えると板の面（千 px の桁）が違う。
@@ -150,6 +151,7 @@ mod Scenes {
         case "pbrEnvironmentSky3d" => Some(2000)
         case "skyIrradiance3d" => Some(100)
         case "hdrEnvironment3d" => Some(600)
+        case "lightmapHdrRect3d" => Some(100)
         case "sunLit3d"        => Some(100)
         case "sunShadow3d"     => Some(100)
         case "sunSpotShadow3d" => Some(200)
@@ -1266,6 +1268,34 @@ mod Scenes {
         let scene = { textures = tex :: left :: right :: Nil, pointLights = light :: Nil,
                       environment = { hemisphere = 1.0 | base#environment } | base };
         { name = "lightmapBaked3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
+
+    /// 横 32・縦 16 の half の lightmap（左の半分は 1 を超える暖色の縦縞・右の半分は寒色の横縞）。
+    def hdrAtlas(): Texture3d.Texture3d =
+        let texel = (x: Int32, y: Int32) ->
+            if (x < 16) (if (Int32.remainder(x / 2, 2) == 0) Vector#{2.5, 1.6, 0.8, 1.0} else Vector#{0.6, 0.4, 0.2, 1.0})
+            else (if (Int32.remainder(y / 2, 2) == 0) Vector#{0.3, 0.5, 1.4, 1.0} else Vector#{0.1, 0.15, 0.3, 1.0});
+        let rgba = Vector.range(0, 32 * 16) |> Vector.flatMap(k -> texel(Int32.remainder(k, 32), k / 32));
+        match Texture3d.fromRgba16Float(32, 16, rgba) {
+            case Ok(t)  => t
+            case Err(e) => bug!(e)
+        }
+
+    // half の lightmap と atlas の矩形（Lightmap の uvRect）: 同じ形の板 2 枚が 1 枚の half の lightmap の左と右の半分を読む（左は暖色の縦縞・右は寒色の横縞）。
+    // 矩形の当て方（× 大きさ + 位置）か half の読み（sRGB から戻さない）を取り違えると、板の面（千 px の桁）が丸ごと違う。
+    def lightmapHdrRect3d(): Scene =
+        let tex = parityTexture();
+        let atlas = hdrAtlas();
+        let mesh = withScaledUvs2(1.0, texturedQuad(-1.8, 1.8, -2.2, 2.2, 0.0, 0.0, 1.0));
+        let material = Scene3d.texturedMaterial(Texture3d.name(tex), ShaderDoc.FilterMode.Nearest);
+        let plateAt = (x: Float64, offset: Float64) ->
+            Scene3d.meshInstance(mesh, Mat4.mul(Mat4.translate(Vec3.v3(x, 0.0, 10.0)), Mat4.rotateX(0.5)))
+                |> Scene3d.withMaterial(material)
+                |> Scene3d.withLightmap({ uvRect = { position = Vec2.v2(offset, 0.0), size = Vec2.v2(0.5, 1.0) }, maxLevels = 1
+                                         | Scene3d.lightmap(Texture3d.name(atlas)) });
+        let base = flatScene({ x = 64.0, y = 48.0 }, 1, plateAt(-2.2, 0.0) :: plateAt(2.2, 0.5) :: Nil, Nil);
+        let scene = { textures = tex :: atlas :: Nil, environment = { ambient = c8(40, 40, 40) | base#environment } | base };
+        { name = "lightmapHdrRect3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
             Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
 
     // ── scene 36: 法線マップとベイクした光（normalBump の板に lightmap）。B 段階 ──

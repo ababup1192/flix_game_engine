@@ -118,7 +118,7 @@ mod Render3d.Material {
                 putDepthRange(gl, locs#depthRange, dr)
         }
 
-    /// lightmap を lightmap の unit に貼り、段の数・色空間・強さを入れる（Clamp・段つきの Linear で読む）。lightmap を読まないプログラムは何もしない。
+    /// lightmap を lightmap の unit に貼り、段の数・色空間・強さ・atlas の矩形を入れる（Clamp・段つきの Linear で読む）。lightmap を読まないプログラムは何もしない。
     /// 名前が場面の textures に無い絵は 0（黒）で読み、名前ごとに 1 回知らせる（材質の絵と同じ道）。
     // WhyNot: プログラムごとに 1 回だけ入れない — 同じ形と材質で lightmap だけ違う物は同じプログラムで続けて描かれ、前の物の絵と強さを引き継ぐ。
     def bindLightmap(gl: GlContext, state: State, gen: Int64, source: TextureSource, entry: MaterialEntry, head: MeshDraw): Unit \ IO =
@@ -130,8 +130,10 @@ mod Render3d.Material {
             gl.bindTexture(GlConst.TEXTURE_2D, bound#texId);
             gl.bindSampler(unit, materialSampler(gl, state, Scene3d.Wrap.Clamp, ShaderDoc.FilterMode.Linear, bound#levels > 1));
             gl.uniform1f(entry#locs#lightmapLevels, RenderUtil.f32(Int32.toFloat64(Render3d.MaterialValues.lightmapLevelsOf(lm, bound#levels))));
-            gl.uniform1i(entry#locs#lightmapSrgb, if (lm#colorSpace == Texture3d.ColorSpace.Srgb) 1 else 0);
-            gl.uniform1f(entry#locs#lightmapIntensity, RenderUtil.f32(lm#intensity))
+            gl.uniform1i(entry#locs#lightmapSrgb, if (Render3d.MaterialValues.lightmapSrgbOf(source, lm)) 1 else 0);
+            gl.uniform1f(entry#locs#lightmapIntensity, RenderUtil.f32(lm#intensity));
+            gl.uniform4f(entry#locs#lightmapUvRect, RenderUtil.f32(lm#uvRect#position#x), RenderUtil.f32(lm#uvRect#position#y),
+                         RenderUtil.f32(lm#uvRect#size#x), RenderUtil.f32(lm#uvRect#size#y))
         })
 
     /// 場面の環境マップを環境マップの unit に貼り、絵の段の数を返す（無ければ 0・何も貼らない）。名前が場面の textures に無い絵は 0（黒）の 1 段で読み、
@@ -578,7 +580,7 @@ mod Render3d.Material {
           normalStrength = loc(gl, program, "uNormalStrength"), normalFlip = loc(gl, program, "uNormalFlip"),
           texLevels = List.range(0, texCount) |> List.map(i -> loc(gl, program, "uTexLevels${i}")), normalLevels = loc(gl, program, "uNormalLevels"),
           lightmapLevels = loc(gl, program, "uLightmapLevels"), lightmapSrgb = loc(gl, program, "uLightmapSrgb"),
-          lightmapIntensity = loc(gl, program, "uLightmapIntensity") }
+          lightmapIntensity = loc(gl, program, "uLightmapIntensity"), lightmapUvRect = loc(gl, program, "uLightmapUvRect") }
 
     /// 引退した材質のプログラムを消し、使われない材質を LRU で追い出す（画面のコマの終わりに 1 回。捨てる物は materialEvictions）。
     pub def sweepMaterials(gl: GlContext, state: State, gen: Int64): Unit \ IO =

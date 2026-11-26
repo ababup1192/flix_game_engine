@@ -31,6 +31,13 @@ mod Render3d.TextureTable3d {
         if (String.startsWith(prefix = Texture3d.namePrefix(), name)) Map.get(name, source#own) |> Option.map(TextureHit.Own)
         else (source#textureOf)(name) |> Option.map(TextureHit.Registered)
 
+    /// 名前 name の絵が場面の half の絵（Texture3d.Format.Rgba16Float）か（全体の登録の絵と無い絵は偽）。
+    pub def isHalfTexture(source: TextureSource, name: String): Bool \ IO =
+        findTexture(source, name) |> Option.exists(hit -> match hit {
+            case TextureHit.Own(t)        => Texture3d.formatOf(t) == Texture3d.Format.Rgba16Float
+            case TextureHit.Registered(_) => false
+        })
+
     /// 置き場の鍵の、段の作り方の部分。gpuMip = backend が段を GPU に作らせる（GL の prefersGpuMipmap）。
     // WhyNot: GPU が段を作る機種で平均の仕方を鍵に入れない — generateMipmap は平均の仕方を選べないので、色と法線に貼った同じ絵が同じ段の 2 枚になる。
     /// 字は Mip.Average の ToString と同じ。

@@ -374,14 +374,20 @@ pub mod SoftRaster3d {
     /// 当てる法線マップ。絵の段の列・strength・0..1 の外の uv を繰り返すか。
     type alias NormalMapping = { texture = Vector[ShaderEval.TexData], strength = Float64, repeat = Bool }
 
-    /// 置いた物 1 つに貼る lightmap。絵の段の列・Srgb で読むか・intensity・読む段の数の上限。
-    type alias Baked = { texture = Vector[ShaderEval.TexData], srgb = Bool, intensity = Float64, maxLevels = Int32 }
+    /// 置いた物 1 つに貼る lightmap。絵の段の列（half の絵は Linear）・Srgb で読むか・intensity・読む段の数の上限・atlas の中の矩形。
+    type alias Baked = { texture = SoftRaster3d.Internal.MipChain, srgb = Bool, intensity = Float64, maxLevels = Int32, uvRect = Rect2.Rect2 }
 
     /// 置いた物 f の lightmap（Scene3d.lightmapOfFields が Some の時だけ）。絵が無ければ透明な黒で読む（GL の代わりの絵と同じ）。
-    def bakedOf(textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]], f: Scene3d.InstanceFields): Option[Baked] =
-        Scene3d.lightmapOfFields(f) |> Option.map(lm ->
-            { texture = Map.getWithDefault((lm#texture, Texture3d.mipSpaceOf(Texture3d.TextureUse.Lightmap(lm#colorSpace))), blackTexture(), textures),
-              srgb = lm#colorSpace == Texture3d.ColorSpace.Srgb, intensity = lm#intensity, maxLevels = lm#maxLevels })
+    /// halves = 場面の half の絵の段（SoftRaster3d.Internal.halfChainsOf）。half の絵は colorSpace を見ず線形の量として読む。
+    def bakedOf(textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]], halves: Map[String, Vector[ShaderEval.HdrTexture]],
+                f: Scene3d.InstanceFields): Option[Baked] =
+        Scene3d.lightmapOfFields(f) |> Option.map(lm -> match Map.get(lm#texture, halves) {
+            case Some(hdr) =>
+                { texture = SoftRaster3d.Internal.MipChain.Linear(hdr), srgb = false, intensity = lm#intensity, maxLevels = lm#maxLevels, uvRect = lm#uvRect }
+            case None =>
+                { texture = SoftRaster3d.Internal.MipChain.Srgb(Map.getWithDefault((lm#texture, Texture3d.mipSpaceOf(Texture3d.TextureUse.Lightmap(lm#colorSpace))), blackTexture(), textures)),
+                  srgb = lm#colorSpace == Texture3d.ColorSpace.Srgb, intensity = lm#intensity, maxLevels = lm#maxLevels, uvRect = lm#uvRect }
+        })
 
     /// hasUv = 形が uv を持つか（uv の無い形には法線マップを当てない。GL と同じ）。法線マップの絵が無ければ透明な黒で読む（GL の代わりの絵と同じ）。
     /// materialTextures = 材質の Tex が名前で引く絵（textures の材質の絵の鍵の物）・textures = 法線マップを引く全部の絵。
@@ -476,9 +482,10 @@ pub mod SoftRaster3d {
             fields#material |> Option.map(matOf(textures, materialTextures, fields#tint, Option.nonEmpty(Mesh3d.uvs(fields#mesh))))
         }) |> List.toVector);
         // WhyNot: lightmap を Mat に入れない — Mat は材質の中身で、lightmap は置いた物ごと（同じ材質を別の光の場所に置く）。
+        let halves = SoftRaster3d.Internal.halfChainsOf(scene);
         let bakes = hoist(rc, numbered |> List.filterMap(pair -> {
             let fields = fst(pair)#fields;
-            fields#material |> Option.map(_ -> bakedOf(textures, fields))
+            fields#material |> Option.map(_ -> bakedOf(textures, halves, fields))
         }) |> List.toVector);
         // WhyNot: 間引いた物を numberMaterials の前に除かない — 材質の番号（mats の並び）を置いた物の並びのまま保つ。
         let meshTris = solidNumbered |> List.flatMap(pair ->
@@ -515,7 +522,7 @@ pub mod SoftRaster3d {
         });
         let sky = hoist(rc, scene#sky |> Option.map(sk -> (SoftRaster3d.Internal.linearSkyColorsOf(sk), Scene3d.skyBasisOf(scene))));
         let reflection = hoist(rc, SoftRaster3d.Internal.reflectionColorsOf(scene));
-        let environment = hoist(rc, SoftRaster3d.Internal.environmentLookupOf(textures, scene));
+        let environment = hoist(rc, SoftRaster3d.Internal.environmentLookupOf(textures, halves, scene));
         let shadeEnv = hoist(rc, { time = time, lights = lights, fog = fog, eye = eye, lut = lut, reflection = reflection, environment = environment, affine = screen#affine });
         let backgroundMap = hoist(rc, Scene3d.backgroundEnvironmentOf(scene) |> Option.flatMap(_ -> environment) |> Option.map(e -> (e, Scene3d.skyBasisOf(scene))));
         let fillAt = (x: Int32, y: Int32) -> match backgroundMap {
@@ -974,12 +981,7 @@ pub mod SoftRaster3d {
         let (nextX, nextY) = neighbors;
         let (xu, xv) = uv2At(v, nextX);
         let (yu, yv) = uv2At(v, nextY);
-        let levels = Int32.min(Vector.length(bake#texture), bake#maxLevels);
-        let lod = match Vector.head(bake#texture) {
-            case Some(base) => Mip.lodOf({ dudx = xu - u, dvdx = xv - uvV, dudy = yu - u, dvdy = yv - uvV }, base#width, base#height, levels)
-            case None       => 0.0
-        };
-        ShaderEval.sampleMipRgb(bake#texture, { linear = true, repeat = false }, lod, u, uvV)
+        SoftRaster3d.Internal.lightmapRgbAt(bake#texture, bake#maxLevels, bake#uvRect, (u, uvV), (xu, xv), (yu, yv))
 
     /// 材質のある物の画素の光（lightmap が無ければ evalLight・あれば evalLightBaked）。n = 光の計算に使う法線。
     def materialLight(bake: Option[Baked], lights: Lights, pointLit: Vector[Float64], v: Vector[Float64], weights: (Float64, Float64, Float64, Float64),

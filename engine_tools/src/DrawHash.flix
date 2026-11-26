@@ -362,12 +362,15 @@ pub mod DrawHash {
     // WhyNot: 付けた lightmap の欄でなく lightmapOfFields を書く — 使わない lightmap（骨つき・2 本目の uv 無し）は絵に出ないので鍵も変えない。
     def putLightmap(out: DataOutputStream, lightmap: Option[Scene3d.Lightmap]): Unit \ IO = match lightmap {
         case None => ()
-        case Some({ texture = texture, colorSpace = colorSpace, intensity = intensity, maxLevels = maxLevels }) =>
+        case Some({ texture = texture, colorSpace = colorSpace, intensity = intensity, maxLevels = maxLevels, uvRect = uvRect }) =>
             out.writeByte(0x4c);
             putStr(out, texture);
             putStr(out, ToString.toString(colorSpace));
             putF(out, intensity);
-            out.writeInt(maxLevels)
+            out.writeInt(maxLevels);
+            // WhyNot: 絵の全部の矩形（既定）を書かない — 矩形を足す前の lightmap の物の鍵の字を保つ（gallery の PNG を塗り直させない）。
+            if (Scene3d.Internal.LightmapRect.isWhole(uvRect)) ()
+            else { out.writeByte(0x52); putF(out, uvRect#position#x); putF(out, uvRect#position#y); putF(out, uvRect#size#x); putF(out, uvRect#size#y) }
     }
 
     // WhyNot: None にも印のバイトを書かない — pose の欄を足す前の鍵の字を保ち、ジョイントの無い場面のキャッシュの PNG を塗り直させない。

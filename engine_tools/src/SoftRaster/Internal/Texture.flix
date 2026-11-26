@@ -23,7 +23,7 @@ pub mod SoftRaster.Internal.Texture {
         scenes |> List.flatMap(c -> Scene3d.droppedLightsWarnings(c#scene) ::: Scene3d.Internal.SkyIrradiance.warningsOf(c#scene)) |> List.forEach(kl -> warnSceneOnce(warnLog, fst(kl), snd(kl)));
         scenes |> List.filterMap(c -> Scene3d.directionalLightWarning(c#scene)) |> List.forEach(line -> warnSceneOnce(warnLog, "@sun:direction", line));
         let keyOf = (name: String, textureUse: Texture3d.TextureUse) -> (name, Texture3d.mipSpaceOf(textureUse));
-        // WhyNot: half の絵の環境マップと lightmap を 8bit の段の表に入れない — 描き手は場面の textures から half の段を作って読む（SoftRaster3d.Internal.halfChainNamed）。
+        // WhyNot: half の絵の環境マップと lightmap を 8bit の段の表に入れない — 描き手は場面の textures から half の段を作って読む（SoftRaster3d.Internal.halfChainsOf）。
         let isHalf = (name: String) -> Map.get(name, ownTextures) |> Option.exists(t -> Texture3d.formatOf(t) == Texture3d.Format.Rgba16Float);
         let lightmapKeys = scenes |> List.flatMap(c -> Scene3d.instancesOf(c#scene) |> List.filterMap(Scene3d.lightmapOf))
             |> List.filter(lm -> not isHalf(lm#texture))

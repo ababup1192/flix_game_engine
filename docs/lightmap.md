@@ -28,6 +28,8 @@ Scene3d.meshInstance(part#mesh, world)
   `Srgb`・`intensity = 1` の lightmap を白い材質に貼れば、画面の値は読んだ値のまま。
 - 露出の置き場所: 書き出しの「lightmap × 0.5 を sRGB で書いた PNG（読んだ後に 2 を掛ける）」と「exposure 2^0.6」は、両方とも `intensity` に入れる（2.0 × 2^0.6 ≒ 3.03）。
   `intensity` は線形の倍率なので、そのまま入れて正しい。`PostProcess.tonemappedWith` の exposureStops は画面の値に掛かるので、ここへは写さない。
+- **half の絵**（`Texture3d.decodeHdr` の .hdr）は `colorSpace` を見ず線形の量として読む。1 を超える明るさ（灯りの近く）が切れず、99 % 点で割って
+  8bit に収める書き出しが要らない（`intensity` は .hdr をそのまま書けば 1）。
 
 ## ベイクの時の注意（Blender）
 
@@ -37,6 +39,18 @@ Scene3d.meshInstance(part#mesh, world)
   島の間が狭い lightmap（島が数千ある小物の部品で 7 px など）は、`{ maxLevels = Scene3d.lightmapLevelsForGap(7) | Scene3d.lightmap(name) }` で読むレベルを減らす（7 px で 2）。
   `Texture3d.limitSize` で lightmap を半分にしたら、島の間も半分になる（2048 で 16 px なら 1024 で 8 px → 3）。
 - lightmap の PNG は sRGB で書く（Blender の既定）。
+
+## Godot の LightmapGI を持ち込む
+
+Godot の LightmapGI は物ごとの 0..1 の UV2 を、1 枚（か slice ごとの数枚）の atlas の中の矩形へ並べて読む（`light_data` の `user_data` の rect と slice）。
+
+- **絵**: Godot の `.exr` は読まないので、slice ごとに Radiance の `.hdr` へ書き出す（GDScript で RGBE を書く・`oiiotool in.exr -o out.hdr`）。
+  `Texture3d.decodeHdr` で読む。slice（層）は engine に配列の絵が無いので、slice ごとに別の絵（名前）にする
+- **矩形**: UV2 は Godot のまま書き出し、物ごとの矩形を `{ uvRect = { position = Vec2.v2(x, y), size = Vec2.v2(w, h) } | Scene3d.lightmap(name) }` で渡す
+  （読む uv = UV2 × 大きさ + 位置。Bevy の `Lightmap::uv_rect`）。大きさが 0 以下・数でない矩形は絵の全部で読んで 1 回知らせる
+- **無い物**: Directional（向きつきの lightmap）・LightmapProbe（動く物を照らす点）・Shadowmask は無い。動く物は今の光（点光源・スポット・太陽）で照らす
+- **予算**: 2048² の half の絵は段込みで 1 枚約 43 MB。`Texture3d.limitSize(1024)` で約 11 MB
+- 書き出しの見本は `spaceship_lab`（ゲームの側）の `tools/hangar.gd`（`_lightmap_hdrs` と parts.json の `lightmapRect`）
 
 ## 場面の絵の予算
 

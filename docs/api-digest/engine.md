@@ -1517,7 +1517,7 @@
 - 置いた物の中身。mesh = 形・world = 形の座標 → world の行列・tint = 頂点の色に掛ける色・material = 材質（None なら頂点の色）・
   `pub type alias InstanceFields = { mesh = Mesh3d.Mesh3d, world = Mat4.Mat4, tint = Color, material = Option[Material3d], pose = Option[Pose3d.Pose3d], lightmap = Option[Lightmap], name = String }`
 - 3D のベイクした光（Blender などで前もって計算した光の絵。2D の Light.lightMapPass とは別）。
-  `pub type alias Lightmap = { texture = String, colorSpace = Texture3d.ColorSpace, intensity = Float64, maxLevels = Int32 }`
+  `pub type alias Lightmap = { texture = String, colorSpace = Texture3d.ColorSpace, intensity = Float64, maxLevels = Int32, uvRect = Rect2.Rect2 }`
 - 置いた物（閉じた型 — 欄を後から足しても、ゲームの書いた値が壊れない）。
   `pub type alias Instance3d = InstanceData`
 - 形を world の行列で置く（tint 白・材質なし）。
@@ -1560,7 +1560,7 @@
   `pub def lightmapMaxLevels(): Int32`
 - UV の島の間の px（読み込んだ lightmap の絵の上で）から、読む mip のレベルの数の上限を決める（1 以上）。
   `pub def lightmapLevelsForGap(gapPx: Int32): Int32`
-- colorSpace = Srgb・intensity = 1・maxLevels = lightmapMaxLevels() の lightmap。ほかの値は { intensity = 2.0 | Scene3d.lightmap(name) } の形で替える。
+- colorSpace = Srgb・intensity = 1・maxLevels = lightmapMaxLevels()・uvRect = 絵の全部（位置 (0, 0)・大きさ (1, 1)）の lightmap。ほかの値は { intensity = 2.0 | Scene3d.lightmap(name) } の形で替える。
   `pub def lightmap(texture: String): Lightmap`
 - 置いた物にベイクした光を付ける（2 本目の uv で読む）。付けた物は環境光と hemisphere を足さず、動く光（点光源・スポット）は足す。
   `pub def withLightmap(lm: Lightmap, i: Instance3d): Instance3d`

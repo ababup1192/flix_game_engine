@@ -511,11 +511,14 @@ pub mod Render3dGlsl {
 
     /// ベイクした光の uniform と、lightmap の絵の読み（lightmapColor）と、lightmap のある面の光の式（lightmapLightSource）。
     /// 段つきの Linear で読む（sg_texMip。段は Lightmap の maxLevels まで）。2 本目の uv の絵は場面の textures だけから引くので上下の反転は無い。
+    /// 読む uv = 2 本目の uv × uLightmapUvRect.zw + uLightmapUvRect.xy（Lightmap の uvRect）。
+    // WhyNot: 矩形を頂点の式で当てない — WebGPU の物ごとの値（R3dDraw）は FRAGMENT からだけ見え、頂点で読むと layout の可視範囲と全部の材質の WGSL が変わる。GL も同じ所で当ててそろえる。
     def lightmapSource(v: Render3d.ShaderVariant): String =
         "uniform sampler2D uLightmap;\n" +
         "uniform float uLightmapLevels;\n" +
+        "uniform vec4 uLightmapUvRect;\n" +
         "vec3 lightmapColor() {\n" +
-        "    return sg_texMip(uLightmap, 0.0, uLightmapLevels, vUv2).rgb;\n" +
+        "    return sg_texMip(uLightmap, 0.0, uLightmapLevels, vUv2 * uLightmapUvRect.zw + uLightmapUvRect.xy).rgb;\n" +
         "}\n" +
         lightmapLightSourceFor(v)
 

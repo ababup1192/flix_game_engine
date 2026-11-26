@@ -107,8 +107,8 @@ pub mod Render3d.WebGpuMaterials {
     /// 値の区画のそろえ（バイト。core の minUniformBufferOffsetAlignment と minStorageBufferOffsetAlignment の上限）。
     def valueAlignBytes(): Int32 = 4 * MaterialValues.valueAlign()
 
-    /// r3dDraw の binding の大きさ（Render3dWgsl の R3dDraw: f32 が 6 つを 16 バイトの倍数へ切り上げ）。
-    def drawValueBytes(): Int64 = 32i64
+    /// r3dDraw の binding の大きさ（Render3dWgsl の R3dDraw: f32 が 6 つ・16 バイトにそろえた vec4f が 1 つ）。
+    def drawValueBytes(): Int64 = 48i64
 
     pub def create(gpu: WebGpu, binding: ValuesBinding): Materials \ IO =
         let blank = gpu.createTexture("fge material blank", 1, 1, TextureFormat.RGBA8_UNORM, Int32.bitwiseOr(TextureUsage.TEXTURE_BINDING, TextureUsage.COPY_DST), 1, 1);

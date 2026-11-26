@@ -203,3 +203,24 @@ def testDefaultMaxLevelsIsTheDefaultLimit(): Unit \ Assert =
 def testZeroMaxLevelsBecomesOne(): Unit \ Assert =
     Assert.assertEq(expected = Some(1),
         Scene3d.lightmapOf(lmPlaced({ maxLevels = 0 | Scene3d.lightmap(lmName()) })) |> Option.map(lm -> lm#maxLevels))
+
+// ── atlas の中の矩形（uvRect）──
+
+/// 矩形の大きさが 0 の lightmap も使い、矩形は絵の全部に直す。
+@Test
+def testZeroSizedRectFallsBackToWhole(): Unit \ Assert =
+    let lm = { uvRect = { position = Vec2.v2(0.5, 0.0), size = Vec2.v2(0.0, 1.0) } | Scene3d.lightmap(lmName()) };
+    Assert.assertEq(expected = Some((0.0, 1.0)), Scene3d.lightmapOf(lmPlaced(lm)) |> Option.map(l -> (l#uvRect#position#x, l#uvRect#size#x)))
+
+/// 大きさが 0 の矩形は知らせる。
+@Test
+def testZeroSizedRectIsWarned(): Unit \ Assert =
+    let lm = { uvRect = { position = Vec2.v2(0.0, 0.0), size = Vec2.v2(1.0, 0.0) } | Scene3d.lightmap(lmName()) };
+    Assert.assertTrue(Scene3d.lightmapWarning(lmPlaced(lm)) |> Option.exists(line -> String.contains(substr = "uvRect", line)))
+
+/// 使える矩形はそのまま渡る。
+@Test
+def testUsableRectIsKept(): Unit \ Assert =
+    let lm = { uvRect = { position = Vec2.v2(0.5, 0.25), size = Vec2.v2(0.5, 0.5) } | Scene3d.lightmap(lmName()) };
+    Assert.assertEq(expected = Some((0.5, 0.25, 0.5, 0.5)),
+        Scene3d.lightmapOf(lmPlaced(lm)) |> Option.map(l -> (l#uvRect#position#x, l#uvRect#position#y, l#uvRect#size#x, l#uvRect#size#y)))

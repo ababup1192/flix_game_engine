@@ -14,27 +14,46 @@ pub mod SoftRaster3d.Internal {
     /// 場面の環境マップ。chain = 絵の段の列（段 0 が元の絵）・intensity = Scene3d.environmentIntensityOf・box = 箱の補正（Scene3d.environmentBoxOf で軸ごとに min < max にそろえた物）。
     pub type alias EnvironmentLookup = { chain = MipChain, intensity = Float64, box = Option[Scene3d.EnvironmentBox] }
 
-    /// 場面 scene の環境マップ（無ければ None）。textures = 場面が読む絵の段の列。half の絵は場面の textures から段を作る。絵が無ければ透明な黒で読む（GL の代わりの絵と同じ）。
-    pub def environmentLookupOf(textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]], scene: Scene3d.Scene3dCmd): Option[EnvironmentLookup] =
+    /// 場面 scene の環境マップ（無ければ None）。textures = 場面が読む 8bit の絵の段の列・halves = half の絵の段（halfChainsOf）。絵が無ければ透明な黒で読む（GL の代わりの絵と同じ）。
+    pub def environmentLookupOf(textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]], halves: Map[String, Vector[ShaderEval.HdrTexture]],
+                                scene: Scene3d.Scene3dCmd): Option[EnvironmentLookup] =
         scene#environmentMap |> Option.map(e -> {
             let f = Scene3d.environmentMapFieldsOf(e);
             let key = (f#texture, Texture3d.mipSpaceOf(Texture3d.TextureUse.MaterialTexture));
-            let chain = match halfChainNamed(scene, f#texture) {
+            let chain = match Map.get(f#texture, halves) {
                 case Some(hdr) => MipChain.Linear(hdr)
                 case None      => MipChain.Srgb(Map.getWithDefault(key, Vector#{ { width = 1, height = 1, pixels = Vector#{ 0 } } }, textures))
             };
             { chain = chain, intensity = Scene3d.environmentIntensityOf(e), box = f#box |> Option.map(Scene3d.environmentBoxOf) }
         })
 
-    /// 場面の textures の名前 name の絵が half の絵なら、その段の列（Mip.buildRgba16Float）。
-    pub def halfChainNamed(scene: Scene3d.Scene3dCmd, name: String): Option[Vector[ShaderEval.HdrTexture]] =
-        scene#textures |> List.find(t -> Texture3d.name(t) == name) |> Option.flatMap(t -> match Texture3d.sourceOf(t) {
+    /// 場面の textures の half の絵の名前 → 段の列（Mip.buildRgba16Float）。場面を描く時に 1 回作り、環境マップと lightmap が名前で引く。
+    // WhyNot: 置いた物ごとに段を作らない — lightmap の絵は何百もの物が分け合い、2048² の段づくりは 1 回 40 ms ほどかかる。
+    pub def halfChainsOf(scene: Scene3d.Scene3dCmd): Map[String, Vector[ShaderEval.HdrTexture]] =
+        scene#textures |> List.filterMap(t -> match Texture3d.sourceOf(t) {
             case Texture3d.Source.Rgba16Float(halves) =>
-                Some(Mip.buildRgba16Float(Texture3d.width(t), Texture3d.height(t), halves)
+                Some((Texture3d.name(t), Mip.buildRgba16Float(Texture3d.width(t), Texture3d.height(t), halves)
                     |> List.map(level -> { let (w, h, bits) = level; ShaderEval.hdrTextureOfHalves(w, h, Vector.map(b -> RenderUtil.f32(Texture3d.Internal.fromHalfBits(b)), bits)) })
-                    |> List.toVector)
+                    |> List.toVector))
             case _ => None
-        })
+        }) |> List.toMap
+
+    /// lightmap の段の列 chain を、2 本目の uv uv（横隣 nextX・縦隣 nextY）に矩形 rect を当てた座標で読んだ rgb（8bit の絵は読んだ値のまま・half の絵は線形の量）。
+    /// 段は Mip.lodOf（段の数は maxLevels まで）・Clamp・Linear。読む uv = uv2 × rect の大きさ + rect の位置（微分も同じ座標で取る）。
+    pub def lightmapRgbAt(chain: MipChain, maxLevels: Int32, rect: Rect2.Rect2, uv: (Float64, Float64), nextX: (Float64, Float64), nextY: (Float64, Float64)): (Float64, Float64, Float64) =
+        let place = (p: (Float64, Float64)) -> { let (a, b) = p; (a * rect#size#x + rect#position#x, b * rect#size#y + rect#position#y) };
+        let ((u, v), (xu, xv), (yu, yv)) = (place(uv), place(nextX), place(nextY));
+        let levels = Int32.min(mipLevelsOf(chain), maxLevels);
+        let (w, h) = match chain {
+            case MipChain.Srgb(ls)   => Vector.head(ls) |> Option.map(b -> (b#width, b#height)) |> Option.getWithDefault((1, 1))
+            case MipChain.Linear(ls) => Vector.head(ls) |> Option.map(b -> (ShaderEval.hdrWidthOf(b), ShaderEval.hdrHeightOf(b))) |> Option.getWithDefault((1, 1))
+        };
+        let lod = Mip.lodOf({ dudx = xu - u, dvdx = xv - v, dudy = yu - u, dvdy = yv - v }, w, h, levels);
+        let sampling = { linear = true, repeat = false };
+        match chain {
+            case MipChain.Srgb(ls)   => ShaderEval.sampleMipRgb(ls, sampling, lod, u, v)
+            case MipChain.Linear(ls) => ShaderEval.sampleMipRgbHdr(ls, sampling, lod, u, v)
+        }
 
     /// 段の列の段の数。
     pub def mipLevelsOf(chain: MipChain): Int32 = match chain {
