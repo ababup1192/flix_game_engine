@@ -455,6 +455,32 @@
       "hint": "標準の Vector・Array・Chain・MutList・Nel の sort 族も List と同じ単純なクイックソートで、並んだ入力で二乗になる。List.toList などで列にして Sort.sortStable・sortStableBy・sortStableWith を通し、戻す（どんな入力でも n log n・安定）"
     },
     {
+      "id": "physics-portable-math",
+      "suffixes": [".flix", ".java"],
+      "prefixes": ["engine/src/core/PortableMath.flix", "src/engine/core/PortableMath.flix", "engine/src/core/Rot2.flix", "src/engine/core/Rot2.flix",
+                   "engine_world/src/PhysicsWorld2d", "src/engine_world/PhysicsWorld2d", "engine_world/src/RigidBody2d.flix", "src/engine_world/RigidBody2d.flix",
+                   "engine_world/src/Collider2d.flix", "src/engine_world/Collider2d.flix",
+                   "engine_world/src/PhysicsWorld3d", "src/engine_world/PhysicsWorld3d"],
+      "pattern": "\\bNum\\.(sin|cos|tan|atan|atan2|asin|acos|log|log10|exp|pow|hypot)\\b|\\bMath\\.[a-z]|\\bStrictMath\\.|\\bFloat64\\.(pow|exp|log)\\b|\\bFloat32\\b",
+      "hint": "物理のファイルでは三角関数・指数・対数・Float32 を使わない（TeaVM では JS の Math になり、JVM と wasm で最下位ビットがずれて World が分かれる）。向きは Rot2 の組のまま回し、角から作るなら PortableMath.sin・cos・atan2、平方根は PortableMath.sqrt（engine の docs/physics.md）"
+    },
+    {
+      "id": "physics-step-direct",
+      "suffixes": [".flix"],
+      "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "src/engine/", "src/engine_world/", "src/engine_tools/", "lib/", "build/", "bench/physics2d/"],
+      "skipDirs": ["test"],
+      "pattern": "\\bPhysicsWorld[23]d\\.step\\b",
+      "hint": "物理の World を進めるのは App（App.addPhysics2d が遊びの時計で貯めた固定刻みで step し、出来事を onEvents へ渡す）。ゲームが step を呼ぶと、刻みの数がフレームの間隔で変わり、ポーズでも転がり続ける（engine の docs/physics.md）"
+    },
+    {
+      "id": "rot2-from-num",
+      "suffixes": [".flix"],
+      "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "src/engine/", "src/engine_world/", "src/engine_tools/", "lib/", "build/"],
+      "notice": true,
+      "pattern": "\\bRot2\\.fromCosSin\\(\\s*Num\\.",
+      "hint": "Num.cos・Num.sin で作った組を Rot2 にすると、ブラウザ版と PC で向きの最下位ビットが分かれ、物理の World の指紋が揃わなくなる。角から作るなら Rot2.fromDegrees・fromRadians（PortableMath を通る）"
+    },
+    {
       "id": "app-with-passes",
       "suffixes": [".flix"],
       "skip": ["lib/", "build/"],
