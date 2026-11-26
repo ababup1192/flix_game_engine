@@ -195,6 +195,26 @@
           "why": "手で大きさを見るだけでは門にならない"
         }
       ]
+    },
+    {
+      "id": "web-engine-compare",
+      "prompt": "engine のブラウザ版の重さを、three.js や PlayCanvas・Babylon.js と同じ測り方（WebGPU Engine Bench の harness）で並べて測りたい。同じ session で flix も回して、場面を絞って流す口はある？何を打つ？",
+      "expect": [
+        {
+          "re": "make web-engine-compare",
+          "why": "比べる相手の harness に flix の adapter を足して回すのは engine の根の make web-engine-compare"
+        },
+        {
+          "re": "ONLY=|PROFILE=",
+          "why": "場面・engine は ONLY='engine=flix,three;scenario=k1'・回数は PROFILE=smoke|quick|full で絞る"
+        }
+      ],
+      "avoid": [
+        {
+          "re": "make bench-web[^\\n]*(同じ測り方|並べ)",
+          "why": "make bench-web は engine の中の物差しで、他の engine と表には並べない"
+        }
+      ]
     }
   ]
 }

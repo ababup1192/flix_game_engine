@@ -176,6 +176,7 @@ git log 掘りやテスト回し直しから始めない。
 2D の物理（PhysicsWorld2d）の指紋が PC とブラウザで同じかと 1 刻みの重さは `make physics2d-same CPU=4`（bench/physics2d の 4 場面・画面を開く門で release の前に手元で・予算は docs/physics.md の「重さの予算」）。
 3D のブラウザ版が書き出せて（TeaVM に無いメソッドで落ちないか）ヘッドレスの Chrome の WebGPU と WebGL2 で数コマ描け、console の誤りが 0 件か、wasm（classes.wasm.br）が testdata/web-size.tsv の記録から 3% を超えて増えていないかは `make web-load-check`（retro3d-horror-starter と rpg-starter・約 3 分半・release の門・`WEB_LOAD_GAMES=<ゲーム…>` で替える・増えを受け入れるのは `make web-size-update`・docs/web-capture.md）。
 3D の描き手のシェーダー（render_gl の Render3dGlsl・Render3dWgsl・Render3dShaders・Render3d/）は入口の字（`"#version 330"`・`"@fragment"`・`"@vertex"`）を手で書かず、本文を Render3dShaders に ShaderAst の木で書いて `FragmentEntry` / `VertexEntry` で GLSL と WGSL を出す（forbid の `render3d-shader-entry-by-hand` が止める・手書きで残すのは置いた物の頂点の `Render3dGlsl.MeshVertex` / `Render3dWgsl.MeshVertex` と、WebGPU の backend の道具の pass の `Render3d.WebGpuMipmaps`・`Render3d.WebGpuShadowCache` で、forbid の skip と同じ）。
+3D のブラウザ版の重さを WebGPU Engine Bench（three.js・PlayCanvas・Babylon.js など）と同じ harness・同じ session で並べるのは `make web-engine-compare ONLY='engine=flix,three;scenario=k1' PROFILE=smoke|quick|full`（bench/web_engine_compare・先に `make -C bench/web_engine_compare upstream`・門ではない・full は 3.5〜4 時間・結果は同じ所の RESULTS.md）。
 テストの範囲・書き方は `/quality-assurance`、リリース手順は `/release`。
 
 ## Doc（`*.kind.json`）の流儀

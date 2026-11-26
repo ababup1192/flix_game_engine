@@ -58,14 +58,6 @@ mod Draw {
             |> Scene3d.withMetallicRoughness(pbr#metalness, pbr#roughness)
             |> Scene3d.withAlphaBlend(pbr#opacity < 1.0)
 
-    /// 右手系の列優先の行列を左手系へ（S × m × S・S は Z の裏返し）。
-    pub def mirroredColumns(m: Vector[Float64]): Vector[Float64] =
-        m |> Vector.mapWithIndex((i, x) -> {
-            let row = Int32.remainder(i, 4);
-            let col = i / 4;
-            if ((row == 2) != (col == 2)) 0.0 - x else x
-        })
-
     def flip(v: Scenes.V3): Vec3.Vec3 = { let (x, y, z) = v; Vec3.v3(x, y, 0.0 - z) }
 
     /// 位置から注視点を見るカメラ。
@@ -84,7 +76,7 @@ mod Draw {
 
     /// 物 i の時刻 t の world の行列（左手系）。
     def worldOf(f: Scenes.Field, t: Float64, i: Int32): Mat4.Mat4 =
-        Mat4.ofColumns(mirroredColumns(Scenes.worldColumns(f, t, i))) |> Result.getWithDefault(Mat4.identity())
+        Mat4.ofColumns(Scenes.mirroredWorldColumns(f, t, i)) |> Result.getWithDefault(Mat4.identity())
 
     /// 時刻 t の、形と材質の組ごとの MultiMesh3d。
     pub def multiMeshes(kit: Kit, t: Float64): List[MultiMesh3d.MultiMesh3d] =

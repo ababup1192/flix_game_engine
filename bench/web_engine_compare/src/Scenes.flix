@@ -155,41 +155,34 @@ mod Scenes {
                           spin = spinner(seed, count * 3 + groups * 3, groups), timeScale = 0.5 }) | base }
 
     /// 物 i の world の行列（列優先の 16 個・右手系）。親があれば親の回転と位置を重ねる。
-    pub def worldColumns(f: Field, t: Float64, i: Int32): Vector[Float64] =
-        let own = trs((Vector.get(i * 3, f#position), Vector.get(i * 3 + 1, f#position), Vector.get(i * 3 + 2, f#position)), quatAt(f#spin, t, i), Vector.get(i, f#scale));
-        match f#groups {
-            case None    => own
-            case Some(g) =>
-                let p = Vector.get(i, g#parent);
-                withParent(quatAt(g#spin, t * g#timeScale, p), (Vector.get(p * 3, g#position), Vector.get(p * 3 + 1, g#position), Vector.get(p * 3 + 2, g#position)), own)
-        }
+    pub def worldColumns(f: Field, t: Float64, i: Int32): Vector[Float64] = columnsOf(false, f, t, i)
 
-    /// 位置・向き・倍率から列優先の 16 個。
-    def trs(p: V3, q: (Float64, Float64, Float64, Float64), sc: Float64): Vector[Float64] =
-        let (px, py, pz) = p;
-        let (x, y, z, w) = q;
+    /// worldColumns を Z の裏返しで左手系へ写した物（S × m × S）。
+    pub def mirroredWorldColumns(f: Field, t: Float64, i: Int32): Vector[Float64] = columnsOf(true, f, t, i)
+
+    /// 物 i の world の行列を 1 つの Vector に詰める。親の無い場面は回転なし・位置 0 の親として同じ式を通す。
+    def columnsOf(mirror: Bool, f: Field, t: Float64, i: Int32): Vector[Float64] =
+        let (x, y, z, w) = quatAt(f#spin, t, i);
+        let sc = Vector.get(i, f#scale);
         let (x2, y2, z2) = (x + x, y + y, z + z);
         let (xx, xy, xz, yy, yz, zz) = (x * x2, x * y2, x * z2, y * y2, y * z2, z * z2);
         let (wx, wy, wz) = (w * x2, w * y2, w * z2);
-        Vector#{(1.0 - (yy + zz)) * sc, (xy + wz) * sc, (xz - wy) * sc, 0.0,
-                (xy - wz) * sc, (1.0 - (xx + zz)) * sc, (yz + wx) * sc, 0.0,
-                (xz + wy) * sc, (yz - wx) * sc, (1.0 - (xx + yy)) * sc, 0.0,
-                px, py, pz, 1.0}
+        let parent = f#groups |> Option.map(g -> { let p = Vector.get(i, g#parent); (quatAt(g#spin, t * g#timeScale, p), (Vector.get(p * 3, g#position), Vector.get(p * 3 + 1, g#position), Vector.get(p * 3 + 2, g#position))) })
+            |> Option.getWithDefault(((0.0, 0.0, 0.0, 1.0), (0.0, 0.0, 0.0)));
+        let (q, (gx, gy, gz)) = parent;
+        let (ax, ay, az) = rotateBy(q, ((1.0 - (yy + zz)) * sc, (xy + wz) * sc, (xz - wy) * sc));
+        let (bx, by, bz) = rotateBy(q, ((xy - wz) * sc, (1.0 - (xx + zz)) * sc, (yz + wx) * sc));
+        let (cx, cy, cz) = rotateBy(q, ((xz + wy) * sc, (yz - wx) * sc, (1.0 - (xx + yy)) * sc));
+        let (tx, ty, tz) = rotateBy(q, (Vector.get(i * 3, f#position), Vector.get(i * 3 + 1, f#position), Vector.get(i * 3 + 2, f#position)));
+        let k = if (mirror) -1.0 else 1.0;
+        Vector#{ax, ay, az * k, 0.0, bx, by, bz * k, 0.0, cx * k, cy * k, cz, 0.0, tx + gx, ty + gy, (tz + gz) * k, 1.0}
 
-    /// 列優先の行列 m の各列を四元数 q で回し、平行移動に p を足す。
-    def withParent(q: (Float64, Float64, Float64, Float64), p: V3, m: Vector[Float64]): Vector[Float64] =
+    /// 向き v を四元数 q で回す。
+    def rotateBy(q: (Float64, Float64, Float64, Float64), v: V3): V3 =
         let (x, y, z, w) = q;
-        let (px, py, pz) = p;
-        let rotate = (vx: Float64, vy: Float64, vz: Float64) -> {
-            let (tx, ty, tz) = (2.0 * (y * vz - z * vy), 2.0 * (z * vx - x * vz), 2.0 * (x * vy - y * vx));
-            (vx + w * tx + (y * tz - z * ty), vy + w * ty + (z * tx - x * tz), vz + w * tz + (x * ty - y * tx))
-        };
-        Vector.range(0, 4) |> Vector.flatMap(c -> {
-            let (rx, ry, rz) = rotate(Vector.get(c * 4, m), Vector.get(c * 4 + 1, m), Vector.get(c * 4 + 2, m));
-            let shift = if (c == 3) (px, py, pz) else (0.0, 0.0, 0.0);
-            let (sx, sy, sz) = shift;
-            Vector#{rx + sx, ry + sy, rz + sz, Vector.get(c * 4 + 3, m)}
-        })
+        let (vx, vy, vz) = v;
+        let (tx, ty, tz) = (2.0 * (y * vz - z * vy), 2.0 * (z * vx - x * vz), 2.0 * (x * vy - y * vx));
+        (vx + w * tx + (y * tz - z * ty), vy + w * ty + (z * tx - x * tz), vz + w * tz + (x * ty - y * tx))
 
     /// 場面の物全部の三角形の数（全部が見える場面で、描いた三角形と比べる）。
     pub def triangleCount(f: Field, shapes: Vector[Geometry.Shape]): Int32 =

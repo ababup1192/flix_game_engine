@@ -35,9 +35,10 @@ mod TestScenes {
     def testK2GroupsOfEight(): Unit \ Assert =
         Assert.assertEq(expected = Some(63), Scenes.build(Scenes.Scenario.K2, 500)#groups |> Option.map(g -> g#count))
 
-    /// 左手系へ写す時は Z の行と列だけの符号を替える（Z と Z の交わりはそのまま）。
+    /// 左手系の行列は、右手系の行列の Z の行と列だけの符号を替えた物（Z と Z の交わりはそのまま）。
     @Test
-    def testMirroredColumnsFlipsZRowAndColumnOnly(): Unit \ Assert =
-        Assert.assertEq(expected = Vector#{1.0, 2.0, -3.0, 4.0, 5.0, 6.0, -7.0, 8.0, -9.0, -10.0, 11.0, -12.0, 13.0, 14.0, -15.0, 16.0},
-                        Draw.mirroredColumns(Vector.range(1, 17) |> Vector.map(Int32.toFloat64)))
+    def testMirroredWorldColumnsFlipsZRowAndColumnOnly(): Unit \ Assert =
+        let f = Scenes.build(Scenes.Scenario.K2, 500);
+        let flipped = Scenes.worldColumns(f, 1.25, 37) |> Vector.mapWithIndex((i, x) -> if ((Int32.remainder(i, 4) == 2) != (i / 4 == 2)) 0.0 - x else x);
+        Assert.assertEq(expected = flipped, Scenes.mirroredWorldColumns(f, 1.25, 37))
 }

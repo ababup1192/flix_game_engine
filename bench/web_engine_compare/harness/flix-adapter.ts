@@ -7,6 +7,8 @@ import type { EngineAdapter, InitOptions, InitReport, LoadReport, SceneData, Var
 
 const BASE = '/flix/';
 const SIM_LINE = '[wec] sim ';
+/** engine が置き方を勧める行の頭（数えて counters の hints に出す）。 */
+const HINT_PREFIXES = ['scene3d: 置いた物が'];
 /** load の中で回すコマ数（pipeline と形の初めての上げを済ませる）。 */
 const LOAD_FRAMES = 60;
 /** 起動（wasm の compile と main）を待つ上限。 */
@@ -36,6 +38,7 @@ class FlixAdapter implements EngineAdapter {
   private backend: 'webgpu' | 'webgl2' = 'webgpu';
   private pairs: (() => string[]) | null = null;
   private patched = false;
+  private hints = 0;
 
   async init(canvas: HTMLCanvasElement, opts: InitOptions): Promise<InitReport> {
     this.backend = opts.backend;
@@ -71,6 +74,10 @@ class FlixAdapter implements EngineAdapter {
     const ms = this.simMs;
     this.simMs = 0;
     return ms;
+  }
+
+  counters() {
+    return { hints: this.hints };
   }
 
   async dispose() {}
@@ -130,6 +137,16 @@ class FlixAdapter implements EngineAdapter {
         return;
       }
       log(...args);
+    };
+    // WhyNot: engine が置き方を勧める 1 行を consoleErrors のままにしない — 誤りではなく助言で、report の誤りの数に混ざる。
+    const error = console.error.bind(console);
+    console.error = (...args: unknown[]) => {
+      const first = args[0];
+      if (typeof first === 'string' && HINT_PREFIXES.some((p) => first.startsWith(p))) {
+        self.hints++;
+        return;
+      }
+      error(...args);
     };
   }
 

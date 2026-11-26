@@ -121,3 +121,20 @@ smoke（1 回・M4 Pro・Chrome 156）の flix の値:
   他の engine の場面の更新は 0.01〜0.06 ms なので、K2 の 32,000 の差（9.4 ms と 47 ms）はほぼ Flix の側の行列づくりの値段。
 - 場面の更新が重い所は bench の Flix のコード（物ごとに Vector を作る `Scenes.worldColumns`）で、engine の外。S4 の前に軽くする余地がある。
 - 4,000 個の naive では engine が console に staticGroup と MultiMesh3d を勧める 1 行を出す（report の consoleErrors に 1 件と数えられる）。
+
+### 場面の更新を軽くした前と後（S4 の前・WebGPU・smoke）
+
+`Scenes.worldColumns` を、物ごとに 4〜6 個の Vector を作る形から、四元数の回転を数だけで計算して最後に 1 つの Vector に詰める形にした（親の回転を重ねる式は同じ・ゲームが普通に書く範囲）。
+naive は物ごとの `Scene3d.meshInstance`、optimized は形と材質の組ごとの `MultiMesh3d.build` のまま（どちらも毎コマ組み直す）。
+
+| variant | 物の数 | 場面の更新 p50 前 → 後 | CPU p95（差し引いた後）前 → 後 | CPU p95（差し引く前）前 → 後 | interval p50 前 → 後 |
+|---|---:|---:|---:|---:|---:|
+| naive | 500 | 0.59 → 0.36 | 3.6 → 3.1 | 4.2 → 3.5 | 3.8 → 3.2 |
+| naive | 4,000 | 7.8 → 6.1 | 9.2 → 9.1 | 16.9 → 14.7 | 15.5 → 12.8 |
+| naive | 32,000 | 62.9 → 48.3 | 55.1 → 55.0 | 128.0 → 110.8 | 113.2 → 101.3 |
+| optimized | 4,000 | 4.9 → 3.1 | 4.6 → 5.0 | 9.5 → 8.0 | 8.9 → 7.4 |
+| optimized | 32,000 | 37.6 → 26.5 | 9.4 → 11.3 | 47.4 → 38.6 | 47.0 → 37.2 |
+
+- 表の決まり: frame cost は元の決まり（max(CPU p95, GPU p95, interval p50)）のまま載せる。CPU は差し引いた後（主）と前の 2 列。interval からは差し引かない。
+  **注: 場面の更新は Flix の bench のコード（`src/Scenes.flix`）の値段で、ゲームが払う本当の値段として interval と frame cost に入る。**
+- engine が 4,000 個以上の物で console に出す置き方の助言の 1 行は、adapter が consoleErrors から外して `counters` の `hints` に数える（naive の 4,000・32,000 で 1）。
