@@ -6,7 +6,7 @@ set -euo pipefail
 name="$1"; log="$2"
 line=$(grep -m1 '遊べるまで（すぐ押した時' "$log" || true)
 if [ -z "$line" ]; then
-  echo "[web-budget] $name: 書き出しのログに遊べるまでの見込みの行が無い（$log）"
+  echo "[web-budget] $name: 書き出しのログに遊べるまでの見込みの行が無い（${log}）"
   exit 1
 fi
 read -r est budget < <(printf '%s\n' "$line" | sed -n 's/.*約 \([0-9.]*\) 秒 \/ 予算 \([0-9.]*\) 秒.*/\1 \2/p')
