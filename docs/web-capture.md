@@ -133,10 +133,13 @@ Chrome は後回しの無いゲームで 2 回、ある時は 3〜4 回起こす
 
 門として 3D のゲームをブラウザ版へ書き出すのはこれだけ（ほかの web の門は 2D の rpg-starter と 2D のベンチ。`make bench-web BENCH=scene3d` は測るだけ）。release の門の 1 つ。
 
-1. `bin/fge export-web <ゲーム> --draft --no-browser-check`（既定は `templates/retro3d-horror-starter`・`WEB_LOAD_GAMES=<ゲーム…>` で替える）。
+1. `bin/fge export-web <ゲーム> --draft --no-browser-check`（既定は `templates/retro3d-horror-starter` と 2D の `templates/rpg-starter`・`WEB_LOAD_GAMES=<ゲーム…>` で替える）。
    TeaVM の classlib に無いメソッドやクラスを engine が呼ぶと、ここ（③ TeaVM）で落ちる。`--draft` は遊べるまでの予算（cwebp の有無で機械ごとに揺れる）で止めないため
 2. `bin/fge web-capture index.html … --dev capture:10`（WebGPU）と `--dev capture:10,webgl2`（WebGL2）を `--console-errors --console-allow '^WebFs fail-open: '` で開く。
    10 コマ目まで描けない（`fgeCaptureError`）・頁が名乗った描き手が違う・console.error か拾われなかった例外が 1 件でもある、のどれかで exit 1
+3. `bin/web-size-check.sh <名前> <書き出したフォルダ>` が `classes.wasm.br` のバイト数を `testdata/web-size.tsv` の記録と比べ、`WEB_SIZE_GROWTH`（既定 3）% を超えて増えていたら exit 1。
+   増えた所は `bin/fge wasm-size <フォルダ> --diff <前の書き出し>` で見る。受け入れるなら `make web-size-update WEB_LOAD_GAMES=<ゲーム> WEB_EXPORT=off` で記録を書き換え、理由をコミットに書く。
+   同じソースでも書き出すたびに 0.1% ほど揺れる（rpg-starter で 1,064,223 → 1,063,361 バイト）ので、上限はその揺れより十分大きくしてある
 
 `--console-errors` は頁のどの script よりも先に `console.error` と `error`・`unhandledrejection` を `window.fgeConsoleErrors` へ積み、撮った後に数える。
 engine の `Log.warn` はブラウザでは console.error に出るので、数えないのは WebFs が saves/ の外へ書かない知らせ（`WebFs fail-open: …`）だけにしてある。`Log.fellBack` の定型を丸ごと許すと、WGSL が組めず材質を頂点の色に替えた知らせ（同じ形）まで通ってしまう。

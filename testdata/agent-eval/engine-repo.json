@@ -179,6 +179,22 @@
           "why": "GLSL と WGSL を別々に手で書くと式が分かれ、forbid が止める"
         }
       ]
+    },
+    {
+      "id": "web-size-gate",
+      "prompt": "engine の描き手に機能を足したら、テンプレートのブラウザ版の wasm がどれだけ太ったかが気になる。決めた割合より増えたら止まる門と、増えを受け入れる時に記録を書き換える口はある？何を打つ？",
+      "expect": [
+        {
+          "re": "web-load-check|web-size",
+          "why": "make web-load-check が書き出した classes.wasm.br を testdata/web-size.tsv の記録と比べて 3% を超えたら止め、受け入れるのは make web-size-update"
+        }
+      ],
+      "avoid": [
+        {
+          "re": "(?i)ls -l[^\\n]*classes\\.wasm[^\\n]*(だけ|で十分)",
+          "why": "手で大きさを見るだけでは門にならない"
+        }
+      ]
     }
   ]
 }

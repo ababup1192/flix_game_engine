@@ -468,7 +468,10 @@ webgpu-v1-check-web: ### [WEB_EXPORT=off] | 同じ門のブラウザ版（rpg-st
 # WhyNot: gui にしない（webgpu-v1-check-web は gui） — 事故は engine を触った作業中に起きるので、affected で拾う。窓は開かない。
 # WhyNot: export-web の ⑨ に任せない — ⑨ は Chrome が無いと黙って飛ばし、console.error（engine の Log.warn・Worker から送り直した行）を数えない。
 # WhyNot: 書き出しの門（遊べるまでの予算）で止めない（--draft） — 予算は cwebp の有無で機械ごとに揺れ、この門の見たい事ではない。
-WEB_LOAD_GAMES   ?= templates/retro3d-horror-starter
+# wasm の大きさ（classes.wasm.br）も書き出したゲームごとに testdata/web-size.tsv の記録と比べ、WEB_SIZE_GROWTH（既定 3）% を超えて増えたら止める
+# （bin/web-size-check.sh）。2D の軽さも守るので rpg-starter も既定に入れる。増えを受け入れるのは make web-size-update。
+# WhyNot: 前の版の Release の wasm と比べない — 版を跨いだ取り物が要り、手元で作業中に差を見られない。記録はコミットの差で追える。
+WEB_LOAD_GAMES   ?= templates/retro3d-horror-starter templates/rpg-starter
 WEB_LOAD_OUT     := build/web-load-check
 WEB_LOAD_FRAMES  ?= 10
 .PHONY: web-load-check
@@ -490,8 +493,20 @@ web-load-check: ### [WEB_LOAD_GAMES=<ゲーム…>] [WEB_EXPORT=off] | 3D のテ
 			$(call web-renderer-is,$$log,$$backend) || { cat $$log; echo "[web-load-check] $$name の $$backend の頁が $$backend で描いたと名乗っていない ($$log)"; exit 1; }; \
 			echo "[web-load-check] $$name $$backend: $$(grep -m1 'renderer:' $$log | sed 's/^ *//') ・$$(grep -m1 'console.error:' $$log | sed 's/^ *//')"; \
 		done; \
+		bin/web-size-check.sh $$name $$dir; \
 	done
 	@echo "[web-load-check] OK"
+
+.PHONY: web-size-update
+web-size-update: ### [WEB_LOAD_GAMES=<ゲーム…>] [WEB_EXPORT=off] | web-load-check の書き出しの classes.wasm.br の大きさで testdata/web-size.tsv の記録を書き換える（増えを受け入れる時・理由はコミットに）
+	@set -e; for game in $(WEB_LOAD_GAMES); do \
+		name=$$(basename $$game); dir=$(WEB_LOAD_OUT)/$$name; \
+		if [ "$(WEB_EXPORT)" != off ]; then \
+			mkdir -p $(WEB_LOAD_OUT); \
+			bin/fge export-web $$game --out $$dir --work $(CURDIR)/$(WEB_LOAD_OUT)/$$name-work --draft --no-browser-check > $(WEB_LOAD_OUT)/$$name-export.log 2>&1; \
+		fi; \
+		bin/web-size-check.sh $$name $$dir --update; \
+	done
 
 # 同じ門のブラウザ版 (navigator.gpu・TeaVM の JSO)。ウィンドウを使わない門を PC と同じ Flix のコード (bench/webgpu_check/src/Checks.flix) で
 # ヘッドレスの Chrome に流し、canvas の描き先も見る。結果の JSON は build/bench-web/webgpu_check.json。どれかが NG なら exit 1。
