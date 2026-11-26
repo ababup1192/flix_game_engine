@@ -1,5 +1,5 @@
 // CollisionEvent2d — 2D の剛体の当たり始め・離れた（Rapier の CollisionEvent）。PhysicsWorld2d.events(w)#collisions が直前の 1 刻みの分を返し、
-// `App.addPhysics2d`（予定） の onEvents が刻みごとに受け取る。組の id は小さい方が先。
+// App.addPhysics2d の onEvents が刻みごとに受け取る。組の id は小さい方が先。
 // 当たり始めは離れが 1 cm 以下になった刻み・離れたは 2 cm を超えた刻み（見た目で触れる前に Started を出さない）。
 // 眠った島の組は触れたままと見て Stopped を出さない。体を消すと、その体の組に removed = true の Stopped が出る（消した後の次の刻みの出来事）。
 pub mod CollisionEvent2d {

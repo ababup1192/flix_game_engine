@@ -76,17 +76,16 @@ pub mod App.Internal.Frame {
             case Some(fixedDt) =>
                 let (steps, nextCarry) = fixedSteps(state#carry, frame#dt, fixedDt);
                 let merged = mergeEdges(state#pending, stamped);
-                if (steps == 0)
-                    (ticked, { carry = nextCarry, pending = pendingOf(merged), real = real })
-                else {
-                    let firstFrame = { dt = fixedDt | merged };
-                    let laterFrame = suppressEdges(firstFrame);
-                    let advanced = List.range(0, steps) |> List.foldLeft((acc, i) -> {
-                        let subFrame = if (i == 0) firstFrame else laterFrame;
-                        applySystems(subFrame, r#updateSystems, acc)
-                    }, ticked);
-                    (advanced, { carry = nextCarry, pending = noPending(), real = real })
-                }
+                let firstFrame = { dt = fixedDt | merged };
+                let laterFrame = suppressEdges(firstFrame);
+                let advanced = List.range(0, steps) |> List.foldLeft((acc, i) -> {
+                    let subFrame = if (i == 0) firstFrame else laterFrame;
+                    applySystems(subFrame, r#updateSystems, acc)
+                }, ticked);
+                // 物理は系の後に、遊びの時計で貯めた別の貯めで回す（系が 0 回のコマでも物理は進みうる・ポーズの間は進まない）。
+                let (physical, physicsCarry) = App.Internal.Physics.advance(app, fixedDt, state#physicsCarry, advanced);
+                let pending = if (steps == 0) pendingOf(merged) else noPending();
+                (physical, { carry = nextCarry, pending = pending, real = real, physicsCarry = physicsCarry })
         }
 
 }

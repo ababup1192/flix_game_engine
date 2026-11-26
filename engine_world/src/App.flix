@@ -96,16 +96,15 @@ pub mod App {
     /// display は今の画面の情報（大きさ・倍率・最後の pointer・端末の区分）。小さい画面（sizeClass が Small）だけ字とボタンを
     /// 大きくする・指の時だけ案内を「タップ」にする、のように使う。当たりの並べ方を替えるなら、入力の側は Frame#sizeClass で
     /// 同じ並べ方を引く。画面なしの描き出しと pickCtx では Display.desktop(design)（Large・Mouse）で、小さい画面を描き出すなら
-    /// `{ display = { sizeClass = Display.SizeClass.Small | ctx#display } | ctx }` で差し替える。preload3d は先に作る集まりの進み具合（前のコマの値。暗転は engine が出すので View は読まなくてよい）。最初のコマと key が替わったコマは 0 / 1・描き出しと pickCtx は Scene3d.noPreload()。
+    /// `{ display = { sizeClass = Display.SizeClass.Small | ctx#display } | ctx }` で差し替える。preload3d は先に作る集まりの進み具合（前のコマの値。暗転は engine が出すので View は読まなくてよい）。最初のコマと key が替わったコマは 0 / 1・描き出しと pickCtx は Scene3d.noPreload()。fixedAlpha は固定刻みの端数 ÷ 刻み（0〜1。addPhysics2d があれば物理の貯め・withFixedStep だけなら系の貯め・どちらも無ければ 0。描き出しと pickCtx は 0）で、前の刻みと今の刻みの間をなめらかにつなぐ（PhysicsWorld2d.interpolatedPoseOf）。
     // WhyNot: 進み具合を Frame に置かない — 描き手の実時間で決まる値で、系が読むと遊んだ記録と再生（済んでいる）で World が食い違う。
     pub type alias ViewCtx = { atlas = FontAtlas, fontOf = String -> FontAtlas, visible = Rect2.Rect2,
                                warnOnce = String -> Unit, diagnostics = Option[FrameDiagnostics.Diagnostics],
-                               display = Display.Display, preload3d = Scene3d.PreloadProgress }
+                               display = Display.Display, preload3d = Scene3d.PreloadProgress, fixedAlpha = Float64 }
 
     /// ヘッドレス描き出しから view を呼ぶときの ViewCtx。画面全体が見えている扱いにする。
     /// フォント 1 本だけの版 — どの名前で引いても同じ本が返る。
-    pub def viewCtxOf(atlas: FontAtlas, design: Vec2.Vec2): ViewCtx =
-        viewCtxOfFonts(atlas, _ -> atlas, design)
+    pub def viewCtxOf(atlas: FontAtlas, design: Vec2.Vec2): ViewCtx = viewCtxOfFonts(atlas, _ -> atlas, design)
 
     /// viewCtxOf の複数フォント版。fontOf には実機と同じ名前で引ける関数を渡す
     /// （HeadlessFont.buildAtlas に実機と同じ name を渡して組んだ本を返す関数）。
@@ -114,7 +113,7 @@ pub mod App {
     pub def viewCtxOfFonts(atlas: FontAtlas, fontOf: String -> FontAtlas, design: Vec2.Vec2): ViewCtx =
         { atlas = atlas, fontOf = fontOf,
           visible = { position = { x = 0.0, y = 0.0 }, size = design },
-          warnOnce = Log.warn, diagnostics = None, display = Display.desktop(design), preload3d = Scene3d.noPreload() }
+          warnOnce = Log.warn, diagnostics = None, display = Display.desktop(design), preload3d = Scene3d.noPreload(), fixedAlpha = 0.0 }
 
     /// 入力の側（update・テスト）で、押せる物の当たりを出すために View の木を組むときの ViewCtx
     /// （`SortingLayer.pickFrom(点, View.layers(App.pickCtx(design), w))`）。字の形を持たないフォントで、
@@ -124,7 +123,7 @@ pub mod App {
                       lineGap = 0.0, glyphs = Map.empty() };
         { atlas = blank, fontOf = _ -> blank,
           visible = { position = { x = 0.0, y = 0.0 }, size = design },
-          warnOnce = _ -> (), diagnostics = None, display = Display.desktop(design), preload3d = Scene3d.noPreload() }
+          warnOnce = _ -> (), diagnostics = None, display = Display.desktop(design), preload3d = Scene3d.noPreload(), fixedAlpha = 0.0 }
 
     /// 見た文面を seen に覚え、初めての文面だけ Log.warn する口（ViewCtx#warnOnce の実機の形）。
     /// View は純粋なので、効果は Log.warn と同じく `unsafe IO` で隠す。
@@ -234,7 +233,7 @@ pub mod App {
         remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})],
         // 物理・当たり判定を実時間でなく固定量子で進めたいゲームの刻み幅（秒）。None = 可変 dt
         // のまま（既定・全既存ゲームはこちら）。withFixedStep で有効化する（詳細は同関数を参照）。
-        fixedStep = Option[Float64],
+        fixedStep = Option[Float64], physics = Option[App.Internal.Physics.Hook[w]], // physics = addPhysics2d の物理の step（物理だけの貯めで回す）
         // 次のコマの World を別のスレッドで進めながら、1 つ前の World を描くか（withPipelinedRendering）。
         pipelinedRendering = Bool,
         // 遊びの時計（addClock で宣言）を 1 フレームぶん進める関数の列・追加順。引数は実時間の dt。
@@ -313,7 +312,7 @@ pub mod App {
           remoteRender = None,
           shot = None,
           remoteHandlers = Nil,
-          fixedStep = None,
+          fixedStep = None, physics = None,
           pipelinedRendering = false,
           clocks = Nil,
           backgroundSteps = Nil,
@@ -665,8 +664,10 @@ pub mod App {
     /// 規則の出来事で音を鳴らすなら、World の欄は Emit.Events にして audio は Emit.since で読む
     /// （出来事の欄を刻みごとに置き換えると、刻みが 0 回のフレームで前の音がもう一度鳴る）。
     /// 呼ばなければ現行の可変 dt のまま挙動は変わらない。
-    pub def withFixedStep(dtSeconds: Float64, app: App[w, ef]): App[w, ef] =
-        App.App({ fixedStep = Some(dtSeconds) | rec(app) })
+    pub def withFixedStep(dtSeconds: Float64, app: App[w, ef]): App[w, ef] = App.App({ fixedStep = Some(dtSeconds) | rec(app) })
+
+    /// World の欄の PhysicsWorld2d を、clockOf の遊びの時計で貯めた固定刻みで系の後に 0〜5 回 step し、刻みごとの出来事を onEvents へ渡す（withFixedStep の後に呼ぶ・ポーズで止まる・docs/physics.md）。
+    pub def addPhysics2d(spec: App.Internal.Physics.Spec2d[w, c], app: App[w, ef]): App[w, ef] = App.Internal.Physics.add2d(spec, app)
 
     /// 実機のループで、次のコマの World を別のスレッドで進めながら、1 つ前の World を描いて画面へ出す（Bevy の pipelined rendering と同じ考え）。
     /// 進める時間が描く時間（と GPU を待つ時間）の陰に隠れる。代わりに、入力が画面に出るまでが 1 コマ遅れ、
@@ -1042,12 +1043,12 @@ pub mod App {
 
     /// withFixedStep がフレームをまたいで持ち回す状態（持ち越し秒 + 未消費エッジ）。
     /// 可変 dt（fixedStep = None）のゲームでは常に初期値のまま動かない。
-    /// real は実時間の時計（advanceFrame が毎フレーム進め、Frame#realNow に置く）。
-    pub type alias StepState = { carry = Float64, pending = PendingEdges, real = Clock.Clock[Clock.Real] }
+    /// real は実時間の時計（advanceFrame が毎フレーム進め、Frame#realNow に置く）。physicsCarry は addPhysics2d の物理の貯め（遊びの時計のナノ秒・跳んだコマで 0）。
+    pub type alias StepState = { carry = Float64, pending = PendingEdges, real = Clock.Clock[Clock.Real], physicsCarry = Int64 }
 
     /// 起動直後の StepState（貯金ゼロ・未消費エッジなし）。
     pub def freshStepState(): StepState =
-        { carry = 0.0, pending = App.Internal.Frame.noPending(), real = Clock.start() }
+        { carry = 0.0, pending = App.Internal.Frame.noPending(), real = Clock.start(), physicsCarry = 0i64 }
 
     /// 1 実フレームぶんの updateSystems 適用。fixedStep 未指定なら現行どおり frame を 1 回
     /// そのまま流すだけ（挙動不変・pending も動かない）。指定していれば fixedSteps で回数を

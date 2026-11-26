@@ -9,8 +9,8 @@
 |---|---|
 | ホイールの生 delta を目盛りにまとめる | InputMap（wheelSteps） |
 | 重なり判定・物理（2D） | Collision / Physics2D |
-| 2D の剛体を積む・転がす・押し合う（円・箱・凸多角形・摩擦・跳ね返り・眠り。JVM と wasm で同じ結果・巻き戻せる） | PhysicsWorld2d + RigidBody2d + Collider2d（docs/physics.md） |
-| 2D の剛体が触れた・離れた・領域に入った・出たを読む（合わさる積み物・ゴールの領域） | CollisionEvent2d・SensorEvent2d（PhysicsWorld2d.events） |
+| 2D の剛体を積む・転がす・押し合う（円・箱・凸多角形・摩擦・跳ね返り・眠り。JVM と wasm で同じ結果・巻き戻せる） | PhysicsWorld2d + RigidBody2d + Collider2d・App.addPhysics2d で回す（docs/physics.md） |
+| 2D の剛体が触れた・離れた・領域に入った・出たを読む（合わさる積み物・ゴールの領域） | CollisionEvent2d・SensorEvent2d（App.addPhysics2d の onEvents で受けて Emit.Events に積む） |
 | 2D の剛体の世界へ光線を飛ばす・点の下の体を引く | PhysicsWorld2d.castRay / queryPoint |
 | 剛体の摩擦・跳ね返り・密度を名前で決め、Doc の読み直しで効かせる | PhysicsMaterial + PhysicsWorld2d.withMaterials（Doc は PhysicsDoc2d） |
 | 3D の部屋を一人称で歩く（壁で止まる・段差を上る・坂・落ちる・扉に押される） | CharacterBody3d.moveAndSlide（箱は engine の CollisionShape3d.boxOfNode → CollisionWorld3d.build・docs/scene3d.md の「一人称で歩く」） |

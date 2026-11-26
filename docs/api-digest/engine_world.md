@@ -131,7 +131,7 @@
 - 負方向・正方向のキーの押し下げを -1 / 0 / +1 にまとめる（両押しは打ち消して 0）。
   `pub def axis(negative: {negative = GameEngine.Key}, positive: {positive = GameEngine.Key}, frame: Frame): Float64`
 - view / hudView が受け取る「この 1 フレームの見え方」。atlas は文字描画用の既定フォント、
-  `pub type alias ViewCtx = { atlas = FontAtlas, fontOf = String -> FontAtlas, visible = Rect2.Rect2, warnOnce = String -> Unit, diagnostics = Option[FrameDiagnostics.Diagnostics], display = Display.Display, preload3d = Scene3d.PreloadProgress }`
+  `pub type alias ViewCtx = { atlas = FontAtlas, fontOf = String -> FontAtlas, visible = Rect2.Rect2, warnOnce = String -> Unit, diagnostics = Option[FrameDiagnostics.Diagnostics], display = Display.Display, preload3d = Scene3d.PreloadProgress, fixedAlpha = Float64 }`
 - ヘッドレス描き出しから view を呼ぶときの ViewCtx。画面全体が見えている扱いにする。
   `pub def viewCtxOf(atlas: FontAtlas, design: Vec2.Vec2): ViewCtx`
 - viewCtxOf の複数フォント版。fontOf には実機と同じ名前で引ける関数を渡す
@@ -143,7 +143,7 @@
 - 生成したドット絵アトラス 1 枚ぶんの受け渡し。
   `pub type alias AtlasUpload = { texture = String, key = String, baked = PxSpriteAtlas.Baked }`
 - App の中身（欄の意味は右の // コメント）。ゲームからは読まず、ビルダー（addSystem / withView など）で組む。
-  `pub type alias Rec[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], reloadPaths = Option[List[String]], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> Render.PassPlan \ ef, postStack = Option[App.Internal.Paint.PostInput[w] -> App.Internal.Paint.FramePlan \ ef], screenClear = Color, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], letterboxView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Table \ ef], staticLayers = Option[w -> List[StaticLayerSpec]], preload3d = Option[Preload3d[w]], autoPreload3d = AutoPreload3d, tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], shot = Option[w -> String \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64], pipelinedRendering = Bool, clocks = List[(Float64, w) -> w], backgroundSteps = List[(LoadProgress.DecodeBudget, Float64, w) -> App.Internal.BackgroundLoad.StepResult[w] \ {IO, Fs.FileRead}], decodeBudget = w -> LoadProgress.DecodeBudget, loadWaitView = Option[(Option[LoadProgress.LoadWait], w) -> w], loadWaitStyle = w -> LoadWaitStyle, loadingIndicator = LoadingIndicator, loadGate = Option[w -> List[String]], loadWaitCancelKeys = Option[Set[GameEngine.Key]], cursor = Option[w -> CursorSpec], fullscreen = Option[w -> Bool], mouseCapture = Option[w -> Bool], diagnostics = Bool, outputs = List[Output[w]], starts = List[Start[w]], shots = List[Start[w]], flow = Flow.Table[w], fingerprint = Option[w -> String], summaryMask = w -> w }`
+  `pub type alias Rec[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], reloadPaths = Option[List[String]], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> Render.PassPlan \ ef, postStack = Option[App.Internal.Paint.PostInput[w] -> App.Internal.Paint.FramePlan \ ef], screenClear = Color, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], letterboxView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Table \ ef], staticLayers = Option[w -> List[StaticLayerSpec]], preload3d = Option[Preload3d[w]], autoPreload3d = AutoPreload3d, tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], shot = Option[w -> String \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64], physics = Option[App.Internal.Physics.Hook[w]], pipelinedRendering = Bool, clocks = List[(Float64, w) -> w], backgroundSteps = List[(LoadProgress.DecodeBudget, Float64, w) -> App.Internal.BackgroundLoad.StepResult[w] \ {IO, Fs.FileRead}], decodeBudget = w -> LoadProgress.DecodeBudget, loadWaitView = Option[(Option[LoadProgress.LoadWait], w) -> w], loadWaitStyle = w -> LoadWaitStyle, loadingIndicator = LoadingIndicator, loadGate = Option[w -> List[String]], loadWaitCancelKeys = Option[Set[GameEngine.Key]], cursor = Option[w -> CursorSpec], fullscreen = Option[w -> Bool], mouseCapture = Option[w -> Bool], diagnostics = Bool, outputs = List[Output[w]], starts = List[Start[w]], shots = List[Start[w]], flow = Flow.Table[w], fingerprint = Option[w -> String], summaryMask = w -> w }`
 - 初期 World だけを持つ空の App。絵はまだ無い（withView で繋ぐまで何も描かない）。
   `pub def make(init: w): App[w, ef]`
 - 初期 World を design 解像度（project.json の designWidth/Height）から組む入口。
@@ -234,6 +234,8 @@
   `pub def onRequest(path: String, f: (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead}, app: App[w, ef]): App[w, ef]`
 - 物理・当たり判定を固定刻み（dtSeconds 秒）で進める accumulator 方式を有効にする。
   `pub def withFixedStep(dtSeconds: Float64, app: App[w, ef]): App[w, ef]`
+- World の欄の PhysicsWorld2d を、clockOf の遊びの時計で貯めた固定刻みで系の後に 0〜5 回 step し、刻みごとの出来事を onEvents へ渡す（withFixedStep の後に呼ぶ・ポーズで止まる・docs/physics.md）。
+  `pub def addPhysics2d(spec: App.Internal.Physics.Spec2d[w, c], app: App[w, ef]): App[w, ef]`
 - 実機のループで、次のコマの World を別のスレッドで進めながら、1 つ前の World を描いて画面へ出す（Bevy の pipelined rendering と同じ考え）。
   `pub def withPipelinedRendering(app: App[w, {}]): App[w, {}]`
 - World の欄にある遊びの時計（Clock.Clock[c]）を、App が毎フレーム 1 回だけ進めるよう宣言する。
@@ -325,7 +327,7 @@
 - 0 サブステップのフレームで捨てられそうになったエッジのバッファ。エッジは prev との
   `pub type alias PendingEdges = { justPressed = Set[GameEngine.Key], mouseClicked = Bool, mouseClickedButtons = Set[GameEngine.MouseButton], mouseMoved = Bool, wheel = Float64, mouseDelta = Vec2.Vec2 }`
 - withFixedStep がフレームをまたいで持ち回す状態（持ち越し秒 + 未消費エッジ）。
-  `pub type alias StepState = { carry = Float64, pending = PendingEdges, real = Clock.Clock[Clock.Real] }`
+  `pub type alias StepState = { carry = Float64, pending = PendingEdges, real = Clock.Clock[Clock.Real], physicsCarry = Int64 }`
 - 起動直後の StepState（貯金ゼロ・未消費エッジなし）。
   `pub def freshStepState(): StepState`
 - 1 実フレームぶんの updateSystems 適用。fixedStep 未指定なら現行どおり frame を 1 回
@@ -1959,7 +1961,7 @@
   `pub type alias RayHit2d = { id = EntityId, point = Vec2.Vec2, normal = Vec2.Vec2, distance = Float64 }`
 - 既定の設定: 重力 (0, 9.8)・substep 4 回・眠りのしきい 0.01 m/s・0.02 rad/s。
   `pub def settings(): Settings`
-- 空の World。stepSeconds は 1 刻みの秒（App.withFixedStep と同じ値。`App.addPhysics2d`（予定） がこの値と合っているか確かめる）。
+- 空の World。stepSeconds は 1 刻みの秒（App.withFixedStep と同じ値。App.addPhysics2d がこの値と合っているか確かめる）。
   `pub def empty(s: Settings, stepSeconds: Float64): PhysicsWorld2d`
 - 1 刻みの秒。
   `pub def stepSecondsOf(w: PhysicsWorld2d): Float64`
@@ -1974,9 +1976,9 @@
   `pub def insert(id: EntityId, body: RigidBody2d.RigidBody2d, w: PhysicsWorld2d): PhysicsWorld2d`
 - 体を消す（居なければそのまま）。その体の組に removed = true の Stopped を出し（次の刻みの出来事）、近くで眠っている体を起こす。
   `pub def remove(id: EntityId, w: PhysicsWorld2d): PhysicsWorld2d`
-- 1 刻み進める（刻みは empty で決めた秒）。ゲームは呼ばない — `App.addPhysics2d`（予定） が遊びの時計で貯めた固定刻みで呼ぶ（lint-forbid の physics-step-direct）。
+- 1 刻み進める（刻みは empty で決めた秒）。ゲームは呼ばない — App.addPhysics2d が遊びの時計で貯めた固定刻みで呼ぶ（lint-forbid の physics-step-direct）。
   `pub def step(w: PhysicsWorld2d): PhysicsWorld2d`
-- 直前の 1 刻みの出来事（step のたびに入れ替わる）。`App.addPhysics2d`（予定） の onEvents が刻みごとに受け取るので、ゲームの系はふつう読まない。
+- 直前の 1 刻みの出来事（step のたびに入れ替わる）。App.addPhysics2d の onEvents が刻みごとに受け取るので、ゲームの系はふつう読まない。
   `pub def events(w: PhysicsWorld2d): Events`
 - 重心に衝撃（kg·m/s）を掛ける（Dynamic の体だけ・起こす）。set* と同じく 1 回で体の数ぶんの写しがかかるので、
   `pub def applyImpulse(id: EntityId, impulse: Vec2.Vec2, w: PhysicsWorld2d): PhysicsWorld2d`

@@ -1,5 +1,5 @@
 // PhysicsWorld2d — 2D の剛体の物理の World（Box2D の b2World・Rapier の PhysicsPipeline に当たる不変の値）。
-// ゲームの World の欄に 1 つ置き、`App.addPhysics2d`（予定） が遊びの時計で貯めた固定刻みで step する（ゲームは step を呼ばない）。
+// ゲームの World の欄に 1 つ置き、App.addPhysics2d が遊びの時計で貯めた固定刻みで step する（ゲームは step を呼ばない）。
 // 体の id はゲームの EntityId。形は円・箱・凸多角形（8 頂点まで）。関節・CCD・凹んだ形は無い。
 // 単位は m・秒・kg で、y は下が正（画面と同じ向き）。描く時は 1 m あたりの画素を掛ける。
 // 決まり（docs/physics.md）: 同じ入力の World は JVM と wasm で同じビット・足す順によらない・巻き戻しても同じ。
@@ -37,7 +37,7 @@ pub mod PhysicsWorld2d {
 
     def data(w: PhysicsWorld2d): Data = match w { case WorldOf.WorldOf(d) => d }
 
-    /// 空の World。stepSeconds は 1 刻みの秒（App.withFixedStep と同じ値。`App.addPhysics2d`（予定） がこの値と合っているか確かめる）。
+    /// 空の World。stepSeconds は 1 刻みの秒（App.withFixedStep と同じ値。App.addPhysics2d がこの値と合っているか確かめる）。
     /// 刻みを World が持つので、step は dt を受けない（可変の dt で物理を進められない）。
     pub def empty(s: Settings, stepSeconds: Float64): PhysicsWorld2d =
         let step = if (stepSeconds > 0.0 and PhysicsWorld2d.Internal.Data.isFinite(stepSeconds)) stepSeconds
@@ -203,7 +203,7 @@ pub mod PhysicsWorld2d {
 
     // ── 1 刻み ──
 
-    /// 1 刻み進める（刻みは empty で決めた秒）。ゲームは呼ばない — `App.addPhysics2d`（予定） が遊びの時計で貯めた固定刻みで呼ぶ（lint-forbid の physics-step-direct）。
+    /// 1 刻み進める（刻みは empty で決めた秒）。ゲームは呼ばない — App.addPhysics2d が遊びの時計で貯めた固定刻みで呼ぶ（lint-forbid の physics-step-direct）。
     /// 中で NaN・無限大になった体は消し、removed = true の Stopped を出して 1 回言う。
     pub def step(w: PhysicsWorld2d): PhysicsWorld2d =
         let (stepped, broken) = PhysicsWorld2d.Internal.Step.step(data(w));
@@ -218,7 +218,7 @@ pub mod PhysicsWorld2d {
                               pending = Nil | d })
         }
 
-    /// 直前の 1 刻みの出来事（step のたびに入れ替わる）。`App.addPhysics2d`（予定） の onEvents が刻みごとに受け取るので、ゲームの系はふつう読まない。
+    /// 直前の 1 刻みの出来事（step のたびに入れ替わる）。App.addPhysics2d の onEvents が刻みごとに受け取るので、ゲームの系はふつう読まない。
     pub def events(w: PhysicsWorld2d): Events = data(w)#events
 
     // ── 外から動かす（World を最後に） ──
