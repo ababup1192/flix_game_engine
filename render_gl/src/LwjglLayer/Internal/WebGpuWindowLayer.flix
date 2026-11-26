@@ -23,8 +23,9 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
     import java.lang.System
     import java.lang.Throwable
     import java.nio.ByteBuffer
+    import javax.imageio.ImageIO
     use LwjglLayer.{announceFixedDt, applyFullscreen, applyMouseCaptured, closeAudio, cursorModeOf, frameShotLimit,
-                    handleAudio, handleFrameClock, handleLoadProgress, handleTasks, openAudio, openCursors, saveAnnotationWith}
+                    handleAudio, handleFrameClock, handleLoadProgress, handleTasks, isNativeImage, openAudio, openCursors, saveAnnotationWith}
     use RenderPaint.Internal.WebGpuPaint
 
     /// 開いたウィンドウ。surface = 画面へ出す描き先（隠して起動した時は None）・format = その形式。
@@ -397,8 +398,18 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
     }
 
     /// 最後に描いたコマ（中間の texture）を左上原点の RGBA の PNG に書く（フォルダが無ければ作る）。
-    // WhyNot: imageOf の BufferedImage を ImageIO で書かない — macOS の native image には AWT（libawt）が無く、撮る口が落ちる。
+    /// JVM では ImageIO・native image では stb_image_write で書く（画素は同じ）。
+    // WhyNot: JVM でも stb_image_write で書かない — 画素が同じでも PNG のバイトが変わり、gl-capture の基準（SHA の一覧）と
+    // 1 枚も合わなくなる。基準の絵の無い機械では画素で比べる相手も置かれず、門が通らない。
     def writeShot(ps: PresentState, path: String): Unit \ IO =
+        let file = new File(path);
+        let parent = file.getParentFile();
+        if (not Object.isNull(parent)) discard parent.mkdirs() else ();
+        if (isNativeImage()) writeShotStb(ps, path)
+        else discard ImageIO.write(frameImage(ps), "png", file)
+
+    // WhyNot: native image で ImageIO を使わない — macOS の native image には AWT（libawt）が無く、撮る口が落ちる。
+    def writeShotStb(ps: PresentState, path: String): Unit \ IO =
         let (w, h) = Array.get(0, ps#size);
         let stride = w * 4;
         let pixels = ByteBuffer.allocateDirect(stride * h);
@@ -408,9 +419,6 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
         let topDownAt = MemoryUtil.memAddress(topDown);
         List.forEach(y -> MemoryUtil.memCopy(bottomUpAt + Int32.toInt64((h - 1 - y) * stride), topDownAt + Int32.toInt64(y * stride), Int32.toInt64(stride)),
                      List.range(0, h));
-        let file = new File(path);
-        let parent = file.getParentFile();
-        if (not Object.isNull(parent)) discard parent.mkdirs() else ();
         discard STBImageWrite.stbi_write_png(path, w, h, 4, topDown, stride);
         MemoryUtil.memFree(topDown)
 
