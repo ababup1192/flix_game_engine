@@ -46,7 +46,7 @@ allowed-tools: Read, Grep, Glob, Bash
 - [ ] 5. lib/ を消したコピーで外部 fetch 検証（fpkg と toml に加え、GL の層の jar `fge-gl-<ハッシュ>.jar` も置き場の Release から取れて build と run が通るか）
 ```
 
-手元の `make release` は release-guard → `sync` → `test-release`（全量ゲート・`make test ALL=1 JOBS=6` と同じ）→ `gl-parity` を通して
+手元の `make release` は release-guard → `sync` → `test-release`（全量ゲート・`make test ALL=1 JOBS=6` と同じ）→ `gl-parity` → `web-load-check`（3D のブラウザ版が書き出せて読めるか）→ `go-test-full` を通して
 印を書くだけで、公開はしない。CI は、印の版が `VERSION` と同じか・印の commit から HEAD までの差が印だけか・
 タグがまだ無いかを見て（`make release-marker-check`）、`sync` → `gl-jar-publish` → build-pkg → `bundle-zip` → `gh release create` を
 流す。tag は印を載せた commit に付く。2 の後に 1 行でも変えたら止まるので、2 からやり直す。

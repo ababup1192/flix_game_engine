@@ -173,7 +173,20 @@ func TestEngineWorldSrcSkipsOtherLayers(t *testing.T) {
 		"make sync-engine-full",
 		"make sync-engine-full-web",
 		"make test JOBS=6 PKGS='engine_world hd2d-starter hd2d_town retro3d-horror-starter rpg-starter sound-novel-starter tidepool-starter'",
+		"make web-load-check",
 	})
+}
+
+// 3D のブラウザ版の門は、engine の 3D・GL の層・ブラウザ版の束・3D のテンプレートのどれを触っても流れ、2D のテンプレートだけでは流れない。
+func TestWebLoadCheckFollowsThreeDAndWebChanges(t *testing.T) {
+	for _, f := range []string{"engine/src/scene3d/Texture3d.flix", "render_gl/src/Render3dWgsl.flix", "engine_web/teavm/java/fge/teavmfix/Rewrite.java", "templates/retro3d-horror-starter/src/Game.flix"} {
+		if p := plan(t, env, Options{}, files(f)...); !has(runIDs(p), "web-load-check") {
+			t.Errorf("%s: run %v", f, lines(p))
+		}
+	}
+	if p := plan(t, env, Options{}, files("templates/rpg-starter/src/Battle.flix")...); has(runIDs(p), "web-load-check") {
+		t.Errorf("rpg-starter: run %v", lines(p))
+	}
 }
 
 // T3 で手で流す門（外のリポ・基準の版）は理由つきで別の欄に出る。
