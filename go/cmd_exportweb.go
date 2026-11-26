@@ -234,8 +234,11 @@ func finishExport(out, errOut *strings.Builder, o exportWebOptions, c exportConf
 	b.Checks = &checks
 	g := exportGateOf(newWebSizeTable(p.Out), b, c.Budget)
 	v := exportVerdictOf(!g.green(), o.Draft, c.Budget)
+	if c.Shaders.Missing {
+		b.Draft, b.DraftReasons = true, draftReasonsOf(nil, c.Shaders)
+	}
 	if v == exportDraft {
-		b.Draft, b.DraftReasons = true, g.Red
+		b.Draft, b.DraftReasons = true, draftReasonsOf(g.Red, c.Shaders)
 	}
 	var err error
 	// WhyNot: 確かめの結果を書き出し先の外（report）に置かない — gh-pages の根や play/ に写したフォルダを web-check が Chrome 無しで読めなくなる。
@@ -250,7 +253,7 @@ func finishExport(out, errOut *strings.Builder, o exportWebOptions, c exportConf
 			g = after
 			v = exportVerdictOf(true, o.Draft, c.Budget)
 			if v == exportDraft {
-				b.Draft, b.DraftReasons = true, g.Red
+				b.Draft, b.DraftReasons = true, draftReasonsOf(g.Red, c.Shaders)
 				if hash, err = writeWebPageMeta(p, *b, w.TeavmCore); err != nil {
 					return 0, exportFail(1, err)
 				}
@@ -309,4 +312,13 @@ func exportStopText(out string, g webGate) string {
 	writeWebGateAdvice(&w, g.Advice, "")
 	w.WriteString("  作業中に開くだけなら --draft（web-check が拒む draft のマーカーが付く）\n")
 	return w.String()
+}
+
+// draftReasonsOf は draft の理由（門の赤 red と、記録の無い 3D のシェーダー）。
+func draftReasonsOf(red []string, shaders shaderBakePlan) []string {
+	reasons := append([]string{}, red...)
+	if shaders.Missing {
+		reasons = append(reasons, shaderVariantsMissingReason)
+	}
+	return reasons
 }

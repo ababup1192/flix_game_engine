@@ -114,6 +114,11 @@ func copyAny(src, dst string) error {
 
 // runLogged は dir で cmd を流し、出力を log へ書く（echo なら画面にも）。終わりの番号を返す。
 func runLogged(dir, log string, echo bool, name string, args ...string) int {
+	return runLoggedWith(dir, log, echo, nil, name, args...)
+}
+
+// runLoggedWith は runLogged の、子の環境変数を env にする版（nil なら今のプロセスの物）。
+func runLoggedWith(dir, log string, echo bool, env []string, name string, args ...string) int {
 	if err := os.MkdirAll(filepath.Dir(log), 0o755); err != nil {
 		ewLogf("%s を作れない: %v", filepath.Dir(log), err)
 		return 2
@@ -130,6 +135,7 @@ func runLogged(dir, log string, echo bool, name string, args ...string) int {
 	}
 	c := exec.Command(name, args...)
 	c.Dir = dir
+	c.Env = env
 	c.Stdout, c.Stderr = w, w
 	if err := c.Run(); err != nil {
 		var ee *exec.ExitError
@@ -216,6 +222,7 @@ func cleanupExportWork(p exportWebPaths, keep bool) {
 	os.RemoveAll(p.Project)
 	os.Remove(filepath.Join(p.Work, "rewritten.jar"))
 	os.Remove(filepath.Join(p.Work, "embedded.jar"))
+	os.Remove(filepath.Join(p.Work, "shaders.jar"))
 	os.RemoveAll(filepath.Join(p.Work, "wasm"))
 }
 
@@ -282,6 +289,15 @@ func buildWasm(o exportWebOptions, c exportConfig) (wasmBuild, *exportFailure) {
 				tailFile(embedLog, 20), embedLog)
 		}
 		rewritten = embeddedJar
+	}
+
+	if c.Shaders.Bake {
+		shadersJar := filepath.Join(p.Work, "shaders.jar")
+		ewLogf("②''' 3D のシェーダーの字の表を作って wasm へ埋め込む（記録 %s）", c.Shaders.Variants)
+		if f := embedShaderLibrary(c, asm, rewritten, shadersJar); f != nil {
+			return wasmBuild{}, f
+		}
+		rewritten = shadersJar
 	}
 
 	wasmDir := filepath.Join(p.Work, "wasm")

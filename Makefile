@@ -1078,14 +1078,32 @@ $(WEB_TOOLS_JAR): $(WEB_TOOLS_SRC) $(WEB_TOOLS_DEPS) $(WEB_JAR)
 		-cp "$(subst $(eval) ,:,$(WEB_TOOLS_DEPS)):$(WEB_JAR)" $(WEB_TOOLS_SRC)
 	$(call JDK,jar) --create --file $@ --date=2000-01-01T00:00:00Z -C build/web-jar/tools-classes .
 
-.PHONY: web-jar sync-engine-full-web sync-engine-full-web-unlocked
+.PHONY: web-jar sync-engine-full-web sync-engine-full-web-unlocked shader-bake-jar
 web-jar: $(WEB_JAR) $(WEB_TOOLS_JAR) ### | ブラウザ版の束が使う fge-web と fge-web-tools の jar を組む
+
+# 書き出しがゲームの記録（web/shader-variants.json）から 3D のシェーダーの字の表を作る道具（tools/shader-bake・入口 ShaderBake.main）。
+# engine と render_gl の木に道具の 1 ファイルを足して build-jar で組む（Flix が入口から辿れない物を落とすので jar は数 MB）。
+# WhyNot: ゲームの fatjar に別の入口を足して流さない — Flix は入口から辿れない関数を jar に入れず、足すと build-fatjar を 2 回流す。
+# WhyNot: jar-dependencies の natives を Maven Central へ取りに行かない — engine_full の lib/external に取ってある物を写して使う。
+SHADER_BAKE_DIR := build/shader-bake
+SHADER_BAKE_JAR := build/web-jar/shader-bake-$(VERSION).jar
+shader-bake-jar: gl-jar ### | 書き出しが使う 3D のシェーダーの表を作る道具（build/web-jar/shader-bake-<版>.jar）を組む
+	@rm -rf $(SHADER_BAKE_DIR)/src && mkdir -p $(SHADER_BAKE_DIR)/src $(SHADER_BAKE_DIR)/lib/external build/web-jar
+	@for pkg in $(ENGINE_DIR) $(RENDER_GL_DIR) tools/shader-bake; do \
+		$(LINK_FLIX) "$(CURDIR)/$$pkg/src" "$(SHADER_BAKE_DIR)/src/$$(basename "$$pkg")" || exit 1; \
+	done
+	@cp $(ENGINE_FULL_TOML_SRC) $(SHADER_BAKE_DIR)/flix.toml
+	@rm -f $(SHADER_BAKE_DIR)/lib/external/*.jar $(SHADER_BAKE_DIR)/packages.lock
+	@for j in $(ENGINE_FULL_DIR)/lib/external/*.jar; do [ -f "$$j" ] && cp -p "$$j" $(SHADER_BAKE_DIR)/lib/external/; done; \
+	 rm -f $(SHADER_BAKE_DIR)/lib/external/fge-gl-*.jar; cp -p $(GL_JAR) $(SHADER_BAKE_DIR)/lib/external/
+	cd $(SHADER_BAKE_DIR) && "$(FLIX)" build-jar --entrypoint ShaderBake.main
+	@cp $(SHADER_BAKE_DIR)/artifact/shader-bake.jar $(SHADER_BAKE_JAR)
 
 # 鍵の内側で流す理由は sync-engine-full と同じ（jar の組み直しも鍵の内側に入る）。
 sync-engine-full-web: ### | ブラウザ版の束（engine_full + engine_web）を build/engine_full_web に組み、置き場へ入れる（bin/fge export-web が使う）
 	@bin/fpkg-store.sh locked $(MAKE) --no-print-directory sync-engine-full-web-unlocked
 
-sync-engine-full-web-unlocked: gl-jar web-jar ### | sync-engine-full-web の中身（置き場の鍵を取らない。直に打たない）
+sync-engine-full-web-unlocked: gl-jar web-jar shader-bake-jar ### | sync-engine-full-web の中身（置き場の鍵を取らない。直に打たない）
 	@rm -rf $(WEB_FULL_DIR)/src && mkdir -p $(WEB_FULL_DIR)/src $(WEB_FULL_DIR)/lib/external
 	@# engine_full にだけある物（src/full: VideoOut・GpuShot）も入れる。ゲームの src がそれを use するので、無いと型検査で止まる。
 	@for pkg in $(ROOT_SRC_PKGS) $(WEB_DIR) $(ENGINE_FULL_DIR)/src/full; do \
@@ -1105,7 +1123,7 @@ sync-engine-full-web-unlocked: gl-jar web-jar ### | sync-engine-full-web の中�
 	cd $(WEB_FULL_DIR) && "$(FLIX)" build-pkg
 	@# WhyNot: jar もエントリに入れる — make gl-jar・web-jar が build/ の jar を組み直している間に、別のゲームの書き出しが数分後に tools の jar を読む。
 	@entry=$$(bin/fpkg-store.sh put engine_full_web $(VERSION) $(WEB_FULL_DIR)/artifact/package.fpkg $(WEB_FULL_DIR)/flix.toml \
-	   $(GL_JAR) $(WEB_JAR) $(WEB_TOOLS_JAR)) || exit 1; \
+	   $(GL_JAR) $(WEB_JAR) $(WEB_TOOLS_JAR) $(SHADER_BAKE_JAR)) || exit 1; \
 	 echo "[sync-engine-full-web] 置き場 $$entry"
 	@bin/fpkg-store.sh gc
 

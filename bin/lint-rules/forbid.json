@@ -445,10 +445,18 @@
     {
       "id": "render3d-shader-source-direct",
       "suffixes": [".flix"],
-      "prefixes": ["render_gl/src/Render3d/", "render_gl/src/Render3d.flix"],
+      "prefixes": ["render_gl/src/Render3d/", "render_gl/src/Render3d.flix", "engine_web/src/"],
       "rawLine": true,
       "pattern": "(?:Render3d(?:Glsl|Wgsl)\\.\\w+Source(?:For)?|Render3d(?:Glsl|Wgsl)\\.materialFragmentTemplate|ShaderAst\\.(?:Glsl|Wgsl)\\.(?:fragment|vertex|print))\\(|use Render3d(?:Glsl|Wgsl)\\.\\{[^}]*(?:Source|materialFragmentTemplate)|use ShaderAst\\.(?:Glsl|Wgsl)\\.",
       "hint": "3D の描き手はシェーダーの字を直に作らない（ブラウザの wasm に木と printer が残る）。字は描き手が持つ API（Render3d.ShaderLibrary の glslOrBug・optionalWgsl・materialGlsl など）から鍵（Render3d.ShaderSourceKey）で引く。新しい pass は ShaderSourceKey に case を足し、Render3dShaders.makeRuntimeProvider の match に足す。PC の既定の API を作るのは Render3d.makeRenderer と Render3d.WebGpuRenderer.createWith だけ"
+    },
+    {
+      "id": "web-shader-runtime-provider",
+      "suffixes": [".flix"],
+      "prefixes": ["engine_web/src/"],
+      "rawLine": true,
+      "pattern": "(?:Render3dShaders\\.makeRuntimeProvider|Render3d\\.makeRenderer|Render3d\\.WebGpuRenderer\\.(?:create|createWith|makeScenes))\\(",
+      "hint": "ブラウザの束からシェーダーの字をその場で作る道へ届かない（wasm に ShaderAst の木と printer が残る）。3D の描き手は Render3d.makeRendererWith と Render3d.WebGpuRenderer.makeScenesWithPlatformImages に、書き出しの時に作った表の API（WebLayer.Internal.WebShaderLibrary.provider）を渡して作る"
     },
     {
       "id": "scene3d-linear-color-flag",
