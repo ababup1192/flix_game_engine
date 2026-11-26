@@ -23,15 +23,15 @@ mod Render3d.TestGlslPinned {
 
     @Test
     def testLightSourceIsUnchanged(): Unit \ Assert =
-        Assert.assertEq(expected = "6497ac6aab7e6049298484a7385ca2ecb37b87964787e9fd207a9a29da5ca494", sha256(Render3dGlsl.lightSource()))
+        Assert.assertEq(expected = "edaff50c79ef454616f14e6c9044f8002911b7742f26f9ddc285aaf462acde27", sha256(Render3dGlsl.lightSource()))
 
     @Test
     def testSolidMaterialFragmentsAreUnchanged(): Unit \ Assert =
-        Assert.assertEq(expected = "888ffa1788b758d6a556a692cb5efcaa013ec2f9230fc84df00b83b12e8c501e" :: "888ffa1788b758d6a556a692cb5efcaa013ec2f9230fc84df00b83b12e8c501e" :: "4ea39b66f3de36fec0e91f48ed30f51c89d296ab2ee54f4aed3c1007031def06" :: "1f7b227e28e95dee5856791232959b0239c5c59d4bba1657f808e0b2132e430e" :: Nil, fragments(solidGlsl()))
+        Assert.assertEq(expected = "e6363aa3861f102b7c2f805e3efeb72bde52a11943f6a60a026cce76400540be" :: "e6363aa3861f102b7c2f805e3efeb72bde52a11943f6a60a026cce76400540be" :: "5071b783b34ba59ebd48aaf429a96f04849a7571613104a8fb765c3f57cb1ce1" :: "0a2e49f31d19a9d84d56b75cc855086294b69a2251df6a346a7374940008a054" :: Nil, fragments(solidGlsl()))
 
     @Test
     def testMipMaterialFragmentsAreUnchanged(): Unit \ Assert =
-        Assert.assertEq(expected = "600839aac45ebc0b128f0c9e29fd1074c337204b275100638b465a245e5e0fa4" :: "600839aac45ebc0b128f0c9e29fd1074c337204b275100638b465a245e5e0fa4" :: "8432532598b2f303f8599c62cfa35e703be3e595ca7e812600a418f5c4e026bd" :: "90b2099a4e6ac36efacfb66a1eacf80884b61b89a0001d6374941a9003da9934" :: Nil, fragments(mipGlsl()))
+        Assert.assertEq(expected = "b5f9a828836e6b6904fd4840d3f2740991fa924adbb47acb04557787fc514b13" :: "b5f9a828836e6b6904fd4840d3f2740991fa924adbb47acb04557787fc514b13" :: "8d3daa3ec0a26f2e352605aa5560509da48eb20dab309c2de07e747bc745951f" :: "4a791d4cda15ae37c84b4d80725737f27b15a9f248216e509e49ed57f121374f" :: Nil, fragments(mipGlsl()))
 
     @Test
     def testMaterialVertexSourcesAreUnchanged(): Unit \ Assert =

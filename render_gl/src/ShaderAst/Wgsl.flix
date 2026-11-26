@@ -3,7 +3,7 @@
 // ビットの演算は単項の式しか取らない（中の二項は括弧で包む）・&& と || を括弧なしで混ぜられない・比べは続けて書けない・
 // 決まった値の配列は使う関数の頭の var（実行時の添字で const の配列を引けない実装がある）。
 pub mod ShaderAst.Wgsl {
-    use ShaderAst.{Node, Stmt, Def, Ty, BinOp, BuiltinFn, Layout, Body, Intrinsic, Lang, Expr, Definition}
+    use ShaderAst.{Node, Stmt, Def, Ty, BinOp, BuiltinFn, Layout, Intrinsic, Lang, Expr, Definition}
 
     /// 型の字。
     pub def tyName(t: Ty): String = match t {
@@ -24,7 +24,7 @@ pub mod ShaderAst.Wgsl {
         case Ty.Void           => ShaderAst.invalidOrBug("ShaderAst.Wgsl: void の値は無い")
     }
 
-    /// 組み込みの関数の名前。
+    /// 組み込みの関数の名前（言語ごとに引数の違う Clamp・TextureSize・TargetDepthTexel の形は builtin が書く）。
     def builtinName(fun: BuiltinFn): String = match fun {
         case BuiltinFn.Floor       => "floor"
         case BuiltinFn.Abs         => "abs"
@@ -42,8 +42,7 @@ pub mod ShaderAst.Wgsl {
         case BuiltinFn.Determinant => "determinant"
         case BuiltinFn.Clamp       => "clamp"
         case BuiltinFn.Mix         => "mix"
-        case BuiltinFn.TextureSize => "textureDimensions"
-        case BuiltinFn.TargetDepthTexel => "textureLoad"
+        case _                     => ShaderAst.invalidOrBug("ShaderAst.Wgsl: 組み込みの関数の名前が無い")
     }
 
     /// 式の字。
@@ -51,13 +50,7 @@ pub mod ShaderAst.Wgsl {
 
     def exprAt(ctx: Int32, n: Node): String =
         let s = raw(n);
-        if (precOf(n) < ctx) "(" + s + ")" else s
-
-    /// WGSL の節の強さ（select は関数の呼び出しの字なので括弧が要らない）。
-    def precOf(n: Node): Int32 = match n {
-        case Node.Select(_, _, _, _) => ShaderAst.atomPrec()
-        case _                       => ShaderAst.precOfNode(n)
-    }
+        if (ShaderAst.precOfNode(Lang.Wgsl, n) < ctx) "(" + s + ")" else s
 
     def args(xs: List[Node]): String = xs |> List.map(exprAt(0)) |> String.intercalate(", ")
 
@@ -125,6 +118,7 @@ pub mod ShaderAst.Wgsl {
         case Node.Intrinsic(k, _)      => intrinsic(k)
         case Node.Global(d, _)         => ShaderAst.nameOf(d)
         case Node.Raw(_, text, _, _, _) => ShaderAst.rawTextOrBug(Lang.Wgsl, text)
+        case Node.CallIn(_, _, name, xs, _, _, _) => name + "(" + args(xs) + ")"
         case Node.Varying(name, _, _)  => "i." + name
     }
 
@@ -151,6 +145,7 @@ pub mod ShaderAst.Wgsl {
         case Stmt.Discard                       => "discard;"
         case Stmt.Eval(e)                       => exprAt(0, e) + ";"
         case Stmt.Emit(e, _)                    => "return " + exprAt(0, e) + ";"
+        case Stmt.Headed(_, head, e)            => head + exprAt(0, e) + ";"
         case _                                  => ShaderAst.invalidOrBug("ShaderAst.Wgsl: if・for は 1 行の文の中に置けない")
     }
 
@@ -180,7 +175,7 @@ pub mod ShaderAst.Wgsl {
 
     /// 関数の本文が直に読む決まった値の配列の (名前, 型, 値)（関数の頭に var で置く）。
     def localArrays(d: Def): List[(String, Ty, List[String])] =
-        ShaderAst.directDeps(d) |> List.filterMap(dep -> match dep {
+        ShaderAst.directDeps(Lang.Wgsl, d) |> List.filterMap(dep -> match dep {
             case Def.ConstArray(name, elem, values) => Some((name, elem, values))
             case _                                  => None
         }) |> List.distinct
@@ -211,7 +206,7 @@ pub mod ShaderAst.Wgsl {
 
     /// roots と、それが辿って使う定義を、使う前に 1 回ずつ並べた字（組む時の検査を通す）。
     pub def print(roots: List[Definition]): String =
-        ShaderAst.checkOrBug(ShaderAst.collectOrBug(roots)) |> List.map(definition) |> ShaderAst.joinParts
+        ShaderAst.checkOrBug(ShaderAst.collectOrBug(Lang.Wgsl, roots)) |> List.map(definition) |> ShaderAst.joinParts
 
     /// varying の欄の字（@location と補間）。
     def varyingField(v: ShaderAst.Varying): String =
@@ -222,12 +217,12 @@ pub mod ShaderAst.Wgsl {
         };
         "    @location(${v#location}) " + interp + v#name + ": " + tyName(v#ty) + ",\n"
 
-    /// frag の入口の字（宣言の字・入口の引数の struct・fs_main）。画素の位置を読む本文は入口の頭で r3d_fragCoord へ写す。
+    /// frag の入口の字（辿った定義・入口の引数の struct・fs_main）。画素の位置を読む本文は入口の頭で r3d_fragCoord へ写す。
     pub def fragment(e: ShaderAst.FragmentEntry): String =
-        let body = ShaderAst.checkEntryOrBug(e#body);
-        let fragPos = ShaderAst.readsFragCoord(body);
-        let facing = ShaderAst.readsFrontFacing(body);
-        e#wgslDeclarations +
+        let defs = ShaderAst.entryDefinitionsOrBug(Lang.Wgsl, e);
+        let fragPos = ShaderAst.readsFragCoord(defs);
+        let facing = ShaderAst.readsFrontFacing(e#body);
+        ShaderAst.joinParts(defs |> List.map(definition)) +
         "struct ${e#inputName} {\n" +
         (if (fragPos) "    @builtin(position) fragPos: vec4f,\n" else "") +
         ShaderAst.joinParts(e#inputs |> List.map(varyingField)) +
@@ -235,9 +230,5 @@ pub mod ShaderAst.Wgsl {
         "};\n" +
         "@fragment fn fs_main(i: ${e#inputName}) -> @location(0) vec4f {\n" +
         (if (fragPos) "    " + ShaderAst.nameOf(ShaderAst.fragCoord()) + " = i.fragPos;\n" else "") +
-        stmts(1, body) + "}\n"
-
-    /// defs だけを並べた字（辿った定義は周りの字が置く）。
-    pub def printOnly(defs: List[Definition]): String =
-        ShaderAst.checkOrBug(defs) |> List.map(definition) |> ShaderAst.joinParts
+        stmts(1, e#body) + "}\n"
 }

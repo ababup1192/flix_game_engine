@@ -2,8 +2,10 @@
 //
 // 式は型を持つ組み立ての関数（add・mulS・dot…）でしか作れない（Expr[t] の t は Float・Vec3 などの型のマーカー。trait が受ける型を絞る）。
 // 関数は名前で集める: 呼んだ関数・読んだ大域の値を辿り、使う前に 1 回ずつ並べる。同じ名前で中身の違う物と、呼ぶ関係の輪は止める。
+// GLSL の uniform の宣言の行は、集めた定義が読む uniform から printer が出す。
 // GLSL と WGSL の意味の違いは printer と組み込み（Intrinsic）にだけ書く。
 // WhyNot: 演算子 + * を使わない — Flix の trait は同じ型どうしの演算しか書けず、vec3 × f32 や mat4 × vec4 を表せない。
+// WhyNot: 型のマーカーを受ける関数に本文を書かない — Flix は型ごとに関数を複製するので、本文は Node を受ける関数へ出し、マーカーの関数は包むだけにする。
 pub mod ShaderAst {
 
     // ── 型 ──
@@ -90,16 +92,18 @@ pub mod ShaderAst {
     /// uniform の読み方の字（base に swizzle を付けて読む。swizzle は空でよい）。
     pub type alias Access = { base = String, swizzle = String }
 
-    /// uniform の読み: name = 名前（鍵）・ty = 型・言語ごとの読む字（None はその言語では宣言しない欄）。
-    pub type alias UniformRef = { name = String, ty = Ty, glsl = Option[Access], wgsl = Option[Access] }
+    /// uniform の読み: name = 名前（鍵）・ty = 型・言語ごとの読む字（None はその言語では宣言しない欄）・
+    /// glslType と length = GLSL の宣言の型の字と配列の長さ（`uniform <glslType> <glsl の base>[length];`）。
+    /// ty が Bool の uniform は GLSL は int（== 1 で読む）・WGSL は f32（> 0.5 で読む）で持つ。
+    pub type alias UniformRef = { name = String, ty = Ty, glsl = Option[Access], wgsl = Option[Access], glslType = String, length = Option[Int32] }
 
-    /// 木の中の uniform の読み（名前・型・GLSL の (base, swizzle)・WGSL の (base, swizzle)）。
+    /// 木の中の uniform の読み（名前・型・GLSL の (base, swizzle)・WGSL の (base, swizzle)・GLSL の宣言の型・配列の長さ）。
     // WhyNot: UniformRef の record のまま持たない — Flix の record は Eq を持たず、同じ名前の定義の中身を比べられない。
-    type alias UniformKey = (String, Ty, Option[(String, String)], Option[(String, String)])
+    type alias UniformKey = (String, Ty, Option[(String, String)], Option[(String, String)], String, Option[Int32])
 
     def keyOf(u: UniformRef): UniformKey =
         let pair = (a: Access) -> (a#base, a#swizzle);
-        (u#name, u#ty, Option.map(pair, u#glsl), Option.map(pair, u#wgsl))
+        (u#name, u#ty, Option.map(pair, u#glsl), Option.map(pair, u#wgsl), u#glslType, u#length)
 
     /// 言語ごとに中身の違う組み込みの式（計画の 2 節の意味の違い）。
     enum Intrinsic with Eq {
@@ -132,6 +136,7 @@ pub mod ShaderAst {
         case Intrinsic(Intrinsic, Ty)
         case Global(Def, Ty)
         case Raw(Option[String], Option[String], Ty, List[Def], Bool)
+        case CallIn(String, List[Node], String, List[Node], Ty, List[Def], Bool)
         case Varying(String, Ty, Interp)
     }
 
@@ -149,14 +154,18 @@ pub mod ShaderAst {
         case Discard
         case Eval(Node)
         case Emit(Node, Bool)
+        case Headed(String, String, Node)
         case RawStmt(String, String)
     }
 
+    /// print する時に初めて作る字（光の式の木の生成のように重い字）と、その字が読む定義（deps）と uniform。
+    pub type alias GeneratedText = { text = String, deps = List[Definition], uniforms = List[UniformRef] }
+
     /// 言語ごとの本文の字（extern 関数）。Text = この字を置く・Outside = 周りの字が定義する（置かない）・Missing = この言語には無い（print すると止める）。
-    /// Generated = (鍵, 字) — print する時に初めて作る字（光の式の木の生成のように重い字）。中身の比べは鍵で済ませる。
+    /// Generated = (鍵, 字) — print する時に初めて作る字。中身の比べは鍵で済ませる。
     pub enum Body {
         case Text(String)
-        case Generated(String, Lazy[String])
+        case Generated(String, Lazy[GeneratedText])
         case Outside
         case Missing
     }
@@ -175,12 +184,43 @@ pub mod ShaderAst {
     /// 言語の本文の字（Generated はここで作る）。Outside は空の字・Missing は None。
     def bodyText(b1: Body): Option[String] = match b1 {
         case Body.Text(text)         => Some(text)
-        case Body.Generated(_, text) => Some(force text)
+        case Body.Generated(_, text) => Some((force text)#text)
         case Body.Outside            => Some("")
         case Body.Missing            => None
     }
 
-    /// extern 関数: 本文は言語ごとの字。deps = 本文が読む定義（先に並べる）・derivative = 微分か暗黙の mip レベルの読みを使うか（一様さの検査が辿る）。
+    /// 生成した本文が読む定義（Generated だけ）。
+    def bodyDeps(b1: Body): List[Def] = match b1 {
+        case Body.Generated(_, text) => (force text)#deps
+        case _                       => Nil
+    }
+
+    /// 生成した本文が読む uniform（Generated だけ）。
+    def bodyUniforms(b1: Body): List[UniformKey] = match b1 {
+        case Body.Generated(_, text) => (force text)#uniforms |> List.map(keyOf)
+        case _                       => Nil
+    }
+
+    /// 生成した字 text の GeneratedText。deps = candidates のうち名前が字に名前として出てくる物・uniforms = uniforms のうち GLSL の名前が字に出てくる物。
+    pub def generatedText(text: String, candidates: List[Definition], uniforms: List[UniformRef]): GeneratedText =
+        let glslName = (u: UniformRef) -> u#glsl |> Option.map(a1 -> a1#base) |> Option.getWithDefault(u#name);
+        { text = text, deps = candidates |> List.filter(d -> hasWord(nameOf(d), text)), uniforms = uniforms |> List.filter(u -> hasWord(glslName(u), text)) }
+
+    /// 字 text に word が名前として（前後が英数字と _ でない所に）出てくるか。
+    def hasWord(word: String, text: String): Bool =
+        let isPart = (c: Char) -> Char.isLetter(c) or Char.isDigit(c) or c == '_';
+        let n = String.length(text);
+        def searchFrom(start: Int32): Bool = match String.indexOfLeftWithOffset(substr = word, offset = start, text) {
+            case None     => false
+            case Some(at) =>
+                let end = at + String.length(word);
+                let alone = (at == 0 or not isPart(String.charAt(at - 1, text))) and (end >= n or not isPart(String.charAt(end, text)));
+                alone or searchFrom(at + 1)
+        };
+        searchFrom(0)
+
+    /// extern 関数: 本文は言語ごとの字。deps = 本文が読む定義（先に並べる。Generated の本文が読む物は本文が持つ）・
+    /// derivative = 微分か暗黙の mip レベルの読みを使うか（一様さの検査が辿る）。
     pub type alias ExternDef = { name = String, ret = Ty, params = List[Ty], glsl = Body, wgsl = Body, deps = List[Def], derivative = Bool }
 
     /// 決まった値の配列（GLSL は大域の const・WGSL は使う関数の頭の var）。
@@ -216,23 +256,24 @@ pub mod ShaderAst {
     def wrap(n: Node): Expr[t] = ExprData.ExprData(n, None)
 
     def tyOfNode(n: Node): Ty = match n {
-        case Node.Lit(_, t)             => t
-        case Node.Ref(_, t)             => t
-        case Node.Uniform((_, t, _, _)) => t
-        case Node.Bin(_, _, _, t)       => t
-        case Node.Neg(_, t)             => t
-        case Node.Not(_)                => Ty.Bool
-        case Node.Call(_, _, t)         => t
-        case Node.Builtin(_, _, t)      => t
-        case Node.Construct(t, _)       => t
-        case Node.Swizzle(_, _, t)      => t
-        case Node.Index(_, _, t)        => t
-        case Node.Select(_, _, _, t)    => t
-        case Node.Paren(x1)             => tyOfNode(x1)
-        case Node.Intrinsic(_, t)       => t
-        case Node.Global(_, t)          => t
-        case Node.Raw(_, _, t, _, _)    => t
-        case Node.Varying(_, t, _)      => t
+        case Node.Lit(_, t)                   => t
+        case Node.Ref(_, t)                   => t
+        case Node.Uniform((_, t, _, _, _, _)) => t
+        case Node.Bin(_, _, _, t)             => t
+        case Node.Neg(_, t)                   => t
+        case Node.Not(_)                      => Ty.Bool
+        case Node.Call(_, _, t)               => t
+        case Node.Builtin(_, _, t)            => t
+        case Node.Construct(t, _)             => t
+        case Node.Swizzle(_, _, t)            => t
+        case Node.Index(_, _, t)              => t
+        case Node.Select(_, _, _, t)          => t
+        case Node.Paren(x1)                   => tyOfNode(x1)
+        case Node.Intrinsic(_, t)             => t
+        case Node.Global(_, t)                => t
+        case Node.Raw(_, _, t, _, _)          => t
+        case Node.CallIn(_, _, _, _, t, _, _) => t
+        case Node.Varying(_, t, _)            => t
     }
 
     /// 式の型。
@@ -246,27 +287,81 @@ pub mod ShaderAst {
         case Def.Private(name, _, _, _, _)      => name
     }
 
+    // ── 木を辿る ──
+
+    /// 式の節 n の直の子。
+    def childNodes(n: Node): List[Node] = match n {
+        case Node.Bin(_, a1, b1, _)    => a1 :: b1 :: Nil
+        case Node.Neg(a1, _)           => a1 :: Nil
+        case Node.Not(a1)              => a1 :: Nil
+        case Node.Call(_, args, _)     => args
+        case Node.Builtin(_, args, _)  => args
+        case Node.Construct(_, args)   => args
+        case Node.Swizzle(a1, _, _)    => a1 :: Nil
+        case Node.Index(a1, b1, _)     => a1 :: b1 :: Nil
+        case Node.Select(c, a1, b1, _) => c :: a1 :: b1 :: Nil
+        case Node.Paren(a1)            => a1 :: Nil
+        case Node.CallIn(_, ga, _, wa, _, _, _) => ga ::: wa
+        case _                         => Nil
+    }
+
+    /// 文 s が直に持つ式。
+    def stmtNodes(s: Stmt): List[Node] = match s {
+        case Stmt.Decl(_, _, init, _)      => Option.toList(init)
+        case Stmt.Assign(a1, b1)           => a1 :: b1 :: Nil
+        case Stmt.Incr(a1)                 => a1 :: Nil
+        case Stmt.If(c, _, _, _)           => c :: Nil
+        case Stmt.For(_, _, a1, c, _, _)   => a1 :: c :: Nil
+        case Stmt.Return(e)                => Option.toList(e)
+        case Stmt.Eval(e)                  => e :: Nil
+        case Stmt.Emit(e, _)               => e :: Nil
+        case Stmt.Headed(_, _, e)          => e :: Nil
+        case _                             => Nil
+    }
+
+    /// 文 s の中のブロックの文。
+    def stmtChildren(s: Stmt): List[Stmt] = match s {
+        case Stmt.If(_, t, e, _)          => t ::: e
+        case Stmt.For(_, _, _, _, body, _) => body
+        case _                            => Nil
+    }
+
+    /// 式 n の中の節（子が先・n が最後）。
+    def nodesIn(n: Node): List[Node] = (childNodes(n) |> List.flatMap(nodesIn)) ::: n :: Nil
+
+    /// 文 s の中の節（中のブロックの文の物も）。
+    def nodesInStmt(s: Stmt): List[Node] = (stmtNodes(s) |> List.flatMap(nodesIn)) ::: (stmtChildren(s) |> List.flatMap(nodesInStmt))
+
+    /// 式 n の中（n を含む）に p が真の節があるか。
+    def anyNode(p: Node -> Bool, n: Node): Bool = List.exists(p, nodesIn(n))
+
+    /// 文 s の中（ブロックの中の文も）の式に p が真の節があるか。
+    def anyStmt(p: Node -> Bool, s: Stmt): Bool = List.exists(p, nodesInStmt(s))
+
     // ── マーカーごとの型 ──
 
-    /// 型のマーカー t の値の型（引数・局所の変数を作る時に渡す）。
-    enum TyWitnessData[t] { case TyWitnessData(Ty, Option[t]) }
-    pub type alias TyWitness[t] = TyWitnessData[t]
+    /// 型のマーカー t の値の型（引数・局所の変数を作る時に、マーカーの値 Float.Float・Vec3.Vec3 などを渡す）。
+    // WhyNot: マーカーの値を返す関数（float() など）を通さない — Flix の関数の呼び出しは呼ぶ所ごとに効果の受け渡しのコードを生み、
+    //   シェーダーを組む関数の大きさの多くを占める。マーカーの値はコンストラクタで、呼び出しにならない。
+    pub type alias TyWitness[t] = t
 
-    def witness(t: Ty): TyWitness[a] = TyWitnessData.TyWitnessData(t, None)
+    /// マーカー t の値の型。
+    pub trait Marker[t] {
+        pub def tyOfMarker(x: t): Ty
+    }
+    instance Marker[Float] { pub def tyOfMarker(_x: Float): Ty = Ty.F32 }
+    instance Marker[Int] { pub def tyOfMarker(_x: Int): Ty = Ty.I32 }
+    instance Marker[Boolean] { pub def tyOfMarker(_x: Boolean): Ty = Ty.Bool }
+    instance Marker[Vec2] { pub def tyOfMarker(_x: Vec2): Ty = Ty.Vec2 }
+    instance Marker[Vec3] { pub def tyOfMarker(_x: Vec3): Ty = Ty.Vec3 }
+    instance Marker[Vec4] { pub def tyOfMarker(_x: Vec4): Ty = Ty.Vec4 }
+    instance Marker[IVec2] { pub def tyOfMarker(_x: IVec2): Ty = Ty.IVec2 }
+    instance Marker[Mat3] { pub def tyOfMarker(_x: Mat3): Ty = Ty.Mat3 }
+    instance Marker[Mat4] { pub def tyOfMarker(_x: Mat4): Ty = Ty.Mat4 }
+    instance Marker[Tex] { pub def tyOfMarker(_x: Tex): Ty = Ty.Texture2d }
+    instance Marker[DepthTex] { pub def tyOfMarker(_x: DepthTex): Ty = Ty.DepthTexture2d }
 
-    def tyOfWitness(w1: TyWitness[t]): Ty = match w1 { case TyWitnessData.TyWitnessData(t, _) => t }
-
-    pub def float(): TyWitness[Float] = witness(Ty.F32)
-    pub def int(): TyWitness[Int] = witness(Ty.I32)
-    pub def boolean(): TyWitness[Boolean] = witness(Ty.Bool)
-    pub def vec2(): TyWitness[Vec2] = witness(Ty.Vec2)
-    pub def vec3(): TyWitness[Vec3] = witness(Ty.Vec3)
-    pub def vec4(): TyWitness[Vec4] = witness(Ty.Vec4)
-    pub def ivec2(): TyWitness[IVec2] = witness(Ty.IVec2)
-    pub def mat3(): TyWitness[Mat3] = witness(Ty.Mat3)
-    pub def mat4(): TyWitness[Mat4] = witness(Ty.Mat4)
-    pub def depthTexture(): TyWitness[DepthTex] = witness(Ty.DepthTexture2d)
-    pub def texture(): TyWitness[Tex] = witness(Ty.Texture2d)
+    def tyOfWitness(w1: t): Ty with Marker[t] = Marker.tyOfMarker(w1)
 
     // ── 式の組み立て ──
 
@@ -282,12 +377,14 @@ pub mod ShaderAst {
     pub def bool(b1: Bool): Expr[Boolean] = wrap(Node.Lit(if (b1) "true" else "false", Ty.Bool))
 
     /// 名前の読み（引数・局所の変数）。
-    pub def ref(w1: TyWitness[t], name: String): Expr[t] = wrap(Node.Ref(name, tyOfWitness(w1)))
+    pub def ref(w1: TyWitness[t], name: String): Expr[t] with Marker[t] = wrap(Node.Ref(name, tyOfWitness(w1)))
 
     /// uniform の読み。u#ty はマーカー t と同じ型にする。
-    pub def uniform(w1: TyWitness[t], u: UniformRef): Expr[t] =
-        if (u#ty != tyOfWitness(w1)) invalidOrBug("ShaderAst.uniform: ${u#name} の型 ${u#ty} とマーカー ${tyOfWitness(w1)} が違う")
-        else wrap(Node.Uniform(keyOf(u)))
+    pub def uniform(w1: TyWitness[t], u: UniformRef): Expr[t] with Marker[t] = wrap(uniformNode(tyOfWitness(w1), u))
+
+    def uniformNode(t: Ty, u: UniformRef): Node =
+        if (u#ty != t) invalidOrBug("ShaderAst.uniform: ${u#name} の型 ${u#ty} とマーカー ${t} が違う")
+        else Node.Uniform(keyOf(u))
 
     /// 描き先の左上を 0 とする画素の位置。targetRect = 描き先の矩形 (左下の x, y, 幅, 高さ) の uniform（GLSL の gl_FragCoord は描き先の左下が原点なので、この矩形で直す。WGSL では読まない）。
     pub def pixelFromTopLeft(targetRect: UniformRef): Expr[IVec2] =
@@ -300,18 +397,26 @@ pub mod ShaderAst {
     /// 四角の角（0〜1・y は下向き）。
     pub def quadCorner(): Expr[Vec2] = wrap(Node.Intrinsic(Intrinsic.QuadCorner, Ty.Vec2))
 
-    /// frag が表の面か（入口の中だけで読む。GLSL は gl_FrontFacing・WGSL は入口の @builtin(front_facing)）。
+    /// frag が表の面か（入口の本文の中だけで読む。GLSL は gl_FrontFacing・WGSL は入口の @builtin(front_facing)）。
     pub def frontFacing(): Expr[Boolean] = wrap(Node.Intrinsic(Intrinsic.FrontFacing, Ty.Bool))
 
-    /// 言語ごとに字の違う式（材質の部品が作った字・言語ごとに引数の違う絵の読み）。字は括弧の要らない形で渡す。
+    /// 言語ごとに字の違う式（材質の部品が作った字・言語ごとに引数の違う絵の読み）。字が 1 つの名前・欄の読み・呼び出しでなければ printer が括弧で包む。
     /// deps = 字が呼ぶ定義（先に並べる）・derivative = 微分か暗黙の mip レベルの読みを使うか（一様さの検査が見る）。
-    pub def rawExpr(w1: TyWitness[t], glsl: String, wgsl: String, deps: List[Definition], derivative: Bool): Expr[t] =
+    pub def rawExpr(w1: TyWitness[t], glsl: String, wgsl: String, deps: List[Definition], derivative: Bool): Expr[t] with Marker[t] =
         wrap(Node.Raw(Some(glsl), Some(wgsl), tyOfWitness(w1), deps, derivative))
 
     /// 言語 lang だけの字の式（片方の言語の字しか持たない部品。GL の描き手は GLSL の材質の部品だけを持つ）。ほかの言語で print すると止める。
-    pub def rawExprIn(w1: TyWitness[t], lang: Lang, text: String, deps: List[Definition], derivative: Bool): Expr[t] =
-        let (glsl, wgsl) = if (lang == Lang.Glsl) (Some(text), None) else (None, Some(text));
-        wrap(Node.Raw(glsl, wgsl, tyOfWitness(w1), deps, derivative))
+    pub def rawExprIn(w1: TyWitness[t], lang: Lang, text: String, deps: List[Definition], derivative: Bool): Expr[t] with Marker[t] = wrap(rawInNode(tyOfWitness(w1), lang, text, deps, derivative))
+
+    def rawInNode(t: Ty, lang: Lang, text: String, deps: List[Def], derivative: Bool): Node =
+        if (lang == Lang.Glsl) Node.Raw(Some(text), None, t, deps, derivative) else Node.Raw(None, Some(text), t, deps, derivative)
+
+    /// 言語ごとに名前か引数の並びの違う関数の呼び出し（GLSL は glslName(glslArgs)・WGSL は wgslName(wgslArgs)）。deps と derivative は rawExpr と同じ。
+    pub def callIn(w1: TyWitness[t], glslName: String, glslArgs: List[Arg], wgslName: String, wgslArgs: List[Arg], deps: List[Definition], derivative: Bool): Expr[t] with Marker[t] =
+        wrap(Node.CallIn(glslName, argsOf(glslArgs), wgslName, argsOf(wgslArgs), tyOfWitness(w1), deps, derivative))
+
+    /// WGSL の sampler の名前 name の引数（callIn の WGSL の引数）。
+    pub def samplerArg(name: String): Arg = ArgData.ArgData(Node.Ref(name, Ty.Sampler))
 
     /// raw の式の言語 lang の字（その言語の字が無ければ止める）。
     def rawTextOrBug(lang: Lang, text: Option[String]): String = match text {
@@ -319,44 +424,56 @@ pub mod ShaderAst {
         case None    => invalidOrBug("ShaderAst: ${if (lang == Lang.Glsl) "GLSL" else "WGSL"} の字を持たない式を出した")
     }
 
-    def bin(op: BinOp, a1: Expr[x], b1: Expr[y], t: Ty): Expr[r] = wrap(Node.Bin(op, nodeOf(a1), nodeOf(b1), t))
+    /// 字が括弧なしで演算子の子に置ける形か（名前・数・欄の読み・添字・呼び出しだけで、括弧の外に空白も演算子も無い）。
+    def isAtomText(text: String): Bool =
+        let step = (acc: (Int32, Bool), ch: Char) -> {
+            let (depth, ok) = acc;
+            if (not ok) acc
+            else if (ch == '(' or ch == '[') (depth + 1, true)
+            else if (ch == ')' or ch == ']') (depth - 1, true)
+            else if (depth > 0) acc
+            else (depth, Char.isLetter(ch) or Char.isDigit(ch) or ch == '_' or ch == '.')
+        };
+        not String.isEmpty(text) and snd(String.toList(text) |> List.foldLeft(step, (0, true)))
+
+    def bin(op: BinOp, a1: Node, b1: Node, t: Ty): Expr[r] = wrap(Node.Bin(op, a1, b1, t))
 
     /// 同じ型どうしの四則。
-    pub def add(a1: Expr[t], b1: Expr[t]): Expr[t] with Numeric[t] = bin(BinOp.Add, a1, b1, tyOf(a1))
-    pub def sub(a1: Expr[t], b1: Expr[t]): Expr[t] with Numeric[t] = bin(BinOp.Sub, a1, b1, tyOf(a1))
-    pub def mul(a1: Expr[t], b1: Expr[t]): Expr[t] with Numeric[t] = bin(BinOp.Mul, a1, b1, tyOf(a1))
-    pub def div(a1: Expr[t], b1: Expr[t]): Expr[t] with Numeric[t] = bin(BinOp.Div, a1, b1, tyOf(a1))
+    pub def add(a1: Expr[t], b1: Expr[t]): Expr[t] with Numeric[t] = bin(BinOp.Add, nodeOf(a1), nodeOf(b1), tyOf(a1))
+    pub def sub(a1: Expr[t], b1: Expr[t]): Expr[t] with Numeric[t] = bin(BinOp.Sub, nodeOf(a1), nodeOf(b1), tyOf(a1))
+    pub def mul(a1: Expr[t], b1: Expr[t]): Expr[t] with Numeric[t] = bin(BinOp.Mul, nodeOf(a1), nodeOf(b1), tyOf(a1))
+    pub def div(a1: Expr[t], b1: Expr[t]): Expr[t] with Numeric[t] = bin(BinOp.Div, nodeOf(a1), nodeOf(b1), tyOf(a1))
 
     /// float のベクトルと f32 の四則（a1 の型のまま）。
-    pub def addS(a1: Expr[t], s: Expr[Float]): Expr[t] with FloatLike[t] = bin(BinOp.Add, a1, s, tyOf(a1))
-    pub def subS(a1: Expr[t], s: Expr[Float]): Expr[t] with FloatLike[t] = bin(BinOp.Sub, a1, s, tyOf(a1))
-    pub def mulS(a1: Expr[t], s: Expr[Float]): Expr[t] with FloatLike[t] = bin(BinOp.Mul, a1, s, tyOf(a1))
-    pub def divS(a1: Expr[t], s: Expr[Float]): Expr[t] with FloatLike[t] = bin(BinOp.Div, a1, s, tyOf(a1))
+    pub def addS(a1: Expr[t], s: Expr[Float]): Expr[t] with FloatLike[t] = bin(BinOp.Add, nodeOf(a1), nodeOf(s), tyOf(a1))
+    pub def subS(a1: Expr[t], s: Expr[Float]): Expr[t] with FloatLike[t] = bin(BinOp.Sub, nodeOf(a1), nodeOf(s), tyOf(a1))
+    pub def mulS(a1: Expr[t], s: Expr[Float]): Expr[t] with FloatLike[t] = bin(BinOp.Mul, nodeOf(a1), nodeOf(s), tyOf(a1))
+    pub def divS(a1: Expr[t], s: Expr[Float]): Expr[t] with FloatLike[t] = bin(BinOp.Div, nodeOf(a1), nodeOf(s), tyOf(a1))
 
     /// f32 と float のベクトルの積・差（f32 が左）。
-    pub def sMul(s: Expr[Float], a1: Expr[t]): Expr[t] with FloatLike[t] = bin(BinOp.Mul, s, a1, tyOf(a1))
-    pub def sSub(s: Expr[Float], a1: Expr[t]): Expr[t] with FloatLike[t] = bin(BinOp.Sub, s, a1, tyOf(a1))
+    pub def sMul(s: Expr[Float], a1: Expr[t]): Expr[t] with FloatLike[t] = bin(BinOp.Mul, nodeOf(s), nodeOf(a1), tyOf(a1))
+    pub def sSub(s: Expr[Float], a1: Expr[t]): Expr[t] with FloatLike[t] = bin(BinOp.Sub, nodeOf(s), nodeOf(a1), tyOf(a1))
 
     /// 行列 × ベクトル・行列 × 行列。
-    pub def mulMV(m: Expr[Mat4], v: Expr[Vec4]): Expr[Vec4] = bin(BinOp.Mul, m, v, Ty.Vec4)
-    pub def mulM3V(m: Expr[Mat3], v: Expr[Vec3]): Expr[Vec3] = bin(BinOp.Mul, m, v, Ty.Vec3)
-    pub def mulMM(a1: Expr[Mat4], b1: Expr[Mat4]): Expr[Mat4] = bin(BinOp.Mul, a1, b1, Ty.Mat4)
+    pub def mulMV(m: Expr[Mat4], v: Expr[Vec4]): Expr[Vec4] = bin(BinOp.Mul, nodeOf(m), nodeOf(v), Ty.Vec4)
+    pub def mulM3V(m: Expr[Mat3], v: Expr[Vec3]): Expr[Vec3] = bin(BinOp.Mul, nodeOf(m), nodeOf(v), Ty.Vec3)
+    pub def mulMM(a1: Expr[Mat4], b1: Expr[Mat4]): Expr[Mat4] = bin(BinOp.Mul, nodeOf(a1), nodeOf(b1), Ty.Mat4)
 
     /// 整数の余り・ビットの積。
-    pub def modulo(a1: Expr[Int], b1: Expr[Int]): Expr[Int] = bin(BinOp.Mod, a1, b1, Ty.I32)
-    pub def bitAnd(a1: Expr[Int], b1: Expr[Int]): Expr[Int] = bin(BinOp.BitAnd, a1, b1, Ty.I32)
+    pub def modulo(a1: Expr[Int], b1: Expr[Int]): Expr[Int] = bin(BinOp.Mod, nodeOf(a1), nodeOf(b1), Ty.I32)
+    pub def bitAnd(a1: Expr[Int], b1: Expr[Int]): Expr[Int] = bin(BinOp.BitAnd, nodeOf(a1), nodeOf(b1), Ty.I32)
 
     /// スカラーの比べ。
-    pub def lt(a1: Expr[t], b1: Expr[t]): Expr[Boolean] with Scalar[t] = bin(BinOp.Lt, a1, b1, Ty.Bool)
-    pub def le(a1: Expr[t], b1: Expr[t]): Expr[Boolean] with Scalar[t] = bin(BinOp.Le, a1, b1, Ty.Bool)
-    pub def gt(a1: Expr[t], b1: Expr[t]): Expr[Boolean] with Scalar[t] = bin(BinOp.Gt, a1, b1, Ty.Bool)
-    pub def ge(a1: Expr[t], b1: Expr[t]): Expr[Boolean] with Scalar[t] = bin(BinOp.Ge, a1, b1, Ty.Bool)
-    pub def eq(a1: Expr[t], b1: Expr[t]): Expr[Boolean] with Scalar[t] = bin(BinOp.EqOp, a1, b1, Ty.Bool)
-    pub def ne(a1: Expr[t], b1: Expr[t]): Expr[Boolean] with Scalar[t] = bin(BinOp.Ne, a1, b1, Ty.Bool)
+    pub def lt(a1: Expr[t], b1: Expr[t]): Expr[Boolean] with Scalar[t] = bin(BinOp.Lt, nodeOf(a1), nodeOf(b1), Ty.Bool)
+    pub def le(a1: Expr[t], b1: Expr[t]): Expr[Boolean] with Scalar[t] = bin(BinOp.Le, nodeOf(a1), nodeOf(b1), Ty.Bool)
+    pub def gt(a1: Expr[t], b1: Expr[t]): Expr[Boolean] with Scalar[t] = bin(BinOp.Gt, nodeOf(a1), nodeOf(b1), Ty.Bool)
+    pub def ge(a1: Expr[t], b1: Expr[t]): Expr[Boolean] with Scalar[t] = bin(BinOp.Ge, nodeOf(a1), nodeOf(b1), Ty.Bool)
+    pub def eq(a1: Expr[t], b1: Expr[t]): Expr[Boolean] with Scalar[t] = bin(BinOp.EqOp, nodeOf(a1), nodeOf(b1), Ty.Bool)
+    pub def ne(a1: Expr[t], b1: Expr[t]): Expr[Boolean] with Scalar[t] = bin(BinOp.Ne, nodeOf(a1), nodeOf(b1), Ty.Bool)
 
     /// 論理の積・和・否定。
-    pub def and_(a1: Expr[Boolean], b1: Expr[Boolean]): Expr[Boolean] = bin(BinOp.And, a1, b1, Ty.Bool)
-    pub def or_(a1: Expr[Boolean], b1: Expr[Boolean]): Expr[Boolean] = bin(BinOp.Or, a1, b1, Ty.Bool)
+    pub def and_(a1: Expr[Boolean], b1: Expr[Boolean]): Expr[Boolean] = bin(BinOp.And, nodeOf(a1), nodeOf(b1), Ty.Bool)
+    pub def or_(a1: Expr[Boolean], b1: Expr[Boolean]): Expr[Boolean] = bin(BinOp.Or, nodeOf(a1), nodeOf(b1), Ty.Bool)
     pub def not_(a1: Expr[Boolean]): Expr[Boolean] = wrap(Node.Not(nodeOf(a1)))
 
     /// 符号を返す。
@@ -375,36 +492,40 @@ pub mod ShaderAst {
     }
 
     /// 大域の変数 d の値（配列でない物）。
-    pub def readGlobal(w1: TyWitness[t], d: Definition): Expr[t] = match d {
-        case Def.Private(_, ty, None, _, _) if ty == tyOfWitness(w1) => wrap(Node.Global(d, ty))
-        case _ => invalidOrBug("ShaderAst.readGlobal: ${nameOf(d)} は ${tyOfWitness(w1)} の大域の変数でない")
+    pub def readGlobal(w1: TyWitness[t], d: Definition): Expr[t] with Marker[t] = wrap(globalNode(tyOfWitness(w1), d))
+
+    def globalNode(t: Ty, d: Def): Node = match d {
+        case Def.Private(_, ty, None, _, _) if ty == t => Node.Global(d, ty)
+        case _ => invalidOrBug("ShaderAst.readGlobal: ${nameOf(d)} は ${t} の大域の変数でない")
     }
 
     /// 大域の配列の変数 d の index 番目。
-    pub def readGlobalAt(w1: TyWitness[t], d: Definition, index: Expr[Int]): Expr[t] = match d {
-        case Def.Private(_, ty, Some(_), _, _) if ty == tyOfWitness(w1) => wrap(Node.Index(Node.Global(d, ty), nodeOf(index), ty))
-        case _ => invalidOrBug("ShaderAst.readGlobalAt: ${nameOf(d)} は ${tyOfWitness(w1)} の大域の配列でない")
+    pub def readGlobalAt(w1: TyWitness[t], d: Definition, index: Expr[Int]): Expr[t] with Marker[t] = wrap(globalAtNode(tyOfWitness(w1), d, nodeOf(index)))
+
+    def globalAtNode(t: Ty, d: Def, index: Node): Node = match d {
+        case Def.Private(_, ty, Some(_), _, _) if ty == t => Node.Index(Node.Global(d, ty), index, ty)
+        case _ => invalidOrBug("ShaderAst.readGlobalAt: ${nameOf(d)} は ${t} の大域の配列でない")
     }
 
     // ── swizzle ──
 
-    def swizzle(a1: Expr[x], s: String, t: Ty): Expr[r] = wrap(Node.Swizzle(nodeOf(a1), s, t))
+    def swizzle(a1: Node, s: String, t: Ty): Expr[r] = wrap(Node.Swizzle(a1, s, t))
 
-    def elemTy(v: Expr[t]): Ty = if (tyOf(v) == Ty.IVec2) Ty.I32 else Ty.F32
+    def elemTy(v: Node): Ty = if (tyOfNode(v) == Ty.IVec2) Ty.I32 else Ty.F32
 
-    pub def x(v: Expr[t]): Expr[Swizzle.Elem[t]] with Swizzle[t] = swizzle(v, "x", elemTy(v))
-    pub def y(v: Expr[t]): Expr[Swizzle.Elem[t]] with Swizzle[t] = swizzle(v, "y", elemTy(v))
-    pub def z(v: Expr[t]): Expr[Float] with Has3[t] = swizzle(v, "z", Ty.F32)
-    pub def w(v: Expr[Vec4]): Expr[Float] = swizzle(v, "w", Ty.F32)
-    pub def r(v: Expr[t]): Expr[Float] with FloatVector[t] = swizzle(v, "r", Ty.F32)
-    pub def g(v: Expr[t]): Expr[Float] with FloatVector[t] = swizzle(v, "g", Ty.F32)
-    pub def b(v: Expr[t]): Expr[Float] with Has3[t] = swizzle(v, "b", Ty.F32)
-    pub def a(v: Expr[Vec4]): Expr[Float] = swizzle(v, "a", Ty.F32)
-    pub def xy(v: Expr[t]): Expr[Vec2] with Has3[t] = swizzle(v, "xy", Ty.Vec2)
-    pub def xz(v: Expr[t]): Expr[Vec2] with Has3[t] = swizzle(v, "xz", Ty.Vec2)
-    pub def zw(v: Expr[Vec4]): Expr[Vec2] = swizzle(v, "zw", Ty.Vec2)
-    pub def xyz(v: Expr[Vec4]): Expr[Vec3] = swizzle(v, "xyz", Ty.Vec3)
-    pub def rgb(v: Expr[Vec4]): Expr[Vec3] = swizzle(v, "rgb", Ty.Vec3)
+    pub def x(v: Expr[t]): Expr[Swizzle.Elem[t]] with Swizzle[t] = swizzle(nodeOf(v), "x", elemTy(nodeOf(v)))
+    pub def y(v: Expr[t]): Expr[Swizzle.Elem[t]] with Swizzle[t] = swizzle(nodeOf(v), "y", elemTy(nodeOf(v)))
+    pub def z(v: Expr[t]): Expr[Float] with Has3[t] = swizzle(nodeOf(v), "z", Ty.F32)
+    pub def w(v: Expr[Vec4]): Expr[Float] = swizzle(nodeOf(v), "w", Ty.F32)
+    pub def r(v: Expr[t]): Expr[Float] with FloatVector[t] = swizzle(nodeOf(v), "r", Ty.F32)
+    pub def g(v: Expr[t]): Expr[Float] with FloatVector[t] = swizzle(nodeOf(v), "g", Ty.F32)
+    pub def b(v: Expr[t]): Expr[Float] with Has3[t] = swizzle(nodeOf(v), "b", Ty.F32)
+    pub def a(v: Expr[Vec4]): Expr[Float] = swizzle(nodeOf(v), "a", Ty.F32)
+    pub def xy(v: Expr[t]): Expr[Vec2] with Has3[t] = swizzle(nodeOf(v), "xy", Ty.Vec2)
+    pub def xz(v: Expr[t]): Expr[Vec2] with Has3[t] = swizzle(nodeOf(v), "xz", Ty.Vec2)
+    pub def zw(v: Expr[Vec4]): Expr[Vec2] = swizzle(nodeOf(v), "zw", Ty.Vec2)
+    pub def xyz(v: Expr[Vec4]): Expr[Vec3] = swizzle(nodeOf(v), "xyz", Ty.Vec3)
+    pub def rgb(v: Expr[Vec4]): Expr[Vec3] = swizzle(nodeOf(v), "rgb", Ty.Vec3)
 
     // ── 型の作り直し ──
 
@@ -428,14 +549,14 @@ pub mod ShaderAst {
 
     def builtin(fun: BuiltinFn, args: List[Node], t: Ty): Expr[r] = wrap(Node.Builtin(fun, args, t))
 
-    def same1(fun: BuiltinFn, a1: Expr[t]): Expr[t] = builtin(fun, nodeOf(a1) :: Nil, tyOf(a1))
+    def same1(fun: BuiltinFn, a1: Node): Expr[r] = builtin(fun, a1 :: Nil, tyOfNode(a1))
 
-    pub def floor(a1: Expr[t]): Expr[t] with FloatLike[t] = same1(BuiltinFn.Floor, a1)
-    pub def abs(a1: Expr[t]): Expr[t] with FloatLike[t] = same1(BuiltinFn.Abs, a1)
-    pub def normalize(a1: Expr[t]): Expr[t] with FloatVector[t] = same1(BuiltinFn.Normalize, a1)
-    pub def asin(a1: Expr[Float]): Expr[Float] = same1(BuiltinFn.Asin, a1)
-    pub def sign(a1: Expr[Float]): Expr[Float] = same1(BuiltinFn.Sign, a1)
-    pub def fwidth(a1: Expr[t]): Expr[t] with FloatLike[t] = same1(BuiltinFn.Fwidth, a1)
+    pub def floor(a1: Expr[t]): Expr[t] with FloatLike[t] = same1(BuiltinFn.Floor, nodeOf(a1))
+    pub def abs(a1: Expr[t]): Expr[t] with FloatLike[t] = same1(BuiltinFn.Abs, nodeOf(a1))
+    pub def normalize(a1: Expr[t]): Expr[t] with FloatVector[t] = same1(BuiltinFn.Normalize, nodeOf(a1))
+    pub def asin(a1: Expr[Float]): Expr[Float] = same1(BuiltinFn.Asin, nodeOf(a1))
+    pub def sign(a1: Expr[Float]): Expr[Float] = same1(BuiltinFn.Sign, nodeOf(a1))
+    pub def fwidth(a1: Expr[t]): Expr[t] with FloatLike[t] = same1(BuiltinFn.Fwidth, nodeOf(a1))
     pub def length(a1: Expr[t]): Expr[Float] with FloatVector[t] = builtin(BuiltinFn.Length, nodeOf(a1) :: Nil, Ty.F32)
     pub def dot(a1: Expr[t], b1: Expr[t]): Expr[Float] with FloatVector[t] = builtin(BuiltinFn.Dot, nodeOf(a1) :: nodeOf(b1) :: Nil, Ty.F32)
     pub def distance(a1: Expr[t], b1: Expr[t]): Expr[Float] with FloatVector[t] = builtin(BuiltinFn.Distance, nodeOf(a1) :: nodeOf(b1) :: Nil, Ty.F32)
@@ -465,16 +586,16 @@ pub mod ShaderAst {
 
     // ── 文の組み立て ──
 
+    def declare(name: String, init: Node, mutable: Bool): (Stmt, Node) = (Stmt.Decl(name, tyOfNode(init), Some(init), mutable), Node.Ref(name, tyOfNode(init)))
+
     /// 変えない局所の値（GLSL は型つきの宣言・WGSL は let）。返り値の式でその名前を読む。
-    pub def let_(name: String, e: Expr[t]): (Statement, Expr[t]) =
-        (Stmt.Decl(name, tyOf(e), Some(nodeOf(e)), false), wrap(Node.Ref(name, tyOf(e))))
+    pub def let_(name: String, e: Expr[t]): (Statement, Expr[t]) = let (s, n) = declare(name, nodeOf(e), false); (s, wrap(n))
 
     /// 後で書き替える局所の変数（WGSL は var）。
-    pub def var_(name: String, e: Expr[t]): (Statement, Expr[t]) =
-        (Stmt.Decl(name, tyOf(e), Some(nodeOf(e)), true), wrap(Node.Ref(name, tyOf(e))))
+    pub def var_(name: String, e: Expr[t]): (Statement, Expr[t]) = let (s, n) = declare(name, nodeOf(e), true); (s, wrap(n))
 
     /// 初めの値の無い局所の変数。
-    pub def varNoInit(w1: TyWitness[t], name: String): (Statement, Expr[t]) =
+    pub def varNoInit(w1: TyWitness[t], name: String): (Statement, Expr[t]) with Marker[t] =
         (Stmt.Decl(name, tyOfWitness(w1), None, true), wrap(Node.Ref(name, tyOfWitness(w1))))
 
     /// 代入（target は var_ の変数か大域の変数。違えば組む時に止める）。
@@ -483,7 +604,7 @@ pub mod ShaderAst {
     /// 1 足す（x++）。
     pub def incr(target: Expr[Int]): Statement = Stmt.Incr(nodeOf(target))
 
-    /// 1 行の if（GLSL は波かっこなし）。
+    /// 1 行の if（GLSL は波かっこなし。emitAndReturn のように 1 行に収まらない文はブロックに置く）。
     pub def ifInline(cond: Expr[Boolean], s: Statement): Statement = Stmt.If(nodeOf(cond), s :: Nil, Nil, Layout.Inline)
 
     /// ブロックの if。
@@ -506,11 +627,14 @@ pub mod ShaderAst {
     /// 画素を捨てる。
     pub def discard_(): Statement = Stmt.Discard
 
-    /// frag の色を出す（GLSL は fragColor への代入・WGSL は return）。入口の最後の文。
+    /// frag の色を出す（GLSL は fragColor への代入・WGSL は return）。入口の本文の最後の文にだけ置ける（if・for の中には置けない）。
     pub def emit(e: Expr[Vec4]): Statement = Stmt.Emit(nodeOf(e), false)
 
-    /// frag の色を出して抜ける（GLSL は fragColor への代入と return・WGSL は return）。
+    /// frag の色を出して抜ける（GLSL は fragColor への代入と return・WGSL は return）。入口の本文の中だけに置ける。
     pub def emitAndReturn(e: Expr[Vec4]): Statement = Stmt.Emit(nodeOf(e), true)
+
+    /// 言語ごとに頭の字の違う 1 行の文（頭の字 + 式 + ;。GLSL の大域の変数への代入と WGSL の局所の値のように、置き場だけが言語で違う所）。
+    pub def headed(glslHead: String, wgslHead: String, e: Expr[t]): Statement = Stmt.Headed(glslHead, wgslHead, nodeOf(e))
 
     /// 言語ごとに字の違う文（字下げと改行は printer が付ける。複数の行は改行で区切る。空の字はその言語では何も置かない）。
     pub def rawStatement(glsl: String, wgsl: String): Statement = Stmt.RawStmt(glsl, wgsl)
@@ -523,67 +647,76 @@ pub mod ShaderAst {
     /// varying 1 つ（location は WGSL の @location。GLSL は名前でつなぐ）。
     pub type alias Varying = { name = String, ty = Ty, location = Int32, interp = Interp }
 
-    /// frag の入口: inputName = WGSL の入口の引数の struct の名前・glslDeclarations と wgslDeclarations = 言語ごとの宣言と関数の字（main より前に置く）・
-    /// inputs = 受ける varying・body = main の本文（最後は emit。本文が呼ぶ関数は宣言の字が置く）。
-    pub type alias FragmentEntry = { inputName = String, glslDeclarations = String, wgslDeclarations = String, inputs = List[Varying], body = List[Statement] }
+    /// frag の入口: inputName = WGSL の入口の引数の struct の名前・declarations = 本文から辿れない定義（材質の部品・WGSL の binding の宣言）・
+    /// inputs = 受ける varying・body = main の本文（最後は emit）。本文と declarations が辿って使う定義と GLSL の uniform の行は printer が集める。
+    pub type alias FragmentEntry = { inputName = String, declarations = List[Definition], inputs = List[Varying], body = List[Statement] }
 
     /// varying v の読み（入口の本文の中だけ。GLSL は名前・Affine は w で割り戻す・WGSL は入口の引数の欄）。
-    pub def varying(w1: TyWitness[t], v: Varying): Expr[t] =
-        if (v#ty != tyOfWitness(w1)) invalidOrBug("ShaderAst.varying: ${v#name} の型 ${v#ty} とマーカー ${tyOfWitness(w1)} が違う")
-        else wrap(Node.Varying(v#name, v#ty, v#interp))
+    pub def varying(w1: TyWitness[t], v: Varying): Expr[t] with Marker[t] = wrap(varyingNode(tyOfWitness(w1), v))
+
+    def varyingNode(t: Ty, v: Varying): Node =
+        if (v#ty != t) invalidOrBug("ShaderAst.varying: ${v#name} の型 ${v#ty} とマーカー ${t} が違う")
+        else Node.Varying(v#name, v#ty, v#interp)
 
     /// varying v を同じ名前の局所の値に置く文（言語ごとの字の部品が varying を名前で読む所。GLSL は in の名前のまま読めるので何も置かない・WGSL は入口の引数の欄を写す）。
     pub def varyingAsLocal(v: Varying): Statement =
         if (v#interp == Interp.Affine) invalidOrBug("ShaderAst.varyingAsLocal: ${v#name} は Affine（GLSL の字が w で割る式で、名前で読めない）")
-        else Stmt.RawStmt("", "let ${v#name} = " + ShaderAst.Wgsl.expression(varying(witness(v#ty), v)) + ";")
+        else Stmt.RawStmt("", "let ${v#name} = " + ShaderAst.Wgsl.expression((wrap(Node.Varying(v#name, v#ty, v#interp)): Expr[Float])) + ";")
 
     /// 入口の本文 body を関数として見た物（検査と、本文が辿る定義を集めるため）。
     def entryAsFunction(body: List[Stmt]): Def = Def.Fn("main", Ty.Void, Nil, body)
 
-    /// 入口の本文 body が辿って使う定義の名前。
-    def entryDepNames(body: List[Stmt]): Set[String] = collectOrBug(entryAsFunction(body) :: Nil) |> List.map(nameOf) |> List.toSet
+    /// 入口 e の本文と declarations が辿って使う定義（main を除き、使う前に 1 回ずつ）。組む時の検査と入口の置き場の検査に通す（誤りがあれば止める）。
+    def entryDefinitionsOrBug(lang: Lang, e: FragmentEntry): List[Def] =
+        let main = entryAsFunction(e#body);
+        let defs = checkOrBug(collectOrBug(lang, e#declarations ::: directDeps(lang, main)));
+        let errors = errorsOf(main) ::: entryPlacementErrors(e#body, defs);
+        if (List.isEmpty(errors)) defs else invalidOrBug("ShaderAst: " + String.intercalate("; ", errors))
 
-    /// 入口の本文が画素の位置（r3d_fragCoord）を読むか。
-    def readsFragCoord(body: List[Stmt]): Bool = Set.memberOf(nameOf(fragCoord()), entryDepNames(body))
+    /// 入口だけで使える文と式の置き場の誤り（emit は本文の最後だけ・if と for の中に emit を置かない・入口が辿る関数の中で emit・frontFacing・varying を使わない）。
+    def entryPlacementErrors(body: List[Stmt], defs: List[Def]): List[String] =
+        let isEmitEnd = (s: Stmt) -> match s {
+            case Stmt.Emit(_, false) => true
+            case _                   => false
+        };
+        let early = List.take(List.length(body) - 1, body) |> List.exists(isEmitEnd);
+        let nested = body |> List.flatMap(stmtChildren) |> List.exists(containsStmt(isEmitEnd));
+        let helpers = defs |> List.filterMap(d -> match d {
+            case Def.Fn(name, _, _, fb) if List.exists(usesEntryOnly, fb) => Some(name)
+            case _                                                         => None
+        });
+        (if (early) "emit が本文の最後の文でない" :: Nil else Nil) :::
+        (if (nested) "emit が if・for の中にある（emitAndReturn を使う）" :: Nil else Nil) :::
+        (helpers |> List.map(name -> "${name} が入口の本文の外で emit・frontFacing・varying を使う"))
 
-    /// 入口の本文が表裏（frontFacing）を読むか。
-    def readsFrontFacing(body: List[Stmt]): Bool = body |> List.exists(stmtHasIntrinsic(Intrinsic.FrontFacing))
+    /// 文 s（中のブロックの文も）に p が真の文があるか。
+    def containsStmt(p: Stmt -> Bool, s: Stmt): Bool = p(s) or List.exists(containsStmt(p), stmtChildren(s))
 
-    def stmtHasIntrinsic(k: Intrinsic, s: Stmt): Bool = match s {
-        case Stmt.Decl(_, _, init, _)       => init |> Option.exists(nodeHasIntrinsic(k))
-        case Stmt.Assign(a1, b1)            => nodeHasIntrinsic(k, a1) or nodeHasIntrinsic(k, b1)
-        case Stmt.If(c, t, e, _)            => nodeHasIntrinsic(k, c) or ((t ::: e) |> List.exists(stmtHasIntrinsic(k)))
-        case Stmt.For(_, _, a1, c, body, _) => nodeHasIntrinsic(k, a1) or nodeHasIntrinsic(k, c) or (body |> List.exists(stmtHasIntrinsic(k)))
-        case Stmt.Return(e)                 => e |> Option.exists(nodeHasIntrinsic(k))
-        case Stmt.Eval(e)                   => nodeHasIntrinsic(k, e)
-        case Stmt.Emit(e, _)                => nodeHasIntrinsic(k, e)
-        case _                              => false
+    def isEntryOnlyNode(n: Node): Bool = match n {
+        case Node.Intrinsic(Intrinsic.FrontFacing, _) => true
+        case Node.Varying(_, _, _)                    => true
+        case _                                        => false
     }
 
-    def nodeHasIntrinsic(k: Intrinsic, n: Node): Bool = match n {
-        case Node.Intrinsic(k1, _)     => k1 == k
-        case Node.Bin(_, a1, b1, _)    => nodeHasIntrinsic(k, a1) or nodeHasIntrinsic(k, b1)
-        case Node.Neg(a1, _)           => nodeHasIntrinsic(k, a1)
-        case Node.Not(a1)              => nodeHasIntrinsic(k, a1)
-        case Node.Call(_, args, _)     => args |> List.exists(nodeHasIntrinsic(k))
-        case Node.Builtin(_, args, _)  => args |> List.exists(nodeHasIntrinsic(k))
-        case Node.Construct(_, args)   => args |> List.exists(nodeHasIntrinsic(k))
-        case Node.Swizzle(a1, _, _)    => nodeHasIntrinsic(k, a1)
-        case Node.Index(a1, b1, _)     => nodeHasIntrinsic(k, a1) or nodeHasIntrinsic(k, b1)
-        case Node.Select(c, a1, b1, _) => nodeHasIntrinsic(k, c) or nodeHasIntrinsic(k, a1) or nodeHasIntrinsic(k, b1)
-        case Node.Paren(a1)            => nodeHasIntrinsic(k, a1)
-        case _                         => false
+    def isEmit(s: Stmt): Bool = match s {
+        case Stmt.Emit(_, _) => true
+        case _               => false
     }
 
-    /// 入口の本文 body を組む時の検査に通す（誤りがあれば止める）。
-    def checkEntryOrBug(body: List[Stmt]): List[Stmt] = match checkOrBug(entryAsFunction(body) :: Nil) {
-        case _ => body
-    }
+    /// 文 s が入口の本文の中だけで使える物（emit・frontFacing・varying）を使うか。
+    def usesEntryOnly(s: Stmt): Bool = containsStmt(isEmit, s) or anyStmt(isEntryOnlyNode, s)
+
+    /// 入口が辿る定義 defs が画素の位置（r3d_fragCoord）を読むか。
+    def readsFragCoord(defs: List[Def]): Bool = List.exists(d -> nameOf(d) == nameOf(fragCoord()), defs)
+
+    /// 入口の本文が表裏（frontFacing）を読むか（入口が辿る関数の中では使えないので本文だけを見る）。
+    def readsFrontFacing(body: List[Stmt]): Bool =
+        body |> List.exists(anyStmt(n -> n == Node.Intrinsic(Intrinsic.FrontFacing, Ty.Bool)))
 
     // ── 定義の組み立て ──
 
     /// 関数の引数（名前と型）。返り値の式で本文から読む。
-    pub def param(w1: TyWitness[t], name: String): ((String, Ty), Expr[t]) = ((name, tyOfWitness(w1)), wrap(Node.Ref(name, tyOfWitness(w1))))
+    pub def param(w1: TyWitness[t], name: String): ((String, Ty), Expr[t]) with Marker[t] = ((name, tyOfWitness(w1)), wrap(Node.Ref(name, tyOfWitness(w1))))
 
     /// 関数の定義。ret = 返り値の型（Void なら値を返さない）。
     pub def function(name: String, ret: Ty, params: List[(String, Ty)], body: List[Statement]): Definition =
@@ -596,7 +729,7 @@ pub mod ShaderAst {
     pub def constArray(c: ConstArrayDef): Definition = Def.ConstArray(c#name, c#elem, c#values)
 
     /// 大域の変数の定義（name・型・配列の長さ・初めの値・片方の言語だけに置くならその言語）。
-    pub def privateVar(name: String, w1: TyWitness[t], length: Option[Int32], init: Option[Expr[t]], lang: Option[Lang]): Definition =
+    pub def privateVar(name: String, w1: TyWitness[t], length: Option[Int32], init: Option[Expr[t]], lang: Option[Lang]): Definition with Marker[t] =
         Def.Private(name, tyOfWitness(w1), length, Option.map(nodeOf, init), lang)
 
     def paramTys(d: Def): List[Ty] = match d {
@@ -618,15 +751,19 @@ pub mod ShaderAst {
     /// 引数 1 つ。
     pub def arg(e: Expr[t]): Arg = ArgData.ArgData(nodeOf(e))
 
+    def argsOf(args: List[Arg]): List[Node] = args |> List.map(a1 -> match a1 { case ArgData.ArgData(n) => n })
+
     def argNodes(d: Def, args: List[Arg]): List[Node] =
-        let nodes = args |> List.map(a1 -> match a1 { case ArgData.ArgData(n) => n });
+        let nodes = argsOf(args);
         let got = nodes |> List.map(tyOfNode);
         if (got != paramTys(d)) invalidOrBug("ShaderAst.call: ${nameOf(d)} の引数の型 ${paramTys(d)} に ${got} を渡した") else nodes
 
     /// 関数 d を args で呼ぶ。w1 = 返り値の型のマーカー（d の返り値の型と同じにする）。引数の型が d の引数と違えば止める。
-    pub def call(w1: TyWitness[t], d: Definition, args: List[Arg]): Expr[t] =
-        if (retTy(d) != tyOfWitness(w1)) invalidOrBug("ShaderAst.call: ${nameOf(d)} の返り値の型 ${retTy(d)} を ${tyOfWitness(w1)} で受けた")
-        else wrap(Node.Call(d, argNodes(d, args), tyOfWitness(w1)))
+    pub def call(w1: TyWitness[t], d: Definition, args: List[Arg]): Expr[t] with Marker[t] = wrap(callNode(tyOfWitness(w1), d, args))
+
+    def callNode(t: Ty, d: Def, args: List[Arg]): Node =
+        if (retTy(d) != t) invalidOrBug("ShaderAst.call: ${nameOf(d)} の返り値の型 ${retTy(d)} を ${t} で受けた")
+        else Node.Call(d, argNodes(d, args), t)
 
     /// 返り値の無い関数 d を呼ぶ文。
     pub def callStmt(d: Definition, args: List[Arg]): Statement =
@@ -635,22 +772,18 @@ pub mod ShaderAst {
 
     // ── 集める ──
 
-    def depsOfNode(n: Node): List[Def] = match n {
-        case Node.Bin(_, a1, b1, _)    => depsOfNode(a1) ::: depsOfNode(b1)
-        case Node.Neg(a1, _)           => depsOfNode(a1)
-        case Node.Not(a1)              => depsOfNode(a1)
-        case Node.Call(d, args, _)     => (args |> List.flatMap(depsOfNode)) ::: d :: Nil
-        case Node.Builtin(_, args, _)  => args |> List.flatMap(depsOfNode)
-        case Node.Construct(_, args)   => args |> List.flatMap(depsOfNode)
-        case Node.Swizzle(a1, _, _)    => depsOfNode(a1)
-        case Node.Index(a1, b1, _)     => depsOfNode(a1) ::: depsOfNode(b1)
-        case Node.Select(c, a1, b1, _) => depsOfNode(c) ::: depsOfNode(a1) ::: depsOfNode(b1)
-        case Node.Paren(a1)            => depsOfNode(a1)
-        case Node.Intrinsic(k, _)      => depsOfIntrinsic(k)
-        case Node.Global(d, _)         => d :: Nil
-        case Node.Raw(_, _, _, deps, _) => deps
-        case _                         => Nil
+    /// 節 n そのものが読む定義（呼んだ関数・大域の値・raw の字が呼ぶ物）。
+    def ownDeps(n: Node): List[Def] = match n {
+        case Node.Call(d, _, _)                  => d :: Nil
+        case Node.Intrinsic(k, _)                => depsOfIntrinsic(k)
+        case Node.Global(d, _)                   => d :: Nil
+        case Node.Raw(_, _, _, deps, _)          => deps
+        case Node.CallIn(_, _, _, _, _, deps, _) => deps
+        case _                                   => Nil
     }
+
+    /// 式 n が読む定義（子の物が先）。
+    def depsOfNode(n: Node): List[Def] = nodesIn(n) |> List.flatMap(ownDeps)
 
     /// 組み込みの式が読む大域の値（片方の言語だけの物は Private と Extern の本文で分かれる）。
     def depsOfIntrinsic(k: Intrinsic): List[Def] = match k {
@@ -674,88 +807,93 @@ pub mod ShaderAst {
                       "    return corners[i];\n" +
                       "}\n"), Nil, false)
 
-    def depsOfStmt(s: Stmt): List[Def] = match s {
-        case Stmt.Decl(_, _, init, _)       => init |> Option.toList |> List.flatMap(depsOfNode)
-        case Stmt.Assign(a1, b1)            => depsOfNode(a1) ::: depsOfNode(b1)
-        case Stmt.Incr(a1)                  => depsOfNode(a1)
-        case Stmt.If(c, t, e, _)            => depsOfNode(c) ::: (t |> List.flatMap(depsOfStmt)) ::: (e |> List.flatMap(depsOfStmt))
-        case Stmt.For(_, _, a1, c, body, _) => depsOfNode(a1) ::: depsOfNode(c) ::: (body |> List.flatMap(depsOfStmt))
-        case Stmt.Return(e)                 => e |> Option.toList |> List.flatMap(depsOfNode)
-        case Stmt.Discard                   => Nil
-        case Stmt.Eval(e)                   => depsOfNode(e)
-        case Stmt.Emit(e, _)                => depsOfNode(e)
-        case Stmt.RawStmt(_, _)             => Nil
-    }
+    def depsOfStmt(s: Stmt): List[Def] = nodesInStmt(s) |> List.flatMap(ownDeps)
 
-    /// 定義 d が直に読む定義（呼んだ関数・読んだ大域の値）。
-    def directDeps(d: Def): List[Def] = match d {
-        case Def.Fn(_, _, _, body)              => body |> List.flatMap(depsOfStmt)
-        case Def.Extern(_, _, _, _, _, deps, _) => deps
-        case Def.Private(_, _, _, init, _)      => init |> Option.toList |> List.flatMap(depsOfNode)
-        case _                                  => Nil
+    /// 言語 lang の本文（extern の Body の片方）。
+    def bodyIn(lang: Lang, glsl: Body, wgsl: Body): Body = if (lang == Lang.Glsl) glsl else wgsl
+
+    /// 定義 d が言語 lang で直に読む定義（呼んだ関数・読んだ大域の値・生成した本文が読む物）。
+    def directDeps(lang: Lang, d: Def): List[Def] = match d {
+        case Def.Fn(_, _, _, body)                 => body |> List.flatMap(depsOfStmt)
+        case Def.Extern(_, _, _, gb, wb, deps, _)  => deps ::: bodyDeps(bodyIn(lang, gb, wb))
+        case Def.Private(_, _, _, init, _)         => init |> Option.toList |> List.flatMap(depsOfNode)
+        case _                                     => Nil
     }
 
     /// 集める途中の状態: 並べた列（逆順）・名前 → 定義・辿っている途中の名前（輪を見つける）。
     type alias CollectState = { order = List[Def], seen = Map[String, Def], open = Set[String] }
 
-    /// roots と、それが辿って使う定義を、使う前に 1 回ずつ並べた列（roots の順を保つ）。
+    /// roots と、それが言語 lang で辿って使う定義を、使う前に 1 回ずつ並べた列（roots の順を保つ）。
     /// 同じ名前で中身の違う定義・呼ぶ関係の輪があれば Err。
-    pub def collect(roots: List[Definition]): Result[String, List[Definition]] =
-        roots |> List.foldLeft((acc, d) -> Result.flatMap(st -> visit(d, st), acc), Ok({ order = Nil, seen = Map.empty(), open = Set.empty() }))
+    pub def collect(lang: Lang, roots: List[Definition]): Result[String, List[Definition]] =
+        roots |> List.foldLeft((acc, d) -> Result.flatMap(st -> visit(lang, d, st), acc), Ok({ order = Nil, seen = Map.empty(), open = Set.empty() }))
               |> Result.map(st -> List.reverse(st#order))
 
     /// collect の Err で止める版。
-    pub def collectOrBug(roots: List[Definition]): List[Definition] = match collect(roots) {
+    pub def collectOrBug(lang: Lang, roots: List[Definition]): List[Definition] = match collect(lang, roots) {
         case Ok(defs) => defs
         case Err(msg) => invalidOrBug("ShaderAst.collect: " + msg)
     }
 
-    def visit(d: Def, st: CollectState): Result[String, CollectState] =
+    def visit(lang: Lang, d: Def, st: CollectState): Result[String, CollectState] =
         let name = nameOf(d);
         if (Set.memberOf(name, st#open)) Err("呼ぶ関係が ${name} で輪になっている")
         else match Map.get(name, st#seen) {
             case Some(prev) => if (prev == d) Ok(st) else Err("同じ名前 ${name} で中身の違う定義が 2 つある")
             case None =>
                 let start = Ok({ open = Set.insert(name, st#open) | st });
-                directDeps(d) |> List.foldLeft((acc, dep) -> Result.flatMap(s1 -> visit(dep, s1), acc), start)
-                              |> Result.map(s2 -> { order = d :: s2#order, seen = Map.insert(name, d, s2#seen), open = Set.remove(name, s2#open) })
+                directDeps(lang, d) |> List.foldLeft((acc, dep) -> Result.flatMap(s1 -> visit(lang, dep, s1), acc), start)
+                                    |> Result.map(s2 -> { order = d :: s2#order, seen = Map.insert(name, d, s2#seen), open = Set.remove(name, s2#open) })
         }
+
+    // ── GLSL の uniform の宣言 ──
+
+    /// 節 n そのものが読む uniform（GLSL の画素の位置は描き先の矩形の uniform も読む）。
+    def ownUniform(n: Node): Option[UniformKey] = match n {
+        case Node.Uniform(k)                                  => Some(k)
+        case Node.Intrinsic(Intrinsic.PixelFromTopLeft(k), _) => Some(k)
+        case _                                                => None
+    }
+
+    /// 定義 defs と本文 body が GLSL で読む uniform の宣言 (型, 名前, 配列の長さ)（GLSL の名前ごとに 1 つ・初めて読んだ順）。
+    /// 同じ名前で宣言の違う物があれば止める。
+    def glslUniformsOrBug(defs: List[Def], body: List[Stmt]): List[(String, String, Option[Int32])] =
+        let ofDef = (d: Def) -> match d {
+            case Def.Fn(_, _, _, fb)                => fb |> List.flatMap(nodesInStmt) |> List.filterMap(ownUniform)
+            case Def.Private(_, _, _, init, _)      => init |> Option.toList |> List.flatMap(nodesIn) |> List.filterMap(ownUniform)
+            case Def.Extern(_, _, _, gb, _, _, _)   => bodyUniforms(gb)
+            case _                                  => Nil
+        };
+        let step = (acc: (Map[String, (String, Option[Int32])], List[(String, String, Option[Int32])]), k: UniformKey) -> {
+            let (seen, order) = acc;
+            let (name, _, glsl, _, glslType, length) = k;
+            match glsl {
+                case None            => acc
+                case Some((base, _)) => match Map.get(base, seen) {
+                    case Some(prev) => if (prev == (glslType, length)) acc else invalidOrBug("ShaderAst: uniform ${base} の宣言が 2 通りある（${name}）")
+                    case None       => (Map.insert(base, (glslType, length), seen), (glslType, base, length) :: order)
+                }
+            }
+        };
+        let keys = (defs |> List.flatMap(ofDef)) ::: (body |> List.flatMap(nodesInStmt) |> List.filterMap(ownUniform));
+        List.reverse(snd(keys |> List.foldLeft(step, (Map.empty(), Nil))))
 
     // ── 組む時の検査（一様さ・代入の先・返り値の型） ──
 
     /// 定義 d が微分か暗黙の mip レベルの読みを使うか（呼ぶ関係を辿る）。
     def usesDerivative(d: Def): Bool = match d {
-        case Def.Fn(_, _, _, body)                       => body |> List.exists(stmtUsesDerivative)
+        case Def.Fn(_, _, _, body)                       => body |> List.exists(anyStmt(isDerivativeAt))
         case Def.Extern(_, _, _, _, _, deps, derivative) => derivative or (deps |> List.exists(usesDerivative))
         case _                                           => false
     }
 
-    def isDerivative(fun: BuiltinFn): Bool = fun == BuiltinFn.Fwidth
-
-    def nodeUsesDerivative(n: Node): Bool = match n {
-        case Node.Bin(_, a1, b1, _)     => nodeUsesDerivative(a1) or nodeUsesDerivative(b1)
-        case Node.Neg(a1, _)            => nodeUsesDerivative(a1)
-        case Node.Not(a1)               => nodeUsesDerivative(a1)
-        case Node.Call(d, args, _)      => usesDerivative(d) or (args |> List.exists(nodeUsesDerivative))
-        case Node.Builtin(fun, args, _) => isDerivative(fun) or (args |> List.exists(nodeUsesDerivative))
-        case Node.Construct(_, args)    => args |> List.exists(nodeUsesDerivative)
-        case Node.Swizzle(a1, _, _)     => nodeUsesDerivative(a1)
-        case Node.Index(a1, b1, _)      => nodeUsesDerivative(a1) or nodeUsesDerivative(b1)
-        case Node.Select(c, a1, b1, _)  => nodeUsesDerivative(c) or nodeUsesDerivative(a1) or nodeUsesDerivative(b1)
-        case Node.Paren(a1)             => nodeUsesDerivative(a1)
+    /// 節 n そのものが微分か暗黙の mip レベルの読みか（呼んだ関数は辿る）。
+    def isDerivativeAt(n: Node): Bool = match n {
+        case Node.Call(d, _, _)                  => usesDerivative(d)
+        case Node.Builtin(fun, _, _)             => fun == BuiltinFn.Fwidth
         case Node.Raw(_, _, _, deps, derivative) => derivative or (deps |> List.exists(usesDerivative))
-        case _                          => false
-    }
-
-    def stmtUsesDerivative(s: Stmt): Bool = match s {
-        case Stmt.Decl(_, _, init, _)       => init |> Option.exists(nodeUsesDerivative)
-        case Stmt.Assign(a1, b1)            => nodeUsesDerivative(a1) or nodeUsesDerivative(b1)
-        case Stmt.If(c, t, e, _)            => nodeUsesDerivative(c) or (t |> List.exists(stmtUsesDerivative)) or (e |> List.exists(stmtUsesDerivative))
-        case Stmt.For(_, _, a1, c, body, _) => nodeUsesDerivative(a1) or nodeUsesDerivative(c) or (body |> List.exists(stmtUsesDerivative))
-        case Stmt.Return(e)                 => e |> Option.exists(nodeUsesDerivative)
-        case Stmt.Eval(e)                   => nodeUsesDerivative(e)
-        case Stmt.Emit(e, _)                => nodeUsesDerivative(e)
-        case _                              => false
+        case Node.CallIn(_, _, _, _, _, deps, derivative) => derivative or (deps |> List.exists(usesDerivative))
+        case _                                   => false
     }
 
     /// 式が一様か（uniform・リテラル・一様な局所の値だけの式。関数の引数と呼び出しは一様でないと見る）。
@@ -797,14 +935,14 @@ pub mod ShaderAst {
         if (inner |> List.exists(s -> s#returned)) { diverged = true, returned = true | st } else st
 
     def leafErrors(fname: String, st: UniformityState, s: Stmt): List[String] =
-        if (st#diverged and stmtUsesDerivative(s)) derivativeError(fname) :: Nil else Nil
+        if (st#diverged and anyStmt(isDerivativeAt, s)) derivativeError(fname) :: Nil else Nil
 
     def checkStmt(fname: String, st: UniformityState, s: Stmt): (UniformityState, List[String]) = match s {
         case Stmt.Decl(name, _, init, mutable) =>
             let uniform = (not mutable) and (init |> Option.exists(isUniform(st#locals)));
             (if (uniform) { locals = Set.insert(name, st#locals) | st } else st, leafErrors(fname, st, s))
         case Stmt.If(c, t, e, _) =>
-            let condErr = if (st#diverged and nodeUsesDerivative(c)) derivativeError(fname) :: Nil else Nil;
+            let condErr = if (st#diverged and anyNode(isDerivativeAt, c)) derivativeError(fname) :: Nil else Nil;
             let inner = { diverged = st#diverged or not isUniform(st#locals, c), returned = false | st };
             let (stT, errT) = checkStmts(fname, inner, t);
             let (stE, errE) = checkStmts(fname, inner, e);
@@ -907,13 +1045,19 @@ pub mod ShaderAst {
 
     def isRelational(op: BinOp): Bool = precOf(op) == 9 or precOf(op) == 8
 
-    /// 節の強さ（括弧が要るかを決める）。
-    def precOfNode(n: Node): Int32 = match n {
-        case Node.Bin(op, _, _, _)   => precOf(op)
-        case Node.Select(_, _, _, _) => ternaryPrec()
-        case Node.Neg(_, _)          => unaryPrec()
-        case Node.Not(_)             => unaryPrec()
-        case _                       => atomPrec()
+    /// 節の強さ（括弧が要るかを決める）。言語 lang の raw の字は名前・呼び出しの形でなければ一番弱い。
+    /// Bool の uniform は比べの式（GLSL は == 1・WGSL は > 0.5）・GLSL の Affine の varying は割り算の式。
+    def precOfNode(lang: Lang, n: Node): Int32 = match n {
+        case Node.Bin(op, _, _, _)            => precOf(op)
+        case Node.Select(_, _, _, _)          => if (lang == Lang.Wgsl) atomPrec() else ternaryPrec()
+        case Node.Neg(_, _)                   => unaryPrec()
+        case Node.Not(_)                      => unaryPrec()
+        case Node.Uniform((_, Ty.Bool, _, _, _, _)) => if (lang == Lang.Glsl) precOf(BinOp.EqOp) else precOf(BinOp.Gt)
+        case Node.Varying(_, _, Interp.Affine) => if (lang == Lang.Glsl) precOf(BinOp.Div) else atomPrec()
+        case Node.Raw(glsl, wgsl, _, _, _)    =>
+            let text = if (lang == Lang.Glsl) glsl else wgsl;
+            if (text |> Option.forAll(isAtomText)) atomPrec() else 0
+        case _                                => atomPrec()
     }
 
     /// 単項の演算子 op を、字 inner（強さで括弧を付けた後）の前に付けた字。inner が - で始まれば括弧で包む（-- と読まれる）。
@@ -944,12 +1088,14 @@ pub mod ShaderAst {
         let sw = if (String.isEmpty(swizzle)) outer else if (String.isEmpty(outer)) swizzle else composeSwizzle(swizzle, outer);
         if (String.isEmpty(sw)) base else base + "." + sw
 
-    /// uniform u を言語 lang で読む字（outer = 外から重ねる swizzle）。その言語に無い欄なら止める。
+    /// uniform u を言語 lang で読む字（outer = 外から重ねる swizzle）。その言語に無い欄なら止める。Bool の uniform は持つ型の値を比べる字。
     def accessFor(lang: Lang, u: UniformKey, outer: String): String =
-        let (name, _, glsl, wgsl) = u;
+        let (name, ty, glsl, wgsl, _, _) = u;
         match (if (lang == Lang.Glsl) glsl else wgsl) {
-            case Some((base, swizzle)) => accessText(base, swizzle, outer)
-            case None                  => invalidOrBug("ShaderAst: uniform ${name} はこの言語に無い")
+            case Some((base, swizzle)) =>
+                let text = accessText(base, swizzle, outer);
+                if (ty != Ty.Bool) text else if (lang == Lang.Glsl) text + " == 1" else text + " > 0.5"
+            case None => invalidOrBug("ShaderAst: uniform ${name} はこの言語に無い")
         }
 
     /// 4 つの空白で字下げした行。

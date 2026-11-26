@@ -1,6 +1,6 @@
 // ShaderAst.Glsl — ShaderAst の木を GLSL（330 core・GLSL ES 3.00 へ写す前の字）へ出す。
 pub mod ShaderAst.Glsl {
-    use ShaderAst.{Node, Stmt, Def, Ty, BuiltinFn, Layout, Body, Intrinsic, Lang, Expr, Definition}
+    use ShaderAst.{Node, Stmt, Def, Ty, BuiltinFn, Layout, Intrinsic, Lang, Expr, Definition}
 
     /// 型の字。
     pub def tyName(t: Ty): String = match t {
@@ -21,7 +21,7 @@ pub mod ShaderAst.Glsl {
         case Ty.Void           => "void"
     }
 
-    /// 組み込みの関数の名前。
+    /// 組み込みの関数の名前（言語ごとに引数の違う TextureSize・TargetDepthTexel は builtin が書く）。
     def builtinName(fun: BuiltinFn): String = match fun {
         case BuiltinFn.Floor       => "floor"
         case BuiltinFn.Abs         => "abs"
@@ -39,8 +39,7 @@ pub mod ShaderAst.Glsl {
         case BuiltinFn.Determinant => "determinant"
         case BuiltinFn.Clamp       => "clamp"
         case BuiltinFn.Mix         => "mix"
-        case BuiltinFn.TextureSize => "textureSize"
-        case BuiltinFn.TargetDepthTexel => "texelFetch"
+        case _                     => ShaderAst.invalidOrBug("ShaderAst.Glsl: 組み込みの関数の名前が無い")
     }
 
     /// 式の字。
@@ -48,7 +47,7 @@ pub mod ShaderAst.Glsl {
 
     def exprAt(ctx: Int32, n: Node): String =
         let s = raw(n);
-        if (ShaderAst.precOfNode(n) < ctx) "(" + s + ")" else s
+        if (ShaderAst.precOfNode(Lang.Glsl, n) < ctx) "(" + s + ")" else s
 
     def args(xs: List[Node]): String = xs |> List.map(exprAt(0)) |> String.intercalate(", ")
 
@@ -76,6 +75,7 @@ pub mod ShaderAst.Glsl {
         case Node.Intrinsic(k, _)      => intrinsic(k)
         case Node.Global(d, _)         => ShaderAst.nameOf(d)
         case Node.Raw(text, _, _, _, _) => ShaderAst.rawTextOrBug(Lang.Glsl, text)
+        case Node.CallIn(name, xs, _, _, _, _, _) => name + "(" + args(xs) + ")"
         case Node.Varying(name, _, ShaderAst.Interp.Affine) => name + ".xy / " + name + ".z"
         case Node.Varying(name, _, _)  => name
     }
@@ -97,6 +97,15 @@ pub mod ShaderAst.Glsl {
 
     // ── 文 ──
 
+    /// 1 行に置ける文か（GLSL は emit して抜ける文が 2 行になる）。
+    def fitsOneLine(s: Stmt): Bool = match s {
+        case Stmt.Emit(_, true)          => false
+        case Stmt.If(_, _, _, _)         => false
+        case Stmt.For(_, _, _, _, _, _)  => false
+        case Stmt.RawStmt(_, _)          => false
+        case _                           => true
+    }
+
     /// 1 行に置く文の字（字下げと改行なし）。
     def inline(s: Stmt): String = match s {
         case Stmt.Decl(name, t, Some(e), _) => tyName(t) + " " + name + " = " + exprAt(0, e) + ";"
@@ -107,8 +116,9 @@ pub mod ShaderAst.Glsl {
         case Stmt.Return(None)              => "return;"
         case Stmt.Discard                   => "discard;"
         case Stmt.Eval(e)                   => exprAt(0, e) + ";"
-        case Stmt.Emit(e, _)                => "fragColor = " + exprAt(0, e) + ";"
-        case _                              => ShaderAst.invalidOrBug("ShaderAst.Glsl: if・for は 1 行の文の中に置けない")
+        case Stmt.Emit(e, false)            => "fragColor = " + exprAt(0, e) + ";"
+        case Stmt.Headed(head, _, e)        => head + exprAt(0, e) + ";"
+        case _                              => ShaderAst.invalidOrBug("ShaderAst.Glsl: 1 行に置けない文")
     }
 
     def stmts(depth: Int32, body: List[Stmt]): String = body |> List.map(stmt(depth)) |> ShaderAst.joinParts
@@ -119,14 +129,14 @@ pub mod ShaderAst.Glsl {
             case Stmt.If(c, t, e, layout) =>
                 let head = ind + "if (" + exprAt(0, c) + ")";
                 match (layout, t, e) {
-                    case (Layout.Inline, one :: Nil, Nil) => head + " " + inline(one) + "\n"
+                    case (Layout.Inline, one :: Nil, Nil) if fitsOneLine(one) => head + " " + inline(one) + "\n"
                     case (_, _, Nil)                      => head + " {\n" + stmts(depth + 1, t) + ind + "}\n"
                     case _                                => head + " {\n" + stmts(depth + 1, t) + ind + "} else {\n" + stmts(depth + 1, e) + ind + "}\n"
                 }
             case Stmt.For(name, t, start, cond, body, layout) =>
                 let head = ind + "for (" + tyName(t) + " " + name + " = " + exprAt(0, start) + "; " + exprAt(0, cond) + "; " + name + "++)";
                 match (layout, body) {
-                    case (Layout.Inline, one :: Nil) => head + " " + inline(one) + "\n"
+                    case (Layout.Inline, one :: Nil) if fitsOneLine(one) => head + " " + inline(one) + "\n"
                     case _                           => head + " {\n" + stmts(depth + 1, body) + ind + "}\n"
                 }
             case Stmt.Emit(e, true) => ind + inline(Stmt.Emit(e, false)) + "\n" + ind + "return;\n"
@@ -157,21 +167,31 @@ pub mod ShaderAst.Glsl {
             }
     }
 
-    /// roots と、それが辿って使う定義を、使う前に 1 回ずつ並べた字（組む時の検査を通す）。
+    /// uniform の宣言の行（`uniform <型> <名前>[長さ];`）。
+    def uniformLine(decl: (String, String, Option[Int32])): String =
+        let (t, name, length) = decl;
+        "uniform ${t} ${name}" + (length |> Option.map(n -> "[${n}]") |> Option.getWithDefault("")) + ";\n"
+
+    /// defs と本文 body の中の uniform の宣言の行と、defs の字。
+    def withUniforms(defs: List[Def], body: List[Stmt]): String =
+        ShaderAst.joinParts(ShaderAst.glslUniformsOrBug(defs, body) |> List.map(uniformLine)) + ShaderAst.joinParts(defs |> List.map(definition))
+
+    /// roots と、それが辿って使う定義を、使う前に 1 回ずつ並べた字（読む uniform の宣言の行が先。組む時の検査を通す）。
     pub def print(roots: List[Definition]): String =
-        ShaderAst.checkOrBug(ShaderAst.collectOrBug(roots)) |> List.map(definition) |> ShaderAst.joinParts
+        withUniforms(ShaderAst.checkOrBug(ShaderAst.collectOrBug(Lang.Glsl, roots)), Nil)
+
+    /// uniform refs の宣言の行（並べた順。GLSL の名前の重なりは 1 行に）。
+    pub def uniformDeclarations(refs: List[ShaderAst.UniformRef]): String =
+        refs |> List.map(u -> Stmt.Eval(Node.Uniform(ShaderAst.keyOf(u))))
+             |> ShaderAst.glslUniformsOrBug(Nil) |> List.map(uniformLine) |> ShaderAst.joinParts
 
     /// varying の宣言の型（Affine は uv と w を掛けた xy と w を送るので 1 つ多い）。
     def varyingTy(v: ShaderAst.Varying): Ty =
         if (v#interp == ShaderAst.Interp.Affine and v#ty == Ty.Vec2) Ty.Vec3 else v#ty
 
-    /// frag の入口の字（#version・in の宣言・fragColor・宣言の字・main）。
+    /// frag の入口の字（#version・in の宣言・fragColor・uniform の宣言・辿った定義・main）。
     pub def fragment(e: ShaderAst.FragmentEntry): String =
-        let body = ShaderAst.checkEntryOrBug(e#body);
+        let defs = ShaderAst.entryDefinitionsOrBug(Lang.Glsl, e);
         let ins = e#inputs |> List.map(v -> (if (v#interp == ShaderAst.Interp.Flat) "flat " else "") + "in " + tyName(varyingTy(v)) + " " + v#name + ";\n");
-        "#version 330 core\n" + ShaderAst.joinParts(ins) + "out vec4 fragColor;\n" + e#glslDeclarations + "void main() {\n" + stmts(1, body) + "}\n"
-
-    /// defs だけを並べた字（辿った定義は周りの字が置く）。
-    pub def printOnly(defs: List[Definition]): String =
-        ShaderAst.checkOrBug(defs) |> List.map(definition) |> ShaderAst.joinParts
+        "#version 330 core\n" + ShaderAst.joinParts(ins) + "out vec4 fragColor;\n" + withUniforms(defs, e#body) + "void main() {\n" + stmts(1, e#body) + "}\n"
 }

@@ -10,7 +10,6 @@
 // WhyNot: 3D を別の float の描き先へ描いて貼る時に戻さない — 背景の無い場面の縁は 2D の上で結局画面の値で混ざり、場面ごとに描き先と貼り直しが増える。
 //   半透明の混ぜと MSAA の平均は戻した後の画面の値どうし。
 pub mod Render3dGlsl {
-    use LightModel3d.Vec3Input
     use Render3d.Uniforms.R3dUniform
 
     /// 置いた物の頂点シェーダー（深度だけのプログラム・uv の無い材質のプログラムで共有。頂点の色は値のまま渡す）。
@@ -102,20 +101,11 @@ pub mod Render3dGlsl {
     /// PS1 風の変種の頂点を丸める式 r3d_vertexSnap(clip の位置)（CPU の描き手は SoftRaster3d.Psx.snapVertex）。uPsxTarget.zw = 場面の描き先の幅と高さ（画素）・
     /// uVertexSnap = 格子の大きさ（画素。0 で丸めない）。x・y を描き先の左上を 0 とする画素へ写して格子の一番近い点へ丸め、clip へ戻す（z と w は変えない）。
     // WhyNot: w が 0 以下（目の後ろ）の頂点を丸めない — 画素へ写せず、GPU が手前の面で切る前の形を壊す。
-    def vertexSnapSource(): String =
-        Render3d.Uniforms.glslDeclarations(R3dUniform.PsxTarget :: R3dUniform.VertexSnap :: Nil) +
-        ShaderAst.Glsl.printOnly(Render3dShaders.vertexSnap() :: Nil)
+    def vertexSnapSource(): String = ShaderAst.Glsl.print(Render3dShaders.vertexSnap() :: Nil)
 
-    /// PS1 風の変種の色の丸め r3d_colorDepth(画面の値の色)（式は Scene3d.Psx.quantize・CPU の描き手は SoftRaster3d.Psx.quantized）と、それが読む uniform。
-    /// uPsx = (段の数 2^bits − 1（0 で丸めない）, ディザの表の番号 Scene3d.Psx.patternCode, ディザの強さ, アフィンの割合)・
-    /// uPsxTarget = (描き先の左下の画素の x, y, 幅, 高さ)。ディザの格子は描き先の左上を 0 とする画素の x・y の下 2 ビット。
-    // WhyNot: 表を uniform の配列で渡さない — 2 つの表は決まった値で、const の配列なら変種の uniform が 2 つで済む。
-    def colorDepthSource(): String =
-        Render3d.Uniforms.glslDeclarations(R3dUniform.Psx :: R3dUniform.PsxTarget :: Nil) +
-        ShaderAst.Glsl.print(Render3dShaders.colorDepth() :: Nil)
-
-    /// 変種 v の frag の色の出口: v#psx なら r3d_colorDepth に通した式、ほかは c のまま。
-    def colorOut(v: Render3d.ProgramKey.ShaderVariant, c: String): String = if (v#psx) "r3d_colorDepth(" + c + ")" else c
+    /// 変種 v の frag の色の出口の字（c は画面の値の色の式の字。v の feature の colorOut に通す）。
+    def colorOut(v: Render3d.ProgramKey.ShaderVariant, c: String): String =
+        ShaderAst.Glsl.expression(Render3dShaders.featureOf(v)#colorOut(ShaderAst.rawExpr(ShaderAst.Vec3.Vec3, c, c, Nil, false)))
 
     /// 頂点シェーダーへ数を渡すテクスチャの幅（texel）。
     pub def dataTextureWidth(): Int32 = Skin3d.maxJoints() * 4
@@ -191,138 +181,64 @@ pub mod Render3dGlsl {
         affineUv +
         "}\n"
 
-    /// 光の uniform と、光の式（lightAt）・かすみ（fogged）。式は LightModel3d の木から作る（CPU の描き手と同じ木）。
+    /// 光の uniform と、光の式（lightAt）・かすみ（fogged）・影・色を作る最後の組み立て。式は LightModel3d の木から作る（CPU の描き手と同じ木）。
     pub def lightSource(): String = lightSourceFor(Render3d.ProgramKey.defaultShaderVariant())
 
-    /// 変種 v の lightSource。v#pointShadows なら点光源の影の uniform と r3d_pointShadowsAt（pointShadowSource）・
-    /// v#physicalUnits なら uInverseUnitsPerMeterSquared を・v#skyIrradiance なら景色の拡散の光の uSh・uSkyContribution を、光の式の前に置く（どれも偽なら lightSource と同じ字）。
-    pub def lightSourceFor(v: Render3d.ProgramKey.ShaderVariant): String =
-        Render3d.Uniforms.glslDeclarations(R3dUniform.Ambient :: R3dUniform.Hemisphere :: R3dUniform.ToonSteps :: R3dUniform.PointCount :: R3dUniform.PointPos :: R3dUniform.PointColor :: R3dUniform.PointRange :: R3dUniform.SpotCount :: R3dUniform.SpotPos :: R3dUniform.SpotDir :: R3dUniform.SpotColor :: R3dUniform.SpotRange :: R3dUniform.SpotCone :: R3dUniform.FogOn :: R3dUniform.FogColor :: R3dUniform.FogRange :: R3dUniform.Eye :: Nil) +
-        shadowSource() +
-        (if (v#pointShadows) pointShadowSource() else "") +
-        (if (v#physicalUnits) Render3d.Uniforms.glslDeclarations(R3dUniform.InverseUnitsPerMeterSquared :: Nil) else "") +
-        (if (v#psx) colorDepthSource() else "") +
-        (if (v#skyIrradiance) Render3d.Uniforms.glslDeclarations(R3dUniform.Sh :: R3dUniform.SkyContribution :: Nil) else "") +
-        ShaderAst.Glsl.printOnly(Render3dShaders.lightAt(v) :: Render3dShaders.fogAt() :: Render3dShaders.fogged() :: Nil) +
-        surfaceOutSource()
+    /// 変種 v の lightSource（v の feature が足す定義を含める）。
+    pub def lightSourceFor(v: Render3d.ProgramKey.ShaderVariant): String = ShaderAst.Glsl.print(Render3dShaders.lightDefinitions(v, Render3dShaders.featureOf(v)))
 
     /// 3D の色を作る最後の組み立て r3d_surfaceOut(albedoLinear, tint, light, emission, intensity, p, fogOn)（CPU の描き手は SoftRaster3d.materialColor と shadePixel）:
     /// 色 = albedoLinear × tint × light（fogOn ならかすみ）+ 線形へ戻した emission × intensity を、画面の値へ戻した物。
     /// albedoLinear は線形へ戻し済みの色（材質は r3d_srgbToLinear3(albedo.rgb)・ビルボードは絵・lit は頂点で戻した vColor）。
-    /// lightSource が含め、colorSpaceSource() を先に置く。
     // WhyNot: albedo をここで戻さない — lit の頂点の色は頂点シェーダーで戻してあり、ここで戻すと 2 回かかる。
     // WhyNot: emission にかすみを掛けない — 自分で光る物（溶岩・目）は遠くでもかすみに沈まずに見えてほしい。
     // WhyNot: 光の式の木（LightModel3d）に入れない — かすみの有無・ビルボードの lit・Depth の枝まで木の入力にすることになる。
-    pub def surfaceOutSource(): String = ShaderAst.Glsl.printOnly(Render3dShaders.surfaceOut() :: Nil)
+    pub def surfaceOutSource(): String = ShaderAst.Glsl.print(Render3dShaders.surfaceOut() :: Nil)
 
     /// 色の空間の変換: Texture3d の式のスカラーの r3d_srgbToLinear / r3d_linearToSrgb と、
-    /// その vec3 の版 r3d_srgbToLinear3 / r3d_linearToSrgb3。frag と lit の頂点シェーダーが 1 回ずつ含める。
-    pub def colorSpaceSource(): String = ShaderAst.Glsl.printOnly(Render3dShaders.colorSpace())
-
-    /// 影の uniform と、スポット i の光に掛ける割合（Scene3d.shadowMatrix の doc の約束 1〜5。CPU の描き手と同じ）。
-    /// 地図の画素は uv = NDC × 0.5 + 0.5 に大きさを掛けて切り捨てた所（行 0 が NDC の y = −1）。周りの画素は端へ寄せる。
-    /// uShadowOn = 0 のプログラム（影の無い場面・ビルボード）は 1 を返す。
-    // WhyNot: texture() でなく texelFetch で読む — 標本の位置の丸めと端の扱いを GPU のフィルタに任せると、CPU の数え方とずれる。
-    // WhyNot: w ≤ 0（光の後ろ）を影にしない — w で割ると x・y が裏返って地図の中に入りうる。その点は円錐の外で光が 0。
-    def shadowSource(): String =
-        Render3d.Uniforms.glslDeclarations(R3dUniform.ShadowOn :: R3dUniform.ShadowSpot :: R3dUniform.ShadowMatrix :: R3dUniform.ShadowMap ::
-                                           R3dUniform.ShadowBias :: R3dUniform.ShadowPcf :: R3dUniform.ShadowStrength :: Nil) +
-        ShaderAst.Glsl.printOnly(Render3dShaders.shadowLitFraction() :: Render3dShaders.spotShadow() :: Nil) +
-        sunShadowSource()
-
-    /// 太陽の uniform（向き・color × intensity）と、その影の割合 sunLitAt(p, g, n)（Scene3d.directionalShadowOf の doc の約束・LightModel3d の SunLit。
-    /// CPU の描き手は SoftRaster3d.Sun.litAt）。g = 点をずらす向きの法線（法線マップを当てる前・裏の面は裏返した物）・n = 光の計算の法線。
-    /// 光の式の木は r3d_sunLit（frag の main が先に代入する。ビルボードは 1 のまま）を読む。uSunShadowOn = 0 のプログラムは 1 を返す。
-    // WhyNot: 太陽へ背を向けた点（n·l ≤ 0）で地図を引かない — facing が 0 なので結果は同じで、pcf の (2r+1)² 回が無駄になる。
-    def sunShadowSource(): String =
-        Render3d.Uniforms.glslDeclarations(R3dUniform.SunDir :: R3dUniform.SunColor :: R3dUniform.SunShadowOn :: R3dUniform.SunMatrix :: R3dUniform.SunMap ::
-                                           R3dUniform.SunBias :: R3dUniform.SunNormalShift :: R3dUniform.SunPcf :: R3dUniform.SunStrength ::
-                                           R3dUniform.SunForward :: R3dUniform.SunFade :: Nil) +
-        ShaderAst.Glsl.printOnly(Render3dShaders.sunLit() :: Render3dShaders.sunLitAt() :: Nil)
-
-    /// 点光源の影の uniform と、点光源 i の光に掛ける割合 r3d_pointShadowLit(i, p, g, n)・それを点光源の数だけ r3d_pointLit へ埋める r3d_pointShadowsAt(p, g, n)
-    /// （r3d_pointShadowLit は LightModel3d.PointShadowCodegen.toGlsl の生成物。CPU の描き手も同じ所から作る）。g = 点をずらす向きの法線（法線マップを当てる前・裏の面は裏返した物）・n = 光の計算の法線。
-    /// uPointShadow[i] = (slot, A, B, strength)（slot が負なら影なし・near = B / (A + 1)）・uPointShadowAtlas = (面の一辺 S, 塊の横の数, 面の射影の倍率 s, pcf)・
-    /// uPointShadowBias = (bias, normalBias)。frag の main が光の計算の前に r3d_pointShadowsAt を呼び、光の式の木は r3d_pointLit[i] を読む。
-    // WhyNot: 光の式の木の中で地図を引かない — PBR の材質は拡散と鏡面の 2 つのループを回し、1 本につき 2 回引くことになる。
-    def pointShadowSource(): String =
-        Render3d.Uniforms.glslDeclarations(R3dUniform.PointShadows :: R3dUniform.PointShadowAtlas :: R3dUniform.PointShadowBias :: R3dUniform.PointShadowMap :: Nil) +
-        ShaderAst.Glsl.printOnly(Render3dShaders.pointLit() :: Render3dShaders.pointShadowLit() :: Render3dShaders.pointShadowsAt() :: Nil)
-
-    /// Output.Depth の灰色（目からの距離で near が黒・near + range が白）。uEye は呼ぶ側の frag が宣言する。
-    def depthGraySource(): String =
-        Render3d.Uniforms.glslDeclarations(R3dUniform.DepthRange :: Nil) +
-        ShaderAst.Glsl.printOnly(Render3dShaders.depthGray() :: Nil)
+    /// その vec3 の版 r3d_srgbToLinear3 / r3d_linearToSrgb3。lit の頂点シェーダーが含める（frag は使う所から辿る）。
+    pub def colorSpaceSource(): String = ShaderAst.Glsl.print(Render3dShaders.colorSpace())
 
     /// 頂点の色のプログラムの frag（vColor は litVertexSource が線形へ戻し済み）。
     pub def litFragmentSource(): String = litFragmentSourceFor(Render3d.ProgramKey.defaultShaderVariant())
 
     /// 変種 v の litFragmentSource。
-    pub def litFragmentSourceFor(v: Render3d.ProgramKey.ShaderVariant): String =
-        ShaderAst.Glsl.fragment(Render3dShaders.litFragment(v, colorSpaceSource() + lightSourceFor(v), ""))
+    pub def litFragmentSourceFor(v: Render3d.ProgramKey.ShaderVariant): String = ShaderAst.Glsl.fragment(Render3dShaders.litFragment(v, Nil))
 
     /// 材質の frag（本文は Render3dShaders.materialFragmentBody）。surface#uv = uv つきの形か（偽なら vUv は (0, 0) の const）・
     /// surface#normalMap = 法線マップを当てるか（uv つきの時だけ。光の計算の法線を、法線マップで傾けた n' にする）。
     /// 材質の部品（glsl#functions の materialEval）は大域の vUv・vWorld・vNormal・vColor を読む。psx の uv つきの vUv は main の頭で代入する大域の変数。
     // WhyNot: 欄を 1 つずつ並べた引数にしない — ProgramKind に欄が増えるたびに、呼び手とテストの字が全部書き換わる。skinned は頂点の側だけが読む。
     pub def materialFragmentSource(glsl: ShaderGen.MaterialGlsl, surface: Render3d.ProgramKey.ProgramKind): String =
-        let v = Render3d.ProgramKey.shaderVariantOfKind(surface);
-        let part = Render3dShaders.glslMaterialPart(glsl);
-        let declarations =
-            (if (surface#uv and v#psx) "vec2 vUv;\n" else if (surface#uv) "" else "const vec2 vUv = vec2(0.0, 0.0);\n") +
-            Render3d.Uniforms.glslDeclarations(R3dUniform.Cutout :: R3dUniform.DepthOut :: Nil) +
-            colorSpaceSource() +
-            lightSourceFor(v) +
-            depthGraySource() +
-            glsl#uniforms +
-            glsl#functions +
-            (if (Render3dShaders.isNormalMapped(surface)) Render3d.Uniforms.glslDeclarations(R3dUniform.NormalMap :: R3dUniform.NormalStrength :: R3dUniform.NormalFlip :: R3dUniform.NormalLevels :: Nil) else "") +
-            (if (surface#lightmap) Render3d.Uniforms.glslDeclarations(R3dUniform.Lightmap :: R3dUniform.LightmapLevels :: R3dUniform.LightmapUvRect :: Nil) else "") +
-            ShaderAst.Glsl.print(Render3dShaders.materialHelpers(surface, part)) +
-            (if (surface#lightmap) lightmapLightSourceFor(v) else "") +
-            (if (surface#metallicRoughness) metallicRoughnessSourceFor(v) else "");
-        ShaderAst.Glsl.fragment(Render3dShaders.materialFragment(surface, part, declarations, ""))
+        ShaderAst.Glsl.fragment(Render3dShaders.materialFragment(surface, Render3dShaders.glslMaterialPart(glsl, surface), Nil))
 
-    /// metallic と roughness を持つ材質の色 pbrAt(p, n, albedo × tint, 拡散の光, vec3(metallic, roughness, 0))（LightModel3d.pbrModel の木から作る）と、
-    /// それが読む空の uniform と、かすみ → emission の組み立て r3d_surfaceOutLit(pbrAt の色, emission, intensity, p)。
+    /// metallic と roughness を持つ材質の色 pbrAt(p, n, albedo × tint, 拡散の光, vec3(metallic, roughness, 0), 映り込み)（LightModel3d.pbrModel の木から作る）と、
+    /// それが読む環境マップの読みと、かすみ → emission の組み立て r3d_surfaceOutLit(pbrAt の色, emission, intensity, p)。
     /// 色 = albedo × (1 − metallic) × light + 鏡面 + 映り込みをかすみに通してから、線形へ戻した emission × intensity を足して画面の値へ戻した物
-    /// （CPU の描き手は SoftRaster3d.materialPixel と materialColor）。lightSource と colorSpaceSource() の後に置く。
+    /// （CPU の描き手は SoftRaster3d.materialPixel と materialColor）。
     // WhyNot: r3d_surfaceOut を使い回さない — あちらは albedo × tint × light を中で掛けるので、鏡面を足すには掛け算の前後を別に書く必要があり、
     //   持たない材質の GLSL の字を変えることになる。
     pub def metallicRoughnessSource(): String = metallicRoughnessSourceFor(Render3d.ProgramKey.defaultShaderVariant())
 
-    /// 変種 v の metallicRoughnessSource（lightSourceFor(v) の後に置く）。
+    /// 変種 v の metallicRoughnessSource。
     pub def metallicRoughnessSourceFor(v: Render3d.ProgramKey.ShaderVariant): String =
-        Render3d.Uniforms.glslDeclarations(R3dUniform.Zenith :: R3dUniform.Horizon :: R3dUniform.Ground :: R3dUniform.Curve :: Nil) +
-        environmentSource() +
-        ShaderAst.Glsl.printOnly(Render3dShaders.pbrAt(v) :: Render3dShaders.surfaceOutLit() :: Nil)
+        ShaderAst.Glsl.print(Render3dShaders.metallicRoughnessDefinitions(v, Render3dShaders.featureOf(v)))
 
-    /// 環境マップの uniform と、跳ね返りの向き（environmentDirectionAt）で絵を読む environmentColorAt（Render3dShaders.environmentColorAt）。
-    def environmentSource(): String =
-        Render3d.Uniforms.glslDeclarations(R3dUniform.EnvOn :: R3dUniform.EnvBoxOn :: R3dUniform.EnvBoxMin :: R3dUniform.EnvBoxMax :: R3dUniform.EnvBoxCenter :: R3dUniform.EnvMap :: R3dUniform.EnvLevels :: R3dUniform.EnvIntensity :: R3dUniform.EnvSrgb :: Nil) +
-        ShaderAst.Glsl.printOnly(Render3dShaders.environmentDirectionAt() :: Render3dShaders.environmentUv() :: Render3dShaders.environmentColorAt() :: Nil)
-
-    /// 向き d（長さ 1）で環境マップを読む座標 environmentUv(d)（LightModel3d.environmentUvOf と同じ式）。
-    def environmentUvSource(): String = ShaderAst.Glsl.printOnly(Render3dShaders.environmentUv() :: Nil)
-
-    /// lightmap のある面の光の式 lightmapLightAt(p, n, lightmap の色)（LightModel3d の木から作る）と、それが読む uniform。
-    /// colorSpaceSource()（色の空間の関数）と lightSource の後に置く（光の uniform と spotShadow を読む）。
+    /// lightmap のある面の光の式 lightmapLightAt(p, n, lightmap の色)（LightModel3d の木から作る）と、それが読む uniform と関数。
     pub def lightmapLightSource(): String = lightmapLightSourceFor(Render3d.ProgramKey.defaultShaderVariant())
 
-    /// 変種 v の lightmapLightSource（lightSourceFor(v) の後に置く）。
+    /// 変種 v の lightmapLightSource。
     pub def lightmapLightSourceFor(v: Render3d.ProgramKey.ShaderVariant): String =
-        Render3d.Uniforms.glslDeclarations(R3dUniform.LightmapSrgb :: R3dUniform.LightmapIntensity :: Nil) +
-        ShaderAst.Glsl.printOnly(Render3dShaders.lightmapLightAt(v) :: Nil)
+        ShaderAst.Glsl.print(Render3dShaders.lightmapLightAt(v, Render3dShaders.featureOf(v)#spotShadow(Render3dShaders.spotShadow())) :: Nil)
 
     /// 外向きの法線 n をタンジェント（xyz と w）と法線マップの rgb c で傾けた applyNormalMap(n, tangent, strength, c)（式は Render3d.flix の頭。
     /// CPU の描き手は SoftRaster3d.applyNormalMap）。
     // WhyNot: タンジェントを頂点の値のまま使わない — 補間で N との直交が崩れ、傾ける向きが法線の側へ漏れる。
     // WhyNot: 長さ 0 のタンジェントで傾けない — normalize が NaN を出し、画素が黒く抜ける。その画素は n のまま。
-    pub def applyNormalMapSource(): String = ShaderAst.Glsl.printOnly(Render3dShaders.applyNormalMap() :: Nil)
+    pub def applyNormalMapSource(): String = ShaderAst.Glsl.print(Render3dShaders.applyNormalMap() :: Nil)
 
     /// 奥行きの書き出し（Output.Depth）の形だけの frag（本文は Render3dShaders.depthFragment）。
-    pub def depthFragmentSource(): String =
-        ShaderAst.Glsl.fragment(Render3dShaders.depthFragment(Render3d.Uniforms.glslDeclarations(R3dUniform.Eye :: Nil) + depthGraySource(), ""))
+    pub def depthFragmentSource(): String = ShaderAst.Glsl.fragment(Render3dShaders.depthFragment(Nil))
 
     /// ビルボードの頂点シェーダー: カメラの right / up で四角を立てる（aCorner は 0〜1・y は下向き）。板ごとの値は instance の attribute（location 1〜4・
     /// 並びは Render3d.SceneList.billboardValueFloats: 点と光の当て方・anchor と size・貼る範囲の uv・tint と影を受ける点を離す長さ）。
@@ -367,6 +283,7 @@ pub mod Render3dGlsl {
 
     /// 変種 v の billboardFragmentSource。ビルボードは点光源の影を受けないので v#pointShadows は読まない（Physical の光だけを変える）。
     pub def billboardFragmentSourceFor(v: Render3d.ProgramKey.ShaderVariant): String =
+        let bv = Render3d.ProgramKey.billboardVariantOf(v);
         "#version 330 core\n" +
         "in vec3 vWorld;\n" +
         "in vec2 vUv;\n" +
@@ -376,9 +293,8 @@ pub mod Render3dGlsl {
         "flat in float vShadowOffset;\n" +
         "out vec4 fragColor;\n" +
         Render3d.Uniforms.glslDeclarations(R3dUniform.Image :: R3dUniform.Facing :: R3dUniform.DepthOut :: Nil) +
-        colorSpaceSource() +
-        lightSourceFor(Render3d.ProgramKey.billboardVariantOf(v)) +
-        depthGraySource() +
+        ShaderAst.Glsl.print(Render3dShaders.colorSpace() ::: Render3dShaders.depthGray() ::
+                             Render3dShaders.lightDefinitions(bv, Render3dShaders.featureOf(bv))) +
         "void main() {\n" +
         "    vec4 texel = texture(uImage, vUv);\n" +
         "    if (texel.a < 0.5) discard;\n" +
@@ -389,7 +305,7 @@ pub mod Render3dGlsl {
         "    }\n" +
         "    if (vLit == 2) r3d_sunLit = sunLitAt(vShadowBase + uSunDir * (vShadowOffset / max(length(uSunDir.xz), ${Scene3d.billboardShadowMinFlat()})), uSunDir, normalize(uFacing));\n" +
         "    vec3 light = vLit >= 1 ? lightAt(vWorld, normalize(uFacing)) : vec3(1.0);\n" +
-        "    fragColor = vec4(" + colorOut(v, "r3d_surfaceOut(r3d_srgbToLinear3(texel.rgb), vTint, light, vec3(0.0), 1.0, vWorld, vLit >= 1)") + ", 1.0);\n" +
+        "    fragColor = vec4(" + colorOut(bv, "r3d_surfaceOut(r3d_srgbToLinear3(texel.rgb), vTint, light, vec3(0.0), 1.0, vWorld, vLit >= 1)") + ", 1.0);\n" +
         "}\n"
 
     /// 空の frag（式は LightModel3d.skyModel・向きは Scene3d.skyDirectionOf。NDC は画素の真ん中の gl_FragCoord と viewport から）。
@@ -399,9 +315,7 @@ pub mod Render3dGlsl {
         "in vec2 vUv;\n" +
         "out vec4 fragColor;\n" +
         Render3d.Uniforms.glslDeclarations(R3dUniform.Viewport :: R3dUniform.Forward :: R3dUniform.Right :: R3dUniform.Up :: R3dUniform.DepthOut :: R3dUniform.EnvOn :: R3dUniform.EnvMap :: R3dUniform.EnvIntensity :: R3dUniform.EnvSrgb :: Nil) +
-        colorSpaceSource() +
-        skyLightSource() +
-        environmentUvSource() +
+        ShaderAst.Glsl.print(Render3dShaders.colorSpace() ::: Render3dShaders.skyAt() :: Render3dShaders.environmentUv() :: Nil) +
         "void main() {\n" +
         "    if (uDepthOut == 1) {\n" +
         "        fragColor = vec4(1.0, 1.0, 1.0, 1.0);\n" +
@@ -418,9 +332,7 @@ pub mod Render3dGlsl {
         "}\n"
 
     /// 空の色の式 skyAt(向き)（LightModel3d の木から作る）と、それが読む uniform。
-    pub def skyLightSource(): String =
-        Render3d.Uniforms.glslDeclarations(R3dUniform.Zenith :: R3dUniform.Horizon :: R3dUniform.Ground :: R3dUniform.Curve :: Nil) +
-        LightModel3d.Codegen.toGlsl("skyAt", Vec3Input.SkyDirection :: Nil, LightModel3d.skyModel())
+    pub def skyLightSource(): String = ShaderAst.Glsl.print(Render3dShaders.skyAt() :: Nil)
 
     /// Design の FBO を viewport 全面へ貼る（FBO は行 0 が下なので、四角の上を v = 1 に当てる）。
     pub def blitVertexSource(): String =

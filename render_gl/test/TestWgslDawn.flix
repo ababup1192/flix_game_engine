@@ -268,7 +268,7 @@ mod TestWgslDawn {
 
     /// 3D の光の式の関数（材質の frag に入らない空の式を含む）を、場面の宣言と一緒に組む。
     def sceneFunctions(): List[(String, String)] =
-        let head = Render3dWgsl.sceneDeclarations() + Render3dWgsl.colorSpaceSource() + Render3dWgsl.lightSource();
+        let head = Render3dWgsl.sceneDeclarations() + Render3dWgsl.lightSource();
         ("frag lit", Render3dWgsl.litFragmentSource()) ::
         ("frag lit +ps", Render3dWgsl.litFragmentSourceFor({ pointShadows = true, physicalUnits = false, psx = false, skyIrradiance = false })) ::
         ("frag lit +pu", Render3dWgsl.litFragmentSourceFor({ pointShadows = false, physicalUnits = true, psx = false, skyIrradiance = false })) ::

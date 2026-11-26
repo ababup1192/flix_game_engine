@@ -6,8 +6,6 @@
 // 射影の行列は GL の物のまま使い、頂点シェーダーが ShaderGen.Wgsl.clipFromGlSource の sg_clipFromGl で clip の z を 0..w へ移す前提
 // （奥行きの値が GL のウィンドウの奥行きと同じになり、影の比べ ndc.z × 0.5 + 0.5 をそのまま使える）。
 pub mod Render3dWgsl {
-    use LightModel3d.Vec3Input
-
     /// 場面の値の struct と、場面の絵の宣言（group 0）。struct の欄と並びは Render3d.UniformLayout.sceneFields（詰める側も同じ表から位置を引く）。
     /// f32 と vec2 の光の配列は、uniform の配列の 16 バイト刻みに合わせて vec4 の配列にした（x・y を読む。LightModel3d.Codegen の WGSL の欄と同じ）。
     pub def sceneDeclarations(): String =
@@ -54,120 +52,66 @@ pub mod Render3dWgsl {
     pub def drawBinding(): Int32 = 16
 
     /// 色の空間の変換（Render3dGlsl.colorSpaceSource と同じ）。
-    pub def colorSpaceSource(): String = ShaderAst.Wgsl.printOnly(Render3dShaders.colorSpace())
+    pub def colorSpaceSource(): String = ShaderAst.Wgsl.print(Render3dShaders.colorSpace())
 
-    /// 光の式（lightAt）・かすみ（fogged）・影と、色を作る最後の組み立て（Render3dGlsl.lightSource と同じ）。sceneDeclarations と colorSpaceSource の後に置く。
+    /// 光の式（lightAt）・かすみ（fogged）・影と、色を作る最後の組み立て（Render3dGlsl.lightSource と同じ）。
     pub def lightSource(): String = lightSourceFor(Render3d.ProgramKey.defaultShaderVariant())
 
-    /// 変種 v の lightSource（Render3dGlsl.lightSourceFor と同じ。v が既定でなければ variantDeclarations(v) も置く）。
-    pub def lightSourceFor(v: Render3d.ProgramKey.ShaderVariant): String = lightSourceWith(shadowSource(), v)
+    /// 変種 v の lightSource（Render3dGlsl.lightSourceFor と同じ定義）。
+    pub def lightSourceFor(v: Render3d.ProgramKey.ShaderVariant): String = ShaderAst.Wgsl.print(Render3dShaders.lightDefinitions(v, Render3dShaders.featureOf(v)))
 
-    /// lightSourceFor の、影の関数（spotShadow と r3d_sunLit）を shadows に替えた版。
-    def lightSourceWith(shadows: String, v: Render3d.ProgramKey.ShaderVariant): String =
-        shadows +
-        (if (v#pointShadows) pointShadowSource() else "") +
-        ShaderAst.Wgsl.printOnly(Render3dShaders.lightAt(v) :: Render3dShaders.fogAt() :: Render3dShaders.fogged() :: Nil) +
-        surfaceOutSource() +
-        (if (v#psx) colorDepthSource() else "")
-
-    /// PS1 風の変種の色の丸め r3d_colorDepth(画面の値の色)（Render3dShaders.colorDepth）。r3dLight.uPsx = (色のレベルの数, 表の番号, 強さ, アフィンの割合)。
-    /// 画素の位置は入口が @builtin(position) を写した r3d_fragCoord（場面ごとの描き先の左上が 0）。
-    def colorDepthSource(): String = ShaderAst.Wgsl.print(Render3dShaders.colorDepth() :: Nil)
-
-    /// 変種 v の frag の色の出口: v#psx なら r3d_colorDepth(c) の式、ほかは c のまま。
-    def colorOut(v: Render3d.ProgramKey.ShaderVariant, c: String): String = if (v#psx) "r3d_colorDepth(" + c + ")" else c
+    /// 変種 v の frag の色の出口の字（c は画面の値の色の式の字。v の feature の colorOut に通す）。
+    def colorOut(v: Render3d.ProgramKey.ShaderVariant, c: String): String =
+        ShaderAst.Wgsl.expression(Render3dShaders.featureOf(v)#colorOut(ShaderAst.rawExpr(ShaderAst.Vec3.Vec3, c, c, Nil, false)))
 
     /// 変種 v の frag の入口の頭: v#psx なら画素の位置（at = @builtin(position) の式）を r3d_fragCoord へ写す。
     def fragCoordIn(v: Render3d.ProgramKey.ShaderVariant, at: String): String = if (v#psx) "    r3d_fragCoord = " + at + ";\n" else ""
 
     /// PS1 風の変種の頂点を丸める式 r3d_vertexSnap(GL の clip の位置)（Render3dGlsl.vertexSnapSource と同じ式）。r3dCamera.uSnap = (描き先の幅, 高さ, 格子, 0)。
-    def vertexSnapSource(): String = ShaderAst.Wgsl.printOnly(Render3dShaders.vertexSnap() :: Nil)
+    def vertexSnapSource(): String = ShaderAst.Wgsl.print(Render3dShaders.vertexSnap() :: Nil)
 
     /// 変種 v の頂点シェーダーの clip の位置の出口（GL の clip の式 c を sg_clipFromGl へ。v#psx なら先に r3d_vertexSnap で丸める）。
     def clipOut(psx: Bool, c: String): String = if (psx) "sg_clipFromGl(r3d_vertexSnap(" + c + "))" else "sg_clipFromGl(" + c + ")"
 
     /// Render3dGlsl.surfaceOutSource と同じ式。
-    pub def surfaceOutSource(): String = ShaderAst.Wgsl.printOnly(Render3dShaders.surfaceOut() :: Nil)
+    pub def surfaceOutSource(): String = ShaderAst.Wgsl.print(Render3dShaders.surfaceOut() :: Nil)
 
-    /// 影の地図の PCF（Render3dGlsl.shadowSource と同じ約束 1〜5）と、スポットと太陽の影の割合。
+    /// 影の地図の PCF（Render3dGlsl の約束 1〜5）と、スポットと太陽の影の割合。
     /// 地図の画素の数え方は GL と同じ（行 0 が NDC の y = −1）で、読む時だけ行を上下に返す: WebGPU で描いた地図は行 0 が NDC の y = +1。
     // WhyNot: 周りの画素を返した後の行で端にそろえない — 端にそろえる（clamp）のを GL の行で済ませてから返せば、CPU の描き手と同じ画素の組を読む。
-    pub def shadowSource(): String =
-        ShaderAst.Wgsl.printOnly(Render3dShaders.shadowLitFraction() :: Render3dShaders.spotShadow() :: Nil) +
-        sunShadowSource()
-
-    /// 影の地図の PCF（shadowSource の頭）。
-    def shadowLitFractionSource(): String = ShaderAst.Wgsl.printOnly(Render3dShaders.shadowLitFraction() :: Nil)
-
-    /// 太陽の影の割合 sunLitAt と r3d_sunLit（shadowSource の末尾）。
-    def sunShadowSource(): String = ShaderAst.Wgsl.printOnly(Render3dShaders.sunLit() :: Render3dShaders.sunLitAt() :: Nil)
-
-    /// 点光源の影の割合 r3d_pointShadowLit（LightModel3d.PointShadowCodegen.toWgsl の生成物）と、それを点光源の数だけ r3d_pointLit へ埋める r3d_pointShadowsAt。
-    /// atlas の画素の数え方は GL と同じ（行 0 が ndc.y = −1）で、読む時だけ行を atlas の高さ − 1 − 行 に返す（WebGPU で描いた atlas は行 0 が上）。
-    def pointShadowSource(): String = ShaderAst.Wgsl.printOnly(Render3dShaders.pointLit() :: Render3dShaders.pointShadowLit() :: Render3dShaders.pointShadowsAt() :: Nil)
-
-    /// ビルボードの影の関数: スポットは遮らない（GLSL のビルボードのプログラムは uShadowOn を付けず 0 のまま読む）。太陽の sunLitAt は置いた物と同じで、
-    /// r3d_sunLit は frag が受ける物（vLit が 2）の時だけ代入する（GLSL の uReceive）。
-    // WhyNot: 場面の値の uShadowOn で切らない — 場面の group 0 は同じ場面の物の影の地図と on を持ち、ビルボードだけ値を替える binding が無い。
-    def billboardShadowSource(): String =
-        shadowLitFractionSource() +
-        "fn spotShadow(i: i32, p: vec3f) -> f32 { return 1.0; }\n" +
-        sunShadowSource()
-
-    def depthGraySource(): String = ShaderAst.Wgsl.printOnly(Render3dShaders.depthGray() :: Nil)
+    pub def shadowSource(): String = ShaderAst.Wgsl.print(Render3dShaders.spotShadow() :: Render3dShaders.sunLit() :: Render3dShaders.sunLitAt() :: Nil)
 
     /// metallic と roughness を持つ材質の色 pbrAt と、環境マップの読み・かすみ → emission の組み立て（Render3dGlsl.metallicRoughnessSource と同じ）。
     pub def metallicRoughnessSource(): String = metallicRoughnessSourceFor(Render3d.ProgramKey.defaultShaderVariant())
 
     /// 変種 v の metallicRoughnessSource。
     pub def metallicRoughnessSourceFor(v: Render3d.ProgramKey.ShaderVariant): String =
-        environmentSource() +
-        ShaderAst.Wgsl.printOnly(Render3dShaders.pbrAt(v) :: Render3dShaders.surfaceOutLit() :: Nil)
-
-    /// 環境マップの読み environmentColorAt（Render3dShaders.environmentColorAt）と、それが読む向きと座標の関数。
-    pub def environmentSource(): String =
-        ShaderAst.Wgsl.printOnly(Render3dShaders.environmentDirectionAt() :: Render3dShaders.environmentUv() :: Render3dShaders.environmentColorAt() :: Nil)
-
-    /// 向き d（長さ 1）で環境マップを読む座標 environmentUv(d)（Render3dGlsl.environmentUvSource と同じ式）。
-    // WhyNot: 極で atan2 を選ばない形を if にしない — select は両側を計算するが、atan2(0, 0) の値は捨てられる（Flix の atan2 と同じ 0 を選ぶ）。
-    def environmentUvSource(): String = ShaderAst.Wgsl.printOnly(Render3dShaders.environmentUv() :: Nil)
-
-    /// lightmap のある面の光の式 lightmapLightAt（Render3dGlsl.lightmapLightSourceFor と同じ木）。
-    def lightmapLightSourceFor(v: Render3d.ProgramKey.ShaderVariant): String = ShaderAst.Wgsl.printOnly(Render3dShaders.lightmapLightAt(v) :: Nil)
+        ShaderAst.Wgsl.print(Render3dShaders.metallicRoughnessDefinitions(v, Render3dShaders.featureOf(v)))
 
     /// Render3dGlsl.applyNormalMapSource と同じ式。
     // WhyNot: 長さ 0 の p の normalize を if で避けない — select は両側を計算するが、NaN の側は捨てられる。
-    pub def applyNormalMapSource(): String = ShaderAst.Wgsl.printOnly(Render3dShaders.applyNormalMap() :: Nil)
+    pub def applyNormalMapSource(): String = ShaderAst.Wgsl.print(Render3dShaders.applyNormalMap() :: Nil)
+
+    /// group 0 の場面と変種 v の binding の宣言（frag の入口の declarations）。
+    def sceneBindings(v: Render3d.ProgramKey.ShaderVariant, more: String): List[ShaderAst.Definition] =
+        Render3dShaders.wgslDeclarations("r3d_bindings", sceneDeclarations() + variantDeclarations(v) + more) :: Nil
 
     /// 材質の frag（本文は Render3dShaders.materialFragmentBody）。入口は fs_main・varying の struct は R3dIn。
     /// 材質の部品は group 1 で作った物（ShaderGen.Wgsl.compile3d(…, 1)）を渡す。materialEval と cutoutAlpha は vUv・vWorld・vNormal・vColor を名前で読む（本文が局所の値に置く）。
     pub def materialFragmentSource(m: ShaderGen.Wgsl.MaterialWgsl, surface: Render3d.ProgramKey.ProgramKind): String =
-        let v = Render3d.ProgramKey.shaderVariantOfKind(surface);
-        let part = Render3dShaders.wgslMaterialPart(m);
-        let declarations =
-            sceneDeclarations() +
-            variantDeclarations(v) +
-            drawDeclarations(Render3dShaders.isNormalMapped(surface), surface#lightmap) +
-            m#declarations +
-            colorSpaceSource() +
-            lightSourceFor(v) +
-            depthGraySource() +
-            m#functions +
-            ShaderAst.Wgsl.print(Render3dShaders.materialHelpers(surface, part)) +
-            (if (surface#lightmap) lightmapLightSourceFor(v) else "") +
-            (if (surface#metallicRoughness) metallicRoughnessSourceFor(v) else "");
-        ShaderAst.Wgsl.fragment(Render3dShaders.materialFragment(surface, part, "", declarations))
+        let bindings = sceneBindings(surface#variant, drawDeclarations(Render3dShaders.isNormalMapped(surface), surface#lightmap));
+        ShaderAst.Wgsl.fragment(Render3dShaders.materialFragment(surface, Render3dShaders.wgslMaterialPart(m), bindings))
 
     /// 奥行きの書き出し（Output.Depth）の形だけの frag（Render3dGlsl.depthFragmentSource と同じ本文）。頂点シェーダーは litVertexSource。入口は fs_main。
     pub def depthFragmentSource(): String =
-        ShaderAst.Wgsl.fragment(Render3dShaders.depthFragment("", sceneDeclarations() + depthGraySource()))
+        ShaderAst.Wgsl.fragment(Render3dShaders.depthFragment(Render3dShaders.wgslDeclarations("r3d_bindings", sceneDeclarations()) :: Nil))
 
     /// 頂点の色のプログラムの frag（Render3dGlsl.litFragmentSource と同じ本文。vColor は頂点シェーダーが線形へ戻し済み）。入口は fs_main。
     pub def litFragmentSource(): String = litFragmentSourceFor(Render3d.ProgramKey.defaultShaderVariant())
 
     /// 変種 v の litFragmentSource。
     pub def litFragmentSourceFor(v: Render3d.ProgramKey.ShaderVariant): String =
-        ShaderAst.Wgsl.fragment(Render3dShaders.litFragment(v, "", sceneDeclarations() + variantDeclarations(v) + colorSpaceSource() + lightSourceFor(v)))
+        ShaderAst.Wgsl.fragment(Render3dShaders.litFragment(v, sceneBindings(v, "")))
 
     /// 1 体ごとの値の 1 体のバイト数（Render3d.InstanceValues の 1 体 = 32 float）。
     pub def instanceBytes(): Int32 = 4 * Render3d.InstanceValues.floatsPerInstance()
@@ -247,7 +191,8 @@ pub mod Render3dWgsl {
     /// vLit が 2（光を当てて太陽の影も受ける）の物だけ、太陽の影の地図を引く。
     pub def billboardFragmentSource(): String = billboardFragmentSourceFor(Render3d.ProgramKey.defaultShaderVariant())
 
-    /// 変種 v の billboardFragmentSource（点光源の影を受けないので billboardVariantOf(v) の字）。
+    /// 変種 v の billboardFragmentSource（点光源の影を受けないので billboardVariantOf(v) の字）。スポットは遮らない（spotShadow はいつも 1）。
+    // WhyNot: 場面の値の uShadowOn でスポットの影を切らない — 場面の group 0 は同じ場面の物の影の地図と on を持ち、ビルボードだけ値を替える binding が無い。
     pub def billboardFragmentSourceFor(v: Render3d.ProgramKey.ShaderVariant): String =
         let bv = Render3d.ProgramKey.billboardVariantOf(v);
         sceneDeclarations() +
@@ -255,9 +200,8 @@ pub mod Render3dWgsl {
         "@group(1) @binding(0) var uImage: texture_2d<f32>;\n" +
         "@group(1) @binding(1) var uImageSampler: sampler;\n" +
         billboardVaryings("R3dBillboardIn", bv#psx) +
-        colorSpaceSource() +
-        lightSourceWith(billboardShadowSource(), bv) +
-        depthGraySource() +
+        ShaderAst.Wgsl.print(Render3dShaders.colorSpace() ::: Render3dShaders.depthGray() ::
+                             Render3dShaders.lightDefinitions(bv, { spotShadow = _ -> Render3dShaders.spotShadowUnlit() | Render3dShaders.featureOf(bv) })) +
         "@fragment fn fs_main(i: R3dBillboardIn) -> @location(0) vec4f {\n" +
         fragCoordIn(bv, "i.position") +
         "    let texel = textureSample(uImage, uImageSampler, i.vUv);\n" +
@@ -427,8 +371,7 @@ pub mod Render3dWgsl {
         "}\n"
 
     /// 空の色の式 skyAt(向き)（Render3dGlsl.skyLightSource と同じ木）。
-    pub def skyLightSource(): String =
-        LightModel3d.Codegen.toWgsl("skyAt", Vec3Input.SkyDirection :: Nil, LightModel3d.skyModel())
+    pub def skyLightSource(): String = ShaderAst.Wgsl.print(Render3dShaders.skyAt() :: Nil)
 
     /// R3dScene の uSkyForward のバイトの位置（光の配列の後ろ・uSkyRight と uSkyUp が 16 バイトずつ続く）。
     pub def skyValuesAt(): Int32 = Render3d.UniformLayout.offsetOf(Render3d.UniformLayout.sceneOffsets(), Render3d.UniformLayout.SceneField.SkyForward)
@@ -449,9 +392,7 @@ pub mod Render3dWgsl {
     // WhyNot: 奥行きの書き出しの枝（GLSL の uDepthOut）を持たない — 奥行きの書き出しの pass は空を描かず、地の色の白で消す（WebGpuRenderer.clearOf）。
     pub def skyFragmentSource(): String =
         sceneDeclarations() +
-        colorSpaceSource() +
-        skyLightSource() +
-        environmentUvSource() +
+        ShaderAst.Wgsl.print(Render3dShaders.colorSpace() ::: Render3dShaders.skyAt() :: Render3dShaders.environmentUv() :: Nil) +
         "@fragment fn fs_main(@builtin(position) at: vec4f) -> @location(0) vec4f {\n" +
         "    let ndc = vec2f(at.x / r3d.uSkyForward.w * 2.0 - 1.0, 1.0 - at.y / r3d.uSkyRight.w * 2.0);\n" +
         "    let d = normalize(r3d.uSkyForward.xyz + r3d.uSkyRight.xyz * ndc.x + r3d.uSkyUp.xyz * ndc.y);\n" +

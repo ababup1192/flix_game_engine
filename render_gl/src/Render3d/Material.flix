@@ -534,7 +534,7 @@ mod Render3d.Material {
         let label = "scene3d:material" + (if (kind#skinned) ":skin" else "") + (if (kind#uv) ":uv" else "")
             + (if (kind#normalMap) ":nm" else "") + (if (kind#lightmap) ":lm" else "") + (if (kind#blend) ":bl" else "")
             + (if (kind#doubleSided) ":ds" else "") + (if (kind#coverage) ":cov" else "") + (if (kind#metallicRoughness) ":mr" else "")
-            + String.replace(src = "+", dst = ":", Render3d.ProgramKey.variantKeyOf(Render3d.ProgramKey.shaderVariantOfKind(kind))) + ":${m#spec#name}";
+            + String.replace(src = "+", dst = ":", Render3d.ProgramKey.variantKeyOf(kind#variant)) + ":${m#spec#name}";
         noteMaterialBuild(state, label, reason);
         let vertex = materialVertexSourceFor({ skinned = kind#skinned, uv = kind#uv, lightmap = kind#lightmap }, kind#variant#psx);
         let fragment = materialFragmentSource(glsl, kind);

@@ -5,8 +5,9 @@ pub mod Render3d.Uniforms {
     import fge.gl.GlContext
     use ShaderAst.Ty
 
-    /// 3D の描き手の GLSL の uniform（材質の部品の uParamN・uTexN などは番号つき）。
-    pub enum R3dUniform with Eq, Order, ToString {
+    /// 3D の描き手の GLSL の uniform（材質の部品の uParamN・uTexN などは番号つき）。PointShadow(i) は点光源の影の配列の i 番目の location を引くだけの handle
+    /// （木で読むのは配列の PointShadows）。
+    pub enum R3dUniform with Eq, Order {
         case View, Proj, InstanceBase, InstanceTexture, JointTexture
         case Ambient, Hemisphere, ToonSteps, PointCount, PointPos, PointColor, PointRange
         case SpotCount, SpotPos, SpotDir, SpotColor, SpotRange, SpotCone, FogOn, FogColor, FogRange, Eye
@@ -114,7 +115,7 @@ pub mod Render3d.Uniforms {
             case R3dUniform.EnvSrgb         => row("uEnvSrgb", "int", Ty.I32, scene("uEnvSrgb"))
             case R3dUniform.DepthRange      => row("uDepthRange", "vec2", Ty.Vec2, scene("uDepthRange"))
             case R3dUniform.DepthOut        => row("uDepthOut", "int", Ty.I32, scene("uDepthOut"))
-            case R3dUniform.Cutout          => row("uCutout", "int", Ty.I32, None)
+            case R3dUniform.Cutout          => row("uCutout", "int", Ty.Bool, draw("uCutout"))
             case R3dUniform.Time            => row("uTime", "float", Ty.F32, None)
             case R3dUniform.Param(i)        => row("uParam${i}", "float", Ty.F32, None)
             case R3dUniform.Tex(i)          => row("uTex${i}", "sampler2D", Ty.Texture2d, None)
@@ -147,7 +148,7 @@ pub mod Render3d.Uniforms {
         R3dUniform.ShadowOn :: R3dUniform.ShadowSpot :: R3dUniform.ShadowMatrix :: R3dUniform.ShadowMap :: R3dUniform.ShadowBias :: R3dUniform.ShadowPcf ::
         R3dUniform.ShadowStrength :: R3dUniform.SunDir :: R3dUniform.SunColor :: R3dUniform.SunShadowOn :: R3dUniform.SunMatrix :: R3dUniform.SunMap ::
         R3dUniform.SunBias :: R3dUniform.SunNormalShift :: R3dUniform.SunPcf :: R3dUniform.SunStrength :: R3dUniform.SunForward :: R3dUniform.SunFade ::
-        R3dUniform.PointShadowAtlas :: R3dUniform.PointShadowBias :: R3dUniform.PointShadowMap ::
+        R3dUniform.PointShadows :: R3dUniform.PointShadowAtlas :: R3dUniform.PointShadowBias :: R3dUniform.PointShadowMap ::
         R3dUniform.InverseUnitsPerMeterSquared :: R3dUniform.Psx :: R3dUniform.PsxTarget :: R3dUniform.VertexSnap :: R3dUniform.Sh :: R3dUniform.SkyContribution ::
         R3dUniform.Zenith :: R3dUniform.Horizon :: R3dUniform.Ground :: R3dUniform.Curve :: R3dUniform.EnvOn :: R3dUniform.EnvBoxOn :: R3dUniform.EnvBoxMin ::
         R3dUniform.EnvBoxMax :: R3dUniform.EnvBoxCenter :: R3dUniform.EnvMap :: R3dUniform.EnvLevels :: R3dUniform.EnvIntensity :: R3dUniform.EnvSrgb ::
@@ -156,33 +157,55 @@ pub mod Render3d.Uniforms {
         R3dUniform.Lightmap :: R3dUniform.LightmapLevels :: R3dUniform.LightmapUvRect :: R3dUniform.LightmapSrgb :: R3dUniform.LightmapIntensity ::
         R3dUniform.Right :: R3dUniform.Up :: R3dUniform.RightPerBillboard :: R3dUniform.Facing :: R3dUniform.Image :: R3dUniform.Viewport :: R3dUniform.Forward :: Nil
 
-    /// GLSL の宣言の名前（配列の [N] を除く）→ handle の並び（点光源の影は 1 つずつの location を引くので要素ごと）。
-    def handlesByName(): Map[String, List[R3dUniform]] =
-        let indexed = (prefix: String, make: Int32 -> R3dUniform) ->
-            List.range(0, Scene3d.maxMaterialTextures() + 32) |> List.map(i -> ("${prefix}${i}", make(i) :: Nil));
-        let plain = plainHandles() |> List.map(u -> (rowOf(u)#name, u :: Nil));
-        let pointShadows = ("uPointShadow", List.range(0, Scene3d.maxPointLights()) |> List.map(R3dUniform.PointShadow)) :: Nil;
-        List.toMap(plain ::: pointShadows ::: indexed("uParam", R3dUniform.Param) ::: indexed("uTex", R3dUniform.Tex)
-                   ::: indexed("uTexFlip", R3dUniform.TexFlip) ::: indexed("uTexLevels", R3dUniform.TexLevels))
+    /// GLSL の名前から番号の無い handle を引く表（handleIn に渡す）。
+    pub type alias NameTable = Map[String, R3dUniform]
 
-    /// GLSL の字 source が宣言した uniform の名前（行の頭の `uniform <型> <名前>` の名前。配列の [N] は除く）。
-    pub def declaredNames(source: String): List[String] =
-        TextSplit.lines(source) |> List.filterMap(line -> {
-            let words = TextSplit.split(" ", String.trim(line));
-            match words {
-                case "uniform" :: _ :: name :: _ => Some(String.takeWhile(ch -> ch != '[' and ch != ';', name))
-                case _                           => None
-            }
+    /// 番号の無い handle の表（1 回作って handleIn に渡す）。
+    pub def nameTable(): NameTable = plainHandles() |> List.map(u -> (rowOf(u)#name, u)) |> List.toMap
+
+    /// 番号つきの名前の頭と handle（長い頭が先: uTexLevels3 を uTex で読まない）。
+    def numberedPrefixes(): List[(String, Int32 -> R3dUniform)] =
+        ("uTexLevels", R3dUniform.TexLevels) :: ("uTexFlip", R3dUniform.TexFlip) :: ("uParam", R3dUniform.Param) :: ("uTex", R3dUniform.Tex) :: Nil
+
+    /// 字 digits が 1 字以上の数字だけか。
+    def isNumber(digits: String): Bool = not String.isEmpty(digits) and List.forAll(Char.isDigit, String.toList(digits))
+
+    /// GLSL の宣言の名前 name（配列の [N] を除く）の handle（番号つきは頭 + 数字で読む。表に無ければ None）。
+    pub def handleIn(table: NameTable, name: String): Option[R3dUniform] = match Map.get(name, table) {
+        case Some(u) => Some(u)
+        case None    => numberedPrefixes() |> List.findMap(pm -> {
+            let (prefix, make) = pm;
+            let digits = String.dropLeft(String.length(prefix), name);
+            if (String.startsWith(prefix = prefix, name) and isNumber(digits)) Int32.fromString(digits) |> Option.map(make) else None
         })
+    }
 
-    /// GLSL の字 sources が宣言した uniform の handle（表に無い名前は Err の並びへ）。
+    /// GLSL の字 source が宣言した uniform の名前（`uniform <型> <名前>` で始まる行の名前。配列の [N] は除く）。
+    pub def declaredNames(source: String): List[String] =
+        TextSplit.lines(source) |> List.filterMap(line ->
+            if (not String.startsWith(prefix = "uniform ", line)) None
+            else match TextSplit.split(" ", line) {
+                case _ :: _ :: name :: _ => Some(String.takeWhile(ch -> ch != '[' and ch != ';', name))
+                case _                   => None
+            })
+
+    /// GLSL の字 sources が宣言した uniform の handle と、表に無い名前。
     pub def handlesOf(sources: List[String]): (List[R3dUniform], List[String]) =
-        let table = handlesByName();
-        let names = sources |> List.flatMap(declaredNames) |> List.distinct;
-        let found = names |> List.map(n -> (n, Map.get(n, table)));
-        let known = found |> List.flatMap(nf -> snd(nf) |> Option.getWithDefault(Nil));
-        let unknown = found |> List.filterMap(nf -> if (Option.isEmpty(snd(nf))) Some(fst(nf)) else None);
-        (known, unknown)
+        let table = nameTable();
+        let found = sources |> List.flatMap(declaredNames) |> List.distinct |> List.map(n -> (n, handleIn(table, n)));
+        (found |> List.filterMap(snd), found |> List.filterMap(nf -> if (Option.isEmpty(snd(nf))) Some(fst(nf)) else None))
+
+    /// handlesOf の、表に無い名前があれば止める版。
+    def handlesOfOrBug(sources: List[String]): List[R3dUniform] = match handlesOf(sources) {
+        case (known, Nil) => known
+        case (_, unknown) => bug!("Render3d.Uniforms: GLSL の uniform ${unknown} が handle の表に無い")
+    }
+
+    /// handle u の location を引く handle（点光源の影の配列は要素ごと）。
+    def locationHandles(u: R3dUniform): List[R3dUniform] = match u {
+        case R3dUniform.PointShadows => List.range(0, Scene3d.maxPointLights()) |> List.map(R3dUniform.PointShadow)
+        case _                       => u :: Nil
+    }
 
     /// プログラムの uniform の location（handle → location。プログラムが宣言していない handle は入らない）。
     pub type alias UniformLocations = Map[R3dUniform, Int32]
@@ -190,10 +213,10 @@ pub mod Render3d.Uniforms {
     /// 宣言の無いプログラムの location（何も差さない）。
     pub def noLocations(): UniformLocations = Map.empty()
 
-    /// プログラム program の、GLSL の字 sources が宣言した uniform の location。
+    /// プログラム program の、GLSL の字 sources が宣言した uniform の location（表に無い名前があれば止める）。
     // WhyNot: 表の全部の handle の location を引かない — プログラムを組むたびに GL への呼び出しが 100 回ほど増え、宣言していない名前の -1 を持つだけになる。
     pub def locationsOf(gl: GlContext, program: Int32, sources: List[String]): UniformLocations \ IO =
-        fst(handlesOf(sources)) |> List.foldLeft((acc, u) -> {
+        handlesOfOrBug(sources) |> List.flatMap(locationHandles) |> List.foldLeft((acc, u) -> {
             let at = gl.getUniformLocation(program, rowOf(u)#name);
             if (at < 0) acc else Map.insert(u, at, acc)
         }, Map.empty())
@@ -225,16 +248,19 @@ pub mod Render3d.Uniforms {
 
     // ── 木で読む ──
 
-    /// handle u を木で読む uniform（GLSL の名前・型・言語ごとの読む字）。
-    pub def refOf(u: R3dUniform): ShaderAst.UniformRef =
-        let r = rowOf(u);
-        { name = r#name, ty = r#ty, glsl = Some({ base = r#name, swizzle = "" }), wgsl = r#wgsl }
-
-    /// handles の GLSL の宣言の行（並べた順）。
-    pub def glslDeclarations(handles: List[R3dUniform]): String =
-        handles |> List.map(u -> {
+    /// handle u を木で読む uniform（GLSL の名前・型・言語ごとの読む字・GLSL の宣言の型と長さ）。PointShadow(i) は読めない（止める）。
+    pub def refOf(u: R3dUniform): ShaderAst.UniformRef = match u {
+        case R3dUniform.PointShadow(i) => notReadableOrBug(i)
+        case _ =>
             let r = rowOf(u);
-            let dims = r#length |> Option.map(n -> "[${n}]") |> Option.getWithDefault("");
-            "uniform ${r#glsl} ${r#name}${dims};\n"
-        }) |> String.flatten
+            { name = r#name, ty = r#ty, glsl = Some({ base = r#name, swizzle = "" }), wgsl = r#wgsl, glslType = r#glsl, length = r#length }
+    }
+
+    def notReadableOrBug(i: Int32): a = bug!("Render3d.Uniforms: PointShadow(${i}) は location を引くだけの handle（木では PointShadows を読む）")
+
+    /// 番号の無い handle の全部を木で読む物（生成した字が読む uniform を探す候補）。
+    pub def namedRefs(): List[ShaderAst.UniformRef] = plainHandles() |> List.map(refOf)
+
+    /// handles の GLSL の宣言の行（並べた順。頂点シェーダーのように木で書いていない字が使う）。
+    pub def glslDeclarations(handles: List[R3dUniform]): String = ShaderAst.Glsl.uniformDeclarations(handles |> List.map(refOf))
 }

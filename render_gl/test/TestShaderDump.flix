@@ -31,7 +31,7 @@ mod TestShaderDump {
     def kindLabel(k: Render3d.ProgramKey.ProgramKind): String =
         let bit = (b: Bool, ch: String) -> if (b) ch else "-";
         bit(k#uv, "u") + bit(k#normalMap, "n") + bit(k#lightmap, "l") + bit(k#blend, "b") + bit(k#doubleSided, "d") + bit(k#coverage, "c")
-            + bit(k#metallicRoughness, "m") + "_" + variantLabel(Render3d.ProgramKey.shaderVariantOfKind(k))
+            + bit(k#metallicRoughness, "m") + "_" + variantLabel(k#variant)
 
     def fill(name: String, shade: Shade, alpha: Field): ShaderDoc.Spec =
         { name = name, cycleRate = 0.0, bindings = Nil, out = ShaderDoc.Out.Fill({ shade = shade, alpha = alpha }) }
@@ -150,4 +150,69 @@ mod TestShaderDump {
     def testEveryGlslUniformIsInTheHandleTable(): Unit \ Assert =
         let glsl = allSources() |> List.filter(s -> String.startsWith(prefix = "glsl/", fst(s))) |> List.map(snd);
         Assert.assertEq(expected = Nil, snd(Render3d.Uniforms.handlesOf(glsl)))
+
+    /// 字 text の、英数字と _ と . の続き（r3d.uEye のような欄の読みを 1 つに数える）。
+    def tokensOf(text: String): List[String] =
+        let isPart = (c: Char) -> Char.isLetter(c) or Char.isDigit(c) or c == '_' or c == '.';
+        let (done, word) = String.foldLeft((acc, c) -> {
+            let (found, current) = acc;
+            if (isPart(c)) (found, current + Char.toString(c))
+            else if (String.isEmpty(current)) acc
+            else (current :: found, "")
+        }, (Nil, ""), text);
+        (if (String.isEmpty(word)) done else word :: done) |> List.distinct
+
+    /// LightModel3d の生成物の本文（全部の変種の光の式・lightmap の光・PBR・かすみ・跳ね返りの向き・空・点光源の影）を言語 lang で。
+    def generatedBodies(print: ShaderAst.Definition -> String): List[String] =
+        let spot = Render3dShaders.spotShadow();
+        let perVariant = allVariants() |> List.flatMap(v ->
+            Render3dShaders.lightAt(v, spot) :: Render3dShaders.lightmapLightAt(v, spot) :: Render3dShaders.pbrAt(v, spot) :: Nil);
+        (perVariant ::: Render3dShaders.fogAt() :: Render3dShaders.environmentDirectionAt() :: Render3dShaders.skyAt() :: Render3dShaders.pointShadowLit() :: Nil)
+            |> List.map(print)
+
+    /// LightModel3d.Codegen の生成物の中の uniform の名前（GLSL の u で始まる名前・WGSL の r3d・r3dLight・r3dDraw の欄）は、どれも handle の表にある。
+    @Test
+    def testCodegenUniformNamesAreInTheHandleTable(): Unit \ Assert =
+        let table = Render3d.Uniforms.nameTable();
+        let wgslNames = Render3d.Uniforms.namedRefs() |> List.filterMap(u -> u#wgsl |> Option.map(a -> a#base)) |> List.toSet;
+        let isUniformName = (n: String) -> String.length(n) > 1 and String.startsWith(prefix = "u", n) and Char.isUpperCase(String.charAt(1, n));
+        let glslUnknown = generatedBodies(ShaderAst.Glsl.definition) |> List.flatMap(tokensOf)
+            |> List.filterMap(t -> List.head(TextSplit.split(".", t))) |> List.filter(isUniformName)
+            |> List.filter(n -> Option.isEmpty(Render3d.Uniforms.handleIn(table, n)));
+        let fieldOf = (t: String) -> match TextSplit.split(".", t) {
+            case owner :: field :: _ if owner == "r3d" or owner == "r3dLight" or owner == "r3dDraw" => Some(owner + "." + field)
+            case _ => None
+        };
+        let wgslUnknown = generatedBodies(ShaderAst.Wgsl.definition) |> List.flatMap(tokensOf) |> List.filterMap(fieldOf)
+            |> List.filter(n -> not Set.memberOf(n, wgslNames));
+        Assert.assertEq(expected = Nil, List.distinct(glslUnknown ::: wgslUnknown))
+
+    def fieldNames(fields: List[Render3d.UniformLayout.Field[f]]): Set[String] = fields |> List.map(fd -> { let (_, n, _) = fd; n }) |> List.toSet
+
+    /// handle の表の、場面の値（r3d）と光の値（r3dLight）の欄の名前は、どれも UniformLayout の sceneFields・lightFields にある。
+    @Test
+    def testHandleTableWgslFieldsAreInTheLayout(): Unit \ Assert =
+        let scene = fieldNames(Render3d.UniformLayout.sceneFields());
+        let light = fieldNames(Render3d.UniformLayout.lightFields());
+        let missing = Render3d.Uniforms.namedRefs() |> List.filterMap(u -> u#wgsl) |> List.filterMap(a -> match TextSplit.split(".", a#base) {
+            case "r3d" :: field :: Nil      => if (Set.memberOf(field, scene)) None else Some(a#base)
+            case "r3dLight" :: field :: Nil => if (Set.memberOf(field, light)) None else Some(a#base)
+            case _                          => None
+        });
+        Assert.assertEq(expected = Nil, missing)
+
+    /// 番号つきの uniform は表の番号の上限を超えても名前から handle を引く（uParam40）。
+    @Test
+    def testNumberedUniformBeyondTheTableIsFound(): Unit \ Assert =
+        Assert.assertTrue(Render3d.Uniforms.handleIn(Render3d.Uniforms.nameTable(), "uParam40") == Some(Render3d.Uniforms.R3dUniform.Param(40)))
+
+    /// 番号つきの名前は長い頭から読む（uTexLevels3 は uTex の 3 でない）。
+    @Test
+    def testNumberedUniformReadsTheLongestPrefix(): Unit \ Assert =
+        Assert.assertTrue(Render3d.Uniforms.handleIn(Render3d.Uniforms.nameTable(), "uTexLevels3") == Some(Render3d.Uniforms.R3dUniform.TexLevels(3)))
+
+    /// 頭の後が数字でない名前は表に無い（uTexture）。
+    @Test
+    def testPrefixWithoutNumberIsNotFound(): Unit \ Assert =
+        Assert.assertTrue(Option.isEmpty(Render3d.Uniforms.handleIn(Render3d.Uniforms.nameTable(), "uTexture")))
 }

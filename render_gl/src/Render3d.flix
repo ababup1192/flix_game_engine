@@ -28,7 +28,7 @@ mod Render3d {
     use Render3dGlsl.{meshVertexSource, skinnedMeshVertexSource, litVertexSource, litFragmentSource,
                        depthFragmentSource, billboardVertexSource, billboardFragmentSource, skyFragmentSource, blitVertexSource, blitFragmentSource}
     use Render3d.Light.{lightDataOf, putLights}
-    use Render3d.ProgramKey.{ProgramKind, ShaderVariant, defaultShaderVariant, shaderVariantOf, passVariantOf, shaderVariantOfKind, billboardVariantOf, lightVariantOf, variantKeyOf, materialKey}
+    use Render3d.ProgramKey.{ProgramKind, ShaderVariant, defaultShaderVariant, shaderVariantOf, passVariantOf, billboardVariantOf, lightVariantOf, variantKeyOf, materialKey}
     use Render3d.Batch.{MaterialBatch, MeshBatch}
     use Render3d.ScenePlan.{PlanCaps, ScenePassSpec, coverageOf, groupScenesWith, planScenes}
     use Render3d.SceneList.{SceneList, billboardAt, buildScenePasses, contextOf, firstBillboardRowOf, firstBlendedRowOf, valuesAt}

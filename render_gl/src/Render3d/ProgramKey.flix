@@ -1,5 +1,5 @@
 // Render3d.ProgramKey — 3D の描き手の GL と WebGPU が共有する、プログラムの版の約束（材質の版・場面の変種・鍵）。
-// 変種のフラグは表（flagRows）の 1 行ずつ。フラグを足す時に render_gl の中で直すのは表の 1 行と、そのフラグの中身（シェーダーの字・uniform）。
+// 変種のフラグは表（flagRows）の 1 行ずつ。フラグを足す時に render_gl の中で直すのは表の 1 行と、そのフラグの feature の関数（Render3dShaders.ShaderFeature）。
 // engine の Scene3d.PreloadVariant（ゲームへ出している record）は変えず、ここで 1 回だけ Set[VariantFlag] へ変える。
 pub mod Render3d.ProgramKey {
 
@@ -10,22 +10,27 @@ pub mod Render3d.ProgramKey {
     pub type alias ShaderVariant = Scene3d.PreloadVariant
 
     /// 変種のフラグ（ShaderVariant の欄 1 つ）。
-    pub enum VariantFlag with Eq, Order, ToString {
+    pub enum VariantFlag with Eq, Order {
         case PointShadows, PhysicalUnits, Psx, SkyIrradiance
     }
 
-    /// 変種のフラグの表の 1 行。key = 鍵の字（Scene3d.preloadVariantKey と同じ）・kindCodeBit = 材質の版を 1 つの数にする時の bit（Render3d.ScenePlan.kindCodeOf）・
+    /// 変種のフラグの表の 1 行。key = 鍵の字（Scene3d.preloadVariantKey と同じ）・kindCodeBit = 材質の版を 1 つの数にする時の bit・
     /// billboard = ビルボードのプログラムも受けるか・lightBuffer = WebGPU の group 0 に R3dLight の buffer を足すか・
-    /// pointShadowAtlas = WebGPU の group 0 に点光源の影の atlas を足すか。
-    pub type alias FlagRow = { flag = VariantFlag, key = String, kindCodeBit = Int32, billboard = Bool, lightBuffer = Bool, pointShadowAtlas = Bool }
+    /// pointShadowAtlas = WebGPU の group 0 に点光源の影の atlas を足すか・feature = シェーダーの名前のある点ごとの差し込み。
+    pub type alias FlagRow = { flag = VariantFlag, key = String, kindCodeBit = Int32, billboard = Bool, lightBuffer = Bool, pointShadowAtlas = Bool,
+                               feature = Render3dShaders.ShaderFeature }
 
     /// 変種のフラグの表（鍵の並びの順）。
     // WhyNot: ビルボードに点光源の影を受けさせない — 板は薄く、点光源の影の地図の 6 面を引くと 1 枚の板のために全部の面を読む。
     pub def flagRows(): List[FlagRow] =
-        { flag = VariantFlag.PointShadows,  key = "+ps",  kindCodeBit = 256,  billboard = false, lightBuffer = true, pointShadowAtlas = true } ::
-        { flag = VariantFlag.PhysicalUnits, key = "+pu",  kindCodeBit = 512,  billboard = true,  lightBuffer = true, pointShadowAtlas = false } ::
-        { flag = VariantFlag.Psx,           key = "+psx", kindCodeBit = 1024, billboard = true,  lightBuffer = true, pointShadowAtlas = false } ::
-        { flag = VariantFlag.SkyIrradiance, key = "+sh",  kindCodeBit = 2048, billboard = true,  lightBuffer = true, pointShadowAtlas = false } :: Nil
+        { flag = VariantFlag.PointShadows,  key = "+ps",  kindCodeBit = 256,  billboard = false, lightBuffer = true, pointShadowAtlas = true,
+          feature = Render3dShaders.pointShadowsFeature() } ::
+        { flag = VariantFlag.PhysicalUnits, key = "+pu",  kindCodeBit = 512,  billboard = true,  lightBuffer = true, pointShadowAtlas = false,
+          feature = Render3dShaders.noFeature() } ::
+        { flag = VariantFlag.Psx,           key = "+psx", kindCodeBit = 1024, billboard = true,  lightBuffer = true, pointShadowAtlas = false,
+          feature = Render3dShaders.psxFeature() } ::
+        { flag = VariantFlag.SkyIrradiance, key = "+sh",  kindCodeBit = 2048, billboard = true,  lightBuffer = true, pointShadowAtlas = false,
+          feature = Render3dShaders.noFeature() } :: Nil
 
     /// 変種 v のフラグの集まり（render_gl へ入る所で 1 回だけ変える）。
     pub def flagsOf(v: ShaderVariant): Set[VariantFlag] =
@@ -60,7 +65,7 @@ pub mod Render3d.ProgramKey {
     pub def billboardVariantOf(v: ShaderVariant): ShaderVariant =
         rowsOf(v) |> List.filter(row -> row#billboard) |> List.map(row -> row#flag) |> List.toSet |> variantOf
 
-    /// 変種 v の光の式の木の変種（LightModel3d.lightingModelFor などへ渡す）。
+    /// 変種 v の光の式の木の変種（点光源の影・光の量の読み方・景色の拡散の光）。
     pub def lightVariantOf(v: ShaderVariant): LightModel3d.LightVariant =
         { pointShadows = v#pointShadows, lightUnits = Some(if (v#physicalUnits) Scene3d.LightUnits.Physical else Scene3d.LightUnits.Legacy),
           skyIrradiance = v#skyIrradiance }
@@ -68,7 +73,7 @@ pub mod Render3d.ProgramKey {
     /// 変種 v の鍵の字（表の key を並べた物。既定は空）。
     pub def variantKeyOf(v: ShaderVariant): String = rowsOf(v) |> List.map(row -> row#key) |> String.flatten
 
-    /// 変種 v の、材質の版を 1 つの数にする時の bit の和（Render3d.ScenePlan.kindCodeOf）。
+    /// 変種 v の、材質の版を 1 つの数にする時の bit の和。
     pub def kindCodeBitsOf(v: ShaderVariant): Int32 = rowsOf(v) |> List.foldLeft((acc, row) -> acc + row#kindCodeBit, 0)
 
     /// 材質のプログラムを分ける形。skinned = 骨つき・uv = uv とタンジェントを持つ・normalMap = 法線マップを当てる（uv つきの時だけ真）・
@@ -81,9 +86,6 @@ pub mod Render3d.ProgramKey {
     //   どの GPU でも同じ絵になる保証が崩れる。どれも偽の版は、それらを足す前と 1 字も同じ GLSL を組む。
     pub type alias ProgramKind = { skinned = Bool, uv = Bool, normalMap = Bool, lightmap = Bool, blend = Bool, doubleSided = Bool, coverage = Bool,
                                    metallicRoughness = Bool, variant = ShaderVariant }
-
-    /// 材質のプログラムの版 kind の変種。
-    pub def shaderVariantOfKind(kind: ProgramKind): ShaderVariant = kind#variant
 
     /// 材質のプログラムの鍵（2D の Shader 面の鍵 = spec の名前 と重ならない）。骨つき・uv つき・法線マップつき・lightmap つきの版は GLSL が違うので別の鍵。
     /// 材質の側は spec と emission の中身の鍵（MaterialFields#shaderHash）なので、同じ名前で木の違う材質が並んでも組み直さず、ゲームは名前を分けなくてよい。
