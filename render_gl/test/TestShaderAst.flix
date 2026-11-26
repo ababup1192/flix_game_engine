@@ -474,6 +474,14 @@ mod TestShaderAst {
             ShaderAst.Wgsl.fragment({ writesColor = false, body = ifInline(lt(s("a"), f("0.5")), ShaderAst.discard_()) :: Nil | entryOf(tintOut() :: Nil, Nil) })))
 
     @Test
+    def testColorFragmentNotEndingWithEmitStops(): Unit \ {Assert, IO} =
+        Assert.assertTrue(stops(_ -> ShaderAst.Wgsl.fragment(entryOf(Nil, ifInline(lt(s("a"), f("0.5")), ShaderAst.discard_()) :: Nil))))
+
+    @Test
+    def testOutputDeclaredButNotWrittenStops(): Unit \ {Assert, IO} =
+        Assert.assertTrue(stops(_ -> ShaderAst.Glsl.vertex(vertexOf(Nil, tintOut() :: Nil, ShaderAst.clipOut(origin()) :: Nil))))
+
+    @Test
     def testFragmentWithoutColorEmittingStops(): Unit \ {Assert, IO} =
         Assert.assertTrue(stops(_ -> ShaderAst.Glsl.fragment({ writesColor = false | entryOf(Nil, ShaderAst.emit(red()) :: Nil) })))
 

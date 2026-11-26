@@ -221,9 +221,6 @@ pub mod Render3d.Uniforms {
             if (at < 0) acc else Map.insert(u, at, acc)
         }, Map.empty())
 
-    /// handle u の location（宣言が無ければ −1）。
-    pub def locationOf(u: R3dUniform, locs: UniformLocations): Int32 = Map.getWithDefault(u, -1, locs)
-
     /// プログラムが u を宣言しているか。
     pub def has(u: R3dUniform, locs: UniformLocations): Bool = Map.memberOf(u, locs)
 

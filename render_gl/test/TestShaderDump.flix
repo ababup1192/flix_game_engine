@@ -157,6 +157,86 @@ mod TestShaderDump {
         let pairs = billboards ::: (Render3dShaders.skyVertex(), Render3dShaders.skyFragment(Nil)) :: (Render3dShaders.blitVertex(), Render3dShaders.blitFragment()) :: Nil;
         Assert.assertEq(expected = Nil, pairs |> List.flatMap(vf -> ShaderAst.linkErrors(fst(vf), snd(vf))))
 
+    /// 手書きの頂点（MeshVertex）の (GLSL の字, WGSL の字) と、つなぐ frag の入口の inputs の組（材質は skinned・uv と法線マップ・lightmap の正しい組 × psx・
+    /// 頂点の色・奥行き）。骨つきの版は lightmap を付けない。
+    def meshStagePairs(): List[(String, String, List[ShaderAst.Varying])] =
+        let surfaces = (false, false) :: (true, false) :: (true, true) :: Nil;
+        let d = Render3d.ProgramKey.defaultShaderVariant();
+        flags() |> List.flatMap(psx -> {
+            let v = { pointShadows = d#pointShadows, physicalUnits = d#physicalUnits, psx = psx, skyIrradiance = d#skyIrradiance };
+            let materials = flags() |> List.flatMap(skinned -> surfaces |> List.flatMap(un -> {
+                let (uv, normalMap) = un;
+                (if (skinned) false :: Nil else flags()) |> List.map(lightmap -> {
+                    let k = { skinned = skinned, uv = uv, normalMap = normalMap, lightmap = lightmap, blend = false, doubleSided = false,
+                              coverage = false, metallicRoughness = false, variant = v };
+                    (Render3dGlsl.materialVertexSourceFor({ skinned = skinned, uv = uv, lightmap = lightmap }, psx),
+                     Render3dWgsl.materialVertexSourceFor(uv, lightmap, skinned, psx), Render3dShaders.materialInputs(k))
+                })
+            }));
+            let lits = flags() |> List.map(skinned ->
+                (Render3dGlsl.litVertexSourceFor(skinned, v), Render3dWgsl.litVertexSourceFor(skinned, psx), Render3dShaders.litInputs()));
+            let depth = materials |> List.map(t -> { let (glsl, wgsl, _) = t; (glsl, wgsl, Render3dShaders.depthFragment(Nil)#inputs) });
+            materials ::: lits ::: depth
+        })
+
+    /// 字 text の行（頭と尾の空白を除く）。
+    def trimmedLines(text: String): Set[String] = TextSplit.lines(text) |> List.map(String.trim) |> List.toSet
+
+    /// varying v を受けるために GLSL の頂点が書く out の行（Affine は w を足した vec3 で送る）。
+    def glslOutLine(v: ShaderAst.Varying): String =
+        let ty = if (v#interp == ShaderAst.Interp.Affine) ShaderAst.Ty.Vec3 else v#ty;
+        (if (v#interp == ShaderAst.Interp.Flat) "flat " else "") + "out " + ShaderAst.Glsl.tyName(ty) + " " + v#name + ";"
+
+    def wgslInterpolate(i: ShaderAst.Interp): String = match i {
+        case ShaderAst.Interp.Flat   => " @interpolate(flat)"
+        case ShaderAst.Interp.Affine => " @interpolate(linear)"
+        case _                       => ""
+    }
+
+    /// varying v を受けるために WGSL の頂点の struct に要る欄の、名前を除いた形（@location(n) [@interpolate(..)] 型,）。
+    def wgslSlotOf(v: ShaderAst.Varying): String =
+        "@location(${v#location})" + wgslInterpolate(v#interp) + " " + ShaderAst.Wgsl.tyName(v#ty) + ","
+
+    /// WGSL の struct の欄の行 line（@location(n) [@interpolate(..)] 名前: 型,）の、名前を除いた形。
+    def wgslSlotOfLine(line: String): Option[String] = match TextSplit.split(": ", line) {
+        case head :: ty :: Nil if String.startsWith(prefix = "@location(", head) =>
+            let tokens = TextSplit.split(" ", head);
+            Some(String.intercalate(" ", List.take(List.length(tokens) - 1, tokens)) + " " + ty)
+        case _ => None
+    }
+
+    /// WGSL の字 text の、名前が Out で終わる struct の中の行（頭と尾の空白を除く。属性の struct の location と混ぜない）。
+    def outStructLines(text: String): List[String] =
+        let step = (acc: (Bool, List[String]), line: String) -> {
+            let (inside, found) = acc;
+            if (String.startsWith(prefix = "struct ", line) and String.endsWith(suffix = "Out {", line)) (true, found)
+            else if (inside and line == "};") (false, found)
+            else if (inside) (true, line :: found)
+            else acc
+        };
+        snd(TextSplit.lines(text) |> List.map(String.trim) |> List.foldLeft(step, (false, Nil)))
+
+    /// 手書きの GLSL の頂点は、つなぐ frag の inputs の全部を同じ名前・型・flat で out に書く（GLSL は名前でつなぐ）。
+    @Test
+    def testGlslMeshVertexWritesEveryFragmentInput(): Unit \ Assert =
+        let missing = meshStagePairs() |> List.flatMap(t -> {
+            let (glsl, _, inputs) = t;
+            let lines = trimmedLines(glsl);
+            inputs |> List.map(glslOutLine) |> List.filter(l -> not Set.memberOf(l, lines))
+        });
+        Assert.assertEq(expected = Nil, List.distinct(missing))
+
+    /// 手書きの WGSL の頂点の出口の struct は、つなぐ frag の inputs の全部を同じ location・補間・型で持つ。
+    // WhyNot: 名前までは照らさない — WGSL は location でつなぎ、psx の uv つきの頂点は location 5 を vUv と呼ぶ（frag は vUvPerspective）。
+    @Test
+    def testWgslMeshVertexWritesEveryFragmentInput(): Unit \ Assert =
+        let missing = meshStagePairs() |> List.flatMap(t -> {
+            let (_, wgsl, inputs) = t;
+            let slots = outStructLines(wgsl) |> List.filterMap(wgslSlotOfLine) |> List.toSet;
+            inputs |> List.filter(v -> not Set.memberOf(wgslSlotOf(v), slots)) |> List.map(v -> v#name + " " + wgslSlotOf(v))
+        });
+        Assert.assertEq(expected = Nil, List.distinct(missing))
+
     /// GLSL の全部の版が宣言する uniform は、どれも handle の表（Render3d.Uniforms）にある（GL の location を handle で引くため）。
     @Test
     def testEveryGlslUniformIsInTheHandleTable(): Unit \ Assert =

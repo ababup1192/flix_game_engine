@@ -1,14 +1,14 @@
 // Render3dGlsl.MeshVertex — 置いた物（深度だけ・材質・lit）の頂点シェーダーの GLSL の字。Render3dWgsl.MeshVertex と式を 1 行ずつそろえる。
-// WhyNot: ShaderAst の木で書かない — 木の組み立てを足すと wasm の brotli が上限（S0 の +6%）に届く。木にする時は varying の表の書き手として VertexEntry に載せる。
+// WhyNot: ShaderAst の木で書かない — 木の組み立てを足すと wasm の brotli の大きさが上限に届く（docs/performance.md の 8 節）。木にする時は varying の表の書き手として VertexEntry に載せる。
 mod Render3dGlsl.MeshVertex {
     use Render3d.Uniforms.R3dUniform
 
-    /// 骨の無い・uv の無い版（Render3dGlsl.meshVertexSource）。psx なら頂点を丸める。
+    /// 骨の無い・uv の無い版。psx なら頂点を丸める。
     pub def meshSource(psx: Bool): String =
         meshSourceOf({ declarations = "", prelude = "", position = "vec4(aPos, 1.0)", normal = "aNormal", tangent = None, uv2 = false,
                        vertexColorToLinear = false, psx = psx })
 
-    /// 頂点の色のプログラム（lit）の版（Render3dGlsl.litVertexSourceFor）。頂点の色を線形の量へ戻してから渡す。
+    /// 頂点の色のプログラム（lit）の版。頂点の色を線形の量へ戻してから渡す。
     pub def litSource(skinned: Bool, psx: Bool): String =
         if (skinned)
             meshSourceOf({ declarations = skinDeclarations() + Render3dGlsl.colorSpaceSource(), prelude = skinPrelude(), position = "skin * vec4(aPos, 1.0)",
@@ -17,7 +17,7 @@ mod Render3dGlsl.MeshVertex {
             meshSourceOf({ declarations = Render3dGlsl.colorSpaceSource(), prelude = "", position = "vec4(aPos, 1.0)", normal = "aNormal",
                            tangent = None, uv2 = false, vertexColorToLinear = true, psx = psx })
 
-    /// 骨つきの・uv の無い版（Render3dGlsl.skinnedMeshVertexSource）。
+    /// 骨つきの・uv の無い版。
     pub def skinnedSource(psx: Bool): String =
         meshSourceOf({
             declarations = skinDeclarations(),
@@ -29,7 +29,7 @@ mod Render3dGlsl.MeshVertex {
             vertexColorToLinear = false,
             psx = psx })
 
-    /// 材質のプログラムの版（Render3dGlsl.materialVertexSourceFor）。
+    /// 材質のプログラムの版。
     pub def materialSource(kind: { skinned = Bool, uv = Bool, lightmap = Bool }, psx: Bool): String =
         match (kind#skinned, kind#uv, kind#lightmap) {
             case (false, false, false) => meshSource(psx)

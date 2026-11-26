@@ -440,7 +440,7 @@
       "rawLine": true,
       "skip": ["render_gl/src/Render3dGlsl/MeshVertex.flix", "render_gl/src/Render3dWgsl/MeshVertex.flix", "render_gl/src/Render3d/WebGpuMipmaps.flix", "render_gl/src/Render3d/WebGpuShadowCache.flix"],
       "pattern": "\"[^\"]*(?:#version 330|@fragment|@vertex)",
-      "hint": "3D の描き手のシェーダーの入口を字で手で書かない（GLSL と WGSL の式が分かれる）。本文は Render3dShaders に ShaderAst の木で書き、入口は ShaderAst の FragmentEntry / VertexEntry にして ShaderAst.Glsl / ShaderAst.Wgsl の fragment・vertex で出す（手書きのまま残す置いた物の頂点は Render3dGlsl.MeshVertex・Render3dWgsl.MeshVertex）"
+      "hint": "3D の描き手のシェーダーの入口を字で手で書かない（GLSL と WGSL の式が分かれる）。本文は Render3dShaders に ShaderAst の木で書き、入口は ShaderAst の FragmentEntry / VertexEntry にして ShaderAst.Glsl / ShaderAst.Wgsl の fragment・vertex で出す（手書きのまま残すのは置いた物の頂点の Render3dGlsl.MeshVertex・Render3dWgsl.MeshVertex と、WebGPU の道具の pass の Render3d.WebGpuMipmaps・Render3d.WebGpuShadowCache）"
     },
     {
       "id": "scene3d-linear-color-flag",

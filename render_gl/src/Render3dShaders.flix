@@ -543,10 +543,11 @@ pub mod Render3dShaders {
                 ShaderAst.headed("vUv = ", "let vUv = ",
                     ShaderAst.mixS(ShaderAst.varying(Vec2.Vec2, uvPerspectiveVarying()), ShaderAst.varying(Vec2.Vec2, uvAffineVarying()), w(psx())))
             else if (surface#uv) ShaderAst.varyingAsLocal(uvVarying())
-            else ShaderAst.rawStatement("", "let vUv = vec2f(0.0, 0.0);");
+            else ShaderAst.onlyIn(ShaderAst.Lang.Wgsl, fst(let_("vUv", vec2Of(f("0.0"), f("0.0")))) :: Nil);
         named ::: uv :: Nil
 
     /// 材質の部品の materialEval を呼び、albedo・emission（metallicRoughness なら metalRough も）を局所の値に置く文（GLSL は out の引数・WGSL は struct を返す）。
+    // WhyNot: 木の call で書かない — ShaderGen の部品の materialEval は GLSL では out の引数で返し、WGSL では struct を返すので、1 つの呼び方の形にならない。
     def materialEval(metallicRoughness: Bool): ShaderAst.Statement =
         if (metallicRoughness)
             ShaderAst.rawStatement("vec4 albedo;\nvec3 emission;\nvec2 metalRough;\nmaterialEval(albedo, emission, metalRough);",

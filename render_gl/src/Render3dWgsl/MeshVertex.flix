@@ -1,8 +1,8 @@
 // Render3dWgsl.MeshVertex — 置いた物（材質・lit）の頂点シェーダーの WGSL の字。Render3dGlsl.MeshVertex と式を 1 行ずつそろえる。
-// WhyNot: ShaderAst の木で書かない — 木の組み立てを足すと wasm の brotli が上限（S0 の +6%）に届く。木にする時は varying の表の書き手として VertexEntry に載せる。
+// WhyNot: ShaderAst の木で書かない — 木の組み立てを足すと wasm の brotli の大きさが上限に届く（docs/performance.md の 8 節）。木にする時は varying の表の書き手として VertexEntry に載せる。
 mod Render3dWgsl.MeshVertex {
 
-    /// 頂点の色のプログラムの版（Render3dWgsl.litVertexSourceFor）。psx なら頂点を丸める。
+    /// 頂点の色のプログラムの版。psx なら頂点を丸める。
     pub def litSource(skinned: Bool, psx: Bool): String =
         let local = localOf(skinned);
         cameraDeclarationsFor(psx) +
@@ -36,7 +36,7 @@ mod Render3dWgsl.MeshVertex {
         "    return o;\n" +
         "}\n"
 
-    /// 材質のプログラムの版（Render3dWgsl.materialVertexSourceFor）。psx なら頂点を丸め、uv つきの版は location 8 の vUvAffine も出す。
+    /// 材質のプログラムの版。psx なら頂点を丸め、uv つきの版は location 8 の vUvAffine も出す。
     pub def materialSource(uv: Bool, lightmap: Bool, skinned: Bool, psx: Bool): String =
         let local = localOf(skinned);
         let lm = lightmap and not skinned;

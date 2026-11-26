@@ -84,28 +84,33 @@ mod ShaderAst.Entry {
         case _                          => None
     }
 
-    /// frag の入口の本文の置き場の誤り（emit は本文の最後だけ・if と for の中に emit を置かない・色を出さない入口は emit しない・
+    /// frag の入口の本文の置き場の誤り（emit は本文の最後だけ・色を出す入口は最後の文が emit・if と for の中に emit を置かない・色を出さない入口は emit しない・
     /// 読む varying は inputs にある・属性・output・clipOut を使わない）。
     def fragmentPlacementErrors(body: List[Stmt], inputs: Set[String], writesColor: Bool): List[String] =
         let all = body |> List.flatMap(collectStmts);
         let nodes = body |> List.flatMap(nodesInStmt);
         let unknown = unknownNames(inputs, List.filterMap(varyingName, nodes));
+        let endsWithEmit = List.last(body) |> Option.exists(isEmitEnd);
         failed((List.exists(isEmitEnd, List.take(List.length(body) - 1, body)), "emit が本文の最後の文でない") ::
+               (writesColor and not endsWithEmit, "色を出す frag の最後の文が emit でない") ::
                (List.count(isEmitEnd, all) > List.count(isEmitEnd, body), "emit が if・for の中にある（emitAndReturn を使う）") ::
                (not writesColor and List.exists(isEmit, all), "色を出さない frag が emit する") ::
                (unknown != "", "frag が inputs に無い varying を読む: " + unknown) ::
                (List.exists(isVertexOnly, all) or List.exists(n -> Option.nonEmpty(attributeName(n)), nodes), "frag が属性・output・clipOut を使う") :: Nil)
 
-    /// vertex の入口の本文の置き場の誤り（clipOut は本文のif・for の外に 1 回だけ・Affine の varying は clipOut の後に書く・書く varying は outputs にある・
-    /// 読む属性は attributes にある・emit・frontFacing・varying の読みを使わない）。
+    /// vertex の入口の本文の置き場の誤り（clipOut は本文の if・for の外に 1 回だけ・Affine の varying は clipOut の後に書く・書く varying は outputs にある・
+    /// outputs はどれも本文で書く・読む属性は attributes にある・emit・frontFacing・varying の読みを使わない）。
     def vertexPlacementErrors(body: List[Stmt], outputs: Set[String], attributes: Set[String]): List[String] =
         let all = body |> List.flatMap(collectStmts);
         let nodes = body |> List.flatMap(nodesInStmt);
-        let unknownOutputs = unknownNames(outputs, List.filterMap(outputName, all));
+        let written = List.filterMap(outputName, all);
+        let unknownOutputs = unknownNames(outputs, written);
+        let unwrittenOutputs = unknownNames(List.toSet(written), Set.toList(outputs));
         let unknownAttributes = unknownNames(attributes, List.filterMap(attributeName, nodes));
-        failed((List.count(isClipOut, body) != 1 or List.count(isClipOut, all) != 1, "clipOut が本文のif・for の外に 1 回だけでない") ::
+        failed((List.count(isClipOut, body) != 1 or List.count(isClipOut, all) != 1, "clipOut が本文の if・for の外に 1 回だけでない") ::
                (List.takeWhile(s -> not isClipOut(s), body) |> List.flatMap(collectStmts) |> List.exists(isAffineOutput), "Affine の varying を clipOut の前に書く") ::
                (unknownOutputs != "", "vertex が outputs に無い varying を書く: " + unknownOutputs) ::
+               (unwrittenOutputs != "", "vertex が outputs の varying を書かない: " + unwrittenOutputs) ::
                (unknownAttributes != "", "vertex が attributes に無い属性を読む: " + unknownAttributes) ::
                (List.exists(isEmit, all) or List.exists(isFragmentOnlyNode, nodes), "vertex が emit・frontFacing・varying を使う") :: Nil)
 
