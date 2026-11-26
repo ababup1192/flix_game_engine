@@ -48,7 +48,7 @@ pub mod Scene3d.PointShadows {
         let ranked = List.zipWithIndex(scene#pointLights)
             |> List.filterMap(entry -> {
                 let (i, light) = entry;
-                Scene3d.pointPickScoreOf(scene#camera, Scene3d.aspectOf(scene), frustum, light) |> Option.map(score -> (score, (i, light)))
+                Scene3d.Internal.PointLights.pointPickScoreOf(scene#camera, Scene3d.aspectOf(scene), frustum, light) |> Option.map(score -> (score, (i, light)))
             })
             |> Sort.sortStableBy(fst);
         let scores = ranked |> List.map(fst) |> List.toVector;
