@@ -42,6 +42,8 @@ pub mod ShaderAst.Wgsl {
         case BuiltinFn.Determinant => "determinant"
         case BuiltinFn.Clamp       => "clamp"
         case BuiltinFn.Mix         => "mix"
+        case BuiltinFn.TextureSize => "textureDimensions"
+        case BuiltinFn.TargetDepthTexel => "textureLoad"
     }
 
     /// 式の字。
@@ -79,9 +81,26 @@ pub mod ShaderAst.Wgsl {
     def splatTo(t: Ty, n: Node): String =
         if (isVector(t) and not isVector(ShaderAst.tyOfNode(n))) tyName(t) + "(" + exprAt(0, n) + ")" else exprAt(0, n)
 
-    def builtin(fun: BuiltinFn, xs: List[Node], t: Ty): String = match (fun, xs) {
-        case (BuiltinFn.Clamp, v :: lo :: hi :: Nil) => "clamp(" + exprAt(0, v) + ", " + splatTo(t, lo) + ", " + splatTo(t, hi) + ")"
-        case _                                       => builtinName(fun) + "(" + args(xs) + ")"
+    def builtin(fun: BuiltinFn, xs: List[Node], t: Ty): String = match fun {
+        case BuiltinFn.Clamp            => clampText(xs, t)
+        case BuiltinFn.TextureSize      => "vec2i(textureDimensions(" + args(xs) + ", 0))"
+        case BuiltinFn.TargetDepthTexel => depthTexelLoad(xs)
+        case _                          => builtinName(fun) + "(" + args(xs) + ")"
+    }
+
+    /// clamp の f32 の端を、値の型 t のベクトルに広げた字。
+    def clampText(xs: List[Node], t: Ty): String = match xs {
+        case v :: lo :: hi :: Nil => "clamp(" + exprAt(0, v) + ", " + splatTo(t, lo) + ", " + splatTo(t, hi) + ")"
+        case _                    => "clamp(" + args(xs) + ")"
+    }
+
+    /// GL の行の数え方の画素で、WGSL で描いた奥行きの地図（行 0 が上）を読む字（xs = 地図・画素）。
+    def depthTexelLoad(xs: List[Node]): String = match xs {
+        case map :: texel :: Nil =>
+            let m = exprAt(0, map);
+            let at = exprAt(ShaderAst.atomPrec(), texel);
+            "textureLoad(${m}, vec2i(${at}.x, i32(textureDimensions(${m}, 0).y) - 1 - ${at}.y), 0)"
+        case _ => ShaderAst.invalidOrBug("ShaderAst.Wgsl: targetDepthTexel の引数が 2 つでない")
     }
 
     def raw(n: Node): String = match n {

@@ -11,6 +11,7 @@
 //   半透明の混ぜと MSAA の平均は戻した後の画面の値どうし。
 pub mod Render3dGlsl {
     use LightModel3d.Vec3Input
+    use Render3d.Uniforms.R3dUniform
 
     /// 置いた物の頂点シェーダー（深度だけのプログラム・uv の無い材質のプログラムで共有。頂点の色は値のまま渡す）。
     pub def meshVertexSource(): String = meshVertexSourceFor(false)
@@ -80,7 +81,7 @@ pub mod Render3dGlsl {
     def skinDeclarations(): String =
         "layout (location = 3) in ivec4 aJoints;\n" +
         "layout (location = 4) in vec4 aWeights;\n" +
-        "uniform sampler2D uJointTexture;\n" +
+        Render3d.Uniforms.glslDeclarations(R3dUniform.JointTexture :: Nil) +
         "mat4 jointMatrix(int row, int joint) {\n" +
         "    int x = joint * 4;\n" +
         "    return mat4(texelFetch(uJointTexture, ivec2(x, row), 0), texelFetch(uJointTexture, ivec2(x + 1, row), 0),\n" +
@@ -102,8 +103,7 @@ pub mod Render3dGlsl {
     /// uVertexSnap = 格子の大きさ（画素。0 で丸めない）。x・y を描き先の左上を 0 とする画素へ写して格子の一番近い点へ丸め、clip へ戻す（z と w は変えない）。
     // WhyNot: w が 0 以下（目の後ろ）の頂点を丸めない — 画素へ写せず、GPU が手前の面で切る前の形を壊す。
     def vertexSnapSource(): String =
-        "uniform vec4 uPsxTarget;\n" +
-        "uniform float uVertexSnap;\n" +
+        Render3d.Uniforms.glslDeclarations(R3dUniform.PsxTarget :: R3dUniform.VertexSnap :: Nil) +
         ShaderAst.Glsl.printOnly(Render3dShaders.vertexSnap() :: Nil)
 
     /// PS1 風の変種の色の丸め r3d_colorDepth(画面の値の色)（式は Scene3d.Psx.quantize・CPU の描き手は SoftRaster3d.Psx.quantized）と、それが読む uniform。
@@ -111,8 +111,7 @@ pub mod Render3dGlsl {
     /// uPsxTarget = (描き先の左下の画素の x, y, 幅, 高さ)。ディザの格子は描き先の左上を 0 とする画素の x・y の下 2 ビット。
     // WhyNot: 表を uniform の配列で渡さない — 2 つの表は決まった値で、const の配列なら変種の uniform が 2 つで済む。
     def colorDepthSource(): String =
-        "uniform vec4 uPsx;\n" +
-        "uniform vec4 uPsxTarget;\n" +
+        Render3d.Uniforms.glslDeclarations(R3dUniform.Psx :: R3dUniform.PsxTarget :: Nil) +
         ShaderAst.Glsl.print(Render3dShaders.colorDepth() :: Nil)
 
     /// 変種 v の frag の色の出口: v#psx なら r3d_colorDepth に通した式、ほかは c のまま。
@@ -129,8 +128,7 @@ pub mod Render3dGlsl {
 
     /// 1 体ごとの値のテクスチャの宣言（並びは Render3d.InstanceValues の頭）。
     def instanceDeclarations(): String =
-        "uniform sampler2D uInstanceTexture;\n" +
-        "uniform int uInstanceBase;\n" +
+        Render3d.Uniforms.glslDeclarations(R3dUniform.InstanceTexture :: R3dUniform.InstanceBase :: Nil) +
         "flat out vec3 vTint;\n" +
         "flat out float vEmissionIntensity;\n"
 
@@ -176,8 +174,7 @@ pub mod Render3dGlsl {
         parts#declarations +
         (if (parts#psx) vertexSnapSource() else "") +
         instanceDeclarations() +
-        "uniform mat4 uView;\n" +
-        "uniform mat4 uProj;\n" +
+        Render3d.Uniforms.glslDeclarations(R3dUniform.View :: R3dUniform.Proj :: Nil) +
         "out vec3 vWorld;\n" +
         "out vec3 vNormal;\n" +
         "out vec3 vColor;\n" +
@@ -200,34 +197,13 @@ pub mod Render3dGlsl {
     /// 変種 v の lightSource。v#pointShadows なら点光源の影の uniform と r3d_pointShadowsAt（pointShadowSource）・
     /// v#physicalUnits なら uInverseUnitsPerMeterSquared を・v#skyIrradiance なら景色の拡散の光の uSh・uSkyContribution を、光の式の前に置く（どれも偽なら lightSource と同じ字）。
     pub def lightSourceFor(v: Render3d.ProgramKey.ShaderVariant): String =
-        "uniform vec3 uAmbient;\n" +
-        "uniform float uHemisphere;\n" +
-        "uniform int uToonSteps;\n" +
-        "uniform int uPointCount;\n" +
-        "uniform vec3 uPointPos[${Scene3d.maxPointLights()}];\n" +
-        "uniform vec3 uPointColor[${Scene3d.maxPointLights()}];\n" +
-        "uniform float uPointRange[${Scene3d.maxPointLights()}];\n" +
-        "uniform int uSpotCount;\n" +
-        "uniform vec3 uSpotPos[${Scene3d.maxSpotLights()}];\n" +
-        "uniform vec3 uSpotDir[${Scene3d.maxSpotLights()}];\n" +
-        "uniform vec3 uSpotColor[${Scene3d.maxSpotLights()}];\n" +
-        "uniform float uSpotRange[${Scene3d.maxSpotLights()}];\n" +
-        "uniform vec2 uSpotCone[${Scene3d.maxSpotLights()}];\n" +
-        "uniform int uFogOn;\n" +
-        "uniform vec3 uFogColor;\n" +
-        "uniform vec2 uFogRange;\n" +
-        "uniform vec3 uEye;\n" +
+        Render3d.Uniforms.glslDeclarations(R3dUniform.Ambient :: R3dUniform.Hemisphere :: R3dUniform.ToonSteps :: R3dUniform.PointCount :: R3dUniform.PointPos :: R3dUniform.PointColor :: R3dUniform.PointRange :: R3dUniform.SpotCount :: R3dUniform.SpotPos :: R3dUniform.SpotDir :: R3dUniform.SpotColor :: R3dUniform.SpotRange :: R3dUniform.SpotCone :: R3dUniform.FogOn :: R3dUniform.FogColor :: R3dUniform.FogRange :: R3dUniform.Eye :: Nil) +
         shadowSource() +
         (if (v#pointShadows) pointShadowSource() else "") +
-        (if (v#physicalUnits) "uniform float uInverseUnitsPerMeterSquared;\n" else "") +
+        (if (v#physicalUnits) Render3d.Uniforms.glslDeclarations(R3dUniform.InverseUnitsPerMeterSquared :: Nil) else "") +
         (if (v#psx) colorDepthSource() else "") +
-        (if (v#skyIrradiance) "uniform vec3 uSh[9];\nuniform float uSkyContribution;\n" else "") +
-        LightModel3d.Codegen.toGlsl("lightAt", Vec3Input.Position :: Vec3Input.Normal :: Nil, LightModel3d.lightingModelFor(Render3d.ProgramKey.lightVariantOf(v))) +
-        LightModel3d.Codegen.toGlsl("fogAt", Vec3Input.Position :: Vec3Input.Color :: Nil, LightModel3d.fogModel()) +
-        "vec3 fogged(vec3 c, vec3 p) {\n" +
-        "    if (uFogOn == 0) return c;\n" +
-        "    return fogAt(p, c);\n" +
-        "}\n" +
+        (if (v#skyIrradiance) Render3d.Uniforms.glslDeclarations(R3dUniform.Sh :: R3dUniform.SkyContribution :: Nil) else "") +
+        ShaderAst.Glsl.printOnly(Render3dShaders.lightAt(v) :: Render3dShaders.fogAt() :: Render3dShaders.fogged() :: Nil) +
         surfaceOutSource()
 
     /// 3D の色を作る最後の組み立て r3d_surfaceOut(albedoLinear, tint, light, emission, intensity, p, fogOn)（CPU の描き手は SoftRaster3d.materialColor と shadePixel）:
@@ -249,37 +225,9 @@ pub mod Render3dGlsl {
     // WhyNot: texture() でなく texelFetch で読む — 標本の位置の丸めと端の扱いを GPU のフィルタに任せると、CPU の数え方とずれる。
     // WhyNot: w ≤ 0（光の後ろ）を影にしない — w で割ると x・y が裏返って地図の中に入りうる。その点は円錐の外で光が 0。
     def shadowSource(): String =
-        "uniform int uShadowOn;\n" +
-        "uniform int uShadowSpot;\n" +
-        "uniform mat4 uShadowMatrix;\n" +
-        "uniform sampler2D uShadowMap;\n" +
-        "uniform float uShadowBias;\n" +
-        "uniform int uShadowPcf;\n" +
-        "uniform float uShadowStrength;\n" +
-        "float shadowLitFraction(sampler2D map, mat4 lightMatrix, float bias, int pcf, float shift, vec3 n, vec3 p) {\n" +
-        "    vec4 c = lightMatrix * vec4(p + n * shift, 1.0);\n" +
-        "    if (c.w <= 0.0) return 1.0;\n" +
-        "    vec3 ndc = c.xyz / c.w;\n" +
-        "    if (ndc.x < -1.0 || ndc.x > 1.0 || ndc.y < -1.0 || ndc.y > 1.0) return 1.0;\n" +
-        "    float z = (ndc.z * 0.5 + 0.5) - bias;\n" +
-        "    ivec2 size = textureSize(map, 0);\n" +
-        "    ivec2 last = size - ivec2(1);\n" +
-        "    ivec2 center = clamp(ivec2(floor((ndc.xy * 0.5 + 0.5) * vec2(size))), ivec2(0), last);\n" +
-        "    int lit = 0;\n" +
-        "    int total = 0;\n" +
-        "    for (int dy = -pcf; dy <= pcf; dy++) {\n" +
-        "        for (int dx = -pcf; dx <= pcf; dx++) {\n" +
-        "            ivec2 t = clamp(center + ivec2(dx, dy), ivec2(0), last);\n" +
-        "            if (z <= texelFetch(map, t, 0).r) lit++;\n" +
-        "            total++;\n" +
-        "        }\n" +
-        "    }\n" +
-        "    return float(lit) / float(total);\n" +
-        "}\n" +
-        "float spotShadow(int i, vec3 p) {\n" +
-        "    if (uShadowOn == 0 || i != uShadowSpot) return 1.0;\n" +
-        "    return 1.0 - uShadowStrength * (1.0 - shadowLitFraction(uShadowMap, uShadowMatrix, uShadowBias, uShadowPcf, 0.0, vec3(0.0), p));\n" +
-        "}\n" +
+        Render3d.Uniforms.glslDeclarations(R3dUniform.ShadowOn :: R3dUniform.ShadowSpot :: R3dUniform.ShadowMatrix :: R3dUniform.ShadowMap ::
+                                           R3dUniform.ShadowBias :: R3dUniform.ShadowPcf :: R3dUniform.ShadowStrength :: Nil) +
+        ShaderAst.Glsl.printOnly(Render3dShaders.shadowLitFraction() :: Render3dShaders.spotShadow() :: Nil) +
         sunShadowSource()
 
     /// 太陽の uniform（向き・color × intensity）と、その影の割合 sunLitAt(p, g, n)（Scene3d.directionalShadowOf の doc の約束・LightModel3d の SunLit。
@@ -287,24 +235,10 @@ pub mod Render3dGlsl {
     /// 光の式の木は r3d_sunLit（frag の main が先に代入する。ビルボードは 1 のまま）を読む。uSunShadowOn = 0 のプログラムは 1 を返す。
     // WhyNot: 太陽へ背を向けた点（n·l ≤ 0）で地図を引かない — facing が 0 なので結果は同じで、pcf の (2r+1)² 回が無駄になる。
     def sunShadowSource(): String =
-        "uniform vec3 uSunDir;\n" +
-        "uniform vec3 uSunColor;\n" +
-        "uniform int uSunShadowOn;\n" +
-        "uniform mat4 uSunMatrix;\n" +
-        "uniform sampler2D uSunMap;\n" +
-        "uniform float uSunBias;\n" +
-        "uniform float uSunNormalShift;\n" +
-        "uniform int uSunPcf;\n" +
-        "uniform float uSunStrength;\n" +
-        "uniform vec3 uSunForward;\n" +
-        "uniform vec2 uSunFade;\n" +
-        "float r3d_sunLit = 1.0;\n" +
-        "float sunLitAt(vec3 p, vec3 g, vec3 n) {\n" +
-        "    if (uSunShadowOn == 0 || dot(n, uSunDir) <= 0.0) return 1.0;\n" +
-        "    float fade = clamp((uSunFade.x - dot(p - uEye, uSunForward)) / uSunFade.y, 0.0, 1.0);\n" +
-        "    if (fade <= 0.0) return 1.0;\n" +
-        "    return 1.0 - uSunStrength * fade * (1.0 - shadowLitFraction(uSunMap, uSunMatrix, uSunBias, uSunPcf, uSunNormalShift, g, p));\n" +
-        "}\n"
+        Render3d.Uniforms.glslDeclarations(R3dUniform.SunDir :: R3dUniform.SunColor :: R3dUniform.SunShadowOn :: R3dUniform.SunMatrix :: R3dUniform.SunMap ::
+                                           R3dUniform.SunBias :: R3dUniform.SunNormalShift :: R3dUniform.SunPcf :: R3dUniform.SunStrength ::
+                                           R3dUniform.SunForward :: R3dUniform.SunFade :: Nil) +
+        ShaderAst.Glsl.printOnly(Render3dShaders.sunLit() :: Render3dShaders.sunLitAt() :: Nil)
 
     /// 点光源の影の uniform と、点光源 i の光に掛ける割合 r3d_pointShadowLit(i, p, g, n)・それを点光源の数だけ r3d_pointLit へ埋める r3d_pointShadowsAt(p, g, n)
     /// （r3d_pointShadowLit は LightModel3d.PointShadowCodegen.toGlsl の生成物。CPU の描き手も同じ所から作る）。g = 点をずらす向きの法線（法線マップを当てる前・裏の面は裏返した物）・n = 光の計算の法線。
@@ -312,20 +246,12 @@ pub mod Render3dGlsl {
     /// uPointShadowBias = (bias, normalBias)。frag の main が光の計算の前に r3d_pointShadowsAt を呼び、光の式の木は r3d_pointLit[i] を読む。
     // WhyNot: 光の式の木の中で地図を引かない — PBR の材質は拡散と鏡面の 2 つのループを回し、1 本につき 2 回引くことになる。
     def pointShadowSource(): String =
-        let p = Scene3d.maxPointLights();
-        "uniform vec4 uPointShadow[${p}];\n" +
-        "uniform vec4 uPointShadowAtlas;\n" +
-        "uniform vec2 uPointShadowBias;\n" +
-        "uniform sampler2D uPointShadowMap;\n" +
-        "float r3d_pointLit[${p}];\n" +
-        LightModel3d.PointShadowCodegen.toGlsl() +
-        "void r3d_pointShadowsAt(vec3 p, vec3 g, vec3 n) {\n" +
-        "    for (int i = 0; i < ${p}; i++) r3d_pointLit[i] = r3d_pointShadowLit(i, p, g, n);\n" +
-        "}\n"
+        Render3d.Uniforms.glslDeclarations(R3dUniform.PointShadows :: R3dUniform.PointShadowAtlas :: R3dUniform.PointShadowBias :: R3dUniform.PointShadowMap :: Nil) +
+        ShaderAst.Glsl.printOnly(Render3dShaders.pointLit() :: Render3dShaders.pointShadowLit() :: Render3dShaders.pointShadowsAt() :: Nil)
 
     /// Output.Depth の灰色（目からの距離で near が黒・near + range が白）。uEye は呼ぶ側の frag が宣言する。
     def depthGraySource(): String =
-        "uniform vec2 uDepthRange;\n" +
+        Render3d.Uniforms.glslDeclarations(R3dUniform.DepthRange :: Nil) +
         ShaderAst.Glsl.printOnly(Render3dShaders.depthGray() :: Nil)
 
     /// 頂点の色のプログラムの frag（vColor は litVertexSource が線形へ戻し済み）。
@@ -378,8 +304,7 @@ pub mod Render3dGlsl {
          else if (surface#uv) "in vec2 vUv;\n" else "const vec2 vUv = vec2(0.0, 0.0);\n") +
         (if (surface#lightmap) "in vec2 vUv2;\n" else "") +
         "out vec4 fragColor;\n" +
-        "uniform int uCutout;\n" +
-        "uniform int uDepthOut;\n" +
+        Render3d.Uniforms.glslDeclarations(R3dUniform.Cutout :: R3dUniform.DepthOut :: Nil) +
         colorSpaceSource() +
         lightSourceFor(v) +
         depthGraySource() +
@@ -429,10 +354,7 @@ pub mod Render3dGlsl {
 
     /// 変種 v の metallicRoughnessSource（lightSourceFor(v) の後に置く）。
     pub def metallicRoughnessSourceFor(v: Render3d.ProgramKey.ShaderVariant): String =
-        "uniform vec3 uZenith;\n" +
-        "uniform vec3 uHorizon;\n" +
-        "uniform vec3 uGround;\n" +
-        "uniform float uCurve;\n" +
+        Render3d.Uniforms.glslDeclarations(R3dUniform.Zenith :: R3dUniform.Horizon :: R3dUniform.Ground :: R3dUniform.Curve :: Nil) +
         environmentSource() +
         LightModel3d.Codegen.toGlsl("pbrAt", Vec3Input.Position :: Vec3Input.Normal :: Vec3Input.Albedo :: Vec3Input.Light :: Vec3Input.MetallicRoughness ::
                                              Vec3Input.EnvironmentColor :: Nil,
@@ -446,15 +368,7 @@ pub mod Render3dGlsl {
     // WhyNot: sg_texMip（微分で段を選ぶ読み）を使わない — 向きの atan2 は継ぎ目（u = 0 と 1）で値が 1 跳び、その画素だけ段が最大になって縦の筋が出る。
     // WhyNot: 極（向きが真上・真下）の atan を GLSL に任せない — 引数が両方 0 の atan は値が決まらない。Flix の atan2 は 0 を返すので、同じ 0 にそろえる。
     def environmentSource(): String =
-        "uniform int uEnvOn;\n" +
-        "uniform int uEnvBoxOn;\n" +
-        "uniform vec3 uEnvBoxMin;\n" +
-        "uniform vec3 uEnvBoxMax;\n" +
-        "uniform vec3 uEnvBoxCenter;\n" +
-        "uniform sampler2D uEnvMap;\n" +
-        "uniform float uEnvLevels;\n" +
-        "uniform float uEnvIntensity;\n" +
-        "uniform int uEnvSrgb;\n" +
+        Render3d.Uniforms.glslDeclarations(R3dUniform.EnvOn :: R3dUniform.EnvBoxOn :: R3dUniform.EnvBoxMin :: R3dUniform.EnvBoxMax :: R3dUniform.EnvBoxCenter :: R3dUniform.EnvMap :: R3dUniform.EnvLevels :: R3dUniform.EnvIntensity :: R3dUniform.EnvSrgb :: Nil) +
         LightModel3d.Codegen.toGlsl("environmentDirectionAt", Vec3Input.Position :: Vec3Input.Normal :: Vec3Input.Albedo :: Vec3Input.MetallicRoughness :: Nil,
                                     LightModel3d.environmentDirection()) +
         environmentUvSource() +
@@ -473,9 +387,7 @@ pub mod Render3dGlsl {
     /// 読む uv = 2 本目の uv × uLightmapUvRect.zw + uLightmapUvRect.xy（Lightmap の uvRect）。
     // WhyNot: 矩形を頂点の式で当てない — WebGPU の物ごとの値（R3dDraw）は FRAGMENT からだけ見え、頂点で読むと layout の可視範囲と全部の材質の WGSL が変わる。GL も同じ所で当ててそろえる。
     def lightmapSource(v: Render3d.ProgramKey.ShaderVariant): String =
-        "uniform sampler2D uLightmap;\n" +
-        "uniform float uLightmapLevels;\n" +
-        "uniform vec4 uLightmapUvRect;\n" +
+        Render3d.Uniforms.glslDeclarations(R3dUniform.Lightmap :: R3dUniform.LightmapLevels :: R3dUniform.LightmapUvRect :: Nil) +
         "vec3 lightmapColor() {\n" +
         "    return sg_texMip(uLightmap, 0.0, uLightmapLevels, vUv2 * uLightmapUvRect.zw + uLightmapUvRect.xy).rgb;\n" +
         "}\n" +
@@ -487,8 +399,7 @@ pub mod Render3dGlsl {
 
     /// 変種 v の lightmapLightSource（lightSourceFor(v) の後に置く）。
     pub def lightmapLightSourceFor(v: Render3d.ProgramKey.ShaderVariant): String =
-        "uniform int uLightmapSrgb;\n" +
-        "uniform float uLightmapIntensity;\n" +
+        Render3d.Uniforms.glslDeclarations(R3dUniform.LightmapSrgb :: R3dUniform.LightmapIntensity :: Nil) +
         LightModel3d.Codegen.toGlsl("lightmapLightAt", Vec3Input.Position :: Vec3Input.Normal :: Vec3Input.LightmapColor :: Nil,
                                     LightModel3d.lightmapLightingModelFor(Render3d.ProgramKey.lightVariantOf(v)))
 
@@ -498,10 +409,7 @@ pub mod Render3dGlsl {
     /// 法線マップは段つきの Linear で読む（sg_texMip。materialFragmentSource が前に 1 回だけ出す）。
     def normalMapSource(): String =
         "in vec4 vTangent;\n" +
-        "uniform sampler2D uNormalMap;\n" +
-        "uniform float uNormalStrength;\n" +
-        "uniform float uNormalFlip;\n" +
-        "uniform float uNormalLevels;\n" +
+        Render3d.Uniforms.glslDeclarations(R3dUniform.NormalMap :: R3dUniform.NormalStrength :: R3dUniform.NormalFlip :: R3dUniform.NormalLevels :: Nil) +
         applyNormalMapSource() +
         "vec3 normalMapped(vec3 n) {\n" +
         "    return applyNormalMap(n, vTangent, uNormalStrength, sg_texMip(uNormalMap, uNormalFlip, uNormalLevels, vUv).rgb);\n" +
@@ -519,7 +427,7 @@ pub mod Render3dGlsl {
         "in vec3 vNormal;\n" +
         "in vec3 vColor;\n" +
         "out vec4 fragColor;\n" +
-        "uniform vec3 uEye;\n" +
+        Render3d.Uniforms.glslDeclarations(R3dUniform.Eye :: Nil) +
         depthGraySource() +
         "void main() {\n" +
         "    float g = depthGray(vWorld);\n" +
@@ -539,11 +447,7 @@ pub mod Render3dGlsl {
         "layout (location = 2) in vec4 aAnchorSize;\n" +
         "layout (location = 3) in vec4 aUvRect;\n" +
         "layout (location = 4) in vec4 aTintOffset;\n" +
-        "uniform mat4 uView;\n" +
-        "uniform mat4 uProj;\n" +
-        "uniform vec3 uRight;\n" +
-        "uniform vec3 uUp;\n" +
-        "uniform int uRightPerBillboard;\n" +
+        Render3d.Uniforms.glslDeclarations(R3dUniform.View :: R3dUniform.Proj :: R3dUniform.Right :: R3dUniform.Up :: R3dUniform.RightPerBillboard :: Nil) +
         (if (v#psx) vertexSnapSource() else "") +
         "out vec3 vWorld;\n" +
         "out vec2 vUv;\n" +
@@ -581,9 +485,7 @@ pub mod Render3dGlsl {
         "flat in int vLit;\n" +
         "flat in float vShadowOffset;\n" +
         "out vec4 fragColor;\n" +
-        "uniform sampler2D uImage;\n" +
-        "uniform vec3 uFacing;\n" +
-        "uniform int uDepthOut;\n" +
+        Render3d.Uniforms.glslDeclarations(R3dUniform.Image :: R3dUniform.Facing :: R3dUniform.DepthOut :: Nil) +
         colorSpaceSource() +
         lightSourceFor(Render3d.ProgramKey.billboardVariantOf(v)) +
         depthGraySource() +
@@ -606,15 +508,7 @@ pub mod Render3dGlsl {
         "#version 330 core\n" +
         "in vec2 vUv;\n" +
         "out vec4 fragColor;\n" +
-        "uniform vec4 uViewport;\n" +
-        "uniform vec3 uForward;\n" +
-        "uniform vec3 uRight;\n" +
-        "uniform vec3 uUp;\n" +
-        "uniform int uDepthOut;\n" +
-        "uniform int uEnvOn;\n" +
-        "uniform sampler2D uEnvMap;\n" +
-        "uniform float uEnvIntensity;\n" +
-        "uniform int uEnvSrgb;\n" +
+        Render3d.Uniforms.glslDeclarations(R3dUniform.Viewport :: R3dUniform.Forward :: R3dUniform.Right :: R3dUniform.Up :: R3dUniform.DepthOut :: R3dUniform.EnvOn :: R3dUniform.EnvMap :: R3dUniform.EnvIntensity :: R3dUniform.EnvSrgb :: Nil) +
         colorSpaceSource() +
         skyLightSource() +
         environmentUvSource() +
@@ -635,10 +529,7 @@ pub mod Render3dGlsl {
 
     /// 空の色の式 skyAt(向き)（LightModel3d の木から作る）と、それが読む uniform。
     pub def skyLightSource(): String =
-        "uniform vec3 uZenith;\n" +
-        "uniform vec3 uHorizon;\n" +
-        "uniform vec3 uGround;\n" +
-        "uniform float uCurve;\n" +
+        Render3d.Uniforms.glslDeclarations(R3dUniform.Zenith :: R3dUniform.Horizon :: R3dUniform.Ground :: R3dUniform.Curve :: Nil) +
         LightModel3d.Codegen.toGlsl("skyAt", Vec3Input.SkyDirection :: Nil, LightModel3d.skyModel())
 
     /// Design の FBO を viewport 全面へ貼る（FBO は行 0 が下なので、四角の上を v = 1 に当てる）。
@@ -655,7 +546,7 @@ pub mod Render3dGlsl {
         "#version 330 core\n" +
         "in vec2 vUv;\n" +
         "out vec4 fragColor;\n" +
-        "uniform sampler2D uImage;\n" +
+        Render3d.Uniforms.glslDeclarations(R3dUniform.Image :: Nil) +
         "void main() {\n" +
         "    fragColor = texture(uImage, vUv);\n" +
         "}\n"

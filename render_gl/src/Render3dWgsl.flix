@@ -66,12 +66,7 @@ pub mod Render3dWgsl {
     def lightSourceWith(shadows: String, v: Render3d.ProgramKey.ShaderVariant): String =
         shadows +
         (if (v#pointShadows) pointShadowSource() else "") +
-        LightModel3d.Codegen.toWgsl("lightAt", Vec3Input.Position :: Vec3Input.Normal :: Nil, LightModel3d.lightingModelFor(Render3d.ProgramKey.lightVariantOf(v))) +
-        LightModel3d.Codegen.toWgsl("fogAt", Vec3Input.Position :: Vec3Input.Color :: Nil, LightModel3d.fogModel()) +
-        "fn fogged(c: vec3f, p: vec3f) -> vec3f {\n" +
-        "    if (r3d.uFogOn == 0) { return c; }\n" +
-        "    return fogAt(p, c);\n" +
-        "}\n" +
+        ShaderAst.Wgsl.printOnly(Render3dShaders.lightAt(v) :: Render3dShaders.fogAt() :: Render3dShaders.fogged() :: Nil) +
         surfaceOutSource() +
         (if (v#psx) colorDepthSource() else "")
 
@@ -98,55 +93,18 @@ pub mod Render3dWgsl {
     /// 地図の画素の数え方は GL と同じ（行 0 が NDC の y = −1）で、読む時だけ行を上下に返す: WebGPU で描いた地図は行 0 が NDC の y = +1。
     // WhyNot: 周りの画素を返した後の行で端にそろえない — 端にそろえる（clamp）のを GL の行で済ませてから返せば、CPU の描き手と同じ画素の組を読む。
     pub def shadowSource(): String =
-        shadowLitFractionSource() +
-        "fn spotShadow(i: i32, p: vec3f) -> f32 {\n" +
-        "    if (r3d.uShadowOn == 0 || i != r3d.uShadowSpot) { return 1.0; }\n" +
-        "    return 1.0 - r3d.uShadowStrength * (1.0 - shadowLitFraction(uShadowMap, r3d.uShadowMatrix, r3d.uShadowBias, r3d.uShadowPcf, 0.0, vec3f(0.0), p));\n" +
-        "}\n" +
+        ShaderAst.Wgsl.printOnly(Render3dShaders.shadowLitFraction() :: Render3dShaders.spotShadow() :: Nil) +
         sunShadowSource()
 
     /// 影の地図の PCF（shadowSource の頭）。
-    def shadowLitFractionSource(): String =
-        "fn shadowLitFraction(map: texture_depth_2d, lightMatrix: mat4x4f, bias: f32, pcf: i32, shift: f32, n: vec3f, p: vec3f) -> f32 {\n" +
-        "    let c = lightMatrix * vec4f(p + n * shift, 1.0);\n" +
-        "    if (c.w <= 0.0) { return 1.0; }\n" +
-        "    let ndc = c.xyz / c.w;\n" +
-        "    if (ndc.x < -1.0 || ndc.x > 1.0 || ndc.y < -1.0 || ndc.y > 1.0) { return 1.0; }\n" +
-        "    let z = (ndc.z * 0.5 + 0.5) - bias;\n" +
-        "    let size = vec2i(textureDimensions(map, 0));\n" +
-        "    let last = size - vec2i(1);\n" +
-        "    let center = clamp(vec2i(floor((ndc.xy * 0.5 + 0.5) * vec2f(size))), vec2i(0), last);\n" +
-        "    var lit = 0;\n" +
-        "    var total = 0;\n" +
-        "    for (var dy = -pcf; dy <= pcf; dy++) {\n" +
-        "        for (var dx = -pcf; dx <= pcf; dx++) {\n" +
-        "            let t = clamp(center + vec2i(dx, dy), vec2i(0), last);\n" +
-        "            if (z <= textureLoad(map, vec2i(t.x, last.y - t.y), 0)) { lit++; }\n" +
-        "            total++;\n" +
-        "        }\n" +
-        "    }\n" +
-        "    return f32(lit) / f32(total);\n" +
-        "}\n"
+    def shadowLitFractionSource(): String = ShaderAst.Wgsl.printOnly(Render3dShaders.shadowLitFraction() :: Nil)
 
     /// 太陽の影の割合 sunLitAt と r3d_sunLit（shadowSource の末尾）。
-    def sunShadowSource(): String =
-        "var<private> r3d_sunLit: f32 = 1.0;\n" +
-        "fn sunLitAt(p: vec3f, g: vec3f, n: vec3f) -> f32 {\n" +
-        "    if (r3d.uSunShadowOn == 0 || dot(n, r3d.uSunDir) <= 0.0) { return 1.0; }\n" +
-        "    let fade = clamp((r3d.uSunFade.x - dot(p - r3d.uEye, r3d.uSunForward)) / r3d.uSunFade.y, 0.0, 1.0);\n" +
-        "    if (fade <= 0.0) { return 1.0; }\n" +
-        "    return 1.0 - r3d.uSunStrength * fade * (1.0 - shadowLitFraction(uSunMap, r3d.uSunMatrix, r3d.uSunBias, r3d.uSunPcf, r3d.uSunNormalShift, g, p));\n" +
-        "}\n"
+    def sunShadowSource(): String = ShaderAst.Wgsl.printOnly(Render3dShaders.sunLit() :: Render3dShaders.sunLitAt() :: Nil)
 
     /// 点光源の影の割合 r3d_pointShadowLit（LightModel3d.PointShadowCodegen.toWgsl の生成物）と、それを点光源の数だけ r3d_pointLit へ埋める r3d_pointShadowsAt。
     /// atlas の画素の数え方は GL と同じ（行 0 が ndc.y = −1）で、読む時だけ行を atlas の高さ − 1 − 行 に返す（WebGPU で描いた atlas は行 0 が上）。
-    def pointShadowSource(): String =
-        let p = Scene3d.maxPointLights();
-        "var<private> r3d_pointLit: array<f32, ${p}>;\n" +
-        LightModel3d.PointShadowCodegen.toWgsl() +
-        "fn r3d_pointShadowsAt(p: vec3f, g: vec3f, n: vec3f) {\n" +
-        "    for (var i = 0; i < ${p}; i++) { r3d_pointLit[i] = r3d_pointShadowLit(i, p, g, n); }\n" +
-        "}\n"
+    def pointShadowSource(): String = ShaderAst.Wgsl.printOnly(Render3dShaders.pointLit() :: Render3dShaders.pointShadowLit() :: Render3dShaders.pointShadowsAt() :: Nil)
 
     /// ビルボードの影の関数: スポットは遮らない（GLSL のビルボードのプログラムは uShadowOn を付けず 0 のまま読む）。太陽の sunLitAt は置いた物と同じで、
     /// r3d_sunLit は frag が受ける物（vLit が 2）の時だけ代入する（GLSL の uReceive）。

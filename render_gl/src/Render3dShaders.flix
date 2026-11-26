@@ -1,35 +1,36 @@
 // Render3dShaders — 3D の描き手のシェーダーの関数を ShaderAst で 1 回だけ書いた物（GLSL は Render3dGlsl・WGSL は Render3dWgsl が print する）。
 // 式の約束（色の空間・法線マップ・PS1 風の丸め）は Render3d.flix の頭と Render3dGlsl の doc。CPU の描き手（SoftRaster3d）が 3 本目で、gl-parity が同じ値かを確かめる。
 pub mod Render3dShaders {
-    use ShaderAst.{Expr, Definition, Float, Vec2, Vec3, Vec4, IVec2, Int, Boolean, Body, Layout}
+    use ShaderAst.{Expr, Definition, Float, Vec2, Vec3, Vec4, IVec2, Int, Boolean, DepthTex, Mat4, Body, Layout}
+    use Render3d.Uniforms.R3dUniform
     use ShaderAst.{f, i, add, sub, mul, div, addS, subS, mulS, divS, sMul, sSub, lt, le, or_, neg, paren, ternary, at,
                    x, y, z, w, r, g, b, xyz, vec2Of, vec3Of, vec4Of, ivec2Of, floor, abs, normalize, asin, dot, cross, distance, atan2,
                    clamp, clampS, let_, var_, assign, ifInline, ret, param, call, arg, uniform, bitAnd}
 
     // ── uniform ──
 
-    def access(base: String, swizzle: String): Option[ShaderAst.Access] = Some({ base = base, swizzle = swizzle })
+    /// handle u の uniform を、型のマーカー w1 で読む。
+    def u(w1: ShaderAst.TyWitness[t], h: R3dUniform): Expr[t] = uniform(w1, Render3d.Uniforms.refOf(h))
 
     /// 目の位置。
-    pub def eye(): Expr[Vec3] = uniform(ShaderAst.vec3(), { name = "uEye", ty = ShaderAst.Ty.Vec3, glsl = access("uEye", ""), wgsl = access("r3d.uEye", "") })
+    pub def eye(): Expr[Vec3] = u(ShaderAst.vec3(), R3dUniform.Eye)
 
     /// Output.Depth の灰色の (near, range)。
-    pub def depthRange(): Expr[Vec2] =
-        uniform(ShaderAst.vec2(), { name = "uDepthRange", ty = ShaderAst.Ty.Vec2, glsl = access("uDepthRange", ""), wgsl = access("r3d.uDepthRange", "") })
+    pub def depthRange(): Expr[Vec2] = u(ShaderAst.vec2(), R3dUniform.DepthRange)
 
     /// PS1 風の (色のレベルの数, 表の番号, ディザの強さ, アフィンの割合)。
-    pub def psx(): Expr[Vec4] = uniform(ShaderAst.vec4(), { name = "uPsx", ty = ShaderAst.Ty.Vec4, glsl = access("uPsx", ""), wgsl = access("r3dLight.uPsx", "") })
+    pub def psx(): Expr[Vec4] = u(ShaderAst.vec4(), R3dUniform.Psx)
 
     /// 場面の描き先の矩形 (左下の x, y, 幅, 高さ)（GLSL だけ。WGSL の画素の位置は場面の描き先の左上が 0）。
-    pub def psxTargetRect(): ShaderAst.UniformRef = { name = "uPsxTarget", ty = ShaderAst.Ty.Vec4, glsl = access("uPsxTarget", ""), wgsl = None }
+    pub def psxTargetRect(): ShaderAst.UniformRef = Render3d.Uniforms.refOf(R3dUniform.PsxTarget)
 
     /// 頂点を丸める格子の大きさ（画素。0 で丸めない）。
-    pub def vertexSnapGrid(): Expr[Float] =
-        uniform(ShaderAst.float(), { name = "uVertexSnap", ty = ShaderAst.Ty.F32, glsl = access("uVertexSnap", ""), wgsl = access("r3dCamera.uSnap", "z") })
+    pub def vertexSnapGrid(): Expr[Float] = u(ShaderAst.float(), R3dUniform.VertexSnap)
 
-    /// 場面の描き先の幅と高さ（画素）。
+    /// 場面の描き先の幅と高さ（画素。GLSL は描き先の矩形の zw・WGSL はカメラの値の uSnap の xy）。
     pub def vertexSnapTarget(): Expr[Vec2] =
-        uniform(ShaderAst.vec2(), { name = "uPsxTargetSize", ty = ShaderAst.Ty.Vec2, glsl = access("uPsxTarget", "zw"), wgsl = access("r3dCamera.uSnap", "xy") })
+        uniform(ShaderAst.vec2(), { name = "uPsxTarget", ty = ShaderAst.Ty.Vec2, glsl = Some({ base = "uPsxTarget", swizzle = "zw" }),
+                                    wgsl = Some({ base = "r3dCamera.uSnap", swizzle = "xy" }) })
 
     // ── 色の空間 ──
 
@@ -59,10 +60,28 @@ pub mod Render3dShaders {
 
     // ── 色を作る最後の組み立て ──
 
-    /// かすみ fogged(色, 点)（光の式と一緒に Render3dGlsl.lightSourceFor・Render3dWgsl.lightSourceWith が置く）。
+    /// LightModel3d の木から作った関数 name（引数は inputs・返り値は vec3）。本文は LightModel3d.Codegen が両方の言語で作る。
+    def treeFunction(name: String, inputs: List[LightModel3d.Vec3Input], tree: LightModel3d.Vec3Expr): Definition =
+        ShaderAst.externFunction({ name = name, ret = ShaderAst.Ty.Vec3, params = inputs |> List.map(_ -> ShaderAst.Ty.Vec3),
+                                   glsl = Body.Text(LightModel3d.Codegen.toGlsl(name, inputs, tree)), wgsl = Body.Text(LightModel3d.Codegen.toWgsl(name, inputs, tree)),
+                                   deps = Nil, derivative = false })
+
+    /// 変種 v の光の式 lightAt(点, 法線)。
+    pub def lightAt(v: Render3d.ProgramKey.ShaderVariant): Definition =
+        treeFunction("lightAt", LightModel3d.Vec3Input.Position :: LightModel3d.Vec3Input.Normal :: Nil,
+                     LightModel3d.lightingModelFor(Render3d.ProgramKey.lightVariantOf(v)))
+
+    /// かすみの式 fogAt(点, 色)。
+    pub def fogAt(): Definition =
+        treeFunction("fogAt", LightModel3d.Vec3Input.Position :: LightModel3d.Vec3Input.Color :: Nil, LightModel3d.fogModel())
+
+    /// かすみ fogged(色, 点)（uFogOn = 0 なら色のまま）。
     pub def fogged(): Definition =
-        ShaderAst.externFunction({ name = "fogged", ret = ShaderAst.Ty.Vec3, params = ShaderAst.Ty.Vec3 :: ShaderAst.Ty.Vec3 :: Nil,
-                           glsl = Body.Outside, wgsl = Body.Outside, deps = Nil, derivative = false })
+        let (pc, c) = param(ShaderAst.vec3(), "c");
+        let (pp, p) = param(ShaderAst.vec3(), "p");
+        ShaderAst.function("fogged", ShaderAst.Ty.Vec3, pc :: pp :: Nil,
+            ifInline(ShaderAst.eq(u(ShaderAst.int(), R3dUniform.FogOn), i(0)), ret(c)) ::
+            ret(call(ShaderAst.vec3(), fogAt(), arg(p) :: arg(c) :: Nil)) :: Nil)
 
     def toLinear3(v: Expr[Vec3]): Expr[Vec3] = call(ShaderAst.vec3(), srgbToLinear3(), arg(v) :: Nil)
 
@@ -179,4 +198,93 @@ pub mod Render3dShaders {
             declS ::
             ret(vec4Of(mul(paren(sub(mul(div(x(s), x(size)), f("2.0")), f("1.0"))), w(p)),
                        mul(paren(sub(f("1.0"), mul(div(y(s), y(size)), f("2.0")))), w(p)), z(p), w(p))) :: Nil)
+
+    // ── 影 ──
+
+    /// 影の地図 map の PCF で、点 p（法線 n の向きへ shift ずらす）が光を受ける割合（Render3dGlsl.shadowSource の doc の約束 1〜5）。
+    // WhyNot: 周りの画素を返した後の行で端にそろえない — 端にそろえる（clamp）のを GL の行で済ませてから返せば、CPU の描き手と同じ画素の組を読む。
+    pub def shadowLitFraction(): Definition =
+        let (pm, map) = param(ShaderAst.depthTexture(), "map");
+        let (pl, lightMatrix) = param(ShaderAst.mat4(), "lightMatrix");
+        let (pb, bias) = param(ShaderAst.float(), "bias");
+        let (pk, pcf) = param(ShaderAst.int(), "pcf");
+        let (ps, shift) = param(ShaderAst.float(), "shift");
+        let (pn, n) = param(ShaderAst.vec3(), "n");
+        let (pp, p) = param(ShaderAst.vec3(), "p");
+        let (declC, c) = let_("c", ShaderAst.mulMV(lightMatrix, ShaderAst.vec4FromVec3(add(p, mulS(n, shift)), f("1.0"))));
+        let (declN, ndc) = let_("ndc", divS(xyz(c), w(c)));
+        let outside = or_(or_(or_(lt(x(ndc), f("-1.0")), ShaderAst.gt(x(ndc), f("1.0"))), lt(y(ndc), f("-1.0"))), ShaderAst.gt(y(ndc), f("1.0")));
+        let (declZ, depth) = let_("z", sub(paren(add(mul(z(ndc), f("0.5")), f("0.5"))), bias));
+        let (declS, size) = let_("size", ShaderAst.textureSize(map));
+        let (declL, last) = let_("last", sub(size, ShaderAst.ivec2Splat(i(1))));
+        let cell = ShaderAst.ivec2FromVec2(floor(mul(addS(mulS(ShaderAst.xy(ndc), f("0.5")), f("0.5")), ShaderAst.vec2FromIVec2(size))));
+        let (declCenter, center) = let_("center", ShaderAst.clampI(cell, ShaderAst.ivec2Splat(i(0)), last));
+        let (declLit, lit) = var_("lit", i(0));
+        let (declTotal, total) = var_("total", i(0));
+        let inner = (dy: Expr[Int]) -> (dx: Expr[Int]) -> {
+            let (declT, t) = let_("t", ShaderAst.clampI(add(center, ivec2Of(dx, dy)), ShaderAst.ivec2Splat(i(0)), last));
+            declT :: ifInline(le(depth, ShaderAst.targetDepthTexel(map, t)), ShaderAst.incr(lit)) :: ShaderAst.incr(total) :: Nil
+        };
+        ShaderAst.function("shadowLitFraction", ShaderAst.Ty.F32, pm :: pl :: pb :: pk :: ps :: pn :: pp :: Nil,
+            declC ::
+            ifInline(le(w(c), f("0.0")), ret(f("1.0"))) ::
+            declN ::
+            ifInline(outside, ret(f("1.0"))) ::
+            declZ :: declS :: declL :: declCenter :: declLit :: declTotal ::
+            ShaderAst.for_("dy", neg(pcf), k -> le(k, pcf), Layout.Block, dy ->
+                ShaderAst.for_("dx", neg(pcf), k -> le(k, pcf), Layout.Block, inner(dy)) :: Nil) ::
+            ret(div(ShaderAst.toFloat(lit), ShaderAst.toFloat(total))) :: Nil)
+
+    /// スポット i の光に掛ける割合（uShadowOn = 0 のプログラムは 1）。
+    pub def spotShadow(): Definition =
+        let (pi, index) = param(ShaderAst.int(), "i");
+        let (pp, p) = param(ShaderAst.vec3(), "p");
+        let fraction = call(ShaderAst.float(), shadowLitFraction(),
+            arg(u(ShaderAst.depthTexture(), R3dUniform.ShadowMap)) :: arg(u(ShaderAst.mat4(), R3dUniform.ShadowMatrix)) :: arg(u(ShaderAst.float(), R3dUniform.ShadowBias)) ::
+            arg(u(ShaderAst.int(), R3dUniform.ShadowPcf)) :: arg(f("0.0")) :: arg(ShaderAst.vec3Splat(f("0.0"))) :: arg(p) :: Nil);
+        ShaderAst.function("spotShadow", ShaderAst.Ty.F32, pi :: pp :: Nil,
+            ifInline(or_(ShaderAst.eq(u(ShaderAst.int(), R3dUniform.ShadowOn), i(0)), ShaderAst.ne(index, u(ShaderAst.int(), R3dUniform.ShadowSpot))), ret(f("1.0"))) ::
+            ret(sub(f("1.0"), mul(u(ShaderAst.float(), R3dUniform.ShadowStrength), paren(sub(f("1.0"), fraction))))) :: Nil)
+
+    /// 光の式の木が読む太陽の影の割合（frag の main が先に代入する。ビルボードは 1 のまま）。
+    pub def sunLit(): Definition = ShaderAst.privateVar("r3d_sunLit", ShaderAst.float(), None, Some(f("1.0")), None)
+
+    /// 太陽の影の割合 sunLitAt(p, g, n)（Render3dGlsl.sunShadowSource の doc。CPU の描き手は SoftRaster3d.Sun.litAt）。
+    // WhyNot: 太陽へ背を向けた点（n·l ≤ 0）で地図を引かない — facing が 0 なので結果は同じで、pcf の (2r+1)² 回が無駄になる。
+    pub def sunLitAt(): Definition =
+        let (pp, p) = param(ShaderAst.vec3(), "p");
+        let (pg, g1) = param(ShaderAst.vec3(), "g");
+        let (pn, n) = param(ShaderAst.vec3(), "n");
+        let sunDir = u(ShaderAst.vec3(), R3dUniform.SunDir);
+        let sunFade = u(ShaderAst.vec2(), R3dUniform.SunFade);
+        let (declF, fade) = let_("fade", clamp(div(paren(sub(x(sunFade), dot(sub(p, eye()), u(ShaderAst.vec3(), R3dUniform.SunForward)))), y(sunFade)), f("0.0"), f("1.0")));
+        let fraction = call(ShaderAst.float(), shadowLitFraction(),
+            arg(u(ShaderAst.depthTexture(), R3dUniform.SunMap)) :: arg(u(ShaderAst.mat4(), R3dUniform.SunMatrix)) :: arg(u(ShaderAst.float(), R3dUniform.SunBias)) ::
+            arg(u(ShaderAst.int(), R3dUniform.SunPcf)) :: arg(u(ShaderAst.float(), R3dUniform.SunNormalShift)) :: arg(g1) :: arg(p) :: Nil);
+        ShaderAst.function("sunLitAt", ShaderAst.Ty.F32, pp :: pg :: pn :: Nil,
+            ifInline(or_(ShaderAst.eq(u(ShaderAst.int(), R3dUniform.SunShadowOn), i(0)), le(dot(n, sunDir), f("0.0"))), ret(f("1.0"))) ::
+            declF ::
+            ifInline(le(fade, f("0.0")), ret(f("1.0"))) ::
+            ret(sub(f("1.0"), mul(mul(u(ShaderAst.float(), R3dUniform.SunStrength), fade), paren(sub(f("1.0"), fraction))))) :: Nil)
+
+    /// 光の式の木が読む点光源ごとの影の割合（frag の main が r3d_pointShadowsAt で埋める）。
+    pub def pointLit(): Definition = ShaderAst.privateVar("r3d_pointLit", ShaderAst.float(), Some(Scene3d.maxPointLights()), None, None)
+
+    /// 点光源 i の影の割合 r3d_pointShadowLit(i, p, g, n)（本文は LightModel3d.PointShadowCodegen が両方の言語で作る）。
+    pub def pointShadowLit(): Definition =
+        ShaderAst.externFunction({ name = "r3d_pointShadowLit", ret = ShaderAst.Ty.F32,
+                                   params = ShaderAst.Ty.I32 :: ShaderAst.Ty.Vec3 :: ShaderAst.Ty.Vec3 :: ShaderAst.Ty.Vec3 :: Nil,
+                                   glsl = Body.Text(LightModel3d.PointShadowCodegen.toGlsl()), wgsl = Body.Text(LightModel3d.PointShadowCodegen.toWgsl()),
+                                   deps = Nil, derivative = false })
+
+    /// 点光源の数だけ r3d_pointLit を埋める r3d_pointShadowsAt(p, g, n)。
+    // WhyNot: 光の式の木の中で地図を引かない — PBR の材質は拡散と鏡面の 2 つのループを回し、1 本につき 2 回引くことになる。
+    pub def pointShadowsAt(): Definition =
+        let (pp, p) = param(ShaderAst.vec3(), "p");
+        let (pg, g1) = param(ShaderAst.vec3(), "g");
+        let (pn, n) = param(ShaderAst.vec3(), "n");
+        ShaderAst.function("r3d_pointShadowsAt", ShaderAst.Ty.Void, pp :: pg :: pn :: Nil,
+            ShaderAst.for_("i", i(0), k -> lt(k, i(Scene3d.maxPointLights())), Layout.Inline, k ->
+                ShaderAst.assign(ShaderAst.readGlobalAt(ShaderAst.float(), pointLit(), k),
+                                 call(ShaderAst.float(), pointShadowLit(), arg(k) :: arg(p) :: arg(g1) :: arg(n) :: Nil)) :: Nil) :: Nil)
 }

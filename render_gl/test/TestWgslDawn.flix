@@ -383,7 +383,7 @@ mod TestWgslDawn {
         let wgsl = Render3dWgsl.lightSource();
         Assert.assertEq(expected = (true, true),
                         (String.contains(substr = "let t = clamp(center + vec2i(dx, dy), vec2i(0), last);", wgsl),
-                         String.contains(substr = "textureLoad(map, vec2i(t.x, last.y - t.y), 0)", wgsl)))
+                         String.contains(substr = "textureLoad(map, vec2i(t.x, i32(textureDimensions(map, 0).y) - 1 - t.y), 0)", wgsl)))
 
     @Test
     def testNormalMappedFragmentDoesNotFlipRows(): Unit \ Assert =

@@ -81,6 +81,10 @@ pub mod ShaderAst {
     /// 組み込みの関数（名前は言語ごとに printer が選ぶ）。
     pub enum BuiltinFn with Eq {
         case Floor, Abs, Normalize, Asin, Sign, Fwidth, Length, Dot, Distance, Cross, Atan2, Max, Min, Determinant, Clamp, Mix
+        /// 絵の mip レベル 0 の大きさ（画素の ivec2）。
+        case TextureSize
+        /// GPU が描いた奥行きの描き先を画素で読む（行は GL の数え方: 行 0 が NDC の y = −1。WGSL は読む直前に行を返す）。
+        case TargetDepthTexel
     }
 
     /// uniform の読み方の字（base に swizzle を付けて読む。swizzle は空でよい）。
@@ -365,6 +369,9 @@ pub mod ShaderAst {
         construct(Ty.Vec4, nodeOf(x1) :: nodeOf(y1) :: nodeOf(z1) :: nodeOf(w1) :: Nil)
     pub def vec4FromVec3(v: Expr[Vec3], w1: Expr[Float]): Expr[Vec4] = construct(Ty.Vec4, nodeOf(v) :: nodeOf(w1) :: Nil)
     pub def ivec2Of(x1: Expr[Int], y1: Expr[Int]): Expr[IVec2] = construct(Ty.IVec2, nodeOf(x1) :: nodeOf(y1) :: Nil)
+    pub def ivec2Splat(x1: Expr[Int]): Expr[IVec2] = construct(Ty.IVec2, nodeOf(x1) :: Nil)
+    pub def ivec2FromVec2(v: Expr[Vec2]): Expr[IVec2] = construct(Ty.IVec2, nodeOf(v) :: Nil)
+    pub def vec2FromIVec2(v: Expr[IVec2]): Expr[Vec2] = construct(Ty.Vec2, nodeOf(v) :: Nil)
     pub def toFloat(x1: Expr[Int]): Expr[Float] = construct(Ty.F32, nodeOf(x1) :: Nil)
     pub def toInt(x1: Expr[Float]): Expr[Int] = construct(Ty.I32, nodeOf(x1) :: Nil)
 
@@ -394,6 +401,15 @@ pub mod ShaderAst {
 
     /// clamp(float のベクトル, f32, f32)（WGSL の printer が f32 をベクトルに広げる）。
     pub def clampS(a1: Expr[t], lo: Expr[Float], hi: Expr[Float]): Expr[t] with FloatLike[t] = builtin(BuiltinFn.Clamp, nodeOf(a1) :: nodeOf(lo) :: nodeOf(hi) :: Nil, tyOf(a1))
+
+    /// clamp(ivec2, ivec2, ivec2)。
+    pub def clampI(a1: Expr[IVec2], lo: Expr[IVec2], hi: Expr[IVec2]): Expr[IVec2] = builtin(BuiltinFn.Clamp, nodeOf(a1) :: nodeOf(lo) :: nodeOf(hi) :: Nil, Ty.IVec2)
+
+    /// 奥行きの絵 map の mip レベル 0 の大きさ（画素）。
+    pub def textureSize(map: Expr[DepthTex]): Expr[IVec2] = builtin(BuiltinFn.TextureSize, nodeOf(map) :: Nil, Ty.IVec2)
+
+    /// GPU が描いた奥行きの描き先 map の画素 texel の奥行き（行は GL の数え方。WGSL で描いた地図は行 0 が上なので、WGSL の字は読む直前に行を返す）。
+    pub def targetDepthTexel(map: Expr[DepthTex], texel: Expr[IVec2]): Expr[Float] = builtin(BuiltinFn.TargetDepthTexel, nodeOf(map) :: nodeOf(texel) :: Nil, Ty.F32)
 
     /// mix(a1, b1, f32)。
     pub def mixS(a1: Expr[t], b1: Expr[t], s: Expr[Float]): Expr[t] with FloatLike[t] = builtin(BuiltinFn.Mix, nodeOf(a1) :: nodeOf(b1) :: nodeOf(s) :: Nil, tyOf(a1))

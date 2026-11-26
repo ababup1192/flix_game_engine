@@ -39,6 +39,8 @@ pub mod ShaderAst.Glsl {
         case BuiltinFn.Determinant => "determinant"
         case BuiltinFn.Clamp       => "clamp"
         case BuiltinFn.Mix         => "mix"
+        case BuiltinFn.TextureSize => "textureSize"
+        case BuiltinFn.TargetDepthTexel => "texelFetch"
     }
 
     /// 式の字。
@@ -60,7 +62,7 @@ pub mod ShaderAst.Glsl {
         case Node.Neg(a, _)            => ShaderAst.prefixed("-", exprAt(ShaderAst.unaryPrec(), a))
         case Node.Not(a)               => ShaderAst.prefixed("!", exprAt(ShaderAst.unaryPrec(), a))
         case Node.Call(d, xs, _)       => ShaderAst.nameOf(d) + "(" + args(xs) + ")"
-        case Node.Builtin(fun, xs, _)  => builtinName(fun) + "(" + args(xs) + ")"
+        case Node.Builtin(fun, xs, _)  => builtin(fun, xs)
         case Node.Construct(t, xs)     => tyName(t) + "(" + args(xs) + ")"
         case Node.Swizzle(inner, s, _) => match inner {
             case Node.Uniform(u) => ShaderAst.accessFor(Lang.Glsl, u, s)
@@ -73,6 +75,12 @@ pub mod ShaderAst.Glsl {
         case Node.Paren(a)             => "(" + exprAt(0, a) + ")"
         case Node.Intrinsic(k, _)      => intrinsic(k)
         case Node.Global(d, _)         => ShaderAst.nameOf(d)
+    }
+
+    def builtin(fun: BuiltinFn, xs: List[Node]): String = match fun {
+        case BuiltinFn.TextureSize      => "textureSize(" + args(xs) + ", 0)"
+        case BuiltinFn.TargetDepthTexel => "texelFetch(" + args(xs) + ", 0).r"
+        case _                          => builtinName(fun) + "(" + args(xs) + ")"
     }
 
     def intrinsic(k: Intrinsic): String = match k {

@@ -13,6 +13,7 @@ pub mod Render3d.Uniforms {
         case ShadowOn, ShadowSpot, ShadowMatrix, ShadowMap, ShadowBias, ShadowPcf, ShadowStrength
         case SunDir, SunColor, SunShadowOn, SunMatrix, SunMap, SunBias, SunNormalShift, SunPcf, SunStrength, SunForward, SunFade
         case PointShadow(Int32)
+        case PointShadows
         case PointShadowAtlas, PointShadowBias, PointShadowMap
         case InverseUnitsPerMeterSquared, Psx, PsxTarget, VertexSnap, Sh, SkyContribution
         case Zenith, Horizon, Ground, Curve, EnvOn, EnvBoxOn, EnvBoxMin, EnvBoxMax, EnvBoxCenter, EnvMap, EnvLevels, EnvIntensity, EnvSrgb
@@ -88,6 +89,7 @@ pub mod Render3d.Uniforms {
             case R3dUniform.SunForward      => row("uSunForward", "vec3", Ty.Vec3, scene("uSunForward"))
             case R3dUniform.SunFade         => row("uSunFade", "vec2", Ty.Vec2, scene("uSunFade"))
             case R3dUniform.PointShadow(i)  => row("uPointShadow[${i}]", "vec4", Ty.Vec4, light("uPointShadow"))
+            case R3dUniform.PointShadows    => arrayRow("uPointShadow", "vec4", p, Ty.Vec4, light("uPointShadow"))
             case R3dUniform.PointShadowAtlas => row("uPointShadowAtlas", "vec4", Ty.Vec4, light("uPointShadowAtlas"))
             case R3dUniform.PointShadowBias => row("uPointShadowBias", "vec2", Ty.Vec2, light("uPointShadowBias"))
             case R3dUniform.PointShadowMap  => row("uPointShadowMap", "sampler2D", Ty.DepthTexture2d, at("uPointShadowMap"))
