@@ -23,6 +23,7 @@ final class BrowserFormats {
             case BGRA8_UNORM: return "bgra8unorm";
             case BGRA8_UNORM_SRGB: return "bgra8unorm-srgb";
             case RGBA16_FLOAT: return "rgba16float";
+            case R32_FLOAT: return "r32float";
             case RGBA32_FLOAT: return "rgba32float";
             case DEPTH24_PLUS: return "depth24plus";
             case DEPTH24_PLUS_STENCIL8: return "depth24plus-stencil8";

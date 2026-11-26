@@ -443,6 +443,7 @@ pub mod HeadlessRender {
         match p#target#format {
             case RenderTarget.Format.Rgba8Unorm  => SoftRaster.PassImage.Rgba8Unorm(new BufferedImage(tw, th, 2i32))
             case RenderTarget.Format.Rgba16Float => SoftRaster.PassImage.Rgba16Float(ShaderEval.hdrTextureOf(tw, th, Vector.empty()))
+            case RenderTarget.Format.R32Float    => SoftRaster.PassImage.R32Float(ShaderEval.hdrTextureOf(tw, th, Vector.empty()))
         }
 
     /// 追加の生成済み画像（pass のレンダーターゲットなど）を textures に混ぜて本編を PNG に生成する。

@@ -423,6 +423,18 @@ pub mod RenderCache {
     pub def passImageDigest(image: SoftRaster.PassImage): String \ IO =
         match image {
             case SoftRaster.PassImage.Rgba8Unorm(argb)  => imageDigest(argb)
+            case SoftRaster.PassImage.R32Float(hdr) =>
+                let w = ShaderEval.hdrWidthOf(hdr);
+                let h = ShaderEval.hdrHeightOf(hdr);
+                let md = MessageDigest.getInstance("SHA-256");
+                md.update("R32f:${Int32.toString(w)}x${Int32.toString(h)}".getBytes("UTF-8"));
+                let bytes = ByteBuffer.allocate(w * 4);
+                List.range(0, h) |> List.forEach(y -> {
+                    discard bytes.clear();
+                    List.range(0, w) |> List.forEach(x -> discard bytes.putFloat(RenderUtil.f32(ShaderEval.hdrChannelOf(hdr, (y * w + x) * 4))));
+                    md.update(bytes.array())
+                });
+                HexFormat.of().formatHex(md.digest())
             case SoftRaster.PassImage.Rgba16Float(hdr) =>
                 let w = ShaderEval.hdrWidthOf(hdr);
                 let h = ShaderEval.hdrHeightOf(hdr);

@@ -1357,7 +1357,7 @@
 - ターゲットの寸法の基準。Design = design 解像度（ドット絵の画素の大きさにそろえる）・
   `pub enum Basis with Eq, ToString { case Design case Window }`
 - ターゲットの画素の形式（wgpu の TextureFormat と同じ名前）。
-  `pub enum Format with Eq, ToString { case Rgba8Unorm case Rgba16Float }`
+  `pub enum Format with Eq, ToString { case Rgba8Unorm case Rgba16Float case R32Float }`
 - ターゲットの作り方（毎コマの中身 = Render.Pass とは別に、名前ごとに 1 つ）。wgpu / Unity の
   `pub type alias Descriptor = { scale = Float64, basis = Basis, format = Format, samples = Int32 }`
 - 既定（design 解像度そのまま・Rgba8Unorm・MSAA なし）。

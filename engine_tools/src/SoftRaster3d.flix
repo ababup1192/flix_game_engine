@@ -284,44 +284,6 @@ pub mod SoftRaster3d {
         }
     }
 
-    /// drawScene の Rgba16Float の描き先版。rgba = 描き先（1 画素に r, g, b, α の 4 つ）・size = その幅と高さ。
-    /// 層は色を切らずに塗り（emission が 1 を超えて残る）、SoftRaster.blendPixelF の Normal で重ねる。
-    pub def drawSceneHdr(rgba: Array[Float64, Static], size: (Int32, Int32), sf: Float64, textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]],
-                         time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO =
-        let (width, height) = size;
-        let scene = cmd#scene;
-        let (rx0, ry0, rx1, ry1) = DrawCmd.clipPixels({ scaleX = sf, scaleY = sf }, { position = cmd#at, size = scene#size });
-        let dw = rx1 - rx0;
-        let dh = ry1 - ry0;
-        let (cx0, cy0, cx1, cy1) = match cmd#clip {
-            case None    => (rx0, ry0, rx1, ry1)
-            case Some(r) => DrawCmd.clipPixels({ scaleX = sf, scaleY = sf }, r)
-        };
-        let x0 = Int32.max(0, Int32.max(rx0, cx0));
-        let y0 = Int32.max(0, Int32.max(ry0, cy0));
-        let x1 = Int32.min(width, Int32.min(rx1, cx1));
-        let y1 = Int32.min(height, Int32.min(ry1, cy1));
-        let w = x1 - x0;
-        let h = y1 - y0;
-        if (dw <= 0 or dh <= 0 or w <= 0 or h <= 0 or scene#size#x <= 0.0 or scene#size#y <= 0.0) ()
-        else {
-            let (lw, lh) = match scene#resolution {
-                case Scene3d.Resolution.Native => (dw, dh)
-                case Scene3d.Resolution.Design =>
-                    (Int32.max(1, SoftRaster3d.Internal.roundInt(scene#size#x)), Int32.max(1, SoftRaster3d.Internal.roundInt(scene#size#y)))
-            };
-            let layer: Array[Float64, Static] = Array.repeat(Static, lw * lh * 4, 0.0);
-            renderLayer(scene, lw, lh, textures, time, LayerOut.Rgba(layer));
-            List.range(0, h) |> List.forEach(j -> {
-                let ly = nearestIndex(y0 + j - ry0, dh, lh);
-                List.range(0, w) |> List.forEach(i -> {
-                    let k = (ly * lw + nearestIndex(x0 + i - rx0, dw, lw)) * 4;
-                    SoftRaster.blendPixelF(DrawCmd.BlendMode.Normal, Array.get(k, layer), Array.get(k + 1, layer), Array.get(k + 2, layer),
-                                           Array.get(k + 3, layer), rgba, (y0 + j) * width + x0 + i)
-                })
-            })
-        }
-
     /// 層の画素の置き場。Argb = 8bit（argbOfRgba で 0..1 に切る）・Rgba = 1 画素に r, g, b, α の 4 つ（切らない）。
     enum LayerOut {
         case Argb(Array[Int32, Static])

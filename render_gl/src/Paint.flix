@@ -171,6 +171,8 @@ mod RenderPaint {
         // tex 場の標本規約（NEAREST + CLAMP）を bind 中の unit へ強制する sampler（起動時に 1 個）。
         let surfaceSampler = RenderSprite.createSurfaceSampler(gl, false);
         let surfaceSamplerLinear = RenderSprite.createSurfaceSampler(gl, true);
+        let targetEntries: Ref[Map[Int32, RenderTargetGl.Entry], Static] = Ref.fresh(Static, Map.empty());
+        let floatLinearWarned: Ref[Bool, Static] = Ref.fresh(Static, false);
 
         // ターゲットは初回の beginTarget で作られ、寸法が変わらない限り使い回す。
         let targets = TargetTable.fresh();
@@ -214,8 +216,12 @@ mod RenderPaint {
             let texBinds = List.zipWithIndex(texLocs) |> List.filter(il -> fst(il) < readCount) |> List.map(il -> {
                 let (i, (_samplerLoc, flipLoc)) = il;
                 let base = (readsAt + i) * RenderList.readFields();
-                let sampler = if (Array.get(base + 1, reads) == 1) surfaceSamplerLinear else surfaceSampler;
-                ({ texUnit = i, texId = Array.get(base, reads), flipLoc = flipLoc, flip = Int32.toFloat64(Array.get(base + 2, reads)), sampler = sampler }: RenderSprite.SurfaceTexBind)
+                let texId = Array.get(base, reads);
+                let linear = Array.get(base + 1, reads) == 1;
+                let floatTarget = Map.get(texId, Ref.get(targetEntries)) |> Option.exists(e -> e#storedFormat == RenderTarget.Format.R32Float);
+                if (linear and floatTarget) warnFloatLinearOnce(floatLinearWarned) else ();
+                let sampler = if (linear and not floatTarget) surfaceSamplerLinear else surfaceSampler;
+                ({ texUnit = i, texId = texId, flipLoc = flipLoc, flip = Int32.toFloat64(Array.get(base + 2, reads)), sampler = sampler }: RenderSprite.SurfaceTexBind)
             });
             RenderSprite.drawShaderSurface(surfaceGl, program, vao, { rectPos = uRectPos, rectSize = uRectSize, time = uTime, alpha = uAlpha },
                                            texBinds, values, at, RenderFrame.blendOf(RenderList.blendAt(rows, row)))
@@ -250,7 +256,7 @@ mod RenderPaint {
           pendingScene3dHolder = Array#{(Nil: List[Scene3d.RenderCmd])} @ Static,
           pendingLetterboxHolder = Array#{(None: Option[String])} @ Static, scene3d = cfg#scene3d,
           blankTexture = GpuHandle.textureIdInt(RenderTexture.loadTextureFromPixels(gl, 1, 1, Vector#{0})#id),
-          targets = targets, targetEntries = Ref.fresh(Static, Map.empty()),
+          targets = targets, targetEntries = targetEntries,
           targetWarnedRef = Ref.fresh(Static, Set.empty()), keepHistory = true,
           registryRef = registryRef, textureKeyRef = textureKeyRef,
           staticCache = staticCache, staticVbos = Ref.fresh(Static, Map.empty()), lastFrameHolder = Array#{emptyFrame()} @ Static,
@@ -854,7 +860,7 @@ mod RenderPaint {
         { create = spec -> {
               let drawn = RenderList.drawSamplesOf(spec#samples, RenderTargetGl.sampleCounts(gl));
               let fresh = RenderTargetGl.createWithSamples(gl, spec#width, spec#height, spec#format, spec#samples, drawn);
-              if (RenderTargetGl.isFallback(fresh)) warnFormatFallback(paint, spec#name) else ();
+              if (RenderTargetGl.isFallback(fresh)) warnFormatFallback(paint, spec#name, spec#format) else ();
               if (RenderTargetGl.isMsaaFallback(fresh)) warnMsaaFallback(paint, spec#name) else ();
               Ref.put(Map.insert(fresh#tex, fresh, Ref.get(paint#targetEntries)), paint#targetEntries);
               fresh#tex
@@ -877,9 +883,21 @@ mod RenderPaint {
     def warnMsaaFallback(paint: Paint, name: String): Unit \ IO =
         warnTargetOnce(paint, name + "@msaa", name, "MSAA なし", "この描き先は標本を持つ FBO を作れない（GL_MAX_SAMPLES か FBO の完成）")
 
-    /// Rgba16Float で作れずに Rgba8Unorm で作り直したことを、名前ごとに 1 回だけ知らせる。
-    def warnFormatFallback(paint: Paint, name: String): Unit \ IO =
-        warnTargetOnce(paint, name, name, "Rgba8Unorm", "この描き先は Rgba16Float の FBO を作れない（1 を超える明るさは 1 に切られる）")
+    /// 頼まれた形式（Rgba16Float か R32Float）で作れずに Rgba8Unorm で作り直したことを、名前ごとに 1 回だけ知らせる。
+    def warnFormatFallback(paint: Paint, name: String, format: RenderTarget.Format): Unit \ IO = match format {
+        case RenderTarget.Format.R32Float =>
+            warnTargetOnce(paint, name, name, "Rgba8Unorm",
+                           "@screen-effects-no-float-target この描き先は R32Float の FBO を作れない（奥行きが 8 bit に切られ、画面の上の技（SSAO）は効かない）")
+        case _ => warnTargetOnce(paint, name, name, "Rgba8Unorm", "この描き先は Rgba16Float の FBO を作れない（1 を超える明るさは 1 に切られる）")
+    }
+
+    /// Linear で読む Spec が R32Float の Pass を読む時、最も近い画素で読むことを 1 回だけ知らせる。
+    def warnFloatLinearOnce(warned: Ref[Bool, Static]): Unit \ IO =
+        if (Ref.get(warned)) ()
+        else {
+            Ref.put(true, warned);
+            Log.fellBack("render-target", "R32Float", "Nearest", "R32Float の Pass は Linear で読めない（WebGL2 は 0 を返す）— 最も近い画素で読む")
+        }
 
     /// ターゲット name の作り方を既定へ落としたことを、鍵 key ごとに 1 回だけ知らせる。
     def warnTargetOnce(paint: Paint, key: String, name: String, fallback: String, reason: String): Unit \ IO =

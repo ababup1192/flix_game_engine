@@ -27,6 +27,7 @@ final class DawnFormats {
             case BGRA8_UNORM -> WGPUTextureFormat.BGRA8Unorm;
             case BGRA8_UNORM_SRGB -> WGPUTextureFormat.BGRA8UnormSrgb;
             case RGBA16_FLOAT -> WGPUTextureFormat.RGBA16Float;
+            case R32_FLOAT -> WGPUTextureFormat.R32Float;
             case RGBA32_FLOAT -> WGPUTextureFormat.RGBA32Float;
             case DEPTH24_PLUS -> WGPUTextureFormat.Depth24Plus;
             case DEPTH24_PLUS_STENCIL8 -> WGPUTextureFormat.Depth24PlusStencil8;

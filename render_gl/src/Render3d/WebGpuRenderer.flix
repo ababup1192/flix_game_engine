@@ -158,6 +158,7 @@ pub mod Render3d.WebGpuRenderer {
             variantFragments = Ref[Map[String, ShaderModule], Static],
             cpuLight = ByteBuffer, sceneOffsets = Map[Render3d.UniformLayout.SceneField, Int32],
             pasteLayout = BindGroupLayout,
+            floatPasteLayout = BindGroupLayout,
             vertexModule = ShaderModule,
             skinnedModule = ShaderModule,
             psxVertexModules = Ref[Map[Bool, ShaderModule], Static],
@@ -239,6 +240,7 @@ pub mod Render3d.WebGpuRenderer {
         let r = RendererData.RendererData({
             gpu = gpu, planner = freshPlanner(Render3d.DrawMode.Instanced),
             sceneLayout = sceneLayout, pasteLayout = pasteLayout,
+            floatPasteLayout = gpu.createBindGroupLayout(WebGpuPipelines.sceneLayoutDescOf(true)),
             variantLayouts = Ref.fresh(Static, Map.empty()),
             variantFragments = Ref.fresh(Static, Map.empty()), cpuLight = directBytes(Render3dWgsl.lightValueBytes()), sceneOffsets = Render3d.UniformLayout.sceneOffsets(),
             vertexModule = gpu.createShaderModule("fge scene3d lit vs", Render3dWgsl.litVertexSource(false)),
@@ -355,6 +357,7 @@ pub mod Render3d.WebGpuRenderer {
         s#depthModule.release();
         Map.forEach((_, m) -> m.release(), Ref.get(s#variantFragments));
         Map.forEach((_, layout) -> layout.release(), Ref.get(s#variantLayouts));
+        s#floatPasteLayout.release();
         s#sceneLayout.release()
 
     /// 場面のどれかのビルボードが、名前が isName に当たる絵を貼るか（GL の Render3d.readsTexture と同じ。2D の描き手が Pass の history の要否を決める）。
@@ -1088,7 +1091,7 @@ pub mod Render3d.WebGpuRenderer {
         discard sceneDesc.buffer(0, sceneValues, 0i64, Int32.toInt64(WebGpuSceneValues.sceneValueBytes()));
         discard sceneDesc.textureView(1, s#blankDepth.defaultView()).textureView(2, s#blankDepth.defaultView());
         discard sceneDesc.textureView(3, s#blankImage.defaultView()).sampler(4, s#environmentSampler).buffer(5, camera, 0i64, Int32.toInt64(Render3dWgsl.cameraBytes()));
-        let pasteDesc = new BindGroupDesc("fge scene3d paste", s#pasteLayout);
+        let pasteDesc = new BindGroupDesc("fge scene3d paste", if (shape#format == RenderTarget.Format.R32Float) s#floatPasteLayout else s#pasteLayout);
         discard pasteDesc.textureView(0, color.defaultView()).buffer(1, paste, 0i64, 16i64);
         { width = shape#width, height = shape#height, format = shape#format, samples = shape#samples, color = color, msaa = msaa, depth = depth,
           sceneValues = sceneValues, camera = camera, sceneGroup = gpu.createBindGroup(sceneDesc),

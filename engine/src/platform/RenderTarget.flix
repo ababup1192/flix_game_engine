@@ -32,9 +32,12 @@ pub mod RenderTarget {
     /// Rgba8Unorm = 各成分 8bit・0..1（書く時に 0..1 へ切る）。
     /// Rgba16Float = 各成分 16bit の浮動小数（half）。1 を超える明るさをそのまま持てる（HDR の Pass。最後にトーンマッピングで 0..1 へ収める）。
     ///   描き先が対応していない環境では Rgba8Unorm で作り直し、名前ごとに 1 回知らせる。
+    /// R32Float = 1 成分 32bit の浮動小数（赤だけ。奥行きの絵）。blend は掛けず置き換えで描き、読むのは最も近い画素だけ（Linear で読む Spec は Nearest に直して知らせる）。
+    ///   PostStack が画面の上の技（SSAO）の奥行きを描くのに使う。描き先が対応していない環境では Rgba8Unorm で作り直し、名前ごとに 1 回知らせる。
     pub enum Format with Eq, ToString {
         case Rgba8Unorm
         case Rgba16Float
+        case R32Float
     }
 
     /// ターゲットの作り方（毎コマの中身 = Render.Pass とは別に、名前ごとに 1 つ）。wgpu / Unity の

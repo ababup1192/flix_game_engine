@@ -30,7 +30,7 @@ pub mod RenderPaint.Internal.WebGpuPipelines {
 
     /// pipeline と stencil の表。frameLayout と imageLayout は WebGpuPaint の持ち物（ここでは手放さない）。
     /// sceneLayout = 3D の場面を貼る形の group 1（場面の texture と貼る矩形の uniform・WebGpuShader.sceneWgsl）。表が作って手放す。
-    /// pipelines の鍵 = 形 × targetKeys() + targetKeyOf（blend・形式（0 = RGBA8_UNORM・1 = RGBA16_FLOAT）・標本・stencil の使い方）。
+    /// pipelines の鍵 = 形 × targetKeys() + targetKeyOf（blend・形式（0 = RGBA8_UNORM・1 = RGBA16_FLOAT・2 = R32_FLOAT）・標本・stencil の使い方）。
     /// stencils = 描き先の鍵 → DEPTH24_PLUS_STENCIL8 の texture と、その幅・高さ・標本の数。
     pub type alias Pipelines = {
         gpu = WebGpu,
@@ -39,6 +39,7 @@ pub mod RenderPaint.Internal.WebGpuPipelines {
         tileModule = ShaderModule,
         sceneModule = ShaderModule,
         sceneLayout = BindGroupLayout,
+        floatSceneLayout = BindGroupLayout,
         frameLayout = BindGroupLayout,
         imageLayout = BindGroupLayout,
         pipelines = Ref[Map[Int32, RenderPipeline], Static],
@@ -53,16 +54,18 @@ pub mod RenderPaint.Internal.WebGpuPipelines {
           polyModule = gpu.createShaderModule("fge polygon", WebGpuShader.polyWgsl()),
           tileModule = gpu.createShaderModule("fge tile", WebGpuShader.tileWgsl()),
           sceneModule = gpu.createShaderModule("fge scene3d paste", WebGpuShader.sceneWgsl()),
-          sceneLayout = createSceneLayout(gpu),
+          sceneLayout = gpu.createBindGroupLayout(sceneLayoutDescOf(false)),
+          floatSceneLayout = gpu.createBindGroupLayout(sceneLayoutDescOf(true)),
           frameLayout = frameLayout, imageLayout = imageLayout,
           pipelines = Ref.fresh(Static, Map.empty()), stencils = Ref.fresh(Static, Map.empty()),
           stencilResetQuad = createResetQuad(gpu, design) }
 
-    /// 場面を貼る形の group 1 の layout（場面の texture と、貼る矩形の uniform）。
-    def createSceneLayout(gpu: WebGpu): BindGroupLayout \ IO =
-        let desc = new BindGroupLayoutDesc("fge scene3d paste");
-        discard desc.texture(0, ShaderStage.FRAGMENT, TextureSampleType.FLOAT).buffer(1, ShaderStage.FRAGMENT, BufferBindingType.UNIFORM);
-        gpu.createBindGroupLayout(desc)
+    /// 場面を貼る形の group 1 の layout の作り方（場面の texture と、貼る矩形の uniform）。r32Float = R32Float の描き先へ貼る形（unfilterable-float の絵）。
+    /// 3D の描き手（Render3d.WebGpuRenderer）も同じ作り方で group を作る（同じ entry の layout は WebGPU では取り替えが効く）。
+    pub def sceneLayoutDescOf(r32Float: Bool): BindGroupLayoutDesc \ IO =
+        let desc = new BindGroupLayoutDesc(if (r32Float) "fge scene3d paste r32float" else "fge scene3d paste");
+        discard desc.texture(0, ShaderStage.FRAGMENT, if (r32Float) TextureSampleType.UNFILTERABLE_FLOAT else TextureSampleType.FLOAT).buffer(1, ShaderStage.FRAGMENT, BufferBindingType.UNIFORM);
+        desc
 
     /// 起動の時に作る pipeline（RGBA8・標本 1 の、stencil の無い pass と mask のある pass の両方）。RGBA16_FLOAT と標本 4 は初めて要る Pass で作る。
     // WhyNot: mask のある pass の分を初めて mask が出たコマで作らない — Dawn は pipeline を作り終えるまで待つので、そのコマが詰まる。
@@ -91,24 +94,33 @@ pub mod RenderPaint.Internal.WebGpuPipelines {
         pipes#polyModule.release();
         pipes#tileModule.release();
         pipes#sceneModule.release();
-        pipes#sceneLayout.release()
+        pipes#sceneLayout.release();
+        pipes#floatSceneLayout.release()
 
-    /// pipeline の鍵のうち描き先と重ね方の分: ((blend の番号 × 2 + 形式) × 2 + 標本（0 = 1・1 = 4）) × 4 + stencil の使い方（0 以上 targetKeys() 未満）。
+    /// pipeline の鍵のうち描き先と重ね方の分: ((blend の番号 × formats() + 形式) × 2 + 標本（0 = 1・1 = 4）) × 4 + stencil の使い方（0 以上 targetKeys() 未満）。
     /// 鍵の残り（形か面の program の番号）は × targetKeys() して足す。
     pub def targetKeyOf(blendC: Int32, format: RenderTarget.Format, samples: Int32, stencil: Int32): Int32 =
-        ((blendC * 2 + formatCode(format)) * 2 + (if (samples > 1) 1 else 0)) * 4 + stencil
+        ((blendC * formats() + formatCode(format)) * 2 + (if (samples > 1) 1 else 0)) * 4 + stencil
 
-    /// targetKeyOf が取る値の数（blend 4（3 つと場面を貼る WebGpuRows.blendScene）× 形式 2 × 標本 2 × stencil 4 = 64 を収める）。
-    pub def targetKeys(): Int32 = 64
+    /// 描き先の形式の数（formatCode が取る値の数）。
+    pub def formats(): Int32 = 3
+
+    /// targetKeyOf が取る値の数（blend 4（3 つと場面を貼る WebGpuRows.blendScene）× 形式 formats() × 標本 2 × stencil 4）。
+    pub def targetKeys(): Int32 = 4 * formats() * 2 * 4
 
     pub def formatCode(format: RenderTarget.Format): Int32 = match format {
         case RenderTarget.Format.Rgba8Unorm  => 0
         case RenderTarget.Format.Rgba16Float => 1
+        case RenderTarget.Format.R32Float    => 2
     }
+
+    /// texture t が R32_FLOAT か（unfilterable-float の layout で読む絵）。
+    pub def isR32Float(t: Texture): Bool \ IO = t.format().name() == "R32_FLOAT"
 
     pub def textureFormatOf(format: RenderTarget.Format): TextureFormat = match format {
         case RenderTarget.Format.Rgba8Unorm  => TextureFormat.RGBA8_UNORM
         case RenderTarget.Format.Rgba16Float => TextureFormat.RGBA16_FLOAT
+        case RenderTarget.Format.R32Float    => TextureFormat.R32_FLOAT
     }
 
     /// 形（WebGpuRows.shape*）と blend の番号（RenderFrame.blendCode）と描き先の形式と標本の数（1 か 4）と stencil の使い方（WebGpuRows.stencil*）の
@@ -118,7 +130,7 @@ pub mod RenderPaint.Internal.WebGpuPipelines {
         match Map.get(key, Ref.get(pipes#pipelines)) {
             case Some(pipeline) => pipeline
             case None =>
-                let pipeline = buildPipeline(pipes, shape, blendC, textureFormatOf(format), samples, stencil);
+                let pipeline = buildPipeline(pipes, shape, blendC, format, samples, stencil);
                 Ref.put(Map.insert(key, pipeline, Ref.get(pipes#pipelines)), pipes#pipelines);
                 pipeline
         }
@@ -130,25 +142,29 @@ pub mod RenderPaint.Internal.WebGpuPipelines {
     /// stencil の使い方が Write の時は blend を (0, 1) にして色を変えない（glColorMask(false…) の代わり）。
     // WhyNot: Write で色の書き込みの mask を 0 にしない — render_gl/java の RenderPipelineDesc に色の書き込みの mask の口が無く、足すと GL の層の jar のハッシュと
     //   ブラウザの実装が動く。
-    def buildPipeline(pipes: Pipelines, shape: Int32, blendC: Int32, format: TextureFormat, samples: Int32, stencil: Int32): RenderPipeline \ IO =
+    def buildPipeline(pipes: Pipelines, shape: Int32, blendC: Int32, format: RenderTarget.Format, samples: Int32, stencil: Int32): RenderPipeline \ IO =
         let entry = if (blendC == 2 and stencil != WebGpuRows.stencilWrite()) "fs_multiply" else "fs_main";
         let desc = new RenderPipelineDesc("fge ${Int32.toString(shape)} ${entry} ${Int32.toString(blendC)} ${Int32.toString(stencil)}");
         if (shape == WebGpuRows.shapePoly()) describePoly(pipes#frameLayout, pipes#polyModule, entry, desc)
         else if (shape == WebGpuRows.shapeTile()) describeTile(pipes#frameLayout, pipes#imageLayout, pipes#tileModule, desc)
-        else if (shape == WebGpuRows.shapeScene()) describeScene(pipes#frameLayout, pipes#sceneLayout, pipes#sceneModule, desc)
+        else if (shape == WebGpuRows.shapeScene())
+            describeScene(pipes#frameLayout, if (format == RenderTarget.Format.R32Float) pipes#floatSceneLayout else pipes#sceneLayout, pipes#sceneModule, desc)
         else describeSprite(pipes#frameLayout, pipes#imageLayout, pipes#spriteModule, entry, desc);
         describeTarget(blendC, format, samples, stencil, desc);
         pipes#gpu.createRenderPipeline(desc)
 
     /// 描き先の形式・標本の数・blend の因子・stencil の使い方を pipeline に書く（スプライトの形と面で同じ物）。
-    pub def describeTarget(blendC: Int32, format: TextureFormat, samples: Int32, stencil: Int32, desc: RenderPipelineDesc): Unit \ IO =
+    pub def describeTarget(blendC: Int32, format: RenderTarget.Format, samples: Int32, stencil: Int32, desc: RenderPipelineDesc): Unit \ IO =
         let (src, dst) =
             if (stencil == WebGpuRows.stencilWrite()) (BlendFactor.ZERO, BlendFactor.ONE)
             else if (blendC == 1) (BlendFactor.SRC_ALPHA, BlendFactor.ONE)
             else if (blendC == 2) (BlendFactor.DST, BlendFactor.ONE_MINUS_SRC_ALPHA)
             else if (blendC == WebGpuRows.blendScene()) (BlendFactor.ONE, BlendFactor.ONE_MINUS_SRC_ALPHA)
             else (BlendFactor.SRC_ALPHA, BlendFactor.ONE_MINUS_SRC_ALPHA);
-        discard desc.colorTarget(format).blend(src, dst, BlendOperation.ADD, src, dst, BlendOperation.ADD).multisample(samples);
+        discard desc.colorTarget(textureFormatOf(format));
+        // WhyNot: R32_FLOAT の描き先に blend を書かない — float32-blendable の無い device では pipeline を作れない（置き換えで描く）。
+        if (format == RenderTarget.Format.R32Float) () else discard desc.blend(src, dst, BlendOperation.ADD, src, dst, BlendOperation.ADD);
+        discard desc.multisample(samples);
         describeStencil(stencil, desc)
 
     /// stencil の使い方（WebGpuRows.stencil*）を pipeline に書く。None は depth と stencil を持たない。表と裏は同じ・深度は比べず書かない。

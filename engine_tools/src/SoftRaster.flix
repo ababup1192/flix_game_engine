@@ -105,9 +105,11 @@ pub mod SoftRaster {
     /// 描き出した Pass の 1 枚（case の名前は RenderTarget.Format と同じ）。Rgba8Unorm = Java2D の画像・
     /// Rgba16Float = 1 を超える値を持つ絵（ShaderEval.HdrTexture と同じ物 — 面の tex / blur へ写さずに渡す）。
     /// 面の tex / blur は Rgba16Float を切らずに読み、sprite・3D の材質・ビルボードは 0..1 に切ってから読む（toArgbImage）。
+    /// R32Float = 赤だけの 32bit の浮動小数の絵（HdrTexture の 4 つを (値, 0, 0, 1) で持ち、half に丸めない。GPU の R32Float の画素と同じ値）。
     pub enum PassImage {
         case Rgba8Unorm(BufferedImage)
         case Rgba16Float(ShaderEval.HdrTexture)
+        case R32Float(ShaderEval.HdrTexture)
     }
 
     /// 描いている途中の Rgba16Float の 1 枚（1 画素に r, g, b, α の 4 つ・行優先・値はいつも half に丸めてある）。
@@ -340,6 +342,14 @@ pub mod SoftRaster {
                 how#clear |> Option.forEach(SoftRaster.Internal.Hdr.fillClearHdr(canvas));
                 SoftRaster.Internal.DrawList.drawAllIntoHdr(canvas, req, surfaces, extraFonts, fontAntialias, extraImages, warnLog, how#texels);
                 PassImage.Rgba16Float(SoftRaster.Internal.Hdr.freezeHdr(canvas))
+            case RenderTarget.Format.R32Float =>
+                let canvas = match start {
+                    case Some(b) => SoftRaster.Internal.Hdr.hdrCanvasOf(b)
+                    case None    => SoftRaster.Internal.Hdr.blankHdrCanvas(w, h)
+                };
+                how#clear |> Option.forEach(SoftRaster.Internal.Hdr.fillClearR32(canvas));
+                SoftRaster.Internal.DrawList.drawAllIntoR32(canvas, req, surfaces, extraFonts, fontAntialias, extraImages, warnLog);
+                PassImage.R32Float(SoftRaster.Internal.Hdr.freezeR32(canvas))
         };
         match how#texels {
             case Some((tw, th)) => resampleNearestPass(drawn, tw, th)
@@ -389,19 +399,23 @@ pub mod SoftRaster {
         match img {
             case PassImage.Rgba8Unorm(argb) =>
                 if (argb.getWidth() == w and argb.getHeight() == h) img else PassImage.Rgba8Unorm(resampleNearest(argb, w, h))
-            case PassImage.Rgba16Float(hdr) =>
-                let sw = ShaderEval.hdrWidthOf(hdr);
-                let sh = ShaderEval.hdrHeightOf(hdr);
-                if (sw == w and sh == h) img
-                else {
-                    let out: Array[Float64, Static] = Array.repeat(Static, Int32.max(1, w * h) * 4, 0.0);
-                    forEachPixel(w * h * 4, k -> {
-                        let i = k / 4;
-                        let picked = (nearestPick(i / w, h, sh, true) * sw + nearestPick(Int32.remainder(i, w), w, sw, false)) * 4;
-                        Array.put(ShaderEval.hdrChannelOf(hdr, picked + Int32.remainder(k, 4)), k, out)
-                    });
-                    PassImage.Rgba16Float(frozenHdr(w, h, out))
-                }
+            case PassImage.Rgba16Float(hdr) => resampleHdr(hdr, w, h) |> Option.map(out -> PassImage.Rgba16Float(frozenHdr(w, h, out))) |> Option.getWithDefault(img)
+            case PassImage.R32Float(hdr)    => resampleHdr(hdr, w, h) |> Option.map(out -> PassImage.R32Float(frozenFloats(w, h, out))) |> Option.getWithDefault(img)
+        }
+
+    /// hdr を w × h へ最近傍で写した値（1 画素に 4 つ）。同じ寸法なら None。
+    def resampleHdr(hdr: ShaderEval.HdrTexture, w: Int32, h: Int32): Option[Array[Float64, Static]] \ IO =
+        let sw = ShaderEval.hdrWidthOf(hdr);
+        let sh = ShaderEval.hdrHeightOf(hdr);
+        if (sw == w and sh == h) None
+        else {
+            let out: Array[Float64, Static] = Array.repeat(Static, Int32.max(1, w * h) * 4, 0.0);
+            forEachPixel(w * h * 4, k -> {
+                let i = k / 4;
+                let picked = (nearestPick(i / w, h, sh, true) * sw + nearestPick(Int32.remainder(i, w), w, sw, false)) * 4;
+                Array.put(ShaderEval.hdrChannelOf(hdr, picked + Int32.remainder(k, 4)), k, out)
+            });
+            Some(out)
         }
 
     // ════════════════════════════════════════════════════════
@@ -413,25 +427,29 @@ pub mod SoftRaster {
         match img {
             case PassImage.Rgba8Unorm(argb)  => (argb.getWidth(), argb.getHeight())
             case PassImage.Rgba16Float(hdr) => (ShaderEval.hdrWidthOf(hdr), ShaderEval.hdrHeightOf(hdr))
+            case PassImage.R32Float(hdr)    => (ShaderEval.hdrWidthOf(hdr), ShaderEval.hdrHeightOf(hdr))
         }
 
     /// Pass の絵の 8bit の形（Rgba8Unorm はそのまま・Rgba16Float は各成分を 0..1 に切って 8bit に丸める）。
-    /// sprite・3D の材質・ビルボードが Rgba16Float の Pass を読む時と、PNG に書く時に使う。
+    /// sprite・3D の材質・ビルボードが Rgba16Float の Pass を読む時と、PNG に書く時に使う。R32Float は (値, 0, 0, 1) の赤の絵（GPU の R32Float の画素と同じ値）。
     pub def toArgbImage(img: PassImage): BufferedImage \ IO =
         match img {
             case PassImage.Rgba8Unorm(argb)  => argb
-            case PassImage.Rgba16Float(hdr) =>
-                let w = ShaderEval.hdrWidthOf(hdr);
-                let h = ShaderEval.hdrHeightOf(hdr);
-                let out: Array[Int32, Static] = Array.repeat(Static, w * h, 0);
-                forEachPixel(w * h, i -> {
-                    let at = c -> ShaderEval.hdrChannelOf(hdr, i * 4 + c);
-                    Array.put(argbOfRgba(at(0), at(1), at(2), at(3)), i, out)
-                });
-                let image = new BufferedImage(w, h, 2i32);
-                image.setRGB(0i32, 0i32, w, h, out, 0i32, w);
-                image
+            case PassImage.Rgba16Float(hdr) => hdrToArgb(hdr)
+            case PassImage.R32Float(hdr)    => hdrToArgb(hdr)
         }
+
+    def hdrToArgb(hdr: ShaderEval.HdrTexture): BufferedImage \ IO =
+        let w = ShaderEval.hdrWidthOf(hdr);
+        let h = ShaderEval.hdrHeightOf(hdr);
+        let out: Array[Int32, Static] = Array.repeat(Static, w * h, 0);
+        forEachPixel(w * h, i -> {
+            let at = c -> ShaderEval.hdrChannelOf(hdr, i * 4 + c);
+            Array.put(argbOfRgba(at(0), at(1), at(2), at(3)), i, out)
+        });
+        let image = new BufferedImage(w, h, 2i32);
+        image.setRGB(0i32, 0i32, w, h, out, 0i32, w);
+        image
 
     /// 画素 i の 4 つを書く。
     def putHdr(rgba: Array[Float64, r], i: Int32, px: (Float64, Float64, Float64, Float64)): Unit \ r =
@@ -473,6 +491,13 @@ pub mod SoftRaster {
         stream.forEach(new IntConsumer {
             def accept(_this: IntConsumer, i: Int32): Unit \ IO = pixelFn(i)
         })
+
+    /// width × height の描き先の値（1 画素に r, g, b, α の 4 つ）を float32 に丸めて凍らせる（R32Float の Pass。half に丸めない）。
+    def frozenFloats(width: Int32, height: Int32, rgba: Array[Float64, Static]): ShaderEval.HdrTexture \ IO =
+        let n = Int32.max(1, width) * Int32.max(1, height) * 4;
+        let values: Array[Float32, Static] = Array.repeat(Static, n, 0.0f32);
+        forEachPixel(Int32.min(n, Array.length(rgba)), i -> Array.put(Float64.truncateToFloat32(Array.get(i, rgba)), i, values));
+        ShaderEval.hdrTextureOfHalves(width, height, Array.toVector(values))
 
     /// width × height の描き先の値（1 画素に r, g, b, α の 4 つ）を half に丸めて凍らせる（ShaderEval.hdrTextureOf と同じ値）。
     def frozenHdr(width: Int32, height: Int32, rgba: Array[Float64, Static]): ShaderEval.HdrTexture \ IO =

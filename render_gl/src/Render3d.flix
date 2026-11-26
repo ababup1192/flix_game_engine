@@ -483,8 +483,12 @@ mod Render3d {
             gl.viewport(rect#x, rect#y, rect#width, rect#height);
             gl.enable(GlConst.SCISSOR_TEST);
             gl.scissor(scissor#x, scissor#y, scissor#width, scissor#height);
-            gl.enable(GlConst.BLEND);
-            gl.blendFunc(GlConst.ONE, GlConst.ONE_MINUS_SRC_ALPHA);
+            // WhyNot: R32Float の描き先へ blend で重ねない — WebGL2 は EXT_float_blend が無いと float32 の描き先への blend を誤りにする（奥行きは置き換えで描く）。
+            if (target#storedFormat == RenderTarget.Format.R32Float) gl.disable(GlConst.BLEND)
+            else {
+                gl.enable(GlConst.BLEND);
+                gl.blendFunc(GlConst.ONE, GlConst.ONE_MINUS_SRC_ALPHA)
+            };
             gl.useProgram(programs#blit#program);
             gl.activeTexture(GlConst.TEXTURE0);
             gl.bindTexture(GlConst.TEXTURE_2D, target#tex);

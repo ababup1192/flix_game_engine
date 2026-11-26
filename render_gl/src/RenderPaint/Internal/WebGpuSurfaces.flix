@@ -112,31 +112,52 @@ pub mod RenderPaint.Internal.WebGpuSurfaces {
                 id
         }
 
-    /// group 0 の layout（面の値の uniform と、読む絵の数ぶんの texture と sampler。ShaderGen.Wgsl.compile の binding の並び）。読む絵の数ごとに 1 つ作って控える。
-    def layoutOf(surfaces: Surfaces, reads: Int32): BindGroupLayout \ IO =
-        match Map.get(reads, Ref.get(surfaces#layouts)) {
+    /// group 0 の layout（面の値の uniform と、読む絵の数ぶんの texture と sampler。ShaderGen.Wgsl.compile の binding の並び）。
+    /// floatMask = R32Float の絵を読む番号の bit（その絵は unfilterable-float と non-filtering の sampler）。読む絵の数と floatMask の組ごとに 1 つ作って控える。
+    def layoutOf(surfaces: Surfaces, reads: Int32, floatMask: Int32): BindGroupLayout \ IO =
+        let key = reads * floatMasks() + floatMask;
+        match Map.get(key, Ref.get(surfaces#layouts)) {
             case Some(layout) => layout
             case None =>
                 let desc = new BindGroupLayoutDesc("fge surface values").buffer(0, Int32.bitwiseOr(ShaderStage.VERTEX, ShaderStage.FRAGMENT), BufferBindingType.UNIFORM);
                 List.forEach(k -> {
-                    discard desc.texture(1 + 2 * k, ShaderStage.FRAGMENT, TextureSampleType.FLOAT);
-                    discard desc.sampler(2 + 2 * k, ShaderStage.FRAGMENT, SamplerBindingType.FILTERING)
+                    if (isFloatRead(floatMask, k)) {
+                        discard desc.texture(1 + 2 * k, ShaderStage.FRAGMENT, TextureSampleType.UNFILTERABLE_FLOAT);
+                        discard desc.sampler(2 + 2 * k, ShaderStage.FRAGMENT, SamplerBindingType.NON_FILTERING)
+                    } else {
+                        discard desc.texture(1 + 2 * k, ShaderStage.FRAGMENT, TextureSampleType.FLOAT);
+                        discard desc.sampler(2 + 2 * k, ShaderStage.FRAGMENT, SamplerBindingType.FILTERING)
+                    }
                 }, List.range(0, reads));
                 let layout = surfaces#gpu.createBindGroupLayout(desc);
-                Ref.put(Map.insert(reads, layout, Ref.get(surfaces#layouts)), surfaces#layouts);
+                Ref.put(Map.insert(key, layout, Ref.get(surfaces#layouts)), surfaces#layouts);
                 layout
         }
 
-    /// program id の pipeline（無ければ作る）。blendC = RenderFrame.blendCode・stencil = WebGpuRows.stencil*。
-    def pipelineOf(surfaces: Surfaces, id: Int32, program: Program, blendC: Int32, format: RenderTarget.Format, samples: Int32, stencil: Int32): RenderPipeline \ IO =
-        let key = id * WebGpuPipelines.targetKeys() + WebGpuPipelines.targetKeyOf(blendC, format, samples, stencil);
+    /// floatMask が取る値の数（読む絵は ShaderDoc の上限 8 枚まで）。
+    def floatMasks(): Int32 = 256
+
+    /// floatMask で k 番目の絵が R32Float か。
+    def isFloatRead(floatMask: Int32, k: Int32): Bool = Int32.bitwiseAnd(floatMask, Int32.leftShift(1, k)) != 0
+
+    /// reads の [first, first + count) の絵のうち R32Float の物の番号の bit。
+    def floatMaskOf(textureOf: Int32 -> Option[Texture] \ IO, reads: Array[Int32, Static], first: Int32, count: Int32): Int32 \ IO =
+        List.range(0, Int32.min(count, 8)) |> List.foldLeft((acc, k) -> {
+            let isFloat = textureOf(Array.get((first + k) * RenderList.readFields(), reads)) |> Option.exists(WebGpuPipelines.isR32Float);
+            if (isFloat) Int32.bitwiseOr(acc, Int32.leftShift(1, k)) else acc
+        }, 0)
+
+    /// program id の pipeline（無ければ作る）。blendC = RenderFrame.blendCode・stencil = WebGpuRows.stencil*・floatMask = layoutOf の物。
+    def pipelineOf(surfaces: Surfaces, id: Int32, program: Program, blendC: Int32, format: RenderTarget.Format, samples: Int32, stencil: Int32,
+                   floatMask: Int32): RenderPipeline \ IO =
+        let key = (id * floatMasks() + floatMask) * WebGpuPipelines.targetKeys() + WebGpuPipelines.targetKeyOf(blendC, format, samples, stencil);
         match Map.get(key, Ref.get(surfaces#pipelines)) {
             case Some(pipeline) => pipeline
             case None =>
                 let desc = new RenderPipelineDesc("fge surface ${Int32.toString(id)}");
-                discard desc.bindGroupLayout(layoutOf(surfaces, program#reads)).bindGroupLayout(surfaces#frameLayout);
+                discard desc.bindGroupLayout(layoutOf(surfaces, program#reads, floatMask)).bindGroupLayout(surfaces#frameLayout);
                 discard desc.vertex(program#module, "vs_main").fragment(program#module, "fs_main");
-                WebGpuPipelines.describeTarget(blendC, WebGpuPipelines.textureFormatOf(format), samples, stencil, desc);
+                WebGpuPipelines.describeTarget(blendC, format, samples, stencil, desc);
                 let pipeline = surfaces#gpu.createRenderPipeline(desc);
                 Ref.put(Map.insert(key, pipeline, Ref.get(surfaces#pipelines)), surfaces#pipelines);
                 pipeline
@@ -160,9 +181,11 @@ pub mod RenderPaint.Internal.WebGpuSurfaces {
                 if (not canReadValues(program#slots, RenderList.surfaceValueCountAt(rows, row))) skip("面（program の値の欄が行の値より多い）")
                 else {
                     let (format, samples) = target;
-                    let group = buildDrawGroup(surfaces, program, values, bytes, valueBytesOf(program#slots), textureOf, reads,
-                                               RenderList.surfaceFirstReadAt(rows, row), RenderList.surfaceReadCountAt(rows, row));
-                    pass.setPipeline(pipelineOf(surfaces, id, program, RenderList.blendAt(rows, row), format, samples, stencil));
+                    let first = RenderList.surfaceFirstReadAt(rows, row);
+                    let count = Int32.min(RenderList.surfaceReadCountAt(rows, row), program#reads);
+                    let floatMask = floatMaskOf(textureOf, reads, first, count);
+                    let group = buildDrawGroup(surfaces, program, values, bytes, valueBytesOf(program#slots), textureOf, reads, first, count, floatMask);
+                    pass.setPipeline(pipelineOf(surfaces, id, program, RenderList.blendAt(rows, row), format, samples, stencil, floatMask));
                     pass.setBindGroup(0, group);
                     pass.setBindGroup(1, surfaces#frameGroup);
                     pass.draw(6, 1, 0, 0);
@@ -180,17 +203,28 @@ pub mod RenderPaint.Internal.WebGpuSurfaces {
     /// 面の値（values の bytes から size バイト）と、reads の [first, first + count) の絵を読む group 0。絵の数が program#reads に足りなければ、残りは不透明な黒
     /// （GL が絵の無い unit で読む値）。今の encoder の draw の物として控え、submit の後に手放す。
     def buildDrawGroup(surfaces: Surfaces, program: Program, values: Buffer, bytes: Int32, size: Int32, textureOf: Int32 -> Option[Texture] \ IO,
-                reads: Array[Int32, Static], first: Int32, count: Int32): BindGroup \ IO =
-        let desc = new BindGroupDesc("fge surface", layoutOf(surfaces, program#reads)).buffer(0, values, Int32.toInt64(bytes), Int32.toInt64(size));
+                reads: Array[Int32, Static], first: Int32, count: Int32, floatMask: Int32): BindGroup \ IO =
+        let desc = new BindGroupDesc("fge surface", layoutOf(surfaces, program#reads, floatMask)).buffer(0, values, Int32.toInt64(bytes), Int32.toInt64(size));
         List.forEach(k -> {
             let base = (first + k) * RenderList.readFields();
             let texture = if (k < count) textureOf(Array.get(base, reads)) |> Option.getWithDefault(surfaces#black) else surfaces#black;
-            let sampler = if (k < count and Array.get(base + 1, reads) == 1) surfaces#linearClamp else surfaces#nearestClamp;
+            let linear = k < count and Array.get(base + 1, reads) == 1;
+            if (linear and isFloatRead(floatMask, k)) warnFloatLinearOnce(surfaces) else ();
+            let sampler = if (linear and not isFloatRead(floatMask, k)) surfaces#linearClamp else surfaces#nearestClamp;
             discard desc.textureView(1 + 2 * k, texture.defaultView()).sampler(2 + 2 * k, sampler)
         }, List.range(0, program#reads));
         let group = surfaces#gpu.createBindGroup(desc);
         Ref.put(group :: Ref.get(surfaces#drawGroups), surfaces#drawGroups);
         group
+
+    /// Linear で読む Spec が R32Float の Pass を読む時、最も近い画素で読むことを 1 回だけ知らせる。
+    def warnFloatLinearOnce(surfaces: Surfaces): Unit \ IO =
+        let warned = Ref.get(surfaces#warned);
+        if (Set.memberOf("@r32float-linear", warned)) ()
+        else {
+            Ref.put(Set.insert("@r32float-linear", warned), surfaces#warned);
+            Log.fellBack("render-target", "R32Float", "Nearest", "R32Float の Pass は Linear で読めない（unfilterable-float）— 最も近い画素で読む")
+        }
 
     // ── 手放す ──
 
@@ -208,7 +242,7 @@ pub mod RenderPaint.Internal.WebGpuSurfaces {
         else {
             Ref.put(kept, surfaces#retired);
             let pipelines = Ref.get(surfaces#pipelines);
-            let programOfKey = key -> key / WebGpuPipelines.targetKeys();
+            let programOfKey = key -> key / WebGpuPipelines.targetKeys() / floatMasks();
             Map.forEach((key, pipeline) -> if (Set.memberOf(programOfKey(key), retired)) pipeline.release() else (), pipelines);
             Ref.put(Map.filterWithKey((key, _) -> not Set.memberOf(programOfKey(key), retired), pipelines), surfaces#pipelines);
             Set.forEach(id -> Map.get(id, Ref.get(surfaces#programs)) |> Option.forEach(p -> p#module.release()), retired);

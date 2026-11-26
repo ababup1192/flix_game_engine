@@ -1,4 +1,4 @@
-<!-- engine v0.117.0 / 生成: 2026-11-26 -->
+<!-- engine v0.117.0 / 生成: 2026-11-27 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_tools
@@ -308,7 +308,7 @@
 - 宣言シェーダー面 1 枚の headless ラスタライズ要求（Render.ShaderSurface と同形の
   `pub type alias SurfaceCmd = { rect = Rect2.Rect2, spec = ShaderDoc.Spec, time = Float64, mask = List[List[Vec2.Vec2]], zIndex = Int32, blend = DrawCmd.BlendMode }`
 - 描き出した Pass の 1 枚（case の名前は RenderTarget.Format と同じ）。Rgba8Unorm = Java2D の画像・
-  `pub enum PassImage { case Rgba8Unorm(BufferedImage) case Rgba16Float(ShaderEval.HdrTexture) }`
+  `pub enum PassImage { case Rgba8Unorm(BufferedImage) case Rgba16Float(ShaderEval.HdrTexture) case R32Float(ShaderEval.HdrTexture) }`
 - 「絵に出ない指定」1 種類ぶんの報告。attr は指定の名前、count は件数、hint は逃げ道。
   `pub type alias Dropped = { attr = String, count = Int32, hint = String }`
 - この経路が描けずに落とす指定を数える（純粋・描き出す前に呼べる）。
@@ -411,8 +411,6 @@
   `pub def rowMajorOf(m: Mat4.Mat4): Vector[Float64]`
 - 場面 cmd を image へ重ねる。sf = design px → 出力の画素の倍率。textures = ビルボードと材質が引く絵（(名前, 段の平均の色空間) → 段の列。
   `pub def drawScene(image: BufferedImage, sf: Float64, textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]], time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO`
-- drawScene の Rgba16Float の描き先版。rgba = 描き先（1 画素に r, g, b, α の 4 つ）・size = その幅と高さ。
-  `pub def drawSceneHdr(rgba: Array[Float64, Static], size: (Int32, Int32), sf: Float64, textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]], time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO`
 - 置いた物を光の目 eye から見た n × n の深度の地図（SoftRaster3d.ShadowMaps.buildShadowMap と同じ形。視錐台の間引きは eye の行列から作る）。
   `pub def depthMapOf(instances: List[Scene3d.Instance3d], eye: LightEye, n: Int32): Vector[Float64] \ IO`
 - 三角形の道の射影の種類。Perspective(near) は w = 目の座標の −z で w ≥ near の側を残す・Orthographic は w = 1 で z ≥ −w の側を残す。
@@ -477,6 +475,16 @@
   `pub def terms(s: Light): (Float64, Float64, Float64, Float64, Float64, Float64)`
 - world の点 (px, py, pz) へ届く太陽の光に掛ける影の割合（式は LightModel3d の頭の sunLit）。(gx, gy, gz) = 点を地図の画素の幅だけずらす向きの
   `pub def litAt(s: Light, px: Float64, py: Float64, pz: Float64, gx: Float64, gy: Float64, gz: Float64, nx: Float64, ny: Float64, nz: Float64): Float64`
+
+## SoftRaster3d.Targets — `engine_tools/src/SoftRaster3d/Targets.flix`
+- 場面 cmd を描き先（幅 × 高さ = size・design px → 画素の倍率 sf）に置く所。rect = 場面の矩形の画素（左上・幅・高さ）・
+  `pub type alias SceneRegion = { rect = (Int32, Int32, Int32, Int32), box = (Int32, Int32, Int32, Int32), layer = (Int32, Int32) }`
+- 場面 cmd の SceneRegion（書く範囲が無ければ None）。
+  `pub def sceneRegionOf(size: (Int32, Int32), sf: Float64, cmd: Scene3d.RenderCmd): Option[SceneRegion]`
+- drawScene の Rgba16Float の描き先版。rgba = 描き先（1 画素に r, g, b, α の 4 つ）・size = その幅と高さ。
+  `pub def drawSceneHdr(rgba: Array[Float64, Static], size: (Int32, Int32), sf: Float64, textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]], time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO`
+- drawScene の R32Float の描き先版（奥行きの絵の Pass）。層の赤を置き換えで (赤, 0, 0, 1) に書く（GPU の R32Float の描き先は blend しない・half に丸めない）。
+  `pub def drawSceneR32(rgba: Array[Float64, Static], size: (Int32, Int32), sf: Float64, textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]], time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO`
 
 ## SoftRaster3dLight — `engine_tools/src/gen/SoftRaster3dLight.flix`
 - lightingModel の光の量（toon の丸めまで済ませた値。sunLit = 太陽の影の割合・sh と skyContribution = Scene3d.Internal.SkyIrradiance.valuesOf の係数と割合）。

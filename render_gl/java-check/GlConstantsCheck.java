@@ -70,6 +70,8 @@ public final class GlConstantsCheck {
         c("RENDERBUFFER", GlConst.RENDERBUFFER, GL33.GL_RENDERBUFFER);
         c("DEPTH24_STENCIL8", GlConst.DEPTH24_STENCIL8, GL33.GL_DEPTH24_STENCIL8);
         c("RGBA16F", GlConst.RGBA16F, GL33.GL_RGBA16F);
+        c("R8", GlConst.R8, GL33.GL_R8);
+        c("R32F", GlConst.R32F, GL33.GL_R32F);
         c("MAX_SAMPLES", GlConst.MAX_SAMPLES, GL33.GL_MAX_SAMPLES);
         c("NONE", GlConst.NONE, GL33.GL_NONE);
         c("BACK", GlConst.BACK, GL33.GL_BACK);

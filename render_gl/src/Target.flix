@@ -21,7 +21,7 @@ mod RenderTargetGl {
     /// 初回でもゴミが出ない）。ラップが CLAMP_TO_EDGE なのは、貼るときの縁の標本が反対側の行へ
     /// 回り込まないように（REPEAT だと v=0/1 ちょうどで滲む）。フィルタは他のテクスチャと
     /// 同じ NEAREST（ドット絵前提）。
-    /// Rgba16Float の FBO が完成しない描き先では Rgba8Unorm で作り直す（storedFormat に残る。知らせるのは呼び手）。
+    /// Rgba16Float と R32Float の FBO が完成しない描き先では Rgba8Unorm で作り直す（storedFormat に残る。知らせるのは呼び手）。
     pub def create(gl: GlContext, width: Int32, height: Int32, format: RenderTarget.Format): Entry \ IO =
         let (made, status) = createStored(gl, width, height, format);
         if (status == GlConst.FRAMEBUFFER_COMPLETE) made
@@ -54,6 +54,7 @@ mod RenderTargetGl {
         let internal = match stored {
             case RenderTarget.Format.Rgba8Unorm  => GlConst.RGBA8
             case RenderTarget.Format.Rgba16Float => GlConst.RGBA16F
+            case RenderTarget.Format.R32Float    => GlConst.R32F
         };
         let color = gl.createRenderbuffer();
         gl.bindRenderbuffer(GlConst.RENDERBUFFER, color);
@@ -134,6 +135,7 @@ mod RenderTargetGl {
         match stored {
             case RenderTarget.Format.Rgba8Unorm  => gl.texImageArgbZero(width, height)
             case RenderTarget.Format.Rgba16Float => gl.texImageRgba16fZero(width, height)
+            case RenderTarget.Format.R32Float    => gl.texImageR32fZero(width, height)
         }
 
     def warnIncomplete(status: Int32): Unit \ IO =
