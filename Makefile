@@ -417,9 +417,15 @@ webgpu-v1-check: ### | WebGPU の 2D の描き手の PC の門（画面なしの
 
 # 同じ V1 の門のブラウザ版: rpg-starter を書き出し、web-capture --dev capture:6 の頁を webgl2・既定（WebGPU）・WebGPU の無い頁
 # (navigator.gpu と GPU* の大域の名前を消した頁・bench/webgpu_v1/web/nogpu-head.html) で撮って比べる。
-# 既定の頁の renderer に webgpu: が無い・webgl2 の頁か WebGPU の無い頁の renderer に webgpu: がある・WebGL2 の絵と違う、のどれかで exit 1。
+# 既定の頁の renderer に webgpu: が無い・webgl2 の頁か WebGPU の無い頁の renderer に webgpu: がある・WebGL2 の絵と違う・console の誤りがある、のどれかで exit 1。
 # PC の WebGPU (make webgpu-v1-check の w1) があれば、それとも比べる (alpha は見ない)。書き出しを省くなら WEB_EXPORT=off。先に make sync-engine-full-web。
 WEBGPU_V1_WEB := $(WEBGPU_V1_OUT)/web
+# $(call web-renderer-is,<web-capture のログ>,webgpu|webgl2) は頁が名乗った描き手が合うかの shell の式（webgpu-v1-check-web と web-load-check）。
+# WhyNot: webgl2 を「webgpu: が無い」だけで見ない — 撮れずに renderer の行が無いログでも通る。
+# WEB_CONSOLE_ALLOW は web-capture --console-errors で数えない行（WebFs が saves/ の外へ書かない知らせだけ。ブラウザ版に行き先が無いのは作りの通り）。
+# WhyNot: Log.fellBack の定型（" fail-open: "）を丸ごと許さない — WGSL が組めず材質を頂点の色に替えた（WebGpuMaterials）知らせも同じ形で、3D が壊れたまま緑になる。
+WEB_CONSOLE_ALLOW := '^WebFs fail-open: '
+web-renderer-is = { if [ "$(2)" = webgpu ]; then grep -q 'renderer: webgpu:' $(1); else grep -q 'renderer: ' $(1) && ! grep -q 'renderer: webgpu:' $(1); fi; }
 # WhyNot: /bin/sh に任せない — pipefail を持たない sh（古い dash など）では撮れなかった回が通る。
 webgpu-v1-check-web: SHELL := /bin/bash
 webgpu-v1-check-web: ### [WEB_EXPORT=off] | 同じ門のブラウザ版（rpg-starter の 6 コマ目を webgl2・既定の WebGPU・WebGPU の無い頁で撮って比べる）
@@ -429,13 +435,13 @@ webgpu-v1-check-web: ### [WEB_EXPORT=off] | 同じ門のブラウザ版（rpg-st
 	@rm -f $(WEBGPU_V1_WEB)/gl.png $(WEBGPU_V1_WEB)/gl.log $(WEBGPU_V1_WEB)/webgpu.png $(WEBGPU_V1_WEB)/webgpu.log $(WEBGPU_V1_WEB)/nogpu.png $(WEBGPU_V1_WEB)/nogpu.log
 	@set -e -o pipefail; for row in "gl|index.html|capture:6,deferred:all,webgl2" "webgpu|index.html|capture:6,deferred:all" "nogpu|nogpu.html|capture:6,deferred:all"; do \
 		IFS='|' read -r name url dev <<< "$$row"; \
-		bin/fge web-capture "$$url" $(WEBGPU_V1_WEB)/$$name.png --dir $(WEBGPU_V1_WEB)/rpg --dev "$$dev" --size 640x600 --wait 90 | tee $(WEBGPU_V1_WEB)/$$name.log \
+		bin/fge web-capture "$$url" $(WEBGPU_V1_WEB)/$$name.png --dir $(WEBGPU_V1_WEB)/rpg --dev "$$dev" --size 640x600 --wait 90 --console-errors --console-allow $(WEB_CONSOLE_ALLOW) | tee $(WEBGPU_V1_WEB)/$$name.log \
 			|| { echo "[webgpu-v1-check-web] $$name を撮れなかった ($(WEBGPU_V1_WEB)/$$name.log)"; exit 1; }; \
 	done
-	@grep -q 'renderer: webgpu:' $(WEBGPU_V1_WEB)/webgpu.log || { echo "[webgpu-v1-check-web] 既定の頁が WebGPU で描いていない"; exit 1; }
-	@grep -q 'renderer: ' $(WEBGPU_V1_WEB)/gl.log && ! grep -q 'renderer: webgpu:' $(WEBGPU_V1_WEB)/gl.log \
+	@$(call web-renderer-is,$(WEBGPU_V1_WEB)/webgpu.log,webgpu) || { echo "[webgpu-v1-check-web] 既定の頁が WebGPU で描いていない"; exit 1; }
+	@$(call web-renderer-is,$(WEBGPU_V1_WEB)/gl.log,webgl2) \
 		|| { echo "[webgpu-v1-check-web] webgl2 の頁が WebGL2 で描いたと名乗っていない ($(WEBGPU_V1_WEB)/gl.log)"; exit 1; }
-	@grep -q 'renderer: ' $(WEBGPU_V1_WEB)/nogpu.log && ! grep -q 'renderer: webgpu:' $(WEBGPU_V1_WEB)/nogpu.log \
+	@$(call web-renderer-is,$(WEBGPU_V1_WEB)/nogpu.log,webgl2) \
 		|| { echo "[webgpu-v1-check-web] WebGPU の無い頁が WebGL2 で描いたと名乗っていない ($(WEBGPU_V1_WEB)/nogpu.log)"; exit 1; }
 	@bin/fge pixel-diff $(WEBGPU_V1_WEB)/gl.png $(WEBGPU_V1_WEB)/webgpu.png --name rpg-starter__title --tolerance $(WEBGPU_V1_TOL) --out $(WEBGPU_V1_WEB)/diff-webgpu.png
 	@bin/fge pixel-diff $(WEBGPU_V1_WEB)/gl.png $(WEBGPU_V1_WEB)/nogpu.png --name nogpu --out $(WEBGPU_V1_WEB)/diff-nogpu.png
@@ -444,6 +450,41 @@ webgpu-v1-check-web: ### [WEB_EXPORT=off] | 同じ門のブラウザ版（rpg-st
 			--name rpg-starter__title-web-vs-pc --tolerance $(WEBGPU_V1_TOL) --out $(WEBGPU_V1_WEB)/diff-web-vs-pc.png; \
 	else echo "[webgpu-v1-check-web] PC の WebGPU の絵が無いので比べない (先に make webgpu-v1-check)"; fi
 	@echo "[webgpu-v1-check-web] OK"
+
+# 3D のゲームをブラウザ版へ書き出し、ヘッドレスの Chrome の WebGPU と WebGL2 の頁で数コマ描けて、console の誤りが 0 件かを見る。
+# 止めたい事故: engine が JDK の新しいメソッドや TeaVM の classlib に無いクラスを呼び、書き出し（TeaVM）か読み込み（wasm）で落ちる
+# （Float.float16ToFloat の時は 2D の門しか書き出していなかったので、どの門も気づけなかった）。絵の画素は比べない（gl-capture-check・webgpu_v2 が見る）。
+# 既定は retro3d-horror-starter（glb の読み込み・影・点と spot の灯り・PSX の描き方を通る。軽い hd2d-starter より覆う範囲が広い。
+# glb の Worker が起きない時は console.warn を出してメインで解くので、この門は Worker の故障までは見ない）。
+# 数えない console の行は WEB_CONSOLE_ALLOW（WebFs の知らせ）だけ。書き出しを省いて頁だけ開き直すなら WEB_EXPORT=off。
+# 作業フォルダは門の置き場の中（--work）。テンプレートの build/web-export を使う別の書き出しとぶつからない。
+# WhyNot: gui にしない（webgpu-v1-check-web は gui） — 事故は engine を触った作業中に起きるので、affected で拾う。窓は開かない。
+# WhyNot: export-web の ⑨ に任せない — ⑨ は Chrome が無いと黙って飛ばし、console.error（engine の Log.warn・Worker から送り直した行）を数えない。
+# WhyNot: 書き出しの門（遊べるまでの予算）で止めない（--draft） — 予算は cwebp の有無で機械ごとに揺れ、この門の見たい事ではない。
+WEB_LOAD_GAMES   ?= templates/retro3d-horror-starter
+WEB_LOAD_OUT     := build/web-load-check
+WEB_LOAD_FRAMES  ?= 10
+.PHONY: web-load-check
+web-load-check: SHELL := /bin/bash
+web-load-check: ### [WEB_LOAD_GAMES=<ゲーム…>] [WEB_EXPORT=off] | 3D のテンプレートをブラウザ版へ書き出し、ヘッドレスの Chrome の WebGPU と WebGL2 で数コマ描けて console の誤りが 0 件か
+	@mkdir -p $(WEB_LOAD_OUT)
+	@set -e -o pipefail; for game in $(WEB_LOAD_GAMES); do \
+		name=$$(basename $$game); dir=$(WEB_LOAD_OUT)/$$name; \
+		if [ "$(WEB_EXPORT)" != off ]; then \
+			bin/fge export-web $$game --out $$dir --work $(CURDIR)/$(WEB_LOAD_OUT)/$$name-work --draft --no-browser-check > $(WEB_LOAD_OUT)/$$name-export.log 2>&1 \
+				|| { tail -30 $(WEB_LOAD_OUT)/$$name-export.log; echo "[web-load-check] $$name をブラウザ版へ書き出せない ($(WEB_LOAD_OUT)/$$name-export.log)"; exit 1; }; \
+		fi; \
+		for backend in webgpu webgl2; do \
+			dev=capture:$(WEB_LOAD_FRAMES); [ $$backend = webgl2 ] && dev=$$dev,webgl2; \
+			log=$(WEB_LOAD_OUT)/$$name-$$backend.log; rm -f $$log; \
+			bin/fge web-capture index.html $(WEB_LOAD_OUT)/$$name-$$backend.png --dir $$dir --dev $$dev --wait 90 \
+				--console-errors --console-allow $(WEB_CONSOLE_ALLOW) > $$log 2>&1 \
+				|| { cat $$log; echo "[web-load-check] $$name の $$backend の頁が $(WEB_LOAD_FRAMES) コマ目まで描けないか console に誤りが出た ($$log)"; exit 1; }; \
+			$(call web-renderer-is,$$log,$$backend) || { cat $$log; echo "[web-load-check] $$name の $$backend の頁が $$backend で描いたと名乗っていない ($$log)"; exit 1; }; \
+			echo "[web-load-check] $$name $$backend: $$(grep -m1 'renderer:' $$log | sed 's/^ *//') ・$$(grep -m1 'console.error:' $$log | sed 's/^ *//')"; \
+		done; \
+	done
+	@echo "[web-load-check] OK"
 
 # 同じ門のブラウザ版 (navigator.gpu・TeaVM の JSO)。ウィンドウを使わない門を PC と同じ Flix のコード (bench/webgpu_check/src/Checks.flix) で
 # ヘッドレスの Chrome に流し、canvas の描き先も見る。結果の JSON は build/bench-web/webgpu_check.json。どれかが NG なら exit 1。
@@ -1040,7 +1081,7 @@ fpkg-store-gc: ### [DRY=1] | 束の置き場（build/fpkg-store）から、ど�
 #
 # 流れ (公開は CI の 1 本。手元は門だけ):
 #   1) make bump FROM=<旧> TO=<新>   … 全 flix.toml と VERSION を一括更新 → commit → main へ push
-#   2) make release (= make release-verify) … sync → test-release(全量ゲート) → gl-parity(A 段階の全一致) を手元で通し、
+#   2) make release (= make release-verify) … sync → test-release(全量ゲート) → gl-parity(A 段階の全一致) → web-load-check(3D のブラウザ版) → go-test-full を手元で通し、
 #                                          通した commit を release/verified.txt に書く
 #   3) release/verified.txt を commit → main へ push
 #   4) GitHub の Actions で release を main で手で起動 … CI が make release-publish で組んで gh release
@@ -1105,7 +1146,8 @@ studio-parity: ### [STUDIO=<パス>|none] | Studio の check-agents-parity を�
 	   || { echo "[release] sync-agents の出力が Studio の server/src/NewGame.flix とずれています。Studio 側も同じ変更を入れて main へ push してから公開してください"; exit 1; }
 # gl-parity も全量ゲートの一員 — GL と SoftRaster の絵の退行はテストに出ないため。
 # WhyNot: studio-parity を門に入れない — Studio は凍結中（plans/dashboard.md の 7 節）。凍結を解いたら戻す。
-RELEASE_GATES := release-guard sync $(RELEASE_TEST) gl-parity go-test-full
+# web-load-check も一員 — 3D のブラウザ版が TeaVM に無いメソッドで落ちても、テストと PC の門には出ない（0.117.0 の前の Float.float16ToFloat）。
+RELEASE_GATES := release-guard sync $(RELEASE_TEST) gl-parity web-load-check go-test-full
 .PHONY: release
 release: release-verify ### [JOBS=1] | release-verify と同じ
 

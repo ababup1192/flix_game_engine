@@ -1,12 +1,14 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"image/png"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -17,7 +19,33 @@ import (
 const webCaptureUsage = "使い方: fge web-capture <URL> <出力.png> [--wait <秒>] [--size WxH] [--dir <書き出したフォルダ>] [--dev <語,語…>]\n" +
 	"  --dir はそのフォルダを 127.0.0.1 の使い捨ての口で配り、<URL> をその頁の道とクエリ（例 index.html）として読む\n" +
 	"  --dev は頁の旗を頁より先に window.fgeDev で入れる（例 --dev capture:6,deferred:all,webgl2。語は ?fge= と同じ・docs/web-capture.md の「頁の旗」）\n" +
+	"  --console-errors は頁を開いてから撮るまでの console.error と拾われなかった例外を数え、1 件でもあれば行を出して exit 1\n" +
+	"  --console-allow <正規表現> は --console-errors で数えない行（何度でも書ける。例 '^WebFs fail-open: '）\n" +
 	"  頁の約束（window.fgeCaptureReady と window.fgeCapture()）は docs/web-capture.md"
+
+// webConsoleErrorsInit は頁のどの script よりも先に流し、console.error と拾われなかった例外を window.fgeConsoleErrors へ積む。
+// WhyNot: CDP の Runtime.consoleAPICalled を購読しない — cdp の client は呼んだ答えを待つだけで、届いた知らせを溜める口を持たない。
+// 頁の中で積めば Worker から頁へ送り直された行（[glb-worker]）も同じ所に入る。
+const webConsoleErrorsInit = `(function () {
+  var list = window.fgeConsoleErrors = [];
+  var push = function (s) { if (list.length < 50) list.push(String(s).slice(0, 400)); };
+  var orig = console.error;
+  console.error = function () { push(Array.prototype.map.call(arguments, String).join(" ")); return orig.apply(console, arguments); };
+  window.addEventListener("error", function (e) { push("error: " + ((e.error && (e.error.stack || e.error.message)) || e.message)); });
+  window.addEventListener("unhandledrejection", function (e) { push("unhandledrejection: " + ((e.reason && e.reason.stack) || e.reason)); });
+})();`
+
+// webConsoleErrorsOf は頁が積んだ行（webConsoleErrorsInit）を読む。頁が積み場を持たない時は空。
+func webConsoleErrorsOf(raw []byte) ([]string, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+	var lines []string
+	if err := json.Unmarshal(raw, &lines); err != nil {
+		return nil, fmt.Errorf("頁の window.fgeConsoleErrors の形が違う: %v", err)
+	}
+	return lines, nil
+}
 
 func init() {
 	register("web-capture",
@@ -32,9 +60,27 @@ func cmdWebCapture(out, errOut *strings.Builder, args []string) int {
 	var pos []string
 	serveDir := ""
 	var dev *webPageSwitches
+	consoleErrors := false
+	var consoleAllow []*regexp.Regexp
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch a {
+		case "--console-errors":
+			consoleErrors = true
+			continue
+		case "--console-allow":
+			if i+1 >= len(args) {
+				fmt.Fprintf(errOut, "--console-allow の値がありません\n%s\n", webCaptureUsage)
+				return 2
+			}
+			re, err := regexp.Compile(args[i+1])
+			if err != nil {
+				fmt.Fprintf(errOut, "--console-allow: %v\n", err)
+				return 2
+			}
+			consoleAllow = append(consoleAllow, re)
+			i++
+			continue
 		case "--dir":
 			if i+1 >= len(args) {
 				fmt.Fprintf(errOut, "--dir の値がありません\n%s\n", webCaptureUsage)
@@ -86,6 +132,10 @@ func cmdWebCapture(out, errOut *strings.Builder, args []string) int {
 			pos = append(pos, a)
 		}
 	}
+	if len(consoleAllow) > 0 && !consoleErrors {
+		fmt.Fprintf(errOut, "--console-allow は --console-errors と一緒に使う\n%s\n", webCaptureUsage)
+		return 2
+	}
 	if len(pos) != 2 {
 		fmt.Fprintln(errOut, webCaptureUsage)
 		return 2
@@ -111,10 +161,21 @@ func cmdWebCapture(out, errOut *strings.Builder, args []string) int {
 		}
 	}
 
+	if consoleErrors {
+		opt.InitScript = webConsoleErrorsInit + "\n" + opt.InitScript
+		opt.Eval = "window.fgeConsoleErrors || null"
+	}
 	res, err := cdp.Capture(opt)
 	if err != nil {
 		fmt.Fprintf(errOut, "web-capture: %v\n", err)
 		return 1
+	}
+	var consoleLines []string
+	if consoleErrors {
+		if consoleLines, err = webConsoleErrorsOf(res.Eval); err != nil {
+			fmt.Fprintf(errOut, "web-capture: %v\n", err)
+			return 1
+		}
 	}
 	if dir := filepath.Dir(dest); dir != "" {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -142,7 +203,40 @@ func cmdWebCapture(out, errOut *strings.Builder, args []string) int {
 	if res.Renderer != "" {
 		fmt.Fprintf(out, "  renderer: %s\n", res.Renderer)
 	}
+	if consoleErrors {
+		bad, allowed := splitAllowedConsole(consoleLines, consoleAllow)
+		fmt.Fprintf(out, "  console.error: %d 件（--console-allow で数えない %d 件）\n", len(bad), len(allowed))
+		for _, l := range bad {
+			fmt.Fprintf(out, "    %s\n", l)
+		}
+		for _, l := range allowed {
+			fmt.Fprintf(out, "    数えない: %s\n", l)
+		}
+		if len(bad) > 0 {
+			fmt.Fprintf(errOut, "web-capture: 頁が console.error か拾われなかった例外を %d 件出した\n", len(bad))
+			return 1
+		}
+	}
 	return 0
+}
+
+// splitAllowedConsole は頁の行を、数える物と allow のどれかに当たって数えない物に分ける。
+func splitAllowedConsole(lines []string, allow []*regexp.Regexp) (bad, allowed []string) {
+	for _, l := range lines {
+		hit := false
+		for _, re := range allow {
+			if re.MatchString(l) {
+				hit = true
+				break
+			}
+		}
+		if hit {
+			allowed = append(allowed, l)
+		} else {
+			bad = append(bad, l)
+		}
+	}
+	return bad, allowed
 }
 
 func parseSize(s string) (int, int, bool) {

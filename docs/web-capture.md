@@ -129,6 +129,20 @@ Chrome は後回しの無いゲームで 2 回、ある時は 3〜4 回起こす
   頁が合図を出すまで待つ上限は既定 90 秒・`FLIX_GE_WEB_CHECK_WAIT`（秒）で替える。
 - 確かめ: `go test -run 'CheckWebLoads|WebMissingTitle|TapOutcome' ./`（`go/`。壊れた wasm を compile させる頁・WebGL2 の頁だけ止まる頁で赤になる事、通る頁で緑になる事、4G のタイトルの待ちと押した後の測りの読み方）。
 
+## 3D のブラウザ版の門（make web-load-check）
+
+門として 3D のゲームをブラウザ版へ書き出すのはこれだけ（ほかの web の門は 2D の rpg-starter と 2D のベンチ。`make bench-web BENCH=scene3d` は測るだけ）。release の門の 1 つ。
+
+1. `bin/fge export-web <ゲーム> --draft --no-browser-check`（既定は `templates/retro3d-horror-starter`・`WEB_LOAD_GAMES=<ゲーム…>` で替える）。
+   TeaVM の classlib に無いメソッドやクラスを engine が呼ぶと、ここ（③ TeaVM）で落ちる。`--draft` は遊べるまでの予算（cwebp の有無で機械ごとに揺れる）で止めないため
+2. `bin/fge web-capture index.html … --dev capture:10`（WebGPU）と `--dev capture:10,webgl2`（WebGL2）を `--console-errors --console-allow '^WebFs fail-open: '` で開く。
+   10 コマ目まで描けない（`fgeCaptureError`）・頁が名乗った描き手が違う・console.error か拾われなかった例外が 1 件でもある、のどれかで exit 1
+
+`--console-errors` は頁のどの script よりも先に `console.error` と `error`・`unhandledrejection` を `window.fgeConsoleErrors` へ積み、撮った後に数える。
+engine の `Log.warn` はブラウザでは console.error に出るので、数えないのは WebFs が saves/ の外へ書かない知らせ（`WebFs fail-open: …`）だけにしてある。`Log.fellBack` の定型を丸ごと許すと、WGSL が組めず材質を頂点の色に替えた知らせ（同じ形）まで通ってしまう。
+ログと絵は `build/web-load-check/<ゲーム>-{export,webgpu,webgl2}.log`。書き出しを省いて頁だけ開き直すなら `WEB_EXPORT=off`。
+2D の `make webgpu-v1-check-web` も同じ旗で console の誤りを数える。
+
 ## gl_parity とのつなぎ（案）
 
 今の物差し（[backend-parity.md](backend-parity.md) の「機械での突き合わせ」）: `make gl-parity` が A 段階の scene を

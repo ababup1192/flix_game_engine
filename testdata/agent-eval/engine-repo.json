@@ -147,6 +147,22 @@
           "why": "DevTools を手で開いて比べる（同じ条件で何回も流せない）"
         }
       ]
+    },
+    {
+      "id": "web-load-check-3d",
+      "prompt": "engine の 3D の描き手で、JDK の新しめのメソッドを 1 つ使った。TeaVM の classlib に無いと 3D のゲームのブラウザ版が書き出せないか、ブラウザで wasm を読む所で落ちるらしい。3D のテンプレートをブラウザ版にして、ヘッドレスの Chrome の WebGPU と WebGL2 で最初の数コマが描けて console に誤りが出ないかを 1 回で確かめたい。何を打つ？",
+      "expect": [
+        {
+          "re": "web-load-check",
+          "why": "make web-load-check が retro3d-horror-starter を export-web し、ヘッドレスの Chrome の WebGPU と WebGL2 の頁で 10 コマ描けて console の誤りが 0 件かを見る"
+        }
+      ],
+      "avoid": [
+        {
+          "re": "(?i)devtools[^\\n]*(手|開いて)",
+          "why": "DevTools を手で開いて console を読む（門にならない）"
+        }
+      ]
     }
   ]
 }

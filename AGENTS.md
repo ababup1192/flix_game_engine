@@ -174,6 +174,7 @@ git log 掘りやテスト回し直しから始めない。
 テストの口は `make test`（`ALL=1` でテンプレートとテストを持つ bench（bench/hd2d_town）も・`JOBS=<数>` で並べて流す）。絞る旗は `make gl-capture-check SCENES=<テンプレートか場面>`・`make go-test PKG=<名前>`。go のテストの全部を cache なしで 1 回流すのは `make go-test-full`（リリースの門。作業中の go-test は tape を cache に任せる）。
 ベンチのブラウザ版をスマホの代わりに CPU を絞って測るのは `make bench-web BENCH=<名前> ARGS='…' CPU=4`（`bin/fge web-bench --cpu <倍>`・出す JSON の `cpuThrottle` に倍率が入る）。
 2D の物理（PhysicsWorld2d）の指紋が PC とブラウザで同じかと 1 刻みの重さは `make physics2d-same CPU=4`（bench/physics2d の 4 場面・画面を開く門で release の前に手元で・予算は docs/physics.md の「重さの予算」）。
+3D のブラウザ版が書き出せて（TeaVM に無いメソッドで落ちないか）ヘッドレスの Chrome の WebGPU と WebGL2 で数コマ描け、console の誤りが 0 件かは `make web-load-check`（retro3d-horror-starter・約 1 分 45 秒・release の門・`WEB_LOAD_GAMES=<ゲーム…>` で替える・docs/web-capture.md）。
 テストの範囲・書き方は `/quality-assurance`、リリース手順は `/release`。
 
 ## Doc（`*.kind.json`）の流儀
