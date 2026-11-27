@@ -6,22 +6,26 @@ mod Render3d.VariantPrograms {
     use Render3d.{ProgramUniforms, State, bindDataTextureUnits, bindUnits, compileProgram, programsOf, skinnedProgramsOf}
     use Render3d.ProgramKey.{ShaderVariant, billboardVariantOf, variantKeyOf}
     use Render3d.Uniforms.{R3dUniform}
-    use Render3dGlsl.{billboardFragmentSourceFor, billboardVertexSourceFor, litFragmentSourceFor, litVertexSourceFor}
+    use Render3d.ShaderSourceKey
+    use Render3d.ShaderLibrary.{optionalGlsl, recordVariant}
 
-    /// 変種 v の頂点の色の（skinned なら骨つきの版の）プログラム。
+    /// 変種 v の頂点の色の（skinned なら骨つきの版の）プログラム。字が無い変種（ブラウザの表に無い）は 0 のプログラム（描かない）。
     pub def litProgramOfVariant(gl: GlContext, state: State, v: ShaderVariant, skinned: Bool): ProgramUniforms \ IO =
         let key = variantKeyOf(v);
         if (key == "") (if (skinned) skinnedProgramsOf(gl, state)#lit else programsOf(gl, state)#lit)
         else match Map.get((key, skinned), Ref.get(state#variantLitRef)) {
             case Some(p) => p
             case None =>
-                let made = compileProgram(gl, litVertexSourceFor(skinned, v), litFragmentSourceFor(v), "scene3d:lit" + (if (skinned) ":skin" else "") + key);
+                recordVariant(state#shaders, v);
+                let label = "scene3d:lit" + (if (skinned) ":skin" else "") + key;
+                let made = compileOptional(gl, optionalGlsl(state#shaders, ShaderSourceKey.LitVertex(skinned, v#psx)),
+                                           optionalGlsl(state#shaders, ShaderSourceKey.LitFragment(v)), label);
                 bindDataTextureUnits(gl, made);
                 Ref.put(Map.insert((key, skinned), made, Ref.get(state#variantLitRef)), state#variantLitRef);
                 made
         }
 
-    /// 変種 v の場面のビルボードのプログラム（billboardVariantOf の変種）。
+    /// 変種 v の場面のビルボードのプログラム（billboardVariantOf の変種）。字が無い変種は 0 のプログラム（描かない）。
     pub def billboardProgramFor(gl: GlContext, state: State, v: ShaderVariant): ProgramUniforms \ IO =
         let bv = billboardVariantOf(v);
         let key = variantKeyOf(bv);
@@ -29,9 +33,18 @@ mod Render3d.VariantPrograms {
         else match Map.get(key, Ref.get(state#variantBillboardRef)) {
             case Some(p) => p
             case None =>
-                let made = compileProgram(gl, billboardVertexSourceFor(bv), billboardFragmentSourceFor(bv), "scene3d:billboard" + key);
+                recordVariant(state#shaders, v);
+                let made = compileOptional(gl, optionalGlsl(state#shaders, ShaderSourceKey.BillboardVertex(bv, Render3dShaders.BillboardRight.ByUniform)),
+                                           optionalGlsl(state#shaders, ShaderSourceKey.BillboardFragment(bv)), "scene3d:billboard" + key);
                 bindUnits(gl, made, (R3dUniform.Image, 0) :: Nil);
                 Ref.put(Map.insert(key, made, Ref.get(state#variantBillboardRef)), state#variantBillboardRef);
                 made
         }
+
+    /// 頂点シェーダーと frag の字が両方あれば組んだプログラム（無ければ 0 のプログラム）。
+    def compileOptional(gl: GlContext, vertex: Option[String], fragment: Option[String], label: String): ProgramUniforms \ IO = match (vertex, fragment) {
+        case (Some(vs), Some(fs)) => compileProgram(gl, vs, fs, label)
+        case _                    => { program = 0, locs = Render3d.Uniforms.noLocations() }
+    }
+
 }

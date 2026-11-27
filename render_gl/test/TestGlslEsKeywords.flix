@@ -60,7 +60,7 @@ mod Render3d.TestGlslEsKeywords {
             ("skyFragment", Render3dGlsl.skyFragmentSource()) ::
             ("blitVertex", Render3dGlsl.blitVertexSource()) ::
             ("blitFragment", Render3dGlsl.blitFragmentSource()) ::
-            ("screenVertex", ShaderAst.Glsl.vertex(Render3d.ScreenPasses.vertex())) ::
+            ("screenVertex", ShaderAst.Glsl.vertex(Render3dShaders.skyVertex())) ::
             ("screenAoMask", ShaderAst.Glsl.fragment(Render3d.ScreenPasses.fragment(Render3d.ScreenPasses.ScreenPassKind.AoMask, Nil))) ::
             ("screenAoBlur", ShaderAst.Glsl.fragment(Render3d.ScreenPasses.fragment(Render3d.ScreenPasses.ScreenPassKind.AoBlurH, Nil))) ::
             ("screenAoShow", ShaderAst.Glsl.fragment(Render3d.ScreenPasses.fragment(Render3d.ScreenPasses.ScreenPassKind.ShowAo, Nil))) ::

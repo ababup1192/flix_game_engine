@@ -288,7 +288,7 @@ mod TestWgslDawn {
         ("frag screen ao mask", ShaderAst.Wgsl.fragment(Render3d.ScreenPasses.fragment(Render3d.ScreenPasses.ScreenPassKind.AoMask, Render3d.ScreenPasses.wgslBindings() :: Nil))) ::
         ("frag screen ao blur", ShaderAst.Wgsl.fragment(Render3d.ScreenPasses.fragment(Render3d.ScreenPasses.ScreenPassKind.AoBlurH, Render3d.ScreenPasses.wgslBindings() :: Nil))) ::
         ("frag screen ao show", ShaderAst.Wgsl.fragment(Render3d.ScreenPasses.fragment(Render3d.ScreenPasses.ScreenPassKind.ShowAo, Render3d.ScreenPasses.wgslBindings() :: Nil))) ::
-        ("vertex screen", ShaderAst.Wgsl.vertex(Render3d.ScreenPasses.vertex())) ::
+        ("vertex screen", ShaderAst.Wgsl.vertex(Render3dShaders.skyVertex())) ::
         ("frag depth", Render3dWgsl.depthFragmentSource()) ::
         ("vertex lit", Render3dWgsl.litVertexSource(false)) ::
         ("vertex material", Render3dWgsl.materialVertexSource(false, false, false)) ::

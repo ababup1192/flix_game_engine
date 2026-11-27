@@ -20,24 +20,27 @@ mod Render3d.WebGpuBillboards {
     use RenderPaint.Internal.WebGpuPipelines
 
     /// ビルボードの backend の状態。sceneLayout = group 0 の layout（3D の描き手の持ち物）・imageLayout = group 1 の layout（2D の描き手の絵の group の layout・2D の描き手の持ち物）・
-    /// pipelines = BillboardPipelineKey → pipeline・variantModules = 変種の鍵（Render3d.ProgramKey.variantKeyOf(billboardVariantOf(..))）→ その頂点シェーダーと frag（初めて要る時に作る）。
+    /// pipelines = BillboardPipelineKey → pipeline・variantModules = 変種の鍵（Render3d.ProgramKey.variantKeyOf(billboardVariantOf(..))）→ その頂点シェーダーと frag
+    /// （初めて要る時に作る・字の無い変種は None で、その変種のビルボードは描かない）・shaders = 字を引く API。
     /// shadowFragmentModule = 影の地図へ描く frag（Render3dWgsl.billboardShadowFragmentSource）・shadowPipeline = 影の地図の pipeline（初めて要る時に作る）・
     /// rowRightVertexModule と rowRightShadowPipeline = 板の横の向きを行の値から読む頂点シェーダーと、その影の地図の pipeline（点光源の面・初めて要る時に作る）。
     pub type alias Billboards = {
         gpu = WebGpu, sceneLayout = BindGroupLayout, imageLayout = BindGroupLayout, vertexModule = ShaderModule, fragmentModule = ShaderModule,
-        variantModules = Ref[Map[String, (ShaderModule, ShaderModule)], Static],
+        variantModules = Ref[Map[String, Option[(ShaderModule, ShaderModule)]], Static], shaders = Render3d.ShaderLibrary.ShaderSources,
         pipelines = Ref[Map[BillboardPipelineSlot, RenderPipeline], Static], shadowFragmentModule = ShaderModule, shadowPipeline = Ref[Option[RenderPipeline], Static],
         rowRightVertexModule = Ref[Option[ShaderModule], Static], rowRightShadowPipeline = Ref[Option[RenderPipeline], Static]
     }
 
     /// device の上に shader module を作る（layout 2 つは持ち主が手放す）。
-    pub def create(gpu: WebGpu, sceneLayout: BindGroupLayout, imageLayout: BindGroupLayout): Billboards \ IO =
+    pub def create(gpu: WebGpu, sceneLayout: BindGroupLayout, imageLayout: BindGroupLayout, shaders: Render3d.ShaderLibrary.ShaderSources): Billboards \ IO =
+        let v = Render3d.ProgramKey.defaultShaderVariant();
+        let wgsl = Render3d.ShaderLibrary.wgslOrBug(shaders);
         { gpu = gpu, sceneLayout = sceneLayout, imageLayout = imageLayout,
-          vertexModule = gpu.createShaderModule("fge scene3d billboard vs", Render3dWgsl.billboardVertexSource()),
-          fragmentModule = gpu.createShaderModule("fge scene3d billboard fs", Render3dWgsl.billboardFragmentSource()),
-          variantModules = Ref.fresh(Static, Map.empty()),
+          vertexModule = gpu.createShaderModule("fge scene3d billboard vs", wgsl(Render3d.ShaderSourceKey.BillboardVertex(v, Render3dShaders.BillboardRight.Camera))),
+          fragmentModule = gpu.createShaderModule("fge scene3d billboard fs", wgsl(Render3d.ShaderSourceKey.BillboardFragment(v))),
+          variantModules = Ref.fresh(Static, Map.empty()), shaders = shaders,
           pipelines = Ref.fresh(Static, Map.empty()),
-          shadowFragmentModule = gpu.createShaderModule("fge scene3d billboard shadow fs", Render3dWgsl.billboardShadowFragmentSource()),
+          shadowFragmentModule = gpu.createShaderModule("fge scene3d billboard shadow fs", wgsl(Render3d.ShaderSourceKey.BillboardShadowFragment)),
           shadowPipeline = Ref.fresh(Static, None), rowRightVertexModule = Ref.fresh(Static, None), rowRightShadowPipeline = Ref.fresh(Static, None) }
 
     /// device の上に作った物を全部手放す（layout は持ち主が）。この後 b は使えない。
@@ -52,7 +55,7 @@ mod Render3d.WebGpuBillboards {
         Ref.put(None, b#rowRightVertexModule);
         b#vertexModule.release();
         b#fragmentModule.release();
-        Map.forEach((_, vf) -> { let (vm, fm) = vf; vm.release(); fm.release() }, Ref.get(b#variantModules));
+        Map.forEach((_, found) -> found |> Option.forEach(vf -> { let (vm, fm) = vf; vm.release(); fm.release() }), Ref.get(b#variantModules));
         Ref.put(Map.empty(), b#variantModules);
         b#shadowFragmentModule.release()
 
@@ -80,7 +83,9 @@ mod Render3d.WebGpuBillboards {
     def rowRightVertexModuleOf(b: Billboards): ShaderModule \ IO = match Ref.get(b#rowRightVertexModule) {
         case Some(m) => m
         case None    =>
-            let made = b#gpu.createShaderModule("fge scene3d billboard vs row right", Render3dWgsl.billboardRowRightVertexSource());
+            let source = Render3d.ShaderLibrary.wgslOrBug(b#shaders,
+                Render3d.ShaderSourceKey.BillboardVertex(Render3d.ProgramKey.defaultShaderVariant(), Render3dShaders.BillboardRight.PerBillboard));
+            let made = b#gpu.createShaderModule("fge scene3d billboard vs row right", source);
             Ref.put(Some(made), b#rowRightVertexModule);
             made
     }
@@ -98,16 +103,16 @@ mod Render3d.WebGpuBillboards {
 
     /// 形式 format・標本 samples・場面の変種 variant のビルボードの pipeline（無ければ作る）。裏を間引かず（四角はいつもカメラを向く）、深度は LESS で書く
     /// （GL のビルボードと同じく不透明の物の後・半透明の物の前に描く）。奥行きの書き出しの pass も同じ pipeline で、frag が場面の値の uDepthOut で灰色を書く。
-    /// group0 = 場面の group 0 の (形の番号, layout)。frag は Render3d.ProgramKey.billboardVariantOf(variant) の字（点光源の影は受けない）。
-    pub def pipelineOf(b: Billboards, format: RenderTarget.Format, samples: Int32, variant: Render3d.ProgramKey.ShaderVariant, group0: (Int32, BindGroupLayout)): RenderPipeline \ IO =
+    /// group0 = 場面の group 0 の (形の番号, layout)。frag は Render3d.ProgramKey.billboardVariantOf(variant) の字（点光源の影は受けない）。字の無い変種は None。
+    pub def pipelineOf(b: Billboards, format: RenderTarget.Format, samples: Int32, variant: Render3d.ProgramKey.ShaderVariant, group0: (Int32, BindGroupLayout)): Option[RenderPipeline] \ IO =
         let (code, layout) = group0;
         let key = billboardPipelineSlotOf({ format = WebGpuPipelines.formatCode(format), samples = samples, sceneLayout = code, variant = Render3d.ProgramKey.variantKeyOf(Render3d.ProgramKey.billboardVariantOf(variant)) });
         match Map.get(key, Ref.get(b#pipelines)) {
-            case Some(p) => p
-            case None =>
+            case Some(p) => Some(p)
+            case None => modulesOf(b, variant) |> Option.map(vf -> {
+                let (vertex, fragment) = vf;
                 let desc = new RenderPipelineDesc("fge scene3d billboard");
                 discard desc.bindGroupLayout(layout).bindGroupLayout(b#imageLayout);
-                let (vertex, fragment) = modulesOf(b, variant);
                 discard desc.vertex(vertex, "vs_main").fragment(fragment, "fs_main");
                 discard desc.vertexBuffer(valueStride(), true);
                 discard desc.attribute(VertexFormat.FLOAT32X4, 0, 0).attribute(VertexFormat.FLOAT32X4, 16, 1);
@@ -118,20 +123,27 @@ mod Render3d.WebGpuBillboards {
                 let made = b#gpu.createRenderPipeline(desc);
                 Ref.put(Map.insert(key, made, Ref.get(b#pipelines)), b#pipelines);
                 made
+            })
         }
 
-    /// 変種 variant のビルボードの頂点シェーダーと frag（既定でない変種の版は初めて要る時に作る）。
-    def modulesOf(b: Billboards, variant: Render3d.ProgramKey.ShaderVariant): (ShaderModule, ShaderModule) \ IO =
+    /// 変種 variant のビルボードの頂点シェーダーと frag（既定でない変種の版は初めて要る時に作る・字が無ければ None）。
+    def modulesOf(b: Billboards, variant: Render3d.ProgramKey.ShaderVariant): Option[(ShaderModule, ShaderModule)] \ IO =
         let bv = Render3d.ProgramKey.billboardVariantOf(variant);
         let key = Render3d.ProgramKey.variantKeyOf(bv);
-        if (key == "") (b#vertexModule, b#fragmentModule)
+        if (key == "") Some((b#vertexModule, b#fragmentModule))
         else match Map.get(key, Ref.get(b#variantModules)) {
-            case Some(vf) => vf
-            case None     =>
+            case Some(found) => found
+            case None        =>
+                Render3d.ShaderLibrary.recordVariant(b#shaders, variant);
+                let vertexKey = Render3d.ShaderSourceKey.BillboardVertex(Render3d.ShaderLibrary.webGpuBillboardVertexVariant(bv), Render3dShaders.BillboardRight.Camera);
+                let vertexSource = Render3d.ShaderLibrary.optionalWgsl(b#shaders, vertexKey);
+                let fragmentSource = Render3d.ShaderLibrary.optionalWgsl(b#shaders, Render3d.ShaderSourceKey.BillboardFragment(bv));
                 // WhyNot: +pu だけの時に b#vertexModule を使い回さない — release は変種の表の頂点シェーダーも離すので、共有すると既定の物を 2 回離す。
-                let vertex = if (bv#psx) b#gpu.createShaderModule("fge scene3d billboard vs" + key, Render3dWgsl.billboardVertexSourceFor(bv))
-                             else b#gpu.createShaderModule("fge scene3d billboard vs" + key, Render3dWgsl.billboardVertexSource());
-                let made = (vertex, b#gpu.createShaderModule("fge scene3d billboard fs" + key, Render3dWgsl.billboardFragmentSourceFor(variant)));
+                let made = match (vertexSource, fragmentSource) {
+                    case (Some(vs), Some(fs)) =>
+                        Some((b#gpu.createShaderModule("fge scene3d billboard vs" + key, vs), b#gpu.createShaderModule("fge scene3d billboard fs" + key, fs)))
+                    case _ => None
+                };
                 Ref.put(Map.insert(key, made, Ref.get(b#variantModules)), b#variantModules);
                 made
         }

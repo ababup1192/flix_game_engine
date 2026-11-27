@@ -53,6 +53,7 @@ mod TestShaderDump {
         surfaceKinds(v) |> List.filter(k ->
             (not k#blend and not k#coverage and not k#doubleSided) or (k#uv and k#normalMap and k#lightmap and k#doubleSided and k#metallicRoughness and not k#coverage))
 
+    /// 材質の frag は描き手と同じ道（部品の所が空いた字に部品を入れる・Render3d.ShaderLibrary.withMaterialPart）で作る。
     def materialFragments(): List[(String, String)] =
         let d = Render3d.ProgramKey.defaultShaderVariant();
         let kinds = surfaceKinds(d) ::: (allVariants() |> List.filter(v -> variantLabel(v) != variantLabel(d)) |> List.flatMap(representativeKinds));
@@ -61,8 +62,12 @@ mod TestShaderDump {
             kinds |> List.flatMap(k -> {
                 let glsl = ShaderGen.compile3d(spec, glowOf(), metalOf(k));
                 let wgsl = ShaderGen.Wgsl.compile3d(spec, glowOf(), metalOf(k), 1);
-                ("glsl/frag-material-${name}-${kindLabel(k)}.frag", Render3dGlsl.materialFragmentSource(glsl, k)) ::
-                ("wgsl/frag-material-${name}-${kindLabel(k)}.wgsl", Render3dWgsl.materialFragmentSource(wgsl, k)) :: Nil
+                let glslTemplate = Render3dGlsl.materialFragmentTemplate(k, not List.isEmpty(glsl#texReads));
+                let wgslTemplate = Render3dWgsl.materialFragmentTemplate(k, not List.isEmpty(wgsl#texReads));
+                ("glsl/frag-material-${name}-${kindLabel(k)}.frag",
+                 Render3d.ShaderLibrary.withMaterialPart(glslTemplate, Render3d.ShaderLibrary.glslPartText(glsl), glsl#cutoutAlpha)) ::
+                ("wgsl/frag-material-${name}-${kindLabel(k)}.wgsl",
+                 Render3d.ShaderLibrary.withMaterialPart(wgslTemplate, Render3d.ShaderLibrary.wgslPartText(wgsl), wgsl#cutoutAlpha)) :: Nil
             })
         })
 

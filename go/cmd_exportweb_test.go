@@ -260,7 +260,7 @@ func exportWebFixture(t *testing.T) (string, string) {
 		put(eng, rel, "")
 	}
 	entry := "build/fpkg-store/engine_full_web-0.9.0-0123456789abcdef/"
-	for _, name := range []string{"package.fpkg", "flix.toml", "fge-gl-0.9.0.jar", "fge-web-0.9.0.jar", "fge-web-tools-0.9.0.jar"} {
+	for _, name := range []string{"package.fpkg", "flix.toml", "fge-gl-0.9.0.jar", "fge-web-0.9.0.jar", "fge-web-tools-0.9.0.jar", "shader-bake-0.9.0.jar"} {
 		put(eng, entry+name, "")
 	}
 	return game, eng

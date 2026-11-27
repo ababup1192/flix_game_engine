@@ -51,12 +51,12 @@ mod Render3d.WebGpuMipmaps {
         case Step.Halve(Mip.Average.SrgbCurve)  => "fs_srgb"
     }
 
-    /// device の上に shader module と layout を作る（pipeline は初めて使う時に）。
-    pub def create(gpu: WebGpu): Mipmaps \ IO =
+    /// device の上に shader module と layout を作る（pipeline は初めて使う時に）。vertex は空の vertex（shaders の SkyVertex）を使う。
+    pub def create(gpu: WebGpu, shaders: Render3d.ShaderLibrary.ShaderSources): Mipmaps \ IO =
         let layoutDesc = new BindGroupLayoutDesc("fge mip copy");
         discard layoutDesc.texture(0, ShaderStage.FRAGMENT, TextureSampleType.FLOAT);
         { gpu = gpu, layout = gpu.createBindGroupLayout(layoutDesc),
-          vertexModule = gpu.createShaderModule("fge mip copy vs", Render3dWgsl.skyVertexSource()),
+          vertexModule = gpu.createShaderModule("fge mip copy vs", Render3d.ShaderLibrary.wgslOrBug(shaders, Render3d.ShaderSourceKey.SkyVertex)),
           fragmentModule = gpu.createShaderModule("fge mip copy fs", fragmentSource()),
           pipelines = Ref.fresh(Static, Map.empty()), views = Ref.fresh(Static, Nil), groups = Ref.fresh(Static, Nil) }
 

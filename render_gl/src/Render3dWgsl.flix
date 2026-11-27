@@ -102,6 +102,12 @@ pub mod Render3dWgsl {
         let bindings = sceneBindings(surface#variant, drawDeclarations(Render3dShaders.isNormalMapped(surface), surface#lightmap));
         ShaderAst.Wgsl.fragment(Render3dShaders.materialFragment(surface, Render3dShaders.wgslMaterialPart(m), bindings))
 
+    /// materialFragmentSource の、材質の部品の所が空いた字（Render3d.ShaderLibrary.withMaterialPart で WGSL の材質の部品を入れる）。
+    /// readsTextures = 入れる部品が絵を読むか。
+    pub def materialFragmentTemplate(surface: Render3d.ProgramKey.ProgramKind, readsTextures: Bool): String =
+        let bindings = sceneBindings(surface#variant, drawDeclarations(Render3dShaders.isNormalMapped(surface), surface#lightmap));
+        ShaderAst.Wgsl.fragment(Render3dShaders.materialFragment(surface, Render3dShaders.templateMaterialPart(ShaderAst.Lang.Wgsl, surface, readsTextures), bindings))
+
     /// 奥行きの書き出し（Output.Depth）の形だけの frag（Render3dGlsl.depthFragmentSource と同じ本文）。頂点シェーダーは litVertexSource。入口は fs_main。
     pub def depthFragmentSource(): String =
         ShaderAst.Wgsl.fragment(Render3dShaders.depthFragment(Render3dShaders.wgslDeclarations("r3d_bindings", sceneDeclarations()) :: Nil))

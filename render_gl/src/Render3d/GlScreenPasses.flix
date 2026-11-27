@@ -149,9 +149,11 @@ pub mod Render3d.GlScreenPasses {
         match Map.get(key, Ref.get(d#programs)) {
             case Some(p) => p
             case None =>
-                let vertex = ShaderAst.Glsl.vertex(Render3d.ScreenPasses.vertex());
-                let fragment = ShaderAst.Glsl.fragment(Render3d.ScreenPasses.fragment(shared, Nil));
-                let program = Render3d.compile(gl, vertex, fragment, "scene3d:screen:" + key);
+                let vertex = Render3d.ShaderLibrary.glslOrBug(state#shaders, Render3d.ShaderSourceKey.SkyVertex);
+                let program = match Render3d.ShaderLibrary.optionalGlsl(state#shaders, Render3d.ShaderSourceKey.ScreenPassFragment(shared)) {
+                    case Some(fragment) => Render3d.compile(gl, vertex, fragment, "scene3d:screen:" + key)
+                    case None           => 0
+                };
                 let names = Render3d.ScreenPasses.depthName() :: Render3d.ScreenPasses.maskName() :: Render3d.ScreenPasses.uniformNames();
                 let locs = if (program == 0) Map.empty()
                            else names |> List.foldLeft((acc, n) -> {

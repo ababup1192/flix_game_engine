@@ -4,7 +4,7 @@ mod Render3d.Material {
     import fge.gl.GlContext
     import java.nio.{ByteBuffer, ByteOrder}
     use Render3d.Shadow.{putPointShadow, putShadow, putSunShadow}
-    use Render3dGlsl.{materialFragmentSource, materialVertexSourceFor}
+    use Render3d.ShaderSourceKey
     use Render3d.Light.{putLights}
     use Render3d.Uniforms.{R3dUniform, put1f, put1i, put4f}
     use Render3d.{BoundTexture, CameraData, MaterialEntry, MaterialPass, MeshDraw, ProgramUniforms, State, TextureSlot, TextureSource, bindDataTextureUnits, bindUnits, ensureTangents, environmentTextureUnit, lightmapTextureUnit, normalMapTextureUnit, programUniformsOf, putDepthRange, useMeshProgram, warnDroppedTextures, warnSceneOnce}
@@ -536,14 +536,18 @@ mod Render3d.Material {
             + (if (kind#doubleSided) ":ds" else "") + (if (kind#coverage) ":cov" else "") + (if (kind#metallicRoughness) ":mr" else "")
             + String.replace(src = "+", dst = ":", Render3d.ProgramKey.variantKeyOf(kind#variant)) + ":${m#spec#name}";
         noteMaterialBuild(state, label, reason);
-        let vertex = materialVertexSourceFor({ skinned = kind#skinned, uv = kind#uv, lightmap = kind#lightmap }, kind#variant#psx);
-        let fragment = materialFragmentSource(glsl, kind);
-        let program = match RenderShader.tryCreateProgram(gl, vertex, fragment, label) {
-            case Some(p) => p
-            case None    =>
-                Log.warnThen("scene3d: 材質 '${m#spec#name}' のプログラムが組めなかった — この材質の物は頂点の色で描く", 0)
+        let fragment = Render3d.ShaderLibrary.materialGlsl(state#shaders, kind, m#cutout, glsl);
+        let vertex = Render3d.ShaderLibrary.optionalGlsl(state#shaders,
+            ShaderSourceKey.MaterialVertex({ skinned = kind#skinned, uv = kind#uv, lightmap = kind#lightmap, psx = kind#variant#psx }));
+        let (program, sources) = match (vertex, fragment) {
+            case (Some(vs), Some(fs)) => match RenderShader.tryCreateProgram(gl, vs, fs, label) {
+                case Some(p) => (p, vs :: fs :: Nil)
+                case None    =>
+                    (Log.warnThen("scene3d: 材質 '${m#spec#name}' のプログラムが組めなかった — この材質の物は頂点の色で描く", 0), Nil)
+            }
+            case _ => (0, Nil)
         };
-        let uniforms = programUniformsOf(gl, program, vertex :: fragment :: Nil);
+        let uniforms = programUniformsOf(gl, program, sources);
         bindDataTextureUnits(gl, uniforms);
         bindTextureUnits(gl, uniforms, List.length(glsl#texReads), kind#normalMap, kind#lightmap, kind#metallicRoughness);
         { spec = m#spec, emission = m#emission, metallicRoughness = m#metallicRoughnessShade,

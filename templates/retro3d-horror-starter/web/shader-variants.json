@@ -1,0 +1,41 @@
+{
+  "materialShapes": [
+    {
+      "blend": false,
+      "cutout": false,
+      "doubleSided": true,
+      "lightmap": false,
+      "metallicRoughness": false,
+      "normalMap": false,
+      "readsTextures": true,
+      "skinned": true,
+      "uv": true
+    },
+    {
+      "blend": false,
+      "cutout": true,
+      "doubleSided": true,
+      "lightmap": false,
+      "metallicRoughness": false,
+      "normalMap": false,
+      "readsTextures": true,
+      "skinned": false,
+      "uv": true
+    },
+    {
+      "blend": false,
+      "cutout": false,
+      "doubleSided": true,
+      "lightmap": false,
+      "metallicRoughness": false,
+      "normalMap": false,
+      "readsTextures": true,
+      "skinned": false,
+      "uv": true
+    }
+  ],
+  "variants": [
+    "+psx"
+  ],
+  "version": 1
+}

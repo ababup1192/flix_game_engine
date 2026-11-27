@@ -20,11 +20,11 @@ mod Render3d.WebGpuSky {
         pipelines = Ref[Map[SkyPipelineSlot, RenderPipeline], Static]
     }
 
-    /// device の上に shader module を作る。sceneLayout = 場面の group 0 の layout（持ち主が手放す）。
-    pub def create(gpu: WebGpu, sceneLayout: BindGroupLayout): Sky \ IO =
+    /// device の上に shader module を作る。sceneLayout = 場面の group 0 の layout（持ち主が手放す）・shaders = 字を引く API。
+    pub def create(gpu: WebGpu, sceneLayout: BindGroupLayout, shaders: Render3d.ShaderLibrary.ShaderSources): Sky \ IO =
         { gpu = gpu, sceneLayout = sceneLayout,
-          vertexModule = gpu.createShaderModule("fge scene3d sky vs", Render3dWgsl.skyVertexSource()),
-          fragmentModule = gpu.createShaderModule("fge scene3d sky fs", Render3dWgsl.skyFragmentSource()),
+          vertexModule = gpu.createShaderModule("fge scene3d sky vs", Render3d.ShaderLibrary.wgslOrBug(shaders, Render3d.ShaderSourceKey.SkyVertex)),
+          fragmentModule = gpu.createShaderModule("fge scene3d sky fs", Render3d.ShaderLibrary.wgslOrBug(shaders, Render3d.ShaderSourceKey.SkyFragment)),
           pipelines = Ref.fresh(Static, Map.empty()) }
 
     /// device の上に作った物を全部手放す（sceneLayout は持ち主が）。この後 sky は使えない。

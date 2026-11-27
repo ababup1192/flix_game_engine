@@ -3,7 +3,7 @@
 //       make render SHOT=title → debug/title.png（1 枚だけ）
 // 描くのは実機と同じ View.frame（3D の場面）に View.postOf（ポストプロセス）を掛け、View.hud（終了の確認の窓）を重ねた物。
 mod SceneRender {
-    use fge::{App, Color, Filmstrip, HeadlessFont, HeadlessRender, PostStack, Render}
+    use fge::{App, Color, Filmstrip, HeadlessFont, HeadlessRender, PostStack, Render, Scene3d}
 
     import java.awt.image.BufferedImage
     import java.io.File
@@ -123,6 +123,16 @@ mod SceneRender {
             let channel = Int32.max(0, Int32.min(255, Float64.round(sum / area) |> Float64.tryToInt32 |> Option.getWithDefault(0)));
             Int32.bitwiseOr(acc, Int32.leftShift(channel, shift))
         }, 0, 24 :: 16 :: 8 :: 0 :: Nil)
+
+    /// ブラウザ版のシェーダーの記録（web/shader-variants.json）が覆うべき 3D の場面: 全部の場面の、描き出しと同じ道で組んだ面と Pass の中の 3D の場面
+    /// （test/TestShaderVariants が読む）。
+    pub def shaderScenes(): List[Scene3d.Scene3dCmd] \ IO =
+        let res = loadRes();
+        let ctx = App.viewCtxOf(HeadlessFont.buildUiAtlas(ttf(), ttf()), View.size());
+        Shots.names() |> List.filterMap(name -> Shots.worldOf(name, res)) |> List.flatMap(w -> {
+            let s = sceneOf(ctx, res, w);
+            (s#scenes ::: List.flatMap(p -> p#scenes, s#passes)) |> List.map(cmd -> cmd#scene)
+        })
 
     /// 1 枚の中身: View.frame にポストプロセス（explore.json の post が偽なら掛けない）を掛け、View.hud を重ねる。
     def sceneOf(ctx: App.ViewCtx, res: Res.Res, w: World.World): HeadlessRender.Scene =

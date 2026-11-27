@@ -74,12 +74,13 @@ pub mod WebLayer {
     def withProject3dPage(rootDir: String, f: Unit -> a \ ef): a \ ef - Platform.Services - LoadProgress + IO + Fs.FileRead =
         WebLayer.Internal.GlbWorker.warmUp();
         let config = loadBootConfigOrBug(rootDir);
-        let makeRenderer = (gl, cfg) -> Render3d.makeRenderer(gl, cfg, Render3d.DrawMode.Instanced);
+        let shaders = WebLayer.Internal.WebShaderLibrary.provider();
+        let makeRenderer = (gl, cfg) -> Render3d.makeRendererWith(gl, cfg, Render3d.DrawMode.Instanced, shaders);
         let g = () -> recordSceneTextures(() -> recordDrawnTextures(f));
         let makeScenes = (gpu, pasteLayout, imageLayout) ->
             Render3d.WebGpuRenderer.makeScenesWithPlatformImages(
                 { has = (key, width, height) -> BrowserWebGpu.hasPlatformImage(key, width, height),
-                  copy = (key, texture) -> BrowserWebGpu.copyPlatformImage(gpu, key, texture) }, gpu, pasteLayout, imageLayout);
+                  copy = (key, texture) -> BrowserWebGpu.copyPlatformImage(gpu, key, texture) }, shaders, gpu, pasteLayout, imageLayout);
         if (Browser.backendRequest() == "webgpu") withWebGpuOrGl(makeRenderer, makeScenes, config, g)
         else withWeb(makeRenderer, config, g)
 

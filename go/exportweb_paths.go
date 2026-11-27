@@ -17,6 +17,8 @@ import (
 type exportWebPaths struct {
 	Game, Engine, Version, Work, Project, Out                                       string
 	FullWebFpkg, FullWebToml, GlJar, WebJar, WebToolsJar, WebJS, IndexHTML, FlixJar string
+	// ShaderBakeJar は記録（web/shader-variants.json）から 3D のシェーダーの字の表を作る道具（make shader-bake-jar）。
+	ShaderBakeJar string
 	// 置き場（build/fpkg-store）のエントリ。空なら置き場が無く、build/engine_full_web などを直に読んでいる。
 	FullWebEntry string
 	// AppIcon は project.json の web.appIcon の絶対の道（空なら engine のロゴでホーム画面のアイコンを作る）。
@@ -70,17 +72,19 @@ func resolveExportWebPaths(o exportWebOptions) (exportWebPaths, int, error) {
 		p.GlJar = filepath.Join(entry, glJarNameOf(p.FullWebToml, v))
 		p.WebJar = filepath.Join(entry, "fge-web-"+v+".jar")
 		p.WebToolsJar = filepath.Join(entry, "fge-web-tools-"+v+".jar")
+		p.ShaderBakeJar = filepath.Join(entry, "shader-bake-"+v+".jar")
 	} else {
 		p.FullWebFpkg = filepath.Join(p.Engine, "build", "engine_full_web", "artifact", "package.fpkg")
 		p.FullWebToml = filepath.Join(p.Engine, "build", "engine_full_web", "flix.toml")
 		p.GlJar = filepath.Join(p.Engine, "build", "gl-jar", glJarNameOf(p.FullWebToml, v))
 		p.WebJar = filepath.Join(p.Engine, "build", "web-jar", "fge-web-"+v+".jar")
 		p.WebToolsJar = filepath.Join(p.Engine, "build", "web-jar", "fge-web-tools-"+v+".jar")
+		p.ShaderBakeJar = filepath.Join(p.Engine, "build", "web-jar", "shader-bake-"+v+".jar")
 	}
 	p.WebJS = filepath.Join(p.Engine, "engine_web", "js", "fge-web.js")
 	p.IndexHTML = filepath.Join(p.Engine, "engine_web", "js", "index.html")
 	var missing []string
-	for _, f := range []string{p.FullWebFpkg, p.FullWebToml, p.GlJar, p.WebJar, p.WebToolsJar} {
+	for _, f := range []string{p.FullWebFpkg, p.FullWebToml, p.GlJar, p.WebJar, p.WebToolsJar, p.ShaderBakeJar} {
 		if !fileExists(f) {
 			missing = append(missing, f)
 		}

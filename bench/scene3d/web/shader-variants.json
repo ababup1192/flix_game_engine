@@ -1,0 +1,31 @@
+{
+  "materialShapes": [
+    {
+      "blend": false,
+      "cutout": false,
+      "doubleSided": false,
+      "lightmap": false,
+      "metallicRoughness": false,
+      "normalMap": false,
+      "readsTextures": false,
+      "skinned": false,
+      "uv": false
+    },
+    {
+      "blend": false,
+      "cutout": false,
+      "doubleSided": false,
+      "lightmap": false,
+      "metallicRoughness": false,
+      "normalMap": false,
+      "readsTextures": true,
+      "skinned": false,
+      "uv": true
+    }
+  ],
+  "variants": [
+    "",
+    "+psx"
+  ],
+  "version": 1
+}

@@ -2069,6 +2069,10 @@
 - loadOr の「色を名前で書ける」版。
   `pub def loadOrWith(palette: Map[String, Color], fallback: ShaderDoc.Spec, path: String): ShaderDoc.Spec \ Fs.FileRead`
 
+## ShaderText — `engine/src/shader/ShaderText.flix`
+- 字が括弧なしで演算子の子に置ける形か（名前・数・欄の読み・添字・呼び出しだけで、括弧の外に空白も演算子も無い）。
+  `pub def isAtomText(text: String): Bool`
+
 ## Skin3d — `engine/src/scene3d/Skin3d.flix`
 - ジョイント 1 本の局所の姿勢（親のジョイントの座標で。根は rootTransform の座標で）。
   `pub type alias JointPose = { translation = Vec3.Vec3, rotation = Quat.Quat, scale = Vec3.Vec3 }`

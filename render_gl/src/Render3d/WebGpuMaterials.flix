@@ -57,8 +57,9 @@ pub mod Render3d.WebGpuMaterials {
     }
 
     /// 組んだ材質の program 1 つ。id = 順の番号（計画へ返す・0 でない）・fragment = 材質の frag・layout = group 1 の layout・
-    /// slotCount = sg の欄の数（ShaderGen.Wgsl.compile3d の slots）・texCount = 材質の絵の数。
-    pub type alias Program = { id = Int32, kind = ProgramKind, fragment = ShaderModule, layout = BindGroupLayout, slotCount = Int32, texCount = Int32 }
+    /// slotCount = sg の欄の数（ShaderGen.Wgsl.compile3d の slots）・texCount = 材質の絵の数・vertexSource = 材質の頂点シェーダーの字。
+    pub type alias Program = { id = Int32, kind = ProgramKind, fragment = ShaderModule, layout = BindGroupLayout, slotCount = Int32, texCount = Int32,
+                               vertexSource = String }
 
     /// GPU に置いた材質の絵 1 枚（場面の絵と、全体の登録の絵の mip つきの写し）。
     type alias GpuTexture = { texture = Texture, levels = Int32 }
@@ -96,7 +97,8 @@ pub mod Render3d.WebGpuMaterials {
             warned = Ref[Set[String], Static],
             textureEpoch = Array[Int64, Static],
             mipmaps = Render3d.WebGpuMipmaps.Mipmaps,
-            platformImages = Ref[Option[PlatformImages], Static]
+            platformImages = Ref[Option[PlatformImages], Static],
+            shaders = Render3d.ShaderLibrary.ShaderSources
         })
     }
 
@@ -111,7 +113,8 @@ pub mod Render3d.WebGpuMaterials {
     /// r3dDraw の binding の大きさ（Render3dWgsl の R3dDraw: f32 が 6 つ・16 バイトにそろえた vec4f が 1 つ）。
     def drawValueBytes(): Int64 = 48i64
 
-    pub def create(gpu: WebGpu, binding: ValuesBinding): Materials \ IO =
+    /// shaders = 材質の frag と頂点シェーダーの字を引く API。
+    pub def create(gpu: WebGpu, binding: ValuesBinding, shaders: Render3d.ShaderLibrary.ShaderSources): Materials \ IO =
         let blank = gpu.createTexture("fge material blank", 1, 1, TextureFormat.RGBA8_UNORM, Int32.bitwiseOr(TextureUsage.TEXTURE_BINDING, TextureUsage.COPY_DST), 1, 1);
         gpu.writeTexture(blank, 0, 0, 0, 1, 1, ByteBuffer.allocateDirect(4), 0, 4);
         let sampler = (label, filter, address) -> gpu.createSampler(label, filter, FilterMode.LINEAR, address);
@@ -125,8 +128,9 @@ pub mod Render3d.WebGpuMaterials {
                               sampler("fge material clamp linear", FilterMode.LINEAR, AddressMode.CLAMP_TO_EDGE)} @ Static,
             blank = blank, values = Array#{createValueBuffer(gpu, initialValueBytes())} @ Static, valuesUsed = Array#{0} @ Static,
             groups = Ref.fresh(Static, Nil), warned = Ref.fresh(Static, Set.empty()), textureEpoch = Array#{0i64} @ Static,
-            mipmaps = Render3d.WebGpuMipmaps.create(gpu),
-            platformImages = Ref.fresh(Static, None)
+            mipmaps = Render3d.WebGpuMipmaps.create(gpu, shaders),
+            platformImages = Ref.fresh(Static, None),
+            shaders = shaders
         })
 
     /// 機種の側に持つ絵を写す口を images にする（作った時は口が無く、その絵は上げない）。
@@ -224,26 +228,34 @@ pub mod Render3d.WebGpuMaterials {
                 made
         }
 
-    /// 材質の frag を組む（読む絵の組は GL と同じく上限で切る）。組めなければ名前ごとに 1 回知らせて None。
+    /// 材質の frag を組む（読む絵の組は GL と同じく上限で切る）。組めなければ名前ごとに 1 回知らせて None。字が無い形（ブラウザの表に無い）も None。
     // WhyNot: 同じ鍵で中身の違う材質（木の鍵のぶつかり）を見分けない — GL の Render3d.Material.reuseOrRebuild の比べは、WebGPU の材質の LRU と一緒に入れる（持ち越し）。
     def compileProgram(m: Materials, fields: Scene3d.MaterialFields, kind: ProgramKind): Option[Program] \ IO =
         let MaterialsData.MaterialsData(s) = m;
         let (spec, emission, metallicRoughness) = ShaderDoc.limitMaterialTexReads(Scene3d.maxMaterialTextures(), fields#spec, fields#emission, fields#metallicRoughnessShade);
         let wgsl = ShaderGen.Wgsl.compile3d(spec, emission, metallicRoughness, 1);
-        let source = valuesDeclared(s#binding, Render3dWgsl.materialFragmentSource(wgsl, kind));
-        let module = s#gpu.createShaderModule("fge material ${spec#name}", source);
+        let fragment = Render3d.ShaderLibrary.materialWgsl(s#shaders, kind, fields#cutout, wgsl);
+        let vertex = Render3d.ShaderLibrary.optionalWgsl(s#shaders, vertexKeyOf(kind#uv, kind#lightmap, kind#skinned, kind#variant#psx));
+        match (fragment, vertex) {
+            case (Some(f), Some(vs)) => compileModule(m, spec#name, kind, wgsl, valuesDeclared(s#binding, f), vs)
+            case _                  => None
+        }
+
+    def compileModule(m: Materials, name: String, kind: ProgramKind, wgsl: ShaderGen.Wgsl.MaterialWgsl, source: String, vertexSource: String): Option[Program] \ IO =
+        let MaterialsData.MaterialsData(s) = m;
+        let module = s#gpu.createShaderModule("fge material ${name}", source);
         let errors = TextSplit.lines(s#gpu.getCompilationInfo(module)) |> List.filter(l -> String.startsWith({ prefix = "Error" }, l));
         match errors {
             case first :: _ =>
                 module.release();
-                warnOnce(m, spec#name, () -> Log.fellBack("scene3d", spec#name, "頂点の色", "材質の WGSL を組めない（${first}）"));
+                warnOnce(m, name, () -> Log.fellBack("scene3d", name, "頂点の色", "材質の WGSL を組めない（${first}）"));
                 None
             case Nil =>
                 let id = Array.get(0, s#nextId);
                 Array.put(id + 1, 0, s#nextId);
                 let texCount = List.length(wgsl#texReads);
                 Some({ id = id, kind = kind, fragment = module, layout = createLayout(m, texCount, kind#uv and kind#normalMap, kind#lightmap),
-                       slotCount = List.length(wgsl#slots), texCount = texCount })
+                       slotCount = List.length(wgsl#slots), texCount = texCount, vertexSource = vertexSource })
         }
 
     def warnOnce(m: Materials, name: String, say: Unit -> Unit \ ef): Unit \ ef + IO =
@@ -633,7 +645,7 @@ pub mod Render3d.WebGpuMaterials {
             case None =>
                 let desc = new RenderPipelineDesc("fge material");
                 let skinned = p#kind#skinned;
-                discard desc.bindGroupLayout(mp#sceneLayout).bindGroupLayout(p#layout).vertex(vertexModuleOf(m, p#kind#uv, p#kind#lightmap, skinned, p#kind#variant#psx), "vs_main").fragment(p#fragment, "fs_main");
+                discard desc.bindGroupLayout(mp#sceneLayout).bindGroupLayout(p#layout).vertex(vertexModuleOf(m, p), "vs_main").fragment(p#fragment, "fs_main");
                 if (skinned) discard desc.bindGroupLayout(mp#poseLayout) else ();
                 discard desc.vertexBuffer(mesh#stride, false).attribute(VertexFormat.FLOAT32X3, 0, 0).attribute(VertexFormat.FLOAT32X3, 12, 1).attribute(VertexFormat.FLOAT32X3, 24, 2);
                 if (p#kind#uv) discard desc.attribute(VertexFormat.FLOAT32X2, 36, 11).attribute(VertexFormat.FLOAT32X4, 44, 12) else ();
@@ -655,16 +667,21 @@ pub mod Render3d.WebGpuMaterials {
                 made
         }
 
-    /// 材質の頂点シェーダー（uv つきの版か・lightmap つきの版か・骨つきの版か・PS1 風の版か。無ければ作る）。
-    def vertexModuleOf(m: Materials, uv: Bool, lightmap: Bool, skinned: Bool, psx: Bool): ShaderModule \ IO =
+    /// program p の材質の頂点シェーダー（uv つきの版か・lightmap つきの版か・骨つきの版か・PS1 風の版かの鍵で控える。無ければ作る）。
+    def vertexModuleOf(m: Materials, p: Program): ShaderModule \ IO =
         let MaterialsData.MaterialsData(s) = m;
-        let baked = lightmap and not skinned;
-        let key = (uv, baked, skinned, psx);
+        let k = p#kind;
+        let key = (k#uv, k#lightmap and not k#skinned, k#skinned, k#variant#psx);
         match Map.get(key, Ref.get(s#vertexModules)) {
             case Some(found) => found
             case None =>
-                let made = s#gpu.createShaderModule("fge material vs", Render3dWgsl.materialVertexSourceFor(uv, baked, skinned, psx));
+                let made = s#gpu.createShaderModule("fge material vs", p#vertexSource);
                 Ref.put(Map.insert(key, made, Ref.get(s#vertexModules)), s#vertexModules);
                 made
         }
+
+    /// 材質の頂点シェーダーの鍵（lightmap は骨つきでない時だけ読む）。
+    def vertexKeyOf(uv: Bool, lightmap: Bool, skinned: Bool, psx: Bool): Render3d.ShaderSourceKey =
+        Render3d.ShaderSourceKey.MaterialVertex({ skinned = skinned, uv = uv, lightmap = lightmap and not skinned, psx = psx })
 }
+

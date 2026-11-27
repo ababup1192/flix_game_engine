@@ -134,6 +134,34 @@ type exportConfig struct {
 	DeferredPlan   webDeferredPlan
 	DeferredFonts  []string
 	DeferredPolicy webDeferredPolicy
+	// Shaders は 3D の入口のゲームのシェーダーの表の作り方（2D の入口なら Bake が偽）。
+	Shaders shaderBakePlan
+}
+
+// shaderBakePlan は書き出しで 3D のシェーダーの字の表を作るか（Bake）と、作る元の記録（Variants）・記録が無いまま --draft で既定の一式だけを作るか（Missing）。
+type shaderBakePlan struct {
+	Bake, Missing bool
+	Variants      string
+}
+
+// shaderVariantsMissingReason は記録の無い 3D のゲームを --draft で書き出した時の draft の理由。
+const shaderVariantsMissingReason = "web/shader-variants.json が無い（3D のシェーダーは既定の一式だけ）"
+
+// planShaderBake は 3D の入口のゲームのシェーダーの表の作り方を決める。記録が無ければ --draft の時だけ既定の一式で通し、ほかは止める。
+// WhyNot: 記録が無い時に全部の変種を作らない — 材質の frag だけで 1 言語 3,072 本になり、wasm に載らない。
+func planShaderBake(game, entry string, draft bool) (shaderBakePlan, error) {
+	if !usesScene3dEntry(entry) {
+		return shaderBakePlan{}, nil
+	}
+	variants := filepath.Join(game, "web", "shader-variants.json")
+	if fileExists(variants) {
+		return shaderBakePlan{Bake: true, Variants: variants}, nil
+	}
+	if !draft {
+		return shaderBakePlan{}, fmt.Errorf("web/shader-variants.json（3D の描き手が使ったシェーダーの記録）が無い。\n" +
+			"  次: ゲームのフォルダで make run（fge run）を流して 3D の場面を一度通し、できた web/shader-variants.json を git に入れてから書き出し直す（作業中に開くだけなら --draft）")
+	}
+	return shaderBakePlan{Bake: true, Missing: true, Variants: variants}, nil
 }
 
 // loadExportConfig は道を決め、project.json の web 欄を全部読んで検査し、後回しの計画まで組む。
@@ -186,6 +214,10 @@ func loadExportConfig(o exportWebOptions) (exportConfig, *exportFailure) {
 		c.ID = filepath.Base(p.Game)
 	}
 	c.Entry = readWebEntry(p.Game)
+	if c.Shaders, err = planShaderBake(p.Game, c.Entry, o.Draft || o.Check); err != nil {
+		return c, exportFail(1, err)
+	}
+
 	early, err := buildWebBundle(p.Game, c.ID, proj, usesScene3dEntry(c.Entry))
 	if err != nil {
 		return c, exportFail(1, err)

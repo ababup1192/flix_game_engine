@@ -43,6 +43,7 @@ GL と WebGPU（窓・ブラウザ）と CPU（画面なしの描き出し・テ
   - [テレビのにじみ（CRT・コンポジット映像）](#テレビのにじみcrtコンポジット映像)
   - [3 つの描き手の違い](#3-つの描き手の違い)
   - [見送った物（頂点ごとの光）](#見送った物頂点ごとの光)
+- [ブラウザ版のシェーダー（書き出しの時に作る）](#ブラウザ版のシェーダー書き出しの時に作る)
 - [場面の絵の予算](#場面の絵の予算)
 - [初めて出る物を先に上げる](#初めて出る物を先に上げる)
 - [一人称の視点](#一人称の視点)
@@ -803,6 +804,19 @@ GL・WebGPU・CPU は同じ式を書く（GLSL の `r3d_colorDepth`・`r3d_verte
 影の地図の読み（PCF）・点光源の影・lightmap・法線マップの入力を頂点の段に持ち込むか、それらを外した木を別に作ることになり、GLSL・WGSL・CPU の 3 か所で頂点の出口を足す。
 大きな面では懐中電灯の丸い光が出ない（三角形の頂点にしか光が乗らない）ので、懐中電灯を主役にする場面では使いにくい。入れるなら
 `LightModel3d.Codegen` に頂点の段へ出す口（`toGlslVertex`）を足し、影を引かない光だけの木（`lightingModelFor` の影なしの変種）を頂点で評価して `vLight` で frag へ渡す形が近い。
+
+## ブラウザ版のシェーダー（書き出しの時に作る）
+
+3D の描き手はシェーダーの字を鍵（`Render3d.ShaderSourceKey`）で引く（`Render3d.ShaderSourceProvider`）。PC は `Render3dShaders.makeRuntimeProvider` がその場で木から作り、
+ブラウザは書き出し（`bin/fge export-web`）の時に `tools/shader-bake` が記録（`web/shader-variants.json`）から作って wasm に埋めた表を引く。ゲームの側の手順は [web-export.md](web-export.md) の「3D のシェーダーの記録」。
+
+- 材質の frag は部品の所が空いた字（`Render3dGlsl.materialFragmentTemplate`）を作っておき、描き手が ShaderGen の字を `Render3d.ShaderLibrary.withMaterialPart` で入れる。
+  cutout の α は名前・呼び出しの形（`ShaderText.isAtomText`）だけを受ける（ShaderGen のテストが止める）
+- **新しい pass のシェーダーは `ShaderSourceKey` に case を足し、`makeRuntimeProvider` の match と `Render3d.ShaderLibrary.requiredKeysOf` の広げ方に足す。**
+  描き手から `Render3dGlsl`・`Render3dWgsl` の字の関数や `ShaderAst.Glsl`・`ShaderAst.Wgsl` の print を直に呼ばない（lint-forbid の `render3d-shader-source-direct`）。
+  漏れは make web-load-check が wasm の中の字を作るコードの関数の数（0 本のはず）で止める
+- 既定の一式（既定の変種の頂点の色とビルボード・空・奥行き・blit・置いた物の頂点・ビルボードの影）が表に無いのは `bug!`。
+  記録に依る鍵（既定でない変種・材質の形・+ao の pass）が無い時は描かずに鍵ごとに 1 回知らせる
 
 ## 場面の絵の予算
 
