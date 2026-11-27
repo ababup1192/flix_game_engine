@@ -199,7 +199,8 @@ mod Render3d.TestStaticRows {
         let planner = freshPlanner(Render3d.DrawMode.Instanced);
         let retired = Ref.fresh(Static, Nil);
         let steps = countingSteps(Ref.fresh(Static, 0), p -> Ref.put(p :: Ref.get(retired), retired), 0i64);
-        let cache = freshCache();
+        // WhyNot: 時計を止める — 本当の時計だと、機械が混んだ時に 1 コマの予算で作り直しが終わらず、前の控えをまだ手放さない。
+        let cache = { clock = () -> 0i64 | freshCache() };
         let g = town();
         discard ensure(planner, cache, 1i64, g, "color", false, sceneOf(Nil), steps);
         discard ensure(planner, cache, 1i64, g, "depth", false, sceneOf(Nil), steps);
