@@ -6,6 +6,9 @@ public interface RenderCommands {
 
     void setBindGroup(int index, BindGroup group);
 
+    /** dynamicOffsets = layout で hasDynamicOffset にした buffer の項目の、binding の番号の順の位置（バイト・256 の倍数）。 */
+    void setBindGroup(int index, BindGroup group, int[] dynamicOffsets);
+
     void setVertexBuffer(int slot, Buffer buffer, long offset, long size);
 
     void setIndexBuffer(Buffer buffer, IndexFormat format, long offset, long size);

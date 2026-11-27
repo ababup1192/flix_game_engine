@@ -206,7 +206,7 @@ final class BrowserObjects {
      */
     static final class BrowserRenderPass implements fge.webgpu.RenderPass {
         static final int PIPELINE = 1, BIND_GROUP = 2, VERTEX_BUFFER = 3, INDEX_BUFFER = 4, VIEWPORT = 5, SCISSOR = 6,
-                         STENCIL = 7, DRAW = 8, DRAW_INDEXED = 9;
+                         STENCIL = 7, DRAW = 8, DRAW_INDEXED = 9, BIND_GROUP_OFFSETS = 10;
         private static int epochs;
 
         final GPURenderPassEncoder pass;
@@ -248,6 +248,14 @@ final class BrowserObjects {
             BrowserBindGroup g = (BrowserBindGroup) group;
             int slot = slotOf(g, g.group);
             room(3); ops[count++] = BIND_GROUP; ops[count++] = index; ops[count++] = slot;
+        }
+
+        @Override public void setBindGroup(int index, fge.webgpu.BindGroup group, int[] dynamicOffsets) {
+            BrowserBindGroup g = (BrowserBindGroup) group;
+            int slot = slotOf(g, g.group);
+            int n = dynamicOffsets.length;
+            room(4 + n); ops[count++] = BIND_GROUP_OFFSETS; ops[count++] = index; ops[count++] = slot; ops[count++] = n;
+            for (int k = 0; k < n; k++) ops[count++] = dynamicOffsets[k];
         }
 
         @Override public void setVertexBuffer(int slot, fge.webgpu.Buffer buffer, long offset, long size) {
@@ -341,6 +349,10 @@ final class BrowserObjects {
 
         @Override public void setBindGroup(int index, fge.webgpu.BindGroup group) { setBindGroup(encoder, index, ((BrowserBindGroup) group).group); }
 
+        @Override public void setBindGroup(int index, fge.webgpu.BindGroup group, int[] dynamicOffsets) {
+            setBindGroupOffsets(encoder, index, ((BrowserBindGroup) group).group, Int32Array.copyFromJavaArray(dynamicOffsets));
+        }
+
         @Override public void setVertexBuffer(int slot, fge.webgpu.Buffer buffer, long offset, long size) {
             setVertexBuffer(encoder, slot, ((BrowserBuffer) buffer).buffer, (double) offset, (double) size);
         }
@@ -364,6 +376,9 @@ final class BrowserObjects {
 
         @JSBody(params = {"e", "i", "g"}, script = "e.setBindGroup(i, g);")
         private static native void setBindGroup(org.teavm.jso.JSObject e, int i, org.teavm.jso.JSObject g);
+
+        @JSBody(params = {"e", "i", "g", "o"}, script = "e.setBindGroup(i, g, new Uint32Array(o.buffer, o.byteOffset, o.length));")
+        private static native void setBindGroupOffsets(org.teavm.jso.JSObject e, int i, org.teavm.jso.JSObject g, Int32Array o);
 
         @JSBody(params = {"e", "s", "b", "o", "n"}, script = "e.setVertexBuffer(s, b, o, n);")
         private static native void setVertexBuffer(org.teavm.jso.JSObject e, int s, org.teavm.jso.JSObject b, double o, double n);

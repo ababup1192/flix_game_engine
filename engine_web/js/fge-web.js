@@ -342,6 +342,7 @@ var fgePassBits = new Int32Array(6);
 var fgePassFloats = new Float32Array(fgePassBits.buffer);
 function fgeRunPass(pass, ops, count, end) {
   var o = fgePassObj, f = fgePassFloats, bits = fgePassBits;
+  var u32 = null;
   for (var i = 0; i < count;) {
     switch (ops[i]) {
       case 1: pass.setPipeline(o(ops[i + 1])); i += 2; break;
@@ -355,6 +356,9 @@ function fgeRunPass(pass, ops, count, end) {
       case 7: pass.setStencilReference(ops[i + 1]); i += 2; break;
       case 8: pass.draw(ops[i + 1], ops[i + 2], ops[i + 3], ops[i + 4]); i += 5; break;
       case 9: pass.drawIndexed(ops[i + 1], ops[i + 2], ops[i + 3], ops[i + 4], ops[i + 5]); i += 6; break;
+      case 10:
+        if (u32 === null) u32 = new Uint32Array(ops.buffer, ops.byteOffset, ops.length);
+        pass.setBindGroup(ops[i + 1], o(ops[i + 2]), u32, i + 4, ops[i + 3]); i += 4 + ops[i + 3]; break;
       default: throw new Error("fgeRunPass: 知らない命令 " + ops[i] + "（" + i + " 番目）");
     }
   }

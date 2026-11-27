@@ -347,7 +347,7 @@ pub mod Render3d.WebGpuMaterials {
                  |> String.replace(src = "var<uniform> r3dDraw:", dst = "var<storage, read> r3dDraw:")
     }
 
-    /// group 1 の layout: 0 = sg・1 + 2k と 2 + 2k = 材質の絵と sampler・Render3dWgsl.drawBinding() = r3dDraw・その次の 2 つ = 法線マップと sampler・
+    /// group 1 の layout（sg と r3dDraw は dynamic offset で行の値の位置を渡す）: 0 = sg・1 + 2k と 2 + 2k = 材質の絵と sampler・Render3dWgsl.drawBinding() = r3dDraw・その次の 2 つ = 法線マップと sampler・
     /// その次の 2 つ = lightmap と sampler（Render3dWgsl.drawDeclarations と同じ番号）。
     def createLayout(m: Materials, texCount: Int32, normalMapped: Bool, lightmapped: Bool): BindGroupLayout \ IO =
         let MaterialsData.MaterialsData(s) = m;
@@ -357,7 +357,7 @@ pub mod Render3d.WebGpuMaterials {
         };
         let desc = new BindGroupLayoutDesc("fge material");
         let draw = Render3dWgsl.drawBinding();
-        discard desc.buffer(0, ShaderStage.FRAGMENT, kind).buffer(draw, ShaderStage.FRAGMENT, kind);
+        discard desc.dynamicBuffer(0, ShaderStage.FRAGMENT, kind).dynamicBuffer(draw, ShaderStage.FRAGMENT, kind);
         List.range(0, texCount) |> List.forEach(k ->
             discard desc.texture(1 + 2 * k, ShaderStage.FRAGMENT, TextureSampleType.FLOAT).sampler(2 + 2 * k, ShaderStage.FRAGMENT, SamplerBindingType.FILTERING));
         if (normalMapped) discard desc.texture(draw + 1, ShaderStage.FRAGMENT, TextureSampleType.FLOAT).sampler(draw + 2, ShaderStage.FRAGMENT, SamplerBindingType.FILTERING) else ();
@@ -653,15 +653,17 @@ pub mod Render3d.WebGpuMaterials {
                 };
                 let reuse = hasFlag(list, row, flagSameBinding()) and Array.get(0, mp#groupRow) >= 0;
                 if (reuse) () else {
-                    pass.setBindGroup(1, buildGroup(m, mp, p, list, row));
+                    // WhyNot: sg の offset を at + valueAlignBytes() にしない — sg の区画の頭のずれは makeGroup が group の binding の offset に入れてあり、2 つとも行の頭の at を足す。
+                    let at = mp#base + 4 * valuesAt(list, row);
+                    pass.setBindGroup(1, buildGroup(m, mp, p, list, row), Array#{at, at} @ Static);
                     Array.put(row, 0, mp#groupRow)
                 };
                 true
             case _ => false
         }
 
-    /// 行 row の group 1（値の区画 2 つと、reads の絵と sampler。並びは材質の絵 → 法線マップ → lightmap）。
-    /// cacheable な pass は、同じ鍵（program・値の buffer の世代と位置・絵ごとの通し番号と sampler）の group を前のコマから引く。
+    /// 行 row の group 1（値の buffer と、reads の絵と sampler。並びは材質の絵 → 法線マップ → lightmap。行の値の位置は付ける時の dynamic offset）。
+    /// cacheable な pass は、同じ鍵（program・値の buffer の世代・絵ごとの通し番号と sampler）の group を前のコマから引く。
     /// 控えに入れない group は submit の後に手放す。
     def buildGroup(m: Materials, mp: MaterialPass, p: Program, list: SceneList, row: Int32): BindGroup \ IO =
         let MaterialsData.MaterialsData(s) = m;
@@ -670,7 +672,7 @@ pub mod Render3d.WebGpuMaterials {
             Ref.put(group :: Ref.get(mp#groups), mp#groups);
             group
         } else {
-            let key = groupKeyOf(m, mp, p, list, row);
+            let key = groupKeyOf(m, p, list, row);
             let found = s#groupCache.get(key);
             if (not Objects.isNull(found)) {
                 let c = cachedOf(found);
@@ -686,13 +688,14 @@ pub mod Render3d.WebGpuMaterials {
             }
         }
 
-    /// group 1 の控えの鍵: program の番号・値の buffer の世代・行の値の位置・読む絵ごとの (通し番号, sampler の番号)。
+    /// group 1 の控えの鍵: program の番号・値の buffer の世代・読む絵ごとの (通し番号, sampler の番号)。
     /// 値の区画の大きさは program で決まり、layout も program が持つので鍵に入れない。
-    def groupKeyOf(m: Materials, mp: MaterialPass, p: Program, list: SceneList, row: Int32): String \ IO =
+    // WhyNot: 行の値の位置を鍵に入れない — 位置は付けるたびに dynamic offset で渡すので、入れると物が視錐台を出入りして行がずれるたびに外れる。
+    def groupKeyOf(m: Materials, p: Program, list: SceneList, row: Int32): String \ IO =
         let MaterialsData.MaterialsData(s) = m;
         let store = Ref.get(s#store);
         let sb = new StringBuilder();
-        discard sb.append(p#id).append(':').append(Array.get(0, s#valuesSerial)).append(':').append(mp#base + 4 * valuesAt(list, row));
+        discard sb.append(p#id).append(':').append(Array.get(0, s#valuesSerial));
         let put = (k: Int32) -> {
             let serial = Map.get(readAt(list, row, k, 0), store) |> Option.map(g -> g#serial) |> Option.getWithDefault(0i64);
             discard sb.append('|').append(serial).append(',').append(2 * readAt(list, row, k, 2) + readAt(list, row, k, 1))
@@ -703,15 +706,14 @@ pub mod Render3d.WebGpuMaterials {
         if (p#kind#lightmap) put(MaterialValues.lightmapReadAt(p#texCount, normalMapped)) else ();
         sb.toString()
 
-    /// 行 row の group 1 を作る（数を数える）。
+    /// 行 row の group 1 を作る（数を数える）。値の区画は buffer の頭から数え、行の値の位置は bindRow の dynamic offset が足す。
     def makeGroup(m: Materials, mp: MaterialPass, p: Program, list: SceneList, row: Int32): BindGroup \ IO =
         let MaterialsData.MaterialsData(s) = m;
         Array.put(Array.get(0, s#groupStats) + 1i64, 0, s#groupStats);
         let buffer = mp#values;
-        let at = mp#base + 4 * valuesAt(list, row);
         let desc = new BindGroupDesc("fge material", p#layout);
-        discard desc.buffer(Render3dWgsl.drawBinding(), buffer, Int32.toInt64(at), drawValueBytes());
-        discard desc.buffer(0, buffer, Int32.toInt64(at + valueAlignBytes()), Int32.toInt64(roundUp(4 * p#slotCount, 16)));
+        discard desc.buffer(Render3dWgsl.drawBinding(), buffer, 0i64, drawValueBytes());
+        discard desc.buffer(0, buffer, Int32.toInt64(valueAlignBytes()), Int32.toInt64(roundUp(4 * p#slotCount, 16)));
         let store = Ref.get(s#store);
         let textureAt = (k: Int32) -> Map.get(readAt(list, row, k, 0), store) |> Option.map(g -> g#texture) |> Option.getWithDefault(s#blank);
         let samplerAt = (k: Int32) -> Array.get(2 * readAt(list, row, k, 2) + readAt(list, row, k, 1), s#samplers);

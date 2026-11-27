@@ -366,7 +366,10 @@ public final class DawnWebGpu implements WebGpu {
                 entry.getTexture().setMultisampled(0);
                 entry.getStorageTexture().setAccess(WGPUStorageTextureAccess.BindingNotUsed);
                 switch (e.kind) {
-                    case BUFFER -> entry.getBuffer().setType(DawnFormats.bufferBinding(e.bufferType));
+                    case BUFFER -> {
+                        entry.getBuffer().setType(DawnFormats.bufferBinding(e.bufferType));
+                        entry.getBuffer().setHasDynamicOffset(e.hasDynamicOffset ? 1 : 0);
+                    }
                     case TEXTURE -> entry.getTexture().setSampleType(DawnFormats.sampleType(e.sampleType));
                     case SAMPLER -> entry.getSampler().setType(DawnFormats.samplerBinding(e.samplerType));
                 }
