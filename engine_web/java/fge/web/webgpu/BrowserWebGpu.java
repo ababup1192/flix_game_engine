@@ -222,6 +222,7 @@ public final class BrowserWebGpu implements WebGpu {
             case BUFFER -> {
                 GPUDescriptor.BufferBindingLayout b = GPUDescriptor.create();
                 b.setType(BrowserFormats.token(e.bufferType));
+                if (e.hasDynamicOffset) b.setHasDynamicOffset(true);
                 entry.setBuffer(b);
             }
             case TEXTURE -> {

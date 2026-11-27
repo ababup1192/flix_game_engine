@@ -7,6 +7,13 @@ import fge.webgpu.*;
 final class DawnObjects {
     private DawnObjects() {}
 
+    /** values を into へ詰め直して返す（encoder ごとに 1 つを使い回す・setBindGroup の中で写されるので次の呼び出しで書き換えてよい）。 */
+    static WGPUVectorInt offsetsOf(WGPUVectorInt into, int[] values) {
+        into.clear();
+        for (int v : values) into.push_back(v);
+        return into;
+    }
+
     static final class DawnBuffer implements fge.webgpu.Buffer {
         final WGPUBuffer buffer;
         final long size;
@@ -212,6 +219,7 @@ final class DawnObjects {
 
     static final class DawnRenderBundleEncoder implements fge.webgpu.RenderBundleEncoder {
         final WGPURenderBundleEncoder encoder;
+        private final WGPUVectorInt offsets = new WGPUVectorInt();
 
         DawnRenderBundleEncoder(WGPURenderBundleEncoder encoder) { this.encoder = encoder; }
 
@@ -221,6 +229,10 @@ final class DawnObjects {
 
         @Override public void setBindGroup(int index, fge.webgpu.BindGroup group) {
             encoder.setBindGroup(index, ((DawnBindGroup) group).group);
+        }
+
+        @Override public void setBindGroup(int index, fge.webgpu.BindGroup group, int[] dynamicOffsets) {
+            encoder.setBindGroup(index, ((DawnBindGroup) group).group, offsetsOf(offsets, dynamicOffsets));
         }
 
         @Override public void setVertexBuffer(int slot, fge.webgpu.Buffer buffer, long offset, long size) {
@@ -251,6 +263,7 @@ final class DawnObjects {
 
     static final class DawnRenderPass implements fge.webgpu.RenderPass {
         final WGPURenderPassEncoder pass;
+        private final WGPUVectorInt offsets = new WGPUVectorInt();
         private final WGPUColor blendConstant = new WGPUColor();
         private WGPUVectorRenderBundle bundles;
 
@@ -262,6 +275,10 @@ final class DawnObjects {
 
         @Override public void setBindGroup(int index, fge.webgpu.BindGroup group) {
             pass.setBindGroup(index, ((DawnBindGroup) group).group);
+        }
+
+        @Override public void setBindGroup(int index, fge.webgpu.BindGroup group, int[] dynamicOffsets) {
+            pass.setBindGroup(index, ((DawnBindGroup) group).group, offsetsOf(offsets, dynamicOffsets));
         }
 
         @Override public void setVertexBuffer(int slot, fge.webgpu.Buffer buffer, long offset, long size) {
