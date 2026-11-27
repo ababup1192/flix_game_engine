@@ -653,6 +653,7 @@ pub mod Render3d.WebGpuMaterials {
                 };
                 let reuse = hasFlag(list, row, flagSameBinding()) and Array.get(0, mp#groupRow) >= 0;
                 if (reuse) () else {
+                    // WhyNot: sg の offset を at + valueAlignBytes() にしない — sg の区画の頭のずれは makeGroup が group の binding の offset に入れてあり、2 つとも行の頭の at を足す。
                     let at = mp#base + 4 * valuesAt(list, row);
                     pass.setBindGroup(1, buildGroup(m, mp, p, list, row), Array#{at, at} @ Static);
                     Array.put(row, 0, mp#groupRow)

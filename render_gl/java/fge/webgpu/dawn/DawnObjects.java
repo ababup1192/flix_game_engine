@@ -7,7 +7,7 @@ import fge.webgpu.*;
 final class DawnObjects {
     private DawnObjects() {}
 
-    /** values を into へ詰め直して返す（encoder ごとに 1 つを使い回す・setBindGroup の中で写されるので次の呼び出しで書き換えてよい）。 */
+    /** values を into へ詰め直して返す（into は encoder ごとに 1 つ・Dawn は setBindGroup の中で写すので次の呼び出しで書き換えてよい）。 */
     static WGPUVectorInt offsetsOf(WGPUVectorInt into, int[] values) {
         into.clear();
         for (int v : values) into.push_back(v);
@@ -219,7 +219,13 @@ final class DawnObjects {
 
     static final class DawnRenderBundleEncoder implements fge.webgpu.RenderBundleEncoder {
         final WGPURenderBundleEncoder encoder;
-        private final WGPUVectorInt offsets = new WGPUVectorInt();
+        private WGPUVectorInt offsets;
+
+        // WhyNot: pass や encoder を作る時に作らない — 材質の group を付けない pass が多く、使わない物を毎コマ作って捨てることになる。
+        private WGPUVectorInt offsets() {
+            if (offsets == null) offsets = new WGPUVectorInt();
+            return offsets;
+        }
 
         DawnRenderBundleEncoder(WGPURenderBundleEncoder encoder) { this.encoder = encoder; }
 
@@ -232,7 +238,7 @@ final class DawnObjects {
         }
 
         @Override public void setBindGroup(int index, fge.webgpu.BindGroup group, int[] dynamicOffsets) {
-            encoder.setBindGroup(index, ((DawnBindGroup) group).group, offsetsOf(offsets, dynamicOffsets));
+            encoder.setBindGroup(index, ((DawnBindGroup) group).group, offsetsOf(offsets(), dynamicOffsets));
         }
 
         @Override public void setVertexBuffer(int slot, fge.webgpu.Buffer buffer, long offset, long size) {
@@ -257,13 +263,20 @@ final class DawnObjects {
             WGPURenderBundle bundle = new WGPURenderBundle();
             encoder.finish(WGPURenderBundleDescriptor.NULL, bundle);
             encoder.release();
+            if (offsets != null) offsets.dispose();
             return new DawnRenderBundle(bundle);
         }
     }
 
     static final class DawnRenderPass implements fge.webgpu.RenderPass {
         final WGPURenderPassEncoder pass;
-        private final WGPUVectorInt offsets = new WGPUVectorInt();
+        private WGPUVectorInt offsets;
+
+        // WhyNot: pass や encoder を作る時に作らない — 材質の group を付けない pass が多く、使わない物を毎コマ作って捨てることになる。
+        private WGPUVectorInt offsets() {
+            if (offsets == null) offsets = new WGPUVectorInt();
+            return offsets;
+        }
         private final WGPUColor blendConstant = new WGPUColor();
         private WGPUVectorRenderBundle bundles;
 
@@ -278,7 +291,7 @@ final class DawnObjects {
         }
 
         @Override public void setBindGroup(int index, fge.webgpu.BindGroup group, int[] dynamicOffsets) {
-            pass.setBindGroup(index, ((DawnBindGroup) group).group, offsetsOf(offsets, dynamicOffsets));
+            pass.setBindGroup(index, ((DawnBindGroup) group).group, offsetsOf(offsets(), dynamicOffsets));
         }
 
         @Override public void setVertexBuffer(int slot, fge.webgpu.Buffer buffer, long offset, long size) {
@@ -324,6 +337,7 @@ final class DawnObjects {
             pass.release();
             blendConstant.dispose();
             if (bundles != null) bundles.dispose();
+            if (offsets != null) offsets.dispose();
         }
     }
 
