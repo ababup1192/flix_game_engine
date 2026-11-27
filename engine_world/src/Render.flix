@@ -896,10 +896,14 @@ pub mod Render {
 
     pub def drawWithLayouts(layouts: Option[HashMap[String, JObject]], textureInfoOf: String -> Option[GameEngine.TextureInfo] \ ef,
                      items: List[PlacedItem]): (List[GameEngine.Drawable], List[GameEngine.PolygonRenderCmd]) \ ef =
-        Render.Internal.Extract.drawInto((item, pos) -> match item {
+        let toDs = (item, pos) -> match item {
             case Item.Text(t) => Render.Internal.Extract.textDrawablesWith(layouts, t#text, t#fontAtlas, t#fontSize, t#tint, t#alpha, t#rotation, t#zIndex, t#wrapWidth, pos)
             case _ => Render.Internal.Extract.toDrawablesAtlas(textureInfoOf, item, pos)
-        }, items)
+        };
+        match layouts {
+            case Some(m) => Render.Internal.Extract.drawIntoLayouts(m, toDs, items)
+            case None    => Render.Internal.Extract.drawInto(toDs, items)
+        }
 
     /// そのフレームに描く字の集合の指紋（テクスチャ名と文の codepoint を織り込んだ Int64）。
     /// 「前フレームと同じ字を描くか」を安く見分ける鍵。文字列の集合そのものを組んで

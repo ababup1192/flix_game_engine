@@ -25,6 +25,50 @@ pub mod Render.Internal.Extract {
             (MutList.toList(ds), MutList.toList(ps))
         }
 
+    /// drawInto と同じ走査で、clip の無い不透明・回転なしの Text は控えた字の組み（layouts）から ds へ直に積む。
+    // WhyNot: Text も toDs に通さない — toDs は effect を持つ閉包で、字の列を List に組んでから積み直すので、字ごとに cons と続きの入れ物が毎コマ増える。
+    pub def drawIntoLayouts(layouts: HashMap[String, Object], toDs: (Render.Item, Vec2.Vec2) -> List[GameEngine.Drawable] \ ef,
+                 items: List[Render.PlacedItem]): (List[GameEngine.Drawable], List[GameEngine.PolygonRenderCmd]) \ ef =
+        region rc {
+            let ds: MutList[GameEngine.Drawable, rc] = MutList.empty(rc);
+            let ps: MutList[GameEngine.PolygonRenderCmd, rc] = MutList.empty(rc);
+            List.forEach(placed -> if (pushPlain(ds, placed) or pushCachedText(layouts, ds, placed)) () else pushPlaced(toDs, ds, ps, placed), items);
+            (MutList.toList(ds), MutList.toList(ps))
+        }
+
+    /// placed が不透明・回転なしの Text なら、控えた字の組みから Drawable を ds の末尾へ積んで true。ほかは積まずに false。
+    /// 積む値は textDrawablesWith（Text.toDrawables）と同じ。
+    @DontInline
+    def pushCachedText(layouts: HashMap[String, Object], ds: MutList[GameEngine.Drawable, rc], placed: Render.PlacedItem): Bool \ rc =
+        match placed#item {
+            case Render.Item.Text(t) if t#alpha >= 1.0 and t#rotation == 0.0 =>
+                let atlas = t#fontAtlas;
+                let lay = plainLayout(layouts, t#text, atlas, t#fontSize, t#wrapWidth);
+                let at = placed#at;
+                Text.layoutInto(ds, lay, atlas#textureName, atlas#textureSize, t#tint, t#zIndex, at#x, at#y);
+                true
+            case _ => false
+        }
+
+    /// 左上ぞろえの字 content の組みを控えから引く（無い・入力が違えば組んで控える）。
+    def plainLayout(m: HashMap[String, Object], content: String, atlas: FontAtlas, fontSize: Float64, wrapWidth: Option[Float64]): Text.Layout =
+        unchecked_cast(plainLayoutIO(m, content, atlas, fontSize, wrapWidth) as _ \ {})
+
+    def plainLayoutIO(m: HashMap[String, Object], content: String, atlas: FontAtlas, fontSize: Float64, wrapWidth: Option[Float64]): Text.Layout \ IO =
+        let found: Object = m.get(unchecked_cast(content as Object));
+        let hit = if (Objects.isNull(found)) None else {
+            let lay: Text.Layout = unchecked_cast(found as Text.Layout);
+            if (Text.layoutFitsPlain(lay, atlas#textureName, fontSize, wrapWidth)) Some(lay) else None
+        };
+        match hit {
+            case Some(lay) => lay
+            case None =>
+                let lay = Text.buildLayout(Text.make(content, atlas, fontSize) |> Text.setWrapWidth(wrapWidth));
+                if (m.size() >= layoutCacheLimit()) m.clear() else ();
+                discard m.put(content, unchecked_cast(lay as Object));
+                lay
+        }
+
     /// placed が clip も region も無い Sprite か Box なら、その Drawable を ds の末尾へ積んで true。ほかは積まずに false。
     /// 積む値は draw の toDs（Render.toDrawables）とも drawWith の toDs（toDrawablesAtlas）とも同じ。
     // WhyNot: 全部を pushPlaced に任せない — toDs は effect を持つので、呼ぶたびに続きを運ぶ入れ物を作る。数の多い 2 種類だけ、

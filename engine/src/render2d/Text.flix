@@ -193,7 +193,7 @@ pub mod Text {
     pub type alias LayoutRow = { yOff = Float64, offsetX = Float64, glyphs = List[LayoutGlyph] }
     pub type alias Layout = { textureName = String, fontSize = Float64, wrapWidth = Option[Float64],
                           h = HorizontalAlignment, v = VerticalAlignment, asc = Float64,
-                          rows = List[LayoutRow], flatRev = List[FlatGlyph] }
+                          rows = List[LayoutRow], flatRev = List[FlatGlyph], packed = Vector[Float64] }
     pub type alias FlatGlyph = { ax = Float64, ay = Float64, gw = Float64, gh = Float64,
                                  s0 = Float64, t0 = Float64, su = Float64, tv = Float64,
                                  yOff = Float64, offsetX = Float64 }
@@ -227,6 +227,38 @@ pub mod Text {
                 flatOnto(tex, texSize, cr, cg, cb, z, asc, gx, gy, rest, acc1)
         }
 
+    /// 字 1 つの欄の数（packed の並び: ax・ay・gw・gh・s0・t0・su・tv・yOff・offsetX）。
+    def packedStride(): Int32 = 10
+
+    // 案 3: 控えた字を Float64 の平らな列から読み、Drawable を ds へ直に積む。
+    // WhyNot: FlatGlyph のレコードから読まない — レコードの欄は 1 欄ずつ鎖をたどって引くので、字 1 つに 10 回のたどりが毎コマ走る。
+    // WhyNot: 一度 List に組んでから積み直さない — 字ごとの cons がそのまま捨てる値になる。
+    pub def layoutInto(ds: MutList[GameEngine.Drawable, rc], lay: Layout, tex: String, texSize: Float64,
+                       color: Color, z: Int32, gx: Float64, gy: Float64): Unit \ rc =
+        let p = lay#packed;
+        packedInto(ds, p, Vector.length(p), 0, tex, texSize, color#r, color#g, color#b, z, lay#asc, gx, gy)
+
+    def packedInto(ds: MutList[GameEngine.Drawable, rc], p: Vector[Float64], n: Int32, i: Int32, tex: String, texSize: Float64,
+                   cr: Float64, cg: Float64, cb: Float64, z: Int32, asc: Float64, gx: Float64, gy: Float64): Unit \ rc =
+        if (i >= n) ()
+        else {
+            let baseY = gy + Vector.get(i + 8, p) + asc;
+            let x0 = Vector.get(i, p) + gx + Vector.get(i + 9, p);
+            let y0 = Vector.get(i + 1, p) + baseY;
+            let w = (x0 + Vector.get(i + 2, p)) - x0;
+            let h = (y0 + Vector.get(i + 3, p)) - y0;
+            if (w <= 0.0 or h <= 0.0) ()
+            else MutList.push(DrawCmd.Drawable.Drawable(tex, x0, y0, w / texSize, h / texSize, 0.0,
+                cr, cg, cb, 1.0, false, Vector.get(i + 4, p), Vector.get(i + 5, p), Vector.get(i + 6, p), Vector.get(i + 7, p), z,
+                None, None, DrawCmd.BlendMode.Normal, Nil, 1.0), ds);
+            packedInto(ds, p, n, i + packedStride(), tex, texSize, cr, cg, cb, z, asc, gx, gy)
+        }
+
+    /// 控えた lay が、字の絵 textureName・大きさ fontSize・折り返し wrapWidth で左上ぞろえの字に使えるか（Text を組まずに見る）。
+    pub def layoutFitsPlain(lay: Layout, textureName: String, fontSize: Float64, wrapWidth: Option[Float64]): Bool =
+        lay#textureName == textureName and lay#fontSize == fontSize and lay#wrapWidth == wrapWidth
+            and lay#h == HorizontalAlignment.Left and lay#v == VerticalAlignment.Top
+
     pub def sameLayoutInputs(label: Text, lay: Layout): Bool =
         let Text.Text(r) = label;
         lay#textureName == r#fontAtlas#textureName and lay#fontSize == r#fontSize
@@ -247,11 +279,14 @@ pub mod Text {
               offsetX = horizontalOffsetFor(r#horizontalAlignment, lineWidth),
               glyphs = List.reverse(layoutGlyphsRev(atlas, scale, row, 0.0, Nil)) }
         }, rows);
+        let flatRev = List.foldLeft((acc, row) -> List.foldLeft((a, g) ->
+              { ax = g#ax, ay = g#ay, gw = g#gw, gh = g#gh, s0 = g#s0, t0 = g#t0, su = g#su, tv = g#tv,
+                yOff = row#yOff, offsetX = row#offsetX } :: a, acc, row#glyphs), Nil, built);
+        let packed = List.reverse(flatRev) |> List.flatMap(g ->
+              g#ax :: g#ay :: g#gw :: g#gh :: g#s0 :: g#t0 :: g#su :: g#tv :: g#yOff :: g#offsetX :: Nil) |> List.toVector;
         { textureName = atlas#textureName, fontSize = r#fontSize, wrapWidth = r#wrapWidth,
           h = r#horizontalAlignment, v = r#verticalAlignment, asc = atlas#ascent * scale, rows = built,
-          flatRev = List.foldLeft((acc, row) -> List.foldLeft((a, g) ->
-              { ax = g#ax, ay = g#ay, gw = g#gw, gh = g#gh, s0 = g#s0, t0 = g#t0, su = g#su, tv = g#tv,
-                yOff = row#yOff, offsetX = row#offsetX } :: a, acc, row#glyphs), Nil, built) }
+          flatRev = flatRev, packed = packed }
 
     def layoutGlyphsRev(atlas: FontAtlas, scale: Float64, row: List[(Char, Float64)], penX: Float64,
                         acc: List[LayoutGlyph]): List[LayoutGlyph] = match row {
