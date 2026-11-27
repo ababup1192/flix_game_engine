@@ -112,16 +112,8 @@ pub mod Scene3d.StaticBatch {
         let uv = if (Option.nonEmpty(Mesh3d.uvs(f#mesh))) "uv" else "-";
         match f#material {
             case None    => "plain"
-            case Some(m) => "mat|${uv}|${materialKeyOf(Scene3d.materialFieldsOf(m))}|${f#tint#r},${f#tint#g},${f#tint#b}"
+            case Some(m) => "mat|${uv}|${Scene3d.Internal.MaterialKey.materialKeyOf(Scene3d.materialFieldsOf(m))}|${f#tint#r},${f#tint#g},${f#tint#b}"
         }
-
-    /// 材質の値の鍵（描き手の batch の鍵と、絵の名前と、emissionIntensity）。
-    // WhyNot: 木を比べて同じ材質か確かめない — 描き手の batch も shaderHash で同じ木と見なしていて、つないだ形はその batch の頭の木で描かれる。
-    def materialKeyOf(m: Scene3d.MaterialFields): String =
-        let wrap = if (m#wrap == Scene3d.Wrap.Clamp) "clamp" else "repeat";
-        let reads = Scene3d.materialTexReadsOf(m) |> List.map(match (name, filter) -> "${name}:${filter}") |> String.intercalate(",");
-        let params = Map.toList(m#params) |> List.map(match (k, v) -> "${k}=${v}") |> String.intercalate(",");
-        "${force m#shaderHash}|${wrap}|${m#cutout}|${m#doubleSided}|${m#emissionIntensity}|${m#maxMipLevels}|${reads}|${params}"
 
     /// group（同じ単位の物・2 つ以上）を 1 つの形につないで置いた物。world は単位行列。
     /// 材質の無い物は tint を頂点の色へ掛けておき（線形の量で掛けて sRGB の値へ戻す）、置いた物の tint は白。材質のある物は頂点の色のまま、頭の物の材質と tint を付ける。
