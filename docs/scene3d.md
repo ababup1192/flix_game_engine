@@ -620,10 +620,13 @@ let glass = Scene3d.material(spec) |> Scene3d.withAlphaBlend(true) |> Scene3d.wi
 
 ```flix
 // 読み込みで 1 回: 壁と床（staticGroup に入れる前の置いた物）に、1 枚の atlas から血と汚れを貼る
-let blood = Scene3d.texturedMaterial("tex3d:decals", ShaderDoc.FilterMode.Linear);
+// atlas は読み込んだ絵（Texture3d）。名前は字で書かず Texture3d.name で引く（"tex3d:" の後ろは絵の中身の hash）
+let blood = Scene3d.texturedMaterial(Texture3d.name(atlas), ShaderDoc.FilterMode.Linear);
 let decals = { size = Vec3.v3(0.8, 0.8, 0.4), uvRect = { position = Vec2.v2(0.0, 0.0), size = Vec2.v2(0.5, 0.5) } | Decal3d.decal(blood, point, Vec3.v3(0.0, 0.0, -1.0)) }
     :: { rotation = 30.0, uvRect = { position = Vec2.v2(0.5, 0.0), size = Vec2.v2(0.5, 0.5) } | Decal3d.decal(blood, floorPoint, Vec3.v3(0.0, 1.0, 0.0)) } :: Nil;
 let plates = Decal3d.buildInstances(decals, wallsAndFloor);   // Resources に持つ
+// 毎コマ: 板を instances に足し、絵を場面の textures に載せる（載せない名前は 0 で読まれ、半透明の板は消える）
+{ instances = wallsAndFloor ::: plates, textures = atlas :: Nil | Scene3d.scene(camera, size) }
 // 撃った所: Ray3d の RayHit の点と面の向きをそのまま渡し、当たった時に 1 枚ずつ作って控えに足す
 let hole = Ray3d.pickNearest(ray, 50.0, targets) |> Option.map(match (_, hit) -> Decal3d.decal(bulletHole, hit#point, hit#normal));
 ```
@@ -641,7 +644,6 @@ let hole = Ray3d.pickNearest(ray, 50.0, targets) |> Option.map(match (_, hit) ->
   材質の無い的（頂点の色だけ）に絵つきの板を貼ると、頂点の色を線形へ戻す前に掛けるぶん板の方が少し明るく見える
 - 半透明の板も **画面の上の SSAO を受ける**（ほかの半透明の物は受けない。板は真下の不透明な面に貼りつくので、mask の値がちょうどその面の値）。
   隅の暗がりの上の血だけが明るく浮かない
-- 水の深度の前描き（`withDepthPrepass`）の下の半透明の板は隠れる。川底・池の底に見せたい板は `cutout` の材質にする
 - ブラウザ版: SSAO を掛ける場面の板は材質の版の鍵 `+ab` を使う。PC で遊んで `web/shader-variants.json` に記録してから書き出す
   （記録に無い鍵は頂点の色で描かれる。「[ブラウザ版のシェーダー](#ブラウザ版のシェーダー書き出しの時に作る)」）
 - gl-parity の `decal3d`（壁と床の角・atlas の 3 枚・頂点の色の的・lightmap の的・cutout の板）と `decalAmbientOcclusion3d`（SSAO の隅の上の板）で

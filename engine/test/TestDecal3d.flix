@@ -49,8 +49,9 @@ mod TestDecal3d {
     /// 板の材質は半透明でも画面の上の SSAO を受ける（隅の暗がりの上の汚れが明るく浮かない）。
     @Test
     def testPlateMaterialReceivesScreenAo(): Unit \ Assert =
-        let received = Decal3d.buildInstances(front() :: Nil, wall() :: Nil)
-            |> List.forAll(i -> fieldsOf(i)#material |> Option.exists(m -> Scene3d.materialFieldsOf(m)#screenAoOnBlend));
+        let plates = Decal3d.buildInstances(front() :: Nil, wall() :: Nil);
+        let received = not List.isEmpty(plates)
+            and List.forAll(i -> fieldsOf(i)#material |> Option.exists(m -> Scene3d.materialFieldsOf(m)#screenAoOnBlend), plates);
         Assert.assertTrue(received)
 
     /// ゲームが作る材質は SSAO を受ける旗が立っていない（半透明の物は奥の面の暗さを拾わない）。
@@ -268,6 +269,7 @@ mod TestDecal3d {
             :: Scene3d.withNormalMap({ texture = "tex3d:bump", strength = 1.0 }, base) :: Scene3d.withNormalMap({ texture = "tex3d:bump", strength = 0.5 }, base)
             :: Scene3d.withMetallicRoughness(0.0, 0.5, base) :: Scene3d.withMetallicRoughness(1.0, 0.5, base)
             :: Scene3d.withMetallicRoughnessTexture("tex3d:mr", Scene3d.withMetallicRoughness(1.0, 0.5, base))
-            :: Scene3d.withEmissionIntensity(2.0, base) :: Scene3d.withWrap(Scene3d.Wrap.Clamp, base) :: Scene3d.withMaxMipLevels(1, base) :: Nil;
+            :: Scene3d.withEmissionIntensity(2.0, base) :: Scene3d.withWrap(Scene3d.Wrap.Clamp, base) :: Scene3d.withMaxMipLevels(1, base)
+            :: Scene3d.Internal.MaterialFlags.withScreenAoOnBlend(base) :: Nil;
         Assert.assertEq(expected = List.length(variants), List.map(keyOf, variants) |> List.toSet |> Set.size)
 }

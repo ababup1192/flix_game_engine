@@ -107,8 +107,8 @@ mod Scenes {
     /// 環境の光に掛かった ±1。BandFog は DepthBand の帯の縁（postStackDepthBand と同じ割れ）。法線の向き・半径の単位・掛ける項を取り違えると
     /// 床と壁の面（数千 px）が丸ごと違い、桁が変わる。
     /// デカールの 2 つ（Apple Silicon で decal3d 183 px ±108・decalAmbientOcclusion3d 214 px ±1）: decal3d の ±1 は lightmap の板の texel の境の補間の丸め
-    /// （lightmapBaked3d と同じ）・±108 は浅い角で見る床の板の Nearest の texel の境の 1 列（7 px・psxFloor3d と同じ割れ）。板を片方だけ描き落とすと
-    /// 1 枚で数百〜千 px が違う。decalAmbientOcclusion3d は SSAO の場面と同じ mask の ±1。板が SSAO を受けるのを片方だけ落とすと、約 640 px（±17）が違う。
+    /// （lightmapBaked3d と同じ）・±108 は浅い角で見る床の板の Nearest の texel の境の 1 列（7 px・psxFloor3d と同じ割れ）。板を片方だけ描き落とすと、
+    /// 一番小さい cutout の板（1.5 角）でも約 410 px が違う。decalAmbientOcclusion3d は SSAO の場面と同じ mask の ±1。板が SSAO を受けるのを片方だけ落とすと、約 640 px（±17）が違う。
     pub def toleranceOf(name: String): Option[Int32] = match name {
         case "decal3d"                   => Some(300)
         case "decalAmbientOcclusion3d"   => Some(320)

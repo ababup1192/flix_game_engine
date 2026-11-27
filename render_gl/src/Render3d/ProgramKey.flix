@@ -102,7 +102,7 @@ pub mod Render3d.ProgramKey {
     /// metallicRoughness = metallic と roughness を持つ材質（鏡面ハイライトと空の映り込みを足す式のプログラム。持たない材質の GLSL は変わらない）・
     /// screenAoOnBlend = 半透明でも画面の上の SSAO の mask を読む（screenAoOnBlendOf が真の時だけ）・
     /// variant = 場面のシェーダーの変種。
-    // WhyNot: blend・doubleSided・coverage・metallicRoughness と変種を uniform で切り替えない — 使わない材質の GLSL の字が変わり、
+    // WhyNot: blend・doubleSided・coverage・metallicRoughness・screenAoOnBlend と変種を uniform で切り替えない — 使わない材質の GLSL の字が変わり、
     //   どの GPU でも同じ絵になる保証が崩れる。どれも偽の版は、それらを足す前と 1 字も同じ GLSL を組む。
     pub type alias ProgramKind = { skinned = Bool, uv = Bool, normalMap = Bool, lightmap = Bool, blend = Bool, doubleSided = Bool, coverage = Bool,
                                    metallicRoughness = Bool, screenAoOnBlend = Bool, variant = ShaderVariant }
