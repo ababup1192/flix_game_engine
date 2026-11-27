@@ -25,7 +25,7 @@
 |---|---|---|---|
 | worktree-agent-a481e18ac9e6ff039（6a93519f0・「途中:」） | デカール D2（半透明のしみも SSAO を受ける）・D3（docs・早見表・お題・gl-parity の場面） | D2 済み（engine・engine_tools・render_gl のテスト緑・鍵の字 +ab・`MaterialFields#screenAoOnBlend` はゲームが触れない）・D3 は docs の節・早見表 3 行・お題 3 本まで。gl-parity の 2 場面は書いたが型検査も gl-parity も未（サンドボックスで glfwInit が止まった）・許容差・backend-parity・migrations・お題の当たり・verify・レビューが残り | 残りを担当に → 門 → 取り込み |
 | spike/text-layout-cache | 字の組みをコマをまたいで控えるスパイク（main に入れない）。17b28d046 = 案 1・036fa6a2e = 案 2 | 案 1 で K9 22.6 → 20.6 ms（1 回）・GC は減らない。案 2 は未測 | 別の機械で案 2 を測る → 本体にするかを人に相談（pub の案は 4 節） |
-| worktree-agent-acdcbb34ba5db3691 | compute の C4（群れを MultiMesh3d で描く） | 401 で担当が止まった。worktree にコミットしていない変更が 7 ファイル＋新しいファイル（main の案 B と WebGpuRenderer.flix がぶつかる） | 再開時に差分を読み、今の main の上で担当に立て直させる |
+| worktree-agent-acdcbb34ba5db3691 | compute の C4（群れを MultiMesh3d で描く） | 401 で担当が止まった。コミットしていない変更（7 ファイル＋新しいファイル）は pre-commit（api-digest が古い）で枝に入れられなかったので、flix-plans の `wip/compute-c4-on-d94198714.patch` に置いた（d94198714 の上で `git apply`）。main の案 B と WebGpuRenderer.flix がぶつかる見込み | 再開時に差分を読み、今の main の上で担当に立て直させる |
 | worktree-agent-acea528a59b194393 | GPU compute の C0〜C3 | 済み・レビュー 86 点（main d94198714 に取り込み済み） | — |
 | worktree-agent-ae9d7c8e070f30a05 | web のベンチ比べ `bench/web_engine_compare`（three.js などと同じ場面 K1〜K9） | 全段済み・レビュー 90 点。full の前の後片付け 4 つが残る | 後片付け → main へ → full（3.5〜4 時間）は重い仕事と重ならない時に |
 
