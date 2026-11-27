@@ -42,6 +42,10 @@ mod Render3d.TestStaticRows {
           prepareMesh = _ -> if (pause > 0i64) Thread.sleep(pause) else (), prepareMaterial = _ -> (),
           place = _ -> { Ref.put(Ref.get(builds) + 1, builds); Ref.get(builds) }, uploadCount = _ -> 0, uploadAt = (_, _) -> (), retire = retire }
 
+    /// 時計の止まった控え（経った時間がいつも 0 なので、1 回の呼び出しで作り終える）。
+    // WhyNot: 作り終える前提の試しに本当の時計を使わない — 機械が混むと 1 コマの予算で作り終わらず、作った数や手放した物がずれる。
+    def frozenCache(): Render3d.StaticRows.Cache[Int32] \ IO = { clock = () -> 0i64 | freshCache() }
+
     /// 集まり g の持ち越した物（色の場面・GPU を呼ばない仕事）。
     def ensureWith(planner: Render3d.ScenePlan.Planner, cache: Render3d.StaticRows.Cache[Int32], gen: Int64, g: Scene3d.StaticGroup,
                    steps: BuildSteps[Int32]): Int32 \ IO =
@@ -49,7 +53,7 @@ mod Render3d.TestStaticRows {
 
     /// 集まり g を世代 gens の順に lookup し、作った回数を返す。
     def buildsOver(gens: List[(Int64, Scene3d.StaticGroup)]): Int32 \ IO =
-        let cache = freshCache();
+        let cache = frozenCache();
         let builds = Ref.fresh(Static, 0);
         let planner = freshPlanner(Render3d.DrawMode.Instanced);
         let steps = countingSteps(builds, _ -> (), 0i64);
@@ -89,7 +93,7 @@ mod Render3d.TestStaticRows {
         let g = town();
         let tinted = Scene3d.withGroupTint(Color.rgb(1.0, 0.5, 0.5), g);
         let retired = Ref.fresh(Static, 0);
-        let cache = freshCache();
+        let cache = frozenCache();
         let planner = freshPlanner(Render3d.DrawMode.Instanced);
         let builds = Ref.fresh(Static, 0);
         let steps = countingSteps(builds, _ -> Ref.put(Ref.get(retired) + 1, retired), 0i64);
@@ -99,7 +103,7 @@ mod Render3d.TestStaticRows {
     /// 作り直す時は、前の物を destroy に渡す。
     @Test
     def testRebuildDestroysOldPayload(): Unit \ {Assert, IO} =
-        let cache = freshCache();
+        let cache = frozenCache();
         let planner = freshPlanner(Render3d.DrawMode.Instanced);
         let destroyed = Ref.fresh(Static, Nil);
         let steps = countingSteps(Ref.fresh(Static, 0), p -> Ref.put(p :: Ref.get(destroyed), destroyed), 0i64);
@@ -110,7 +114,7 @@ mod Render3d.TestStaticRows {
     /// しばらく描かなかった集まりは sweep が destroy して外し、描いた集まりは残す。
     @Test
     def testSweepDropsIdleGroups(): Unit \ {Assert, IO} =
-        let cache = freshCache();
+        let cache = frozenCache();
         let planner = freshPlanner(Render3d.DrawMode.Instanced);
         let destroyed = Ref.fresh(Static, Nil);
         let destroy = (p: Int32) -> Ref.put(p :: Ref.get(destroyed), destroyed);
@@ -126,7 +130,7 @@ mod Render3d.TestStaticRows {
     // WhyNot: 標準エラーの字を数えない — 同じ JVM で並んで走る試しも System.err を差し替えるので、知らせが別の試しの入れ物へ入って揺れる。
     @Test
     def testRebuildStreakWarnsOnce(): Unit \ {Assert, IO} =
-        let cache = freshCache();
+        let cache = frozenCache();
         let planner = freshPlanner(Render3d.DrawMode.Instanced);
         let steps = countingSteps(Ref.fresh(Static, 0), _ -> (), 0i64);
         discard stderrOf(() -> List.range(1, 70) |> List.forEach(gen -> discard ensureWith(planner, cache, Int32.toInt64(gen), town(), steps)));
@@ -135,7 +139,7 @@ mod Render3d.TestStaticRows {
     /// 作り直しが続かなければ知らせない。
     @Test
     def testSteadyGroupDoesNotWarn(): Unit \ {Assert, IO} =
-        let cache = freshCache();
+        let cache = frozenCache();
         let planner = freshPlanner(Render3d.DrawMode.Instanced);
         let g = town();
         let steps = countingSteps(Ref.fresh(Static, 0), _ -> (), 0i64);
@@ -199,8 +203,7 @@ mod Render3d.TestStaticRows {
         let planner = freshPlanner(Render3d.DrawMode.Instanced);
         let retired = Ref.fresh(Static, Nil);
         let steps = countingSteps(Ref.fresh(Static, 0), p -> Ref.put(p :: Ref.get(retired), retired), 0i64);
-        // WhyNot: 時計を止める — 本当の時計だと、機械が混んだ時に 1 コマの予算で作り直しが終わらず、前の控えをまだ手放さない。
-        let cache = { clock = () -> 0i64 | freshCache() };
+        let cache = frozenCache();
         let g = town();
         discard ensure(planner, cache, 1i64, g, "color", false, sceneOf(Nil), steps);
         discard ensure(planner, cache, 1i64, g, "depth", false, sceneOf(Nil), steps);
@@ -215,7 +218,7 @@ mod Render3d.TestStaticRows {
         let retire = (p: Int32) -> Ref.put(p :: Ref.get(retired), retired);
         let steps = countingSteps(Ref.fresh(Static, 0), retire, 0i64);
         let planner = freshPlanner(Render3d.DrawMode.Instanced);
-        let cache = freshCache();
+        let cache = frozenCache();
         discard List.map(name -> ensureWith(planner, cache, 1i64, boxes(name), steps), "a" :: "b" :: "c" :: Nil);
         Render3d.StaticRows.clearWhere(cache, p -> p == 2, retire);
         Assert.assertEq(expected = (2 :: Nil, 2), (Ref.get(retired), sizeOf(cache)))
@@ -293,7 +296,7 @@ mod Render3d.TestStaticRows {
         let builds = Ref.fresh(Static, 0);
         let steps = countingSteps(builds, _ -> (), 0i64);
         let planner = freshPlanner(Render3d.DrawMode.Instanced);
-        let cache = freshCache();
+        let cache = frozenCache();
         let g = town();
         discard ensureWith(planner, cache, 1i64, g, steps);
         List.range(2, 300) |> List.forEach(gen -> {
