@@ -494,7 +494,7 @@ mod RenderFrame {
     def spriteBreakOf(st: Array[Int32, Static], texId: Int32, clipFlag: Int32,
                       x0: Int32, y0: Int32, x1: Int32, y1: Int32, blendC: Int32, masked: Bool): Int32 \ IO =
         let prevTex = Array.get(19, st);
-        // 絵なし（0）はどの絵の run にも入るので、0 との違いは切れ目の理由にしない。
+        // WhyNot: 0 との違いを texture の切れ目と数えない — 絵なし（0）はどの絵の run にも入る（pushSpriteKeyed）ので、実際の理由は clip・blend の方。
         if (prevTex != texId and prevTex != 0 and texId != 0) RenderDrawCounts.textureSlot()
         else if (Array.get(25, st) != blendC) RenderDrawCounts.blendSlot()
         else if (Array.get(20, st) != clipFlag
@@ -714,7 +714,7 @@ mod RenderFrame {
         else position
 
     /// スプライト 1 体を run へ積む（テクスチャ解決と centered の平行移動込み）。
-    /// upsideDownTargets = 上下逆に格納された描き先の名前（upsideDownTargetsOf で backend に聞いた物）。cachedName・cachedSize = 1 つ前に引いた絵の控え（lookupTextureCached）。
+    /// upsideDownTargets = 上下逆に格納された描き先の名前（upsideDownTargetsOf で backend に聞いた物）。cachedName・cachedSize = 1 つ前に引いた絵の cache（lookupTextureCached）。
     def emitSprite(st: Array[Int32, Static], list: RenderList,
                    scaleX: Float64, scaleY: Float64,
                    registry: RenderAsset.TextureRegistry,
