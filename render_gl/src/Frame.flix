@@ -606,14 +606,17 @@ mod RenderFrame {
                         posX: Float64, posY: Float64, sizeX: Float64, sizeY: Float64,
                         drawable: RenderType.Drawable, useTex: Bool, sdf: Bool): Unit \ IO =
         let count = Array.get(7, st);
+        let runTex = Array.get(0, st);
+        // 絵なし（texId 0）の矩形は絵を読まない（instance の useTex が 0）ので、どの絵の run にも入れる。絵の決まっていない run（0）は、次に来た絵に決める。
         let sameKey = count != 0
-            and Array.get(0, st) == texId
+            and (runTex == texId or texId == 0 or runTex == 0)
             and Array.get(6, st) == blendC
             and Array.get(1, st) == clipFlag
             and (clipFlag == 0 or (Array.get(2, st) == x0 and Array.get(3, st) == y0
                                    and Array.get(4, st) == x1 and Array.get(5, st) == y1));
         if (sameKey) {
             writeInstAt(list#instances, Array.get(runFirstSlot(), st) + count, posX, posY, sizeX, sizeY, drawable, useTex, sdf);
+            if (runTex == 0 and texId != 0) Array.put(texId, 0, st) else ();
             Array.put(count + 1, 7, st)
         } else {
             closeSpriteRun(st, list);

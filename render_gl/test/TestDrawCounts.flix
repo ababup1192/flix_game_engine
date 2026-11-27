@@ -87,6 +87,18 @@ mod TestDrawCounts {
         let sprites = sprite("a", 0) :: added("b", 1) :: Nil;
         Assert.assertEq(expected = (2, 0, 0, 1, 0, 0, 0), countsOf(args -> { sprites = sprites | args }))
 
+    /// 絵の無い箱は前後の絵の run に入る: 箱・a・箱・b・箱 は draw call 2 つ（箱 a 箱 / b 箱）で、texture の切れ目が 1。
+    @Test
+    def testBoxesJoinTextureRuns(): Unit \ {Assert, IO} =
+        let sprites = sprite("", 0) :: sprite("a", 1) :: sprite("", 2) :: sprite("b", 3) :: sprite("", 4) :: Nil;
+        Assert.assertEq(expected = (2, 0, 0, 1, 0, 0, 0), countsOf(args -> { sprites = sprites | args }))
+
+    /// 箱で始まった run の後の絵も、run の頭の箱に続く: 箱・箱・a・a は draw call 1 つ。
+    @Test
+    def testBoxRunTakesFirstTexture(): Unit \ {Assert, IO} =
+        let sprites = sprite("", 0) :: sprite("", 1) :: sprite("a", 2) :: sprite("a", 3) :: Nil;
+        Assert.assertEq(expected = (1, 0, 0, 0, 0, 0, 0), countsOf(args -> { sprites = sprites | args }))
+
     // ── 種類が替わる ──
 
     /// スプライトと多角形が z の順で交互（s・p・s・p）なら draw call 4 つで、kind の切れ目が 3。
