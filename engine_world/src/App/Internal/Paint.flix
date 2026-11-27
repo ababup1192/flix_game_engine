@@ -2,6 +2,8 @@
 // ゲームからは呼ばない（App の中身。ゲームの src・test で App.Internal. を書くと lint が止める）。
 pub mod App.Internal.Paint {
     import java.lang.System
+    import java.lang.Object
+    import java.util.HashMap
 
     /// withFonts で宣言された名前を先に全部引いておき、名前 → アトラスの純粋な引き当てを作る。
     /// view は純粋（ef）なので、その場で getFontAtlas を呼べない — ここで先に解いておく。
@@ -209,11 +211,15 @@ pub mod App.Internal.Paint {
     /// autoPreload = View に初めて出た staticGroup を先に作る所の状態（App.Internal.AutoPreload）。
     pub type alias TileCache =
         { gen = Int32, entries = Map[String, (Int32, String, GpuHandle.TileVao, Int32)], passTargets = Set[String],
-          preload3d = (Option[GameEngine.StaticKey], Scene3d.PreloadProgress), autoPreload = App.Internal.AutoPreload.State }
+          preload3d = (Option[GameEngine.StaticKey], Scene3d.PreloadProgress), autoPreload = App.Internal.AutoPreload.State,
+          textLayouts = HashMap[String, Object] }
 
     /// まだ何も生成していない起動時の持ち回し。
     pub def freshTileCache(): TileCache =
-        { gen = 0, entries = Map.empty(), passTargets = Set.empty(), preload3d = (None, Scene3d.noPreload()), autoPreload = App.Internal.AutoPreload.fresh() }
+        { gen = 0, entries = Map.empty(), passTargets = Set.empty(), preload3d = (None, Scene3d.noPreload()), autoPreload = App.Internal.AutoPreload.fresh(),
+          textLayouts = unchecked_cast(newLayouts() as _ \ {}) }
+
+    def newLayouts(): HashMap[String, Object] \ IO = new HashMap()
 
     /// camera 無しでも zoom があれば「画面中央の world 点 = design/2」を軸に据える正規化。
     /// App.composeScene・App.visibleOf・resolvedCamera が同じ規則を共有するための 1 点
@@ -348,6 +354,11 @@ pub mod App.Internal.Paint {
     pub def submitGpuItems(warnOnce: String -> Unit \ ef, items: List[Render.PlacedItem],
                            tiles: List[GameEngine.TileMapRenderCmd], staticLayers: List[GameEngine.StaticLayerCmd]):
             Unit \ (ef + Platform.Rendering) =
+        submitGpuItemsWith(None, warnOnce, items, tiles, staticLayers)
+
+    pub def submitGpuItemsWith(layouts: Option[HashMap[String, Object]], warnOnce: String -> Unit \ ef, items: List[Render.PlacedItem],
+                           tiles: List[GameEngine.TileMapRenderCmd], staticLayers: List[GameEngine.StaticLayerCmd]):
+            Unit \ (ef + Platform.Rendering) =
         let sceneCmds = Render.drawScenes3d(items);
         let shaderCmds = noteSurfaceZ(warnOnce, items, sceneCmds,
             Render.drawShaders(spec -> Platform.GpuResources.buildProgram(spec), items));
@@ -357,7 +368,7 @@ pub mod App.Internal.Paint {
         let itemsToDraw = if (List.isEmpty(sceneCmds)) withoutSurfaces else Render.withoutScenes3d(withoutSurfaces);
         // drawWith(getTextureInfo): regionRect 付き Sprite（PxSprite.drawQuad のアトラス 1 クアッド等）の UV を
         // registry の寸法で解決する。regionRect 無しの絵は draw と同一の Drawable になる。
-        let (sprites, polygons) = Render.drawWith(name -> Platform.GpuResources.getTextureInfo(name), itemsToDraw);
+        let (sprites, polygons) = Render.drawWithLayouts(layouts, name -> Platform.GpuResources.getTextureInfo(name), itemsToDraw);
         Platform.Draw2d.renderCommands(sprites, tiles, polygons, staticLayers)
 
     /// 面か 3D の場面のある画面で、面か場面の後ろに同じ z の描き物を並べた z・面と場面を同じ z に並べた z と、
@@ -493,7 +504,7 @@ pub mod App.Internal.Paint {
                 };
                 // 面と 3D の場面は別チャンネル（Platform.Draw2d.drawSurface・Platform.Draw3d.drawScene3d）へ積み、残りの 2D と一緒に描き手が z で合流させる。
                 let (tileCmds, nextCache) = if (retained) tileLayerCmds(app, design, world, shown#tiles, cacheSeen) else (Nil, cacheSeen);
-                submitGpuItems(warnOnce, items, tileCmds, if (retained) staticLayerCmds(app, warnOnce, design, world) else Nil);
+                submitGpuItemsWith(Some(tileCache#textLayouts), warnOnce, items, tileCmds, if (retained) staticLayerCmds(app, warnOnce, design, world) else Nil);
                 // 数えるのは itemsForGlyphs（本編 + レンダーターゲットの中）— headless の
                 // 検査と同じ量にそろえる。タイル層・静的層は GPU 側で 1 層 1 draw call に
                 // なるので、ここには最初から乗っていない（= 正しく静的化した絵は安いまま）。

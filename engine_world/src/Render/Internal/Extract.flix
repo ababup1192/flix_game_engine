@@ -1,7 +1,6 @@
 // Render.Internal.Extract — Item を描画命令（Drawable / PolygonRenderCmd）へ写す所: draw / drawWith の走査・clip 矩形の重ね・葉ごとの Drawable 作り・Shader 面をテクスチャ 1 枚の sprite に落とす判定。
 // ゲームからは呼ばない（Render の中身）。
 pub mod Render.Internal.Extract {
-    import java.lang.System
     import java.lang.Object
     import java.util.HashMap
     import java.util.Objects
@@ -271,13 +270,21 @@ pub mod Render.Internal.Extract {
     pub def textDrawables(content: String, fontAtlas: FontAtlas, fontSize: Float64,
                       tint: Color, alpha: Float64, rotation: Float64, zIndex: Int32,
                       wrapWidth: Option[Float64], pos: Vec2.Vec2): List[GameEngine.Drawable] =
+        textDrawablesWith(None, content, fontAtlas, fontSize, tint, alpha, rotation, zIndex, wrapWidth, pos)
+
+    pub def textDrawablesWith(layouts: Option[HashMap[String, Object]], content: String, fontAtlas: FontAtlas, fontSize: Float64,
+                      tint: Color, alpha: Float64, rotation: Float64, zIndex: Int32,
+                      wrapWidth: Option[Float64], pos: Vec2.Vec2): List[GameEngine.Drawable] =
         // engine の public 純粋射影に委譲。文字色（SDF 描画では color がそのまま文字色）と
         // zIndex は Text の visual に 1 回だけ書き込む — 出来上がった列を withTintAndZIndex で
         // map し直すと、文字 1 字につき捨てる Drawable が 1 個ずつ増えるため。
         let label = Text.make(content, fontAtlas, fontSize)
                 |> Text.setWrapWidth(wrapWidth)
                 |> Text.mapVisual(v -> v |> Visual.setColor(tint) |> Visual.setZIndex(zIndex));
-        let ds = Text.layoutToDrawables(label, cachedLayout(label, content), pos);
+        let ds = match layouts {
+            case Some(m) => Text.layoutToDrawables(label, cachedLayout(m, label, content), pos)
+            case None    => Text.toDrawables(label, pos)
+        };
         // 濃さは薄めた時だけ字ごとに書き直す（不透明の字は作り直さない）。
         let faded = if (alpha >= 1.0) ds else ds |> List.map(DrawCmd.withAlpha(alpha));
         if (rotation == 0.0) faded
@@ -301,20 +308,10 @@ pub mod Render.Internal.Extract {
     // ---- スパイク: 字の組みの控え（案 1）。置き場は System.getProperties の HashMap（手早い形・本体にしない） ----
     def layoutCacheLimit(): Int32 = 4096
 
-    def layoutCache(): HashMap[String, Object] \ IO =
-        let props = System.getProperties();
-        let o = props.get(unchecked_cast("fge.textLayoutCache" as Object));
-        if (Objects.isNull(o)) {
-            let m: HashMap[String, Object] = new HashMap();
-            discard props.put(unchecked_cast("fge.textLayoutCache" as Object), unchecked_cast(m as Object));
-            m
-        } else unchecked_cast(o as HashMap[String, Object])
+    def cachedLayout(m: HashMap[String, Object], label: Text, content: String): Text.Layout =
+        unchecked_cast(cachedLayoutIO(m, label, content) as _ \ {})
 
-    def cachedLayout(label: Text, content: String): Text.Layout =
-        unchecked_cast(cachedLayoutIO(label, content) as _ \ {})
-
-    def cachedLayoutIO(label: Text, content: String): Text.Layout \ IO =
-        let m = layoutCache();
+    def cachedLayoutIO(m: HashMap[String, Object], label: Text, content: String): Text.Layout \ IO =
         let found: Object = m.get(unchecked_cast(content as Object));
         let hit = if (Objects.isNull(found)) None else {
             let lay: Text.Layout = unchecked_cast(found as Text.Layout);

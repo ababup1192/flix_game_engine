@@ -8,6 +8,7 @@
 pub mod Render {
     import java.lang.{Object => JObject}
     import java.util.IdentityHashMap
+    import java.util.HashMap
 
     // ── render component（位置を持たない・ノードでない）──
 
@@ -891,7 +892,14 @@ pub mod Render {
     /// region 付き sprite と Poly が同じ列に混ざる UI（UiRender）の描画口。
     pub def drawWith(textureInfoOf: String -> Option[GameEngine.TextureInfo] \ ef,
                      items: List[PlacedItem]): (List[GameEngine.Drawable], List[GameEngine.PolygonRenderCmd]) \ ef =
-        Render.Internal.Extract.drawInto((item, pos) -> Render.Internal.Extract.toDrawablesAtlas(textureInfoOf, item, pos), items)
+        drawWithLayouts(None, textureInfoOf, items)
+
+    pub def drawWithLayouts(layouts: Option[HashMap[String, JObject]], textureInfoOf: String -> Option[GameEngine.TextureInfo] \ ef,
+                     items: List[PlacedItem]): (List[GameEngine.Drawable], List[GameEngine.PolygonRenderCmd]) \ ef =
+        Render.Internal.Extract.drawInto((item, pos) -> match item {
+            case Item.Text(t) => Render.Internal.Extract.textDrawablesWith(layouts, t#text, t#fontAtlas, t#fontSize, t#tint, t#alpha, t#rotation, t#zIndex, t#wrapWidth, pos)
+            case _ => Render.Internal.Extract.toDrawablesAtlas(textureInfoOf, item, pos)
+        }, items)
 
     /// そのフレームに描く字の集合の指紋（テクスチャ名と文の codepoint を織り込んだ Int64）。
     /// 「前フレームと同じ字を描くか」を安く見分ける鍵。文字列の集合そのものを組んで

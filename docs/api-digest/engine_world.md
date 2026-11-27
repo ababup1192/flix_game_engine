@@ -2466,6 +2466,7 @@
   `pub def draw(items: List[PlacedItem]): (List[GameEngine.Drawable], List[GameEngine.PolygonRenderCmd])`
 - `draw` の atlas 注入版。Sprite の region UV を textureInfoOf で解決しつつ、
   `pub def drawWith(textureInfoOf: String -> Option[GameEngine.TextureInfo] \ ef, items: List[PlacedItem]): (List[GameEngine.Drawable], List[GameEngine.PolygonRenderCmd]) \ ef`
+- `pub def drawWithLayouts(layouts: Option[HashMap[String, JObject]], textureInfoOf: String -> Option[GameEngine.TextureInfo] \ ef, items: List[PlacedItem]): (List[GameEngine.Drawable], List[GameEngine.PolygonRenderCmd]) \ ef`
 - そのフレームに描く字の集合の指紋（テクスチャ名と文の codepoint を織り込んだ Int64）。
   `pub def glyphFingerprint(items: List[PlacedItem]): Int64`
 - 描く物が名前で引く絵とフォント（sprite の texture・Shader 面の tex 場・字のフォントのアトラスの texture 名）。
