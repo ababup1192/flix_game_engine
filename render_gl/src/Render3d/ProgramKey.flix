@@ -53,9 +53,19 @@ pub mod Render3d.ProgramKey {
         rowsOf(v) |> List.flatMap(row -> row#group0) |> List.toSet
 
     /// 変種 v の、表で row が真になるフラグの行。
+    // WhyNot: flagsOf の Set を作らない — 材質の問い合わせが置いた物 1 つごとに通り（kindCodeBitsOf）、
+    // 毎コマ数千の Set と表の行を作って捨てる。フラグが 1 つも無い変種（たいていの場面）は表も作らない。
     pub def rowsOf(v: ShaderVariant): List[FlagRow] =
-        let flags = flagsOf(v);
-        flagRows() |> List.filter(row -> Set.memberOf(row#flag, flags))
+        if (not (v#pointShadows or v#physicalUnits or v#psx or v#skyIrradiance or v#ambientOcclusion)) Nil
+        else flagRows() |> List.filter(row -> isFlagOn(v, row#flag))
+
+    def isFlagOn(v: ShaderVariant, flag: VariantFlag): Bool = match flag {
+        case VariantFlag.PointShadows     => v#pointShadows
+        case VariantFlag.PhysicalUnits    => v#physicalUnits
+        case VariantFlag.Psx              => v#psx
+        case VariantFlag.SkyIrradiance    => v#skyIrradiance
+        case VariantFlag.AmbientOcclusion => v#ambientOcclusion
+    }
 
     /// 点光源の影なし・Legacy の光・PS1 風なし・景色の拡散の光なしの変種。
     pub def defaultShaderVariant(): ShaderVariant = variantOf(Set.empty())
