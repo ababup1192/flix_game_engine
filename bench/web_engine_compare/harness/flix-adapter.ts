@@ -43,6 +43,8 @@ class FlixAdapter implements EngineAdapter {
   private pairs: (() => string[]) | null = null;
   private patched = false;
   private hints = 0;
+  private offFrames = 0;
+  private loaded = false;
   private pickSeq = 0;
   private pickReq: { seq: number; x: number; y: number } | null = null;
   private pickAnswer: { seq: number; slot: number; ms: number } | null = null;
@@ -72,9 +74,9 @@ class FlixAdapter implements EngineAdapter {
     if (opt) throw new Error(`N/A: optimized の候補 ${opt} は無い`);
     const scenario = new URLSearchParams(location.search).get('scenario');
     if (variant === 'optimized' && scenario === 'k8') throw new Error('N/A (as naive): engine の pick の口は Ray3d（1 つずつ当てる）だけ');
-    if (variant === 'optimized' && scenario === 'k9') throw new Error('N/A (as naive): engine の 2D は z の順に続く同じ絵を自動でまとめる 1 つの道だけ（別のまとめ方の口が無い）');
     await this.runFrames(LOAD_FRAMES, BOOT_TIMEOUT_MS, false);
     this.capturing = false;
+    this.loaded = true;
     this.simMs = 0;
     return { path: pathOf(scenario, variant), notes: ['場面は Flix の側で同じ乱数から作る（bench/web_engine_compare/src/Scenes.flix）'] };
   }
@@ -111,7 +113,7 @@ class FlixAdapter implements EngineAdapter {
   }
 
   counters() {
-    return { hints: this.hints };
+    return { hints: this.hints, offFrames: this.offFrames };
   }
 
   async dispose() {}
@@ -122,9 +124,20 @@ class FlixAdapter implements EngineAdapter {
     const batch = this.queue.splice(0, this.queue.length);
     this.clock += 1000 / 60;
     const wasCapturing = this.capturing;
+    const before = this.presented;
     this.capturing = true;
     for (const cb of batch) cb(this.clock);
     this.capturing = wasCapturing;
+    if (this.loaded) this.checkOneFrame(batch.length, this.presented - before);
+  }
+
+  /**
+   * load の後の pump は engine の 1 コマちょうど（溜まった予約 1 つ・画面へ出したコマ 1 つ）。外れたら数えて counters の offFrames に出し、初めの 1 回を console.error に出す。
+   */
+  // WhyNot: 外れても黙って進めない — 0 コマなら CPU が軽く、2 コマなら倍に出て、数字が負か重すぎるまで気づけない（K3 は作り直しも飛ぶ）。
+  private checkOneFrame(called: number, presented: number) {
+    if (called === 1 && presented === 1) return;
+    if (this.offFrames++ === 0) console.error(`[wec] pump が engine の 1 コマでない（予約 ${called}・出したコマ ${presented}）`);
   }
 
   /** engine が n コマ出すまで、本物の rAF の上で pump を回す。tap = 押して始める画面を keydown で通す。 */
@@ -159,7 +172,7 @@ class FlixAdapter implements EngineAdapter {
   private wrapPage() {
     const self = this;
     // engine の wasm が await（材質の WGSL の getCompilationInfo など）から pump の外で戻って次のコマを待つ時も溜める。
-    // WhyNot: pump の外の予約を全部 harness の物として本物の rAF へ渡さない — 1 回でも外で戻ると engine が本物の rAF で回り続け、frame() の中で 1 コマも回らなくなる（K3 の初めての絵の材質で起きた）。
+    // WhyNot: pump の外の予約を全部 harness の物として本物の rAF へ渡さない — 1 回でも外で戻ると engine が本物の rAF で回り続け、frame() の中で 1 コマも回らなくなる。
     window.requestAnimationFrame = (cb: FrameRequestCallback) => {
       if (!self.capturing && !calledFromWasm()) return realRaf(cb);
       self.queue.push(cb);
@@ -222,20 +235,27 @@ class FlixAdapter implements EngineAdapter {
 
 /** 物の置き方の名前（report の path）。 */
 function pathOf(scenario: string | null, variant: Variant) {
-  if (scenario === 'k5') return variant === 'optimized' ? '区画ごとの Scene3d.staticGroup（起動の時に先に作る）・見える区画をゲームの側で選ぶ' : 'Scene3d.meshInstance per object（物の列は読み込みで 1 回作る）';
-  if (variant === 'optimized') return 'MultiMesh3d.build per (geometry, material)・毎コマ組み直す';
-  if (scenario === 'k4') return 'Model3d.load の glb（比べる相手の .gltf を 1 本にまとめ直した物）・partInstances を読み込みで 1 回置く';
-  if (scenario === 'k6') return variant === 'optimized'
-    ? 'Model3d.partInstances per character・Walk を読み込みで 1 秒 30 刻みの Pose3d にし、体ごとに一番近い刻みを分け合う'
-    : 'Model3d.partInstances per character・毎コマ AnimationClip3d.sample（Walk・Run）× 2 と Pose3d.blend と Pose3d.compute';
-  if (scenario === 'k9') return '下の 1,000 個は Scene3d.meshInstance per object・HUD は App.withHudView の 2D（RawDraw.box・atlas の Sprite・font-bake の字。名札ごとに z を 4 つ）';
-  if (scenario === 'k3') return 'Scene3d.meshInstance per object・作り直した組は Texture3d.fromArgb（128×128）＋ texturedMaterial と withMetallicRoughness と tint';
-  return 'Scene3d.meshInstance per object（同じ形と材質は engine が自動でまとめる）';
+  const optimized = variant === 'optimized';
+  switch (scenario) {
+    case 'k3': return 'Scene3d.meshInstance per object・作り直した組は Texture3d.fromArgb（128×128）＋ texturedMaterial と withMetallicRoughness と tint';
+    case 'k4': return 'Model3d.load の glb（比べる相手の .gltf を 1 本にまとめ直した物）・partInstances を読み込みで 1 回置く';
+    case 'k5': return optimized ? '区画ごとの Scene3d.staticGroup（起動の時に先に作る）・見える区画をゲームの側で選ぶ' : 'Scene3d.meshInstance per object（物の列は読み込みで 1 回作る）';
+    case 'k6': return optimized
+      ? 'Model3d.partInstances per character・Walk を読み込みで 1 秒 60 刻みの Pose3d にし、体ごとに時刻を刻みへ切り捨てた姿勢を分け合う'
+      : 'Model3d.partInstances per character・毎コマ AnimationClip3d.sample（Walk・Run）× 2 と Pose3d.blend と Pose3d.compute';
+    case 'k9': return `下の 1,000 個は Scene3d.meshInstance per object・HUD は App.withHudView の 2D（RawDraw.box・atlas の Sprite・font-bake の字）。${optimized ? '種類ごとに z を分ける（全部の下地 → bar → icon → 字。名札どうしの重なりの順は崩れる）' : '名札ごとに z を 4 つ（下地 → bar → icon → 字）'}`;
+    default: return optimized ? 'MultiMesh3d.build per (geometry, material)・毎コマ組み直す' : 'Scene3d.meshInstance per object（同じ形と材質は engine が自動でまとめる）';
+  }
 }
 
 /** 呼び手の stack に wasm の関数があるか（engine の予約か、harness の予約か）。 */
+// WhyNot: 'wasm://' で見分けない — compileStreaming で読んだ wasm の stack の行は wasm://… でなく classes.wasm の URL と wasm-function[番号] になる。
 function calledFromWasm() {
-  return (new Error().stack ?? '').includes('wasm://');
+  const limit = Error.stackTraceLimit;
+  Error.stackTraceLimit = 64;
+  const stack = new Error().stack ?? '';
+  Error.stackTraceLimit = limit;
+  return stack.includes('wasm-function[');
 }
 
 const realRaf: (cb: FrameRequestCallback) => number = window.requestAnimationFrame.bind(window);

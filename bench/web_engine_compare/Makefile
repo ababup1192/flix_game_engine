@@ -93,12 +93,13 @@ export RAW_WASM
 
 # K4 の Sponza（約 53 MB）は別の書き出しに入れる。
 # WhyNot: assets/ に置いて 1 つの書き出しにしない — 書き出しの素材は起動で全部取るので、K1 の TTFF まで Sponza を取る時間が乗る。
-K4_NEEDED := $(if $(ONLY),$(findstring k4,$(ONLY)),k4)
+# 場面で絞らない時（ONLY に scenario= が無い）も K4 は回るので書き出す。
+K4_NEEDED := $(if $(findstring scenario=,$(ONLY)),$(findstring k4,$(ONLY)),k4)
 K4_GAME := build/k4-game
 k4-export: compare-assets
 	@test -f build/sponza/Sponza.glb || $(NODE) harness/pack-glb.mjs $(UPSTREAM)/public/assets/Sponza/Sponza.gltf build/sponza/Sponza.glb
 	@rm -rf $(K4_GAME) && mkdir -p $(K4_GAME)
-	rsync -aL src web flix.toml packages.lock project.json lib assets $(K4_GAME)/
+	rsync -a src web flix.toml packages.lock project.json lib assets $(K4_GAME)/
 	cp build/sponza/Sponza.glb $(K4_GAME)/assets/Sponza.glb
 	$(FGE) export-web $(K4_GAME) --out $(CURDIR)/build/web-flix-k4
 	@mkdir -p $(UPSTREAM)/public/flix-k4

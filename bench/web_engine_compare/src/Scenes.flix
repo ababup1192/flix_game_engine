@@ -95,9 +95,9 @@ mod Scenes {
         case _    => None
     }
 
-    /// 場面と段（K2 は物の数）から場面を作る。K6 は狐の広がりが要るので crowdField で作る（ここでは空の群れ）。
+    /// 場面と段（K2 は物の数）から場面を作る（K6 は Walk と Run を混ぜる群れ。混ぜない群れは crowdField）。
     pub def build(scenario: Scenario, level: Int32): Field = match scenario {
-        case Scenario.K6 => crowdField(level, true, { min = (0.0, 0.0, 0.0), max = (1.0, 1.0, 1.0) })
+        case Scenario.K6 => crowdField(level, true, foxExtent())
         case Scenario.K1 => startup()
         case Scenario.K2 => hierarchyField(level)
         case Scenario.K3 => frustumField(3, level, palette(2300, 8, 1.0))
@@ -295,6 +295,11 @@ mod Scenes {
           count = 0, geom = Vector.empty(), material = Vector.empty(), position = Vector.empty(), scale = Vector.empty(),
           motion = Motion.Sweep({ center = ((x0 + x1) / 2.0, y0, (z0 + z1) / 2.0), length = length, height = y1 - y0, alongX = lenX >= lenZ }) | base }
 
+    /// 比べる相手の素材の表（public/assets/manifest.json）の Fox の bounds（node の置き方を掛けない頂点の広がり）。
+    // WhyNot: 読んだ glb から量らない — engine の Model3d は node の置き方を頂点に掛けて持つので、比べる相手の bounds（掛けない広がり）と同じ物を量れない。
+    pub def foxExtent(): Extent =
+        { min = (-12.592718124389648, -0.12174476683139801, -88.09500122070312), max = (12.592718124389648, 78.90718841552734, 66.62486267089844) }
+
     /// 比べる相手の素材の表（public/assets/manifest.json）の Sponza の worldBounds。
     // WhyNot: 読んだ glb から量らない — 段 0 のカメラの道は建物に合わせて決めたデザインの値で、読み込みの前（場面を作る時）に要る。
     pub def sponzaExtent(): Extent =
@@ -341,6 +346,10 @@ mod Scenes {
     /// K6: 時刻 t の体 i の Run の重み（Walk は 1 − 重み）。
     pub def runWeightAt(c: Crowd, t: Float64, i: Int32): Float64 = 0.5 + 0.5 * Num.sin(t * 0.5 + Vector.get(i, c#phase) * 2.0)
 
+    /// K6: 時刻 t の体ごとの Run の重み（混ぜない群れは空）。
+    pub def runWeights(c: Crowd, t: Float64): Vector[Float64] =
+        if (c#blended) Vector.range(0, c#count) |> Vector.map(runWeightAt(c, t)) else Vector.empty()
+
     /// K9: 回る 1,000 個の上の HUD（units = 名札の数・0 なら HUD なし）。
     def hudField(units: Int32): Field =
         let base = frustumField(9, 1000, palette(2900, 4, 1.0));
@@ -374,12 +383,15 @@ mod Scenes {
     /// 毎コマ変わる字の数。
     pub def dynamicTextCount(): Int32 = 30
 
-    /// 時刻 t の毎コマ変わる字 i（左上の位置と字）。
-    pub def dynamicTextAt(t: Float64, i: Int32): (Float64, Float64, String) =
+    /// 毎コマ変わる字（x, y = 左上）。
+    pub type alias Label = { x = Float64, y = Float64, text = String }
+
+    /// 時刻 t の毎コマ変わる字 i。
+    pub def dynamicTextAt(t: Float64, i: Int32): Label =
         let words = Vector#{"DMG", "HEAL", "CRIT", "XP", "GOLD"};
         let f = Int32.toInt64(Num.roundInt(t * 60.0));
         let n = Int64.remainder(f * Int32.toInt64(i + 7) * 13i64, 100000i64);
-        (i2f(1496 + Int32.remainder(i, 3) * 136), i2f(872 + i / 3 * 19), "${Vector.get(Int32.remainder(i, 5), words)} ${n}")
+        { x = i2f(1496 + Int32.remainder(i, 3) * 136), y = i2f(872 + i / 3 * 19), text = "${Vector.get(Int32.remainder(i, 5), words)} ${n}" }
 
     /// JS の Math.round と同じ丸め（.5 は大きい方へ）。
     def roundHalfUp(x: Float64): Float64 = Float64.floor(x + 0.5)

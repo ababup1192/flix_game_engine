@@ -39,28 +39,36 @@ mod HudDraw {
         let (r, g, b, a) = rgba;
         Render.at(Vec2.v2(x, y), RawDraw.box(Vec2.v2(w, hgt), Color.rgb(r, g, b), z) |> Render.fade(a))
 
-    /// 名札 i の 4 つ（z は base + 4i から 4 つ）。
-    def nameplate(h: Scenes.Hud, font: FontAtlas, widths: Vector[Float64], base: Int32, i: Int32, p: Scenes.Nameplate): List[Render.PlacedItem] =
-        let z = base + i * 4;
+    /// 名札の 4 つ（下地・bar・icon・字）の z。名札ごと = 名札 i に base + 4i から 4 つ（HudSpec の描く順）・
+    /// 種類ごと = 全部の下地 → 全部の bar → 全部の icon → 全部の字（同じ絵が続くので engine が 1 本にまとめる。名札どうしの重なりの順は崩れる）。
+    pub enum PlateOrder with Eq {
+        case PerPlate
+        case ByKind
+    }
+
+    def plateZ(order: PlateOrder, base: Int32, i: Int32, part: Int32): Int32 = match order {
+        case PlateOrder.PerPlate => base + i * 4 + part
+        case PlateOrder.ByKind   => base + part
+    }
+
+    /// 名札 i の 4 つ。
+    def nameplate(h: Scenes.Hud, font: FontAtlas, widths: Vector[Float64], z: Int32 -> Int32, i: Int32, p: Scenes.Nameplate): List[Render.PlacedItem] =
         let top = p#y + labelSize() + 2.0;
         let left = p#x - barWidth() / 2.0;
-        rect(left, top, barWidth(), barHeight(), (0.0, 0.0, 0.0, 0.6), z) ::
-        rect(left, top, barWidth() * p#health, barHeight(), (0.2, 0.9, 0.3, 1.0), z + 1) ::
-        icon(Vector.get(i, h#units#cell), left - iconSize() - 2.0, top, iconSize(), z + 2) ::
-        Render.at(Vec2.v2(p#x - Vector.get(i, widths) / 2.0, p#y), Render.textTinted(Vector.get(i, h#labels), font, labelSize(), white(), z + 3)) :: Nil
+        rect(left, top, barWidth(), barHeight(), (0.0, 0.0, 0.0, 0.6), z(0)) ::
+        rect(left, top, barWidth() * p#health, barHeight(), (0.2, 0.9, 0.3, 1.0), z(1)) ::
+        icon(Vector.get(i, h#units#cell), left - iconSize() - 2.0, top, iconSize(), z(2)) ::
+        Render.at(Vec2.v2(p#x - Vector.get(i, widths) / 2.0, p#y), Render.textTinted(Vector.get(i, h#labels), font, labelSize(), white(), z(3))) :: Nil
 
-    /// 時刻 t の HUD の絵。plates = 時刻 t の名札（場面の更新として外で作る）。
-    pub def items(h: Scenes.Hud, font: FontAtlas, widths: Vector[Float64], plates: Vector[Scenes.Nameplate], t: Float64): List[Render.PlacedItem] =
+    /// HUD の絵。plates = 時刻 t の名札・texts = 時刻 t の毎コマ変わる字（どちらも場面の更新として外で作る）。
+    pub def items(h: Scenes.Hud, order: PlateOrder, font: FontAtlas, widths: Vector[Float64], plates: Vector[Scenes.Nameplate], texts: Vector[Scenes.Label]): List[Render.PlacedItem] =
         let iconZ = List.length(h#panels);
         let plateBase = iconZ + 1;
         let textZ = plateBase + h#units#count * 4;
         let panels = h#panels |> List.mapWithIndex((k, p) -> rect(p#x, p#y, p#w, p#h, p#color, k));
         let icons = List.range(0, Vector.length(h#icons#cell)) |> List.map(i ->
             icon(Vector.get(i, h#icons#cell), Vector.get(i, h#icons#x), Vector.get(i, h#icons#y), atlasCell(), iconZ));
-        let names = plates |> Vector.toList |> List.mapWithIndex((i, p) -> nameplate(h, font, widths, plateBase, i, p)) |> List.flatten;
-        let texts = List.range(0, Scenes.dynamicTextCount()) |> List.map(i -> {
-            let (x, y, s) = Scenes.dynamicTextAt(t, i);
-            Render.at(Vec2.v2(x, y), Render.textTinted(s, font, dynamicSize(), white(), textZ))
-        });
-        panels ::: icons ::: names ::: texts
+        let names = plates |> Vector.toList |> List.mapWithIndex((i, p) -> nameplate(h, font, widths, plateZ(order, plateBase, i), i, p)) |> List.flatten;
+        let dynamic = texts |> Vector.toList |> List.map(l -> Render.at(Vec2.v2(l#x, l#y), Render.textTinted(l#text, font, dynamicSize(), white(), textZ)));
+        panels ::: icons ::: names ::: dynamic
 }

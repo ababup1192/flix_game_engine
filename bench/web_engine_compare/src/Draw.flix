@@ -7,8 +7,15 @@ mod Draw {
     pub type alias Kit = { field = Scenes.Field, meshes = Vector[Mesh3d.Mesh3d], materials = Vector[Scene3d.Material3d], batches = List[Batch], chunks = List[Chunk], fixed = Option[List[Scene3d.Instance3d]], path = Path,
                               fox = Option[Fox], scenery = List[Scene3d.Instance3d], sceneryTextures = List[Texture3d.Texture3d] }
 
-    /// K6 の狐（比べる相手の Fox.glb）。baked = Walk を 1 秒 bakeRate 刻みで姿勢にした物（群れが Walk だけの時に読み込みで 1 回作る）。
-    pub type alias Fox = { model = Model3d.Model3d, skin = Skin3d.Skin3d, walkClip = AnimationClip3d.AnimationClip3d, runClip = AnimationClip3d.AnimationClip3d, baked = Vector[Pose3d.Pose3d] }
+    /// K6 の狐（比べる相手の Fox.glb）と、姿勢の作り方。
+    pub type alias Fox = { model = Model3d.Model3d, skin = Skin3d.Skin3d, poses = FoxPoses }
+
+    /// Crossfade = 毎コマ Walk と Run を取り出して体ごとの重みで混ぜる（naive）・
+    /// Baked = Walk を 1 秒 bakeRate 刻みで姿勢にした物を読み込みで 1 回作り、体どうしで分け合う（optimized）。
+    pub enum FoxPoses {
+        case Crossfade({ walk = AnimationClip3d.AnimationClip3d, running = AnimationClip3d.AnimationClip3d })
+        case Baked(Vector[Pose3d.Pose3d])
+    }
 
     /// 同じ形と材質の物の番号の組。
     pub type alias Batch = { geom = Int32, material = Int32, members = Vector[Int32] }
@@ -29,23 +36,23 @@ mod Draw {
     pub def withScenery(model: Model3d.Model3d, kit: Kit): Kit =
         { scenery = Model3d.partInstances(Mat4.scale(Vec3.v3(-1.0, 1.0, -1.0)), model), sceneryTextures = model#textures | kit }
 
-    /// 狐の Walk を姿勢にする刻み（1 秒の数）。
-    pub def bakeRate(): Float64 = 30.0
+    /// 狐の Walk を姿勢にする刻み（1 秒の数。Babylon.js の baked animation と同じ 60）。
+    pub def bakeRate(): Float64 = 60.0
 
-    /// 読んだ狐から骨と Walk・Run を取り出す（誤りの文は ASCII — font-bake が src の文字列の字を HUD の字のアトラスへ集める）。bake = Walk を刻みで姿勢にしておく（Babylon.js の baked animation と同じく、時刻を刻みに丸めて体どうしで姿勢を分け合う）。
-    pub def foxOf(model: Model3d.Model3d, bake: Bool): Result[String, Fox] =
+    /// 読んだ狐から骨と姿勢の作り方を取り出す。crossfade が偽なら Walk を刻みで姿勢にしておく（Babylon.js の baked animation と同じく、時刻を刻みへ切り捨てて体どうしで姿勢を分け合う）。
+    // WhyNot: 誤りの文に日本語を書かない — font-bake が src の文字列の字を HUD の字のアトラスへ集め、Roboto に無い字で書き出しが止まる。
+    pub def foxOf(model: Model3d.Model3d, crossfade: Bool): Result[String, Fox] =
         let clip = name -> Map.get(name, model#clips) |> Option.toOk("Fox.glb: no clip ${name}");
-        Option.toOk("Fox.glb: no skin", model#skin) |> Result.flatMap(skin -> clip("Walk") |> Result.flatMap(walk -> clip("Run") |> Result.map(running -> {
-            let steps = Int32.max(1, Num.roundInt(AnimationClip3d.duration(walk) * bakeRate()));
-            { model = model, skin = skin, walkClip = walk, runClip = running,
-              baked = if (bake) Vector.range(0, steps) |> Vector.map(k -> Pose3d.compute(skin, AnimationClip3d.sample(skin, walk, Int32.toFloat64(k) / bakeRate(), true))) else Vector.empty() }
-        })))
+        forM (skin <- Option.toOk("Fox.glb: no skin", model#skin); walk <- clip("Walk"); running <- clip("Run"))
+        yield { model = model, skin = skin, poses = if (crossfade) FoxPoses.Crossfade({ walk = walk, running = running }) else FoxPoses.Baked(bakedWalk(skin, walk)) }
+
+    def bakedWalk(skin: Skin3d.Skin3d, walk: AnimationClip3d.AnimationClip3d): Vector[Pose3d.Pose3d] =
+        let steps = Int32.max(1, Num.roundInt(AnimationClip3d.duration(walk) * bakeRate()));
+        Vector.range(0, steps) |> Vector.map(k -> Pose3d.compute(skin, AnimationClip3d.sample(skin, walk, Int32.toFloat64(k) / bakeRate(), true)))
 
     /// K6: 時刻 t の体ごとの Run の重み（比べる相手の scene.update に当たる・混ぜない群れは空）。
-    pub def crowdWeights(kit: Kit, t: Float64): Vector[Float64] = match kit#field#crowd {
-        case Some(c) if c#blended => Vector.range(0, c#count) |> Vector.map(Scenes.runWeightAt(c, t))
-        case _ => Vector.empty()
-    }
+    pub def crowdWeights(kit: Kit, t: Float64): Vector[Float64] =
+        kit#field#crowd |> Option.map(c -> Scenes.runWeights(c, t)) |> Option.getWithDefault(Vector.empty())
 
     /// K6: 時刻 t の狐全部（体ごとに姿勢を付けて glb の部品を置く）。
     pub def crowdInstances(kit: Kit, weights: Vector[Float64], t: Float64): List[Scene3d.Instance3d] =
@@ -58,16 +65,16 @@ mod Draw {
             case _ => Nil
         }
 
-    /// 体 i の時刻 t の姿勢。混ぜる群れは Walk と Run を毎コマ取り出して重みで混ぜ、混ぜない群れは刻みの姿勢から一番近い物を使う。
+    /// 体 i の時刻 t の姿勢。
     def poseOf(fox: Fox, c: Scenes.Crowd, weights: Vector[Float64], t: Float64, i: Int32): Pose3d.Pose3d =
         let at = t + Vector.get(i, c#phase);
-        if (c#blended) {
-            let walk = AnimationClip3d.sample(fox#skin, fox#walkClip, at, true);
-            let running = AnimationClip3d.sample(fox#skin, fox#runClip, at, true);
-            Pose3d.compute(fox#skin, Pose3d.blend(walk, running, Vector.get(i, weights)))
-        } else {
-            let n = Vector.length(fox#baked);
-            Vector.get(Int32.modulo(Num.roundInt(at * bakeRate()), n), fox#baked)
+        match fox#poses {
+            case FoxPoses.Crossfade(clips) =>
+                let walk = AnimationClip3d.sample(fox#skin, clips#walk, at, true);
+                let running = AnimationClip3d.sample(fox#skin, clips#running, at, true);
+                Pose3d.compute(fox#skin, Pose3d.blend(walk, running, Vector.get(i, weights)))
+            case FoxPoses.Baked(baked) =>
+                Vector.get(Int32.modulo(Num.floorInt(at * bakeRate()), Vector.length(baked)), baked)
         }
 
     /// 体 i の根の行列（左手系）。engine の glTF の読み手は X を裏返して左手系にするので、右手系の 位置 × Y で yaw 回す × 倍率 を

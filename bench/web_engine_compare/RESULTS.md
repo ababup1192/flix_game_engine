@@ -217,7 +217,8 @@ smoke（1 回・counters の回・WebGPU・2,000 個）:
 - 字は比べる相手の Roboto（Apache-2.0）を project.json の fonts に置き、書き出しの font-bake でアトラスにする（engine の字の道はこれだけ）。`App.withFonts` で名前を宣言しないと既定の字（起動の字）へ落ちる。
 - 描き方（naive）: `App.withHudView` の 2D で、名札ごとに z を 4 つ（下地・bar・icon・字）続けて置く（HudSpec の描く順のとおり）。名札の字の幅は初めのコマで 1 回量って控える。
   名札の位置（比べる相手の scene.update に当たる）は場面の更新として差し引き、絵の列を組む所は CPU に残す。HUD は PostStack の外なので tone map も bloom も掛からない。
-- optimized は `N/A (as naive)`: engine の 2D は z の順に続く同じ絵を自動でまとめる 1 つの道だけで、別のまとめ方の口が無い（three.js も N/A）。
+- optimized: 名札の z を種類ごと（全部の下地 → 全部の bar → 全部の icon → 全部の字）に並べ、engine の 2D の自動のまとめ（z の順に続く同じ絵）に乗せる。名札どうしが重なった所の順が崩れる（three.js の naive と PlayCanvas の optimized も同じ崩し方）。
+  計画 2.3 の「icon と字のアトラスを 1 枚に寄せる」案は、字のアトラスを engine が font-bake で作るので、ゲームの側から寄せられない。
 - engine の 2D が 1 コマ 2,000 個を超えると出す助言（`budget: この 1 フレームで …`）は hints に数える（HINT_PREFIXES に足した）。
 
 smoke（1 回・counters の回・WebGPU）:
@@ -237,11 +238,11 @@ smoke（1 回・counters の回・WebGPU）:
 
 ## S6: K6（骨つきの狐の群れ・crossfade）
 
-- 場面: 比べる相手の Fox.glb（CC-BY・`make compare-assets` が assets/ へ写す・git の外）を格子に並べる。高さを 1.6 m にそろえる倍率と間隔は、読んだ形の頂点の広がり（`Mesh3d.bounds`）から同じ式で出す。
-  `make scene-compare` に K6 の 2 場面（25 体・400 体）を足し、カメラ・位置・yaw・位相・Run の重みまで **14 場面・547 の配列が一致**（広がりは比べる相手の manifest の値を渡す）。
+- 場面: 比べる相手の Fox.glb（CC-BY・`make compare-assets` が assets/ へ写す・git の外）を格子に並べる。高さを 1.6 m にそろえる倍率と間隔は、比べる相手の manifest の Fox の bounds（node の置き方を掛けない広がり）から同じ式で出す（engine の Model3d は node の置き方を頂点に掛けて持つので、読んだ形からは同じ物を量れない）。
+  `make scene-compare` に K6 の 2 場面（25 体・400 体）を足し、カメラ・位置・yaw・位相・Run の重みまで **14 場面・547 の配列が一致**。
 - naive: 毎コマ体ごとに `AnimationClip3d.sample`（Walk・Run）× 2 → `Pose3d.blend` → `Pose3d.compute`、`Model3d.partInstances` に `Scene3d.withPose`。
-- optimized（計画の決め 8）: 比べる相手と同じく Walk だけ。読み込みで Walk を 1 秒 30 刻みの姿勢（`Pose3d`）にしておき、体ごとに一番近い刻みを使う（同じ姿勢の体は engine が姿勢の行を分け合う・Babylon.js の baked animation と同じ考え方）。path に刻みを書く。
-- 差し引く場面の更新は Run の重みだけ（比べる相手の scene.update と同じ）。姿勢を取り出して混ぜる所と置く所は engine の仕事（比べる相手の mixer）として CPU に残す。
+- optimized（計画の決め 8）: 比べる相手と同じく Walk だけ。読み込みで Walk を 1 秒 60 刻みの姿勢（`Pose3d`）にしておき、体ごとに時刻を刻みへ切り捨てた姿勢を使う（同じ姿勢の体は engine が姿勢の行を分け合う・Babylon.js の baked animation と同じ 60 刻みと切り捨て）。path に刻みを書く。smoke の表は 30 刻み・四捨五入の時の値。
+- 差し引く場面の更新は Run の重みと、場面の命令を組む所（`Draw.items`・下の「差し引く範囲」）。姿勢を取り出して混ぜる所と glb の部品を置く所は engine の仕事（比べる相手の mixer）として CPU に残す。
   - Flix の最適化が純粋な let を測る thunk の中へ畳み、姿勢の値段が場面の更新に入っていた。姿勢を作る所も timed で包んで順を決めた（値は捨てる）。
 - engine の glTF の読み手は X を裏返して左手系にするので、体の根の行列は Sz × M × Sx（裏返し 2 回で三角形の表と裏は入れ替わらない）。frame 60 の絵で向き・大きさ・間隔が three.js と同じ。
 - engine の助言の行（`scene3d: 同じ形と材質の物が …`）を hints に数える（HINT_PREFIXES に足した）。
@@ -287,3 +288,48 @@ smoke（1 回・counters の回・WebGPU）:
 
 - 比べる相手の M4 Pro の quick（S0）は K4 段 0 が 1.4〜1.7 ms・Sponza の TTFF が 367〜826 ms。flix はどちらもその外。
 - TTFF の大半は init（wasm の compile と起動・glb の解析）。glb の Worker の計画（`plans/engine-web-glb-worker.md`）が効く所。
+
+## レビュー 1 回目（80 点）の直し
+
+### 差し引く範囲（sim）
+- 差し引く場面の更新は、比べる相手の scene.update に当たる値（K3 の場面の写しと絵の画素・K6 の重み・K9 の名札と毎コマ変わる字）に加えて、**物ごとの行列と置いた物の列（場面の命令）を組む所**（`Draw.items`）も入る（K2 から同じ形）。
+  three.js では行列を作る所（updateMatrixWorld）と Object3D への写しは cpu に入るので、**差し引いた後の CPU は Flix に有利な向き**。表には差し引く前（cpuRaw）も並べる。interval と frame cost は差し引かない。
+- K6 の姿勢づくりと glb の部品を置く所、K3 の絵と材質を作る所、K9 の HUD の絵の列は差し引かない。
+
+### adapter
+- 1 回の pump が engine の 1 コマちょうど（溜まった予約 1 つ・画面へ出したコマ 1 つ）かを load の後は毎回確かめ、外れた数を counters の `offFrames` に出す（初めの 1 回は console.error）。
+- wasm から呼ばれた rAF の見分けは、stack の深さの上限を一時 64 に上げてから見る。
+- path の名前を場面ごとの switch にした（K6 optimized に MultiMesh の名前が出ていた）。
+- K4 の書き出しは、ONLY が場面で絞らない時にも作る（前は ONLY に k4 の字が無いと作らず、古い `public/flix-k4` を読む恐れがあった）。
+
+- **wasm の予約の見分けの誤り（見張りで見つけた）**: S7 で wasm を compileStreaming で読む道に替えてから、stack の行が `wasm://…` でなく `classes.wasm の URL:wasm-function[番号]` になり、
+  engine の予約を harness の物と取り違えていた。K3 は初めての絵の材質で WGSL を組む await（1 回だけ）の後、engine が本物の rAF で回り続け、frame() の中の CPU が 0（差し引くと負）になっていた。
+  `wasm-function[` で見分けるように直し、K3 の offFrames は warm-up の 2（その 1 回の await とその戻り）だけになった。S4〜S7 の smoke の K3 の値（CPU 44.5 ms）は .br の道の時の物で、取り違えは無い。
+
+### 場面
+- `make scene-compare` はどの種類の場面でも clearColor・ambient・太陽の向きと色と強さ・fov・near・far まで比べ、K6 optimized（混ぜない群れ）も足した（**17 場面・615 の配列が一致**）。
+- K6 の姿勢の作り方を `Draw.FoxPoses`（Crossfade / Baked）の 1 つの enum にした。
+
+### 残した事
+- adapter の load の 60 コマ（LOAD_FRAMES）はそのまま。TTFF には不利に入り（loadMs 110〜270 ms）、**first-frame・stableAt の数字は pipeline を先に作った後なので他の engine と並べられない**。
+- K1 の書き出しにも K6 の狐・K9 の字と atlas（合わせて約 300 KB）が入り、起動で取る。Sponza（53 MB）と違い TTFF への乗りは小さいと見て分けていない。
+
+## quick（1 回・M4 Pro・Chrome 156・WebGPU・レビュー 1 回目の直しの後）
+
+session 2026-11-27T00-24-26-chrome-quick（flix と three）。frame cost = max(CPU p95, GPU p95, interval p50)。flix の CPU は差し引いた後（括弧は差し引く前）。
+
+| 場面 | flix | three | 注 |
+|---|---:|---:|---|
+| K1 TTFF ms（一番速い回）| 511 | 373 | |
+| K3 churn frame cost / CPU 最悪 ms | 55 / 119 | 12 / 38 | flix CPU p95 54.9（59.1）・interval 51.5 |
+| K4 段 0 frame cost ms | 3.7 | 2.0 | flix CPU p95 3.7・GPU p95 2.6 |
+| K4 段 0 TTFF ms | 1,340 | 213 | |
+| K4 段 1〜4 | N/A | 1.6〜11.8 | |
+| K6 crossfade（naive）60 fps に収まる最大 | 約 330 | 約 750 | |
+| K6 1 clip（optimized）| 約 4.8k | 約 800 | flix は 60 刻みの姿勢を分け合う・three は分け合う道が無い |
+| K9 名札（naive）| 約 550 | ≥ 16k | |
+| K9 名札（optimized・種類ごとの z）| 約 640 | N/A (as naive) | flix の 2D の draw は 1,000 枚でも 40 本 |
+
+- K9 は optimized で draw が 3,037 → 40 本に減っても、1,000 枚の CPU は 29.7 → 25.6 ms とわずか。**重いのは draw の数でなく 1 個の描き物あたりの CPU**（4,000 個余りで約 20 µs ずつ）。
+- engine の助言の行（hints）は K6 optimized の 3,200 体以上と K9 の 500 枚以上で出る（consoleErrors からは外してある）。
+- 同じ export で、前からある場面（K1・K2・K5・K7・K8）を smoke で回し直し、どれも offFrames 0（session 2026-11-27T00-33-04-chrome-smoke）。

@@ -2,7 +2,7 @@
 // 比べる相手の harness の頁で開かれた時（query に engine=flix）は、場面の時刻を harness から受け、場面の更新の ms を console の 1 行で返す
 // （受け渡しは harness/flix-adapter.ts が頁の fgeQueryPairs と console.log を包んで行う）。
 mod WebMain {
-    use fge::{App, Mesh3d, Model3d, WebFs, WebLayer}
+    use fge::{App, Model3d, WebFs, WebLayer}
 
     import fge.web.Browser
 
@@ -34,18 +34,15 @@ mod WebMain {
         let blended = Map.get("variant", knobs) != Some("optimized");
         run {
             let made = if (scenario == Scenes.Scenario.K6)
-                Model3d.load(Model3d.loader(), "assets/Fox.glb") |> Result.flatMap(model -> {
-                    let b = Mesh3d.bounds(model#mesh);
-                    let field = Scenes.crowdField(level, blended, { min = (b#min#x, b#min#y, b#min#z), max = (b#max#x, b#max#y, b#max#z) });
-                    Draw.kitOf(path, field) |> Result.flatMap(k -> Draw.foxOf(model, not blended) |> Result.map(fox -> { fox = Some(fox) | k }))
-                })
+                Model3d.load(Model3d.loader(), "assets/Fox.glb") |> Result.flatMap(model ->
+                    Draw.kitOf(path, Scenes.crowdField(level, blended, Scenes.foxExtent())) |> Result.flatMap(k -> Draw.foxOf(model, blended) |> Result.map(fox -> { fox = Some(fox) | k })))
             else if (scenario == Scenes.Scenario.K4)
                 Model3d.load(Model3d.loader(), "assets/Sponza.glb") |> Result.flatMap(model -> Draw.kitOf(path, Scenes.build(scenario, level)) |> Result.map(Draw.withScenery(model)))
             else Draw.kitOf(path, Scenes.build(scenario, level));
             match made {
                 case Err(why) => Browser.log("[web_engine_compare] 形を作れない: ${why}")
                 case Ok(kit)  =>
-                    CompareBench.app(CompareBench.planOf(knobs), line -> Browser.log(line), hooksOf(knobs), kit, scenario)
+                    CompareBench.app(CompareBench.planOf(knobs), line -> Browser.log(line), hooksOf(knobs), kit, scenario, CompareBench.plateOrderOf(knobs))
                         |> App.quitWhen((_frame, _w) -> checked_ecast(false))
                         |> App.launchForBench
             }

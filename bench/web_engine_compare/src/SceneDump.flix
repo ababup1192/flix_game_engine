@@ -3,15 +3,15 @@
 mod SceneDump {
     use fge::Num
 
-    /// (場面, 段, 時刻) の組。
-    pub def cases(): List[(Scenes.Scenario, Int32, Float64)] =
-        (Scenes.Scenario.K1, 1, 0.0) :: (Scenes.Scenario.K1, 1, 1.25) ::
-        (Scenes.Scenario.K2, 500, 0.0) :: (Scenes.Scenario.K2, 500, 1.25) :: (Scenes.Scenario.K2, 4000, 0.7) ::
-        (Scenes.Scenario.K3, 2000, 0.0) :: (Scenes.Scenario.K3, 2000, 2.5) ::
-        (Scenes.Scenario.K5, 20000, 3.0) :: (Scenes.Scenario.K7, 500, 0.8) :: (Scenes.Scenario.K8, 10000, 0.0) ::
-        (Scenes.Scenario.K4, 0, 0.0) :: (Scenes.Scenario.K4, 0, 5.3) ::
-        (Scenes.Scenario.K6, 25, 0.0) :: (Scenes.Scenario.K6, 400, 1.3) ::
-        (Scenes.Scenario.K9, 250, 0.0) :: (Scenes.Scenario.K9, 250, 1.75) :: Nil
+    /// (場面, 段, 時刻, optimized) の組（optimized で場面が変わるのは K6 だけ）。
+    pub def cases(): List[(Scenes.Scenario, Int32, Float64, Bool)] =
+        (Scenes.Scenario.K1, 1, 0.0, false) :: (Scenes.Scenario.K1, 1, 1.25, false) ::
+        (Scenes.Scenario.K2, 500, 0.0, false) :: (Scenes.Scenario.K2, 500, 1.25, false) :: (Scenes.Scenario.K2, 4000, 0.7, false) ::
+        (Scenes.Scenario.K3, 2000, 0.0, false) :: (Scenes.Scenario.K3, 2000, 2.5, false) ::
+        (Scenes.Scenario.K5, 20000, 3.0, false) :: (Scenes.Scenario.K7, 500, 0.8, false) :: (Scenes.Scenario.K8, 10000, 0.0, false) ::
+        (Scenes.Scenario.K4, 0, 0.0, false) :: (Scenes.Scenario.K4, 0, 5.3, false) ::
+        (Scenes.Scenario.K6, 25, 0.0, false) :: (Scenes.Scenario.K6, 400, 1.3, false) :: (Scenes.Scenario.K6, 200, 0.4, true) ::
+        (Scenes.Scenario.K9, 250, 0.0, false) :: (Scenes.Scenario.K9, 250, 1.75, false) :: Nil
 
     def numbers(v: Vector[Float64]): String = "[${v |> Vector.map(Float64.toString) |> Vector.join(",")}]"
 
@@ -23,9 +23,10 @@ mod SceneDump {
         Vector.range(0, count) |> Vector.flatMap(i -> { let (x, y, z, w) = Scenes.quatAt(spin, t, i); Vector#{x, y, z, w} })
 
     /// 場面 1 つの JSON（欄の名前は比べる相手の FieldScene と同じ）。
-    pub def jsonOf(scenario: Scenes.Scenario, level: Int32, t: Float64): String =
+    pub def jsonOf(scenario: Scenes.Scenario, level: Int32, t: Float64, optimized: Bool): String =
         let frame = Num.roundInt(t * 60.0);
-        let seeded = if (scenario == Scenes.Scenario.K6) Scenes.crowdField(level, true, foxExtent()) else Scenes.build(scenario, level);
+        let seeded = if (scenario == Scenes.Scenario.K6) Scenes.crowdField(level, not optimized, Scenes.foxExtent()) else Scenes.build(scenario, level);
+        let (ar, ag, ab) = seeded#ambient#color;
         let churned = scenario == Scenes.Scenario.K3;
         let f = if (churned) Scenes.churnedUpTo(frame, seeded) else seeded;
         let texture = if (churned and frame > 0) ints(Scenes.churnPixels(frame)) else "null";
@@ -36,7 +37,8 @@ mod SceneDump {
             case None    => "null"
             case Some(g) => "{\"count\":${g#count},\"parent\":${ints(g#parent)},\"position\":${numbers(g#position)},\"quat\":${numbers(quats(g#spin, t * g#timeScale, g#count))}}"
         };
-        "{\"scenario\":\"${String.toLowerCase(ToString.toString(scenario))}\",\"level\":${level},\"t\":${t}," +
+        "{\"scenario\":\"${String.toLowerCase(ToString.toString(scenario))}\",\"level\":${level},\"t\":${t},\"variant\":\"${if (optimized) "optimized" else "naive"}\"," +
+        "\"clearColor\":${v3(f#clearColor)},\"ambient\":${numbers(Vector#{ar, ag, ab, f#ambient#intensity})}," +
         "\"camera\":{\"position\":${v3(camera#position)},\"target\":${v3(camera#target)},\"fovY\":${f#camera#fovY},\"near\":${f#camera#near},\"far\":${f#camera#far}}," +
         "\"sun\":{\"direction\":${v3(f#sun#direction)},\"color\":${v3(f#sun#color)},\"intensity\":${f#sun#intensity}}," +
         "\"count\":${f#count},\"geom\":${ints(f#geom)},\"material\":${ints(f#material)},\"position\":${numbers(f#position)}," +
@@ -44,14 +46,9 @@ mod SceneDump {
         "\"worldColumns\":${numbers(Vector.range(0, f#count) |> Vector.flatMap(i -> Scenes.worldColumns(f, t, i)))}," +
         "\"pickPoints\":${numbers(f#pickPoints)},\"texture\":${texture},\"hud\":${f#hud |> Option.map(hudJson(t)) |> Option.getWithDefault("null")},\"crowd\":${f#crowd |> Option.map(crowdJson(t)) |> Option.getWithDefault("null")},\"shapes\":[${Scenes.shapesOf(f#shapes) |> Vector.map(shapeJson) |> Vector.join(",")}]}"
 
-    /// 比べる相手の素材の表（public/assets/manifest.json）の Fox の bounds。
-    // WhyNot: 狐の glb を読んで量らない — この dump は画面なしの desktop で流すので素材を読む道（LoadProgress）が無い。読んだ形の広がりから作る大きさと間隔が同じかは、frame 60 の絵を比べる相手と並べて確かめた。
-    def foxExtent(): Scenes.Extent =
-        { min = (-12.592718124389648, -0.12174476683139801, -88.09500122070312), max = (12.592718124389648, 78.90718841552734, 66.62486267089844) }
-
     def crowdJson(t: Float64, c: Scenes.Crowd): String =
         "{\"count\":${c#count},\"scale\":${c#scale},\"position\":${numbers(c#position)},\"yaw\":${numbers(c#yaw)},\"phase\":${numbers(c#phase)}," +
-        "\"weight\":${numbers(Vector.range(0, c#count) |> Vector.map(Scenes.runWeightAt(c, t)))}}"
+        "\"weight\":${numbers(Scenes.runWeights(c, t))}}"
 
     def strings(v: Vector[String]): String = "[${v |> Vector.map(x -> "\"${x}\"") |> Vector.join(",")}]"
 
@@ -63,11 +60,11 @@ mod SceneDump {
         "{\"panels\":[${panels}],\"icons\":{\"x\":${numbers(h#icons#x)},\"y\":${numbers(h#icons#y)},\"cell\":${ints(h#icons#cell)}}," +
         "\"nameplates\":{\"x\":${numbers(plates |> Vector.map(p -> p#x))},\"y\":${numbers(plates |> Vector.map(p -> p#y))},\"health\":${numbers(plates |> Vector.map(p -> p#health))}," +
         "\"cell\":${ints(h#units#cell)},\"label\":${strings(h#labels)}}," +
-        "\"dynamicText\":{\"x\":${numbers(texts |> Vector.map(x -> { let (a, _, _) = x; a }))},\"y\":${numbers(texts |> Vector.map(x -> { let (_, b, _) = x; b }))},\"text\":${strings(texts |> Vector.map(x -> { let (_, _, c) = x; c }))}}}"
+        "\"dynamicText\":{\"x\":${numbers(texts |> Vector.map(l -> l#x))},\"y\":${numbers(texts |> Vector.map(l -> l#y))},\"text\":${strings(texts |> Vector.map(l -> l#text))}}}"
 
     def shapeJson(s: Geometry.Shape): String =
         "{\"name\":\"${s#name}\",\"positions\":${numbers(s#positions)},\"normals\":${numbers(s#normals)},\"uvs\":${numbers(s#uvs)},\"indices\":${ints(s#indices)}}"
 
     pub def write(): Unit \ IO =
-        cases() |> List.forEach(c -> { let (scenario, level, t) = c; println(jsonOf(scenario, level, t)) })
+        cases() |> List.forEach(c -> { let (scenario, level, t, optimized) = c; println(jsonOf(scenario, level, t, optimized)) })
 }

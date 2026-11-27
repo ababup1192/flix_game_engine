@@ -60,43 +60,48 @@ function shape(label: string, ours: any, theirs: Geometry) {
 
 const manifest = JSON.parse(readFileSync(new URL('../build/upstream/public/assets/manifest.json', import.meta.url), 'utf8'));
 
-function crowd(tag: string, ours: any) {
-  const theirs = buildScene('k6', ours.level, manifest, 'naive') as CharactersScene;
-  theirs.update(ours.t);
-  const c = ours.crowd;
+/** どの種類の場面にもある欄（カメラ・clear・ambient・太陽）。 */
+function common(tag: string, ours: any, theirs: any) {
   floats(`${tag} camera.position`, ours.camera.position, theirs.camera.position);
   floats(`${tag} camera.target`, ours.camera.target, theirs.camera.target);
+  floats(`${tag} camera.lens`, [ours.camera.fovY, ours.camera.near, ours.camera.far], [theirs.camera.fovY, theirs.camera.near, theirs.camera.far]);
+  floats(`${tag} clearColor`, ours.clearColor, theirs.clearColor);
+  floats(`${tag} ambient`, ours.ambient, [...theirs.ambient.color, theirs.ambient.intensity]);
+  floats(`${tag} sun`, [...ours.sun.direction, ...ours.sun.color, ours.sun.intensity], [...theirs.sun.direction, ...theirs.sun.color, theirs.sun.intensity]);
+}
+
+function crowd(tag: string, ours: any) {
+  const theirs = buildScene('k6', ours.level, manifest, ours.variant) as CharactersScene;
+  theirs.update(ours.t);
+  const c = ours.crowd;
+  common(tag, ours, theirs);
   exact(`${tag} count`, [c.count], [theirs.count]);
   floats(`${tag} scale`, [c.scale], [theirs.scale]);
   floats(`${tag} position`, c.position, theirs.position);
   floats(`${tag} yaw`, c.yaw, theirs.yaw);
   floats(`${tag} phase`, c.phase, theirs.phase);
-  floats(`${tag} blend.weight`, c.weight, theirs.blend!.weight);
+  if (theirs.blend) floats(`${tag} blend.weight`, c.weight, theirs.blend.weight);
+  else exact(`${tag} blend`, [c.weight.length], [0]);
 }
 
 function gltfScene(tag: string, ours: any) {
   const theirs = buildScene('k4', ours.level, manifest) as GltfScene;
   theirs.update(ours.t);
-  floats(`${tag} camera.position`, ours.camera.position, theirs.camera.position);
-  floats(`${tag} camera.target`, ours.camera.target, theirs.camera.target);
-  floats(`${tag} camera.lens`, [ours.camera.fovY, ours.camera.near, ours.camera.far], [theirs.camera.fovY, theirs.camera.near, theirs.camera.far]);
-  floats(`${tag} sun`, [...ours.sun.direction, ours.sun.intensity], [...theirs.sun!.direction, theirs.sun!.intensity]);
+  common(tag, ours, theirs);
 }
 
 const lines = readFileSync(process.argv[2], 'utf8').split('\n').filter((l) => l.startsWith('{'));
 for (const line of lines) {
   const ours = JSON.parse(line);
   if (ours.scenario === 'k4') { gltfScene(`k4@${ours.level} t=${ours.t}`, ours); continue; }
-  if (ours.scenario === 'k6') { crowd(`k6@${ours.level} t=${ours.t}`, ours); continue; }
+  if (ours.scenario === 'k6') { crowd(`k6@${ours.level} ${ours.variant} t=${ours.t}`, ours); continue; }
   const theirs = buildScene(ours.scenario, ours.level, null) as FieldScene;
   // K3 は状態を持つ（コマごとに 20 個を作り直す）ので、harness と同じくコマ 0 から順に update を回す。
   if (theirs.churn) for (let k = 0; k < Math.round(ours.t * 60); k++) theirs.update(k / 60);
   theirs.update(ours.t);
   const tag = `${ours.scenario}@${ours.level} t=${ours.t}`;
-  floats(`${tag} camera.position`, ours.camera.position, theirs.camera.position);
-  floats(`${tag} camera.target`, ours.camera.target, theirs.camera.target);
+  common(tag, ours, theirs);
   floats(`${tag} materials.opacity`, ours.materials.map((m: any) => m.opacity), theirs.materials.map((m) => m.opacity ?? 1));
-  floats(`${tag} sun.direction`, ours.sun.direction, theirs.sun!.direction);
   exact(`${tag} count`, [ours.count], [theirs.count]);
   exact(`${tag} geom`, ours.geom, theirs.geom);
   exact(`${tag} material`, ours.material, theirs.material);
