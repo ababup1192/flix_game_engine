@@ -398,6 +398,7 @@ pub mod Render3d.WebGpuRenderer {
         let preloaded = Ref.get(s#preloaded);
         let droppedTextures = WebGpuMaterials.endFrame(s#materials, gen, limits#textures, preloaded#textures);
         Render3d.warnDroppedTextures(s#planner, droppedTextures, preloaded#textures);
+        Render3d.ScenePlan.endPlannerFrame(s#planner);
         discard WebGpuShadows.endFrame(s#shadows, gen);
         let (usedGroups, idleGroups) = List.partition(e -> Array.get(0, e#lastUsed) >= gen, Ref.get(s#sceneGroups));
         List.forEach(e -> e#group.release(), idleGroups);

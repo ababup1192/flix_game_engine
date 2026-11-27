@@ -23,7 +23,7 @@ pub mod Render3d.MultiMeshPlan {
             match r#material |> Option.map(Scene3d.materialFieldsOf) |> Option.filter(wants) {
                 case Some(m) =>
                     let kind = kindOf(coverage, variant, head, m);
-                    { mesh = mm, head = head, surface = Some((m, kind)), handle = verifiedHandle(tables, requestOf(tables, m, kind), m, kind) }
+                    { mesh = mm, head = head, surface = Some((m, kind)), handle = verifiedHandle(planner, tables, requestOf(tables, m, kind), m, kind) }
                 case None => { mesh = mm, head = head, surface = None, handle = -1 }
             }
         })

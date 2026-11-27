@@ -25,7 +25,11 @@ mod Render3d.StaticRows {
 
     /// 場面の計画へ通す物: instances と、持ち越した集まりの持ち越さない物（carried の perFrame）。
     pub def perFrameOf(scene: Scene3d.Scene3dCmd, carried: List[CarriedRows]): List[Scene3d.Instance3d] =
-        List.foldRight((c, acc) -> List.append(c#perFrame, acc), Nil, carried) |> List.append(scene#instances)
+        // WhyNot: 持ち越さない物が無い時に List.append を通さない — 第 1 引数の列を写し直すので、置いた物の数だけ毎コマ割り当てる。
+        match List.foldRight((c, acc) -> List.append(c#perFrame, acc), Nil, carried) {
+            case Nil  => scene#instances
+            case rest => List.append(scene#instances, rest)
+        }
 
     /// 場面の置いた物の数（instances と持ち越した集まりの物。MultiMesh の体は入れない・staticGroup を勧める知らせが数える数）。carried = 場面の持ち越した集まり。
     pub def placedCountOf(scene: Scene3d.Scene3dCmd, carried: List[CarriedRows]): Int32 =

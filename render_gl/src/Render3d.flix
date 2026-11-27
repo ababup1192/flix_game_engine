@@ -896,6 +896,7 @@ mod Render3d {
     def endFrame(gl: GlContext, state: State, gen: Int64): Unit \ IO = timed(state, Phase.EndFrame, () -> {
         noteUploadStreak(state);
         noteMaterialStreak(state);
+        Render3d.ScenePlan.endPlannerFrame(state#planner);
         sweepMaterials(gl, state, gen);
         sweepShadowTargets(gl, state, gen);
         discard Render3d.SceneTargets.sweep(state#designTargets, designAllocator(gl), gen);
