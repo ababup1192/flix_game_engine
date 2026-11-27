@@ -123,3 +123,13 @@
   - 需要が無い API は足さない（windSway は今のゲームに使う所が 0 件だったので docs の例にした）。
   - デモの機能の表から逆算しない。部品の形は複数の使い道を当てた表で決める（compute は群れ・粒子・FFT の海・セルの 4 つで決めた）。
 - 計画のレビューでも「汎用さ・AI が迷わないか・Internal の切り方」を採点の軸に入れる。
+
+**誤った書き方を止める順: 型 → lint → docs（人の決め・11-25）**
+- engine の穴（ゲームや AI が誤って書ける所）は、まず型で書けなくする。型で無理なら lint（`bin/lint-rules/forbid.json` の 1 行の正規表現＋代わりの物・`app-internal`）で止める。最後に docs と早見表に書く。docs だけで済ませない。
+- 型で止める書き方:
+  - 外から作らせない値は、pub mod の中の非 pub の enum＋`pub type alias`（Flix 0.78。書き方は `/flix-docs`）。
+  - 取り違えやすい 2 種類は型の目印で分ける（compute の `Simulation3d[Elements]` / `[Cells]`）。
+  - 足し忘れを止めたい表は enum にして網羅の match で引く（compute のプリセットは enum のデータにし、engine の CPU の規則と render_gl の kernel の両方が網羅の match で引く → プリセットを足すと両方の層がコンパイルで止まる）。
+  - 遊びの規則に使わせたくない物は、状態や位置を返す pub を作らない（compute は GPU から読む関数を作らない）。
+- lint で止めた例（11-27 に足した物）: `render3d-shader-entry-by-hand`（シェーダーの入口を手で書かない）・`render3d-shader-source-direct` と `web-shader-runtime-provider`（W1）・`scene3d-screen-inputs-in-game` と `ssao-custom-spec`（L5）・compute の `webgpu-java-outside-engine`。古い書き方も forbid に 1 行足して止める。
+- 新しい型や lint を足したら、早見表に 1 行とお題 1 本を足し、`make agent-eval ONLY=<お題>` が当たるのを確かめる（engine のリポだけの口は AGENTS.md の検証の節と `testdata/agent-eval/engine-repo.json`）。
