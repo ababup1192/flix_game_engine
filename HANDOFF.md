@@ -1,55 +1,66 @@
-# 引き継ぎ（2026-11-27 書いた時点・週の上限 91%）
+# 引き継ぎ（2026-11-27 14 時ごろ・週の上限 95% で人が止めた）
 
 週の上限（全モデル）が 2026-12-01 01:00（日本時間）に戻るまで作業を止める。再開の手順は [RESUME-PROMPT.md](RESUME-PROMPT.md)。
-計画書（`plans/` のうち engine に入れていない物）は private のリポ [ababup1192/flix-plans](https://github.com/ababup1192/flix-plans) に写してある（engine のリポは public なので分けた）。
+計画書（`plans/` のうち engine に入れていない物）は private のリポ [ababup1192/flix-plans](https://github.com/ababup1192/flix-plans) に写してある（engine のリポは public なので分けた）。測りの結果は flix-plans の `results/2026-11-27-m4pro.md`、別の機械での測りの手順は `MEASURE-2026-11-27.md`。
 
 ## 1. 各リポジトリの今
 
 | リポ | 枝・状態 | remote | 次の手 |
 |---|---|---|---|
-| flix_game_engine | main = W1 取り込み（da66aea74）の上にこの md（push 済み） | ababup1192/flix_game_engine | 下の「engine の枝」を順に取り込む |
+| flix_game_engine | main = この md（下の 4 つの取り込みの上・push 済み） | ababup1192/flix_game_engine | 2 節の枝・3 節の順 |
+| flix-plans | main（push 済み） | ababup1192/flix-plans（private） | 別の機械の測りの結果を `results/` に足す |
 | cinder_lab | main = bbaf592・gh-pages 86e3e36（push 済み） | ababup1192/cinder-lab | ピクセル物理は人の判断で止めている。再開は compute の C4 以降の後（案 A: 地形は CPU・飛び散る物を GPU） |
-| bistro_lab | main = f7008e7（push 済み） | ababup1192/bistro-lab（private） | `make engine-upgrade` で WebGPU の swap の直し（2579aa0fb）を入れる（ゲームのファイルが変わるので人に一言） |
-| demo_repro_lab | main = e5b5d4f（push 済み） | ababup1192/demo-repro-lab（private） | Godot の公開デモ 2 本＋Sponza を素材だけで再現・測り済み（tools/perf/SUMMARY-2026-11-27.md）。ブラウザの 1 コマの CPU は Godot の約 2 倍（Lights 1.1 / 2.1 ms）・最初の絵はこちらが速い。見た目は映り込み・光の数・GI が足りない |
+| bistro_lab | main = f7008e7（push 済み） | ababup1192/bistro-lab（private） | `make engine-upgrade` で WebGPU の swap の直し（2579aa0fb）以降を入れる（ゲームのファイルが変わるので人に一言） |
+| demo_repro_lab | main = e5b5d4f（push 済み） | ababup1192/demo-repro-lab（private） | Godot の公開デモ 2 本＋Sponza を素材だけで再現・測り済み（tools/perf/SUMMARY-2026-11-27.md） |
 | night_school | main（push 済み） | ababup1192/night-school | 触らない（_plan_stalker.md・art/・UPDATE_PLAN.md は除く決まり） |
 | spaceship_lab | remote なし（この機械だけ） | なし | PC で Godot に並ぶ目標の 2 本目（格納庫）。手付かず |
 
 この会話で触っていない repo のうち、push していない commit を持つ物: blood-scale（8）・hd2d_lab（9）・conduit_hive（2）・touhou_rebuild（4）。中身を確かめていないので push していない。
 
-## 2. engine の枝（main に未取り込み・remote へは退避の push 済み・作業は続いているので最新は remote を見る）
+**11-27 に main へ入った物**: d1dc7d095 描き手の CPU の直し（C1・C3・組み込みフォント・W-1 案 A）と測りの口 `bin/fge web-perf`／f4486b6bb デカール D0〜D1（`Decal3d`・pub 3・レビュー 91 点）／3a186b06d W-1 案 B（dynamic offset・GL の層の jar は fge-gl-7b7278214ad7）／6b55d1379 毎コマ作って捨てる値の直し（字の組み・材質の変種）。どれも枝に main を合わせて `make verify SUITE=affected SINCE=main` が緑。
 
-| 枝 | 中身 | 状態 | 取り込む時 |
+## 2. engine の枝（main に未取り込み・remote へ push 済み）
+
+| 枝 | 中身 | 状態 | 次の手 |
 |---|---|---|---|
-| worktree-agent-acea528a59b194393 | GPU compute の C0〜C3（Java の API・engine と render_gl の Internal・Dawn のテスト・測りの道具） | 済み・レビュー 86 点 | C1 はいつでも可。C2・C3 は C4（W1 の後）と一緒に |
-| worktree-agent-ae9d7c8e070f30a05 | web のベンチ比べ（WebGPU Engine Bench の harness に flix の adapter） | 全段済み（17 場面・615 配列が元と一致・quick 済み・レビュー 80 → 90 点）。full の前の小さな後片付け 4 つ（offFrames を warm-up と分ける・K6 の刻みを ceil に・Crowd.blended と FoxPoses を 1 つの値から・RESULTS の古い数）が残る | S7 とレビューの後。full（3.5〜4 時間）は他の重い仕事と重ならない時に |
+| worktree-agent-a481e18ac9e6ff039（6a93519f0・「途中:」） | デカール D2（半透明のしみも SSAO を受ける）・D3（docs・早見表・お題・gl-parity の場面） | D2 済み（engine・engine_tools・render_gl のテスト緑・鍵の字 +ab・`MaterialFields#screenAoOnBlend` はゲームが触れない）・D3 は docs の節・早見表 3 行・お題 3 本まで。gl-parity の 2 場面は書いたが型検査も gl-parity も未（サンドボックスで glfwInit が止まった）・許容差・backend-parity・migrations・お題の当たり・verify・レビューが残り | 残りを担当に → 門 → 取り込み |
+| spike/text-layout-cache | 字の組みをコマをまたいで控えるスパイク（main に入れない）。17b28d046 = 案 1・036fa6a2e = 案 2 | 案 1 で K9 22.6 → 20.6 ms（1 回）・GC は減らない。案 2 は未測 | 別の機械で案 2 を測る → 本体にするかを人に相談（pub の案は 4 節） |
+| worktree-agent-acdcbb34ba5db3691 | compute の C4（群れを MultiMesh3d で描く） | 401 で担当が止まった。worktree にコミットしていない変更が 7 ファイル＋新しいファイル（main の案 B と WebGpuRenderer.flix がぶつかる） | 再開時に差分を読み、今の main の上で担当に立て直させる |
+| worktree-agent-acea528a59b194393 | GPU compute の C0〜C3 | 済み・レビュー 86 点（main d94198714 に取り込み済み） | — |
+| worktree-agent-ae9d7c8e070f30a05 | web のベンチ比べ `bench/web_engine_compare`（three.js などと同じ場面 K1〜K9） | 全段済み・レビュー 90 点。full の前の後片付け 4 つが残る | 後片付け → main へ → full（3.5〜4 時間）は重い仕事と重ならない時に |
 
 ## 3. 計画の全体と順番
 
-推す順（人の了承済み）: **W1（済み）→ リリース（次）→ 水 G0〜G4 → リリース → L6 → L7 → リリース → 段 1 の残り**。compute の C4〜C6 は W1 の後、描き手の CPU の直しも W1 の後。
+推す順（人の了承済み）: **リリース（次・W1 以降の分）→ 水 G0〜G4 → リリース → L6 → L7 → リリース → 段 1 の残り**。並べて: 描き手の CPU の直しの続き・デカールの残り・空の計画。
 
 | 計画書（plans/） | 状態 | 要点 |
 |---|---|---|
-| engine-render-look-l5-l7.md | L5 済み（main 098323be7）・L6・L7 は未着手 | L5 = SSAO（`PostStack.withAmbientOcclusion`） |
-| engine-wasm-shader-prebake.md | 済み（main da66aea74・wasm −8.3%・遊べるまで 14.5 秒） | 記録に無い材質の形は頂点の色で描く・ShaderVariants の 2 関数を残す（人の了承） |
-| engine-water.md | 了承（86 点・必須は直し済み） | 汎用の部品 3 つ＋水のプリセット 1 つ・ゲームが見る API 11＋型 1。windSway は v1 に入れない |
-| engine-gpu-compute.md | 了承（90 点）・C0〜C3 済み | 汎用の部品 3 つ・pub 12・1 本目は群れ 8,000 羽。見た目だけ（遊びの規則に使わない） |
-| engine-render-cpu-cache.md | 了承（84 点・W1 の後に段 0b から） | 共通の所から持ち越し → 絵の bind group → K9 名札の 2D のまとめ描き。目標: どの場面も three.js の 1/2 以内・K3 と K9 は 1/1.5 以内 |
-| engine-web-bench.md | 了承・実装中 | 上のベンチの枝 |
-| engine-render-stage1.md | 了承（読み替えた版） | 段 1 の残り（影のカスケードの直しなど） |
-| （新・未作成）場所ごとの映り込み（reflection probe・HDR の回転）＋後ろの段に GI の前もって計算した irradiance probe（baked） | 人が次の計画に入れると決めた（11-27）。計画を起こす | Material Testers との並べで一番差が出た所。GI は A（前もって計算した probe・3 つの描き手）を先に、B（SSGI）は TAA と SSR の後の上乗せ、C（ボクセル・SDF の動く GI）は当面やらない |
-| （新・未作成）デカール（壁の汚れ・血・弾痕・道路の標示を形を作らずに貼る） | 人が優先して入れたいと決めた（11-27）。計画を起こす | 映り込み・空と並ぶ次の表現力の計画 |
-| （新・未作成）空と時間の流れ（procedural sky） | 人が次の計画に入れると決めた（11-27）。計画を起こす | 太陽の位置から空の色・朝昼夕 |
-| web-export-showcase-survey.md | 調べ済み | Unity・Godot の web 書き出しの上の方 |
+| engine-render-cpu-cache.md | 段 0・0b・S・C1・C3・W-1（案 A → 案 B）済み | 次: ① 2c の条件を測る（決め 2）② C4（PostStack の入力の表とレビューを先に）③ 15 節の候補（BVH・render bundle・半透明の並べの持ち越し）は相談。K3 は 43.5 → 約 30 ms |
+| engine-decals.md | 了承・D0〜D1 済み・D2・D3 は 2 節の枝 | D4 は D0 の測りの後・D5 は L6 の後 |
+| engine-reflection-probes.md | 1 回目のレビュー 66 点の指摘を直した所 | 2 回目のレビュー → 人の了承 |
+| （未作成）空と時間の流れ（procedural sky） | 人が次の計画に入れると決めた | 映り込みの probe より先に（probe が空を映す） |
+| engine-water.md | 了承（86 点） | 汎用の部品 3 つ＋水のプリセット 1 つ |
+| engine-gpu-compute.md | 了承（90 点）・C0〜C3 済み・C4 は 2 節の止まった枝 | |
+| engine-render-look-l5-l7.md | L5 済み・L6・L7 は未着手 | |
+| （未作成）超解像 | 人と話した順: 内側の解像度を分ける → FSR1 型（1 コマだけ）→ 動的な解像度 → TAA と動きベクトル → FSR2 系 | うちに合わせる 4 点: CPU の直しより後・UI と字は拡大しない・ドット絵と PS1 風は整数倍の最近傍のまま・FSR2 系は WebGPU だけ。手本に pmndrs/upscaler（MIT・若い）は読むだけ |
+| engine-web-bench.md | 実装済み（上のベンチの枝） | |
+| engine-render-stage1.md | 了承（読み替えた版） | 段 1 の残り |
 
 ## 4. 分かった事（数字）
 
-- web のベンチ（smoke・M4 Pro・Chrome・WebGPU）: まとめる書き方は three.js と並ぶ（K2・K5）。負けている所: K3 入れ替わり 約 1/4.5（絵の bind group を毎コマ 1,721 回作る）・K9 名札 約 1/27（2D のまとめ描きが絵の替わり目で切れる・1,000 枚で draw 3,003 本）・K7 半透明 1/2.5〜1/16・K8 pick 約 1/60（BVH が無い）・K5 まとめない 約 1/2.7。配る大きさは 1.4 MB（比べる軸にしない）。
-- デスクトップの WebGPU の rest 9 ms は CPU でなく GPU の待ち（Bistro を 3840×2160 で GPU 9.4 ms）。swap に記録する直しは 2579aa0fb。画面がロック中の 120 Hz の頭打ちは測り直していない（人: 120 出ていれば良い）。
-- compute の測り: 群れ 8,000 羽の格子の 1 刻みは PC 0.10〜0.21 ms・Chrome 0.05〜0.13 ms。CPU で同じ規則は 16〜76 ms。
+- **11-27 は機械の重さで絶対値が大きく揺れた**（ほかの担当の門と重なり load average 3〜68）。同じ時に同じ手順で取った前後の比べは使えるが、別の時刻の値どうし・three.js との比は並べない。正式な比は別の機械で three.js と同じ時間帯に取る（flix-plans の MEASURE-2026-11-27.md）。
+- K3（2,000 個がそれぞれ別の材質）: 43.5 → C1+C3 40.7 → 案 A 36.7 → 案 B 約 30 ms（案 B の前後は同じ手順で 35.0 / 34.7 → 31.3 / 30.1・createBindGroup 1 コマ約 2,080 → 約 3）。案 B は見込み（33 ms）より効いた。プロファイルの割合（2.78%）より、作る物の数を断った効き（JS との行き来・GC に散らばった分）が大きい。
+- K9（名札 1,000 枚）: 24.1 → 22.6 ms（字の組みの直し）・GC 約 27% のまま。字ごとに DrawCmd と Vec2 4 個を作るのが残る。スパイク案 1 で 20.6 ms。
+- 見込み: 計画の直しを全部入れて K3 は three.js の約 1/2。1/1.5 から先は BVH や値の持ち方を変える作りの直しが要る。K9 は 1/2 に遠い（描き物 1 個約 20 µs の作りの値段）。
+- 字の組みの控えの本体にする時の pub の案: engine に外から作らせない型 `Text.Layout` と `buildLayout`・`layoutMatches`・`layoutToDrawables`（今の `toDrawables` は同じ意味で残す）。控えの置き場は engine の lint が HashMap と System を止めるので engine_world の TileCache。
+- デカール: 10 万三角形の的に 1 枚 3.65 ms（JVM）・64 枚の作り直し 96 ms → 弾痕は当たった時に 1 枚ずつ。使わないゲームの wasm は増えない。試しの絵（PS1 風の廊下）で頂点の色の明るさに馴染む事を見た。
+- デスクトップの WebGPU の rest 9 ms は GPU の待ち（Bistro 3840×2160 で GPU 9.4 ms）。compute の群れ 8,000 羽の 1 刻みは PC 0.10〜0.21 ms・Chrome 0.05〜0.13 ms。
 
 ## 5. 人に聞く事（再開時）
 
-- engine の直しの候補（相談が要る物）: BVH（K8 pick）・render bundle・engine の 2D の助言の行を console に出す出し方・staticGroup の出し入れを「作り直し」と読む知らせ・X2（線形の ACES）。
+- 字の組みの控え（engine の拡張・4 節の pub の案）を本体にするか。別の機械で案 2 を測った後に。
+- engine の直しの候補（相談が要る物）: BVH（K8 pick・K5）・render bundle・半透明の並べの持ち越し・K9-c（1 draw に複数の絵）・`DrawCmd` の Vec2 を受けない入口・X2（線形の ACES）。
+- 超解像の計画を起こすか（3 節の順）。
 - bistro_lab に `make engine-upgrade` を打ってよいか。
 
 ## 6. 守る事（人の決まり）
@@ -133,3 +144,8 @@
   - 遊びの規則に使わせたくない物は、状態や位置を返す pub を作らない（compute は GPU から読む関数を作らない）。
 - lint で止めた例（11-27 に足した物）: `render3d-shader-entry-by-hand`（シェーダーの入口を手で書かない）・`render3d-shader-source-direct` と `web-shader-runtime-provider`（W1）・`scene3d-screen-inputs-in-game` と `ssao-custom-spec`（L5）・compute の `webgpu-java-outside-engine`。古い書き方も forbid に 1 行足して止める。
 - 新しい型や lint を足したら、早見表に 1 行とお題 1 本を足し、`make agent-eval ONLY=<お題>` が当たるのを確かめる（engine のリポだけの口は AGENTS.md の検証の節と `testdata/agent-eval/engine-repo.json`）。
+- **ヘッドレスの Chrome が起動しなくなった（11-27 13:28 から）**: `--dump-dom` の空の頁でもログを出さずに固まる。Chrome の更新ではない。画面のロックが長いと macOS が起動を待たせる、という推測は未確認。web-perf・web-load-check・gl-capture-check が止まるので、再開したら最初に 1 回起こして確かめる。
+- **測りは機械の重さを書いてから**: 担当を並べると load average が 60 を超え、同じ書き出しの K3 が 23 ms と 43 ms の間で揺れた。測る担当には各回の load average を書かせ、10 を超える回は捨てさせる。測る間は門を走らせない。
+- **担当の測りの写しは worktree に残させない**: `bench/web_engine_compare` の写しや `debug/` が git の外に残ると、`make verify SUITE=affected` が「全部の門」を選ぶ。scratchpad へ退けてから門を流す。
+- **取り込みの前に枝へ main を合わせる**: 担当の枝は古い main から出ているので、`git merge main` を枝の側でしてから `make verify SUITE=affected SINCE=main` を流し、緑なら main で `--no-ff` の取り込み。
+- **担当は refactor が 1 回落ちると grep へ戻りがち**（11-27 のスパイクで 11 回）。依頼文に「索引の作り直しで 1 回落ちても refactor を打ち直す」と書く。
