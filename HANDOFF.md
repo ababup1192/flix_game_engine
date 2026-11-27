@@ -7,7 +7,7 @@
 
 | リポ | 枝・状態 | remote | 次の手 |
 |---|---|---|---|
-| flix_game_engine | main = 18f68ebfc の上にこの md（push 済み） | ababup1192/flix_game_engine | 下の「engine の枝」を順に取り込む |
+| flix_game_engine | main = W1 取り込み（da66aea74）の上にこの md（push 済み） | ababup1192/flix_game_engine | 下の「engine の枝」を順に取り込む |
 | cinder_lab | main = bbaf592・gh-pages 86e3e36（push 済み） | ababup1192/cinder-lab | ピクセル物理は人の判断で止めている。再開は compute の C4 以降の後（案 A: 地形は CPU・飛び散る物を GPU） |
 | bistro_lab | main = f7008e7（push 済み） | ababup1192/bistro-lab（private） | `make engine-upgrade` で WebGPU の swap の直し（2579aa0fb）を入れる（ゲームのファイルが変わるので人に一言） |
 | demo_repro_lab | main = e5b5d4f（push 済み） | ababup1192/demo-repro-lab（private） | Godot の公開デモ 2 本＋Sponza を素材だけで再現・測り済み（tools/perf/SUMMARY-2026-11-27.md）。ブラウザの 1 コマの CPU は Godot の約 2 倍（Lights 1.1 / 2.1 ms）・最初の絵はこちらが速い。見た目は映り込み・光の数・GI が足りない |
@@ -20,23 +20,25 @@
 
 | 枝 | 中身 | 状態 | 取り込む時 |
 |---|---|---|---|
-| worktree-agent-a8c46cd6d4fb117ac | W1: ブラウザ版の書き出しでシェーダーの文字列を先に作り、wasm から ShaderAst と printer を外す | 実装中（5 コミット: 鍵で引く形・鍵の記録・字の表を wasm へ・wasm の記録を下げる。中間レビュー 78 点の直し済み） | 門（`make verify SUITE=affected SINCE=main`）を自分で流してから。W1 の後にリリース |
 | worktree-agent-acea528a59b194393 | GPU compute の C0〜C3（Java の API・engine と render_gl の Internal・Dawn のテスト・測りの道具） | 済み・レビュー 86 点 | C1 はいつでも可。C2・C3 は C4（W1 の後）と一緒に |
 | worktree-agent-ae9d7c8e070f30a05 | web のベンチ比べ（WebGPU Engine Bench の harness に flix の adapter） | S0〜S7 済み（16 場面・555 配列が元と一致）・残りは quick とレビュー | S7 とレビューの後。full（3.5〜4 時間）は他の重い仕事と重ならない時に |
 
 ## 3. 計画の全体と順番
 
-推す順（人の了承済み）: **W1 → リリース → 水 G0〜G4 → リリース → L6 → L7 → リリース → 段 1 の残り**。compute の C4〜C6 は W1 の後、描き手の CPU の直しも W1 の後。
+推す順（人の了承済み）: **W1（済み）→ リリース（次）→ 水 G0〜G4 → リリース → L6 → L7 → リリース → 段 1 の残り**。compute の C4〜C6 は W1 の後、描き手の CPU の直しも W1 の後。
 
 | 計画書（plans/） | 状態 | 要点 |
 |---|---|---|
 | engine-render-look-l5-l7.md | L5 済み（main 098323be7）・L6・L7 は未着手 | L5 = SSAO（`PostStack.withAmbientOcclusion`） |
-| engine-wasm-shader-prebake.md | 了承・実装中（W1） | wasm を軽くする |
+| engine-wasm-shader-prebake.md | 済み（main da66aea74・wasm −8.3%・遊べるまで 14.5 秒） | 記録に無い材質の形は頂点の色で描く・ShaderVariants の 2 関数を残す（人の了承） |
 | engine-water.md | 了承（86 点・必須は直し済み） | 汎用の部品 3 つ＋水のプリセット 1 つ・ゲームが見る API 11＋型 1。windSway は v1 に入れない |
 | engine-gpu-compute.md | 了承（90 点）・C0〜C3 済み | 汎用の部品 3 つ・pub 12・1 本目は群れ 8,000 羽。見た目だけ（遊びの規則に使わない） |
 | engine-render-cpu-cache.md | 了承（84 点・W1 の後に段 0b から） | 共通の所から持ち越し → 絵の bind group → K9 名札の 2D のまとめ描き。目標: どの場面も three.js の 1/2 以内・K3 と K9 は 1/1.5 以内 |
 | engine-web-bench.md | 了承・実装中 | 上のベンチの枝 |
 | engine-render-stage1.md | 了承（読み替えた版） | 段 1 の残り（影のカスケードの直しなど） |
+| （新・未作成）場所ごとの映り込み（reflection probe・HDR の回転）＋後ろの段に GI の前もって計算した irradiance probe（baked） | 人が次の計画に入れると決めた（11-27）。計画を起こす | Material Testers との並べで一番差が出た所。GI は A（前もって計算した probe・3 つの描き手）を先に、B（SSGI）は TAA と SSR の後の上乗せ、C（ボクセル・SDF の動く GI）は当面やらない |
+| （新・未作成）デカール（壁の汚れ・血・弾痕・道路の標示を形を作らずに貼る） | 人が優先して入れたいと決めた（11-27）。計画を起こす | 映り込み・空と並ぶ次の表現力の計画 |
+| （新・未作成）空と時間の流れ（procedural sky） | 人が次の計画に入れると決めた（11-27）。計画を起こす | 太陽の位置から空の色・朝昼夕 |
 | web-export-showcase-survey.md | 調べ済み | Unity・Godot の web 書き出しの上の方 |
 
 ## 4. 分かった事（数字）
