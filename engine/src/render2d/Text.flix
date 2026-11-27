@@ -184,6 +184,98 @@ pub mod Text {
     /// wrapWidth の折り返しとで複数行に分割される。
     /// horizontalAlignment は見た目の行ごとに、verticalAlignment はテキストブロック全体に適用される。
     pub def toDrawables(label: Text, globalPos: Vec2.Vec2): List[GameEngine.Drawable] =
+        toDrawablesUncached(label, globalPos)
+
+    // ---- スパイク: 字の組みをコマをまたいで控える（案 1）。控えの置き場は engine_world の側 ----
+
+    pub type alias LayoutGlyph = { ax = Float64, ay = Float64, gw = Float64, gh = Float64,
+                               s0 = Float64, t0 = Float64, su = Float64, tv = Float64 }
+    pub type alias LayoutRow = { yOff = Float64, offsetX = Float64, glyphs = List[LayoutGlyph] }
+    pub type alias Layout = { textureName = String, fontSize = Float64, wrapWidth = Option[Float64],
+                          h = HorizontalAlignment, v = VerticalAlignment, asc = Float64,
+                          rows = List[LayoutRow] }
+
+    pub def layoutToDrawables(label: Text, lay: Layout, globalPos: Vec2.Vec2): List[GameEngine.Drawable] =
+        List.reverse(layoutRowsRev(label, lay, globalPos#x, globalPos#y, lay#rows, Nil))
+
+    pub def sameLayoutInputs(label: Text, lay: Layout): Bool =
+        let Text.Text(r) = label;
+        lay#textureName == r#fontAtlas#textureName and lay#fontSize == r#fontSize
+            and lay#wrapWidth == r#wrapWidth and lay#h == r#horizontalAlignment
+            and lay#v == r#verticalAlignment
+
+    pub def buildLayout(label: Text): Layout =
+        let Text.Text(r) = label;
+        let atlas = r#fontAtlas;
+        let scale = r#fontSize / atlas#fontSize;
+        let lineHeight = (atlas#ascent + atlas#descent + atlas#lineGap) * scale;
+        let rows = visualRows(label);
+        let totalHeight = lineHeight * Int32.toFloat64(Int32.max(1, List.length(rows)));
+        let blockYOffset = verticalOffsetFor(r#verticalAlignment, totalHeight);
+        let built = List.mapWithIndex((i, row) -> {
+            let lineWidth = advanceSum(row, 0.0) * scale;
+            { yOff = Int32.toFloat64(i) * lineHeight + blockYOffset,
+              offsetX = horizontalOffsetFor(r#horizontalAlignment, lineWidth),
+              glyphs = List.reverse(layoutGlyphsRev(atlas, scale, row, 0.0, Nil)) }
+        }, rows);
+        { textureName = atlas#textureName, fontSize = r#fontSize, wrapWidth = r#wrapWidth,
+          h = r#horizontalAlignment, v = r#verticalAlignment, asc = atlas#ascent * scale, rows = built }
+
+    def layoutGlyphsRev(atlas: FontAtlas, scale: Float64, row: List[(Char, Float64)], penX: Float64,
+                        acc: List[LayoutGlyph]): List[LayoutGlyph] = match row {
+        case Nil => acc
+        case (ch, adv) :: rest =>
+            let acc1 = match Map.get(TextLayout.charToCodePoint(ch), atlas#glyphs) {
+                case None => acc
+                case Some(gm) =>
+                    { ax = (penX + gm#xOff) * scale, ay = (0.0 + gm#yOff) * scale,
+                      gw = gm#glyphW * scale, gh = gm#glyphH * scale,
+                      s0 = gm#s0, t0 = gm#t0, su = gm#s1 - gm#s0, tv = gm#t1 - gm#t0 } :: acc
+            };
+            layoutGlyphsRev(atlas, scale, rest, penX + adv, acc1)
+    }
+
+    def layoutRowsRev(label: Text, lay: Layout, gx: Float64, gy: Float64, rows: List[LayoutRow],
+                      acc: List[GameEngine.Drawable]): List[GameEngine.Drawable] = match rows {
+        case Nil => acc
+        case row :: rest =>
+            let baseY = gy + row#yOff + lay#asc;
+            let acc1 = layoutGlyphDrawablesRev(label, gx, baseY, row#offsetX, row#glyphs, acc);
+            layoutRowsRev(label, lay, gx, gy, rest, acc1)
+    }
+
+    def layoutGlyphDrawablesRev(label: Text, gx: Float64, baseY: Float64, offsetX: Float64,
+                                glyphs: List[LayoutGlyph],
+                                acc: List[GameEngine.Drawable]): List[GameEngine.Drawable] = match glyphs {
+        case Nil => acc
+        case g :: rest =>
+            let Text.Text(r) = label;
+            let atlas = r#fontAtlas;
+            let x0 = g#ax + gx + offsetX;
+            let y0 = g#ay + baseY;
+            let w = (x0 + g#gw) - x0;
+            let h = (y0 + g#gh) - y0;
+            let acc1 =
+                if (w <= 0.0 or h <= 0.0) acc
+                else DrawCmd.fromParts(
+                    atlas#textureName,
+                    {x = x0, y = y0},
+                    {x = w / atlas#textureSize, y = h / atlas#textureSize},
+                    0.0,
+                    r#visual#color,
+                    1.0,
+                    false,
+                    {x = g#s0, y = g#t0},
+                    {x = g#su, y = g#tv},
+                    r#visual#zIndex,
+                    None,
+                    None,
+                    DrawCmd.BlendMode.Normal,
+                    Nil) :: acc;
+            layoutGlyphDrawablesRev(label, gx, baseY, offsetX, rest, acc1)
+    }
+
+    pub def toDrawablesUncached(label: Text, globalPos: Vec2.Vec2): List[GameEngine.Drawable] =
         let Text.Text(r) = label;
         let atlas = r#fontAtlas;
         let scale = r#fontSize / atlas#fontSize;

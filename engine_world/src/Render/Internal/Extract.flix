@@ -1,6 +1,10 @@
 // Render.Internal.Extract — Item を描画命令（Drawable / PolygonRenderCmd）へ写す所: draw / drawWith の走査・clip 矩形の重ね・葉ごとの Drawable 作り・Shader 面をテクスチャ 1 枚の sprite に落とす判定。
 // ゲームからは呼ばない（Render の中身）。
 pub mod Render.Internal.Extract {
+    import java.lang.System
+    import java.lang.Object
+    import java.util.HashMap
+    import java.util.Objects
     /// draw / drawWith の共通トラバーサル。Clipped を剥がして有効な clip 矩形（入れ子は交差）を決め、
     /// 葉を Drawable / PolygonRenderCmd へ振り分けてから clip 矩形を刻む。振り分けの分岐を 1 本に
     /// しておかないと、Clipped の扱いが 2 経路で割れる。
@@ -270,11 +274,10 @@ pub mod Render.Internal.Extract {
         // engine の public 純粋射影に委譲。文字色（SDF 描画では color がそのまま文字色）と
         // zIndex は Text の visual に 1 回だけ書き込む — 出来上がった列を withTintAndZIndex で
         // map し直すと、文字 1 字につき捨てる Drawable が 1 個ずつ増えるため。
-        let ds = Text.toDrawables(
-            Text.make(content, fontAtlas, fontSize)
+        let label = Text.make(content, fontAtlas, fontSize)
                 |> Text.setWrapWidth(wrapWidth)
-                |> Text.mapVisual(v -> v |> Visual.setColor(tint) |> Visual.setZIndex(zIndex)),
-            pos);
+                |> Text.mapVisual(v -> v |> Visual.setColor(tint) |> Visual.setZIndex(zIndex));
+        let ds = Text.layoutToDrawables(label, cachedLayout(label, content), pos);
         // 濃さは薄めた時だけ字ごとに書き直す（不透明の字は作り直さない）。
         let faded = if (alpha >= 1.0) ds else ds |> List.map(DrawCmd.withAlpha(alpha));
         if (rotation == 0.0) faded
@@ -294,6 +297,37 @@ pub mod Render.Internal.Extract {
         let half = Vec2.div(size, 2.0);
         let moved = Render.rotAbout(t, pivot, Vec2.add({x = px, y = py}, half));
         DrawCmd.withPositionAndRotation(Vec2.sub(moved, half), radiansOf(t), d)
+
+    // ---- スパイク: 字の組みの控え（案 1）。置き場は System.getProperties の HashMap（手早い形・本体にしない） ----
+    def layoutCacheLimit(): Int32 = 4096
+
+    def layoutCache(): HashMap[String, Object] \ IO =
+        let props = System.getProperties();
+        let o = props.get(unchecked_cast("fge.textLayoutCache" as Object));
+        if (Objects.isNull(o)) {
+            let m: HashMap[String, Object] = new HashMap();
+            discard props.put(unchecked_cast("fge.textLayoutCache" as Object), unchecked_cast(m as Object));
+            m
+        } else unchecked_cast(o as HashMap[String, Object])
+
+    def cachedLayout(label: Text, content: String): Text.Layout =
+        unchecked_cast(cachedLayoutIO(label, content) as _ \ {})
+
+    def cachedLayoutIO(label: Text, content: String): Text.Layout \ IO =
+        let m = layoutCache();
+        let found: Object = m.get(unchecked_cast(content as Object));
+        let hit = if (Objects.isNull(found)) None else {
+            let lay: Text.Layout = unchecked_cast(found as Text.Layout);
+            if (Text.sameLayoutInputs(label, lay)) Some(lay) else None
+        };
+        match hit {
+            case Some(lay) => lay
+            case None =>
+                let lay = Text.buildLayout(label);
+                if (m.size() >= layoutCacheLimit()) m.clear() else ();
+                discard m.put(content, unchecked_cast(lay as Object));
+                lay
+        }
 
     pub def boxDrawable(size: Vec2.Vec2, color: Color, alpha: Float64, rotation: Float64,
                     style: Option[GameEngine.BoxStyle], zIndex: Int32, blend: DrawCmd.BlendMode,

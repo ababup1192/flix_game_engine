@@ -154,4 +154,28 @@ mod TestText {
             case None    => bug!("4 文字目の Drawable が無い")
         }
 
+    def oddAtlas(): FontAtlas =
+        let m = (i: Int32) -> {
+            let f = Int32.toFloat64(i);
+            ({ xOff = 0.37 * f - 1.1, yOff = -7.3 + 0.13 * f, glyphW = 5.7 + 0.21 * f, glyphH = 9.1 - 0.07 * f,
+               advance = 6.3 + 0.11 * f, s0 = 0.017 * f, t0 = 0.031 * f, s1 = 0.017 * f + 0.0213, t1 = 0.031 * f + 0.0391 }: TextLayout.GlyphMetrics)
+        };
+        let glyphs = List.range(32, 127) |> List.foldLeft((acc, cp) -> Map.insert(cp, m(cp - 32), acc), Map.empty());
+        ({ textureName = "odd", fontSize = 32.0, textureSize = 512.0, ascent = 25.3, descent = 6.7, lineGap = 1.9, glyphs = glyphs }: FontAtlas)
+
+    /// 控えを通した字の組みと、控えを通さない字の組みが、どの入力でも同じ描画命令になる
+    @Test
+    def testLayoutCacheSameDrawables(): Unit \ Assert =
+        let texts = "Unit 17" :: "DMG 98231" :: "a b\ncdef ghij" :: "" :: "  lead" :: "Wrap me around please ok" :: Nil;
+        let sizes = 13.0 :: 17.5 :: 32.0 :: Nil;
+        let wraps = None :: Some(40.0) :: Some(71.3) :: Nil;
+        let hs = HorizontalAlignment.Left :: HorizontalAlignment.Center :: HorizontalAlignment.Right :: Nil;
+        let vs = VerticalAlignment.Top :: VerticalAlignment.Center :: VerticalAlignment.Bottom :: Nil;
+        let poss = ({x = 0.0, y = 0.0}: Vec2.Vec2) :: {x = 123.456, y = 78.9012} :: {x = -33.3, y = 1e5 + 0.1} :: Nil;
+        let labels = List.flatMap(t -> List.flatMap(s -> List.flatMap(w -> List.flatMap(h -> List.map(v ->
+            Text.make(t, oddAtlas(), s) |> Text.setWrapWidth(w) |> Text.setHorizontalAlignment(h) |> Text.setVerticalAlignment(v),
+            vs), hs), wraps), sizes), texts);
+        let bad = List.flatMap(l -> List.filter(p -> Text.layoutToDrawables(l, Text.buildLayout(l), p) != Text.toDrawablesUncached(l, p), poss), labels);
+        Assert.assertEq(expected = 0, List.length(bad))
+
 }
