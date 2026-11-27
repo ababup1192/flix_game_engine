@@ -122,6 +122,9 @@ pub mod Text {
                  lineChars: List[Char]): List[List[(Char, Float64)]] =
         if (List.isEmpty(lineChars))
             (Nil: List[(Char, Float64)]) :: Nil
+        // 折り返さない行は 1 行のままなので、ペン位置の列と 2 度の zip を毎コマ作らない。
+        else if (wrapWidth <= 0.0)
+            List.map(ch -> (ch, advanceOf(atlas, ch)), lineChars) :: Nil
         else {
             let advances = advancesOf(atlas, lineChars);
             // lineHeight に 1.0 を渡すのは、y を「何行目か」の番号としてだけ使うため。
@@ -132,13 +135,13 @@ pub mod Text {
 
     /// 各文字の送り幅（グリフ表に無い文字は 0）。
     def advancesOf(atlas: FontAtlas, chars: List[Char]): List[Float64] =
-        List.map(ch -> {
-            let cp = TextLayout.charToCodePoint(ch);
-            match Map.get(cp, atlas#glyphs) {
-                case Some(gm) => gm#advance
-                case None     => 0.0
-            }
-        }, chars)
+        List.map(ch -> advanceOf(atlas, ch), chars)
+
+    def advanceOf(atlas: FontAtlas, ch: Char): Float64 =
+        match Map.get(TextLayout.charToCodePoint(ch), atlas#glyphs) {
+            case Some(gm) => gm#advance
+            case None     => 0.0
+        }
 
     /// (文字, 送り幅) と行番号 y の並びを、y が変わる所で行に区切る。
     /// 蓄積はタプルで持つ — レコードは 1 フィールド 1 オブジェクトで、文字ごとに
@@ -188,49 +191,72 @@ pub mod Text {
         let rows = visualRows(label);
         let totalHeight = lineHeight * Int32.toFloat64(Int32.max(1, List.length(rows)));
         let blockYOffset = verticalOffsetFor(r#verticalAlignment, totalHeight);
-        let result = List.foldLeft((acc, row) -> {
-            let (accRows, lineIdx) = acc;
-            // 行幅と horizontalAlignment から横オフセット計算（足す順は totalAdvance と同じ左から）
-            let lineWidth = List.foldLeft((a, entry) -> a + snd(entry), 0.0, row) * scale;
+        List.reverse(rowsDrawablesRev(label, globalPos, lineHeight, blockYOffset, rows, 0, Nil))
+
+    // 蓄積をタプルで持つ foldLeft にしない — 文字ごとにタプルと箱に入れた Float64 を作り、
+    // ブラウザ版では名札の多い場面の GC の大半になる。全行を 1 本の逆順の列へ積み、最後に 1 回だけ並べ直す。
+    def rowsDrawablesRev(label: Text, globalPos: Vec2.Vec2, lineHeight: Float64, blockYOffset: Float64,
+                         rows: List[List[(Char, Float64)]], lineIdx: Int32,
+                         acc: List[GameEngine.Drawable]): List[GameEngine.Drawable] = match rows {
+        case Nil => acc
+        case row :: rest =>
+            let Text.Text(r) = label;
+            let atlas = r#fontAtlas;
+            let scale = r#fontSize / atlas#fontSize;
+            let lineWidth = advanceSum(row, 0.0) * scale;
             let offsetX = horizontalOffsetFor(r#horizontalAlignment, lineWidth);
             let yOff = Int32.toFloat64(lineIdx) * lineHeight + blockYOffset;
-            let ascentOffset = atlas#ascent * scale;
-            let lineGlobalPos = {x = globalPos#x, y = globalPos#y + yOff + ascentOffset};
-            // グリフごとに Drawable を生成。ペン位置は行頭 0 から送り幅を足し込むだけ —
-            // layoutPositions をもう一度呼ぶと、文字数ぶんのペン位置リストと文字との zip を
-            // 毎フレーム組み直すことになる（行の割りは visualRows が済ませている）。
-            let folded = List.foldLeft((acc2, entry) -> {
-                let (dsRev, penX) = acc2;
-                let (ch, adv) = entry;
-                let cp = TextLayout.charToCodePoint(ch);
-                match Map.get(cp, atlas#glyphs) {
-                    case Some(gm) =>
-                        let qb = TextLayout.glyphQuadBounds((penX, 0.0), gm, scale, lineGlobalPos, offsetX);
-                        let w = qb#x1 - qb#x0;
-                        let h = qb#y1 - qb#y0;
-                        if (w <= 0.0 or h <= 0.0) (dsRev, penX + adv)
-                        else (DrawCmd.fromParts(
-                            atlas#textureName,
-                            {x = qb#x0, y = qb#y0},
-                            {x = w / atlas#textureSize, y = h / atlas#textureSize},
-                            0.0,
-                            r#visual#color,
-                            1.0,
-                            false,
-                            {x = gm#s0, y = gm#t0},
-                            {x = gm#s1 - gm#s0, y = gm#t1 - gm#t0},
-                            r#visual#zIndex,
-                            None,
-                            None,
-                            DrawCmd.BlendMode.Normal,
-                            Nil) :: dsRev, penX + adv)
-                    case None => (dsRev, penX + adv)
-                }
-            }, ((Nil: List[GameEngine.Drawable]), 0.0), row);
-            // 行ごとの列を先頭へ積んで最後に並べ直す。acc へ append すると行数の二乗で割り当てる。
-            (List.reverse(fst(folded)) :: accRows, lineIdx + 1)
-        }, ((Nil: List[List[GameEngine.Drawable]]), 0), rows);
-        List.flatten(List.reverse(fst(result)))
+            let baseY = globalPos#y + yOff + atlas#ascent * scale;
+            let acc1 = glyphsDrawablesRev(label, globalPos#x, baseY, offsetX, row, 0.0, acc);
+            rowsDrawablesRev(label, globalPos, lineHeight, blockYOffset, rest, lineIdx + 1, acc1)
+    }
+
+    def advanceSum(row: List[(Char, Float64)], sum: Float64): Float64 = match row {
+        case Nil => sum
+        case (_, adv) :: rest => advanceSum(rest, sum + adv)
+    }
+
+    def glyphsDrawablesRev(label: Text, baseX: Float64, baseY: Float64, offsetX: Float64,
+                           row: List[(Char, Float64)], penX: Float64,
+                           acc: List[GameEngine.Drawable]): List[GameEngine.Drawable] = match row {
+        case Nil => acc
+        case (ch, adv) :: rest =>
+            let acc1 = glyphDrawableOnto(label, baseX, baseY, offsetX, ch, penX, acc);
+            glyphsDrawablesRev(label, baseX, baseY, offsetX, rest, penX + adv, acc1)
+    }
+
+    // TextLayout.glyphQuadBounds を呼ばない — 文字ごとに四角のレコードとペン位置のタプルを作るため。
+    // 式（足す順まで）は glyphQuadBounds と同じに保ち、画素を変えない。
+    def glyphDrawableOnto(label: Text, baseX: Float64, baseY: Float64, offsetX: Float64,
+                          ch: Char, penX: Float64,
+                          acc: List[GameEngine.Drawable]): List[GameEngine.Drawable] =
+        let Text.Text(r) = label;
+        let atlas = r#fontAtlas;
+        let scale = r#fontSize / atlas#fontSize;
+        match Map.get(TextLayout.charToCodePoint(ch), atlas#glyphs) {
+            case None => acc
+            case Some(gm) =>
+                let x0 = (penX + gm#xOff) * scale + baseX + offsetX;
+                let y0 = (0.0 + gm#yOff) * scale + baseY;
+                let w = (x0 + gm#glyphW * scale) - x0;
+                let h = (y0 + gm#glyphH * scale) - y0;
+                if (w <= 0.0 or h <= 0.0) acc
+                else DrawCmd.fromParts(
+                    atlas#textureName,
+                    {x = x0, y = y0},
+                    {x = w / atlas#textureSize, y = h / atlas#textureSize},
+                    0.0,
+                    r#visual#color,
+                    1.0,
+                    false,
+                    {x = gm#s0, y = gm#t0},
+                    {x = gm#s1 - gm#s0, y = gm#t1 - gm#t0},
+                    r#visual#zIndex,
+                    None,
+                    None,
+                    DrawCmd.BlendMode.Normal,
+                    Nil) :: acc
+        }
 
 }
 

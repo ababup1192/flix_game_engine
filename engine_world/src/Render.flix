@@ -933,6 +933,7 @@ pub mod Render {
         items |> List.foldLeft((acc, placed) -> {
             let (leaf, _clip) = unwrapClip(placed#item, None);
             match leaf {
+                case Item.Text(t) if not hasMissingGlyph(t#fontAtlas, t#text, 0, String.length(t#text)) => acc
                 case Item.Text(t) =>
                     let atlas = t#fontAtlas;
                     let missing = t#text |> String.toList |> List.filterMap(ch -> {
@@ -948,6 +949,15 @@ pub mod Render {
                 case _ => acc
             }
         }, Map.empty())
+
+    // 先に字の列を作らずに見る — 欠けた字はたいてい無く、毎コマすべての字の列を作って捨てることになるため。
+    def hasMissingGlyph(atlas: FontAtlas, text: String, i: Int32, n: Int32): Bool =
+        if (i >= n) false
+        else {
+            let cp = TextLayout.charToCodePoint(String.charAt(i, text));
+            if (cp != 10 and not Map.memberOf(cp, atlas#glyphs)) true
+            else hasMissingGlyph(atlas, text, i + 1, n)
+        }
 
     /// Shader 面だけを取り出して Platform.Draw2d.drawSurface が受ける描画依頼へ変換する（GL 経路専用）。
     /// programOf は Spec → コンパイル済みプログラムのハンドル（バックエンドが用意）。
