@@ -38,7 +38,11 @@ pub mod Render3d.WebGpuMaterials {
     import java.nio.ByteBuffer
     import java.nio.ByteOrder
     import java.lang.StringBuilder
+    import java.lang.Object
+    import java.util.HashMap
     import java.util.HashSet
+    import java.util.Iterator
+    import java.util.Objects
     use Render3d.{MeshDraw, TextureSlot, TextureSource}
     use Render3d.ProgramKey.{ProgramKind, materialKey}
     use Render3d.MaterialValues
@@ -67,6 +71,7 @@ pub mod Render3d.WebGpuMaterials {
     type alias GpuTexture = { texture = Texture, levels = Int32, serial = Int64 }
 
     /// 控えた group 1 と、最後に使った画面のコマの番号。
+    // WhyNot: 控えを Flix の MutMap（木）に置かない — 鍵の字の比べが木の深さぶん要り、K3 の 1,700 行で group を作るより重くなった。
     type alias CachedGroup = { group = BindGroup, lastUsed = Array[Int64, Static] }
 
     /// 全体の登録の絵の読み方。textureById = 登録の絵の番号 → 2D の描き手の texture・encoding = mip つきの写しを作る pass を積む encoder・
@@ -105,7 +110,7 @@ pub mod Render3d.WebGpuMaterials {
             platformImages = Ref[Option[PlatformImages], Static],
             shaders = Render3d.ShaderLibrary.ShaderSources,
             textureSerial = Array[Int64, Static],
-            groupCache = MutMap[String, CachedGroup, Static],
+            groupCache = HashMap[String, Object],
             valuesSerial = Array[Int64, Static],
             frame = Array[Int64, Static],
             groupStats = Array[Int64, Static]
@@ -141,7 +146,7 @@ pub mod Render3d.WebGpuMaterials {
             mipmaps = Render3d.WebGpuMipmaps.create(gpu, shaders),
             platformImages = Ref.fresh(Static, None),
             shaders = shaders,
-            textureSerial = Array#{0i64} @ Static, groupCache = MutMap.empty(Static), valuesSerial = Array#{0i64} @ Static,
+            textureSerial = Array#{0i64} @ Static, groupCache = new HashMap(), valuesSerial = Array#{0i64} @ Static,
             frame = Array#{0i64} @ Static, groupStats = Array#{0i64, 0i64} @ Static
         })
 
@@ -213,14 +218,30 @@ pub mod Render3d.WebGpuMaterials {
     // WhyNot: submit の後に回さない — endFrame は画面のコマの submit の後に呼ばれるので、ここで手放しても使っている encoder は無い（group 0 の控えと同じ）。
     def sweepCachedGroups(m: Materials, gen: Int64): Unit \ IO =
         let MaterialsData.MaterialsData(s) = m;
-        let stale = MutMap.foldLeftWithKey((acc, k, c) -> if (Array.get(0, c#lastUsed) < gen - 1i64) (k, c) :: acc else acc, Nil, s#groupCache);
-        stale |> List.forEach(match (k, c) -> { c#group.release(); MutMap.remove(k, s#groupCache) })
+        sweepFrom(s#groupCache.values().iterator(), gen)
+
+    def sweepFrom(it: Iterator[Object], gen: Int64): Unit \ IO =
+        if (not it.hasNext()) ()
+        else {
+            let c = cachedOf(it.next());
+            if (Array.get(0, c#lastUsed) < gen - 1i64) { c#group.release(); it.remove() } else ();
+            sweepFrom(it, gen)
+        }
+
+    def cachedOf(o: Object): CachedGroup = unchecked_cast(o as CachedGroup)
 
     /// 控えを全部、今の encoder の group 1 の置き場（submit の後に手放す）へ移す。
     def retireCachedGroups(m: Materials): Unit \ IO =
         let MaterialsData.MaterialsData(s) = m;
-        MutMap.forEach((_, c) -> Ref.put(c#group :: Ref.get(s#groups), s#groups), s#groupCache);
-        MutMap.clear(s#groupCache)
+        retireFrom(s#groupCache.values().iterator(), s#groups);
+        s#groupCache.clear()
+
+    def retireFrom(it: Iterator[Object], groups: Ref[List[BindGroup], Static]): Unit \ IO =
+        if (not it.hasNext()) ()
+        else {
+            Ref.put(cachedOf(it.next())#group :: Ref.get(groups), groups);
+            retireFrom(it, groups)
+        }
 
     /// 値の buffer を作り直した時に呼ぶ（前の buffer を指す控えは二度と当たらないので手放す物へ回す）。
     def renewValuesBuffer(m: Materials, bytes: Int32): Unit \ IO =
@@ -233,7 +254,7 @@ pub mod Render3d.WebGpuMaterials {
     /// group 1 を (作った数, 控えから使った数)・今の控えの数（テストが読む）。
     pub def groupCacheStatsOf(m: Materials): ((Int64, Int64), Int32) \ IO =
         let MaterialsData.MaterialsData(s) = m;
-        ((Array.get(0, s#groupStats), Array.get(1, s#groupStats)), MutMap.size(s#groupCache))
+        ((Array.get(0, s#groupStats), Array.get(1, s#groupStats)), s#groupCache.size())
 
     /// 次の絵の通し番号。
     def nextTextureSerial(m: Materials): Int64 \ IO =
@@ -650,16 +671,18 @@ pub mod Render3d.WebGpuMaterials {
             group
         } else {
             let key = groupKeyOf(m, mp, p, list, row);
-            match MutMap.get(key, s#groupCache) {
-                case Some(c) =>
-                    Array.put(Array.get(0, s#frame), 0, c#lastUsed);
-                    Array.put(Array.get(1, s#groupStats) + 1i64, 1, s#groupStats);
-                    c#group
-                case None =>
-                    if (MutMap.size(s#groupCache) >= groupCacheLimit()) retireCachedGroups(m) else ();
-                    let group = makeGroup(m, mp, p, list, row);
-                    MutMap.put(key, { group = group, lastUsed = Array#{Array.get(0, s#frame)} @ Static }, s#groupCache);
-                    group
+            let found = s#groupCache.get(key);
+            if (not Objects.isNull(found)) {
+                let c = cachedOf(found);
+                Array.put(Array.get(0, s#frame), 0, c#lastUsed);
+                Array.put(Array.get(1, s#groupStats) + 1i64, 1, s#groupStats);
+                c#group
+            } else {
+                if (s#groupCache.size() >= groupCacheLimit()) retireCachedGroups(m) else ();
+                let group = makeGroup(m, mp, p, list, row);
+                let made: CachedGroup = { group = group, lastUsed = Array#{Array.get(0, s#frame)} @ Static };
+                discard s#groupCache.put(key, unchecked_cast(made as Object));
+                group
             }
         }
 
