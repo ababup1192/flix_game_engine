@@ -243,11 +243,12 @@ pub mod Scene3d {
     /// spec・emission・metallicRoughnessShade は Scene3d の with… でだけ替える（record を外で組み替えると shaderHash と texReads が古いまま残る）。
     /// spec の Tex の名前は、"tex3d:" で始まれば場面の textures（Texture3d.name）、ほかは全体の登録（project.json の textures・
     /// レンダーターゲット）から引く。無い名前は 0（黒・透明）。1 つの材質が読める (名前, 補間) の組は maxMaterialTextures() まで。
-    /// maxMipLevels = spec の Tex の絵を読む mip のレベルの数の上限（withMaxMipLevels。既定は上限なし。Lightmap の maxLevels と同じ考え）。
+    /// maxMipLevels = spec の Tex の絵を読む mip のレベルの数の上限（withMaxMipLevels。既定は上限なし。Lightmap の maxLevels と同じ考え）・
+    /// screenAoOnBlend = 半透明でも画面の上の SSAO を受ける（デカールの板。Scene3d.Internal.MaterialFlags で立てる・既定は偽）。
     pub type alias MaterialFields = { spec = ShaderDoc.Spec, params = Map[String, Float64], cutout = Bool, emission = Option[ShaderDoc.Shade],
                                       normalMap = Option[NormalMap], wrap = Wrap, blend = Bool, doubleSided = Bool, emissionIntensity = Float64,
                                       metallicRoughness = Option[MetallicRoughness], metallicRoughnessShade = Option[ShaderDoc.Shade], shaderHash = Lazy[Int64],
-                                      texReads = Lazy[List[(String, ShaderDoc.FilterMode)]], maxMipLevels = Int32 }
+                                      texReads = Lazy[List[(String, ShaderDoc.FilterMode)]], maxMipLevels = Int32, screenAoOnBlend = Bool }
 
     /// 材質の金属っぽさ（metallic・0 で絶縁体・1 で金属）と粗さ（roughness・0 で鏡・1 でざらざら）。どちらも 0..1。
     /// texture = 絵の名前（glTF の metallicRoughnessTexture と同じ決まり: B = metallic・G = roughness。絵の値に metallic・roughness を掛ける）・None なら値だけ。
@@ -263,7 +264,7 @@ pub mod Scene3d {
         MaterialData.MaterialData({ spec = spec, params = Map.empty(), cutout = false, emission = None, normalMap = None, wrap = Wrap.Repeat,
                                     blend = false, doubleSided = false, emissionIntensity = 1.0,
                                     metallicRoughness = None, metallicRoughnessShade = None, shaderHash = lazy 0i64, texReads = lazy Nil,
-                                    maxMipLevels = Int32.maxValue() } |> withShaderKeys)
+                                    maxMipLevels = Int32.maxValue(), screenAoOnBlend = false } |> withShaderKeys)
 
     /// spec の Tex の絵を読む mip のレベルの数を levels までにする（1 以上に直す。1 なら縮んでも元の絵だけを読む）。
     /// ドット絵のアトラスを貼る材質で、遠くや斜めで 1 つのタイルが 1 画素より小さく縮んだ所に隣のタイルの色が混ざるのを止める（atlasMipLevelsFor）。

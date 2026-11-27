@@ -11,11 +11,11 @@ pub mod Scene3d.Internal.MaterialKey {
         let params = Map.toList(m#params) |> List.map(match (k, v) -> "${k}=${v}") |> String.intercalate(",");
         "${force m#shaderHash}|${wrap}|${m#cutout}|${m#doubleSided}|${m#emissionIntensity}|${m#maxMipLevels}|${reads}|${params}"
 
-    /// materialKeyOf に、つながない材質（半透明・法線マップ・metallicRoughness）の欄も足した鍵。
+    /// materialKeyOf に、つながない材質（半透明・法線マップ・metallicRoughness・screenAoOnBlend）の欄も足した鍵。
     /// 欄の違う材質の物を 1 つの形につないで、頭の材質で描いてしまわない所（デカールのつなぎ）が使う。
     // WhyNot: materialKeyOf そのものに欄を足さない — staticGroup は半透明と法線マップの物をつながないので、足すと既存の鍵の字だけが変わる。
     pub def fullMaterialKeyOf(m: Scene3d.MaterialFields): String =
         let normal = m#normalMap |> Option.map(n -> "${n#texture}*${n#strength}") |> Option.getWithDefault("-");
         let pbr = m#metallicRoughness |> Option.map(r -> "${r#metallic},${r#roughness},${r#texture}") |> Option.getWithDefault("-");
-        "${materialKeyOf(m)}|blend=${m#blend}|normal=${normal}|pbr=${pbr}"
+        "${materialKeyOf(m)}|blend=${m#blend}|normal=${normal}|pbr=${pbr}|ab=${m#screenAoOnBlend}"
 }

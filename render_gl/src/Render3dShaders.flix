@@ -599,6 +599,7 @@ pub mod Render3dShaders {
     /// 光の式は頂点の色のプログラムと同じで、頂点の色の代わりに materialEval の albedo を使う（頂点の色は材質の Spec が VertexColor で読む）。
     /// uDepthOut = 1 なら cutout で抜いた後の奥行きの灰色を書く（Output.Depth の cutout の材質）。
     /// surface#blend = 出す α を材質の α に（半透明）・surface#doubleSided = 裏の面は光の計算の法線を裏返す・surface#coverage = cutout を discard でなく alpha to coverage の α で抜く・
+    /// surface#screenAoOnBlend = 半透明でも SSAO の mask を読む（下の不透明な面の値。デカールの板）・
     /// surface#lightmap = ベイクした光を 2 本目の uv で読み、環境光と hemisphere の代わりに足す。
     pub def materialFragmentBody(surface: Render3d.ProgramKey.ProgramKind, part: MaterialPart): List[ShaderAst.Statement] =
         let v = surface#variant;
@@ -648,7 +649,7 @@ pub mod Render3dShaders {
                 toScreen(call(Vec3.Vec3, surfaceOut(),
                               arg(toLinear3(ShaderAst.rgb(albedo))) :: arg(tint) :: arg(light) :: arg(emission) :: arg(intensity) :: arg(world) :: arg(ShaderAst.bool(true)) :: Nil)) :: Nil;
         materialNames(surface) ::: (materialEval(surface#metallicRoughness) :: Nil) ::: cutout ::: (depthOut :: Nil) :::
-        (if (surface#doubleSided) declFacing :: Nil else Nil) ::: (declN :: Nil) ::: shadowsBeforeLight(feature, { point = world, shift = faceNormal, normal = n, screenAo = not surface#blend }) :::
+        (if (surface#doubleSided) declFacing :: Nil else Nil) ::: (declN :: Nil) ::: shadowsBeforeLight(feature, { point = world, shift = faceNormal, normal = n, screenAo = not surface#blend or surface#screenAoOnBlend }) :::
         (declLight :: Nil) ::: shade
 
     /// 頂点の色のプログラムの frag の main の本文（vColor は頂点シェーダーが線形へ戻し済み）。

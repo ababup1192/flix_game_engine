@@ -1508,7 +1508,7 @@
 - 法線マップ。texture = 絵の名前（タンジェント空間・緑が絵の上）・strength = でこぼこの強さ（1 で絵のまま）。
   `pub type alias NormalMap = { texture = String, strength = Float64 }`
 - 材質の中身。spec の Out の色 = 光を当てる前の色・params = spec の Param・
-  `pub type alias MaterialFields = { spec = ShaderDoc.Spec, params = Map[String, Float64], cutout = Bool, emission = Option[ShaderDoc.Shade], normalMap = Option[NormalMap], wrap = Wrap, blend = Bool, doubleSided = Bool, emissionIntensity = Float64, metallicRoughness = Option[MetallicRoughness], metallicRoughnessShade = Option[ShaderDoc.Shade], shaderHash = Lazy[Int64], texReads = Lazy[List[(String, ShaderDoc.FilterMode)]], maxMipLevels = Int32 }`
+  `pub type alias MaterialFields = { spec = ShaderDoc.Spec, params = Map[String, Float64], cutout = Bool, emission = Option[ShaderDoc.Shade], normalMap = Option[NormalMap], wrap = Wrap, blend = Bool, doubleSided = Bool, emissionIntensity = Float64, metallicRoughness = Option[MetallicRoughness], metallicRoughnessShade = Option[ShaderDoc.Shade], shaderHash = Lazy[Int64], texReads = Lazy[List[(String, ShaderDoc.FilterMode)]], maxMipLevels = Int32, screenAoOnBlend = Bool }`
 - 材質の金属っぽさ（metallic・0 で絶縁体・1 で金属）と粗さ（roughness・0 で鏡・1 でざらざら）。どちらも 0..1。
   `pub type alias MetallicRoughness = { metallic = Float64, roughness = Float64, texture = Option[String] }`
 - 材質（閉じた型 — 欄を後から足しても、ゲームの書いた値が壊れない）。material から作り、with… で足す。

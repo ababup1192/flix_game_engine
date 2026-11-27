@@ -25,7 +25,7 @@ mod TestShaderDump {
             flags() |> List.flatMap(lightmap -> flags() |> List.flatMap(blend -> flags() |> List.flatMap(doubleSided ->
                 flags() |> List.flatMap(coverage -> flags() |> List.map(metallic ->
                     { skinned = false, uv = uv, normalMap = normalMap, lightmap = lightmap, blend = blend, doubleSided = doubleSided,
-                      coverage = coverage, metallicRoughness = metallic, variant = { pointShadows = v#pointShadows, physicalUnits = v#physicalUnits, psx = v#psx, skyIrradiance = v#skyIrradiance, ambientOcclusion = v#ambientOcclusion } })))))
+                      coverage = coverage, metallicRoughness = metallic, screenAoOnBlend = false, variant = { pointShadows = v#pointShadows, physicalUnits = v#physicalUnits, psx = v#psx, skyIrradiance = v#skyIrradiance, ambientOcclusion = v#ambientOcclusion } })))))
         })
 
     def kindLabel(k: Render3d.ProgramKey.ProgramKind): String =
@@ -173,7 +173,7 @@ mod TestShaderDump {
                 let (uv, normalMap) = un;
                 (if (skinned) false :: Nil else flags()) |> List.map(lightmap -> {
                     let k = { skinned = skinned, uv = uv, normalMap = normalMap, lightmap = lightmap, blend = false, doubleSided = false,
-                              coverage = false, metallicRoughness = false, variant = v };
+                              coverage = false, metallicRoughness = false, screenAoOnBlend = false, variant = v };
                     (Render3dGlsl.materialVertexSourceFor({ skinned = skinned, uv = uv, lightmap = lightmap }, psx),
                      Render3dWgsl.materialVertexSourceFor(uv, lightmap, skinned, psx), Render3dShaders.materialInputs(k))
                 })

@@ -14,7 +14,7 @@ mod Render3d.TestPsxVariant {
 
     def kind(uv: Bool): Render3d.ProgramKey.ProgramKind =
         { skinned = false, uv = uv, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false,
-          metallicRoughness = false, variant = { pointShadows = false, physicalUnits = false, psx = true, skyIrradiance = false, ambientOcclusion = false } }
+          metallicRoughness = false, screenAoOnBlend = false, variant = { pointShadows = false, physicalUnits = false, psx = true, skyIrradiance = false, ambientOcclusion = false } }
 
     def solidGlsl(): ShaderGen.MaterialGlsl =
         { uniforms = "uniform float uTime;\n", functions = "void materialEval(out vec4 albedo, out vec3 emission) {}\n",

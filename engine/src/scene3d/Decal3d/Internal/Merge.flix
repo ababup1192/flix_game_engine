@@ -15,9 +15,11 @@ pub mod Decal3d.Internal.Merge {
         (List.flatMap(fst, perTarget), List.filterMap(snd, perTarget))
 
     /// blend も cutout も偽の材質は半透明にする（不透明の板は下の面と同じ深さで奥行きを奪い合う）。
+    /// 板は半透明でも画面の上の SSAO を受ける（隅の暗がりの上の汚れだけが明るく浮かない）。
     def prepare(d: Decal3d.Decal): PreparedDecal =
         let given = Scene3d.materialFieldsOf(d#material);
-        let material = if (given#blend or given#cutout) d#material else Scene3d.withAlphaBlend(true, d#material);
+        let material = (if (given#blend or given#cutout) d#material else Scene3d.withAlphaBlend(true, d#material))
+            |> Scene3d.Internal.MaterialFlags.withScreenAoOnBlend;
         let rule = Clip.settingsOf(d);
         { rule = rule, material = material, key = Scene3d.Internal.MaterialKey.fullMaterialKeyOf(Scene3d.materialFieldsOf(material)),
           bounds = Clip.boundsOf(rule#box) }

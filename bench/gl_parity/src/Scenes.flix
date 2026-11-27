@@ -9,7 +9,7 @@
 //   4. 時刻は固定値（アニメ無し — 2 回描き出して同じ絵になることが決定性検証の前提）
 mod Scenes {
 
-    use fge::{Camera3d, Color, DrawCmd, Gltf, HeadlessLoad, Light, Mat4, Mesh3d, Model3d, Pose3d, PostProcess, PxSprite, PxSpriteDoc, RawDraw, Render, RenderTarget, RenderUtil, Scene3d, ShaderDoc, Shadow, Skin3d, Texture3d, Num, Vec2, Vec3}
+    use fge::{Camera3d, Color, Decal3d, DrawCmd, Gltf, HeadlessLoad, Light, Mat4, Mesh3d, Model3d, Pose3d, PostProcess, PxSprite, PxSpriteDoc, RawDraw, Render, RenderTarget, RenderUtil, Scene3d, ShaderDoc, Shadow, Skin3d, Texture3d, Num, Vec2, Vec3}
 
     // 寸法の権威は整数側 — Float 側を権威にすると Int へ戻す丸めが要る。
     pub def designWi(): Int32 = 320
@@ -59,6 +59,7 @@ mod Scenes {
             :: PostScenes.postStackLook() :: PostScenes.postStackDepthBand() :: PostScenes.postStackCrt()
             :: PostScenes.ambientOcclusionMask3d() :: PostScenes.ambientOcclusion3d()
             :: PostScenes.ambientOcclusionFog3d() :: PostScenes.ambientOcclusionFocus3d() :: PostScenes.ambientOcclusionBandFog3d()
+            :: PostScenes.decalAmbientOcclusion3d() :: decal3d()
             :: staticBatch3d() :: staticBatchInstances3d() :: Nil
 
     /// B 段階の scene のうち、違う画素の数に上限を置く物（名前 → 許す画素数）。3D の場面は GL と CPU で三角形の縁の
@@ -1131,7 +1132,10 @@ mod Scenes {
 
     /// 床・奥の壁・左の壁と、床に置いた箱 3 つ（1 つは部屋の隅）の部屋（240 × 140・PostScenes の SSAO の場面が読む）。
     /// 環境の光が強く、太陽は影を落とさない（SSAO が暗くする所 = 箱の足元・壁と床の境・部屋の隅が、ほかの暗さと混ざらない）。
-    pub def roomWorld(): List[Render.PlacedItem] =
+    pub def roomWorld(): List[Render.PlacedItem] = Render.scene3d({ x = 40.0, y = 20.0 }, roomScene()) :: Nil
+
+    /// roomWorld の場面（デカールの場面が的の列を足して描く）。
+    pub def roomScene(): Scene3d.Scene3dCmd =
         let camera = { eye = Vec3.v3(0.5, 3.0, 0.0), yaw = 0.15, pitch = 0.32, fovY = 1.0, near = 1.0, far = 60.0, lensShift = Vec2.zero() };
         let v = Vec3.v3;
         let floor = shape(upQuad(-6.0, 6.0, 4.0, 16.5, -2.0, c8(200, 196, 188)) :: Nil);
@@ -1139,10 +1143,9 @@ mod Scenes {
         let boxes = shape(boxOf(v(-2.0, -2.0, 9.0), v(0.0, -0.6, 11.0), c8(180, 90, 70)) ::: boxOf(v(1.5, -2.0, 11.5), v(3.5, 1.0, 13.5), c8(80, 130, 180))
                           ::: boxOf(v(-5.9, -2.0, 14.0), v(-4.0, 0.0, 15.9), c8(120, 170, 90)));
         let sun = { intensity = 0.6 | Scene3d.directionalLight(Vec3.v3(0.4, -0.8, 0.45)) };
-        let scene = { instances = floor :: walls :: boxes :: Nil, directionalLight = Some(sun), zIndex = 1,
-                      environment = { ambient = c8(170, 170, 175), hemisphere = 0.25, toonSteps = 0, fog = None, background = Some(c8(10, 10, 30)) }
-                      | Scene3d.scene(camera, { x = 240.0, y = 140.0 }) };
-        Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil
+        { instances = floor :: walls :: boxes :: Nil, directionalLight = Some(sun), zIndex = 1,
+          environment = { ambient = c8(170, 170, 175), hemisphere = 0.25, toonSteps = 0, fog = None, background = Some(c8(10, 10, 30)) }
+          | Scene3d.scene(camera, { x = 240.0, y = 140.0 }) }
 
     /// 太陽で照らした床と板の 3D の場面を画面いっぱいに 1 つ（PostScenes の奥行きのぼかしの場面が読む）。
     pub def sunWorld(): List[Render.PlacedItem] =
@@ -1405,6 +1408,33 @@ mod Scenes {
         let scene = { instances = box :: Nil, sky = Some(sky), zIndex = 1 | Scene3d.scene(camera, { x = 320.0, y = 180.0 }) };
         { name = "skyGradient3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
             Render.scene3d({ x = 0.0, y = 0.0 }, scene) :: Nil }
+
+    /// デカール（Decal3d）: 左は頂点の色の壁と床の角に斜めに投げた 1 枚（両方の面に掛かる）と cutout の 1 枚・
+    /// 真ん中は 1 枚の atlas（parityTexture の象限）から読む 3 枚（1 枚は 20 度回す）・右は lightmap つきの板に貼った 1 枚（板の lightmap を写す）。
+    def decal3d(): Scene =
+        let tex = parityTexture();
+        let baked = bakedChecker(true);
+        let atlas = Scene3d.texturedMaterial(Texture3d.name(tex), ShaderDoc.FilterMode.Nearest);
+        let v = Vec3.v3;
+        let quarter = (x: Float64, y: Float64) -> { position = Vec2.v2(x, y), size = Vec2.v2(0.5, 0.5) };
+        let corner = shape(facingQuad(-8.5, -2.5, -4.0, 1.5, 12.0, c8(170, 160, 150)) :: upQuad(-8.5, -2.5, 6.0, 12.0, -4.0, c8(150, 140, 120)) :: Nil)
+            |> Scene3d.withName("corner");
+        let middle = shape(facingQuad(-2.0, 3.0, -2.0, 4.0, 12.0, c8(200, 200, 200)) :: Nil) |> Scene3d.withName("middle");
+        let lit = Scene3d.meshInstance(withScaledUvs2(1.0, texturedQuad(3.5, 8.0, -3.0, 1.5, 12.0, 0.0, 1.0)), Mat4.identity())
+            |> Scene3d.withMaterial(Scene3d.texturedMaterial(Texture3d.name(tex), ShaderDoc.FilterMode.Nearest))
+            |> Scene3d.withLightmap(Scene3d.lightmap(Texture3d.name(baked))) |> Scene3d.withName("lit");
+        let decals =
+            { size = v(3.0, 3.0, 3.0), angleCutoff = 80.0 | Decal3d.decal(atlas, v(-5.5, -4.0, 12.0), v(0.0, 0.7071067811865476, -0.7071067811865476)) }
+            :: { size = v(1.5, 1.5, 0.5) | Decal3d.decal(atlas |> Scene3d.withCutout(true), v(-5.5, 0.0, 12.0), v(0.0, 0.0, -1.0)) }
+            :: { size = v(1.8, 1.8, 0.5), uvRect = quarter(0.0, 0.0) | Decal3d.decal(atlas, v(-0.8, 2.6, 12.0), v(0.0, 0.0, -1.0)) }
+            :: { size = v(1.8, 1.8, 0.5), uvRect = quarter(0.5, 0.0), rotation = 20.0 | Decal3d.decal(atlas, v(1.6, 1.0, 12.0), v(0.0, 0.0, -1.0)) }
+            :: { size = v(1.8, 1.8, 0.5), uvRect = quarter(0.0, 0.5) | Decal3d.decal(atlas, v(-0.4, -0.6, 12.0), v(0.0, 0.0, -1.0)) }
+            :: { size = v(2.4, 2.4, 0.5), uvRect = quarter(0.5, 0.5) | Decal3d.decal(atlas, v(5.75, -0.75, 12.0), v(0.0, 0.0, -1.0)) } :: Nil;
+        let targets = corner :: middle :: lit :: Nil;
+        let base = flatScene({ x = 240.0, y = 140.0 }, 1, targets ::: Decal3d.buildInstances(decals, targets), Nil);
+        let scene = { textures = tex :: baked :: Nil, environment = { ambient = c8(200, 200, 200), hemisphere = 0.3 | base#environment } | base };
+        { name = "decal3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
 
     /// 色 c・α a の半透明の材質。
     def glassMaterial(name: String, c: Color, a: Float64): Scene3d.Material3d =

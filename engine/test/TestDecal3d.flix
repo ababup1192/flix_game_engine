@@ -44,6 +44,20 @@ mod TestDecal3d {
 
     def round3(x: Float64): Int32 = Float64.round(x * 1000.0) |> Float64.tryToInt32 |> Option.getWithDefault(0)
 
+    // ── 材質 ──
+
+    /// 板の材質は半透明でも画面の上の SSAO を受ける（隅の暗がりの上の汚れが明るく浮かない）。
+    @Test
+    def testPlateMaterialReceivesScreenAo(): Unit \ Assert =
+        let received = Decal3d.buildInstances(front() :: Nil, wall() :: Nil)
+            |> List.forAll(i -> fieldsOf(i)#material |> Option.exists(m -> Scene3d.materialFieldsOf(m)#screenAoOnBlend));
+        Assert.assertTrue(received)
+
+    /// ゲームが作る材質は SSAO を受ける旗が立っていない（半透明の物は奥の面の暗さを拾わない）。
+    @Test
+    def testPlainMaterialDoesNotReceiveScreenAoOnBlend(): Unit \ Assert =
+        Assert.assertFalse(Scene3d.materialFieldsOf(Scene3d.withAlphaBlend(true, grime()))#screenAoOnBlend)
+
     // ── 切った形 ──
 
     @Test

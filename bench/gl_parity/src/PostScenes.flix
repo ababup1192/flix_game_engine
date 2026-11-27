@@ -2,7 +2,7 @@
 // 1 枚目は HDR の 2D の絵に今の見え方（AcesNarkowicz・ブルーム・ビネット・FXAA）・2 枚目は 3D の場面に奥行きのぼかし（DepthBand）。
 mod PostScenes {
 
-    use fge::{Color, PostStack, Render, Vec2}
+    use fge::{Color, Decal3d, PostStack, Render, Scene3d, ShaderDoc, Vec2, Vec3}
 
     def size(): Vec2.Vec2 = { x = Scenes.designW(), y = Scenes.designH() }
 
@@ -57,6 +57,21 @@ mod PostScenes {
             PostStack.preset(PostStack.Preset.Neutral) |> PostStack.withAmbientOcclusion(Some(roomAo()))
                 |> PostStack.withHeightFog(Some({ density = 0.06, baseHeight = -2.0, heightFalloff = 0.3 | PostStack.heightFog() }))
                 |> PostStack.withDepthOfField(Some(PostStack.DepthOfField.DepthBand({ focusDistance = 11.0, range = 6.0, band = 0.2, soft = 0.4, blur = 0.01 }))))
+
+    /// 部屋の隅・壁と床の境・箱の足元に貼った半透明のデカール（Decal3d）に SSAO を掛けた仕上がり。
+    /// 板は奥行きの絵に入らないが、真下の面の mask の暗さを受ける（受けないと暗がりの上の板だけが明るく浮く）。
+    pub def decalAmbientOcclusion3d(): Scenes.Scene =
+        let room = Scenes.roomScene();
+        let stain = Scene3d.material({ name = "parity:decal:stain", cycleRate = 0.0, bindings = Nil,
+                                       out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Solid(Color.rgb(0.55, 0.08, 0.06)), alpha = ShaderDoc.Field.Const(0.7) }) })
+            |> Scene3d.withAlphaBlend(true);
+        let v = Vec3.v3;
+        let decals = { size = v(3.0, 3.0, 1.0) | Decal3d.decal(stain, v(-5.0, -2.0, 13.0), v(0.0, 1.0, 0.0)) }
+            :: { size = v(4.0, 1.6, 1.0) | Decal3d.decal(stain, v(1.0, -1.6, 16.0), v(0.0, 0.0, -1.0)) }
+            :: { size = v(2.4, 1.2, 1.0), angleCutoff = 89.0 | Decal3d.decal(stain, v(-6.0, -1.6, 9.0), v(1.0, 0.0, 0.0)) } :: Nil;
+        let scene = { instances = room#instances ::: Decal3d.buildInstances(decals, room#instances) | room };
+        sceneOf("decalAmbientOcclusion3d", Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil,
+            PostStack.preset(PostStack.Preset.Neutral) |> PostStack.withAmbientOcclusion(Some(roomAo())))
 
     /// 3D の場面（太陽で照らした床と板）に、ピントの奥行きを中心とする帯の外をぼかす。奥行きの絵は PostStack が場面から作る。
     pub def postStackDepthBand(): Scenes.Scene =

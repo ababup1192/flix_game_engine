@@ -100,11 +100,17 @@ pub mod Render3d.ProgramKey {
     /// blend = 半透明（出す α を材質の α に）・doubleSided = 裏の面の光の法線を裏返す・
     /// coverage = cutout を discard でなく alpha to coverage で抜く（isCoverageCutout が真の時だけ）・
     /// metallicRoughness = metallic と roughness を持つ材質（鏡面ハイライトと空の映り込みを足す式のプログラム。持たない材質の GLSL は変わらない）・
+    /// screenAoOnBlend = 半透明でも画面の上の SSAO の mask を読む（screenAoOnBlendOf が真の時だけ）・
     /// variant = 場面のシェーダーの変種。
     // WhyNot: blend・doubleSided・coverage・metallicRoughness と変種を uniform で切り替えない — 使わない材質の GLSL の字が変わり、
     //   どの GPU でも同じ絵になる保証が崩れる。どれも偽の版は、それらを足す前と 1 字も同じ GLSL を組む。
     pub type alias ProgramKind = { skinned = Bool, uv = Bool, normalMap = Bool, lightmap = Bool, blend = Bool, doubleSided = Bool, coverage = Bool,
-                                   metallicRoughness = Bool, variant = ShaderVariant }
+                                   metallicRoughness = Bool, screenAoOnBlend = Bool, variant = ShaderVariant }
+
+    /// 材質 m を変種 v で描く時に、半透明でも SSAO の mask を読むか（Scene3d.MaterialFields#screenAoOnBlend）。
+    // WhyNot: 材質の欄をそのまま版に入れない — +ao の無い場面で同じ字のプログラムを 2 回組み、記録の行も増える。
+    pub def screenAoOnBlendOf(v: ShaderVariant, m: Scene3d.MaterialFields): Bool =
+        v#ambientOcclusion and m#blend and m#screenAoOnBlend
 
     /// 材質のプログラムの鍵（2D の Shader 面の鍵 = spec の名前 と重ならない）。骨つき・uv つき・法線マップつき・lightmap つきの版は GLSL が違うので別の鍵。
     /// 材質の側は spec と emission の中身の鍵（MaterialFields#shaderHash）なので、同じ名前で木の違う材質が並んでも組み直さず、ゲームは名前を分けなくてよい。
@@ -112,6 +118,6 @@ pub mod Render3d.ProgramKey {
     pub def materialKey(m: Scene3d.MaterialFields, kind: ProgramKind): String =
         "3d" + (if (kind#skinned) "+skin" else "") + (if (kind#uv) "+uv" else "") + (if (kind#normalMap) "+nm" else "") + (if (kind#lightmap) "+lm" else "")
             + (if (kind#blend) "+bl" else "") + (if (kind#doubleSided) "+ds" else "") + (if (kind#coverage) "+cov" else "")
-            + (if (kind#metallicRoughness) "+mr" else "") + variantKeyOf(kind#variant)
+            + (if (kind#metallicRoughness) "+mr" else "") + (if (kind#screenAoOnBlend) "+ab" else "") + variantKeyOf(kind#variant)
             + ":" + Int64.toString(force m#shaderHash)
 }
