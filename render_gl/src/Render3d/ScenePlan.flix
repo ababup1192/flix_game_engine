@@ -6,6 +6,7 @@ mod Render3d.ScenePlan {
     import java.util.HashMap
     import java.util.IdentityHashMap
     import java.util.Objects
+    import java.lang.ref.WeakReference
     use Render3d.{DrawMode, MeshDraw, ShadowCaster, ShadowLight, ShadowPlan, maxShadowMapSize, maxShadowPcfRadius}
     use Render3d.ProgramKey.{ProgramKind, ShaderVariant, defaultShaderVariant}
     use Render3d.Batch.{BatchKey, MaterialBatch, SpanBatch, batchKeyOf}
@@ -16,16 +17,55 @@ mod Render3d.ScenePlan {
     /// crowdedScenesRef = 置いた物が多いのに staticGroup の無い場面が続いた数（noteStaticGroupHint）・
     /// shapeSplitScenesRef = draw call が多く、その半分超が形の違いで分かれた場面が続いた数（noteDrawCallHint）・
     /// sameShapeScenesRef = instances に同じ形と材質の物が多い場面が続いた数（noteSameShapeHint）・
-    /// spreadScenesRef = 散らばりすぎた MultiMesh のある場面が続いた数（Render3d.MultiMeshPlan.noteSpreadHint）。
+    /// spreadScenesRef = 散らばりすぎた MultiMesh のある場面が続いた数（Render3d.MultiMeshPlan.noteSpreadHint）・
+    /// verified = 候補の頭の材質が聞いた材質と同じ GLSL を生むと確かめた組の、コマをまたぐ控え（verifiedHandle）。
     pub type alias Planner = {
         drawMode = DrawMode, sceneWarnedRef = Ref[Set[String], Static], skinWarnedRef = Ref[Set[String], Static], shadowWarnedRef = Ref[Set[String], Static],
-        crowdedScenesRef = Ref[Int32, Static], shapeSplitScenesRef = Ref[Int32, Static], sameShapeScenesRef = Ref[Int32, Static], spreadScenesRef = Ref[Int32, Static]
+        crowdedScenesRef = Ref[Int32, Static], shapeSplitScenesRef = Ref[Int32, Static], sameShapeScenesRef = Ref[Int32, Static], spreadScenesRef = Ref[Int32, Static],
+        verified = VerifiedPairs
     }
 
     pub def freshPlanner(drawMode: DrawMode): Planner \ IO =
         { drawMode = drawMode, sceneWarnedRef = Ref.fresh(Static, Set.empty()), skinWarnedRef = Ref.fresh(Static, Set.empty()),
           shadowWarnedRef = Ref.fresh(Static, Set.empty()), crowdedScenesRef = Ref.fresh(Static, 0), shapeSplitScenesRef = Ref.fresh(Static, 0),
-          sameShapeScenesRef = Ref.fresh(Static, 0), spreadScenesRef = Ref.fresh(Static, 0) }
+          sameShapeScenesRef = Ref.fresh(Static, 0), spreadScenesRef = Ref.fresh(Static, 0), verified = freshVerifiedPairs() }
+
+    /// 確かめた組（候補の頭の材質の値 → 聞いた材質の値。どちらも参照）を 2 世代で持つ: now = 今のコマ・before = 1 つ前のコマ。
+    /// 描き手の画面のコマの終わり（endPlannerFrame）で before を捨てて now を before にするので、2 コマ続けて使わなかった組は落ちる。
+    /// 材質の値は作った後に変わらないので、同じ参照の組なら答えも同じ。
+    pub type alias VerifiedPairs = { now = Ref[IdentityHashMap[Object, Object], Static], before = Ref[IdentityHashMap[Object, Object], Static] }
+
+    def freshVerifiedPairs(): VerifiedPairs \ IO = { now = Ref.fresh(Static, new IdentityHashMap()), before = Ref.fresh(Static, new IdentityHashMap()) }
+
+    /// 1 コマに控える組の上限（超えた分は控えずに毎回比べる）。
+    pub def verifiedPairLimit(): Int32 = 8192
+
+    /// 描き手の画面のコマの終わりに 1 回呼ぶ。
+    // WhyNot: Pass ごとの prepare で世代を進めない — 1 コマに何度も進むと、前のコマの組が次のコマまで残らない。
+    pub def endPlannerFrame(planner: Planner): Unit \ IO =
+        let v = planner#verified;
+        Ref.put(Ref.get(v#now), v#before);
+        Ref.put(new IdentityHashMap(), v#now)
+
+    /// 今のコマと 1 つ前のコマに控えた組の数（テストが寿命を見る）。
+    pub def verifiedPairCounts(planner: Planner): (Int32, Int32) \ IO =
+        (Ref.get(planner#verified#now).size(), Ref.get(planner#verified#before).size())
+
+    // WhyNot: Objects.equals で比べない — Flix の値が equals を中身の比べにした時に、木を辿る比べへ黙って戻る（ShaderGen.isSameSpec と同じ）。
+    def isSameObject(a: Object, b: Object): Bool \ IO = new WeakReference(a).refersTo(b)
+
+    /// head の値を asked の値と比べて同じと確かめてあるか（1 つ前のコマの控えに当たったら今のコマへ移す）。
+    def wasVerified(v: VerifiedPairs, head: Object, asked: Object): Bool \ IO =
+        let found = Ref.get(v#now).get(head);
+        if (not Objects.isNull(found) and isSameObject(found, asked)) true
+        else {
+            let old = Ref.get(v#before).get(head);
+            if (not Objects.isNull(old) and isSameObject(old, asked)) { noteVerified(v, head, asked); true } else false
+        }
+
+    def noteVerified(v: VerifiedPairs, head: Object, asked: Object): Unit \ IO =
+        let now = Ref.get(v#now);
+        if (now.size() < verifiedPairLimit()) discard now.put(head, asked) else ()
 
     /// 置いた物が staticHintInstances() 個を超え、staticGroup が 1 つも無い場面が staticHintScenes() 回続いたら、1 回だけ知らせる（GL と WebGPU が場面ごとに呼ぶ）。
     /// placed = 場面の instances と集まりの物の数（MultiMesh の体は入れない・Render3d.StaticRows.placedCountOf / itemCountOf）。
@@ -277,7 +317,7 @@ mod Render3d.ScenePlan {
         Array.put(end, 0, w#next);
         end >= n
 
-    def spansOfWork(w: PlaceWork): List[Group] \ IO = spansOf(w#g#tables, w#split, w#draws, w#placements, w#levels, w#subs)
+    def spansOfWork(w: PlaceWork): List[Group] \ IO = spansOf(w#g#planner, w#g#tables, w#split, w#draws, w#placements, w#levels, w#subs)
 
     /// pass spec の場面で材質のプログラムを組む材質か（組まない材質の物は頂点の色の道で形だけ描く）。
     // WhyNot: 奥行きの書き出しで cutout でも両面でもない材質に材質のプログラムを組まない — 奥行きは形だけで決まり、色の計算は捨てられる
@@ -471,8 +511,13 @@ mod Render3d.ScenePlan {
     /// handle 番の材質と m が同じ GLSL を生むならその番号・違えば（木の鍵の衝突）新しい番号で聞く。
     // WhyNot: 物ごとに比べない — 材質の値を毎コマ作り直すゲームでは参照で比べられず、物の数だけ木を辿る。候補の中の物は頭の材質で描くので、頭で 1 回比べれば足りる。
     // WhyNot: ぶつかった 2 つを同じ控えの中で両方保たない — backend の控えの鍵は木の鍵なので、ぶつかった 2 つは毎コマ組み直しになるが、64 ビットの衝突でだけ起き、絵は正しい。
-    pub def verifiedHandle(tables: Tables, handle: Int32, m: Scene3d.MaterialFields, kind: ProgramKind): Int32 \ IO =
-        if (isSameProgram(fst(MutList.get(handle, tables#requests)), m)) handle else pushRequest(tables, m, kind)
+    // WhyNot: 確かめた組の控えを 1 つのコマの中だけにしない — 材質の値を作り置くゲームでも、毎コマ候補の数だけ木を辿ることになる。
+    pub def verifiedHandle(planner: Planner, tables: Tables, handle: Int32, m: Scene3d.MaterialFields, kind: ProgramKind): Int32 \ IO =
+        let asked = fst(MutList.get(handle, tables#requests));
+        let (askedObj, headObj) = (unchecked_cast(asked as Object), unchecked_cast(m as Object));
+        if (wasVerified(planner#verified, headObj, askedObj)) handle
+        else if (isSameProgram(asked, m)) { noteVerified(planner#verified, headObj, askedObj); handle }
+        else pushRequest(tables, m, kind)
 
     def pushRequest(tables: Tables, m: Scene3d.MaterialFields, kind: ProgramKind): Int32 \ IO =
         let handle = MutList.size(tables#requests);
@@ -540,7 +585,7 @@ mod Render3d.ScenePlan {
         }
 
     /// 物ごとの候補の番号から、候補ごとの頭の物と描く物の範囲を作る（描く物は members の後ろへ候補の順に足す・候補の中は来た順）。
-    def spansOf(tables: Tables, split: Split, draws: Array[MeshDraw, Static], placements: Array[Placement, Static],
+    def spansOf(planner: Planner, tables: Tables, split: Split, draws: Array[MeshDraw, Static], placements: Array[Placement, Static],
                 levels: Array[Int32, Static], subs: Array[Int32, Static]): List[Group] \ IO =
         let levelCount = MutList.size(split#subCount);
         let offsets = Array.repeat(Static, levelCount + 1, 0);
@@ -561,7 +606,7 @@ mod Render3d.ScenePlan {
             let head = Array.get(k, span#heads);
             let p = Array.get(head, placements);
             { batch = { head = Array.get(head, draws), start = base + Array.get(k, starts), count = Array.get(k, span#counts) }, surface = p#surface,
-              handle = p#surface |> Option.map(mk -> verifiedHandle(tables, p#handle, fst(mk), snd(mk))) |> Option.getWithDefault(-1) }
+              handle = p#surface |> Option.map(mk -> verifiedHandle(planner, tables, p#handle, fst(mk), snd(mk))) |> Option.getWithDefault(-1) }
         })
 
     /// spansOf の物ごとの控え。groupOf = 物の候補の番号・heads = 候補の頭の物の番号・counts = 候補の描く物の数。

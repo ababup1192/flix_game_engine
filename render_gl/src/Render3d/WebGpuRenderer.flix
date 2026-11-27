@@ -398,6 +398,7 @@ pub mod Render3d.WebGpuRenderer {
         let preloaded = Ref.get(s#preloaded);
         let droppedTextures = WebGpuMaterials.endFrame(s#materials, gen, limits#textures, preloaded#textures);
         Render3d.warnDroppedTextures(s#planner, droppedTextures, preloaded#textures);
+        Render3d.ScenePlan.endPlannerFrame(s#planner);
         discard WebGpuShadows.endFrame(s#shadows, gen);
         let (usedGroups, idleGroups) = List.partition(e -> Array.get(0, e#lastUsed) >= gen, Ref.get(s#sceneGroups));
         List.forEach(e -> e#group.release(), idleGroups);
@@ -459,7 +460,7 @@ pub mod Render3d.WebGpuRenderer {
         let allocator = countingAllocator(r);
         let mp = { base = 0, values = WebGpuMaterials.valuesBufferOf(s#materials), programs = Vector.empty(), format = RenderTarget.Format.Rgba8Unorm, samples = 1,
                    sceneLayout = s#sceneLayout, poseLayout = s#poseLayout, hasPoses = false, bound = Ref.fresh(Static, BoundPipeline.Unbound), groupRow = Array#{-1} @ Static,
-                   groups = WebGpuMaterials.frameGroupsOf(s#materials) };
+                   groups = WebGpuMaterials.frameGroupsOf(s#materials), cacheable = false };
         let noteBuild = name -> noteMaterialBuild(s, name, FrameDiagnostics.BuildReason.First);
         let missing = name -> Render3d.ScenePlan.warnOnce(s#planner, "preload:" + name, Render3d.Preload.missingTextureLine(name));
         let textures = groups |> List.flatMap(vg -> {
@@ -813,10 +814,10 @@ pub mod Render3d.WebGpuRenderer {
             WebGpuSky.draw(s#sky, pass, target#format, target#samples, (code, sceneLayoutOf(r, code)));
             Render3d.Counts.countDrawCall(s, Render3d.Counts.BatchBreak.Sky)
         } else ();
-        let materialPass = (base: Int32, values: Buffer, programs: Vector[Option[WebGpuMaterials.Program]], groups: Ref[List[BindGroup], Static]) ->
+        let materialPass = (base: Int32, values: Buffer, programs: Vector[Option[WebGpuMaterials.Program]], groups: Ref[List[BindGroup], Static], cacheable: Bool) ->
             { base = base, values = values, programs = programs, format = target#format, samples = target#samples, sceneLayout = sceneLayoutOf(r, code),
               poseLayout = s#poseLayout, hasPoses = Option.nonEmpty(staged#poseGroup), bound = Ref.fresh(Static, BoundPipeline.Unbound), groupRow = Array#{-1} @ Static,
-              groups = groups };
+              groups = groups, cacheable = cacheable };
         let bundleTarget = { color = Some(WebGpuPipelines.textureFormatOf(target#format)), depth = sceneDepthFormat(), samples = target#samples };
         // WhyNot: 鍵に描き先を入れずに形式と標本だけにしない — group 0 は描き先ごとに違い、同じ集まりを 2 つの描き先の場面で描くと毎コマ積み直しになる。
         let bundleKey = "color:${staged#targetKey}:${WebGpuPipelines.formatCode(target#format)}:${target#samples}:${passCodeOf(staged#spec)}${variantKeyOf(staged#variant)}";
@@ -824,14 +825,14 @@ pub mod Render3d.WebGpuRenderer {
         // WhyNot: 持ち越した物を場面の行の後に描かない — 半透明の行は場面の行の末尾にあり、持ち越した不透明の物より後に重ねる。同じ深さで重なる面の勝ち方は GL（集まりを instances の後ろに並べる）と逆になりうる。
         (if (Render3d.GpuSpans.skipsColorDraws()) Nil else staged#carried) |> List.forEach(c -> WebGpuStatic.runBundle(s#statics, s#gpu, Array.get(0, s#gen), c, bundleKey, staged#sceneGroup, epoch, bundleTarget, (commands, groups) -> {
             commands.setVertexBuffer(1, c#instances, 0i64, c#instances.size());
-            drawRows(commands, s#meshStore, rowDrawerOf(r, host, target, staged, materialPass(0, c#values, c#programs, groups)), c#rows#list, 0)
+            drawRows(commands, s#meshStore, rowDrawerOf(r, host, target, staged, materialPass(0, c#values, c#programs, groups, false)), c#rows#list, 0)
         }, pass));
         // WhyNot: bundle を流した後に group 0 を付け直さずに描かない — bundle を流すと pass の bind group と頂点の buffer は付いていない形に戻る。
         if (List.isEmpty(staged#carried)) () else pass.setBindGroup(0, staged#sceneGroup);
         Option.forEach(g -> pass.setBindGroup(2, g), staged#poseGroup);
         let instances = Array.get(0, s#instances);
         pass.setVertexBuffer(1, instances, 0i64, instances.size());
-        let mp = materialPass(staged#valuesBase, WebGpuMaterials.valuesBufferOf(s#materials), WebGpuMaterials.currentPrograms(s#materials), WebGpuMaterials.frameGroupsOf(s#materials));
+        let mp = materialPass(staged#valuesBase, WebGpuMaterials.valuesBufferOf(s#materials), WebGpuMaterials.currentPrograms(s#materials), WebGpuMaterials.frameGroupsOf(s#materials), true);
         let drawer = rowDrawerOf(r, host, target, staged, mp);
         // WhyNot: 不透明の行・ビルボードの行・半透明の行を GL の drawPass のように 3 回に分けて流さない — 行の順（SceneList の頭）がその 3 つの順で、
         //   GL が分ける理由の深度の書き込みと blend は WebGPU では pipeline ごとに決まっている。

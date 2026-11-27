@@ -23,6 +23,8 @@ type PageOptions struct {
 	InitScript string
 	// CPUThrottle は CPU を何倍遅くするか（Emulation.setCPUThrottlingRate。1 以下は絞らない）。遅いスマホの姿を手元で見る時。
 	CPUThrottle float64
+	// ExtraArgs は Chrome の起動の旗に足す（vsync を外す --disable-gpu-vsync など）。
+	ExtraArgs []string
 }
 
 // Page は自分が起こした Chrome の 1 頁。使い終えたら Close。
@@ -51,7 +53,7 @@ func OpenPage(opt PageOptions) (*Page, error) {
 		}
 		exe = found
 	}
-	b, err := launchChrome(exe, opt.Width, opt.Height, 20*time.Second)
+	b, err := launchChrome(exe, opt.Width, opt.Height, opt.ExtraArgs, 20*time.Second)
 	if err != nil {
 		return nil, err
 	}
@@ -136,6 +138,23 @@ func (p *Page) Eval(expr string, out any) error {
 		return nil
 	}
 	return json.Unmarshal(raw, out)
+}
+
+// EvalFor は Eval と同じで、待つ長さを決められる（頁の中で何秒も測る式のため）。
+func (p *Page) EvalFor(expr string, out any, wait time.Duration) error {
+	raw, err := p.c.evaluate(expr, wait)
+	if err != nil {
+		return err
+	}
+	if out == nil || len(raw) == 0 {
+		return nil
+	}
+	return json.Unmarshal(raw, out)
+}
+
+// Call は CDP の命令を 1 つ送り、返事を JSON のまま返す（Profiler.stop のように答えの大きい命令のため）。
+func (p *Page) Call(method string, params any, wait time.Duration) (json.RawMessage, error) {
+	return p.c.call(method, params, wait)
 }
 
 // WaitFor は式が true を返すまで待つ。
