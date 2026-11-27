@@ -414,8 +414,8 @@
       "suffixes": [".flix"],
       "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "render_gl/", "engine_web/", "bench/", "src/engine/", "src/engine_world/", "src/engine_tools/", "src/render_gl/", "src/engine_web/", "lib/", "build/"],
       "skipDirs": ["build", "lib"],
-      "pattern": "\\b(?:App|Render|RenderFrame|RenderPaint|LwjglLayer|WebLayer|SoftRaster|BackgroundLoad|PostStack|LoadProgress|Gltf|Mesh3d|ProjectLoader|PhysicsWorld2d)\\.Internal\\b",
-      "hint": "App.Internal・Render.Internal・RenderFrame.Internal・RenderPaint.Internal・LwjglLayer.Internal・WebLayer.Internal・SoftRaster.Internal・BackgroundLoad.Internal・PostStack.Internal・LoadProgress.Internal・Gltf.Internal・Mesh3d.Internal・ProjectLoader.Internal・PhysicsWorld2d.Internal は engine のそのモジュールの中身でゲームからは呼ばない（版を上げると名前も形も黙って変わる。Mesh3d.Internal.fromTrusted は範囲の外の頂点の番号を持つ形も作れる）。glb はゲームから Model3d.loader / load / decode で読む。ゲームが使う関数は親のモジュールにある（App.launch・App.trace・App.traceFrame・App.frameOf・App.composeScene・App.withBackgroundLoad など。bin/fge api App.）。足りない関数があれば engine に足すよう相談する"
+      "pattern": "\\b(?:App|Render|RenderFrame|RenderPaint|LwjglLayer|WebLayer|SoftRaster|BackgroundLoad|PostStack|LoadProgress|Gltf|Mesh3d|ProjectLoader|PhysicsWorld2d|Scene3d|Decal3d)\\.Internal\\b",
+      "hint": "App.Internal・Render.Internal・RenderFrame.Internal・RenderPaint.Internal・LwjglLayer.Internal・WebLayer.Internal・SoftRaster.Internal・BackgroundLoad.Internal・PostStack.Internal・LoadProgress.Internal・Gltf.Internal・Mesh3d.Internal・ProjectLoader.Internal・PhysicsWorld2d.Internal・Scene3d.Internal・Decal3d.Internal は engine のそのモジュールの中身でゲームからは呼ばない（版を上げると名前も形も黙って変わる。Mesh3d.Internal.fromTrusted は範囲の外の頂点の番号を持つ形も作れる）。glb はゲームから Model3d.loader / load / decode で読む。ゲームが使う関数は親のモジュールにある（App.launch・App.trace・App.traceFrame・App.frameOf・App.composeScene・App.withBackgroundLoad など。bin/fge api App.）。足りない関数があれば engine に足すよう相談する"
     },
     {
       "id": "dev-request-outside-main",

@@ -342,6 +342,14 @@
 - loadOrBuild に加えて、build の中の Fs.FileTest（exists 系）と Fs.DirList（一覧）も記録する。
   `pub def loadOrBuildWithDirs(cache: Cache[a], params: String, extraFiles: List[String], build: Unit -> a \ ef): a \ (ef - Fs.FileRead - Fs.FileTest - Fs.DirList) + Fs.FileRead + Fs.FileTest + Fs.DirList + IO`
 
+## Decal3d — `engine/src/scene3d/Decal3d.flix`
+- 貼る 1 枚。
+  `pub type alias Decal = { material = Scene3d.Material3d, center = Vec3.Vec3, normal = Vec3.Vec3, size = Vec3.Vec3, rotation = Float64, uvRect = Rect2.Rect2, angleCutoff = Float64, offset = Option[Float64] }`
+- 既定値のデカール（size 1 × 1 × 0.5・rotation 0・uvRect は絵の全部・angleCutoff 70 度・offset は幅と高さの短い方の 1%）。
+  `pub def decal(material: Scene3d.Material3d, center: Vec3.Vec3, normal: Vec3.Vec3): Decal`
+- デカールの列を的（targets）に貼った板の置いた物の列（高い・毎コマ呼ばない）。
+  `pub def buildInstances(decals: List[Decal], targets: List[Scene3d.Instance3d]): List[Scene3d.Instance3d]`
+
 ## Display — `engine/src/platform/Display.flix`
 - 端末の区分。Ren'Py の screen variant（small / medium / large）に合わせた 3 つ
   `pub enum SizeClass with Eq, Order, ToString { case Small case Medium case Large }`
