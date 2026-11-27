@@ -175,7 +175,8 @@ mod TestText {
         let labels = List.flatMap(t -> List.flatMap(s -> List.flatMap(w -> List.flatMap(h -> List.map(v ->
             Text.make(t, oddAtlas(), s) |> Text.setWrapWidth(w) |> Text.setHorizontalAlignment(h) |> Text.setVerticalAlignment(v),
             vs), hs), wraps), sizes), texts);
-        let bad = List.flatMap(l -> List.filter(p -> Text.layoutToDrawables(l, Text.buildLayout(l), p) != Text.toDrawablesUncached(l, p), poss), labels);
+        let bad = List.flatMap(l -> List.filter(p -> Text.layoutToDrawables(l, Text.buildLayout(l), p) != Text.toDrawablesUncached(l, p)
+                                                  or Text.layoutToDrawablesV1(l, Text.buildLayout(l), p) != Text.toDrawablesUncached(l, p), poss), labels);
         Assert.assertEq(expected = 0, List.length(bad))
 
 }

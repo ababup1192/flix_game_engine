@@ -2226,7 +2226,9 @@
   `pub def toDrawables(label: Text, globalPos: Vec2.Vec2): List[GameEngine.Drawable]`
 - `pub type alias LayoutGlyph = { ax = Float64, ay = Float64, gw = Float64, gh = Float64, s0 = Float64, t0 = Float64, su = Float64, tv = Float64 }`
 - `pub type alias LayoutRow = { yOff = Float64, offsetX = Float64, glyphs = List[LayoutGlyph] }`
-- `pub type alias Layout = { textureName = String, fontSize = Float64, wrapWidth = Option[Float64], h = HorizontalAlignment, v = VerticalAlignment, asc = Float64, rows = List[LayoutRow] }`
+- `pub type alias Layout = { textureName = String, fontSize = Float64, wrapWidth = Option[Float64], h = HorizontalAlignment, v = VerticalAlignment, asc = Float64, rows = List[LayoutRow], flatRev = List[FlatGlyph] }`
+- `pub type alias FlatGlyph = { ax = Float64, ay = Float64, gw = Float64, gh = Float64, s0 = Float64, t0 = Float64, su = Float64, tv = Float64, yOff = Float64, offsetX = Float64 }`
+- `pub def layoutToDrawablesV1(label: Text, lay: Layout, globalPos: Vec2.Vec2): List[GameEngine.Drawable]`
 - `pub def layoutToDrawables(label: Text, lay: Layout, globalPos: Vec2.Vec2): List[GameEngine.Drawable]`
 - `pub def sameLayoutInputs(label: Text, lay: Layout): Bool`
 - `pub def buildLayout(label: Text): Layout`

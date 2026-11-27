@@ -193,10 +193,39 @@ pub mod Text {
     pub type alias LayoutRow = { yOff = Float64, offsetX = Float64, glyphs = List[LayoutGlyph] }
     pub type alias Layout = { textureName = String, fontSize = Float64, wrapWidth = Option[Float64],
                           h = HorizontalAlignment, v = VerticalAlignment, asc = Float64,
-                          rows = List[LayoutRow] }
+                          rows = List[LayoutRow], flatRev = List[FlatGlyph] }
+    pub type alias FlatGlyph = { ax = Float64, ay = Float64, gw = Float64, gh = Float64,
+                                 s0 = Float64, t0 = Float64, su = Float64, tv = Float64,
+                                 yOff = Float64, offsetX = Float64 }
 
-    pub def layoutToDrawables(label: Text, lay: Layout, globalPos: Vec2.Vec2): List[GameEngine.Drawable] =
+    pub def layoutToDrawablesV1(label: Text, lay: Layout, globalPos: Vec2.Vec2): List[GameEngine.Drawable] =
         List.reverse(layoutRowsRev(label, lay, globalPos#x, globalPos#y, lay#rows, Nil))
+
+    // 案 2: 逆順に持った字の列を頭から積むと正順になる（並べ直しの列を作らない）。Vec2 のレコードを挟まず Drawable を直に組む。
+    pub def layoutToDrawables(label: Text, lay: Layout, globalPos: Vec2.Vec2): List[GameEngine.Drawable] =
+        let Text.Text(r) = label;
+        let atlas = r#fontAtlas;
+        let c = r#visual#color;
+        flatOnto(atlas#textureName, atlas#textureSize, c#r, c#g, c#b, r#visual#zIndex, lay#asc,
+                 globalPos#x, globalPos#y, lay#flatRev, Nil)
+
+    def flatOnto(tex: String, texSize: Float64, cr: Float64, cg: Float64, cb: Float64, z: Int32, asc: Float64,
+                 gx: Float64, gy: Float64, glyphs: List[FlatGlyph], acc: List[GameEngine.Drawable]): List[GameEngine.Drawable] =
+        match glyphs {
+            case Nil => acc
+            case g :: rest =>
+                let baseY = gy + g#yOff + asc;
+                let x0 = g#ax + gx + g#offsetX;
+                let y0 = g#ay + baseY;
+                let w = (x0 + g#gw) - x0;
+                let h = (y0 + g#gh) - y0;
+                let acc1 =
+                    if (w <= 0.0 or h <= 0.0) acc
+                    else DrawCmd.Drawable.Drawable(tex, x0, y0, w / texSize, h / texSize, 0.0,
+                        cr, cg, cb, 1.0, false, g#s0, g#t0, g#su, g#tv, z,
+                        None, None, DrawCmd.BlendMode.Normal, Nil, 1.0) :: acc;
+                flatOnto(tex, texSize, cr, cg, cb, z, asc, gx, gy, rest, acc1)
+        }
 
     pub def sameLayoutInputs(label: Text, lay: Layout): Bool =
         let Text.Text(r) = label;
@@ -219,7 +248,10 @@ pub mod Text {
               glyphs = List.reverse(layoutGlyphsRev(atlas, scale, row, 0.0, Nil)) }
         }, rows);
         { textureName = atlas#textureName, fontSize = r#fontSize, wrapWidth = r#wrapWidth,
-          h = r#horizontalAlignment, v = r#verticalAlignment, asc = atlas#ascent * scale, rows = built }
+          h = r#horizontalAlignment, v = r#verticalAlignment, asc = atlas#ascent * scale, rows = built,
+          flatRev = List.foldLeft((acc, row) -> List.foldLeft((a, g) ->
+              { ax = g#ax, ay = g#ay, gw = g#gw, gh = g#gh, s0 = g#s0, t0 = g#t0, su = g#su, tv = g#tv,
+                yOff = row#yOff, offsetX = row#offsetX } :: a, acc, row#glyphs), Nil, built) }
 
     def layoutGlyphsRev(atlas: FontAtlas, scale: Float64, row: List[(Char, Float64)], penX: Float64,
                         acc: List[LayoutGlyph]): List[LayoutGlyph] = match row {
