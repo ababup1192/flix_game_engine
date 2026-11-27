@@ -32,7 +32,7 @@ mod Render3d.TestShaderLibrary {
             flags() |> List.flatMap(lightmap -> flags() |> List.flatMap(blend -> flags() |> List.flatMap(doubleSided ->
                 flags() |> List.flatMap(coverage -> flags() |> List.map(metallic ->
                     { skinned = false, uv = uv, normalMap = normalMap, lightmap = lightmap, blend = blend, doubleSided = doubleSided,
-                      coverage = coverage, metallicRoughness = metallic, variant = v })))))
+                      coverage = coverage, metallicRoughness = metallic, screenAoOnBlend = false, variant = v })))))
         })
 
     def metalOf(k: Render3d.ProgramKey.ProgramKind): Option[Shade] =
@@ -82,7 +82,7 @@ mod Render3d.TestShaderLibrary {
 
     def sampleCollection(): CollectionKeys =
         let kind = { skinned = false, uv = true, normalMap = false, lightmap = false, blend = false, doubleSided = true, coverage = false,
-                     metallicRoughness = false, variant = { psx = true | Render3d.ProgramKey.defaultShaderVariant() } };
+                     metallicRoughness = false, screenAoOnBlend = false, variant = { psx = true | Render3d.ProgramKey.defaultShaderVariant() } };
         unionCollection(Render3d.ShaderLibrary.shapeKeys(kind, true, true), variantKeys({ pointShadows = true | Render3d.ProgramKey.defaultShaderVariant() }))
 
     def keysOf(c: CollectionKeys): (Set[String], Set[String]) = (Map.keysOf(c#variants), Map.keysOf(c#materialShapes))
@@ -109,6 +109,27 @@ mod Render3d.TestShaderLibrary {
         let names = Render3d.ShaderLibrary.requiredKeysOf(sampleCollection()) |> List.map(Render3d.ShaderSourceKey.toKeyString) |> List.toSet;
         Assert.assertEq(expected = (true, true),
                         (Set.memberOf("material.fs+uv+ds+cov+tex/+psx", names), Set.memberOf("material.fs+uv+ds+tex/+psx", names)))
+
+    def decalCollection(): CollectionKeys =
+        let kind = { skinned = false, uv = true, normalMap = false, lightmap = false, blend = true, doubleSided = false, coverage = false,
+                     metallicRoughness = false, screenAoOnBlend = true, variant = { ambientOcclusion = true | Render3d.ProgramKey.defaultShaderVariant() } };
+        Render3d.ShaderLibrary.shapeKeys(kind, false, true)
+
+    /// 記録に SSAO を受ける半透明の形（デカールの板）があれば、書き出しはその +ab の frag を作る。
+    @Test
+    def testScreenAoOnBlendShapeExpandsToAbFragment(): Unit \ Assert =
+        let names = Render3d.ShaderLibrary.requiredKeysOf(decalCollection()) |> List.map(Render3d.ShaderSourceKey.toKeyString) |> List.toSet;
+        Assert.assertTrue(Set.memberOf("material.fs+uv+bl+ab+tex/+ao", names))
+
+    /// SSAO を受ける半透明の形は記録のファイルを通しても残る。
+    @Test
+    def testScreenAoOnBlendShapeRoundTrips(): Unit \ Assert =
+        Assert.assertEq(expected = Ok(keysOf(decalCollection())), collectionOfJson(collectionToJson(decalCollection())) |> Result.map(keysOf))
+
+    /// SSAO を受けない形の記録の字には screenAoOnBlend の欄が出ない（デカールを使わないゲームの記録が変わらない）。
+    @Test
+    def testPlainShapeJsonOmitsScreenAoOnBlend(): Unit \ Assert =
+        Assert.assertFalse(String.contains(substr = "screenAoOnBlend", collectionToJson(sampleCollection())))
 
     def tempPath(name: String): String \ IO =
         let dir = File.createTempFile("fge-shader-variants", "");

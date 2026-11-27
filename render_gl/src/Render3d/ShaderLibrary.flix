@@ -112,7 +112,7 @@ pub mod Render3d.ShaderLibrary {
 
     /// 材質の形（記録の 1 行）。ProgramKind から変種と coverage を除き、材質の cutout と、材質が絵を読むか（readsTextures）を足した物。
     pub type alias MaterialShape = { skinned = Bool, uv = Bool, normalMap = Bool, lightmap = Bool, blend = Bool, doubleSided = Bool,
-                                     cutout = Bool, metallicRoughness = Bool, readsTextures = Bool }
+                                     cutout = Bool, metallicRoughness = Bool, screenAoOnBlend = Bool, readsTextures = Bool }
 
     /// 記録した鍵。variants = 変種の鍵の字（variantKeyOf）→ 変種・materialShapes = 形の字 → 形。
     pub type alias CollectionKeys = { variants = Map[String, ShaderVariant], materialShapes = Map[String, MaterialShape] }
@@ -134,7 +134,8 @@ pub mod Render3d.ShaderLibrary {
     /// 形 kind（材質の cutout と、絵を読むか readsTextures）の材質を使った記録（変種と形）。
     pub def shapeKeys(kind: ProgramKind, cutout: Bool, readsTextures: Bool): CollectionKeys =
         let shape = { skinned = kind#skinned, uv = kind#uv, normalMap = kind#normalMap, lightmap = kind#lightmap, blend = kind#blend,
-                      doubleSided = kind#doubleSided, cutout = cutout, metallicRoughness = kind#metallicRoughness, readsTextures = readsTextures };
+                      doubleSided = kind#doubleSided, cutout = cutout, metallicRoughness = kind#metallicRoughness,
+                      screenAoOnBlend = kind#screenAoOnBlend, readsTextures = readsTextures };
         { variants = Map#{ variantKeyOf(kind#variant) => kind#variant }, materialShapes = Map#{ shapeKeyOf(shape) => shape } }
 
     /// 形の字（記録の表の鍵）。
@@ -146,7 +147,8 @@ pub mod Render3d.ShaderLibrary {
     /// 形の欄の名前と値（ファイルの欄の名前と同じ・並びも同じ）。
     def shapeFields(s: MaterialShape): List[(String, Bool)] =
         ("skinned", s#skinned) :: ("uv", s#uv) :: ("normalMap", s#normalMap) :: ("lightmap", s#lightmap) :: ("blend", s#blend) ::
-        ("doubleSided", s#doubleSided) :: ("cutout", s#cutout) :: ("metallicRoughness", s#metallicRoughness) :: ("readsTextures", s#readsTextures) :: Nil
+        ("doubleSided", s#doubleSided) :: ("cutout", s#cutout) :: ("metallicRoughness", s#metallicRoughness) :: ("screenAoOnBlend", s#screenAoOnBlend) ::
+        ("readsTextures", s#readsTextures) :: Nil
 
     /// 場面 scene を描く時に使う鍵（描き手を使わない純粋な決め方。描き手の Render3d.ScenePlan と同じ決め方を写す）。
     /// 色の場面は場面の変種・奥行きの場面（Output.Depth）は既定の変種で、cutout か両面の材質だけ・半透明は外す。
@@ -206,7 +208,8 @@ pub mod Render3d.ShaderLibrary {
     def shapeSourceKeys(s: MaterialShape, v: ShaderVariant): List[ShaderSourceKey] =
         let coverages = if (s#cutout and not s#blend) true :: false :: Nil else false :: Nil;
         let kindOf = (coverage: Bool) -> { skinned = s#skinned, uv = s#uv, normalMap = s#normalMap, lightmap = s#lightmap, blend = s#blend,
-                                           doubleSided = s#doubleSided, coverage = coverage, metallicRoughness = s#metallicRoughness, variant = v };
+                                           doubleSided = s#doubleSided, coverage = coverage, metallicRoughness = s#metallicRoughness,
+                                           screenAoOnBlend = s#screenAoOnBlend and v#ambientOcclusion, variant = v };
         // WhyNot: 材質の頂点の鍵を 1 本にしない — GL は lightmap をそのまま読み、WebGPU は骨つきでない時だけ読むので、骨つきの lightmap の形で鍵が分かれる。
         let vertex = ShaderSourceKey.MaterialVertex({ skinned = s#skinned, uv = s#uv, lightmap = s#lightmap, psx = v#psx });
         let bakedVertex = ShaderSourceKey.MaterialVertex({ skinned = s#skinned, uv = s#uv, lightmap = s#lightmap and not s#skinned, psx = v#psx });
@@ -243,7 +246,9 @@ pub mod Render3d.ShaderLibrary {
 
     /// 記録 c の JSON の字（欄は名前の順・並びは鍵の字の順で、新しい鍵の時だけ git の差が出る）。
     pub def collectionToJson(c: CollectionKeys): String =
-        let shapes = Map.valuesOf(c#materialShapes) |> List.map(s -> JObject(shapeFields(s) |> List.map(nb -> (fst(nb), JBool(snd(nb)))) |> List.toMap));
+        // WhyNot: screenAoOnBlend の偽を書かない — デカールを使わないゲームの記録の字が、欄を足す前と同じに保てる（無い欄は偽で読む）。
+        let written = (nb: (String, Bool)) -> snd(nb) or fst(nb) != "screenAoOnBlend";
+        let shapes = Map.valuesOf(c#materialShapes) |> List.map(s -> JObject(shapeFields(s) |> List.filter(written) |> List.map(nb -> (fst(nb), JBool(snd(nb)))) |> List.toMap));
         let obj = JObject(Map#{
             "version"        => JNumber(JBigDecimal.valueOf(Int32.toInt64(collectionVersion()))),
             "variants"       => JArray(Map.keysOf(c#variants) |> Set.toList |> List.map(JString) |> List.toVector),
@@ -284,7 +289,8 @@ pub mod Render3d.ShaderLibrary {
     def shapeOfFields(f: Map[String, Json]): MaterialShape =
         let on = name -> Map.get(name, f) == Some(JBool(true));
         { skinned = on("skinned"), uv = on("uv"), normalMap = on("normalMap"), lightmap = on("lightmap"), blend = on("blend"),
-          doubleSided = on("doubleSided"), cutout = on("cutout"), metallicRoughness = on("metallicRoughness"), readsTextures = on("readsTextures") }
+          doubleSided = on("doubleSided"), cutout = on("cutout"), metallicRoughness = on("metallicRoughness"),
+          screenAoOnBlend = on("screenAoOnBlend"), readsTextures = on("readsTextures") }
 
     /// 変種の鍵の字 key（"+ps+psx" の形）の変種（知らないフラグの字は読み飛ばす）。
     pub def variantOfKey(key: String): ShaderVariant =

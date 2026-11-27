@@ -204,14 +204,14 @@ mod Render3d.ScenePlan {
         let uv = hasUv(d);
         { skinned = isSkinned(d), uv = uv, normalMap = Option.nonEmpty(m#normalMap) and uv, lightmap = Option.nonEmpty(Scene3d.lightmapOfFields(d#fields)),
           blend = m#blend, doubleSided = m#doubleSided, coverage = isCoverageCutout(coverage, m),
-          metallicRoughness = Option.nonEmpty(m#metallicRoughnessShade), variant = variant }
+          metallicRoughness = Option.nonEmpty(m#metallicRoughnessShade), screenAoOnBlend = Render3d.ProgramKey.screenAoOnBlendOf(variant, m), variant = variant }
 
-    /// プログラムの版の 12 の欄を 1 つの数にした物（Render3d.ProgramKey.materialKey の版の部分と同じ欄）。
+    /// プログラムの版の 13 の欄を 1 つの数にした物（Render3d.ProgramKey.materialKey の版の部分と同じ欄）。
     // WhyNot: Render3d.Batch.kindBits を使わない — あちらは batch にしない版（lightmap・blend）を落とした batch の鍵で、材質の問い合わせは別のプログラムの版を分けなければいけない。
     def kindCodeOf(kind: ProgramKind): Int32 =
         let bit = (on, value) -> if (on) value else 0;
         bit(kind#skinned, 1) + bit(kind#uv, 2) + bit(kind#normalMap, 4) + bit(kind#lightmap, 8) + bit(kind#blend, 16) + bit(kind#doubleSided, 32)
-            + bit(kind#coverage, 64) + bit(kind#metallicRoughness, 128) + Render3d.ProgramKey.kindCodeBitsOf(kind#variant)
+            + bit(kind#coverage, 64) + bit(kind#metallicRoughness, 128) + bit(kind#screenAoOnBlend, 8192) + Render3d.ProgramKey.kindCodeBitsOf(kind#variant)
 
     // ── 候補に分ける ──
 

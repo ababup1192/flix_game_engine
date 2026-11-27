@@ -422,6 +422,12 @@
 - 外向きの法線 n（長さ 1）を、タンジェント raw（長さはそろえない）・w（±1）と法線マップの rgb c で傾けた法線（式はファイルの頭）。
   `pub def applyNormalMap(n: Vec3.Vec3, raw: Vec3.Vec3, w: Float64, strength: Float64, c: (Float64, Float64, Float64)): Vec3.Vec3`
 
+## SoftRaster3d.Blended — `engine_tools/src/SoftRaster3d/Blended.flix`
+- 半透明の物を塗る時に要る、場面ごとに 1 回だけ組んだ物（半透明の三角形・材質・lightmap・塗りの材料）。env = SSAO の mask を読む塗りの材料・glassEnv = 読まない塗りの材料・
+  `pub type alias BlendedShading = { tris = Vector[SoftRaster3d.Tri], mats = Vector[SoftRaster3d.Mat], bakes = Vector[Option[SoftRaster3d.Baked]], env = SoftRaster3d.ShadeEnv, glassEnv = SoftRaster3d.ShadeEnv, aoOnBlend = Vector[Bool], psx = SoftRaster3d.Psx.PsxColor }`
+- 半透明の三角形 ti が行 y で覆い、1 段目の深度 depth より手前の画素に、その色を重ねる（rgba = その行の r, g, b, α。深度は書かない）。
+  `pub def blendRow(lw: Int32, y: Int32, blended: BlendedShading, ti: Int32, depth: Array[Float64, r], rgba: Array[Float64, r]): Unit \ r`
+
 ## SoftRaster3d.PointShadows — `engine_tools/src/SoftRaster3d/PointShadows.flix`
 - 場面の点光源の影。atlas の値と、点光源の番号（pickLights の後の並び・maxPointLights() 個）ごとの影を落とす灯りと面 6 枚の地図（影を落とさない灯りは None）。
   `pub enum PointShadowMaps { case PointShadowMaps(Scene3d.PointShadows.Atlas, Vector[Option[(Scene3d.PointShadows.ShadowedPointLight, Vector[Vector[Float64]])]]) }`

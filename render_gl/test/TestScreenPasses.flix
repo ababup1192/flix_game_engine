@@ -48,7 +48,7 @@ mod Render3d.TestScreenPasses {
     /// 絵を一番多く読む材質（絵 6 枚・法線マップ・lightmap・PBR の環境マップ）の +ps+ao の版。
     def heaviestKind(): Render3d.ProgramKey.ProgramKind =
         { skinned = false, uv = true, normalMap = true, lightmap = true, blend = false, doubleSided = false, coverage = false, metallicRoughness = true,
-          variant = { pointShadows = true, physicalUnits = true, psx = true, skyIrradiance = true, ambientOcclusion = true } }
+          screenAoOnBlend = false, variant = { pointShadows = true, physicalUnits = true, psx = true, skyIrradiance = true, ambientOcclusion = true } }
 
     def sixTextures(): ShaderDoc.Spec =
         let tex = (i: Int32) -> ShaderDoc.Field.Tex({ name = "t${i}", chan = ShaderDoc.TexChan.R });

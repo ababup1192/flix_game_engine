@@ -401,7 +401,8 @@ pub mod DrawHash {
     def putMaterial(out: DataOutputStream, m: Scene3d.Material3d): Unit \ IO = match Scene3d.materialFieldsOf(m) {
         case { spec = spec, params = params, cutout = cutout, emission = emission, normalMap = normalMap, wrap = wrap,
                blend = blend, doubleSided = doubleSided, emissionIntensity = emissionIntensity,
-               metallicRoughness = metallicRoughness, metallicRoughnessShade = metallicRoughnessShade, shaderHash = _, texReads = _, maxMipLevels = maxMipLevels } =>
+               metallicRoughness = metallicRoughness, metallicRoughnessShade = metallicRoughnessShade, shaderHash = _, texReads = _, maxMipLevels = maxMipLevels,
+               screenAoOnBlend = screenAoOnBlend } =>
             putStr(out, ToString.toString(ShaderJson.toJson(spec)));
             putSize(out, Map.size(params));
             params |> Map.forEach((name, v) -> { putStr(out, name); putF(out, v) });
@@ -421,7 +422,8 @@ pub mod DrawHash {
             // WhyNot: 値や絵 1 枚から作った shade（metallicRoughness が Some）を書かない — 中身は上の値と絵の名前で決まり、前からの材質の鍵の字を保つ。
             //   withMetallicRoughnessShade の shade だけは metallicRoughness が None で、木を書かないと shade だけ替えた材質が塗り直されない。
             if (Option.isEmpty(metallicRoughness)) metallicRoughnessShade |> Option.forEach(shade -> { out.writeByte(0x6d); putStr(out, ToString.toString(ShaderJson.toJson(shadeSpec(shade)))) }) else ();
-            if (maxMipLevels != Int32.maxValue()) { out.writeByte(0x4c); out.writeInt(maxMipLevels) } else ()
+            if (maxMipLevels != Int32.maxValue()) { out.writeByte(0x4c); out.writeInt(maxMipLevels) } else ();
+            if (screenAoOnBlend) out.writeByte(0x61) else ()
     }
 
     /// Shade を 1 枚の Spec の Out に包む（JSON に書く口が Spec にしか無いため）。

@@ -34,6 +34,7 @@ GL と WebGPU（窓・ブラウザ）と CPU（画面なしの描き出し・テ
   - [動かない物をまとめる（staticGroup）](#動かない物をまとめるstaticgroup)
 - [空（グラデーション）](#空グラデーション)
 - [半透明と両面（窓ガラス・網・水面）](#半透明と両面窓ガラス網水面)
+- [デカール（壁・床に血・汚れ・弾痕・標示を貼る）](#デカール壁床に血汚れ弾痕標示を貼る)
 - [細い物の欠けを抑える（MSAA）](#細い物の欠けを抑えるmsaa)
 - [画面の歪み（熱のゆらぎ・水の中・魔法）](#画面の歪み熱のゆらぎ水の中魔法)
 - [地面を這う霧（高さの霧・街灯のにじみ）](#地面を這う霧高さの霧街灯のにじみ)
@@ -607,6 +608,47 @@ let glass = Scene3d.material(spec) |> Scene3d.withAlphaBlend(true) |> Scene3d.wi
 - 色の α は材質の spec の α（絵の α）。baseColorFactor の α は読まない（頂点の色に色だけ書き込んである）
 - 半透明の物が 1 つも無い場面は、今までと 1 bit も同じ絵（描く順も GLSL の字も変わらない）
 
+## デカール（壁・床に血・汚れ・弾痕・標示を貼る）
+
+形を作り直さずに、壁・床・道の上へ薄い板（mesh decal）を貼る（Unreal の mesh decal・Bevy の ForwardDecal と同じ考え）。ゲームが見るのは 3 つ:
+
+| API | いつ使うか |
+|---|---|
+| `Decal3d.Decal`（record） | 貼る材質・点・面の向き・大きさ・回り・atlas の矩形・角の上限・浮かせる量 |
+| `Decal3d.decal(材質, 点, 面の向き)` | 既定値から作る（大きさは `{ size = … \| Decal3d.decal(…) }` で替える） |
+| `Decal3d.buildInstances(デカールの列, 的の列)` | 的の三角形を箱で切って、板の置いた物の列を返す。**読み込みか当たった時に 1 回**呼び、結果を Resources に持って `instances` に足す |
+
+```flix
+// 読み込みで 1 回: 壁と床（staticGroup に入れる前の置いた物）に、1 枚の atlas から血と汚れを貼る
+// atlas は読み込んだ絵（Texture3d）。名前は字で書かず Texture3d.name で引く（"tex3d:" の後ろは絵の中身の hash）
+let blood = Scene3d.texturedMaterial(Texture3d.name(atlas), ShaderDoc.FilterMode.Linear);
+let decals = { size = Vec3.v3(0.8, 0.8, 0.4), uvRect = { position = Vec2.v2(0.0, 0.0), size = Vec2.v2(0.5, 0.5) } | Decal3d.decal(blood, point, Vec3.v3(0.0, 0.0, -1.0)) }
+    :: { rotation = 30.0, uvRect = { position = Vec2.v2(0.5, 0.0), size = Vec2.v2(0.5, 0.5) } | Decal3d.decal(blood, floorPoint, Vec3.v3(0.0, 1.0, 0.0)) } :: Nil;
+let plates = Decal3d.buildInstances(decals, wallsAndFloor);   // Resources に持つ
+// 毎コマ: 板を instances に足し、絵を場面の textures に載せる（載せない名前は 0 で読まれ、半透明の板は消える）
+{ instances = wallsAndFloor ::: plates, textures = atlas :: Nil | Scene3d.scene(camera, size) }
+// 撃った所: Ray3d の RayHit の点と面の向きをそのまま渡し、当たった時に 1 枚ずつ作って控えに足す
+let hole = Ray3d.pickNearest(ray, 50.0, targets) |> Option.map(match (_, hit) -> Decal3d.decal(bulletHole, hit#point, hit#normal));
+```
+
+- 箱は `center` から `−normal` の向きへ投げ、奥行き（`size#z`）の半分ずつ前後へ延びる。`angleCutoff`（度）を超えて斜めの面には貼らない
+  （床に投げた血が壁を這い上がらない）。板は面の向きへ `offset`（既定は幅と高さの短い方の 1%・場面の長さ）だけ浮かせる
+- 板は (的, 材質) ごとに world の座標の 1 つの形へつなぎ、形の中はデカールの列の順（**列の後ろが上**）。名前は `<的の名前>:decal`。
+  **重ねる物は同じ材質（atlas の `uvRect`）にまとめる** — 違う材質の板どうしは物の境界の真ん中で並ぶので、歩くと前後が入れ替わりうる
+- `blend` も `cutout` も偽の材質は半透明にする（不透明の板は下の面と奥行きを奪い合う）。cutout の板は不透明の物と一緒に描くので
+  `staticGroup` に入れてよい。半透明の板は staticGroup でまとまらないので `instances` へ
+- 骨つきの的と半透明の的には貼らずに 1 行言う（動く物に貼るのは範囲の外）。大きな 1 枚の床は、板の形も大きくなってほかの半透明の物との並びが
+  崩れやすいので、的を部屋・区画ごとの part に分けておく
+- 重さは「箱が掛かる的の三角形の数 × デカールの数」（10 万三角形の的に 1 枚で JVM 約 3.7 ms）。**毎コマ呼ばない**
+- 板は的の tint・頂点の色・lightmap（uv2 に的の矩形を掛けた物）を写すので、ベイクした明るさの壁に貼っても同じ明るさに見える。
+  材質の無い的（頂点の色だけ）に絵つきの板を貼ると、頂点の色を線形へ戻す前に掛けるぶん板の方が少し明るく見える
+- 半透明の板も **画面の上の SSAO を受ける**（ほかの半透明の物は受けない。板は真下の不透明な面に貼りつくので、mask の値がちょうどその面の値）。
+  隅の暗がりの上の血だけが明るく浮かない
+- ブラウザ版: SSAO を掛ける場面の板は材質の版の鍵 `+ab` を使う。PC で遊んで `web/shader-variants.json` に記録してから書き出す
+  （記録に無い鍵は頂点の色で描かれる。「[ブラウザ版のシェーダー](#ブラウザ版のシェーダー書き出しの時に作る)」）
+- gl-parity の `decal3d`（壁と床の角・atlas の 3 枚・頂点の色の的・lightmap の的・cutout の板）と `decalAmbientOcclusion3d`（SSAO の隅の上の板）で
+  GL と CPU の違う画素の数を見る
+
 ## 細い物の欠けを抑える（MSAA）
 
 手すり・金網・電線のような細い物は、画素の真ん中に掛からないと抜け、歩くとちらつく。場面を描く Pass に標本を持たせる:
@@ -709,7 +751,7 @@ post.json なら `"ambientOcclusion": { "radius": 0.5 }`（null で外す）。�
 
 - `radius`（m）・`thickness`（m・これより離れた点は数えない）は場面の `unitsPerMeter` を掛けて使う。`intensity`・`power` で暗さ、`taps`（4〜16）で 1 画素の点の数、
   `scale`（0.25〜1）で mask の解像度、`lightAffect`（0..1）で直接光（点光源・スポット・太陽）にも掛ける割合
-- 掛かるのは環境の光（ambient・hemisphere・景色の拡散の光）と lightmap にベイクした光。環境マップの映り込みと半透明の物には掛からない
+- 掛かるのは環境の光（ambient・hemisphere・景色の拡散の光）と lightmap にベイクした光。環境マップの映り込みと半透明の物には掛からない（デカールの板だけは半透明でも受ける。「[デカール](#デカール壁床に血汚れ弾痕標示を貼る)」）
 - PostStack が場面の色より先に奥行きを R32Float の Pass（`ps_depth_far`・目からの距離 / far の面の遠い隅までの距離）へ描き、3D の描き手が場面の色を描く前に
   mask → 横のぼかし → 縦のぼかしを描いて、材質の frag が画面の位置で読む。霧と Physical の奥行きのぼかしも同じ 1 枚を読む（場面を 3 回描かない）
 - View の絵の一番大きい 3D の場面 1 つにだけ掛かり、`Resolution.Native` の場面だけ（Design の場面は掛けずに `Issue.AmbientOcclusionNeedsNative`）
@@ -817,6 +859,7 @@ GL・WebGPU・CPU は同じ式を書く（GLSL の `r3d_colorDepth`・`r3d_verte
   漏れは make web-load-check が wasm の中の字を作るコードの関数の数（0 本のはず）で止める
 - 既定の一式（既定の変種の頂点の色とビルボード・空・奥行き・blit・置いた物の頂点・ビルボードの影）が表に無いのは `bug!`。
   記録に依る鍵（既定でない変種・材質の形・+ao の pass）が無い時は描かずに鍵ごとに 1 回知らせる
+- デカールの板（SSAO を受ける半透明の材質）は +ao の場面でだけ材質の版の鍵に `+ab` が付き、記録の形の行に `"screenAoOnBlend": true` が出る（偽の欄は書かない）
 
 ## 場面の絵の予算
 

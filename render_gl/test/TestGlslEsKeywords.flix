@@ -44,7 +44,7 @@ mod Render3d.TestGlslEsKeywords {
     def kindsOf(v: Render3d.ProgramKey.ShaderVariant): List[Render3d.ProgramKey.ProgramKind] =
         List.flatMap(sk -> List.flatMap(uv -> List.flatMap(nm -> List.flatMap(lm -> List.flatMap(bl -> List.flatMap(ds -> List.flatMap(cv -> List.map(mr ->
             { skinned = sk, uv = uv, normalMap = nm, lightmap = lm, blend = bl, doubleSided = ds, coverage = cv, metallicRoughness = mr,
-              variant = v },
+              screenAoOnBlend = false, variant = v },
             bools()), bools()), bools()), bools()), bools()), bools()), bools()), bools())
 
     def solidGlsl(): ShaderGen.MaterialGlsl =
