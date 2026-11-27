@@ -21,7 +21,7 @@
 | 枝 | 中身 | 状態 | 取り込む時 |
 |---|---|---|---|
 | worktree-agent-acea528a59b194393 | GPU compute の C0〜C3（Java の API・engine と render_gl の Internal・Dawn のテスト・測りの道具） | 済み・レビュー 86 点 | C1 はいつでも可。C2・C3 は C4（W1 の後）と一緒に |
-| worktree-agent-ae9d7c8e070f30a05 | web のベンチ比べ（WebGPU Engine Bench の harness に flix の adapter） | S0〜S7 済み（16 場面・555 配列が元と一致）・残りは quick とレビュー | S7 とレビューの後。full（3.5〜4 時間）は他の重い仕事と重ならない時に |
+| worktree-agent-ae9d7c8e070f30a05 | web のベンチ比べ（WebGPU Engine Bench の harness に flix の adapter） | 全段済み（17 場面・615 配列が元と一致・quick 済み・レビュー 80 → 90 点）。full の前の小さな後片付け 4 つ（offFrames を warm-up と分ける・K6 の刻みを ceil に・Crowd.blended と FoxPoses を 1 つの値から・RESULTS の古い数）が残る | S7 とレビューの後。full（3.5〜4 時間）は他の重い仕事と重ならない時に |
 
 ## 3. 計画の全体と順番
 
@@ -82,3 +82,32 @@
 - 起動したゲームは PID で止めて ps で確かめる。
 - ピクセル物理（cinder_lab）は止めている。Studio は凍結（engine の計画に Studio の機能を前提にしない）。
 - 配る先はブラウザが本命。性能は「Godot・three.js と並ぶ」を目標に、表現力とパフォーマンスで比べる（配る大きさは比べる軸にしない）。
+
+## 9. 作業の注意点（11-27 の作業で踏んだ物）
+
+**環境・道具**
+- python3 は前に `DEVELOPER_DIR=/Library/Developer/CommandLineTools` を付ける（nix の apple-sdk がシムを乗っ取る）。git commit も同じ（pre-commit の check-docs-sync が python3 を使う）。
+- flix は `bin/flix`・`bin/fge`・make から流す。`java -jar bin/flix.jar` を直に叩くと Maven へ取りに行き 429 で止まる。worktree を立てたら最初に `make worktree-seed`。
+- 層（render_gl・engine_world・engine_tools）の型検査は `make sync-layers` の後に `.layers/<名前>` で `../../bin/flix check`。ゲーム側へ engine の直しを届けるのは `make sync-engine-full`（ゲームの lib は `make engine-upgrade` まで古いまま）。
+- foreground の `sleep` は止められる。待つ時は until の繰り返しか、background で流して通知を待つ。
+- `cd` で worktree の中へ入ると、その後の作業場所がそこへ移る。終わったら engine の根へ戻る。
+
+**コミットの門（pre-commit）で止まる物**
+- `bin/fge jargon`: 新しく書いた行の独自語。「焼く」→「前もって計算する（bake）」など。コミットの前に `bin/fge jargon <ファイル>` で素振りする。 jargon-ok: 止まる語の例として挙げている
+- go-test の `TestNoUnbracedVariableBeforeWideChar`: sh で全角の字の直前の変数は `${名前}` と書く（`$log）` は不可）。
+- pub や doc コメントを触ったら `make api-digest` を同じコミットに。docs を触ったら `make check-docs-sync`。
+
+**測る時**
+- 測る前に `make strays` と `ps`（java・Chrome）と load average を見る。担当が残した java（headless の Bistro など）が GPU を取り合うと、数字が数倍ずれる（11-27 に 1 コマ 10 ms → 41 ms）。
+- デスクトップの WebGPU は、画面がロック中・表示が眠っている時に 120 Hz（8.33 ms）へ張り付く。余裕を見るなら GL か画面を起こして測る。
+- 描き手どうしは rest・submit・swap で比べない（GPU を待つ時間の入る区間が違う）。1 コマの間隔と `FLIX_GE_GPU_TIMER=1` の GPU の時間で比べる。
+- ベンチの full（3.5〜4 時間）は、ほかの重い仕事（門・書き出し・型検査）と重ねない。
+
+**ブラウザ版の書き出し（W1 の後）**
+- `web/WebMain.flix` を持つゲームは `web/shader-variants.json`（使ったシェーダーの組の記録）が要る。無いと書き出しが止まる（`--draft` の時だけ既定の一式で書き出す）。記録は `bin/fge run` / `bin/fge debug` で遊ぶと書き足される。表に無い組は頂点の色で描かれ、console.error が 1 行出る（web-load-check が赤にする）。
+
+**担当（サブエージェント）の扱い**
+- 同じパッケージを 2 人に触らせない。今は「描き手の CPU の直し（WebGpuMaterials・SceneList・ScenePlan・StaticRows・2D）」と「compute の C4 以降（新しいモジュール・WebGpuRenderer.prepare の頭・MultiMesh3d の欄）」に分けてある。
+- 担当の最後の報告は 1 回だけ届く。background の仕事を残して止まった担当は、続きを SendMessage で頼み直す。レビュー役の点数は書き手の報告より後に届くことが多いので、レビュー役へ直接「main へ送って」と頼む。
+- 担当の緑の主張は、取り込む前に自分で `make verify SUITE=affected SINCE=<取り込む前の main>` を流して確かめる（11-27 は L5 の後に自分の書いた sh の誤りが 1 件赤になった）。
+- 計画書（`plans/`）は git の外。直したら flix-plans の写しも更新する（README の rsync の 1 行）。
