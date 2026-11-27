@@ -1,9 +1,9 @@
 // 多角形の run・タイルの層・static layer の範囲・面・3D の場面を貼る所が RenderList の行になる所（GL を呼ばない前半）と、場面と面の行を GL の backend が流す順を固定する。
-// 並べた物（Merged）を emitRowItem へ順に渡して run を閉じ、行の欄と values を読む（倍率 1・Pass の絵は無し）。
+// 並べた物（Merged）を emitMerged へ渡して run を閉じ、行の欄と values を読む（倍率 1・Pass の絵は無し）。
 // WhyNot: mod TestShapeRows にしない — 行を作る関数は RenderFrame の中の pub でない関数で、子のモジュールからしか呼べない。
 mod RenderFrame.TestShapeRows {
     import java.nio.FloatBuffer
-    use RenderFrame.{Merged, blendCode, closeRuns, countBase, emitRowItem, newRunState, stateSize}
+    use RenderFrame.{Merged, blendCode, closeRuns, countBase, emitMerged, newRunState, stateSize}
     use RenderFrame.Internal.GlRows
     use RenderFrame.Internal.RenderList.{ListRowKind, RenderList, clearRenderList, instanceFloats,
                                          newRenderList, nextVertexOf, readFields, readsOf, rowCountOf, rowsOf, surfaceValueAlign, valueCountOf, valuesOf,
@@ -48,7 +48,7 @@ mod RenderFrame.TestShapeRows {
         let st: Array[Int32, Static] = Array.empty(Static, stateSize());
         let list = newRenderList(FloatBuffer.allocate(instanceFloats() * 8), FloatBuffer.allocate(vertexFloats() * 64));
         let warnLog = Ref.fresh(Static, Set#{"missing"});
-        List.forEach(item -> emitRowItem(st, list, 1.0, 1.0, registry(), Set.empty(), warnLog, item), items);
+        emitMerged(st, list, 1.0, 1.0, registry(), Set.empty(), warnLog, items);
         closeRuns(st, list);
         list
 
@@ -296,7 +296,7 @@ mod RenderFrame.TestShapeRows {
         let st: Array[Int32, Static] = Array.empty(Static, stateSize());
         let list = newRenderList(FloatBuffer.allocate(instanceFloats()), FloatBuffer.allocate(vertexFloats()));
         let item = surfaceWith(("tiles", ShaderDoc.FilterMode.Linear) :: ("missing", ShaderDoc.FilterMode.Nearest) :: Nil, Nil);
-        emitRowItem(st, list, 1.0, 1.0, registry(), Set#{"tiles"}, Ref.fresh(Static, Set#{"shader tex missing"}), item);
+        emitMerged(st, list, 1.0, 1.0, registry(), Set#{"tiles"}, Ref.fresh(Static, Set#{"shader tex missing"}), item :: Nil);
         Assert.assertEq(expected = (2, (9, 1, 1), (0, 0, 0)), (cell(list, 0, 7), readAt(list, 0, 0), readAt(list, 0, 1)))
 
     /// mask つきの面は、mask の三角形（四角 = 6 頂点）を vertices へ書き、比べる値 1 を持つ。次の頂点はその後ろ。

@@ -99,6 +99,14 @@ mod TestDrawCounts {
         let sprites = sprite("", 0) :: sprite("", 1) :: sprite("a", 2) :: sprite("a", 3) :: Nil;
         Assert.assertEq(expected = (1, 0, 0, 0, 0, 0, 0), countsOf(args -> { sprites = sprites | args }))
 
+    /// 登録の無い絵（"zz"・知らせ済み）は描かず run も切らず、その後の絵は自分の番号で引く: a・zz・b・a は draw call 3 つで texture の切れ目が 2。
+    @Test
+    def testMissingTextureBetweenKeepsLookups(): Unit \ {Assert, IO} =
+        let sprites = sprite("a", 0) :: sprite("zz", 1) :: sprite("b", 2) :: sprite("a", 3) :: Nil;
+        let warned = Ref.fresh(Static, Set#{"zz"});
+        Assert.assertEq(expected = (3, 0, 0, 2, 0, 0, 0),
+                        countsOf(args -> { sprites = sprites, texWarnLog = warned | args }))
+
     // ── 種類が替わる ──
 
     /// スプライトと多角形が z の順で交互（s・p・s・p）なら draw call 4 つで、kind の切れ目が 3。

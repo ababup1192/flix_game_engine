@@ -80,8 +80,8 @@ mod RenderFrame.Internal.WebGpuRows.TestWebGpuRows {
         let st: Array[Int32, Static] = Array.empty(Static, stateSize());
         let list = newRenderList(FloatBuffer.allocate(instanceFloats() * 2), FloatBuffer.allocate(0));
         let warnLog = Ref.fresh(Static, Set.empty());
-        emitSprite(st, list, 1.0, 1.0, registry, Set.empty(), warnLog, spriteOf("a"));
-        emitSprite(st, list, 1.0, 1.0, registry, Set.empty(), warnLog, spriteOf("b"));
+        emitSprite(st, list, 1.0, 1.0, registry, Set.empty(), warnLog, Ref.fresh(Static, ""), Array.empty(Static, 2), spriteOf("a"));
+        emitSprite(st, list, 1.0, 1.0, registry, Set.empty(), warnLog, Ref.fresh(Static, ""), Array.empty(Static, 2), spriteOf("b"));
         closeSpriteRun(st, list);
         let rows = rowsOf(list);
         Assert.assertEq(expected = (0, 6, 101, 1), (blendAt(rows, 1), textureAt(rows, 1), firstInstanceAt(rows, 1, 100), countAt(rows, 1)))

@@ -1,9 +1,9 @@
 // mask つきスプライトと mask つきの面が RenderList の行になる所と、stencil の比べる値の決まり（GL を呼ばない前半）を固定する。
-// 並べた物（Merged）を emitRowItem へ順に渡して run を閉じ、行の欄を読む（倍率 1・絵は箱だけ）。
+// 並べた物（Merged）を emitMerged へ渡して run を閉じ、行の欄を読む（倍率 1・絵は箱だけ）。
 // WhyNot: mod TestMaskRows にしない — 行を作る関数は RenderFrame の中の pub でない関数で、子のモジュールからしか呼べない。
 mod RenderFrame.TestMaskRows {
     import java.nio.FloatBuffer
-    use RenderFrame.{Merged, closeRuns, emitRowItem, stateSize, usesStencil}
+    use RenderFrame.{Merged, closeRuns, emitMerged, stateSize, usesStencil}
     use RenderFrame.Internal.RenderList.{ListRowKind, RenderList, instanceFloats, maxMaskRef, newRenderList, nextInstanceOf, nextMaskRef,
                                          nextVertexOf, rowCountOf, rowsOf, stencilRefOf, vertexFloats}
 
@@ -37,7 +37,7 @@ mod RenderFrame.TestMaskRows {
         let st: Array[Int32, Static] = Array.empty(Static, stateSize());
         let n = List.length(items) + 1;
         let list = newRenderList(FloatBuffer.allocate(instanceFloats() * n), FloatBuffer.allocate(vertexFloats() * 12 * n));
-        List.forEach(item -> emitRowItem(st, list, 1.0, 1.0, Map.empty(), Set.empty(), Ref.fresh(Static, Set.empty()), item), items);
+        emitMerged(st, list, 1.0, 1.0, Map.empty(), Set.empty(), Ref.fresh(Static, Set.empty()), items);
         closeRuns(st, list);
         (st, list)
 

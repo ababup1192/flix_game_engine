@@ -444,7 +444,14 @@ mod RenderFrame {
     //              32-38=この描き先で数えた数（並びは RenderDrawCounts の slot）
     // mask:       41=この pass で前の mask に使った stencil の値（0 = まだ無いか、stencil を 0 に戻す前提が崩れた）
     //              42=この pass に stencil を使う行を積んだ（1 = 積んだ）
-    def stateSize(): Int32 = 43
+    // 絵の控え:   43=絵の番号 44=SDF の字の絵（1） 45=上下逆に格納された描き先（1）（名前と大きさは emitMerged の memoName・memoSize）
+    def stateSize(): Int32 = 46
+
+    def memoTexSlot(): Int32 = 43
+
+    def memoFontSlot(): Int32 = 44
+
+    def memoFlipSlot(): Int32 = 45
 
     def maskRefSlot(): Int32 = 41
 
@@ -704,12 +711,12 @@ mod RenderFrame {
         else position
 
     /// スプライト 1 体を run へ積む（テクスチャ解決と centered の平行移動込み）。
-    /// upsideDownTargets = 上下逆に格納された描き先の名前（upsideDownTargetsOf で backend に聞いた物）。
+    /// upsideDownTargets = 上下逆に格納された描き先の名前（upsideDownTargetsOf で backend に聞いた物）。memoName・memoSize = 1 つ前に引いた絵の控え（rememberTexture）。
     def emitSprite(st: Array[Int32, Static], list: RenderList,
                    scaleX: Float64, scaleY: Float64,
                    registry: RenderAsset.TextureRegistry,
                    upsideDownTargets: Set[String],
-                   warnLog: Ref[Set[String], Static],
+                   warnLog: Ref[Set[String], Static], memoName: Ref[String, Static], memoSize: Array[Float64, Static],
                    drawable: RenderType.Drawable): Unit \ IO =
         let DrawCmd.Drawable.Drawable(tex, px, py, sx, sy, _rot,
                                       _cr, _cg, _cb, _a, cen,
@@ -718,22 +725,38 @@ mod RenderFrame {
         if (String.isEmpty(tex)) {
             pushSpriteItem(st, list, scaleX, scaleY, 0,
                            px, py, sx, sy, drawable, false, false)
-        } else {
-            match Map.get(tex, registry) {
-                case Some(texInfo) =>
-                    let displayW = texInfo#width * sx;
-                    let displayH = texInfo#height * sy;
-                    let posX = originAxis(cen, px, displayW);
-                    let posY = originAxis(cen, py, displayH);
-                    // フォントアトラス (font_*) は SDF テキストとして描く。
-                    let isFont = String.startsWith({prefix = "font_"}, tex);
-                    let d = targetUvFlipped(upsideDownTargets, drawable);
-                    pushSpriteItem(st, list, scaleX, scaleY,
-                                   GpuHandle.textureIdInt(texInfo#id),
-                                   posX, posY, displayW, displayH, d, true, isFont)
-                // texture 未登録は描かない。描かないだけなので run は途切れさせない。
-                case None => warnMissingTexture(warnLog, tex)
-            }
+        } else if (rememberTexture(st, memoName, memoSize, registry, upsideDownTargets, tex)) {
+            let displayW = Array.get(0, memoSize) * sx;
+            let displayH = Array.get(1, memoSize) * sy;
+            let posX = originAxis(cen, px, displayW);
+            let posY = originAxis(cen, py, displayH);
+            let d = if (Array.get(memoFlipSlot(), st) == 1) targetUvFlipped(upsideDownTargets, drawable) else drawable;
+            pushSpriteItem(st, list, scaleX, scaleY, Array.get(memoTexSlot(), st),
+                           posX, posY, displayW, displayH, d, true, Array.get(memoFontSlot(), st) == 1)
+        }
+        // texture 未登録は描かない。描かないだけなので run は途切れさせない。
+        else warnMissingTexture(warnLog, tex)
+
+    /// 1 つ前に引いた絵の控え: memoName = 名前・memoSize = 絵の幅と高さ。番号・SDF か・上下逆かは run の状態 st の memo*Slot に置く。
+    /// 絵 tex を控えに載せる（前と同じ名前なら引き直さない）。registry に無ければ false（控えは空にする）。
+    // WhyNot: 毎体 Map.get と TextureInfo の欄を引かない — 字の run は同じ絵が続くのに、1 体ごとに木をたどり、レコードの欄を鎖でたどり、
+    //   startsWith の引数のレコードを作っていた。控えをレコードにまとめないのも同じ（欄を引くたびに鎖をたどる）。
+    def rememberTexture(st: Array[Int32, Static], memoName: Ref[String, Static], memoSize: Array[Float64, Static],
+                        registry: RenderAsset.TextureRegistry, upsideDownTargets: Set[String], tex: String): Bool \ IO =
+        if (Ref.get(memoName) == tex) true
+        else match Map.get(tex, registry) {
+            case Some(texInfo) =>
+                Ref.put(tex, memoName);
+                Array.put(texInfo#width, 0, memoSize);
+                Array.put(texInfo#height, 1, memoSize);
+                Array.put(GpuHandle.textureIdInt(texInfo#id), memoTexSlot(), st);
+                // フォントアトラス (font_*) は SDF テキストとして描く。
+                Array.put(if (String.startsWith({prefix = "font_"}, tex)) 1 else 0, memoFontSlot(), st);
+                Array.put(if (Set.memberOf(tex, upsideDownTargets)) 1 else 0, memoFlipSlot(), st);
+                true
+            case None =>
+                Ref.put("", memoName);
+                false
         }
 
     /// mask つきスプライト 1 体を行にする（テクスチャ解決と centered の平行移動は emitSprite と同じ式）。
@@ -919,13 +942,14 @@ mod RenderFrame {
     @DontInline
     def emitRowItem(st: Array[Int32, Static], list: RenderList, scaleX: Float64, scaleY: Float64,
                     registry: RenderAsset.TextureRegistry, upsideDownTargets: Set[String],
-                    warnLog: Ref[Set[String], Static], item: Merged): Unit \ IO =
+                    warnLog: Ref[Set[String], Static], memoName: Ref[String, Static], memoSize: Array[Float64, Static],
+                    item: Merged): Unit \ IO =
         match item {
             case Merged.MSprite(drawable) =>
                 if (List.isEmpty(DrawCmd.maskOf(drawable))) {
                     // スプライトが来たら溜まっている多角形 run を先に閉じる（列順を守る）。
                     closePolyRun(st, list);
-                    emitSprite(st, list, scaleX, scaleY, registry, upsideDownTargets, warnLog, drawable)
+                    emitSprite(st, list, scaleX, scaleY, registry, upsideDownTargets, warnLog, memoName, memoSize, drawable)
                 } else emitSpriteMasked(st, list, scaleX, scaleY, registry, upsideDownTargets, warnLog, drawable)
             case Merged.MPoly(pc) =>
                 closeSpriteRun(st, list);
@@ -959,11 +983,20 @@ mod RenderFrame {
                    upsideDownTargets: Set[String],
                    warnLog: Ref[Set[String], Static],
                    items: List[Merged]): Unit \ IO =
+        emitMergedWith(st, list, scaleX, scaleY, registry, upsideDownTargets, warnLog, Ref.fresh(Static, ""), Array.empty(Static, 2), items)
+
+    def emitMergedWith(st: Array[Int32, Static], list: RenderList,
+                       scaleX: Float64, scaleY: Float64,
+                       registry: RenderAsset.TextureRegistry,
+                       upsideDownTargets: Set[String],
+                       warnLog: Ref[Set[String], Static],
+                       memoName: Ref[String, Static], memoSize: Array[Float64, Static],
+                       items: List[Merged]): Unit \ IO =
         match items {
             case Nil => ()
             case item :: rest =>
-                emitRowItem(st, list, scaleX, scaleY, registry, upsideDownTargets, warnLog, item);
-                emitMerged(st, list, scaleX, scaleY, registry, upsideDownTargets, warnLog, rest)
+                emitRowItem(st, list, scaleX, scaleY, registry, upsideDownTargets, warnLog, memoName, memoSize, item);
+                emitMergedWith(st, list, scaleX, scaleY, registry, upsideDownTargets, warnLog, memoName, memoSize, rest)
         }
 
     /// 多角形を三角形へほどいたときの頂点数の上限（1 個 n 頂点なら 3(n-2) 以下）。
