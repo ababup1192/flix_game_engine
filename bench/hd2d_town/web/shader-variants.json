@@ -1,0 +1,31 @@
+{
+  "materialShapes": [
+    {
+      "blend": true,
+      "cutout": false,
+      "doubleSided": false,
+      "lightmap": false,
+      "metallicRoughness": false,
+      "normalMap": false,
+      "readsTextures": true,
+      "skinned": false,
+      "uv": true
+    },
+    {
+      "blend": false,
+      "cutout": false,
+      "doubleSided": true,
+      "lightmap": false,
+      "metallicRoughness": false,
+      "normalMap": false,
+      "readsTextures": true,
+      "skinned": false,
+      "uv": true
+    }
+  ],
+  "variants": [
+    "",
+    "+pu"
+  ],
+  "version": 1
+}

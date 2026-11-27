@@ -331,21 +331,22 @@ pub mod Render3d.ShaderLibrary {
         case Err(e) =>
             let quiet = withoutRecording(provider);
             Log.fellBackThen("shader", path, "記録しない", e, quiet)
-
         case Ok(start) =>
             let held = Ref.fresh(Static, start);
             { provider = provider, missed = Ref.fresh(Static, Set.empty()), record = keys ->
                 if (coversCollection(Ref.get(held), keys)) ()
-                else match loadCollection(path) {
-                    case Err(e) => Log.fellBack("shader", path, "書かない", e)
-                    case Ok(onDisk) =>
-                        let after = unionCollection(unionCollection(onDisk, Ref.get(held)), keys);
-                        Ref.put(after, held);
-                        match saveCollection(path, after) {
-                            case Ok(_)  => ()
-                            case Err(e) => Log.fellBack("shader", path, "書かない", e)
-                        }
+                else {
+                    // WhyNot: 書けなかった鍵を控えに入れずにおかない — 毎コマ通る経路で、新しい鍵のたびに同じ知らせを出し直す。
+                    Ref.put(unionCollection(Ref.get(held), keys), held);
+                    match recordTo(path, Ref.get(held)) {
+                        case Ok(_)  => ()
+                        case Err(e) => Log.fellBack("shader", path, "書かない", e)
+                    }
                 } }
     }
 
+    /// path の記録に keys を足して書く（ファイルを読み直して合わせる。無いファイルは keys だけで作る）。読めない記録は書き換えずに Err。
+    pub def recordTo(path: String, keys: CollectionKeys): Result[String, Unit] \ IO =
+        loadCollection(path) |> Result.flatMap(onDisk ->
+            if (coversCollection(onDisk, keys)) Ok(()) else saveCollection(path, unionCollection(onDisk, keys)))
 }

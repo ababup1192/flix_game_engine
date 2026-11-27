@@ -12,9 +12,15 @@ pub mod WebLayer.Internal.WebShaderLibrary {
         def go(i, acc) =
             if (i + 1 >= n) acc
             else {
-                let count = Int32.fromString(Array.get(i + 1, table)) |> Option.getWithDefault(0);
+                let count = countOrBug(Array.get(i + 1, table));
                 let text = List.range(i + 2, i + 2 + count) |> List.map(j -> Array.get(j, table)) |> String.flatten;
                 go(i + 2 + count, Map.insert(Array.get(i, table), text, acc))
             };
         go(0, Map.empty())
+
+    /// 表の切れ端の数の字（書き出しの道具 ShaderEmbed が書く。数でないのは道具と読み手の約束が破れた所なので止める）。
+    def countOrBug(text: String): Int32 = match Int32.fromString(text) {
+        case Some(n) => n
+        case None    => bug!("WebLayer.Internal.WebShaderLibrary: シェーダーの表の切れ端の数 '${text}' が数でない（ShaderEmbed と食い違い）")
+    }
 }

@@ -6,5 +6,7 @@ mod TestShaderVariants {
 
     @Test
     def testRecordCoversEveryShot(): Unit \ {Assert, IO} =
-        Assert.assertEq(expected = Nil, ShaderVariants.missingFrom("web/shader-variants.json", SceneRender.shaderScenes()))
+        let scenes = SceneRender.shaderScenes();
+        ShaderVariants.recordFromEnv(scenes);
+        Assert.assertEq(expected = Nil, ShaderVariants.missingFrom("web/shader-variants.json", scenes))
 }

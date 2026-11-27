@@ -80,7 +80,7 @@ mod SceneRender {
                 path
             }))
 
-    /// ブラウザ版のシェーダーの記録（web/shader-variants.json）が覆うべき 3D の場面: 全部の場面と、各階の最初の部屋に立った時の、
+    /// ブラウザ版のシェーダーの記録（web/shader-variants.json）が覆うべき 3D の場面: 全部の場面と、各階の全部の部屋の真ん中に立った時の、
     /// 描き出しと同じ道で組んだ面と Pass の中の 3D の場面（test/TestShaderVariants が読む）。
     pub def shaderScenes(): List[Scene3d.Scene3dCmd] \ IO =
         let font = ttf();
@@ -88,7 +88,7 @@ mod SceneRender {
         let ctx = App.viewCtxOf(HeadlessFont.buildUiAtlas(font, font), design());
         let w0 = World.initial(res);
         let shots = Shots.names() |> List.filterMap(name -> Shots.worldOf(name, res));
-        let floors = res#layout#floors |> List.filterMap(f -> f#rooms |> List.head |> Option.map(r ->
+        let floors = res#layout#floors |> List.flatMap(f -> f#rooms |> List.map(r ->
             World.placeAt(res, Vec3.v3((r#min#x + r#max#x) / 2.0, f#y, (r#min#y + r#max#y) / 2.0), 0.0, w0)));
         (shots ::: floors) |> List.flatMap(w -> {
             let s = sceneOf(ctx, res, w);
@@ -96,7 +96,6 @@ mod SceneRender {
         })
 
     /// 1 枚の中身: View.frame（テレビのにじみがあれば PostStack を通した面）に View.hud を重ねる（実機の App.withPostStack と同じ）。
-
     def sceneOf(ctx: App.ViewCtx, res: Res.Res, w: World.World): HeadlessRender.Scene =
         let (passes, frame) = match Game.crtStackOf(res) {
             case None    => (Nil, View.frame(ctx, res, w))

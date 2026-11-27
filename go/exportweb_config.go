@@ -214,7 +214,7 @@ func loadExportConfig(o exportWebOptions) (exportConfig, *exportFailure) {
 		c.ID = filepath.Base(p.Game)
 	}
 	c.Entry = readWebEntry(p.Game)
-	if c.Shaders, err = planShaderBake(p.Game, c.Entry, o.Draft); err != nil {
+	if c.Shaders, err = planShaderBake(p.Game, c.Entry, o.Draft || o.Check); err != nil {
 		return c, exportFail(1, err)
 	}
 

@@ -85,7 +85,6 @@ func resolveExportWebPaths(o exportWebOptions) (exportWebPaths, int, error) {
 	p.IndexHTML = filepath.Join(p.Engine, "engine_web", "js", "index.html")
 	var missing []string
 	for _, f := range []string{p.FullWebFpkg, p.FullWebToml, p.GlJar, p.WebJar, p.WebToolsJar, p.ShaderBakeJar} {
-
 		if !fileExists(f) {
 			missing = append(missing, f)
 		}

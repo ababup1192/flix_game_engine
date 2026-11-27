@@ -81,7 +81,6 @@ pub mod WebLayer {
             Render3d.WebGpuRenderer.makeScenesWithPlatformImages(
                 { has = (key, width, height) -> BrowserWebGpu.hasPlatformImage(key, width, height),
                   copy = (key, texture) -> BrowserWebGpu.copyPlatformImage(gpu, key, texture) }, shaders, gpu, pasteLayout, imageLayout);
-
         if (Browser.backendRequest() == "webgpu") withWebGpuOrGl(makeRenderer, makeScenes, config, g)
         else withWeb(makeRenderer, config, g)
 

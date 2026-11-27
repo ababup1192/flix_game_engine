@@ -1088,7 +1088,10 @@ web-jar: $(WEB_JAR) $(WEB_TOOLS_JAR) ### | ブラウザ版の束が使う fge-we
 # WhyNot: jar-dependencies の natives を Maven Central へ取りに行かない — engine_full の lib/external に取ってある物を写して使う。
 SHADER_BAKE_DIR := build/shader-bake
 SHADER_BAKE_JAR := build/web-jar/shader-bake-$(VERSION).jar
-shader-bake-jar: gl-jar ### | 書き出しが使う 3D のシェーダーの表を作る道具（build/web-jar/shader-bake-<版>.jar）を組む
+SHADER_BAKE_SRC := $(shell find $(ENGINE_DIR)/src $(RENDER_GL_DIR)/src tools/shader-bake/src -name '*.flix' 2>/dev/null)
+shader-bake-jar: $(SHADER_BAKE_JAR) ### | 書き出しが使う 3D のシェーダーの表を作る道具（build/web-jar/shader-bake-<版>.jar）を組む
+
+$(SHADER_BAKE_JAR): $(SHADER_BAKE_SRC) $(ENGINE_FULL_TOML_SRC) $(GL_JAR)
 	@rm -rf $(SHADER_BAKE_DIR)/src && mkdir -p $(SHADER_BAKE_DIR)/src $(SHADER_BAKE_DIR)/lib/external build/web-jar
 	@for pkg in $(ENGINE_DIR) $(RENDER_GL_DIR) tools/shader-bake; do \
 		$(LINK_FLIX) "$(CURDIR)/$$pkg/src" "$(SHADER_BAKE_DIR)/src/$$(basename "$$pkg")" || exit 1; \

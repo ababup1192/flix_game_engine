@@ -5,7 +5,6 @@
 mod SceneRender {
     use fge::{App, Color, Filmstrip, HeadlessFont, HeadlessRender, PostStack, Render, Scene3d}
 
-
     import java.awt.image.BufferedImage
     import java.io.File
 

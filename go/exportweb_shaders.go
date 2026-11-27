@@ -13,6 +13,8 @@ func embedShaderLibrary(c exportConfig, asmJar, src, dst string) *exportFailure 
 	p, java := c.Paths, c.Java
 	table := filepath.Join(p.Work, "shader-library.json")
 	bakeLog := filepath.Join(p.Work, "shader-bake.log")
+	// WhyNot: 前の回の表を残したまま流さない — 道具が書けずに終わっても、残った表で成否を見誤る。
+	os.Remove(table)
 	cmdEnv := append(os.Environ(), "FGE_SHADER_BAKE_VARIANTS="+c.Shaders.Variants, "FGE_SHADER_BAKE_OUT="+table)
 	if code := runLoggedWith(p.Work, bakeLog, false, cmdEnv, java, "-jar", p.ShaderBakeJar); code != 0 || !fileExists(table) {
 		return exportFailf(1, "%s\nfge export-web: シェーダーの表を作れない（shader-bake・ログ %s）。\n  次: 上の行を読む（記録が壊れているなら web/shader-variants.json を消して make run で 3D の場面を通し直す）\n",

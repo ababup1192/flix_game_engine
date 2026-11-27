@@ -21,10 +21,10 @@
 - 作るのは記録 `web/shader-variants.json` にある分だけ: 使った場面の変種（`+psx`・`+ps` など）と材質の形（uv・cutout・両面など）。
   `make run`・`make debug`（`fge run`・`fge debug`。Studio から走らせた時も）で 3D の場面を通すと、描き手が新しい鍵を見た時に書き足す。git に入れる
 - 記録が無い 3D のゲームの書き出しは止まる。`--draft` の時だけ既定の一式で書き出し、draft の理由に「web/shader-variants.json が無い」が付く
-- 記録に無い鍵の場面は、その物を描かずに `shader: <鍵> は 描かない（web/shader-variants.json に無い…）` を console に 1 回出す
-  （材質は頂点の色で描き、SSAO は掛けない）。直し方は PC でその場面を一度通してから書き出し直す
+- 記録に無い鍵の場面は、console に `shader fail-open: <鍵> を描かないに替えました — web/shader-variants.json に無い…` を鍵ごとに 1 回出す
+  （頂点の色の物とビルボードは描かない・材質は「頂点の色に替えました」で頂点の色で描く・SSAO は「SSAO なしに替えました」で掛けない）。直し方は PC でその場面を一度通してから書き出し直す
 - 遊ばずに出る場面の漏れは、ゲームのテスト（`test/TestShaderVariants.flix`・`ShaderVariants.missingFrom("web/shader-variants.json", SceneRender.shaderScenes())`）で止める。
-  環境変数 `FLIX_GE_SHADER_VARIANTS=<ゲーム>/web/shader-variants.json` を付けて流すと、足りない鍵を書き足す
+  環境変数 `FLIX_GE_SHADER_VARIANTS=<ゲーム>/web/shader-variants.json` を付けて流すと、`ShaderVariants.recordFromEnv` が足りない鍵を書き足す
 - 2D の入口のゲームは何もしない（表を作らない）
 
 ### 旗と環境変数
