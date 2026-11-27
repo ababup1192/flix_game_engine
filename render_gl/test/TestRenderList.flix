@@ -42,9 +42,9 @@ mod RenderFrame.TestRenderList {
         let st: Array[Int32, Static] = Array.empty(Static, stateSize());
         let list = newRenderList(FloatBuffer.allocate(instanceFloats() * Int32.max(1, List.length(drawables))), FloatBuffer.allocate(0));
         let warnLog = Ref.fresh(Static, Set#{"missing"});
-        let memoName = Ref.fresh(Static, "");
-        let memoSize = Array.empty(Static, 2);
-        List.forEach(d -> emitSprite(st, list, 1.0, 1.0, registry(), Set.empty(), warnLog, memoName, memoSize, d), drawables);
+        let cachedName = Ref.fresh(Static, "");
+        let cachedSize = Array.empty(Static, 2);
+        List.forEach(d -> emitSprite(st, list, 1.0, 1.0, registry(), Set.empty(), warnLog, cachedName, cachedSize, d), drawables);
         closeSpriteRun(st, list);
         list
 

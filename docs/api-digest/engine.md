@@ -2230,7 +2230,8 @@
 - `pub type alias FlatGlyph = { ax = Float64, ay = Float64, gw = Float64, gh = Float64, s0 = Float64, t0 = Float64, su = Float64, tv = Float64, yOff = Float64, offsetX = Float64 }`
 - `pub def layoutToDrawablesV1(label: Text, lay: Layout, globalPos: Vec2.Vec2): List[GameEngine.Drawable]`
 - `pub def layoutToDrawables(label: Text, lay: Layout, globalPos: Vec2.Vec2): List[GameEngine.Drawable]`
-- `pub def layoutInto(ds: MutList[GameEngine.Drawable, rc], lay: Layout, tex: String, texSize: Float64, color: Color, z: Int32, gx: Float64, gy: Float64): Unit \ rc`
+- lay の字を、左上 (gx, gy)・字の絵 tex（一辺 texSize）・色 color・重なり z の Drawable にして ds の末尾へ積む（toDrawables と同じ値・同じ順）。
+  `pub def layoutInto(ds: MutList[GameEngine.Drawable, rc], lay: Layout, tex: String, texSize: Float64, color: Color, z: Int32, gx: Float64, gy: Float64): Unit \ rc`
 - 控えた lay が、字の絵 textureName・大きさ fontSize・折り返し wrapWidth で左上ぞろえの字に使えるか（Text を組まずに見る）。
   `pub def layoutFitsPlain(lay: Layout, textureName: String, fontSize: Float64, wrapWidth: Option[Float64]): Bool`
 - `pub def sameLayoutInputs(label: Text, lay: Layout): Bool`

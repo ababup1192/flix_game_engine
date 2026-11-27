@@ -230,7 +230,7 @@ pub mod Text {
     /// 字 1 つの欄の数（packed の並び: ax・ay・gw・gh・s0・t0・su・tv・yOff・offsetX）。
     def packedStride(): Int32 = 10
 
-    // 案 3: 控えた字を Float64 の平らな列から読み、Drawable を ds へ直に積む。
+    /// lay の字を、左上 (gx, gy)・字の絵 tex（一辺 texSize）・色 color・重なり z の Drawable にして ds の末尾へ積む（toDrawables と同じ値・同じ順）。
     // WhyNot: FlatGlyph のレコードから読まない — レコードの欄は 1 欄ずつ鎖をたどって引くので、字 1 つに 10 回のたどりが毎コマ走る。
     // WhyNot: 一度 List に組んでから積み直さない — 字ごとの cons がそのまま捨てる値になる。
     pub def layoutInto(ds: MutList[GameEngine.Drawable, rc], lay: Layout, tex: String, texSize: Float64,

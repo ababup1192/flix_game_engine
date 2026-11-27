@@ -99,6 +99,17 @@ mod TestDrawCounts {
         let sprites = sprite("", 0) :: sprite("", 1) :: sprite("a", 2) :: sprite("a", 3) :: Nil;
         Assert.assertEq(expected = (1, 0, 0, 0, 0, 0, 0), countsOf(args -> { sprites = sprites | args }))
 
+    /// 絵の run の後に切り抜きの違う箱が来ると、切れ目の理由は texture でなく clip。
+    @Test
+    def testClippedBoxAfterTextureBreaksByClip(): Unit \ {Assert, IO} =
+        let clippedBox = DrawCmd.withClip(Some(tenSquare()), sprite("", 1));
+        Assert.assertEq(expected = (2, 0, 0, 0, 0, 1, 0), countsOf(args -> { sprites = sprite("a", 0) :: clippedBox :: Nil | args }))
+
+    /// 絵の run の後に blend の違う箱が来ると、切れ目の理由は blend。
+    @Test
+    def testAddedBoxAfterTextureBreaksByBlend(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = (2, 0, 0, 0, 1, 0, 0), countsOf(args -> { sprites = sprite("a", 0) :: added("", 1) :: Nil | args }))
+
     /// 登録の無い絵（"zz"・知らせ済み）は描かず run も切らず、その後の絵は自分の番号で引く: a・zz・b・a は draw call 3 つで texture の切れ目が 2。
     @Test
     def testMissingTextureBetweenKeepsLookups(): Unit \ {Assert, IO} =

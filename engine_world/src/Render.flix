@@ -894,6 +894,8 @@ pub mod Render {
                      items: List[PlacedItem]): (List[GameEngine.Drawable], List[GameEngine.PolygonRenderCmd]) \ ef =
         drawWithLayouts(None, textureInfoOf, items)
 
+    // WhyNot: 呼ぶ所へインライン展開させない — App の描く道を run で包むテストの閉包が JVM の 1 メソッドの上限（64KB）を超える。
+    @DontInline
     pub def drawWithLayouts(layouts: Option[HashMap[String, JObject]], textureInfoOf: String -> Option[GameEngine.TextureInfo] \ ef,
                      items: List[PlacedItem]): (List[GameEngine.Drawable], List[GameEngine.PolygonRenderCmd]) \ ef =
         let toDs = (item, pos) -> match item {

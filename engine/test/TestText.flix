@@ -179,4 +179,25 @@ mod TestText {
                                                   or Text.layoutToDrawablesV1(l, Text.buildLayout(l), p) != Text.toDrawablesUncached(l, p), poss), labels);
         Assert.assertEq(expected = 0, List.length(bad))
 
+    def layoutIntoList(label: Text, pos: Vec2.Vec2): List[GameEngine.Drawable] =
+        let Text.Text(r) = label;
+        let atlas = r#fontAtlas;
+        region rc {
+            let ds = MutList.empty(rc);
+            Text.layoutInto(ds, Text.buildLayout(label), atlas#textureName, atlas#textureSize, r#visual#color, r#visual#zIndex, pos#x, pos#y);
+            MutList.toList(ds)
+        }
+
+    /// 平らな列（packed）から積んだ左上ぞろえの字は、cache を通さない字の組みと同じ描画命令になる
+    @Test
+    def testLayoutIntoSameDrawables(): Unit \ Assert =
+        let texts = "Unit 17" :: "DMG 98231" :: "a b\ncdef ghij" :: "" :: "  lead" :: "Wrap me around please ok" :: Nil;
+        let sizes = 13.0 :: 17.5 :: 32.0 :: Nil;
+        let wraps = None :: Some(40.0) :: Some(71.3) :: Nil;
+        let poss = ({x = 0.0, y = 0.0}: Vec2.Vec2) :: {x = 123.456, y = 78.9012} :: {x = -33.3, y = 1e5 + 0.1} :: Nil;
+        let labels = List.flatMap(t -> List.flatMap(s -> List.map(w ->
+            Text.make(t, oddAtlas(), s) |> Text.setWrapWidth(w), wraps), sizes), texts);
+        let bad = List.flatMap(l -> List.filter(p -> layoutIntoList(l, p) != Text.toDrawablesUncached(l, p), poss), labels);
+        Assert.assertEq(expected = 0, List.length(bad))
+
 }

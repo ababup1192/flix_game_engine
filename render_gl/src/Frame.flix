@@ -444,14 +444,14 @@ mod RenderFrame {
     //              32-38=この描き先で数えた数（並びは RenderDrawCounts の slot）
     // mask:       41=この pass で前の mask に使った stencil の値（0 = まだ無いか、stencil を 0 に戻す前提が崩れた）
     //              42=この pass に stencil を使う行を積んだ（1 = 積んだ）
-    // 絵の控え:   43=絵の番号 44=SDF の字の絵（1） 45=上下逆に格納された描き先（1）（名前と大きさは emitMerged の memoName・memoSize）
+    // 絵の cache: 43=絵の番号 44=SDF の字の絵（1） 45=上下逆に格納された描き先（1）（名前と大きさは emitMerged の cachedName・cachedSize）
     def stateSize(): Int32 = 46
 
-    def memoTexSlot(): Int32 = 43
+    def cachedTexSlot(): Int32 = 43
 
-    def memoFontSlot(): Int32 = 44
+    def cachedFontSlot(): Int32 = 44
 
-    def memoFlipSlot(): Int32 = 45
+    def cachedFlipSlot(): Int32 = 45
 
     def maskRefSlot(): Int32 = 41
 
@@ -493,7 +493,9 @@ mod RenderFrame {
     /// masked = 今の draw call が mask つき。鍵が全部同じで mask も絡まないのは、間に描かない物（別の種類）が挟まった時。
     def spriteBreakOf(st: Array[Int32, Static], texId: Int32, clipFlag: Int32,
                       x0: Int32, y0: Int32, x1: Int32, y1: Int32, blendC: Int32, masked: Bool): Int32 \ IO =
-        if (Array.get(19, st) != texId) RenderDrawCounts.textureSlot()
+        let prevTex = Array.get(19, st);
+        // 絵なし（0）はどの絵の run にも入るので、0 との違いは切れ目の理由にしない。
+        if (prevTex != texId and prevTex != 0 and texId != 0) RenderDrawCounts.textureSlot()
         else if (Array.get(25, st) != blendC) RenderDrawCounts.blendSlot()
         else if (Array.get(20, st) != clipFlag
                  or (clipFlag != 0 and (Array.get(21, st) != x0 or Array.get(22, st) != y0
@@ -614,7 +616,8 @@ mod RenderFrame {
                         drawable: RenderType.Drawable, useTex: Bool, sdf: Bool): Unit \ IO =
         let count = Array.get(7, st);
         let runTex = Array.get(0, st);
-        // 絵なし（texId 0）の矩形は絵を読まない（instance の useTex が 0）ので、どの絵の run にも入れる。絵の決まっていない run（0）は、次に来た絵に決める。
+        // WhyNot: texId だけで run を切らない — 絵なし（texId 0）の矩形は instance の useTex が 0 で絵を読まない（GLSL は分岐の中だけ・WGSL は flags.x で捨てる）。
+        //   0 を「絵なし」に使えるのは、GL・WebGPU の絵の番号が 1 から振られるため。
         let sameKey = count != 0
             and (runTex == texId or texId == 0 or runTex == 0)
             and Array.get(6, st) == blendC
@@ -711,12 +714,12 @@ mod RenderFrame {
         else position
 
     /// スプライト 1 体を run へ積む（テクスチャ解決と centered の平行移動込み）。
-    /// upsideDownTargets = 上下逆に格納された描き先の名前（upsideDownTargetsOf で backend に聞いた物）。memoName・memoSize = 1 つ前に引いた絵の控え（rememberTexture）。
+    /// upsideDownTargets = 上下逆に格納された描き先の名前（upsideDownTargetsOf で backend に聞いた物）。cachedName・cachedSize = 1 つ前に引いた絵の控え（lookupTextureCached）。
     def emitSprite(st: Array[Int32, Static], list: RenderList,
                    scaleX: Float64, scaleY: Float64,
                    registry: RenderAsset.TextureRegistry,
                    upsideDownTargets: Set[String],
-                   warnLog: Ref[Set[String], Static], memoName: Ref[String, Static], memoSize: Array[Float64, Static],
+                   warnLog: Ref[Set[String], Static], cachedName: Ref[String, Static], cachedSize: Array[Float64, Static],
                    drawable: RenderType.Drawable): Unit \ IO =
         let DrawCmd.Drawable.Drawable(tex, px, py, sx, sy, _rot,
                                       _cr, _cg, _cb, _a, cen,
@@ -725,37 +728,37 @@ mod RenderFrame {
         if (String.isEmpty(tex)) {
             pushSpriteItem(st, list, scaleX, scaleY, 0,
                            px, py, sx, sy, drawable, false, false)
-        } else if (rememberTexture(st, memoName, memoSize, registry, upsideDownTargets, tex)) {
-            let displayW = Array.get(0, memoSize) * sx;
-            let displayH = Array.get(1, memoSize) * sy;
+        } else if (lookupTextureCached(st, cachedName, cachedSize, registry, upsideDownTargets, tex)) {
+            let displayW = Array.get(0, cachedSize) * sx;
+            let displayH = Array.get(1, cachedSize) * sy;
             let posX = originAxis(cen, px, displayW);
             let posY = originAxis(cen, py, displayH);
-            let d = if (Array.get(memoFlipSlot(), st) == 1) targetUvFlipped(upsideDownTargets, drawable) else drawable;
-            pushSpriteItem(st, list, scaleX, scaleY, Array.get(memoTexSlot(), st),
-                           posX, posY, displayW, displayH, d, true, Array.get(memoFontSlot(), st) == 1)
+            let d = if (Array.get(cachedFlipSlot(), st) == 1) targetUvFlipped(upsideDownTargets, drawable) else drawable;
+            pushSpriteItem(st, list, scaleX, scaleY, Array.get(cachedTexSlot(), st),
+                           posX, posY, displayW, displayH, d, true, Array.get(cachedFontSlot(), st) == 1)
         }
         // texture 未登録は描かない。描かないだけなので run は途切れさせない。
         else warnMissingTexture(warnLog, tex)
 
-    /// 1 つ前に引いた絵の控え: memoName = 名前・memoSize = 絵の幅と高さ。番号・SDF か・上下逆かは run の状態 st の memo*Slot に置く。
-    /// 絵 tex を控えに載せる（前と同じ名前なら引き直さない）。registry に無ければ false（控えは空にする）。
-    // WhyNot: 毎体 Map.get と TextureInfo の欄を引かない — 字の run は同じ絵が続くのに、1 体ごとに木をたどり、レコードの欄を鎖でたどり、
-    //   startsWith の引数のレコードを作っていた。控えをレコードにまとめないのも同じ（欄を引くたびに鎖をたどる）。
-    def rememberTexture(st: Array[Int32, Static], memoName: Ref[String, Static], memoSize: Array[Float64, Static],
+    /// 絵 tex を cache に載せて true（前と同じ名前なら引き直さない）。registry に無ければ false（cache は空にする）。
+    /// cache = 1 つ前に引いた絵: cachedName = 名前・cachedSize = 絵の幅と高さ。番号・SDF か・上下逆かは run の状態 st の cached*Slot に置く。
+    // WhyNot: 1 体ごとに Map.get と TextureInfo の欄を引かない — 字の run は同じ絵が続くので、名前の比べ 1 回で足りる。
+    // WhyNot: cache をレコードにまとめない — 欄を引くたびに鎖をたどる。
+    def lookupTextureCached(st: Array[Int32, Static], cachedName: Ref[String, Static], cachedSize: Array[Float64, Static],
                         registry: RenderAsset.TextureRegistry, upsideDownTargets: Set[String], tex: String): Bool \ IO =
-        if (Ref.get(memoName) == tex) true
+        if (Ref.get(cachedName) == tex) true
         else match Map.get(tex, registry) {
             case Some(texInfo) =>
-                Ref.put(tex, memoName);
-                Array.put(texInfo#width, 0, memoSize);
-                Array.put(texInfo#height, 1, memoSize);
-                Array.put(GpuHandle.textureIdInt(texInfo#id), memoTexSlot(), st);
+                Ref.put(tex, cachedName);
+                Array.put(texInfo#width, 0, cachedSize);
+                Array.put(texInfo#height, 1, cachedSize);
+                Array.put(GpuHandle.textureIdInt(texInfo#id), cachedTexSlot(), st);
                 // フォントアトラス (font_*) は SDF テキストとして描く。
-                Array.put(if (String.startsWith({prefix = "font_"}, tex)) 1 else 0, memoFontSlot(), st);
-                Array.put(if (Set.memberOf(tex, upsideDownTargets)) 1 else 0, memoFlipSlot(), st);
+                Array.put(if (String.startsWith({prefix = "font_"}, tex)) 1 else 0, cachedFontSlot(), st);
+                Array.put(if (Set.memberOf(tex, upsideDownTargets)) 1 else 0, cachedFlipSlot(), st);
                 true
             case None =>
-                Ref.put("", memoName);
+                Ref.put("", cachedName);
                 false
         }
 
@@ -942,14 +945,14 @@ mod RenderFrame {
     @DontInline
     def emitRowItem(st: Array[Int32, Static], list: RenderList, scaleX: Float64, scaleY: Float64,
                     registry: RenderAsset.TextureRegistry, upsideDownTargets: Set[String],
-                    warnLog: Ref[Set[String], Static], memoName: Ref[String, Static], memoSize: Array[Float64, Static],
+                    warnLog: Ref[Set[String], Static], cachedName: Ref[String, Static], cachedSize: Array[Float64, Static],
                     item: Merged): Unit \ IO =
         match item {
             case Merged.MSprite(drawable) =>
                 if (List.isEmpty(DrawCmd.maskOf(drawable))) {
                     // スプライトが来たら溜まっている多角形 run を先に閉じる（列順を守る）。
                     closePolyRun(st, list);
-                    emitSprite(st, list, scaleX, scaleY, registry, upsideDownTargets, warnLog, memoName, memoSize, drawable)
+                    emitSprite(st, list, scaleX, scaleY, registry, upsideDownTargets, warnLog, cachedName, cachedSize, drawable)
                 } else emitSpriteMasked(st, list, scaleX, scaleY, registry, upsideDownTargets, warnLog, drawable)
             case Merged.MPoly(pc) =>
                 closeSpriteRun(st, list);
@@ -990,13 +993,13 @@ mod RenderFrame {
                        registry: RenderAsset.TextureRegistry,
                        upsideDownTargets: Set[String],
                        warnLog: Ref[Set[String], Static],
-                       memoName: Ref[String, Static], memoSize: Array[Float64, Static],
+                       cachedName: Ref[String, Static], cachedSize: Array[Float64, Static],
                        items: List[Merged]): Unit \ IO =
         match items {
             case Nil => ()
             case item :: rest =>
-                emitRowItem(st, list, scaleX, scaleY, registry, upsideDownTargets, warnLog, memoName, memoSize, item);
-                emitMergedWith(st, list, scaleX, scaleY, registry, upsideDownTargets, warnLog, memoName, memoSize, rest)
+                emitRowItem(st, list, scaleX, scaleY, registry, upsideDownTargets, warnLog, cachedName, cachedSize, item);
+                emitMergedWith(st, list, scaleX, scaleY, registry, upsideDownTargets, warnLog, cachedName, cachedSize, rest)
         }
 
     /// 多角形を三角形へほどいたときの頂点数の上限（1 個 n 頂点なら 3(n-2) 以下）。
