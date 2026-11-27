@@ -3,7 +3,7 @@
 下の枠の中をそのまま貼る。
 
 ```text
-flix_game_engine の作業を再開する。まず engine の根の HANDOFF.md を全部読み、make status の 1 画面を見て、今の状態を 10 行で私に言ってから進めて。
+flix_game_engine の作業を再開する。別のマシンなら先に HANDOFF.md の 7 節（用意）を済ませる。まず engine の根の HANDOFF.md を全部読み（8 節の人の決め事も守る）、make status の 1 画面を見て、今の状態を 10 行で私に言ってから進めて。
 
 進め方（全体のオーケストレーション）:
 1. 担当（サブエージェント）の取り込み
