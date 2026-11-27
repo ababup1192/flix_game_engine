@@ -195,6 +195,22 @@
           "why": "手で大きさを見るだけでは門にならない"
         }
       ]
+    },
+    {
+      "id": "web-perf-fixed-cost",
+      "prompt": "書き出したゲームのブラウザ版で、物がほとんど無い場面でも毎コマ 2 ms かかる。rAF の中の CPU を測って、どの関数が重いか（wasm の関数名つき）を見たい。engine のリポで何を打つ？",
+      "expect": [
+        {
+          "re": "web-perf",
+          "why": "bin/fge web-perf <書き出したフォルダ> --profile <file> が rAF の中の CPU と、classes.names で名前を引いた自分の時間の多い関数を出す"
+        }
+      ],
+      "avoid": [
+        {
+          "re": "(?i)web-bench[^\\n]*(だけ|で十分)",
+          "why": "web-bench は window.__bench を出すベンチの頁専用で、ゲームの頁の rAF とプロファイルは取らない"
+        }
+      ]
     }
   ]
 }

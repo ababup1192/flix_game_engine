@@ -329,12 +329,54 @@ mod Render3d.TestSceneList {
     /// 版と木の鍵が同じでも木の違う材質（木の鍵の衝突）は、候補の頭の確かめで別の番号になり、同じ材質は同じ番号のまま。
     @Test
     def testCollidingTreeKeyAsksSeparately(): Unit \ {Assert, IO} =
+        let planner = freshPlanner(Render3d.DrawMode.Instanced);
         let tables = Render3d.ScenePlan.freshTables();
         let colliding = (red: Float64) -> { shaderHash = lazy 1i64 | fieldsOf(red) };
         let asked = Render3d.ScenePlan.requestOf(tables, colliding(0.1), plainKind());
-        let same = Render3d.ScenePlan.verifiedHandle(tables, Render3d.ScenePlan.requestOf(tables, colliding(0.1), plainKind()), colliding(0.1), plainKind());
-        let other = Render3d.ScenePlan.verifiedHandle(tables, Render3d.ScenePlan.requestOf(tables, colliding(0.9), plainKind()), colliding(0.9), plainKind());
+        let same = Render3d.ScenePlan.verifiedHandle(planner, tables, Render3d.ScenePlan.requestOf(tables, colliding(0.1), plainKind()), colliding(0.1), plainKind());
+        let other = Render3d.ScenePlan.verifiedHandle(planner, tables, Render3d.ScenePlan.requestOf(tables, colliding(0.9), plainKind()), colliding(0.9), plainKind());
         Assert.assertEq(expected = (0, 0, 1), (asked, same, other))
+
+    /// 木の鍵がぶつかった材質は、前のコマで同じ頭を確かめてあっても、聞いた材質が違えば別の番号になる（控えは参照の組で引く）。
+    @Test
+    def testVerifiedPairDoesNotHideCollisionWithOtherRequest(): Unit \ {Assert, IO} =
+        let planner = freshPlanner(Render3d.DrawMode.Instanced);
+        let colliding = (red: Float64) -> { shaderHash = lazy 1i64 | fieldsOf(red) };
+        let head = colliding(0.9);
+        let first = Render3d.ScenePlan.freshTables();
+        discard Render3d.ScenePlan.verifiedHandle(planner, first, Render3d.ScenePlan.requestOf(first, head, plainKind()), head, plainKind());
+        Render3d.ScenePlan.endPlannerFrame(planner);
+        let second = Render3d.ScenePlan.freshTables();
+        discard Render3d.ScenePlan.requestOf(second, colliding(0.1), plainKind());
+        Assert.assertEq(expected = 1, Render3d.ScenePlan.verifiedHandle(planner, second, Render3d.ScenePlan.requestOf(second, head, plainKind()), head, plainKind()))
+
+    /// 確かめた組は次のコマへ持ち越し、2 コマ続けて使わなければ落ちる。
+    @Test
+    def testVerifiedPairsDropAfterTwoIdleFrames(): Unit \ {Assert, IO} =
+        let planner = freshPlanner(Render3d.DrawMode.Instanced);
+        let tables = Render3d.ScenePlan.freshTables();
+        let asked = fieldsOf(0.1);
+        let head = fieldsOf(0.1);
+        discard Render3d.ScenePlan.verifiedHandle(planner, tables, Render3d.ScenePlan.requestOf(tables, asked, plainKind()), head, plainKind());
+        Render3d.ScenePlan.endPlannerFrame(planner);
+        let afterOne = Render3d.ScenePlan.verifiedPairCounts(planner);
+        Render3d.ScenePlan.endPlannerFrame(planner);
+        Assert.assertEq(expected = ((0, 1), (0, 0)), (afterOne, Render3d.ScenePlan.verifiedPairCounts(planner)))
+
+    /// 1 つ前のコマに確かめた組を使うと、今のコマへ移る（続けて使う組は落ちない）。
+    @Test
+    def testVerifiedPairUsedAgainMovesToNow(): Unit \ {Assert, IO} =
+        let planner = freshPlanner(Render3d.DrawMode.Instanced);
+        let asked = fieldsOf(0.1);
+        let head = fieldsOf(0.1);
+        let once = () -> {
+            let tables = Render3d.ScenePlan.freshTables();
+            discard Render3d.ScenePlan.verifiedHandle(planner, tables, Render3d.ScenePlan.requestOf(tables, asked, plainKind()), head, plainKind())
+        };
+        once();
+        Render3d.ScenePlan.endPlannerFrame(planner);
+        once();
+        Assert.assertEq(expected = (1, 1), Render3d.ScenePlan.verifiedPairCounts(planner))
 
     /// 形 X・Y・X は、X の 2 体・Y の 1 体の候補になる。
     @Test

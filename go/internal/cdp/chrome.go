@@ -79,8 +79,8 @@ type browser struct {
 	stderr      *tailBuffer
 }
 
-func chromeArgs(userDataDir string, width, height int) []string {
-	return []string{
+func chromeArgs(userDataDir string, width, height int, extra []string) []string {
+	args := []string{
 		"--headless=new",
 		"--remote-debugging-port=0",
 		"--remote-debugging-address=127.0.0.1",
@@ -98,16 +98,17 @@ func chromeArgs(userDataDir string, width, height int) []string {
 		"--disable-renderer-backgrounding",
 		"--disable-backgrounding-occluded-windows",
 		fmt.Sprintf("--window-size=%d,%d", width, height),
-		"about:blank",
 	}
+	args = append(args, extra...)
+	return append(args, "about:blank")
 }
 
-func launchChrome(exe string, width, height int, timeout time.Duration) (*browser, error) {
+func launchChrome(exe string, width, height int, extra []string, timeout time.Duration) (*browser, error) {
 	dir, err := os.MkdirTemp("", "fge-web-capture-")
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.Command(exe, chromeArgs(dir, width, height)...)
+	cmd := exec.Command(exe, chromeArgs(dir, width, height, extra)...)
 	// WhyNot: 組（process group）を分けるのは、止める時に自分が起こした Chrome とその子（GPU・描画のプロセス）だけへ合図を送るため。
 	// 名前で pkill すると人が開いている Chrome まで落ちる。
 	cmd.SysProcAttr = sysProcAttrNewGroup()
