@@ -529,7 +529,11 @@ mod RenderPaint {
                         + "（組み込みフォントで代用します）");
                     Ref.put(Set.insert(name, warned), fonts#missing)
                 } else ();
-                BootFont.atlas()
+                // WhyNot: BootFont.atlas() を毎回呼ばない — 字の表を毎コマ解き直し、名前の合わないゲームの 1 コマに約 0.08 ms 乗る（読み込みで控えた物を引く）。
+                match Map.get(BootFont.name(), Ref.get(fonts#atlases)) {
+                    case Some(boot) => boot
+                    case None       => BootFont.atlas()
+                }
         }
 
     /// Game.ensureGlyphs の中身。起動時に用意しなかった字を出そうとした。いま作って足す（無ければ何も起きない）。
