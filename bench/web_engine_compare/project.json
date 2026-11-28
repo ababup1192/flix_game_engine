@@ -1,0 +1,29 @@
+{
+  "title": "Web Engine Compare",
+  "designWidth": 1920,
+  "designHeight": 1080,
+  "windowScale": 1,
+  "clearColor": {
+    "r": 0.0,
+    "g": 0.0,
+    "b": 0.0
+  },
+  "maxDeltaTime": 10.0,
+  "textures": [
+    {
+      "name": "hud_atlas",
+      "path": "assets/hud-atlas.png",
+      "hasAlpha": true
+    }
+  ],
+  "fonts": [
+    {
+      "name": "hud",
+      "path": "assets/Roboto-Regular.ttf",
+      "fontSize": 14.0
+    }
+  ],
+  "sounds": [],
+  "scene3dTextureBudgetCount": 128,
+  "scene3dTextureBudgetMB": 512
+}
