@@ -2,265 +2,149 @@
   <img src="docs/brand/flix_ge_banner.png" alt="Flix_GE" width="680">
 </p>
 
-# Flix Game Engine
-
-A 2D game engine written in [Flix](https://flix.dev/), built to be worked on
-**together with an AI**. It narrows its scope to 2D so that the things games
-usually need can ship as official parts rather than plugins, and it is wired so
-an AI can check its own work instead of asking you to look.
-
-**[flix_ge_studio](https://github.com/ababup1192/flix_ge_studio)**, the companion
-editor, is frozen for now. If you already have it, do not let its self-update move it
-to a newer engine: a frozen Studio cannot run the newer engines.
-
-| | | |
-|:--:|:--:|:--:|
-| <img src="docs/gallery/cards.gif" alt="cards" width="240"> | <img src="docs/gallery/farm.gif" alt="farm" width="240"> | <img src="docs/gallery/dungeon.gif" alt="dungeon" width="240"> |
-| Card game | Farm sim | Dungeon crawler |
-| <img src="docs/gallery/novel.gif" alt="novel" width="240"> | <img src="docs/gallery/village.gif" alt="village" width="240"> | <img src="docs/gallery/puzzle.gif" alt="puzzle" width="240"> |
-| Visual novel | Village sim | Falling-block puzzle |
-| <img src="docs/gallery/horror.gif" alt="horror" width="240"> | | |
-| Horror exploration | | |
-
-Development here is genre-free. The parts are plentiful and pitched at a high
-enough level that **any 2D game can be expressed** by combining them.
-
-Most of these were made **without a single hand-drawn or bought asset** — the
-engine can have an AI produce the minimum art and sound it needs.
-
-## Why this engine is easy to build with an AI
-
-The AI can check its own work, and you can hand it the situation without
-describing it. Game rules are pure functions, so they can be pulled out and
-exercised on their own — after a change the AI verifies itself. The look is
-guaranteed **pixel for pixel** by comparing rendered frames, so a fix that quietly
-breaks something else shows up immediately. And when a game misbehaves, the whole
-state can be handed over as data, so you never have to put the symptom into words.
-
-That last part is what makes the difference. Every engine gets easier once an AI
-writes the code; here the AI's output can be *checked by machine*, so far more of
-the work can be handed over.
-
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/positioning-dark-en.png">
-    <img src="docs/brand/positioning-light-en.png" alt="Positioning: expressive range vs. engineering skill needed" width="820">
-  </picture>
+  <a href="https://ababup1192.github.io/flix-ge-lp/"><img src="https://img.shields.io/badge/Landing_Page-Demos_%26_Benchmarks-ff6a3d?style=for-the-badge" alt="Landing Page"></a>
+  <a href="https://github.com/ababup1192/flix_game_engine/releases/latest"><img src="https://img.shields.io/github/v/release/ababup1192/flix_game_engine?style=for-the-badge" alt="Latest release"></a>
+  <a href="LICENSE.md"><img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="MIT License"></a>
 </p>
 
-## What is already built in
+<p align="center">
+  <b>English</b> · <a href="#flix-game-engine-日本語">日本語</a>
+</p>
 
-Everything below is an official part of the engine, so neither you nor an AI has
-to build it from scratch. Full index: [docs/module-index.md](docs/module-index.md).
+# Flix Game Engine
 
-- **Light and shadow** — reflections on mirrors and water, light sources, cast
-  shadows, a whole-screen colour filter (time of day), sprite shading, additive /
-  multiply blending, glow
-- **Motion and effects** — particles, procedural shader surfaces (no raw GLSL),
-  object sway, screen transitions, sprite rotation, tweening, sprite animation,
-  scripted action sequences, path following, cutscenes, BGM fades
-- **Game systems** — save/load, rewind & replay, per-tile state, pathfinding and
-  movement range, enemy AI, hitboxes declared in JSON, collision and physics, timers
-- **UI** — dialogue windows with typewriter text, menus, scrolling lists, UI
-  declared in JSON (one declaration drives both the look and the click target),
-  9-slice window frames, variables embedded in text, mouse picking
-- **Boards and terrain** — dual-grid terrain that needs no tile art, maps written
-  as a character grid, tileset images with auto-tiling, sprites as character grids,
-  automatic depth sorting, view culling, infinite scatter
-- **Input and camera** — key mapping, edge detection, mouse wheel, camera
-  follow/zoom, camera shake, pixel-perfect rendering
-- **While you work** — tune numbers without restarting, machine-verified visual
-  regressions, drive the game over HTTP from an AI or external tool, pause and
-  circle a spot to report it
+**Turn AI speed into game quality.**
 
-Games are built around a single immutable `World` value: systems are pure
-functions run each frame by a Bevy-style `App`, and every frame is rendered from
-the `World`. Rendering, input, and audio are a from-scratch implementation on top
-of LWJGL (OpenGL 3.3 Core / GLFW / OpenAL). The engine ships as a reusable
-library, with ready-to-run starter games living under `templates/`, in a monorepo
-layout. `fge new` copies a template into a new folder with its own git repository.
+An AI-native **2D, HD-2D, and 3D game engine** written in [Flix](https://flix.dev/).
+One codebase ships to **Desktop (macOS / Windows / Linux)** and **Web / mobile browsers (WebGPU + WebAssembly)**.
 
-> 日本語版は[下](#flix-game-engine-日本語)にあります。
+### 👉 [Visit the landing page](https://ababup1192.github.io/flix-ge-lp/) — playable showcase, the AI workflow in pictures, honest benchmarks, and a comparison with other engines.
 
-## Getting started (macOS / Linux)
+This README covers installing, the starter templates, and working on the engine itself.
 
-You need [Claude Code](https://claude.com/claude-code), plus `make`, `perl` and `git`
-(on macOS, `xcode-select --install` gives you all three). Then run two commands:
+## Why it works so well with AI
+
+- **Machine-verified changes** — game logic is pure functions over an immutable `World`. Flix's type & effect system, automated replays, 1px pixel-diff checks, and pre-publish browser checks catch what an AI breaks before you have to look.
+- **Tape video review (`make tape`)** — an auto-play video you annotate on a timeline (phone or desktop); it becomes a structured fix prompt for the AI.
+- **`F8` annotate & HitchDetector** — box anything in a running game and the screenshot, coordinates, and the state needed to reproduce it go to the AI. Frame hitches are recorded with repro steps.
+
+Everything is built in — 3D PBR / HD-2D / retro 3D, 2D terrain & VFX, deterministic 2D physics, JSON-declared UI, Yarn dialogue, a sound synth & mixer, and `fge export-web`. See the [capabilities on the LP](https://ababup1192.github.io/flix-ge-lp/#capabilities) or the full [module index](docs/module-index.md).
+
+## Play in your browser
+
+| Title | Genre / Tech | Link |
+|---|---|---|
+| **Internet Saihate Dungeon** | 2D deck-building / combo battle | [▶ Play / LP](https://ababup1192.github.io/internet-saihate-dungeon-lp/) |
+| **Night School** | First-person PS1-style 3D horror | [▶ Play](https://ababup1192.github.io/night-school/play/) |
+| **Stepdown** | Vertical mobile roguelike (PWA) | [▶ Play](https://ababup1192.github.io/stepdown/) |
+| **Haioku Live** | Vertical horror visual novel | [▶ Play](https://ababup1192.github.io/haioku-live/) |
+| **Home Tape** | Vertical visual novel | [▶ Play](https://ababup1192.github.io/home-tape-live/) |
+| **Collision & JSON Doc sample** | Physics2D colliders & live-reload Docs | [▶ Play](https://ababup1192.github.io/fge-collision-sample/) |
+| **Bistro 3D Street** | 3D PBR, 2.83M triangles, WebGPU | [bistro-lab](https://github.com/ababup1192/bistro-lab) |
+
+More, with screenshots: **[showcase on the LP](https://ababup1192.github.io/flix-ge-lp/#showcase)**.
+
+## Getting started
+
+You need [Claude Code](https://claude.com/claude-code) (or another AI coding agent) and `git`.
+
+**macOS / Linux** — also `make` and `perl` (on macOS, `xcode-select --install` gives you all three):
 
 ```bash
 curl -fsSL https://github.com/ababup1192/flix_game_engine/releases/latest/download/install.sh | sh
-fge dashboard        # opens http://127.0.0.1:8790/ in your browser
 ```
 
-On the dashboard, the "Make a new game" card lets you pick a name and a template.
-Press **Open in Claude Code**: Claude starts in your games folder (`~/flix-games`), creates the game
-with `fge new`, checks that it runs, and tells you what to do next. The engine and
-the JDK are downloaded for you into `~/.flix_ge` the first time.
+**Windows** (PowerShell) — needs [Git for Windows](https://gitforwindows.org/) (`winget install --id Git.Git -e`):
 
-Windows support is in preparation.
+```powershell
+irm https://github.com/ababup1192/flix_game_engine/releases/latest/download/install.ps1 | iex
+```
+
+Then open the dashboard:
+
+```bash
+fge dashboard        # opens http://127.0.0.1:8790/
+```
+
+On the "Make a new game" card, pick a name and a template and press **Open in Claude Code**.
+Claude starts in your games folder (`~/flix-games`), creates the game with `fge new`, checks
+that it runs, and tells you what to do next. The engine and the JDK are downloaded into
+`~/.flix_ge` the first time.
+
+Without the dashboard:
+
+```bash
+fge new --list                             # the templates
+fge new my-game --template rpg-starter     # create ./my-game (its own git repository)
+cd my-game && make run                     # play it (make test runs its tests)
+```
 
 ## Starter games (templates)
 
-Each template is a complete, playable game with its own art style, Docs, and
-tests — read one to learn the engine, or copy it with `fge new` to start
-your own.
+Each template is a complete, playable game with its own art style, Docs, and tests.
 
 | Template | Description |
 |---|---|
 | **game-starter** | The bare skeleton: move a pixel-art hero with the arrow keys. The default for `fge new` |
 | **rpg-starter** | FC-style classic RPG: a village whose spring has run dry, a world map, a mine dungeon and command battles |
-| **sound-novel-starter** | Sound novel in the countryside: blurred real photos, Mincho prose with ruby, NVL/ADV, log, auto, skip, save/load — all scripted in Yarn |
-| **tidepool-starter** | Turn-based puzzle on a tide pool: push rocks to reroute channels as the tide rises and falls each move; undo, retry and a look-ahead preview |
-| **hd2d-starter** | HD-2D town walk: a 3D harbor town built from a tile map with pixel-art billboards, a party of three that follows the leader, wall sliding, sun shadows and depth of field; keys, gamepad or an on-screen stick |
-| **retro3d-horror-starter** | Retro 3D horror in first person: a low-poly three-storey wooden school at night with a PS1-style look (color banding, dither, vertex jitter, CRT bleed), baked lighting in vertex colors, three people to talk to, keys and locked rooms, and synthesized footsteps as the main sound |
-
-You can also make a game without the dashboard (a new folder with its own git repository):
-
-```bash
-fge new --list                             # the templates
-fge new my-game --template rpg-starter     # create ./my-game
-cd my-game && make run                     # play it (make test runs its tests)
-```
+| **sound-novel-starter** | Sound novel in the countryside: blurred photos, Mincho prose with ruby, NVL/ADV, log, auto, skip, save/load — scripted in Yarn |
+| **tidepool-starter** | Turn-based tide-pool puzzle: push rocks to reroute channels as the tide moves each turn; undo, retry and a look-ahead preview |
+| **hd2d-starter** | HD-2D town walk: a 3D harbor town from a tile map with pixel-art billboards, a following party, sun shadows and depth of field |
+| **retro3d-horror-starter** | First-person retro 3D horror in a wooden school at night: PS1-style look, baked vertex lighting, conversations, keys and locked rooms |
 
 ## Game data (Docs)
 
-A game's numbers, look, and layout live outside the code in JSON files called
-**Docs** (`<name>.<kind>.json` — e.g. `grass.theme.json`, `b1.dungeon.json`).
-Behavior — rules, collision, spawning — stays in code; only values and looks go
-into Docs. Every Doc kind ships a `<kind>.schema.json`, so the same schema drives
-the editor form, startup validation, and AI-written data. A game can watch its
-Docs with `App.watchFile`, so saving a Doc shows up in the running game right away.
+Numbers, looks, and layouts live outside the code in JSON **Docs** (`<name>.<kind>.json`,
+e.g. `grass.theme.json`). Behavior — rules, collision, spawning — stays in code. Each kind has a
+`<kind>.schema.json` that drives editor forms, startup validation, and AI-written data, and a game
+watching its Docs with `App.watchFile` picks up a save while it runs.
+See [docs/doc-conventions.md](docs/doc-conventions.md).
 
-Docs are edited by hand, or through forms/sliders in **flix_ge_studio** (a
-separate Elm + Tauri editor, frozen for now). See [docs/doc-conventions.md](docs/doc-conventions.md)
-for the full convention, and the "エディタと Doc の流儀" section in
-[CLAUDE.md](CLAUDE.md).
+## Working on the engine itself
 
-Maps can be drawn without any tile art: a `*.terrain.json` Doc maps cell
-characters to a material, and **painting the `rows` character grid is enough** —
-the dual-grid renderer (`Terrain` / `TerrainDoc`) auto-generates the corner shapes
-(round / square / diamond) from how the four corners are filled.
-
-## Project layout (monorepo)
-
-```
-engine/        contract layer (GL-free, no native deps): the role-split Platform effects (Input, Window, Draw2d, GpuResources, ...) and the GameEngine.Audio effect, shared render types, foundational types (math, color, text layout, project loading), scene-graph draw vocabulary
-render_gl/     OpenGL/OpenAL backend implementing engine's contract: LWJGL window/input/audio, shaders, textures, SDF fonts (depends on engine)
-engine_world/  value-based game framework: Bevy-style App run-loop, ECS queries, physics, UI widgets, camera rig, Worldline undo/replay, and frontend services (asset loading, save data, JSON, logging) (depends on engine)
-engine_tools/  dev & test tooling: headless software rasterizer, filmstrip/GIF rendering, reference viewer, render lint, SFX synth (depends on engine)
-templates/     starter games, ready to run and to copy with make new-game (depend on the all-in-one flix_game_engine package)
-bin/           the flix wrapper script (the compiler jar comes from devbox/nix)
-flix.toml
-src/           root project for the Flix community build: per-file symlinks bundling
-               all engine packages into one source tree (regenerate with make sync-root-src)
-```
-
-Dependency chain: `engine` is the foundation (no deps); `render_gl`, `engine_world`, and
-`engine_tools` each depend on it; `engine_full` (published as `flix_game_engine`)
-bundles all four into the single package games depend on.
-`make sync` runs `build-pkg` on each package and distributes it to dependents via
-relative symlinks (symlink, not cp — so rebuilding the engine is reflected instantly).
-
-## For people changing the engine itself
-
-Everything above uses an engine downloaded by `fge`. To change the engine, clone this
-repository and build it yourself.
-
-- **devbox** (required — fetches JDK 25, GNU make, and the Flix 0.80.0 compiler automatically)
-- Supported OS: macOS (Apple Silicon / Intel) / Linux
-
-The Flix **0.80.0** compiler is provided via [Cj-bc/flix.nix](https://github.com/Cj-bc/flix.nix)
-(pinned in `devbox.json`), so no manual jar download is needed. The `bin/flix` wrapper runs that
-jar with devbox's JDK 25 (adding `-XstartOnFirstThread` / headless flags as needed).
-
-Set up the toolchain and build the engine packages:
+Everything above uses an engine downloaded by `fge`. To change the engine, clone this repository.
+You need **devbox** (it fetches JDK 25, GNU make, and the Flix 0.80.0 compiler); macOS or Linux.
 
 ```bash
-devbox shell        # fetch JDK 25 + make + Flix compiler, and add bin/ to PATH
-make sync            # build-pkg all engine packages and distribute (via symlink) to templates & bench
+devbox shell         # toolchain + bin/ on PATH
+make sync            # build all engine packages and link them into templates & bench (run once first)
 make go-build        # build bin/fge from go/
+make status          # one-screen summary of where things stand
+make help            # every other target
 ```
 
-Run `make sync` **once on first setup**. Each template resolves the engine through
-a relative symlink under `lib/github/ababup1192/.../0.1.0/`, so without it the
-dependency cannot be resolved. After editing an engine package, re-run `make sync`
-(`render_gl` / `engine_world` / `engine_tools` are checked in `.layers/<pkg>/`, a
-symlinked tree of `engine` + that package, which `make sync-layers` lays out).
-
-Every template runs and tests the same way:
-
-```bash
-cd templates/<name>
-flix run             # launch
-flix test            # test
-```
-
-To make a game from this clone instead of a downloaded engine:
+Re-run `make sync` after editing an engine package. Run a template with
+`cd templates/<name> && flix run` (`flix test` for its tests). To make a game from this clone:
 
 ```bash
 make new-game GAME=/abs/path/to/mygame NAME=mygame TITLE="My Game" TEMPLATE=rpg-starter
 ```
 
-Development tips:
-
-```bash
-make help                # list other targets (sync-layers, etc.)
-make sync-layers         # lay out .layers/ (engine + render_gl / engine_world / engine_tools)
-make sync-root-src       # regenerate the root src/ symlinks for the Flix community build
-make clean-locks         # remove stale *.lock left in the Maven cache by an interrupted flix check
-make clean-game-builds   # delete templates/*/build/ and bench/*/build/ (speeds up IDE scene loading)
-make boot-font           # re-bake the built-in splash font & logo into engine sources
+```
+engine/        contract layer, no native deps: Platform effects (Input, Window, Draw2d, ...), Audio, shared render types, math, color, text layout
+render_gl/     desktop backend: LWJGL window/input/audio, WebGPU (Dawn) & OpenGL 3.3 renderers, shaders, SDF fonts
+engine_web/    browser backend: TeaVM (WasmGC), WebGPU / WebGL2, Web Audio
+engine_world/  game framework: Bevy-style App loop, ECS queries, physics, UI, camera rig, undo/replay, assets, save data
+engine_tools/  dev & test tooling: headless rasterizer, filmstrips/GIFs, render lint, SFX synth
+engine_full/   bundles the packages into the single `flix_game_engine` package games depend on
+templates/     starter games (copied by fge new / make new-game)
+go/            the fge CLI (dashboard, export-web, refactor, checkd, lints, ...)
+bench/         benchmarks and test scenes
 ```
 
-## Startup screen
+Contributor rules (naming, testing, art floor, release) are in [AGENTS.md](AGENTS.md).
+The startup splash and on-demand glyph baking are described in [docs/startup-screen.md](docs/startup-screen.md).
 
-Every game shows a splash screen while assets load — the engine draws it, games write
-nothing. The window clears to the splash colour as soon as the GL context exists, then a
-logo, a white progress bar and a one-line status (`loading images...`, `loading font ui...`,
-`loading sounds...`) stay on screen until the first game frame.
-
-The text uses a **built-in font** embedded in the engine sources (ASCII only, 1-bit
-bitmap) — the game's own fonts are still being baked at that point, so they cannot be used.
-The same font backs the `DEBUG=1` fps badge, so it works whatever the game names its fonts.
-
-**Glyphs are baked the first time they are drawn, not at startup.** A CJK font holds thousands
-to tens of thousands of glyphs and each one costs about a millisecond to turn into a distance
-field, so baking the lot stalls startup for tens of seconds. Instead the engine starts with an
-empty atlas: when a character is about to be drawn and is not there yet, it is baked into the
-atlas's free space and only that patch is uploaded. The character appears one frame later.
-Startup becomes instant and nothing ever silently disappears.
-
-The trade is a small hitch on the first screen that shows a lot of new text (a few dozen
-glyphs is one or two frames). `"glyphs": "used"` avoids it by scanning the project's sources
-and assets at launch (a few tens of milliseconds) and baking those characters up front.
-
-`"glyphs"` in `project.json` picks what to bake up front:
-
-| Value | Meaning |
-|---|---|
-| `"auto"` (default) | nothing up front — every glyph is baked the first time it is drawn |
-| `"used"` | characters found in the project's sources and assets, baked before the first frame |
-| `"all"` | every glyph the font has (slow; rarely what you want) |
-
-`FLIX_GE_GLYPHS=used\|all\|auto` overrides it for a single run, so you can compare without
-editing the project.
-
-Baked atlases are also cached under `~/.cache/flix_game_engine/font`, so later launches skip
-baking entirely. A damaged or outdated cache is ignored and simply re-baked. Delete that folder to force a re-bake.
-
-| Environment variable | Effect |
-|---|---|
-| `FLIX_GE_NO_SPLASH=1` | Skip the splash screen entirely |
-| `FLIX_GE_NO_FONT_CACHE=1` | Never read or write the font atlas cache |
-| `FLIX_GE_CACHE_DIR=<dir>` | Put the font atlas cache somewhere else |
-| `FLIX_GE_SPLASH_SHOT=<file>` | Save a few PNGs of the splash screen (for eyeballing it) |
+> The companion editor **[flix_ge_studio](https://github.com/ababup1192/flix_ge_studio)** is frozen for now. If you have it, do not let its self-update move it to a newer engine: a frozen Studio cannot run newer engine releases.
 
 ## Tech stack
 
-- **Flix 0.80.0** — functional programming language
-- **LWJGL** — OpenGL / GLFW / STB / OpenAL bindings
-- **OpenGL 3.3 Core Profile** — shader-based 2D rendering
-- **OpenAL** — sound effects and BGM playback
+- **Flix 0.80.0** — functional language with static effect tracking
+- **WebGPU** (Dawn on desktop / browser) by default, falling back to **OpenGL 3.3 Core** (desktop) or **WebGL2** (browser)
+- **TeaVM** — WebAssembly (WasmGC) export for browsers & mobile PWA
+- **LWJGL** — GLFW / OpenGL / STB / OpenAL / SDL3 gamepad
+- **OpenAL / Web Audio** — sound
 
 ## License
 
@@ -270,248 +154,136 @@ baking entirely. A damaged or outdated cache is ignored and simply re-baked. Del
 
 # Flix Game Engine (日本語)
 
-[Flix](https://flix.dev/) で書く 2D ゲームエンジン。**AI と一緒に作る**ことを前提に設計している。
-表現を 2D に絞ることで、足りない機能をプラグインで継ぎ足す形をやめ、ゲームでよくやることを
-公式の部品として用意する。さらに、AI が自分の仕事を自分で確かめられる作りにしてある。
+**AIの速さを、ゲームの完成度へ。**
 
-対になるエディタ **[flix_ge_studio](https://github.com/ababup1192/flix_ge_studio)** は凍結中。
-手元にある人は、Studio の self-update で新しい版の engine に上げない（凍結した Studio は新しい版の engine を動かせない）。
+[Flix](https://flix.dev/) で書く **AI ネイティブな 2D / HD-2D / 3D ゲームエンジン**。
+1 つのコードベースから **PC（macOS / Windows / Linux）** と **Web / スマホブラウザ（WebGPU + WebAssembly）** へ届けます。
 
-| | | |
-|:--:|:--:|:--:|
-| <img src="docs/gallery/cards.gif" alt="カードゲーム" width="240"> | <img src="docs/gallery/farm.gif" alt="農場シミュレーション" width="240"> | <img src="docs/gallery/dungeon.gif" alt="ダンジョン探索" width="240"> |
-| カードゲーム | 農場シミュレーション | ダンジョン探索 |
-| <img src="docs/gallery/novel.gif" alt="ノベル" width="240"> | <img src="docs/gallery/village.gif" alt="村づくりシミュレーション" width="240"> | <img src="docs/gallery/puzzle.gif" alt="落ちものパズル" width="240"> |
-| ノベル | 村づくりシミュレーション | 落ちものパズル |
-| <img src="docs/gallery/horror.gif" alt="ホラー探索" width="240"> | | |
-| ホラー探索 | | |
+### 👉 [紹介ページ（LP）を見る](https://ababup1192.github.io/flix-ge-lp/) — ブラウザで遊べる作品、AI 開発ループの図解、実測ベンチマーク、他エンジンとの比較はこちら。
 
-ジャンルフリーにゲーム開発ができる。豊富で抽象度の高いパーツの組み合わせで、
-**あらゆる 2D ゲームが表現可能**。
-
-これらのほとんどは、**人が描いた絵も、買ってきた素材も使わずに**作ったもの。絵や音も、
-最低限のものは AI に作らせる仕組みがある。
+この README は、インストール・スターターテンプレート・エンジン自体を直す人向けの手順をまとめています。
 
 ## なぜ AI と作りやすいのか
 
-**AI が自分で答え合わせをしやすく、人も今の状態を AI に伝えやすい**作りになっているから。
-ゲームのルールは、その部分だけを取り出して自動で試せるので、AI は直したあと自分で確かめられる。
-見た目は**ピクセル単位で変わっていないことを機械が保証できる**ので、直したつもりが別の場所を
-壊していれば、その場で分かる。思ったとおりに動かないときも、そのときのゲームの中身をまるごと
-AI へ渡せるので、**症状を言葉で説明する必要がない**。
+- **壊れたら機械が止める** — ゲームロジックは不変の `World` に対する純粋関数。Flix の型と副作用検査・自動リプレイ・1px 単位の画素差・Web 公開前の実ブラウザチェックが、AI の書いた変更を人が見る前に検算します。
+- **Tape 動画レビュー（`make tape`）** — 自動プレイ動画をスマホや PC で観ながらタイムラインに注釈を付けると、AI 向けの修正プロンプトになります。
+- **`F8` 画面囲み ＆ 処理落ちの自動記録** — 動いているゲームで気になる所を囲むだけで、スクショ・座標・再現に要る状態を AI へ渡せます。処理落ちも再現手順ごと記録します。
 
-AI がコードを書けば、どのエンジンでも敷居は下がる。差が出るのは下がり幅で、ここは
-**AI の書いた物を機械で検算できる**ぶん、任せられる範囲が広い。
+3D PBR・HD-2D・レトロ 3D、2D の地形とエフェクト、決定論的な 2D 物理、JSON で書く UI、Yarn の会話、効果音シンセとミキサー、`fge export-web` まで標準で入っています。
+一覧は [LP の機能紹介](https://ababup1192.github.io/flix-ge-lp/#capabilities) か [docs/module-index.md](docs/module-index.md)。
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/positioning-dark.png">
-    <img src="docs/brand/positioning-light.png" alt="立ち位置: 表現力と、必要なエンジニアリング力" width="820">
-  </picture>
-</p>
+## ブラウザで遊べる作品
 
-## 何が最初から入っているか
+| 作品 | ジャンル / 技術 | リンク |
+|---|---|---|
+| **インターネット・サイハテ・ダンジョン** | 2D デッキ構築・コンボバトル | [▶ Play / LP](https://ababup1192.github.io/internet-saihate-dungeon-lp/) |
+| **夜の校舎** | 一人称 PS1 風 3D ホラー | [▶ 遊ぶ](https://ababup1192.github.io/night-school/play/) |
+| **片手間迷宮** | 縦型スマホ向けローグライク（PWA） | [▶ 遊ぶ](https://ababup1192.github.io/stepdown/) |
+| **廃屋配信** | 縦型ホラーノベル | [▶ 遊ぶ](https://ababup1192.github.io/haioku-live/) |
+| **よその子** | 縦型ノベル | [▶ 遊ぶ](https://ababup1192.github.io/home-tape-live/) |
+| **当たり判定 ＆ JSON Doc サンプル** | 2D 物理のコライダーと設定の即反映 | [▶ 遊ぶ](https://ababup1192.github.io/fge-collision-sample/) |
+| **Bistro 3D 街並み** | 3D PBR・283 万三角形・WebGPU | [bistro-lab](https://github.com/ababup1192/bistro-lab) |
 
-以下はすべてエンジンの公式部品なので、人も AI も一から組む必要がない。
-全モジュールの一覧は [docs/module-index.md](docs/module-index.md)。
+画面つきの一覧は **[LP のショーケース](https://ababup1192.github.io/flix-ge-lp/#showcase)** へ。
 
-- **光と影** — 反射・映り込み、ライティング、影の生成、画面全体の色フィルタ（朝・夕・夜）、
-  スプライトの陰影、発光と減光（加算・乗算）、グロー
-- **動きと演出** — パーティクル、絵を描かずに作る動く模様（シェーダーを宣言で組む）、
-  オブジェクトの揺れ、画面転換（フェード・ワイプ）、スプライトの回転、トゥイーン、
-  スプライトアニメ、一連の動作の再生、経路移動、イベントシーン、BGM のフェード
-- **遊びの仕組み** — セーブ・ロード、巻き戻し・リプレイ、マスごとの状態、経路探索と移動範囲、
-  敵 AI、当たり判定を JSON で宣言、衝突と物理、タイマー
-- **画面まわり（UI）** — 会話ウィンドウと文字送り、メニュー、スクロールする一覧、
-  UI を JSON で記述（見た目とクリック判定が同じ宣言から決まる）、9 スライスの枠、
-  テキストの変数表示、マウス操作
-- **盤面と地形** — タイル画像の要らないデュアルグリッド地形、文字で書くマップ、
-  タイルセット画像（自動タイル選択）、文字の格子で描くスプライト、前後関係の自動決定、
-  画面外の間引き、無限に広がる配置
-- **操作とカメラ** — キーマッピング、押した瞬間の判定、マウスホイール、カメラ操作、
-  画面揺れ、ピクセルパーフェクト描画
-- **作っているときの道具** — 再起動せずに数値を調整、見た目の変化を機械が保証、
-  AI や外部ツールから HTTP でゲームを操作、プレイ中に止めて気になる範囲を囲んで記録
+## 始め方
 
-ゲームは不変の `World` 値を中心に組み立てる: システムは Bevy 風 `App` が毎フレーム実行する
-純粋関数で、各フレームは `World` から描画を導出する。描画・入力・音声は
-LWJGL（OpenGL 3.3 Core / GLFW / OpenAL）を直接叩く自前実装。エンジンを再利用ライブラリとして
-提供し、`templates/` 配下にそのまま動くスターターゲームが並ぶ monorepo 構成。
-`fge new` でテンプレを写して、自分の git リポジトリとして新しいゲームを始められる。
+[Claude Code](https://claude.com/claude-code)（または他の AI エージェント）と `git` が要ります。
 
-## 始め方（macOS・Linux）
-
-[Claude Code](https://claude.com/claude-code) と `make`・`perl`・`git` が要る
-（macOS は `xcode-select --install` で 3 つとも入る）。あとは 2 つのコマンドを打つだけ:
+**macOS / Linux** — `make` と `perl` も要ります（macOS は `xcode-select --install` で 3 つとも入ります）:
 
 ```bash
 curl -fsSL https://github.com/ababup1192/flix_game_engine/releases/latest/download/install.sh | sh
+```
+
+**Windows**（PowerShell）— [Git for Windows](https://gitforwindows.org/) が要ります（`winget install --id Git.Git -e`）:
+
+```powershell
+irm https://github.com/ababup1192/flix_game_engine/releases/latest/download/install.ps1 | iex
+```
+
+入ったらダッシュボードを開きます:
+
+```bash
 fge dashboard        # ブラウザで http://127.0.0.1:8790/ が開く
 ```
 
-ダッシュボードの「新しいゲームを作ってみよう」のカードで、名前とテンプレートを選んで
-**Claude Code で開く** を押す。Claude がゲームを置くフォルダ（`~/flix-games`）で起動し、`fge new` でゲームを作り、
-動くか確かめて、次にやることを教えてくれる。engine と JDK は初回に `~/.flix_ge` へ自動で取ってくる。
+「新しいゲームを作ってみよう」のカードで名前とテンプレートを選び、**Claude Code で開く** を押します。
+Claude がゲームを置くフォルダ（`~/flix-games`）で起動し、`fge new` でゲームを作り、動くか確かめて、
+次にやることを教えてくれます。engine と JDK は初回に `~/.flix_ge` へ自動で取ってきます。
 
-Windows は準備中。
+ダッシュボードを使わずに作ることもできます:
+
+```bash
+fge new --list                             # テンプレートの一覧
+fge new my-game --template rpg-starter     # ./my-game を作る（独立した git リポジトリ）
+cd my-game && make run                     # 遊ぶ（make test でテスト）
+```
 
 ## スターターゲーム（templates）
 
-テンプレはどれも「そのまま遊べる 1 本のゲーム」で、画風・Doc・テストが一式そろっている。
-エンジンの使い方を読むならここを読み、自分のゲームを始めるなら `fge new` で写す。
+どれも「そのまま遊べる 1 本のゲーム」で、画風・Doc・テストが一式そろっています。
 
 | テンプレ | 内容 |
 |---|---|
 | **game-starter** | 骨組みだけ。主人公（ドット絵）を矢印キーで動かせる。`fge new` の既定 |
 | **rpg-starter** | FC 風の王道 RPG。泉の枯れた村から、ワールドマップと坑道を抜け、コマンドバトルで進む |
-| **sound-novel-starter** | 田舎のサウンドノベル。実写の写真をシェーダーでぼかした背景・明朝とルビ・NVL/ADV・ログ・オート・スキップ・セーブとロード。台本は Yarn |
+| **sound-novel-starter** | 田舎のサウンドノベル。写真をぼかした背景・明朝とルビ・NVL/ADV・ログ・オート・スキップ・セーブとロード。台本は Yarn |
 | **tidepool-starter** | 潮だまりのターン制パズル。1 手ごとに潮が満ち引きする磯で岩を押して水路を作り変える。取り消し・やり直し・先読みつき |
-| **hd2d-starter** | HD-2D の町歩き。タイルの地図から組んだ 3D の港町にドット絵の板を立て、旅の 3 人で歩き回る。壁で滑る・仲間が後をなぞる・太陽の影と手前と奥のぼけ。キー・パッド・画面のスティック |
-| **retro3d-horror-starter** | レトロ 3D ホラー。夜の木造 3 階建ての校舎を一人称で歩く。PS1 風の描き方（色の段・ディザ・頂点のがたつき・テレビのにじみ）・頂点の色にベイクした明るさ・3 人の人物との会話・鍵と閉じた部屋・足音が主役の合成の効果音 |
-
-ダッシュボードを使わずに作ることもできる（新しいフォルダに、独立した git リポジトリとして産む）:
-
-```bash
-fge new --list                             # テンプレートの一覧
-fge new my-game --template rpg-starter     # ./my-game を作る
-cd my-game && make run                     # 遊ぶ（make test でテスト）
-```
+| **hd2d-starter** | HD-2D の町歩き。タイルの地図から組んだ 3D の港町にドット絵の板を立て、仲間と歩く。太陽の影と被写界深度 |
+| **retro3d-horror-starter** | 夜の木造校舎を一人称で歩くレトロ 3D ホラー。PS1 風の描き方・頂点の色にベイクした明るさ・会話・鍵と閉じた部屋 |
 
 ## ゲームデータ（Doc）
 
-ゲームの数値・見た目・配置は、コードの外の JSON ファイル **Doc**
-（`<名前>.<種類>.json` — 例 `grass.theme.json` / `b1.dungeon.json`）に外出しする。
-振る舞い（ルール・当たり判定・生成）はコードのまま。数値と見た目だけを Doc に置く。
-Doc の種類ごとに `<種類>.schema.json` があり、この 1 枚のスキーマが
-エディタのフォーム生成・起動時の検証・AI がデータを書くときの仕様書を兼ねる。
-ゲームが `App.watchFile` で Doc を監視すると、保存した内容が走っているゲームに即反映される。
-
-Doc は手書きでも、**flix_ge_studio**（別リポの Elm + Tauri エディタ・凍結中）の
-フォーム／スライダーからでも編集できる。詳しくは
-[docs/doc-conventions.md](docs/doc-conventions.md) と、[CLAUDE.md](CLAUDE.md) の
-「エディタと Doc の流儀」の節を参照。
-
-マップはチップ絵を描かずに作れる: `*.terrain.json` Doc がセル文字を質感に対応づけ、
-**`rows` の文字格子を塗るだけ**でデュアルグリッド（`Terrain` / `TerrainDoc`）が
-角の埋まり方から丸/四角/ひし形の形を自動生成する。
-
-## プロジェクト構成（monorepo）
-
-```
-engine/        契約層（GL 非依存・ネイティブ無し）: 役割ごとの Platform の effect（Input・Window・Draw2d・GpuResources など）と GameEngine.Audio の effect・共有描画型・土台型（数学・色・テキストレイアウト・プロジェクト読み込み）・シーングラフ描画語彙
-render_gl/     engine の契約を実装する OpenGL/OpenAL バックエンド: LWJGL の窓/入力/音声・シェーダ・テクスチャ・SDF フォント（engine 依存）
-engine_world/  値ベースのゲームフレームワーク: Bevy 風 App ループ・ECS クエリ・物理・UI 部品・カメラリグ・Worldline undo/リプレイ・frontend サービス（アセット読み込み・セーブ・JSON・ログ）（engine 依存）
-engine_tools/  開発・テスト用ツール: headless ソフトラスタライザ・コマ撮り/GIF の描き出し・スナップショットビューア・RenderLint・効果音合成（engine 依存）
-templates/     スターターゲーム。そのまま動き、make new-game の写し元になる（全部入りの flix_game_engine 1 つに依存）
-bin/           flix ラッパスクリプト（コンパイラ jar は devbox/nix が供給）
-flix.toml
-src/           Flix コミュニティビルド用のルートプロジェクト: 全エンジンパッケージを
-               1 ソースツリーに束ねるファイル単位 symlink 集（make sync-root-src で再生成）
-```
-
-依存関係は `engine` が土台（依存ゼロ）で、`render_gl`・`engine_world`・`engine_tools` が
-それぞれ engine に依存する。ゲームが依存するのは、その 4 つを 1 つに束ねた
-`engine_full`（配布名 `flix_game_engine`）だけ。
-`make sync` が各パッケージを `build-pkg` し、依存先へ相対 symlink で配布する
-（cp ではなく symlink なので、エンジンを再ビルドすれば即座に反映される）。
+数値・見た目・配置は、コードの外の JSON **Doc**（`<名前>.<種類>.json`。例 `grass.theme.json`）に置きます。
+振る舞い（ルール・当たり判定・生成）はコードのまま。種類ごとの `<種類>.schema.json` が
+エディタのフォーム・起動時の検証・AI がデータを書くときの仕様を兼ね、`App.watchFile` で監視すれば
+保存した内容が走っているゲームに即反映されます。詳しくは [docs/doc-conventions.md](docs/doc-conventions.md)。
 
 ## engine を直す人向け
 
-ここまでは `fge` が取ってきた engine を使う。engine そのものを直すときは、このリポジトリを clone して自分で組む。
-
-- **devbox**（必須。JDK 25 + GNU make + Flix 0.80.0 コンパイラを自動取得）
-- 対応 OS: macOS（Apple Silicon / Intel）/ Linux
-
-Flix **0.80.0** コンパイラは [Cj-bc/flix.nix](https://github.com/Cj-bc/flix.nix) 経由で提供され
-（`devbox.json` に固定）、jar の手動ダウンロードは不要。`bin/flix` ラッパがその jar を
-devbox の JDK 25 で実行する（必要に応じて `-XstartOnFirstThread`・headless フラグを付与）。
-
-ツールチェーンを用意し、エンジンパッケージをビルドする:
+ここまでは `fge` が取ってきた engine を使います。engine そのものを直すときは、このリポジトリを clone します。
+**devbox**（JDK 25・GNU make・Flix 0.80.0 コンパイラを取ってくる）が要ります。対応は macOS と Linux。
 
 ```bash
-devbox shell        # JDK 25 + make + Flix コンパイラを取得し、bin/ を PATH に追加
-make sync            # 全エンジンパッケージを build-pkg し、templates・bench へ symlink 配布
+devbox shell         # 道具をそろえ、bin/ を PATH に足す
+make sync            # 全エンジンパッケージを組み、templates・bench へ symlink で配る（初回に必ず 1 回）
 make go-build        # go/ から bin/fge を組む
+make status          # 今の状態を 1 画面で
+make help            # 他の口の一覧
 ```
 
-`make sync` は **初回に必ず一度実行する**。各テンプレはエンジンを
-`lib/github/ababup1192/.../0.1.0/` への相対 symlink 経由で解決するため、これが無いと依存を解決できない。
-エンジンパッケージを編集したら `make sync` で反映する（`render_gl` / `engine_world` / `engine_tools` は
-`engine` のソースと束ねた `.layers/<層>/` で組む。張り直しは `make sync-layers`）。
-
-どのテンプレも同じ手順で実行・テストできる:
-
-```bash
-cd templates/<name>
-flix run             # 起動
-flix test            # テスト
-```
-
-取ってきた engine でなく、この clone からゲームを作る:
+エンジンパッケージを直したら `make sync` で反映します。テンプレートは
+`cd templates/<name> && flix run`（テストは `flix test`）。この clone からゲームを作るには:
 
 ```bash
 make new-game GAME=/abs/path/to/mygame NAME=mygame TITLE=題名 TEMPLATE=rpg-starter
 ```
 
-開発 Tips:
-
-```bash
-make help                # 他ターゲット（sync-layers など）を一覧表示
-make sync-layers         # .layers/ を張り直す（engine + render_gl / engine_world / engine_tools）
-make sync-root-src       # コミュニティビルド用ルート src/ symlink 集を再生成
-make clean-locks         # flix check 中断で残った Maven cache の *.lock を削除
-make clean-game-builds   # templates/*/build/ と bench/*/build/ を削除（IDE のシーン読み込み高速化用）
-make boot-font           # 起動画面の組み込みフォント・ロゴを engine のソースへ作り直す
+```
+engine/        契約層（ネイティブ依存なし）: Platform の effect（Input・Window・Draw2d など）・Audio・共有の描画型・数学・色・テキストレイアウト
+render_gl/     PC 用 backend: LWJGL の窓・入力・音、WebGPU（Dawn）と OpenGL 3.3 の描画、シェーダー、SDF フォント
+engine_web/    ブラウザ用 backend: TeaVM（WasmGC）、WebGPU / WebGL2、Web Audio
+engine_world/  ゲームフレームワーク: Bevy 風 App ループ・ECS クエリ・物理・UI・カメラリグ・undo とリプレイ・アセット・セーブ
+engine_tools/  開発・テスト用: headless ラスタライザ・コマ撮り / GIF・描画 lint・効果音合成
+engine_full/   上の束を、ゲームが依存する 1 つのパッケージ `flix_game_engine` にまとめる
+templates/     スターターゲーム（fge new / make new-game の写し元）
+go/            fge の CLI（dashboard・export-web・refactor・checkd・lint など）
+bench/         ベンチマークと試験用の場面
 ```
 
-## 起動画面
+開発の決まり（名前の付け方・テスト・絵の下限・リリース）は [AGENTS.md](AGENTS.md)。
+起動画面と、字を初めて出るときに作る仕組みは [docs/startup-screen.md](docs/startup-screen.md)。
 
-読み込みの間、どのゲームでも起動画面が出る（エンジンが出すので、ゲーム側は何も書かない）。
-GL の用意ができた時点ですぐ画面を地の色で塗り、ロゴ・白いゲージ・いま何をしているかの一行
-（`loading images...` / `loading font ui...` / `loading sounds...`）を、ゲームの最初の 1 枚が
-出るまで見せ続ける。
-
-字は**エンジンのソースに埋め込んだ組み込みフォント**（ASCII だけ・1bit のドット絵）で描く。
-ゲームのフォントはまさにその時生成している最中で使えないため。`DEBUG=1` の fps 表示も同じ
-フォントを使うので、ゲームがフォントに何という名前を付けていても出る。
-
-**字は起動時ではなく、初めて出るときに作る。** 日本語フォントは数千〜2万字を持っていて、
-1 字を距離場にするのに約 1 ミリ秒かかるので、全部作ると起動が数十秒止まる。そこでエンジンは
-空のアトラスから始め、これから描く字がまだ無ければその場で作り、アトラスの空きに置いて
-**その区画だけ**を上げ直す。その字は 1 コマ遅れて現れる。起動は一瞬になり、
-**字が黙って消えることもない。**
-
-代わりに、新しい字がたくさん出る最初の画面で少し引っかかる（数十字 ＝ 1〜2 コマ）。
-`"glyphs": "used"` にすると、起動時にプロジェクトのソースとアセットを走査して（数十ミリ秒）
-そこにある字を先に作っておくので、その引っかかりが無くなる。
-
-起動時に何を作るかは `project.json` の `"glyphs"` で選ぶ:
-
-| 値 | 意味 |
-|---|---|
-| `"auto"`（既定） | 起動時は作らず、出た字から順に作る |
-| `"used"` | ソースとアセットにある字を、最初の 1 コマの前に作っておく |
-| `"all"` | フォントが持つ字を全部（遅い。まず要らない） |
-
-`FLIX_GE_GLYPHS=used\|all\|auto` でその場かぎりの上書きができる（プロジェクトを触らずに
-見比べられる）。
-
-作った物は `~/.cache/flix_game_engine/font` にも取っておくので、2 回目以降は生成自体が起きない。
-壊れていたり古かったりするキャッシュは黙って捨てて作り直すので、起動が止まることはない。作り直させたい時はこのフォルダを消す。
-
-| 環境変数 | 効き方 |
-|---|---|
-| `FLIX_GE_NO_SPLASH=1` | 起動画面を出さない |
-| `FLIX_GE_NO_FONT_CACHE=1` | フォントのキャッシュを読みも書きもしない |
-| `FLIX_GE_CACHE_DIR=<dir>` | フォントのキャッシュの置き場を変える |
-| `FLIX_GE_SPLASH_SHOT=<file>` | 起動画面を数枚 PNG に書き出す（目視で確かめる用） |
+> 対になるエディタ **[flix_ge_studio](https://github.com/ababup1192/flix_ge_studio)** は凍結中です。手元にある方は、Studio の self-update で新しい版の engine に上げないでください（凍結した Studio は新しい版の engine を動かせません）。
 
 ## 技術スタック
 
-- **Flix 0.80.0** — 関数型プログラミング言語
-- **LWJGL** — OpenGL / GLFW / STB / OpenAL バインディング
-- **OpenGL 3.3 Core Profile** — シェーダーベースの 2D レンダリング
-- **OpenAL** — 効果音・BGM 再生
+- **Flix 0.80.0** — 静的な副作用検査を持つ関数型言語
+- **WebGPU**（PC は Dawn・ブラウザ）が既定。PC は **OpenGL 3.3 Core**、ブラウザは **WebGL2** へ自動で切り替え
+- **TeaVM** — ブラウザ・スマホ PWA 向けの WebAssembly（WasmGC）書き出し
+- **LWJGL** — GLFW / OpenGL / STB / OpenAL / SDL3 ゲームパッド
+- **OpenAL / Web Audio** — 音
 
 ## ライセンス
 
