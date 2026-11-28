@@ -6,7 +6,8 @@
     "path:./nix/flix#flix_0_80_0",
     "ffmpeg@latest",
     "go@1.26",
-    "libwebp@latest"
+    "libwebp@latest",
+    "blender@5.2.3"
   ],
   "shell": {
     "init_hook": [

@@ -1,6 +1,44 @@
 {
   "lockfile_version": "1",
   "packages": {
+    "blender@5.2.3": {
+      "last_modified": "2026-11-22T18:15:35Z",
+      "resolved": "github:NixOS/nixpkgs/619c39f6eac5d1ed6b8f073a9414baf7034b2356#blender",
+      "source": "devbox-search",
+      "version": "5.2.3",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/b4xwhvf9c1an0k13vmgal1s43miqnxd0-blender-5.2.3",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/b4xwhvf9c1an0k13vmgal1s43miqnxd0-blender-5.2.3"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/v9h93pbx6yxqjjg5hhm2icc3vip75baz-blender-5.2.3",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/v9h93pbx6yxqjjg5hhm2icc3vip75baz-blender-5.2.3"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/a9y0mfjy6lsw1hi67krbvrwmwcy8219c-blender-5.2.3",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/a9y0mfjy6lsw1hi67krbvrwmwcy8219c-blender-5.2.3"
+        }
+      }
+    },
     "ffmpeg@latest": {
       "last_modified": "2026-07-23T13:11:22Z",
       "resolved": "github:NixOS/nixpkgs/6d12004108e0e4a5cfa4bd83b14477f040b15773#ffmpeg",
