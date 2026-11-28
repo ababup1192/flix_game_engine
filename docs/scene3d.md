@@ -387,6 +387,17 @@ Scene3d.withMetallicRoughnessTexture("tex3d:orm", gold)                         
   spec の名前が `gltf:vc` の材質まで広げ、`Scene3d.metallicRoughnessOf` の値ごとに束ねる。鏡面が要らない材質は `Scene3d.withoutMetallicRoughness`
 - やらない事: キューブマップ・反射プローブ・スクリーン空間の反射・異方性・クリアコート
 
+### 隙間・隅の暗さの出し方を選ぶ
+
+隙間や隅を暗くする手は 4 つある。出したい暗さで選び、右の列の物とは重ねない（同じ暗さが 2 回掛かって隅が黒くつぶれる）。
+
+| 出したい暗さ | 使う物 | 重ねない物 |
+|---|---|---|
+| 物の細かい溝・継ぎ目（作者が絵に描いた物） | [材質の AO の絵](#材質の-ao-の絵gltf-の-occlusiontexture)（`"gltf": { "occlusion": true, "pbr": true }`） | AO 入りでベイクした lightmap |
+| 家具の足元・物どうしが接する所（置き方で変わる） | [SSAO](#画面の上の技ssao)（`PostStack.withAmbientOcclusion`） | なし（材質の AO の絵とは重ねてよい。SSAO の後に掛かる） |
+| 動かない部屋全体の隅（光ごと固める） | lightmap（`docs/lightmap.md`）か[頂点の色](#glb-の頂点の色color_0blender-でベイクした明るさ)にベイク | AO 入りのベイクなら材質の AO の絵 |
+| （使わない） | albedo（baseColor の絵）に AO を描き込む | 直接光の当たる所まで暗くなる。材質の AO の絵に分ける |
+
 ### 材質の AO の絵（glTF の occlusionTexture）
 
 隙間・角・くぼみの暗さを絵で持つ材質（glTF の `occlusionTexture`・Blender の Ambient Occlusion のベイク・ORM / ARM の絵の R）を、環境から来る光にだけ掛ける
