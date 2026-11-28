@@ -42,27 +42,27 @@ pub mod RenderPaint.Internal.WebGpuPaint.Scenes {
 
     /// 場面の矩形を描き先の画素へ写すための design 領域（GL の左下が原点）と倍率（GL の RenderPaint が Scene3dRenderer.Prepared#draw に渡す物と同じ）。
     def viewportOf(paint: Paint, pass: PassSpec): Scene3dRenderer.Viewport =
-        let PaintData.PaintData(p) = paint;
+        let PaintData.PaintData({designH = designH, designW = designW | _}) = paint;
         let (x, y, w, h) = RenderList.glViewportOf(pass);
-        { x = x, y = y, width = w, height = h, scaleX = Int32.toFloat64(w) / p#designW, scaleY = Int32.toFloat64(h) / p#designH }
+        { x = x, y = y, width = w, height = h, scaleX = Int32.toFloat64(w) / designW, scaleY = Int32.toFloat64(h) / designH }
 
     /// 3D の描き手へ貸す encoder・submit・知らせ。
     def hostOf(paint: Paint): Render3d.WebGpuRenderer.Host =
-        let PaintData.PaintData(p) = paint;
+        let PaintData.PaintData({frameCounters = frameCounters, gpuTimer = gpuTimer, slots = slots | _}) = paint;
         { encoder = () -> encoderOf(paint),
-          notePass = () -> Array.put(Array.get(0, p#frameCounters) + 1, 0, p#frameCounters),
+          notePass = () -> Array.put(Array.get(0, frameCounters) + 1, 0, frameCounters),
           flush = () -> flushPending(paint),
           skip = (name, n) -> skipMany(paint, name, n),
           textureOf = name -> registeredOf(paint, name),
-          textureById = id -> Map.get(id, Ref.get(p#slots)) |> Option.map(slot -> slot#texture),
-          groupById = id -> Map.get(id, Ref.get(p#slots)) |> Option.map(slot -> slot#group),
-          stamp = (desc, name) -> RenderPaint.Internal.WebGpuTimer.stamp(p#gpuTimer, desc, name) }
+          textureById = id -> Map.get(id, Ref.get(slots)) |> Option.map(slot -> slot#texture),
+          groupById = id -> Map.get(id, Ref.get(slots)) |> Option.map(slot -> slot#group),
+          stamp = (desc, name) -> RenderPaint.Internal.WebGpuTimer.stamp(gpuTimer, desc, name) }
 
     /// 3D の材質が名前で読む全体の登録の絵（GL の RenderPaint.registeredTexture と同じ欄。レンダーターゲットは上下逆に読む印）。
     def registeredOf(paint: Paint, name: String): Option[Scene3dRenderer.RegisteredTexture] \ IO =
-        let PaintData.PaintData(p) = paint;
-        Map.get(name, Ref.get(p#registryRef)) |> Option.map(info ->
+        let PaintData.PaintData({registryRef = registryRef, targets = targets, textureKeyRef = textureKeyRef | _}) = paint;
+        Map.get(name, Ref.get(registryRef)) |> Option.map(info ->
             ({ texId = GpuHandle.textureIdInt(info#id), width = info#width, height = info#height,
-               flipped = RenderPaint.Internal.TargetTable.isTarget(p#targets, name),
-               version = Map.getWithDefault(name, "", Ref.get(p#textureKeyRef)) }: Scene3dRenderer.RegisteredTexture))
+               flipped = RenderPaint.Internal.TargetTable.isTarget(targets, name),
+               version = Map.getWithDefault(name, "", Ref.get(textureKeyRef)) }: Scene3dRenderer.RegisteredTexture))
 }

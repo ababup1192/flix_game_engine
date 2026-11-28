@@ -713,3 +713,25 @@ jfr print --json --events jdk.ExecutionSample /tmp/rec.jfr \
 - スレッドダンプ（jstack）でも当たりは付くが、インタプリタのメソッドに偏って止まる。割合は JFR の標本で読む。
 - `-XX:-DontCompileHugeMethods` を付けて速くなるなら 1 つ目の形。**旗で直さない**（ブラウザ版には効かない）。確かめにだけ使う。
 - メソッドの名前の `$数字` は、インライン展開でできたラムダ。行の番号（`List.flix:798` は `foldLeft`）と、呼んでいる def の名前で元の場所を探す。
+
+## 14. コンパイルが遅い時（`--top`）
+
+`flix check` や `make test-<name>` が遅くなったと感じたら、Flix の `--top` で、コンパイルの時間をどの関数が使っているかを見る（Flix 0.80.0 から。Issue #78）。
+
+```bash
+cd <パッケージか engine の根> && rm -rf build/class && ../bin/flix check --top
+```
+
+- 根（`src/` に 4 パッケージが並ぶ木）で 20 秒前後。`build --top` は後段まで流すので 40 秒前後。重い関数は Typer の段に出るので、`check` で足りる。
+- 端末の画面に表を描く形だけで、`--json` は効かない。表の行数は端末の高さで決まる。終わった後はキーを待つので `q` で抜ける。
+- 秒は機械の混み具合で揺れる（同じ関数が 5〜7.5 秒）。比べるのは **alloc**（毎回ほぼ同じ値）。
+
+上の方に出た関数は、今までに 2 つの形で直せている:
+
+| 形 | 直し方 | 例（2026-11-28） |
+|---|---|---|
+| 大きなレコード（欄の型にレコードの type alias が入れ子で入る）を `let X.X(s) = v;` で開き、`s#欄` を何度も引く | レコードのパターンで 1 回に開く: `let X.X({a = a, b = b \| _}) = v;`。欄の数が多くても効くので、関数を分けなくて良い | `Render3d.WebGpuRenderer.release` 5〜7.5 秒・445MB → 0.26 秒・62MB |
+| handler を入れ子にして、エフェクトを引く（`a \ (ef - …) + IO`） | 関数に `@NoSubEff` を付ける。宣言に並べたエフェクトを本体で全部使っていないと「Unused effect」で落ちる（`App.Internal.Runner.loop`・`finishSlow`） | `GlOffscreen.handle` 2.5 秒・316MB → 0.1 秒未満（master の jar で確かめた） |
+
+`@NoSubEff` は Flix 0.80.0 には無い（`Undefined annotation`）。**Flix を次の版へ上げる時に `GlOffscreen.handle` に付ける。**
+ほかの handler（`WebGpuPaint.handleDraw2d` など）と `Runner` の関数は、付けても alloc が変わらなかった。

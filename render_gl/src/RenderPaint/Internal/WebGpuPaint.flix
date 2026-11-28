@@ -288,30 +288,30 @@ pub mod RenderPaint.Internal.WebGpuPaint {
 
     /// 画面の形式 format へ中間の texture を写す pipeline（形式が変われば作り直す）。
     def presentPipelineOf(paint: Paint, format: TextureFormat): RenderPipeline \ IO =
-        let PaintData.PaintData(p) = paint;
-        let current = Ref.get(p#presentPipeline);
+        let PaintData.PaintData({gpu = gpu, presentLayout = presentLayout, presentModule = presentModule, presentPipeline = presentPipeline | _}) = paint;
+        let current = Ref.get(presentPipeline);
         let kept = current |> Option.filter(fp -> fst(fp).ordinal() == format.ordinal());
         match kept {
             case Some((_, pipeline)) => pipeline
             case None =>
                 Option.forEach(fp -> snd(fp).release(), current);
                 let desc = new RenderPipelineDesc("fge present");
-                discard desc.bindGroupLayout(p#presentLayout).vertex(p#presentModule, "vs_present").fragment(p#presentModule, "fs_present");
+                discard desc.bindGroupLayout(presentLayout).vertex(presentModule, "vs_present").fragment(presentModule, "fs_present");
                 discard desc.colorTarget(format);
-                let pipeline = p#gpu.createRenderPipeline(desc);
-                Ref.put(Some((format, pipeline)), p#presentPipeline);
+                let pipeline = gpu.createRenderPipeline(desc);
+                Ref.put(Some((format, pipeline)), presentPipeline);
                 pipeline
         }
 
     def presentGroupOf(paint: Paint): BindGroup \ IO =
-        let PaintData.PaintData(p) = paint;
-        match Ref.get(p#presentGroup) {
+        let PaintData.PaintData({frameTexture = frameTexture, gpu = gpu, presentGroup = presentGroup, presentLayout = presentLayout | _}) = paint;
+        match Ref.get(presentGroup) {
             case Some(group) => group
             case None =>
-                let desc = new BindGroupDesc("fge present", p#presentLayout);
-                discard desc.textureView(0, Array.get(0, p#frameTexture).defaultView());
-                let group = p#gpu.createBindGroup(desc);
-                Ref.put(Some(group), p#presentGroup);
+                let desc = new BindGroupDesc("fge present", presentLayout);
+                discard desc.textureView(0, Array.get(0, frameTexture).defaultView());
+                let group = gpu.createBindGroup(desc);
+                Ref.put(Some(group), presentGroup);
                 group
         }
 
@@ -321,28 +321,28 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     // WhyNot: R32_FLOAT の絵の group を imageLayout で作らない — unfilterable-float の絵は filterable の layout に入らず、group を作る所で誤りになる。
     //   スプライトがその group を読む pipeline は無い（R32Float の Pass は面の Spec と 3D の描き手だけが読む）。
     def addSlot(paint: Paint, texture: Texture, sampler: Sampler, width: Int32, height: Int32): Int32 \ IO =
-        let PaintData.PaintData(p) = paint;
-        let id = Array.get(0, p#nextSlot);
-        Array.put(id + 1, 0, p#nextSlot);
-        let layout = if (WebGpuPipelines.isR32Float(texture)) p#floatImageLayout else p#imageLayout;
+        let PaintData.PaintData({floatImageLayout = floatImageLayout, gpu = gpu, imageLayout = imageLayout, nextSlot = nextSlot, slots = slots | _}) = paint;
+        let id = Array.get(0, nextSlot);
+        Array.put(id + 1, 0, nextSlot);
+        let layout = if (WebGpuPipelines.isR32Float(texture)) floatImageLayout else imageLayout;
         let desc = new BindGroupDesc("fge image", layout);
         discard desc.textureView(0, texture.defaultView()).sampler(1, sampler);
-        let group = p#gpu.createBindGroup(desc);
-        Ref.put(Map.insert(id, { texture = texture, group = group, width = width, height = height }, Ref.get(p#slots)), p#slots);
+        let group = gpu.createBindGroup(desc);
+        Ref.put(Map.insert(id, { texture = texture, group = group, width = width, height = height }, Ref.get(slots)), slots);
         id
 
     /// 番号 id の絵を捨てる（積んだ pass があれば先に submit する）。
     def dropSlot(paint: Paint, id: Int32): Unit \ IO =
-        let PaintData.PaintData(p) = paint;
-        match Map.get(id, Ref.get(p#slots)) {
+        let PaintData.PaintData({linearGroups = linearGroups, slots = slots | _}) = paint;
+        match Map.get(id, Ref.get(slots)) {
             case None => ()
             case Some(slot) =>
                 flushPending(paint);
                 slot#group.release();
-                Map.get(id, Ref.get(p#linearGroups)) |> Option.forEach(g -> g.release());
-                Ref.put(Map.remove(id, Ref.get(p#linearGroups)), p#linearGroups);
+                Map.get(id, Ref.get(linearGroups)) |> Option.forEach(g -> g.release());
+                Ref.put(Map.remove(id, Ref.get(linearGroups)), linearGroups);
                 slot#texture.destroy();
-                Ref.put(Map.remove(id, Ref.get(p#slots)), p#slots)
+                Ref.put(Map.remove(id, Ref.get(slots)), slots)
         }
 
     def infoOf(id: Int32, width: Int32, height: Int32): RenderAsset.TextureInfo =
@@ -352,36 +352,36 @@ pub mod RenderPaint.Internal.WebGpuPaint {
 
     /// 解いた画像（1 画素 4 バイトの RGBA・上の行から）を RGBA8_UNORM の絵にする。NEAREST・REPEAT。名前で引くには putTexture。
     pub def uploadRgba(paint: Paint, width: Int32, height: Int32, rgba: ByteBuffer): RenderAsset.TextureInfo \ IO =
-        let PaintData.PaintData(p) = paint;
+        let PaintData.PaintData({gpu = gpu, nearestRepeat = nearestRepeat | _}) = paint;
         flushPending(paint);
-        let texture = p#gpu.createTexture("fge image", width, height, TextureFormat.RGBA8_UNORM, imageUsage(), 1, 1);
-        p#gpu.writeTexture(texture, 0, 0, 0, width, height, rgba, 0, width * 4);
-        infoOf(addSlot(paint, texture, p#nearestRepeat, width, height), width, height)
+        let texture = gpu.createTexture("fge image", width, height, TextureFormat.RGBA8_UNORM, imageUsage(), 1, 1);
+        gpu.writeTexture(texture, 0, 0, 0, width, height, rgba, 0, width * 4);
+        infoOf(addSlot(paint, texture, nearestRepeat, width, height), width, height)
 
     /// ARGB の int の列（行優先・上の行から）を BGRA8_UNORM の絵にする（little-endian に並べたバイトが B・G・R・A）。NEAREST・REPEAT。
     pub def uploadBgra(paint: Paint, width: Int32, height: Int32, argb: Vector[Int32]): RenderAsset.TextureInfo \ IO =
-        let PaintData.PaintData(p) = paint;
+        let PaintData.PaintData({gpu = gpu, nearestRepeat = nearestRepeat | _}) = paint;
         flushPending(paint);
-        let texture = p#gpu.createTexture("fge image", width, height, TextureFormat.BGRA8_UNORM, imageUsage(), 1, 1);
-        p#gpu.writeTexture(texture, 0, 0, 0, width, height, argbBytes(argb), 0, width * 4);
-        infoOf(addSlot(paint, texture, p#nearestRepeat, width, height), width, height)
+        let texture = gpu.createTexture("fge image", width, height, TextureFormat.BGRA8_UNORM, imageUsage(), 1, 1);
+        gpu.writeTexture(texture, 0, 0, 0, width, height, argbBytes(argb), 0, width * 4);
+        infoOf(addSlot(paint, texture, nearestRepeat, width, height), width, height)
 
     /// 字の距離場（1 画素 1 バイト・上の行から）を R8_UNORM の絵にする。LINEAR・REPEAT（シェーダーは .r を読む）。
     pub def uploadR8(paint: Paint, width: Int32, height: Int32, pixels: ByteBuffer): RenderAsset.TextureInfo \ IO =
-        let PaintData.PaintData(p) = paint;
+        let PaintData.PaintData({gpu = gpu, linearRepeat = linearRepeat | _}) = paint;
         flushPending(paint);
         discard pixels.position(0);
-        let texture = p#gpu.createTexture("fge font", width, height, TextureFormat.R8_UNORM, imageUsage(), 1, 1);
-        p#gpu.writeTexture(texture, 0, 0, 0, width, height, pixels, 0, width);
-        infoOf(addSlot(paint, texture, p#linearRepeat, width, height), width, height)
+        let texture = gpu.createTexture("fge font", width, height, TextureFormat.R8_UNORM, imageUsage(), 1, 1);
+        gpu.writeTexture(texture, 0, 0, 0, width, height, pixels, 0, width);
+        infoOf(addSlot(paint, texture, linearRepeat, width, height), width, height)
 
     /// uploadR8 で作った番号 id の絵の (x, y) から width × height を、字の距離場（1 画素 1 バイト・上の行から）で書き替える。
     // WhyNot: 積んだ pass を先に submit しない（rewriteSlot と違う）— 書くのは字を置いていない所だけで、前に置いた字の画素は変わらない。
     pub def writeR8Region(paint: Paint, id: Int32, x: Int32, y: Int32, width: Int32, height: Int32, pixels: ByteBuffer): Unit \ IO =
-        let PaintData.PaintData(p) = paint;
-        match Map.get(id, Ref.get(p#slots)) {
+        let PaintData.PaintData({gpu = gpu, slots = slots | _}) = paint;
+        match Map.get(id, Ref.get(slots)) {
             case None       => ()
-            case Some(slot) => p#gpu.writeTexture(slot#texture, 0, x, y, width, height, pixels, 0, width)
+            case Some(slot) => gpu.writeTexture(slot#texture, 0, x, y, width, height, pixels, 0, width)
         }
 
     /// ARGB の int の列を little-endian のバイトにする。
@@ -412,46 +412,51 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     /// device の上に作った物（pipeline・sampler・layout・bind group・texture・buffer・shader module）を全部手放す。device は呼ぶ側が捨てる。
     /// この後 paint は使えない。
     pub def release(paint: Paint): Unit \ IO =
-        let PaintData.PaintData(p) = paint;
-        warnTable(SkippedDraws.tableOf(p#skips, "終わり"));
-        Array.put(None, 0, p#encoder);
-        Map.forEach((_, slot) -> { slot#group.release(); slot#texture.destroy() }, Ref.get(p#slots));
-        Ref.put(Map.empty(), p#slots);
-        Map.forEach((_, msaa) -> fst(msaa).destroy(), Ref.get(p#msaaTargets));
-        Ref.put(Map.empty(), p#msaaTargets);
-        Map.forEach((_, group) -> group.release(), Ref.get(p#copyGroups));
-        Ref.put(Map.empty(), p#copyGroups);
-        TargetTable.clear(p#targets);
-        WebGpuTimer.release(p#gpuTimer);
-        p#blank#group.release();
-        p#blank#texture.destroy();
-        Option.forEach(g -> g.release(), Ref.get(p#presentGroup));
-        Ref.put(None, p#presentGroup);
-        Option.forEach(fp -> snd(fp).release(), Ref.get(p#presentPipeline));
-        Ref.put(None, p#presentPipeline);
-        WebGpuPipelines.release(p#pipes);
-        WebGpuSurfaces.release(p#surfaces);
-        (p#scenes3d#release)();
-        Map.forEach((_, pipeline) -> pipeline.release(), Ref.get(p#copyPipelines));
-        Ref.put(Map.empty(), p#copyPipelines);
-        Array.get(0, p#frameTexture).destroy();
-        RenderStatic.release(webGpuStaticAllocator(paint), p#staticCache);
-        Map.forEach((_, b) -> fst(b).destroy(), Ref.get(p#tileBuffers));
-        Map.forEach((_, b) -> fst(b).destroy(), Ref.get(p#staticBuffers));
-        Ref.put(Map.empty(), p#staticBuffers);
-        Ref.put(Map.empty(), p#tileBuffers);
-        List.forEach(stream -> Array.get(0, stream#gpuBuffer).destroy(), p#instances :: p#vertices :: p#values :: Nil);
-        p#frameGroup.release();
-        p#uniform.destroy();
-        p#nearestRepeat.release();
-        p#linearRepeat.release();
-        p#nearestClamp.release();
-        p#linearClamp.release();
-        p#frameLayout.release();
-        p#imageLayout.release();
-        p#floatImageLayout.release();
-        p#presentLayout.release();
-        p#presentModule.release()
+        let PaintData.PaintData({blank = blank, copyGroups = copyGroups, copyPipelines = copyPipelines, encoder = encoder, floatImageLayout = floatImageLayout, frameGroup = frameGroup,
+                                 frameLayout = frameLayout, frameTexture = frameTexture, gpuTimer = gpuTimer, imageLayout = imageLayout, instances = instances, linearClamp = linearClamp,
+                                 linearRepeat = linearRepeat, msaaTargets = msaaTargets, nearestClamp = nearestClamp, nearestRepeat = nearestRepeat, pipes = pipes,
+                                 presentGroup = presentGroup, presentLayout = presentLayout, presentModule = presentModule, presentPipeline = presentPipeline, scenes3d = scenes3d,
+                                 skips = skips, slots = slots, staticBuffers = staticBuffers, staticCache = staticCache, surfaces = surfaces, targets = targets, tileBuffers = tileBuffers,
+                                 uniform = uniform, values = values, vertices = vertices | _}) = paint;
+        warnTable(SkippedDraws.tableOf(skips, "終わり"));
+        Array.put(None, 0, encoder);
+        Map.forEach((_, slot) -> { slot#group.release(); slot#texture.destroy() }, Ref.get(slots));
+        Ref.put(Map.empty(), slots);
+        Map.forEach((_, msaa) -> fst(msaa).destroy(), Ref.get(msaaTargets));
+        Ref.put(Map.empty(), msaaTargets);
+        Map.forEach((_, group) -> group.release(), Ref.get(copyGroups));
+        Ref.put(Map.empty(), copyGroups);
+        TargetTable.clear(targets);
+        WebGpuTimer.release(gpuTimer);
+        blank#group.release();
+        blank#texture.destroy();
+        Option.forEach(g -> g.release(), Ref.get(presentGroup));
+        Ref.put(None, presentGroup);
+        Option.forEach(fp -> snd(fp).release(), Ref.get(presentPipeline));
+        Ref.put(None, presentPipeline);
+        WebGpuPipelines.release(pipes);
+        WebGpuSurfaces.release(surfaces);
+        (scenes3d#release)();
+        Map.forEach((_, pipeline) -> pipeline.release(), Ref.get(copyPipelines));
+        Ref.put(Map.empty(), copyPipelines);
+        Array.get(0, frameTexture).destroy();
+        RenderStatic.release(webGpuStaticAllocator(paint), staticCache);
+        Map.forEach((_, b) -> fst(b).destroy(), Ref.get(tileBuffers));
+        Map.forEach((_, b) -> fst(b).destroy(), Ref.get(staticBuffers));
+        Ref.put(Map.empty(), staticBuffers);
+        Ref.put(Map.empty(), tileBuffers);
+        List.forEach(stream -> Array.get(0, stream#gpuBuffer).destroy(), instances :: vertices :: values :: Nil);
+        frameGroup.release();
+        uniform.destroy();
+        nearestRepeat.release();
+        linearRepeat.release();
+        nearestClamp.release();
+        linearClamp.release();
+        frameLayout.release();
+        imageLayout.release();
+        floatImageLayout.release();
+        presentLayout.release();
+        presentModule.release()
 
     /// 1 枚を名前で置く（同じ名前は置き換える）。
     pub def putTexture(name: String, info: RenderAsset.TextureInfo, paint: Paint): Unit \ IO =
@@ -471,12 +476,12 @@ pub mod RenderPaint.Internal.WebGpuPaint {
 
     /// 番号 id の絵の画素を差し替える（積んだ pass があれば先に submit する）。
     def rewriteSlot(paint: Paint, id: Int32, width: Int32, height: Int32, argb: Vector[Int32]): Unit \ IO =
-        let PaintData.PaintData(p) = paint;
-        match Map.get(id, Ref.get(p#slots)) {
+        let PaintData.PaintData({gpu = gpu, slots = slots | _}) = paint;
+        match Map.get(id, Ref.get(slots)) {
             case None => ()
             case Some(slot) =>
                 flushPending(paint);
-                p#gpu.writeTexture(slot#texture, 0, 0, 0, width, height, argbBytes(argb), 0, width * 4)
+                gpu.writeTexture(slot#texture, 0, 0, 0, width, height, argbBytes(argb), 0, width * 4)
         }
 
     // ── encoder と submit ──
@@ -493,17 +498,18 @@ pub mod RenderPaint.Internal.WebGpuPaint {
 
     /// 今の encoder を submit する（無ければ何もしない）。流れの buffer は頭から使い直せる（queue の書き込みは submit の順に並ぶ）。
     def submitEncoder(paint: Paint): Unit \ IO =
-        let PaintData.PaintData(p) = paint;
-        match Array.get(0, p#encoder) {
+        let PaintData.PaintData({encoder = encoder, frameCounters = frameCounters, gpu = gpu, instances = instances, scenes3d = scenes3d, surfaces = surfaces, values = values,
+                                 vertices = vertices | _}) = paint;
+        match Array.get(0, encoder) {
             case None => ()
             case Some(e) =>
-                p#gpu.submit(e.finish());
-                Array.put(None, 0, p#encoder);
-                Array.put(0, 0, p#frameCounters);
-                Array.put(Array.get(1, p#frameCounters) + 1, 1, p#frameCounters);
-                List.forEach(stream -> Array.put(0, 1, stream#sizes), p#instances :: p#vertices :: p#values :: Nil);
-                WebGpuSurfaces.afterSubmit(p#surfaces);
-                (p#scenes3d#afterSubmit)()
+                gpu.submit(e.finish());
+                Array.put(None, 0, encoder);
+                Array.put(0, 0, frameCounters);
+                Array.put(Array.get(1, frameCounters) + 1, 1, frameCounters);
+                List.forEach(stream -> Array.put(0, 1, stream#sizes), instances :: vertices :: values :: Nil);
+                WebGpuSurfaces.afterSubmit(surfaces);
+                (scenes3d#afterSubmit)()
         }
 
     /// このコマに積んだ pass があれば submit する（絵や buffer を作る・書く・捨てる前に呼ぶ）。
@@ -568,26 +574,27 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     /// values は面の値を uniform として読む位置（RenderList.surfaceValueAlign の 4 倍のバイト）が buffer の中でもその倍数になるよう、送る位置をそろえる。
     def upload(paint: Paint, instanceCount: Int32, vertexCount: Int32, values: Array[Float32, Static], valueCount: Int32): (Int32, Int32, Int32) \ IO =
         let PaintData.PaintData(p) = paint;
+        let {instances = instances, vertices = vertices | _} = p;
         let instanceSize = instanceCount * instanceBytes();
         let vertexSize = vertexCount * 4 * RenderList.vertexFloats();
         let valueSize = valueCount * 4;
         let (submit, instancePlan, vertexPlan, valuePlan) =
-            planUpload(demandOf(p#instances, 4, instanceSize), demandOf(p#vertices, 4, vertexSize),
+            planUpload(demandOf(instances, 4, instanceSize), demandOf(vertices, 4, vertexSize),
                        demandOf(p#values, 4 * RenderList.surfaceValueAlign(), valueSize));
         if (submit) {
             flushPending(paint);
-            List.forEach(stream -> Array.put(0, 1, stream#sizes), p#instances :: p#vertices :: p#values :: Nil)
+            List.forEach(stream -> Array.put(0, 1, stream#sizes), instances :: vertices :: p#values :: Nil)
         } else ();
         discard floatsFor(p#values, valueCount).put(0, values, 0, valueCount);
-        let instanceBase = sendPlanned(paint, p#instances, instancePlan, instanceSize) / instanceBytes();
-        let vertexBase = sendPlanned(paint, p#vertices, vertexPlan, vertexSize) / (4 * RenderList.vertexFloats());
+        let instanceBase = sendPlanned(paint, instances, instancePlan, instanceSize) / instanceBytes();
+        let vertexBase = sendPlanned(paint, vertices, vertexPlan, vertexSize) / (4 * RenderList.vertexFloats());
         (instanceBase, vertexBase, sendPlanned(paint, p#values, valuePlan, valueSize))
 
     /// texture の render pass を spec の色の始末（RenderList.loadOpOf）で開き、group 0・空の絵・instance buffer を付ける。
     /// msaa = 標本を持つ描き先と標本の数（Some なら描くのはそちらで、pass の終わりに texture へ resolve する）。
     /// spec の depthStencil が DepthAndStencil なら、stencilKey の stencil（描き先と同じ大きさと標本の数）を 0 で clear して付ける。
     def openPass(paint: Paint, texture: Texture, msaa: Option[(Texture, Int32)], stencilKey: Int32, spec: PassSpec): RenderPass \ IO =
-        let PaintData.PaintData(p) = paint;
+        let PaintData.PaintData({blank = blank, frameCounters = frameCounters, frameGroup = frameGroup, gpuTimer = gpuTimer, instances = instances, pipes = pipes, targets = targets | _}) = paint;
         let drawn = msaa |> Option.map(fst) |> Option.getWithDefault(texture);
         let view = drawn.defaultView();
         let desc = match RenderList.loadOpOf(spec) {
@@ -596,18 +603,18 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             case RenderTarget.LoadOp.Keep             => new RenderPassDesc("fge pass").loadColor(view)
         };
         if (Option.isEmpty(msaa)) () else discard desc.resolveTo(texture.defaultView());
-        WebGpuTimer.stamp(p#gpuTimer, desc, TargetTable.activeSpec(p#targets) |> Option.map(t -> t#name) |> Option.getWithDefault("screen"));
+        WebGpuTimer.stamp(gpuTimer, desc, TargetTable.activeSpec(targets) |> Option.map(t -> t#name) |> Option.getWithDefault("screen"));
         match spec#depthStencil {
             case DepthStencil.DepthAndStencil =>
                 let samples = msaa |> Option.map(snd) |> Option.getWithDefault(1);
-                discard desc.clearDepthStencil(WebGpuPipelines.stencilOf(p#pipes, () -> flushPending(paint), stencilKey, drawn.width(), drawn.height(), samples).defaultView(), 1.0, 0)
+                discard desc.clearDepthStencil(WebGpuPipelines.stencilOf(pipes, () -> flushPending(paint), stencilKey, drawn.width(), drawn.height(), samples).defaultView(), 1.0, 0)
             case _ => ()
         };
         let pass = encoderOf(paint).beginRenderPass(desc);
-        Array.put(Array.get(0, p#frameCounters) + 1, 0, p#frameCounters);
-        pass.setBindGroup(0, p#frameGroup);
-        pass.setBindGroup(1, p#blank#group);
-        bindWhole(pass, 0, Array.get(0, p#instances#gpuBuffer));
+        Array.put(Array.get(0, frameCounters) + 1, 0, frameCounters);
+        pass.setBindGroup(0, frameGroup);
+        pass.setBindGroup(1, blank#group);
+        bindWhole(pass, 0, Array.get(0, instances#gpuBuffer));
         pass
 
     def bindWhole(pass: RenderPass, slot: Int32, buffer: Buffer): Unit \ IO = pass.setVertexBuffer(slot, buffer, 0i64, buffer.size())
@@ -615,12 +622,12 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     /// 頂点の buffer の 0 番を、積む物 source（WebGpuRows.vertexSource*）の buffer にする（WebGpuRows.renderFrame の setVertices）。返すのはその buffer に入っている要素の数
     /// （タイルは枚数・static は頂点の数・stencil を 0 に戻す矩形は 6・スプライトと多角形はこのコマに送った分なので上限を設けない）。表に無い番号は 0（その行は描かない）。
     def setVertices(paint: Paint, pass: RenderPass, source: Int32, buffer: Int32): Int32 \ IO =
-        let PaintData.PaintData(p) = paint;
-        if (source == RenderFrame.Internal.WebGpuRows.vertexSourcePoly()) { bindWhole(pass, 0, Array.get(0, p#vertices#gpuBuffer)); Int32.maxValue() }
-        else if (source == RenderFrame.Internal.WebGpuRows.vertexSourceStencilQuad()) { bindWhole(pass, 0, p#pipes#stencilResetQuad); 6 }
-        else if (source == RenderFrame.Internal.WebGpuRows.vertexSourceTile()) bindCounted(pass, Map.get(buffer, Ref.get(p#tileBuffers)))
-        else if (source == RenderFrame.Internal.WebGpuRows.vertexSourceStatic()) bindCounted(pass, Map.get(buffer, Ref.get(p#staticBuffers)))
-        else { bindWhole(pass, 0, Array.get(0, p#instances#gpuBuffer)); Int32.maxValue() }
+        let PaintData.PaintData({instances = instances, pipes = pipes, staticBuffers = staticBuffers, tileBuffers = tileBuffers, vertices = vertices | _}) = paint;
+        if (source == RenderFrame.Internal.WebGpuRows.vertexSourcePoly()) { bindWhole(pass, 0, Array.get(0, vertices#gpuBuffer)); Int32.maxValue() }
+        else if (source == RenderFrame.Internal.WebGpuRows.vertexSourceStencilQuad()) { bindWhole(pass, 0, pipes#stencilResetQuad); 6 }
+        else if (source == RenderFrame.Internal.WebGpuRows.vertexSourceTile()) bindCounted(pass, Map.get(buffer, Ref.get(tileBuffers)))
+        else if (source == RenderFrame.Internal.WebGpuRows.vertexSourceStatic()) bindCounted(pass, Map.get(buffer, Ref.get(staticBuffers)))
+        else { bindWhole(pass, 0, Array.get(0, instances#gpuBuffer)); Int32.maxValue() }
 
     /// 表の (buffer, 要素の数) を頂点の buffer の 0 番に付けて要素の数を返す（表に無ければ 0）。
     def bindCounted(pass: RenderPass, entry: Option[(Buffer, Int32)]): Int32 \ IO = match entry {
@@ -645,22 +652,23 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     def paintIntoWith(paint: Paint, groupFor: Int32 -> BindGroup \ IO, texture: Texture, msaa: Option[(Texture, Int32)], stencilKey: Int32,
                       pass: PassSpec, frame: RenderPaint.Frame): Unit \ IO =
         let PaintData.PaintData(p) = paint;
+        let {instances = instances, registryRef = registryRef, slots = slots, staticCache = staticCache, vertices = vertices | _} = p;
         // WhyNot: 画面の形式を描き先に問わない — 画面は中間の texture（RGBA8）へ描き、present で画面の形式へ写す。
         let format = RenderList.targetFormatOf(pass) |> Option.getWithDefault(RenderTarget.Format.Rgba8Unorm);
         let samples = pass#samples;
         let pipes = p#pipes;
-        let staticRanges = RenderStatic.resolve(webGpuStaticAllocator(paint), p#staticCache, frame#staticLayers);
+        let staticRanges = RenderStatic.resolve(webGpuStaticAllocator(paint), staticCache, frame#staticLayers);
         let surfaces = p#surfaces;
-        let textureOf = id -> Map.get(id, Ref.get(p#slots)) |> Option.map(slot -> slot#texture);
+        let textureOf = id -> Map.get(id, Ref.get(slots)) |> Option.map(slot -> slot#texture);
         let scenes = Scenes.prepare(paint, stencilKey, (format, samples), pass, frame#scenes);
         WebGpuRows.renderFrame({
             sprites = frame#sprites, tileMaps = frame#tileMaps, polygons = frame#polygons, staticRanges = staticRanges, surfaces = frame#surfaces,
             sceneZs = List.toVector(List.map(cmd -> cmd#scene#zIndex, frame#scenes)),
-            registry = Ref.get(p#registryRef),
+            registry = Ref.get(registryRef),
             designW = p#designW, designH = p#designH, pass = pass,
             texWarnLog = p#texWarnLog, drawCounts = p#drawCounts,
-            instancesFor = n -> floatsFor(p#instances, n * RenderList.instanceFloats()),
-            verticesFor = n -> floatsFor(p#vertices, n * RenderList.vertexFloats()),
+            instancesFor = n -> floatsFor(instances, n * RenderList.instanceFloats()),
+            verticesFor = n -> floatsFor(vertices, n * RenderList.vertexFloats()),
             upload = (n, m, values, k) -> upload(paint, n, m, values, k),
             openPass = spec -> openPass(paint, texture, msaa, stencilKey, spec),
             setPipeline = (pass1, shape, blendC, stencil) -> pass1.setPipeline(WebGpuPipelines.pipelineOf(pipes, shape, blendC, format, samples, stencil)),
@@ -741,21 +749,21 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     /// 番号 id の絵を、2 つの画素の間をなめらかにつないで読む bind group（無ければ作って控える）。表に無い番号は空の絵。
     // WhyNot: Pass の slot の sampler を linear に替えない — Pass を読むほかの描き物（後がけ・合成）は画素を 1 つずつ読む前提で組んである。
     def linearGroupOf(paint: Paint, id: Int32): BindGroup \ IO =
-        let PaintData.PaintData(p) = paint;
-        match (Map.get(id, Ref.get(p#linearGroups)), Map.get(id, Ref.get(p#slots))) {
+        let PaintData.PaintData({blank = blank, gpu = gpu, imageLayout = imageLayout, linearClamp = linearClamp, linearGroups = linearGroups, slots = slots | _}) = paint;
+        match (Map.get(id, Ref.get(linearGroups)), Map.get(id, Ref.get(slots))) {
             case (Some(group), _) => group
             case (None, Some(slot)) =>
-                let desc = new BindGroupDesc("fge image linear", p#imageLayout);
-                discard desc.textureView(0, slot#texture.defaultView()).sampler(1, p#linearClamp);
-                let group = p#gpu.createBindGroup(desc);
-                Ref.put(Map.insert(id, group, Ref.get(p#linearGroups)), p#linearGroups);
+                let desc = new BindGroupDesc("fge image linear", imageLayout);
+                discard desc.textureView(0, slot#texture.defaultView()).sampler(1, linearClamp);
+                let group = gpu.createBindGroup(desc);
+                Ref.put(Map.insert(id, group, Ref.get(linearGroups)), linearGroups);
                 group
-            case (None, None) => p#blank#group
+            case (None, None) => blank#group
         }
 
     def groupOf(paint: Paint, id: Int32): BindGroup \ IO =
-        let PaintData.PaintData(p) = paint;
-        Map.get(id, Ref.get(p#slots)) |> Option.map(slot -> slot#group) |> Option.getWithDefault(p#blank#group)
+        let PaintData.PaintData({blank = blank, slots = slots | _}) = paint;
+        Map.get(id, Ref.get(slots)) |> Option.map(slot -> slot#group) |> Option.getWithDefault(blank#group)
 
     def skip(paint: Paint, name: String): Unit \ IO = skipMany(paint, name, 1)
 
@@ -774,28 +782,29 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     /// Draw2d.renderCommands の中身。Pass が開いていればそこへ描いて false。開いていなければ中間の texture へ描き、控えを置いて true。
     def submitFrame(paint: Paint, sprites: List[RenderType.Drawable], tileMaps: List[RenderType.TileMapRenderCmd],
                     polygons: List[RenderType.PolygonCmd], staticLayers: List[GameEngine.StaticLayerCmd]): Bool \ IO =
-        let PaintData.PaintData(p) = paint;
-        let scenes = List.reverse(Array.get(0, p#pendingScenes));
-        Array.put(Nil, 0, p#pendingScenes);
-        let surfaces = List.reverse(Array.get(0, p#pendingSurfaces));
-        Array.put(Nil, 0, p#pendingSurfaces);
+        let PaintData.PaintData({diagnosticsRef = diagnosticsRef, drawCounts = drawCounts, lastFrame = lastFrame, pendingLetterbox = pendingLetterbox, pendingScenes = pendingScenes,
+                                 pendingSurfaces = pendingSurfaces, scenes3d = scenes3d, targets = targets | _}) = paint;
+        let scenes = List.reverse(Array.get(0, pendingScenes));
+        Array.put(Nil, 0, pendingScenes);
+        let surfaces = List.reverse(Array.get(0, pendingSurfaces));
+        Array.put(Nil, 0, pendingSurfaces);
         let frame = { sprites = sprites, tileMaps = tileMaps, polygons = polygons, staticLayers = staticLayers, surfaces = surfaces, scenes = scenes,
                       letterbox = None };
-        match TargetTable.activeSpec(p#targets) {
+        match TargetTable.activeSpec(targets) {
             case Some(spec) =>
                 // タイルの層と static layer は画面のコマの物（GL の RenderPaint.paintTarget と同じく Pass には乗せない）。
                 paintTarget(paint, spec, { tileMaps = Nil, staticLayers = Nil | frame });
                 false
             case None =>
-                let screenFrame = { letterbox = Array.get(0, p#pendingLetterbox) | frame };
-                Array.put(None, 0, p#pendingLetterbox);
-                Array.put(screenFrame, 0, p#lastFrame);
+                let screenFrame = { letterbox = Array.get(0, pendingLetterbox) | frame };
+                Array.put(None, 0, pendingLetterbox);
+                Array.put(screenFrame, 0, lastFrame);
                 paintScreen(paint, screenFrame);
-                RenderDrawCounts.endScreenFrame(p#drawCounts);
+                RenderDrawCounts.endScreenFrame(drawCounts);
                 // WhyNot: 集めていない間の 3D の数を溜め続けない — 誰も引き取らない数が増え続ける（GL の RenderPaint.noteGpuTime と同じ）。
-                if (Option.isEmpty(Ref.get(p#diagnosticsRef))) {
-                    RenderDrawCounts.discardTotal(p#drawCounts);
-                    discard (p#scenes3d#takeCounts)()
+                if (Option.isEmpty(Ref.get(diagnosticsRef))) {
+                    RenderDrawCounts.discardTotal(drawCounts);
+                    discard (scenes3d#takeCounts)()
                 } else ();
                 true
         }
@@ -803,13 +812,13 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     /// 開いている Pass の texture へ描く（表に無い名前なら何もしない）。描く物（スプライト・面・3D の場面のビルボード）が自分の history を読むなら、pass を開く前に前のコマの絵を写す。
     def paintTarget(paint: Paint, spec: RenderTarget.TargetSpec, frame: RenderPaint.Frame): Unit \ IO =
         ensureRadialBuiltins(paint, frame);
-        let PaintData.PaintData(p) = paint;
-        let history = TargetTable.historyFor(webGpuTargetAllocator(paint), textureTables(paint), p#targets, (p#designW, p#designH), spec,
-                                             isHistoryReadIn(spec#name, frame), p#keepHistory);
-        TargetTable.rowByName(p#targets, spec#name)
-            |> Option.flatMap(row -> Map.get(row#texture, Ref.get(p#slots)) |> Option.map(slot -> (row, slot)))
+        let PaintData.PaintData({designH = designH, designW = designW, keepHistory = keepHistory, msaaTargets = msaaTargets, slots = slots, targets = targets | _}) = paint;
+        let history = TargetTable.historyFor(webGpuTargetAllocator(paint), textureTables(paint), targets, (designW, designH), spec,
+                                             isHistoryReadIn(spec#name, frame), keepHistory);
+        TargetTable.rowByName(targets, spec#name)
+            |> Option.flatMap(row -> Map.get(row#texture, Ref.get(slots)) |> Option.map(slot -> (row, slot)))
             |> Option.forEach(match (row, slot) -> {
-                   let msaa = Map.get(row#texture, Ref.get(p#msaaTargets));
+                   let msaa = Map.get(row#texture, Ref.get(msaaTargets));
                    let samples = msaa |> Option.map(snd) |> Option.getWithDefault(1);
                    let pass = RenderList.targetPass((row#width, row#height), { texture = row#texture, format = row#format, load = spec#clear },
                                                     DepthStencil.NoDepthStencil, samples, history);
@@ -824,15 +833,15 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     /// pass を開く前の history の始末（TargetTable.historyFor の答え）を、同じ encoder へ積む。
     /// sourceId・source = 開いている描き先の slots の番号と texture（resolve 済みの 1 標本）。
     def applyHistory(paint: Paint, sourceId: Int32, source: Texture, format: RenderTarget.Format, history: PassHistory): Unit \ IO =
-        let PaintData.PaintData(p) = paint;
+        let PaintData.PaintData({frameCounters = frameCounters, slots = slots | _}) = paint;
         match history {
             case PassHistory.NoHistory           => ()
-            case PassHistory.CopyTo(n)           => Map.get(n, Ref.get(p#slots)) |> Option.forEach(h -> copyInto(paint, sourceId, source, h#texture, format))
+            case PassHistory.CopyTo(n)           => Map.get(n, Ref.get(slots)) |> Option.forEach(h -> copyInto(paint, sourceId, source, h#texture, format))
             case PassHistory.ClearTransparent(n) =>
-                Map.get(n, Ref.get(p#slots)) |> Option.forEach(h -> {
+                Map.get(n, Ref.get(slots)) |> Option.forEach(h -> {
                     let pass = encoderOf(paint).beginRenderPass(new RenderPassDesc("fge history").clearColor(h#texture.defaultView(), 0.0, 0.0, 0.0, 0.0));
                     pass.end();
-                    Array.put(Array.get(0, p#frameCounters) + 1, 0, p#frameCounters)
+                    Array.put(Array.get(0, frameCounters) + 1, 0, frameCounters)
                 })
         }
 
@@ -850,50 +859,50 @@ pub mod RenderPaint.Internal.WebGpuPaint {
 
     /// 描き先 sourceId を写す元として読む bind group（無ければ作って控える）。
     def copyGroupOf(paint: Paint, sourceId: Int32, source: Texture): BindGroup \ IO =
-        let PaintData.PaintData(p) = paint;
-        match Map.get(sourceId, Ref.get(p#copyGroups)) {
+        let PaintData.PaintData({copyGroups = copyGroups, gpu = gpu, presentLayout = presentLayout | _}) = paint;
+        match Map.get(sourceId, Ref.get(copyGroups)) {
             case Some(group) => group
             case None =>
-                let group = p#gpu.createBindGroup(new BindGroupDesc("fge history copy", p#presentLayout).textureView(0, source.defaultView()));
-                Ref.put(Map.insert(sourceId, group, Ref.get(p#copyGroups)), p#copyGroups);
+                let group = gpu.createBindGroup(new BindGroupDesc("fge history copy", presentLayout).textureView(0, source.defaultView()));
+                Ref.put(Map.insert(sourceId, group, Ref.get(copyGroups)), copyGroups);
                 group
         }
 
     /// 形式 format の history へ写す pipeline（無ければ作る）。
     def copyPipelineOf(paint: Paint, format: RenderTarget.Format): RenderPipeline \ IO =
-        let PaintData.PaintData(p) = paint;
+        let PaintData.PaintData({copyPipelines = copyPipelines, gpu = gpu, presentLayout = presentLayout, presentModule = presentModule | _}) = paint;
         let key = WebGpuPipelines.formatCode(format);
-        match Map.get(key, Ref.get(p#copyPipelines)) {
+        match Map.get(key, Ref.get(copyPipelines)) {
             case Some(pipeline) => pipeline
             case None =>
                 let desc = new RenderPipelineDesc("fge history copy");
-                discard desc.bindGroupLayout(p#presentLayout).vertex(p#presentModule, "vs_present").fragment(p#presentModule, "fs_present");
+                discard desc.bindGroupLayout(presentLayout).vertex(presentModule, "vs_present").fragment(presentModule, "fs_present");
                 discard desc.colorTarget(WebGpuPipelines.textureFormatOf(format));
-                let pipeline = p#gpu.createRenderPipeline(desc);
-                Ref.put(Map.insert(key, pipeline, Ref.get(p#copyPipelines)), p#copyPipelines);
+                let pipeline = gpu.createRenderPipeline(desc);
+                Ref.put(Map.insert(key, pipeline, Ref.get(copyPipelines)), copyPipelines);
                 pipeline
         }
 
     def paintScreen(paint: Paint, frame: RenderPaint.Frame): Unit \ IO =
         ensureRadialBuiltins(paint, frame);
-        let PaintData.PaintData(p) = paint;
-        let size = (Array.get(0, p#frameSize), Array.get(1, p#frameSize));
-        let screen = RenderList.screenPass(size, (p#designW, p#designH), p#clearColor, DepthStencil.NoDepthStencil);
+        let PaintData.PaintData({clearColor = clearColor, designH = designH, designW = designW, frameSize = frameSize, frameTexture = frameTexture | _}) = paint;
+        let size = (Array.get(0, frameSize), Array.get(1, frameSize));
+        let screen = RenderList.screenPass(size, (designW, designH), clearColor, DepthStencil.NoDepthStencil);
         let pass = if (fillLetterbox(paint, size, screen, frame#letterbox)) RenderList.withLetterboxKept(screen) else screen;
-        paintInto(paint, Array.get(0, p#frameTexture), None, 0, pass, frame)
+        paintInto(paint, Array.get(0, frameTexture), None, 0, pass, frame)
 
     /// 画面の pass に余りがあり、広げる絵 letterbox が登録簿にあれば、中間の texture の全面を viewport にした pass でその絵を窓いっぱいに広げて塗り、真を返す。
     /// 塗らなかった時は偽（本編の pass が余りを黒で塗る）。GL の RenderPaint.fillLetterbox と同じ。
     def fillLetterbox(paint: Paint, size: (Int32, Int32), screen: PassSpec, letterbox: Option[String]): Bool \ IO =
-        let PaintData.PaintData(p) = paint;
+        let PaintData.PaintData({clearColor = clearColor, designH = designH, designW = designW, frameTexture = frameTexture, registryRef = registryRef | _}) = paint;
         let texInfo = letterbox |> Option.filter(_ -> RenderList.hasLetterbox(screen))
-                                |> Option.flatMap(name -> Map.get(name, Ref.get(p#registryRef)) |> Option.map(info -> (name, info)));
+                                |> Option.flatMap(name -> Map.get(name, Ref.get(registryRef)) |> Option.map(info -> (name, info)));
         match texInfo {
             case None => false
             case Some((name, info)) =>
-                let fill = RenderFrame.letterboxFillOf(size, (p#designW, p#designH), name, (info#width, info#height));
-                paintIntoWith(paint, linearGroupOf(paint), Array.get(0, p#frameTexture), None, 0,
-                              RenderList.fullTargetPass(size, p#clearColor, DepthStencil.NoDepthStencil), { sprites = fill :: Nil | RenderPaint.emptyFrame() });
+                let fill = RenderFrame.letterboxFillOf(size, (designW, designH), name, (info#width, info#height));
+                paintIntoWith(paint, linearGroupOf(paint), Array.get(0, frameTexture), None, 0,
+                              RenderList.fullTargetPass(size, clearColor, DepthStencil.NoDepthStencil), { sprites = fill :: Nil | RenderPaint.emptyFrame() });
                 true
         }
 
@@ -907,6 +916,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     /// コマを締める。screen があれば中間の texture をそこへ写す pass を積み、encoder を submit する（surface の present は呼ぶ側）。
     pub def present(paint: Paint, screen: Option[Texture]): Unit \ IO =
         let PaintData.PaintData(p) = paint;
+        let {gpu = gpu, gpuTimer = gpuTimer, lastFrame = lastFrame, scenes3d = scenes3d, skips = skips, surfaces = surfaces | _} = p;
         match screen {
             case None => ()
             case Some(target) =>
@@ -917,12 +927,12 @@ pub mod RenderPaint.Internal.WebGpuPaint {
                 pass.end();
                 Array.put(Array.get(0, p#frameCounters) + 1, 0, p#frameCounters)
         };
-        WebGpuTimer.beforeSubmit(p#gpuTimer, p#gpu, () -> encoderOf(paint));
+        WebGpuTimer.beforeSubmit(gpuTimer, gpu, () -> encoderOf(paint));
         submitEncoder(paint);
-        WebGpuTimer.afterSubmit(p#gpuTimer, p#gpu) |> Option.forEach(t -> noteDiagnostics(paint, d -> { gpuNs = Some(t#gpuNs), gpuPasses = t#passes | d }));
-        warnTable(SkippedDraws.endFrame(p#skips));
-        (p#scenes3d#endFrame)();
-        WebGpuSurfaces.endFrame(p#surfaces, Array.get(0, p#lastFrame)#surfaces |> List.map(cmd -> GpuHandle.shaderProgramInt(cmd#program)) |> List.toSet);
+        WebGpuTimer.afterSubmit(gpuTimer, gpu) |> Option.forEach(t -> noteDiagnostics(paint, d -> { gpuNs = Some(t#gpuNs), gpuPasses = t#passes | d }));
+        warnTable(SkippedDraws.endFrame(skips));
+        (scenes3d#endFrame)();
+        WebGpuSurfaces.endFrame(surfaces, Array.get(0, lastFrame)#surfaces |> List.map(cmd -> GpuHandle.shaderProgramInt(cmd#program)) |> List.toSet);
         let submits = Array.get(1, p#frameCounters);
         Array.put(submits, 2, p#frameCounters);
         Array.put(0, 1, p#frameCounters);
@@ -960,16 +970,16 @@ pub mod RenderPaint.Internal.WebGpuPaint {
 
     /// 中間の texture を RGBA の生の画素で buf へ読む（幅 × 高さ × 4 バイト・GlOffscreen.readRgba と同じく下の行から）。present の後に呼ぶ。
     pub def readFrame(paint: Paint, buf: ByteBuffer): Unit \ IO =
-        let PaintData.PaintData(p) = paint;
-        let width = Array.get(0, p#frameSize);
-        let height = Array.get(1, p#frameSize);
+        let PaintData.PaintData({frameSize = frameSize, frameTexture = frameTexture, gpu = gpu | _}) = paint;
+        let width = Array.get(0, frameSize);
+        let height = Array.get(1, frameSize);
         let bytesPerRow = (width * 4 + 255) / 256 * 256;
-        let readback = p#gpu.createBuffer("fge frame read", Int32.toInt64(bytesPerRow * height), Int32.bitwiseOr(BufferUsage.COPY_DST, BufferUsage.MAP_READ));
-        let encoder = p#gpu.createCommandEncoder("fge frame read");
-        encoder.copyTextureToBuffer(Array.get(0, p#frameTexture), 0, 0, 0, width, height, readback, 0i64, bytesPerRow);
-        p#gpu.submit(encoder.finish());
+        let readback = gpu.createBuffer("fge frame read", Int32.toInt64(bytesPerRow * height), Int32.bitwiseOr(BufferUsage.COPY_DST, BufferUsage.MAP_READ));
+        let encoder = gpu.createCommandEncoder("fge frame read");
+        encoder.copyTextureToBuffer(Array.get(0, frameTexture), 0, 0, 0, width, height, readback, 0i64, bytesPerRow);
+        gpu.submit(encoder.finish());
         let padded = ByteBuffer.allocateDirect(bytesPerRow * height);
-        p#gpu.readBuffer(readback, 0i64, bytesPerRow * height, padded);
+        gpu.readBuffer(readback, 0i64, bytesPerRow * height, padded);
         readback.destroy();
         discard buf.clear();
         copyRowsFlipped(padded, bytesPerRow, buf, width * 4, height, 0)
@@ -984,24 +994,24 @@ pub mod RenderPaint.Internal.WebGpuPaint {
 
     /// 中間の texture を width × height で作り直す（同じなら何もしない）。
     pub def resize(paint: Paint, width: Int32, height: Int32): Unit \ IO =
-        let PaintData.PaintData(p) = paint;
-        if (Array.get(0, p#frameSize) == width and Array.get(1, p#frameSize) == height) ()
+        let PaintData.PaintData({frameSize = frameSize, frameTexture = frameTexture, gpu = gpu, presentGroup = presentGroup | _}) = paint;
+        if (Array.get(0, frameSize) == width and Array.get(1, frameSize) == height) ()
         else {
             flushPending(paint);
-            Array.get(0, p#frameTexture).destroy();
-            Option.forEach(g -> g.release(), Ref.get(p#presentGroup));
-            Ref.put(None, p#presentGroup);
-            Array.put(createFrameTexture(p#gpu, width, height), 0, p#frameTexture);
-            Array.put(width, 0, p#frameSize);
-            Array.put(height, 1, p#frameSize)
+            Array.get(0, frameTexture).destroy();
+            Option.forEach(g -> g.release(), Ref.get(presentGroup));
+            Ref.put(None, presentGroup);
+            Array.put(createFrameTexture(gpu, width, height), 0, frameTexture);
+            Array.put(width, 0, frameSize);
+            Array.put(height, 1, frameSize)
         }
 
     // ── Pass ──
 
     /// RenderTarget.Target.beginTarget の中身。作り直すか・registry への載せ方は TargetTable が決める（標本の数が変われば作り直す）。
     def beginTarget(paint: Paint, spec: RenderTarget.TargetSpec): Unit \ IO =
-        let PaintData.PaintData(p) = paint;
-        discard TargetTable.begin(webGpuTargetAllocator(paint), textureTables(paint), p#targets, (p#designW, p#designH), spec)
+        let PaintData.PaintData({designH = designH, designW = designW, targets = targets | _}) = paint;
+        discard TargetTable.begin(webGpuTargetAllocator(paint), textureTables(paint), targets, (designW, designH), spec)
 
     /// WebGPU でレンダーターゲットを作る・捨てる関数の組。表の番号は絵の表（slots）の番号（積んだ pass があれば先に submit する）。
     def webGpuTargetAllocator(paint: Paint): TargetTable.TargetAllocator =
@@ -1010,32 +1020,32 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     /// spec の 1 標本の texture（読む側が引く・history を写す元）を作り、標本が 2 以上なら標本つきの描き先も作って msaaTargets へ置く。
     /// 標本の数は 1 か 4（RenderList.drawSamplesOf）。頼まれた数と違う時（標本 2 を 4 で描く）は名前ごとに 1 回知らせる。
     def createTargetSlot(paint: Paint, spec: RenderTarget.TargetSpec): Int32 \ IO =
-        let PaintData.PaintData(p) = paint;
+        let PaintData.PaintData({gpu = gpu, msaaTargets = msaaTargets, nearestClamp = nearestClamp | _}) = paint;
         flushPending(paint);
         let format = WebGpuPipelines.textureFormatOf(spec#format);
-        let texture = p#gpu.createTexture("fge pass ${spec#name}", spec#width, spec#height, format,
+        let texture = gpu.createTexture("fge pass ${spec#name}", spec#width, spec#height, format,
             Int32.bitwiseOr(TextureUsage.RENDER_ATTACHMENT, Int32.bitwiseOr(TextureUsage.TEXTURE_BINDING, TextureUsage.COPY_SRC)), 1, 1);
-        let id = addSlot(paint, texture, p#nearestClamp, spec#width, spec#height);
+        let id = addSlot(paint, texture, nearestClamp, spec#width, spec#height);
         let samples = RenderList.drawSamplesOf(spec#samples, 1 :: 4 :: Nil);
         if (samples > 1) {
-            let msaa = p#gpu.createTexture("fge pass ${spec#name} msaa", spec#width, spec#height, format, TextureUsage.RENDER_ATTACHMENT, 1, samples);
-            Ref.put(Map.insert(id, (msaa, samples), Ref.get(p#msaaTargets)), p#msaaTargets)
+            let msaa = gpu.createTexture("fge pass ${spec#name} msaa", spec#width, spec#height, format, TextureUsage.RENDER_ATTACHMENT, 1, samples);
+            Ref.put(Map.insert(id, (msaa, samples), Ref.get(msaaTargets)), msaaTargets)
         } else ();
         if (samples > spec#samples and spec#samples > 1) warnMsaaRounded(paint, spec#name, spec#samples, samples) else ();
         id
 
     /// ターゲットの texture と、あれば標本を持つ描き先を捨てる（積んだ pass があれば先に submit する）。
     def dropTargetSlot(paint: Paint, id: Int32): Unit \ IO =
-        let PaintData.PaintData(p) = paint;
+        let PaintData.PaintData({copyGroups = copyGroups, msaaTargets = msaaTargets, pipes = pipes | _}) = paint;
         dropSlot(paint, id);
-        WebGpuPipelines.dropStencil(p#pipes, () -> flushPending(paint), id);
-        Map.get(id, Ref.get(p#msaaTargets)) |> Option.forEach(msaa -> {
+        WebGpuPipelines.dropStencil(pipes, () -> flushPending(paint), id);
+        Map.get(id, Ref.get(msaaTargets)) |> Option.forEach(msaa -> {
             fst(msaa).destroy();
-            Ref.put(Map.remove(id, Ref.get(p#msaaTargets)), p#msaaTargets)
+            Ref.put(Map.remove(id, Ref.get(msaaTargets)), msaaTargets)
         });
-        Map.get(id, Ref.get(p#copyGroups)) |> Option.forEach(group -> {
+        Map.get(id, Ref.get(copyGroups)) |> Option.forEach(group -> {
             group.release();
-            Ref.put(Map.remove(id, Ref.get(p#copyGroups)), p#copyGroups)
+            Ref.put(Map.remove(id, Ref.get(copyGroups)), copyGroups)
         })
 
     def warnMsaaRounded(paint: Paint, name: String, requested: Int32, drawn: Int32): Unit \ IO =
@@ -1050,9 +1060,9 @@ pub mod RenderPaint.Internal.WebGpuPaint {
 
     /// 描き先 fbW × fbH へ design を収めた時の倍率（黒帯の分は入れない）。
     def pixelScaleOf(paint: Paint): Float64 \ IO =
-        let PaintData.PaintData(p) = paint;
-        let (_, _, vpW, _) = RenderFrame.calcViewport(Array.get(0, p#frameSize), Array.get(1, p#frameSize), p#designW, p#designH);
-        Int32.toFloat64(vpW) / Float64.max(1.0, p#designW)
+        let PaintData.PaintData({designH = designH, designW = designW, frameSize = frameSize | _}) = paint;
+        let (_, _, vpW, _) = RenderFrame.calcViewport(Array.get(0, frameSize), Array.get(1, frameSize), designW, designH);
+        Int32.toFloat64(vpW) / Float64.max(1.0, designW)
 
     // ── 診断 ──
 
@@ -1067,9 +1077,9 @@ pub mod RenderPaint.Internal.WebGpuPaint {
 
     // WhyNot: liveShaders を数えない — WebGPU の 2D は pipeline を作った数と消した数を持っていない。
     def consumeDiagnostics(paint: Paint): FrameDiagnostics.Diagnostics \ IO =
-        let PaintData.PaintData(p) = paint;
-        let draw2d = RenderDrawCounts.take(p#drawCounts);
-        DiagnosticsCollector.take(p#diagnosticsRef, draw2d, (p#scenes3d#takeCounts)(), 0)
+        let PaintData.PaintData({diagnosticsRef = diagnosticsRef, drawCounts = drawCounts, scenes3d = scenes3d | _}) = paint;
+        let draw2d = RenderDrawCounts.take(drawCounts);
+        DiagnosticsCollector.take(diagnosticsRef, draw2d, (scenes3d#takeCounts)(), 0)
 
     // ── handler ──
 
@@ -1164,9 +1174,9 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     pub def handleDiagnostics(paint: Paint, f: Unit -> a \ ef): a \ (ef - Platform.Diagnostics) + IO =
         run f() with handler Platform.Diagnostics {
             def setDiagnosticsEnabled(on, k) = {
-                let PaintData.PaintData(p) = paint;
-                DiagnosticsCollector.setEnabled(p#diagnosticsRef, on);
-                WebGpuTimer.setOn(p#gpuTimer, on);
+                let PaintData.PaintData({diagnosticsRef = diagnosticsRef, gpuTimer = gpuTimer | _}) = paint;
+                DiagnosticsCollector.setEnabled(diagnosticsRef, on);
+                WebGpuTimer.setOn(gpuTimer, on);
                 k(())
             }
             def consumeDiagnostics(k) = k(consumeDiagnostics(paint))
