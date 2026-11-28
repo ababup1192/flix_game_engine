@@ -69,8 +69,8 @@ pub mod GlOffscreen {
 
     /// 画面のコマの画素の大きさ。
     pub def sizeOf(session: Session): (Int32, Int32) =
-        let SessionData.SessionData(s) = session;
-        (s#width, s#height)
+        let SessionData.SessionData({height = height, width = width | _}) = session;
+        (width, height)
 
     /// 窓と同じく、Pass の history に前のコマの絵を写す session（open の既定は毎回透明）。何コマか続けて描き、history の写しを窓の描き手と比べる時に使う。
     pub def withHistoryKept(session: Session): Session =
@@ -325,12 +325,12 @@ pub mod GlOffscreen {
 
     /// 片付ける（GL の物と文脈）。
     pub def close(session: Session): Unit \ IO =
-        let SessionData.SessionData(s) = session;
+        let SessionData.SessionData({colorTex = colorTex, context = context, depthStencil = depthStencil, fbo = fbo | _}) = session;
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, 0);
-        GL30.glDeleteFramebuffers(s#fbo);
-        GL30.glDeleteRenderbuffers(s#depthStencil);
-        GL11.glDeleteTextures(s#colorTex);
-        closeContext(s#context)
+        GL30.glDeleteFramebuffers(fbo);
+        GL30.glDeleteRenderbuffers(depthStencil);
+        GL11.glDeleteTextures(colorTex);
+        closeContext(context)
 
     // ── テクスチャの新しさ ──
 
@@ -344,17 +344,17 @@ pub mod GlOffscreen {
     /// WhyNot: 中身の SHA を毎回取らない — プレビュー 1 枚の予算（0.1 秒）に、全部の絵を読む時間が入らない。
     ///   大きさと更新時刻が両方同じまま中身だけ変わる書き方（同じ秒・同じ大きさの上書き）は見逃す。
     pub def refreshTextures(session: Session, manifest: List[RenderAsset.TextureEntry]): Int32 \ IO =
-        let SessionData.SessionData(s) = session;
+        let SessionData.SessionData({glLog = glLog, paint = paint, stamps = stamps | _}) = session;
         manifest |> List.foldLeft((count, entry) -> {
             let now = stampOf(entry#path);
-            if (Map.get(entry#name, Ref.get(s#stamps)) == Some(now)) count
+            if (Map.get(entry#name, Ref.get(stamps)) == Some(now)) count
             else {
-                Ref.put(Map.insert(entry#name, now, Ref.get(s#stamps)), s#stamps);
+                Ref.put(Map.insert(entry#name, now, Ref.get(stamps)), stamps);
                 let (_, size, _) = now;
                 if (size < 0i64) count
                 else {
-                    Option.forEach(info -> RenderTexture.deleteTexture(s#glLog#gl, info), RenderPaint.textureInfo(s#paint, entry#name));
-                    RenderPaint.putTexture(entry#name, LwjglAssets.loadTexture(RenderPaint.glUploads(s#glLog#gl), entry#path, entry#hasAlpha), s#paint);
+                    Option.forEach(info -> RenderTexture.deleteTexture(glLog#gl, info), RenderPaint.textureInfo(paint, entry#name));
+                    RenderPaint.putTexture(entry#name, LwjglAssets.loadTexture(RenderPaint.glUploads(glLog#gl), entry#path, entry#hasAlpha), paint);
                     count + 1
                 }
             }
@@ -375,8 +375,8 @@ pub mod GlOffscreen {
     /// ファイルの無い絵（ドット絵のアトラスなど）を名前で載せる。同じ名前・同じ key なら何もしない。
     /// argb = width × height の行優先の ARGB。
     pub def uploadImage(session: Session, name: String, key: String, width: Int32, height: Int32, argb: Vector[Int32]): Unit \ IO =
-        let SessionData.SessionData(s) = session;
-        RenderPaint.ensureTexture(s#glLog#gl, s#paint, name, key, width, height, argb)
+        let SessionData.SessionData({glLog = glLog, paint = paint | _}) = session;
+        RenderPaint.ensureTexture(glLog#gl, paint, name, key, width, height, argb)
 
     // ── 塗る ──
 
@@ -389,18 +389,19 @@ pub mod GlOffscreen {
     /// presentFrame は何もしない。
     pub def handle(session: Session, f: Unit -> a \ ef): a \ (ef - HandledEffects) + IO =
         let SessionData.SessionData(s) = session;
+        let {design = design, fbo = fbo, fonts = fonts, glLog = glLog, height = height, width = width | _} = s;
         let paint = s#paint;
-        let gl = s#glLog#gl;
-        let size = () -> checked_ecast((s#width, s#height));
-        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, s#fbo);
+        let gl = glLog#gl;
+        let size = () -> checked_ecast((width, height));
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, fbo);
         // WhyNot 並びを変えない: op は内側の handler から順にたどるので、sprite ごとに呼ぶ GpuResources を一番内側に置く。
         RenderPaintHandlers.handleTarget(gl, paint, size, () ->
-        handleWindowless(s#design, () ->
+        handleWindowless(design, () ->
         RenderPaintHandlers.handleDiagnostics(paint, () ->
         Platform.runTasksInPlace(() ->
         RenderPaintHandlers.handleDraw3d(false, paint, () ->
-        RenderPaintHandlers.handleDraw2d(gl, paint, size, (_, _) -> s#glLog#onScreenFrame(), () ->
-        RenderPaintHandlers.handleGpuResources(gl, paint, s#fonts, f)))))))
+        RenderPaintHandlers.handleDraw2d(gl, paint, size, (_, _) -> glLog#onScreenFrame(), () ->
+        RenderPaintHandlers.handleGpuResources(gl, paint, fonts, f)))))))
 
     /// 窓の無い所の入力・窓・時計・注釈: 何も押されていない・閉じない・1/60 秒ずつ進む・注釈は書かない（WebGPU の 1 枚撮りの session も使う）。
     pub def handleWindowless(design: Vec2.Vec2, f: Unit -> a \ ef): a \ ef - Platform.Input - Platform.Window - Platform.FrameClock - Platform.Annotation =
@@ -438,11 +439,11 @@ pub mod GlOffscreen {
     /// 最後に塗った画面のコマを RGBA の生の画素で buf へ読む（width × height × 4 バイト・下の行から）。
     /// 上下は直さない（ffmpeg の vflip に任せる）。buf は呼ぶ側が持ち回す（毎コマ 2.3 MB を作り直さない）。
     pub def readRgba(session: Session, buf: ByteBuffer): Unit \ IO =
-        let SessionData.SessionData(s) = session;
-        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, s#fbo);
+        let SessionData.SessionData({fbo = fbo, height = height, width = width | _}) = session;
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, fbo);
         GL11.glPixelStorei(GL11.GL_PACK_ALIGNMENT, 1);
         discard buf.clear();
-        GL11.glReadPixels(0, 0, s#width, s#height, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, buf)
+        GL11.glReadPixels(0, 0, width, height, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, buf)
 
     /// readRgba の大きさの入れ物（直のメモリ）。
     pub def freshBuffer(session: Session): ByteBuffer \ IO =

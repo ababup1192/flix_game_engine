@@ -52,11 +52,11 @@ pub mod Render3d.WebGpuRenderer.Group0 {
 
     /// R3dAo（場面の描き先の幅・高さ・lightAffect）を target#aoValues へ書く（GL の Render3d.Light.withScreenAo と同じ値）。
     def writeAoValues(r: Renderer, target: SceneTarget, scene: Scene3d.Scene3dCmd): Unit \ IO =
-        let RendererData.RendererData(s) = r;
+        let RendererData.RendererData({cpuPaste = cpuPaste, gpu = gpu | _}) = r;
         let affect = scene#screenInputs |> Option.flatMap(i -> Scene3d.screenInputsFieldsOf(i)#ambientOcclusion)
                      |> Option.map(ScreenEffects3d.lightAffectOf) |> Option.getWithDefault(0.0);
-        let data = s#cpuPaste;
+        let data = cpuPaste;
         discard data.putFloat(0, Int32.toFloat32(target#width)).putFloat(4, Int32.toFloat32(target#height));
         discard data.putFloat(8, RenderUtil.f32(affect)).putFloat(12, 0.0f32);
-        s#gpu.writeBuffer(target#aoValues, 0i64, data, 0, 16)
+        gpu.writeBuffer(target#aoValues, 0i64, data, 0, 16)
 }
