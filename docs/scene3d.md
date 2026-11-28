@@ -19,6 +19,7 @@ GL と WebGPU（窓・ブラウザ）と CPU（画面なしの描き出し・テ
   - [ドット絵のアトラスを貼る（mip のレベルの上限）](#ドット絵のアトラスを貼るmip-のレベルの上限)
   - [ビルボードを画素にそろえる（ゲームの側の手本）](#ビルボードを画素にそろえるゲームの側の手本)
   - [縦の線を平行のまま見下ろす（レンズシフト・HD-2D のカメラ）](#縦の線を平行のまま見下ろすレンズシフトhd-2d-のカメラ)
+- [.gltf を glb にまとめる（外のファイルつきの glTF）](#gltf-を-glb-にまとめる外のファイルつきの-gltf)
 - [glb のノードを名前で引く](#glb-のノードを名前で引く)
 - [glb の emissive](#glb-の-emissive)
 - [glb の頂点の色（COLOR_0・Blender でベイクした明るさ）](#glb-の頂点の色color_0blender-でベイクした明るさ)
@@ -266,6 +267,21 @@ let camera = { far = 60.0, lensShift = Vec2.v2(0.0, 0.0 - (ta + tb) / 2.0 / (2.0
 - `pitch` を傾けてシフトで縦を直す形にはしない（縦の線が平行になるのは pitch 0 の時だけ）
 - 下へ大きくずらすと視錐台が横と下へ広がり、太陽の影の地図がその全部を覆おうとして粗くなる。`far` と `directionalShadow` の `distance` を、画面の上の端の地面までの距離の少し先（見下ろしの町なら 40〜60 m）に絞る
 - カメラは欄を全部字で書かず `Camera3d.camera(eye, yaw, pitch, fovY)` から `{ .. | }` で替える
+
+## .gltf を glb にまとめる（外のファイルつきの glTF）
+
+engine が読むのは .glb に埋めた buffer と画像だけ（外の uri は読み飛ばす）。拾ってきたモデルが
+`.gltf` と隣の `.bin`・`.png` に分かれているなら、先に 1 つの glb にまとめる:
+
+```
+bin/fge gltf-pack Models/Foo/glTF/Foo.gltf -o assets/models/foo.glb
+```
+
+- buffer が何本あっても 1 本の BIN にまとめ、画像は bufferView に埋める（base64 の data URI も解く）
+- `.gltf` のフォルダの外（絶対パス・`..`・`http://`）を指す uri は読まずに止まる
+- 知らない拡張・extras の欄はそのまま通す。`extensionsUsed` を最後に 1 行出すので、engine が読む拡張か
+  （KHR_texture_transform・KHR_materials_emissive_strength など）をこのページで確かめる
+- Blender で開き直して書き出すより速く、材質の欄が変わらない
 
 ## glb のノードを名前で引く
 
