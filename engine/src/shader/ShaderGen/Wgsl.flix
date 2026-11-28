@@ -7,7 +7,7 @@
 /// 絵の k 番目（texReads の並び）は binding 1 + 2k の texture_2d<f32>（`uTexK`）と 2 + 2k の sampler（`uTexKSampler`）。
 /// GL の描き先と違い、WebGPU の描き先の texture は上の行が先なので、読む uv の上下は返さない（GLSL の uTexFlipN は無い）。
 pub mod ShaderGen.Wgsl {
-    use ShaderGen.{joinParts, wgslModeKey, withParamScope, texScopeFrom, mainStatements, materialStatements}
+    use ShaderGen.{joinParts, wgslModeKey, withParamScope, texScopeFrom, mainStatements, materialStatements, metalRoughWidth}
 
     /// draw ごとの値の 1 つ（`SgValues` の欄。並びの順が uniform buffer の Float32 の位置）。
     /// RectPos・RectSize = 2D の面の矩形（px）・Time = uTime・Alpha = 面の濃さ（uAlpha）・TexLevels(k) = k 番の絵の mip のレベルの数（3D の材質）・Param(k) = paramNames の k 番。
@@ -90,12 +90,15 @@ pub mod ShaderGen.Wgsl {
                                     texReads = List[(String, ShaderDoc.FilterMode)], cutoutAlpha = String }
 
     /// 3D の材質の WGSL（式は ShaderGen.compile3d と同じ木から作る）。group = `sg` と絵を置く bind group の番号。
-    pub def compile3d(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], metallicRoughness: Option[ShaderDoc.Shade], group: Int32): MaterialWgsl =
+    /// materialOcclusion は ShaderGen.compile3d と同じ（真なら SgMaterial の metalRough は vec3f・z = AO）。
+    pub def compile3d(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], metallicRoughness: Option[ShaderDoc.Shade], materialOcclusion: Bool,
+                      group: Int32): MaterialWgsl =
         let reads = ShaderDoc.materialTexReads(spec, emission, metallicRoughness);
         let params = ShaderDoc.materialParamNames(spec, emission, metallicRoughness);
         let readsTextures = not List.isEmpty(reads);
         let tex = Map.insert(wgslModeKey(), 0, withParamScope(params, texScopeFrom(reads)));
-        let stmts = materialStatements(spec, emission, metallicRoughness, tex, readsTextures);
+        let width = if (Option.isEmpty(metallicRoughness)) 2 else metalRoughWidth(materialOcclusion);
+        let stmts = materialStatements(spec, emission, metallicRoughness, width, tex, readsTextures);
         let slots = UniformSlot.Time :: List.append(List.mapWithIndex((k, _) -> UniformSlot.TexLevels(k), reads), paramSlots(params));
         let head = uniformLets(slots) + "    let sg_uv = vUv;\n    let sg_normal = normalize(vNormal);\n";
         let indent = (lines: List[String]) -> lines |> List.map(st -> "    " + st + "\n") |> joinParts;
@@ -111,10 +114,10 @@ pub mod ShaderGen.Wgsl {
               smoothstepSource() ::
               (if (readsTextures) blurSource() + texMipSource() else "") ::
               divSource() ::
-              "struct SgMaterial { albedo: vec4f, emission: vec3f, metalRough: vec2f };\n" ::
+              "struct SgMaterial { albedo: vec4f, emission: vec3f, metalRough: vec${width}f };\n" ::
               "fn materialEval(" + args + ") -> SgMaterial {\n" ::
               head ::
-              "    var albedo = vec4f(0.0);\n    var emission = vec3f(0.0);\n    var metalRough = vec2f(0.0);\n" ::
+              "    var albedo = vec4f(0.0);\n    var emission = vec3f(0.0);\n    var metalRough = vec${width}f(0.0);\n" ::
               indent(stmts#eval) ::
               "    return SgMaterial(albedo, emission, metalRough);\n" ::
               "}\n" ::

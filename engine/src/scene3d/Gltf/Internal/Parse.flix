@@ -12,9 +12,12 @@ pub mod Gltf.Internal.Parse {
 
     /// textureInfo 1 つ（{ index, texCoord, extensions }）と、それが指す textures・samplers の読み方。
     /// source = textures[index] の source（画像の番号）・nearest = sampler の magFilter が NEAREST・
-    /// clamp = wrapS か wrapT が CLAMP_TO_EDGE・mirrored = wrapS か wrapT が MIRRORED_REPEAT・transform = KHR_texture_transform を持つ。
-    pub type alias TextureInfo = { index = Option[Int32], texCoord = Int32, transform = Bool, source = Option[Int32],
+    /// clamp = wrapS か wrapT が CLAMP_TO_EDGE・mirrored = wrapS か wrapT が MIRRORED_REPEAT・transform = KHR_texture_transform（無ければ None）。
+    pub type alias TextureInfo = { index = Option[Int32], texCoord = Int32, transform = Option[TextureTransform], source = Option[Int32],
                                    nearest = Bool, clamp = Bool, mirrored = Bool }
+
+    /// KHR_texture_transform 1 つ（offset 既定 (0, 0)・rotation 既定 0・scale 既定 (1, 1)・texCoord = textureInfo の texCoord の上書き）。
+    pub type alias TextureTransform = { offsetU = Float64, offsetV = Float64, rotation = Float64, scaleU = Float64, scaleV = Float64, texCoord = Option[Int32] }
 
     /// 材質 1 つの記述（glTF の materials の欄を読んだだけ。絵は番号で指す）。
     /// emissiveFactor = 負と NaN を 0 にした値（3 つの数でなければ (0, 0, 0) と emissiveFactorError）・
@@ -24,7 +27,8 @@ pub mod Gltf.Internal.Parse {
                                     base = TextureInfo, normal = TextureInfo, normalScale = Option[Float64], emissive = TextureInfo,
                                     emissiveFactor = { r = Float64, g = Float64, b = Float64 }, emissiveFactorError = Option[String],
                                     emissiveStrength = Float64, metalRough = TextureInfo, hasPbr = Bool, hasMetallic = Bool, hasRoughness = Bool,
-                                    metallicFactor = Option[Float64], roughnessFactor = Option[Float64] }
+                                    metallicFactor = Option[Float64], roughnessFactor = Option[Float64],
+                                    occlusion = TextureInfo, occlusionStrength = Float64 }
 
     /// 画像 1 つの在りか。InBin(start, length) = 元のバイトの中の場所・Unreadable = bufferView が読めない（理由）・
     /// ExternalUri = 外の uri・NoSource = bufferView も uri も無い。
@@ -96,11 +100,12 @@ pub mod Gltf.Internal.Parse {
         forM (
             glb <- parseGlb(bytes);
             _ <- checkBuffers(glb#json);
-            built <- buildModel(read, glb)
+            materials <- Ok(glb#materials |> Vector.map(materialSpecOf(glb)));
+            built <- buildModel(read, glb, Vector.map(bakedTransformOf, materials))
         ) yield {
             let jointOfNode = built#skinBuild |> Option.map(b -> b#jointOfNode) |> Option.getWithDefault(Map.empty());
             { droppedLines = warningsOf(glb#json, jointOfNode),
-              materials = glb#materials |> Vector.map(materialSpecOf(glb)),
+              materials = materials,
               images = glb#images |> Vector.map(imageSourceOf(glb)) | built#parsed }
         }
 
@@ -153,7 +158,9 @@ pub mod Gltf.Internal.Parse {
           metalRough = textureInfoOf(glb, objectOf("metallicRoughnessTexture", pbr)),
           hasPbr = Map.memberOf("pbrMetallicRoughness", material),
           hasMetallic = Map.memberOf("metallicFactor", pbr), hasRoughness = Map.memberOf("roughnessFactor", pbr),
-          metallicFactor = numberAt("metallicFactor", pbr), roughnessFactor = numberAt("roughnessFactor", pbr) }
+          metallicFactor = numberAt("metallicFactor", pbr), roughnessFactor = numberAt("roughnessFactor", pbr),
+          occlusion = textureInfoOf(glb, objectOf("occlusionTexture", material)),
+          occlusionStrength = numberAt("strength", objectOf("occlusionTexture", material)) |> Option.getWithDefault(1.0) }
 
     def errorOf(r: Result[String, a]): Option[String] = match r {
         case Err(e) => Some(e)
@@ -166,9 +173,55 @@ pub mod Gltf.Internal.Parse {
         let sampler = intOf("sampler", texture) |> Option.flatMap(sk -> Vector.nth(sk, glb#samplers)) |> Option.getWithDefault(Map.empty());
         let wraps = intOf("wrapS", sampler) :: intOf("wrapT", sampler) :: Nil;
         { index = index, texCoord = Option.getWithDefault(0, intOf("texCoord", info)),
-          transform = Map.memberOf("KHR_texture_transform", objectOf("extensions", info)),
+          transform = textureTransformOf(objectOf("extensions", info)),
           source = intOf("source", texture), nearest = intOf("magFilter", sampler) == Some(9728),
           clamp = List.exists(w -> w == Some(33071), wraps), mirrored = List.exists(w -> w == Some(33648), wraps) }
+
+    /// extensions の KHR_texture_transform（無ければ None。数でない欄は既定値で読む）。
+    def textureTransformOf(extensions: Obj): Option[TextureTransform] =
+        if (not Map.memberOf("KHR_texture_transform", extensions)) None
+        else {
+            let t = objectOf("KHR_texture_transform", extensions);
+            let pair = (key: String, default: Float64) -> numbersOf(key, 2, t) |> Result.toOption |> Option.flatMap(identity)
+                |> Option.getWithDefault(Vector#{ default, default });
+            let offset = pair("offset", 0.0);
+            let scale = pair("scale", 1.0);
+            Some({ offsetU = Vector.get(0, offset), offsetV = Vector.get(1, offset), rotation = numberAt("rotation", t) |> Option.getWithDefault(0.0),
+                   scaleU = Vector.get(0, scale), scaleV = Vector.get(1, scale), texCoord = intOf("texCoord", t) })
+        }
+
+    /// 絵が実際に読む uv の番号（KHR_texture_transform の texCoord の上書きがあればそれ・無ければ textureInfo の texCoord）。
+    def effectiveTexCoordOf(t: TextureInfo): Int32 = t#transform |> Option.flatMap(x -> x#texCoord) |> Option.getWithDefault(t#texCoord)
+
+    /// 材質の絵の全部（index のある textureInfo）が同じ KHR_texture_transform を持ち、実際に読む uv が全部 0 番（effectiveTexCoordOf）なら、その transform。
+    /// 頂点の uv に焼き込めば、シェーダーを変えずに同じ絵になる（readPrimitive）。どれも持たない・絵ごとに違う時は None。
+    // WhyNot: 絵ごとに違う transform を焼き込まない — uv は 1 本なので、どれか 1 枚の絵がずれる。
+    // WhyNot: vertexColors・pbr のように project.json の旗で選ばせず、いつも書き込む — 読み飛ばすのは作者が glb に書いた絵の置き方と違う絵を出す誤りで、
+    //   見た目の好みを選ぶ旗とは違う。焼けない時（絵ごとに違う・TEXCOORD_1）だけ今までどおり読み飛ばして知らせる。
+    pub def bakedTransformOf(spec: MaterialSpec): Option[TextureTransform] =
+        let infos = (spec#base :: spec#normal :: spec#emissive :: spec#metalRough :: spec#occlusion :: Nil) |> List.filter(t -> Option.nonEmpty(t#index));
+        let keyOf = (t: TextureInfo) -> (t#transform |> Option.map(x -> (x#offsetU, x#offsetV, x#rotation, x#scaleU, x#scaleV)), effectiveTexCoordOf(t));
+        match infos {
+            case first :: rest if effectiveTexCoordOf(first) == 0 and List.forAll(t -> keyOf(t) == keyOf(first), rest) => first#transform
+            case _ => None
+        }
+
+    /// uv（u, v の並び・glTF の向き = v は絵の上が 0）に transform を掛けた並び（KHR_texture_transform の行列 = 平行移動 × 回転 × 倍率）。
+    /// 回転は u' = cos × u + sin × v・v' = −sin × u + cos × v（KHR_texture_transform の README の行列。Khronos の TextureTransformTest の矢印が Correct を指す向き）。
+    // WhyNot: u' = cos × u − sin × v（数学の向きの回転）にしない — v が下向きの uv では逆に回り、TextureTransformTest の矢印が Error を指す。
+    def transformedUvs(t: TextureTransform, uvs: Vector[Float64]): Vector[Float64] =
+        let c = Num.cos(t#rotation);
+        let s = Num.sin(t#rotation);
+        rowsOf(Vector.length(uvs) / 2, 2, (k, col) -> {
+            let u = Vector.get(k * 2, uvs) * t#scaleU;
+            let v = Vector.get(k * 2 + 1, uvs) * t#scaleV;
+            if (col == 0) c * u + s * v + t#offsetU else c * v - s * u + t#offsetV
+        })
+
+    /// 焼き込んだ transform のある primitive でも、ファイルの TANGENT をそのまま使えるか（回さず・倍率が両方正なら、u の向きと表裏が変わらない）。
+    // WhyNot: 回した・裏返した uv にファイルの TANGENT を使わない — TANGENT は元の uv の u の向きで、法線マップの傾く向きがずれる。uv から求め直す。
+    def canKeepFileTangents(baked: Option[TextureTransform]): Bool =
+        baked |> Option.forAll(t -> t#rotation == 0.0 and t#scaleU > 0.0 and t#scaleV > 0.0)
 
     def numberAt(key: String, o: Obj): Option[Float64] = Map.get(key, o) |> Option.flatMap(numberOf)
 
@@ -496,7 +549,8 @@ pub mod Gltf.Internal.Parse {
 
     // ── メッシュ ────────────────────────────────────────────
 
-    def buildModel(read: ReadOptions, glb: Glb): Result[String, Built] =
+    /// baked = 材質の番号 → 頂点の uv に焼き込む transform（bakedTransformOf）。
+    def buildModel(read: ReadOptions, glb: Glb, baked: Vector[Option[TextureTransform]]): Result[String, Built] =
         let nodes = objectsOf("nodes", glb#json);
         let parentOf = parentsOfNodes(nodes);
         let meshNodes = Vector.range(0, Vector.length(nodes)) |> Vector.filter(i -> Map.memberOf("mesh", Vector.get(i, nodes)));
@@ -509,7 +563,7 @@ pub mod Gltf.Internal.Parse {
             };
             forM (
                 skinBuild <- skinR;
-                nested <- Vector.toList(meshNodes) |> Result.traverse(i -> nodeParts(read, glb, nodes, parentOf, skinBuild, i) |> Result.map(ps -> (i, ps)));
+                nested <- Vector.toList(meshNodes) |> Result.traverse(i -> nodeParts(read, glb, baked, nodes, parentOf, skinBuild, i) |> Result.map(ps -> (i, ps)));
                 parts <- Ok(nested |> List.flatMap(snd));
                 mesh <- meshOfParts(parts, Option.nonEmpty(skinBuild));
                 partMeshes <- parts |> Result.traverse(part -> partMeshOf(part, Option.nonEmpty(skinBuild)));
@@ -608,7 +662,8 @@ pub mod Gltf.Internal.Parse {
     ///   - skin のあるノード: 変換を無視し（仕様の MUST）、JOINTS_0 / WEIGHTS_0 を読む
     ///   - ジョイントの子孫: バインドの時のジョイントの world 行列 × ジョイントから下の局所の鎖で写し、そのジョイントに重み 1
     ///   - ほか: world 行列を焼き込む（スキンがあれば根のジョイントに重み 1）
-    def nodeParts(read: ReadOptions, glb: Glb, nodes: Vector[Obj], parentOf: Map[Int32, Int32], skinBuild: Option[SkinBuild], i: Int32): Result[String, List[Part]] =
+    def nodeParts(read: ReadOptions, glb: Glb, baked: Vector[Option[TextureTransform]], nodes: Vector[Obj], parentOf: Map[Int32, Int32], skinBuild: Option[SkinBuild],
+                  i: Int32): Result[String, List[Part]] =
         let node = Vector.get(i, nodes);
         let jointOfNode = Option.map(b -> b#jointOfNode, skinBuild) |> Option.getWithDefault(Map.empty());
         let placementR: Result[String, (Mat4.Mat4, Binding)] = match (skinBuild, intOf("skin", node)) {
@@ -630,10 +685,10 @@ pub mod Gltf.Internal.Parse {
             placement <- placementR;
             meshIndex <- intOf("mesh", node) |> Option.toOk("glTF: nodes[${i}] の mesh が数でない");
             meshObj <- entryAt("meshes", meshIndex, glb#meshes);
-            parts <- objectsOf("primitives", meshObj) |> Vector.toList |> Result.traverse(prim -> readPrimitive(read, glb, fst(placement), snd(placement), prim))
+            parts <- objectsOf("primitives", meshObj) |> Vector.toList |> Result.traverse(prim -> readPrimitive(read, glb, baked, fst(placement), snd(placement), prim))
         ) yield parts
 
-    def readPrimitive(read: ReadOptions, glb: Glb, transform: Mat4.Mat4, binding: Binding, prim: Obj): Result[String, Part] =
+    def readPrimitive(read: ReadOptions, glb: Glb, baked: Vector[Option[TextureTransform]], transform: Mat4.Mat4, binding: Binding, prim: Obj): Result[String, Part] =
         let attributes = objectOf("attributes", prim);
         let mode = Option.getWithDefault(4, intOf("mode", prim));
         forM (
@@ -648,9 +703,14 @@ pub mod Gltf.Internal.Parse {
             let count = positions#count;
             let (colorAccessor, colorLines) = if (read#vertexColors) vertexColorsOf(glb, attributes, count) else (None, Nil);
             let vertexColors = colorAccessor |> Option.map(a -> (a#width, a#values));
-            let (uvs, uvLines) = optionalAttribute(glb, attributes, "TEXCOORD_0", 2, count);
+            let (rawUvs, uvLines) = optionalAttribute(glb, attributes, "TEXCOORD_0", 2, count);
+            let uvTransform = intOf("material", prim) |> Option.flatMap(k -> Vector.nth(k, baked)) |> Option.flatMap(identity);
+            let uvs = match uvTransform {
+                case Some(t) => rawUvs |> Option.map(a -> { values = transformedUvs(t, a#values) | a })
+                case None    => rawUvs
+            };
             let (uvs2, uv2Lines) = optionalAttribute(glb, attributes, "TEXCOORD_1", 2, count);
-            let (tangents, tangentLines) = optionalAttribute(glb, attributes, "TANGENT", 4, count);
+            let (tangents, tangentLines) = if (canKeepFileTangents(uvTransform)) optionalAttribute(glb, attributes, "TANGENT", 4, count) else (None, Nil);
             let indexList = match indices {
                 case Some(a) => Vector.map(toIndex, a#values)
                 case None => Vector.range(0, count)

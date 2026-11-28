@@ -5,7 +5,7 @@
 // WhyNot: JSON で運ばない — メインで JSON を読み直すと、Worker へ出したかった仕事の一部がメインに戻る。
 // WhyNot: 頂点を 1 つのバイト列に詰めない — wasm の中でバイトから Float64 を組み直すと、配列のまま渡すより 3〜5 倍遅い。
 pub mod Gltf.Internal.Codec {
-    use Gltf.Internal.Parse.{Parsed, ParsedPart, MaterialSpec, TextureInfo, ImageSource, SkinSpec, ClipSpec}
+    use Gltf.Internal.Parse.{Parsed, ParsedPart, MaterialSpec, TextureInfo, TextureTransform, ImageSource, SkinSpec, ClipSpec}
 
     /// 並びの形の版。読む側と書く側が同じ wasm なので、違えば壊れた物として読まない。
     def formatVersion(): Int32 = 1
@@ -119,11 +119,19 @@ pub mod Gltf.Internal.Codec {
     def putTextureInfo(w: Writer[r], t: TextureInfo): Unit \ r =
         putOption(w, putInt(w), t#index);
         putInt(w, t#texCoord);
-        putBool(w, t#transform);
+        putOption(w, putTextureTransform(w), t#transform);
         putOption(w, putInt(w), t#source);
         putBool(w, t#nearest);
         putBool(w, t#clamp);
         putBool(w, t#mirrored)
+
+    def putTextureTransform(w: Writer[r], t: TextureTransform): Unit \ r =
+        putFloat(w, t#offsetU);
+        putFloat(w, t#offsetV);
+        putFloat(w, t#rotation);
+        putFloat(w, t#scaleU);
+        putFloat(w, t#scaleV);
+        putOption(w, putInt(w), t#texCoord)
 
     def putMaterial(w: Writer[r], m: MaterialSpec): Unit \ r =
         putOption(w, putString(w), m#name);
@@ -144,7 +152,9 @@ pub mod Gltf.Internal.Codec {
         putBool(w, m#hasMetallic);
         putBool(w, m#hasRoughness);
         putOption(w, putFloat(w), m#metallicFactor);
-        putOption(w, putFloat(w), m#roughnessFactor)
+        putOption(w, putFloat(w), m#roughnessFactor);
+        putTextureInfo(w, m#occlusion);
+        putFloat(w, m#occlusionStrength)
 
     def alphaCode(mode: Model3d.AlphaMode): Int32 = match mode {
         case Model3d.AlphaMode.Opaque => 0
@@ -331,12 +341,21 @@ pub mod Gltf.Internal.Codec {
     def getTextureInfo(rd: Reader[r]): TextureInfo \ r =
         let index = getOption(rd, () -> getInt(rd));
         let texCoord = getInt(rd);
-        let transform = getBool(rd);
+        let transform = getOption(rd, () -> getTextureTransform(rd));
         let source = getOption(rd, () -> getInt(rd));
         let nearest = getBool(rd);
         let clamp = getBool(rd);
         let mirrored = getBool(rd);
         { index = index, texCoord = texCoord, transform = transform, source = source, nearest = nearest, clamp = clamp, mirrored = mirrored }
+
+    def getTextureTransform(rd: Reader[r]): TextureTransform \ r =
+        let offsetU = getFloat(rd);
+        let offsetV = getFloat(rd);
+        let rotation = getFloat(rd);
+        let scaleU = getFloat(rd);
+        let scaleV = getFloat(rd);
+        let texCoord = getOption(rd, () -> getInt(rd));
+        { offsetU = offsetU, offsetV = offsetV, rotation = rotation, scaleU = scaleU, scaleV = scaleV, texCoord = texCoord }
 
     def getMaterial(rd: Reader[r]): MaterialSpec \ r =
         let name = getOption(rd, () -> getString(rd));
@@ -358,11 +377,14 @@ pub mod Gltf.Internal.Codec {
         let hasRoughness = getBool(rd);
         let metallicFactor = getOption(rd, () -> getFloat(rd));
         let roughnessFactor = getOption(rd, () -> getFloat(rd));
+        let occlusion = getTextureInfo(rd);
+        let occlusionStrength = getFloat(rd);
         { name = name, alphaMode = alphaMode, alphaCutoff = alphaCutoff, doubleSided = doubleSided,
           base = base, normal = normal, normalScale = normalScale, emissive = emissive,
           emissiveFactor = { r = er, g = eg, b = eb }, emissiveFactorError = emissiveFactorError,
           emissiveStrength = emissiveStrength, metalRough = metalRough, hasPbr = hasPbr, hasMetallic = hasMetallic,
-          hasRoughness = hasRoughness, metallicFactor = metallicFactor, roughnessFactor = roughnessFactor }
+          hasRoughness = hasRoughness, metallicFactor = metallicFactor, roughnessFactor = roughnessFactor,
+          occlusion = occlusion, occlusionStrength = occlusionStrength }
 
     def alphaOfCode(code: Int32): Model3d.AlphaMode =
         if (code == 1) Model3d.AlphaMode.Mask else if (code == 2) Model3d.AlphaMode.Blend else Model3d.AlphaMode.Opaque

@@ -527,13 +527,13 @@ mod Render3d.Material {
         let readCount = List.length(Scene3d.materialTexReadsOf(m));
         if (readCount > Scene3d.maxMaterialTextures())
             warnSceneOnce(state, "limit:" + m#spec#name, "scene3d: 材質 '${m#spec#name}' が読む絵の組が ${readCount} 組ある"
-                + " — ${Scene3d.maxMaterialTextures()} 組目より後ろは 0 で描く")
+                + " — ${Scene3d.maxMaterialTextures()} 組目より後ろは 0 で描く（材質の AO の絵が落ちると AO は 1 − strength の暗さになる）")
         else ();
         let (spec, emission, metallicRoughness) = ShaderDoc.limitMaterialTexReads(Scene3d.maxMaterialTextures(), m#spec, m#emission, m#metallicRoughnessShade);
-        let glsl = ShaderGen.compile3d(spec, emission, metallicRoughness);
+        let glsl = ShaderGen.compile3d(spec, emission, metallicRoughness, kind#materialOcclusion);
         let label = "scene3d:material" + (if (kind#skinned) ":skin" else "") + (if (kind#uv) ":uv" else "")
             + (if (kind#normalMap) ":nm" else "") + (if (kind#lightmap) ":lm" else "") + (if (kind#blend) ":bl" else "")
-            + (if (kind#doubleSided) ":ds" else "") + (if (kind#coverage) ":cov" else "") + (if (kind#metallicRoughness) ":mr" else "") + (if (kind#screenAoOnBlend) ":ab" else "")
+            + (if (kind#doubleSided) ":ds" else "") + (if (kind#coverage) ":cov" else "") + (if (kind#metallicRoughness) ":mr" else "") + (if (kind#screenAoOnBlend) ":ab" else "") + (if (kind#materialOcclusion) ":occ" else "")
             + String.replace(src = "+", dst = ":", Render3d.ProgramKey.variantKeyOf(kind#variant)) + ":${m#spec#name}";
         noteMaterialBuild(state, label, reason);
         let fragment = Render3d.ShaderLibrary.materialGlsl(state#shaders, kind, m#cutout, glsl);

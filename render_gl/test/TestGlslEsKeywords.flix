@@ -33,7 +33,7 @@ mod Render3d.TestGlslEsKeywords {
 
     def kindName(k: Render3d.ProgramKey.ProgramKind): String =
         "[" + flagsName(("skinned", k#skinned) :: ("uv", k#uv) :: ("normalMap", k#normalMap) :: ("lightmap", k#lightmap) :: ("blend", k#blend) ::
-                        ("doubleSided", k#doubleSided) :: ("coverage", k#coverage) :: ("metallicRoughness", k#metallicRoughness) ::
+                        ("doubleSided", k#doubleSided) :: ("coverage", k#coverage) :: ("metallicRoughness", k#metallicRoughness) :: ("materialOcclusion", k#materialOcclusion) ::
                         ("pointShadows", k#variant#pointShadows) :: ("physicalUnits", k#variant#physicalUnits) :: ("psx", k#variant#psx) :: Nil) + "]"
 
     def variants(): List[Render3d.ProgramKey.ShaderVariant] =
@@ -44,8 +44,9 @@ mod Render3d.TestGlslEsKeywords {
     def kindsOf(v: Render3d.ProgramKey.ShaderVariant): List[Render3d.ProgramKey.ProgramKind] =
         List.flatMap(sk -> List.flatMap(uv -> List.flatMap(nm -> List.flatMap(lm -> List.flatMap(bl -> List.flatMap(ds -> List.flatMap(cv -> List.map(mr ->
             { skinned = sk, uv = uv, normalMap = nm, lightmap = lm, blend = bl, doubleSided = ds, coverage = cv, metallicRoughness = mr,
-              screenAoOnBlend = false, variant = v },
+              screenAoOnBlend = false, materialOcclusion = false, variant = v },
             bools()), bools()), bools()), bools()), bools()), bools()), bools()), bools())
+            |> List.flatMap(k -> if (k#metallicRoughness) k :: { materialOcclusion = true | k } :: Nil else k :: Nil)
 
     def solidGlsl(): ShaderGen.MaterialGlsl =
         { uniforms = "uniform float uTime;\n", functions = "void materialEval(out vec4 albedo, out vec3 emission) {}\n",

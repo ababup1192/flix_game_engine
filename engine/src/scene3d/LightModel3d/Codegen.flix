@@ -119,6 +119,8 @@ pub mod LightModel3d.Codegen {
         case (Target.Wgsl, ScalarInput.ScreenAmbientOcclusion)       => "r3d_ao"
         case (Target.Glsl, ScalarInput.ScreenAmbientOcclusionDirect) => "r3d_aoDirect"
         case (Target.Wgsl, ScalarInput.ScreenAmbientOcclusionDirect) => "r3d_aoDirect"
+        case (Target.Glsl, ScalarInput.MaterialOcclusion)            => "r3d_materialOcclusion"
+        case (Target.Wgsl, ScalarInput.MaterialOcclusion)            => "r3d_materialOcclusion"
         case (Target.Glsl, ScalarInput.SkyContribution)   => "uSkyContribution"
         case (Target.Wgsl, ScalarInput.SkyContribution)   => "r3dLight.uSkyContribution"
         // WhyNot: 太陽の影の割合を関数の引数にしない — toGlsl の引数の並びを変えず、frag の main が先に求めて渡す（地図を引くのは木の外）。
@@ -160,6 +162,7 @@ pub mod LightModel3d.Codegen {
         case ScalarInput.SkyContribution   => "skyContribution"
         case ScalarInput.ScreenAmbientOcclusion       => "ao"
         case ScalarInput.ScreenAmbientOcclusionDirect => "aoDirect"
+        case ScalarInput.MaterialOcclusion            => "materialOcclusion"
     }
 
     def vec3InputName(input: Vec3Input): String = match input {
@@ -740,11 +743,12 @@ pub mod LightModel3d.Codegen {
         let p = Param.Vec3Param(Vec3Input.Position);
         let n = Param.Vec3Param(Vec3Input.Normal);
         let units = Param.ScalarParam(ScalarInput.PhysicalUnits) :: Param.ScalarParam(ScalarInput.InverseUnitsPerMeterSquared) :: Nil;
-        let ao = Param.ScalarParam(ScalarInput.ScreenAmbientOcclusion) :: Param.ScalarParam(ScalarInput.ScreenAmbientOcclusionDirect) :: Nil;
+        let materialOcclusion = Param.ScalarParam(ScalarInput.MaterialOcclusion);
+        let ao = Param.ScalarParam(ScalarInput.ScreenAmbientOcclusion) :: Param.ScalarParam(ScalarInput.ScreenAmbientOcclusionDirect) :: materialOcclusion :: Nil;
         let lights = Param.Steps :: Param.Points :: Param.Spots :: Param.Shadow :: Param.PointLit :: p :: n :: Nil;
         let sun = Param.Vec3Param(Vec3Input.SunDirection) :: Param.Vec3Param(Vec3Input.SunColor) :: Param.ScalarParam(ScalarInput.SunLit) :: Nil;
         let v = cpuVariant();
-        { name = "lightAt", model = lightingModelFor(v), doc = "lightingModel の光の量（toon の丸めまで済ませた値。sunLit = 太陽の影の割合・sh と skyContribution = Scene3d.Internal.SkyIrradiance.valuesOf の係数と割合・ao と aoDirect = SSAO の値（無ければ 1））。",
+        { name = "lightAt", model = lightingModelFor(v), doc = "lightingModel の光の量（toon の丸めまで済ませた値。sunLit = 太陽の影の割合・sh と skyContribution = Scene3d.Internal.SkyIrradiance.valuesOf の係数と割合・ao と aoDirect = SSAO の値（無ければ 1）・materialOcclusion = 材質の AO の絵の値（無ければ 1））。",
           params = lights ::: Param.Vec3Param(Vec3Input.Ambient) :: Param.ScalarParam(ScalarInput.Hemisphere) :: sun ::: units :::
                    Param.Sh :: Param.ScalarParam(ScalarInput.SkyContribution) :: ao } ::
         { name = "lightmapLightAt", model = lightmapLightingModelFor(v), doc = "lightmapLightingModel の光の量（lightmap は段つきで読んだ後の rgb を渡す）。",
@@ -756,11 +760,11 @@ pub mod LightModel3d.Codegen {
         { name = "skyAt", model = skyModel(), doc = "skyModel の空の色。",
           params = Param.Vec3Param(Vec3Input.SkyDirection) :: Param.Vec3Param(Vec3Input.SkyZenith) :: Param.Vec3Param(Vec3Input.SkyHorizon) ::
                    Param.Vec3Param(Vec3Input.SkyGround) :: Param.ScalarParam(ScalarInput.SkyCurve) :: Nil } ::
-        { name = "pbrAt", model = pbrModelFor(v), doc = "pbrModel の、かすみの前の色（light = lightAt か lightmapLightAt の値・metalRough の x = metallic・y = roughness・z は使わない）。",
+        { name = "pbrAt", model = pbrModelFor(v), doc = "pbrModel の、かすみの前の色（light = lightAt か lightmapLightAt の値・metalRough の x = metallic・y = roughness・z は使わない・materialOcclusion = 材質の AO の絵の値（無ければ 1））。",
           params = Param.Points :: Param.Spots :: Param.Shadow :: Param.PointLit :: p :: n :: Param.Vec3Param(Vec3Input.Albedo) :: Param.Vec3Param(Vec3Input.Light) ::
                    Param.Vec3Param(Vec3Input.MetallicRoughness) :: Param.Vec3Param(Vec3Input.Eye) :: Param.Vec3Param(Vec3Input.SkyZenith) ::
                    Param.Vec3Param(Vec3Input.SkyHorizon) :: Param.Vec3Param(Vec3Input.SkyGround) :: Param.ScalarParam(ScalarInput.SkyCurve) ::
-                   Param.Vec3Param(Vec3Input.EnvironmentColor) :: Param.ScalarParam(ScalarInput.EnvironmentOn) :: sun ::: units } ::
+                   Param.Vec3Param(Vec3Input.EnvironmentColor) :: Param.ScalarParam(ScalarInput.EnvironmentOn) :: sun ::: units ::: materialOcclusion :: Nil } ::
         { name = "environmentDirectionAt", model = environmentDirection(),
           doc = "environmentDirection の、環境マップを読む向き（長さ 1。metalRough の x は使わない）。",
           params = p :: n :: Param.Vec3Param(Vec3Input.Albedo) :: Param.Vec3Param(Vec3Input.MetallicRoughness) :: Param.Vec3Param(Vec3Input.Eye) ::

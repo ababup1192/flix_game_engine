@@ -23,7 +23,7 @@ mod Render3d.TestPointShadowVariants {
     def kindOf(b: List[Bool]): Render3d.ProgramKey.ProgramKind =
         let at = (i: Int32) -> List.nth(i, b) |> Option.getWithDefault(false);
         { skinned = false, uv = at(0), normalMap = at(1), lightmap = at(2), blend = at(3), doubleSided = at(4), coverage = at(5),
-          metallicRoughness = at(6), screenAoOnBlend = false, variant = { pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false, ambientOcclusion = false } }
+          metallicRoughness = at(6), screenAoOnBlend = false, materialOcclusion = false, variant = { pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false, ambientOcclusion = false } }
 
     def defaultGlsl(): String =
         Render3dGlsl.lightSource() + Render3dGlsl.litFragmentSource() + Render3dGlsl.billboardFragmentSource() +

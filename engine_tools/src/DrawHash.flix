@@ -402,7 +402,7 @@ pub mod DrawHash {
         case { spec = spec, params = params, cutout = cutout, emission = emission, normalMap = normalMap, wrap = wrap,
                blend = blend, doubleSided = doubleSided, emissionIntensity = emissionIntensity,
                metallicRoughness = metallicRoughness, metallicRoughnessShade = metallicRoughnessShade, shaderHash = _, texReads = _, maxMipLevels = maxMipLevels,
-               screenAoOnBlend = screenAoOnBlend } =>
+               screenAoOnBlend = screenAoOnBlend, occlusion = _ } =>
             putStr(out, ToString.toString(ShaderJson.toJson(spec)));
             putSize(out, Map.size(params));
             params |> Map.forEach((name, v) -> { putStr(out, name); putF(out, v) });

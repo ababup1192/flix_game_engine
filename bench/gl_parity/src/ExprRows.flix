@@ -270,7 +270,7 @@ mod ExprRows {
         "uniform sampler2D uIn1;\n" +
         "uniform sampler2D uIn2;\n" +
         "uniform int uMode;\n" +
-        edit(ShaderAst.Glsl.print(lightDefinitions() ::: Render3dShaders.lightmapLightAt(defaultVariant(), Render3dShaders.spotShadow()) :: Render3dShaders.skyAt() :: Nil)) +
+        edit(ShaderAst.Glsl.print(lightDefinitions() ::: Render3dShaders.lightmapLightAt(LightModel3d.legacyVariant(), Render3dShaders.spotShadow()) :: Render3dShaders.skyAt() :: Nil)) +
         "void main() {\n" +
         "    ivec2 at = ivec2(int(gl_FragCoord.x), 0);\n" +
         "    vec3 a = texelFetch(uIn0, at, 0).xyz;\n" +
@@ -640,9 +640,9 @@ mod ExprRows {
         let spots = LightModel3d.packSpotLights(s#spots);
         match row {
             case TreeRow.Light => SoftRaster3dLight.lightAt(steps, points, spots, shadow, Vector.repeat(Scene3d.maxPointLights(), 1.0), p#x, p#y, p#z, n#x, n#y, n#z, s#ambient#x, s#ambient#y, s#ambient#z, s#hemisphere,
-                                                        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, Scene3d.Internal.SkyIrradiance.zeros(), 0.0, 1.0, 1.0)
+                                                        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, Scene3d.Internal.SkyIrradiance.zeros(), 0.0, 1.0, 1.0, 1.0)
             case TreeRow.LightmapLight => SoftRaster3dLight.lightmapLightAt(steps, points, spots, shadow, Vector.repeat(Scene3d.maxPointLights(), 1.0), p#x, p#y, p#z, n#x, n#y, n#z, e#x, e#y, e#z,
-                                                        if (s#lightmapSrgb) 1.0 else 0.0, s#lightmapIntensity, 0.0, 1.0, 1.0, 1.0)
+                                                        if (s#lightmapSrgb) 1.0 else 0.0, s#lightmapIntensity, 0.0, 1.0, 1.0, 1.0, 1.0)
             case TreeRow.Fog => SoftRaster3dLight.fogAt(p#x, p#y, p#z, s#eye#x, s#eye#y, s#eye#z, e#x, e#y, e#z, s#fogColor#x, s#fogColor#y, s#fogColor#z, s#fogNear, s#fogFar)
             case TreeRow.Sky => SoftRaster3dLight.skyAt(e#x, e#y, e#z, s#zenith#x, s#zenith#y, s#zenith#z, s#horizon#x, s#horizon#y, s#horizon#z,
                                               s#ground#x, s#ground#y, s#ground#z, s#curve)
@@ -810,7 +810,7 @@ mod ExprRows {
                                                                       metallic, roughness, 0.0, s#eye#x, s#eye#y, s#eye#z,
                                                                       s#zenith#x, s#zenith#y, s#zenith#z, s#horizon#x, s#horizon#y, s#horizon#z,
                                                                       s#ground#x, s#ground#y, s#ground#z, s#curve, 0.0, 0.0, 0.0, 0.0,
-                                                                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0)))
+                                                                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0)))
             })
         }))
 
@@ -853,7 +853,7 @@ mod ExprRows {
             SoftRaster3dLight.pbrAt(LightModel3d.packPointLights(s#points), LightModel3d.packSpotLights(s#spots), None, Vector.repeat(Scene3d.maxPointLights(), 1.0), px, py, pz, nx, ny, nz, ax, ay, az, lx, ly, lz,
                                     metallic, roughness, 0.0, s#eye#x, s#eye#y, s#eye#z,
                                     s#zenith#x, s#zenith#y, s#zenith#z, s#horizon#x, s#horizon#y, s#horizon#z,
-                                    s#ground#x, s#ground#y, s#ground#z, s#curve, 0.0, 0.0, 0.0, 0.0, tx, ty, tz, cr, cg, cb, sunLit, 0.0, 1.0)
+                                    s#ground#x, s#ground#y, s#ground#z, s#curve, 0.0, 0.0, 0.0, 0.0, tx, ty, tz, cr, cg, cb, sunLit, 0.0, 1.0, 1.0)
         };
         let probes = List.zip(inputs#pbr, List.zip(inputs#pbrLight, inputs#sun#litValues));
         let outcome = outcomeOf(cases |> List.flatMap(d -> {

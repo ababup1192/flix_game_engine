@@ -25,13 +25,13 @@ mod TestShaderDump {
             flags() |> List.flatMap(lightmap -> flags() |> List.flatMap(blend -> flags() |> List.flatMap(doubleSided ->
                 flags() |> List.flatMap(coverage -> flags() |> List.map(metallic ->
                     { skinned = false, uv = uv, normalMap = normalMap, lightmap = lightmap, blend = blend, doubleSided = doubleSided,
-                      coverage = coverage, metallicRoughness = metallic, screenAoOnBlend = false, variant = { pointShadows = v#pointShadows, physicalUnits = v#physicalUnits, psx = v#psx, skyIrradiance = v#skyIrradiance, ambientOcclusion = v#ambientOcclusion } })))))
+                      coverage = coverage, metallicRoughness = metallic, screenAoOnBlend = false, materialOcclusion = false, variant = { pointShadows = v#pointShadows, physicalUnits = v#physicalUnits, psx = v#psx, skyIrradiance = v#skyIrradiance, ambientOcclusion = v#ambientOcclusion } })))))
         })
 
     def kindLabel(k: Render3d.ProgramKey.ProgramKind): String =
         let bit = (b: Bool, ch: String) -> if (b) ch else "-";
         bit(k#uv, "u") + bit(k#normalMap, "n") + bit(k#lightmap, "l") + bit(k#blend, "b") + bit(k#doubleSided, "d") + bit(k#coverage, "c")
-            + bit(k#metallicRoughness, "m") + "_" + variantLabel(k#variant)
+            + bit(k#metallicRoughness, "m") + "_" + variantLabel(k#variant) + (if (k#materialOcclusion) "+occ" else "")
 
     def fill(name: String, shade: Shade, alpha: Field): ShaderDoc.Spec =
         { name = name, cycleRate = 0.0, bindings = Nil, out = ShaderDoc.Out.Fill({ shade = shade, alpha = alpha }) }
@@ -53,15 +53,20 @@ mod TestShaderDump {
         surfaceKinds(v) |> List.filter(k ->
             (not k#blend and not k#coverage and not k#doubleSided) or (k#uv and k#normalMap and k#lightmap and k#doubleSided and k#metallicRoughness and not k#coverage))
 
+    /// 材質の AO を読む版（metallic・roughness を持つ組のうち、半透明と coverage でない物・lightmap の有無の両方・+ao の変種も）。
+    def materialOcclusionKinds(v: Render3d.ProgramKey.ShaderVariant): List[Render3d.ProgramKey.ProgramKind] =
+        surfaceKinds(v) |> List.filter(k -> k#metallicRoughness and not k#blend and not k#coverage)
+            |> List.flatMap(k -> { materialOcclusion = true | k } :: { materialOcclusion = true, variant = { ambientOcclusion = true | k#variant } | k } :: Nil)
+
     /// 材質の frag は描き手と同じ道（部品の所が空いた字に部品を入れる・Render3d.ShaderLibrary.withMaterialPart）で作る。
     def materialFragments(): List[(String, String)] =
         let d = Render3d.ProgramKey.defaultShaderVariant();
-        let kinds = surfaceKinds(d) ::: (allVariants() |> List.filter(v -> variantLabel(v) != variantLabel(d)) |> List.flatMap(representativeKinds));
+        let kinds = surfaceKinds(d) ::: (allVariants() |> List.filter(v -> variantLabel(v) != variantLabel(d)) |> List.flatMap(representativeKinds)) ::: materialOcclusionKinds(d);
         materials() |> List.flatMap(nm -> {
             let (name, spec) = nm;
             kinds |> List.flatMap(k -> {
-                let glsl = ShaderGen.compile3d(spec, glowOf(), metalOf(k));
-                let wgsl = ShaderGen.Wgsl.compile3d(spec, glowOf(), metalOf(k), 1);
+                let glsl = ShaderGen.compile3d(spec, glowOf(), metalOf(k), k#materialOcclusion);
+                let wgsl = ShaderGen.Wgsl.compile3d(spec, glowOf(), metalOf(k), k#materialOcclusion, 1);
                 let glslTemplate = Render3dGlsl.materialFragmentTemplate(k, not List.isEmpty(glsl#texReads));
                 let wgslTemplate = Render3dWgsl.materialFragmentTemplate(k, not List.isEmpty(wgsl#texReads));
                 ("glsl/frag-material-${name}-${kindLabel(k)}.frag",
@@ -149,7 +154,7 @@ mod TestShaderDump {
                 println("[shader-dump] ${List.length(sources)} 本・${total} 字・組んだ時間 ${elapsed} ms → ${dir}")
             case None => ()
         };
-        Assert.assertEq(expected = 2627, List.length(sources))
+        Assert.assertEq(expected = 2723, List.length(sources))
 
     /// vertex と frag の入口の全部の組（ビルボードの変種と横の向き・影の地図の frag・空・blit）で、frag が受ける varying が vertex の表に同じ形であり、location が重ならない。
     @Test
@@ -173,7 +178,7 @@ mod TestShaderDump {
                 let (uv, normalMap) = un;
                 (if (skinned) false :: Nil else flags()) |> List.map(lightmap -> {
                     let k = { skinned = skinned, uv = uv, normalMap = normalMap, lightmap = lightmap, blend = false, doubleSided = false,
-                              coverage = false, metallicRoughness = false, screenAoOnBlend = false, variant = v };
+                              coverage = false, metallicRoughness = false, screenAoOnBlend = false, materialOcclusion = false, variant = v };
                     (Render3dGlsl.materialVertexSourceFor({ skinned = skinned, uv = uv, lightmap = lightmap }, psx),
                      Render3dWgsl.materialVertexSourceFor(uv, lightmap, skinned, psx), Render3dShaders.materialInputs(k))
                 })
@@ -263,7 +268,7 @@ mod TestShaderDump {
     def generatedBodies(print: ShaderAst.Definition -> String): List[String] =
         let spot = Render3dShaders.spotShadow();
         let perVariant = allVariants() |> List.flatMap(v ->
-            Render3dShaders.lightAt(v, spot) :: Render3dShaders.lightmapLightAt(v, spot) :: Render3dShaders.pbrAt(v, spot) :: Nil);
+            Render3dShaders.lightAt(Render3d.ProgramKey.lightVariantOf(v), spot) :: Render3dShaders.lightmapLightAt(Render3d.ProgramKey.lightVariantOf(v), spot) :: Render3dShaders.pbrAt(Render3d.ProgramKey.lightVariantOf(v), spot) :: Nil);
         (perVariant ::: Render3dShaders.fogAt() :: Render3dShaders.environmentDirectionAt() :: Render3dShaders.skyAt() :: Render3dShaders.pointShadowLit() :: Nil)
             |> List.map(print)
 

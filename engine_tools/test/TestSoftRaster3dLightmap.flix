@@ -137,7 +137,7 @@ mod SoftRaster3d.TestLightmap {
     /// 光の無い場面で lightmap から読んだ値 s が光の足し算に入る値（線形の量・toon なし）。
     def bakedValue(srgb: Bool, intensity: Float64, s: Float64): Float64 =
         let (r, _, _) = SoftRaster3dLight.lightmapLightAt(0, Vector.empty(), Vector.empty(), None, SoftRaster3d.PointShadows.allLit(), 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-                                                    s, s, s, if (srgb) 1.0 else 0.0, intensity, 0.0, 1.0, 1.0, 1.0);
+                                                    s, s, s, if (srgb) 1.0 else 0.0, intensity, 0.0, 1.0, 1.0, 1.0, 1.0);
         r
 
     // toonSteps 2 で、ベイクした光 0.2 と点光源の分 0.1 × (1 − 1² / 4²)² ≒ 0.088 は、どちらも 1 つなら 0.25 未満で 0 に丸まるが、
@@ -149,7 +149,7 @@ mod SoftRaster3d.TestLightmap {
         // Linear・intensity 1 なら baked は読んだ値のままなので、0.2 を渡すと baked が 0.2 になる。
         Assert.assertEq(expected = (0.5, 0.5, 0.5),
                         SoftRaster3dLight.lightmapLightAt(env#toonSteps, points, Vector.empty(), None, SoftRaster3d.PointShadows.allLit(), 0.0, 0.0, 2.0, 0.0, 0.0, -1.0,
-                                                    0.2, 0.2, 0.2, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0))
+                                                    0.2, 0.2, 0.2, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0))
 
     // ── 段（mip）──
     // 256 × 256 の lightmap の左の 20 列だけが明るい（200・ほかは 40）。画面いっぱい（8 px）の板では 1 px が 32 texel で、

@@ -51,7 +51,7 @@ mod Scenes {
             :: lightmapBaked3d() :: lightmapNormal3d() :: spotSoftEdge3d() :: gltfEmissive3d() :: cullOffscreen3d()
             :: skyGradient3d() :: glassPane3d() :: doubleSided3d() :: msaaEdges()
             :: linearOverlap3d() :: mipSrgbAverage3d() :: emissionIntensity3d() :: skinCrowd() :: skinCrowdRows() :: instanceRows() :: batchKeys3d() :: sameDepthOrder3d()
-            :: pbrSpheres3d() :: pbrNoSky3d() :: pbrMapped3d() :: gltfPbr3d() :: pbrEnvironment3d() :: pbrEnvironmentBox3d() :: pbrEnvironmentSky3d() :: skyIrradiance3d() :: hdrEnvironment3d() :: lightmapHdrRect3d()
+            :: pbrSpheres3d() :: pbrNoSky3d() :: pbrMapped3d() :: pbrOcclusion3d() :: gltfPbr3d() :: pbrEnvironment3d() :: pbrEnvironmentBox3d() :: pbrEnvironmentSky3d() :: skyIrradiance3d() :: hdrEnvironment3d() :: lightmapHdrRect3d()
             :: sunLit3d() :: sunShadow3d() :: sunSpotShadow3d() :: sunPbr3d() :: pointShadowPhysical3d()
             :: billboardShadowOf(BillboardShadowYard.SunSide.Axis, "billboardShadowAxis")
             :: billboardShadowOf(BillboardShadowYard.SunSide.Diagonal, "billboardShadowDiagonal")
@@ -84,6 +84,8 @@ mod Scenes {
     /// metallic と roughness の 3 つ（Apple Silicon で pbrSpheres3d 80 px・pbrNoSky3d 34 px・pbrMapped3d 259 px）: 球は鏡面の坂の丸めの ±1 が散る。pbrNoSky3d は toonSteps が 3 なので、
     /// 拡散の段の境目に落ちた画素が Float32 と Float64 の丸めで 1 段（±19 まで）割れる（鏡面は段付けしない）。pbrMapped3d は絵の B と G を読む縁の ±1。
     /// 式を取り違えると球の中（1 個で約 1,700 px）が丸ごと違い、差は千 px を超える。
+    /// 材質の AO の pbrOcclusion3d（Apple Silicon で 349 px・max ±1）: 324 px が板と箱の縁と市松の絵の升の境（Linear の補間の坂）に、残りが平らな面の丸めの ±1 に出る。
+    ///   AO の成分や丸めを取り違えると板と箱の中（約 2,000 px）が丸ごと違い、max も ±1 を超える。
     /// 環境マップの 3 つ（Apple Silicon で pbrEnvironment3d 112 px・pbrEnvironmentBox3d 112 px・pbrEnvironmentSky3d 1,323 px）: 球は絵の補間の ±1〜2。
     /// pbrEnvironmentSky3d は背景の全画素（33,600 px）が絵の補間（Float32 と Float64）の丸めで ±1 割れる。向きを取り違えると背景が丸ごと別の絵になり、max が桁で変わる。
     /// 太陽の 4 つ（Apple Silicon で sunLit3d 0 px・sunShadow3d 0 px・sunSpotShadow3d 45 px・sunPbr3d 87 px）: 影の縁の画素が地図の奥行きの比べ（Float32 と Float64）で割れるのと、
@@ -163,6 +165,7 @@ mod Scenes {
         case "pbrSpheres3d"    => Some(200)
         case "pbrNoSky3d"      => Some(100)
         case "pbrMapped3d"     => Some(400)
+        case "pbrOcclusion3d"  => Some(500)
         case "gltfPbr3d"       => Some(400)
         case "pbrEnvironment3d" => Some(400)
         case "pbrEnvironmentBox3d" => Some(400)
@@ -1734,6 +1737,33 @@ mod Scenes {
         let lit = pbrLit(plate :: box :: Nil, tex :: Nil);
         let scene = { sky = Some(sky), environment = { background = None | lit#environment } | lit };
         { name = "pbrMapped3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
+
+    // 材質の AO の絵（Scene3d.withOcclusionTexture → GL は +occ のプログラムで metalRough.z を r3d_materialOcclusion へ・CPU は ShaderEval の b を pbrAt と光の木へ）。
+    // 左の板は ARM の 1 枚（市松の絵の B = metallic・G = roughness・R = AO）・真ん中の箱は別の絵の AO（strength 0.8）・右の板は lightmap つき（+occ+lm）。
+    // 環境光と空の映り込みを強く・点光源とスポットを弱くして、AO が掛かる環境の光が絵の大半を占めるようにする。
+    // 取り違え（z と別の成分・丸め・CPU の glossyFogged へ渡す値・lightmap の木の変種）は、板と箱の中が丸ごと違って出る。
+    def pbrOcclusion3d(): Scene =
+        let tex = parityTexture();
+        let checker = bakedChecker(true);
+        let baked = bakedChecker(false);
+        let arm = solidMaterial("parity:pbr-arm", c8(200, 200, 210)) |> Scene3d.withMetallicRoughness(1.0, 1.0)
+            |> Scene3d.withMetallicRoughnessTexture(Texture3d.name(tex)) |> Scene3d.withOcclusionTexture(Texture3d.name(tex), 1.0);
+        let separate = solidMaterial("parity:pbr-ao", c8(210, 190, 170)) |> Scene3d.withMetallicRoughness(0.0, 0.6)
+            |> Scene3d.withOcclusionTexture(Texture3d.name(checker), 0.8);
+        let plate = Scene3d.meshInstance(texturedQuad(-1.6, 1.6, -2.0, 2.0, 0.0, 0.0, 1.0), Mat4.mul(Mat4.translate(Vec3.v3(-4.2, 0.0, 12.0)), Mat4.rotateY(0.5)))
+            |> Scene3d.withMaterial(arm);
+        let box = Scene3d.meshInstance(Mesh3d.withBoxUvs(0.5, boxMesh()),
+                                       Mat4.mul(Mat4.translate(Vec3.v3(0.0, 0.0, 12.0)), Mat4.mul(Mat4.rotateX(0.4), Mat4.mul(Mat4.rotateY(0.6), Mat4.scale(Vec3.v3(1.4, 1.4, 1.4))))))
+            |> Scene3d.withMaterial(separate);
+        let lit = Scene3d.meshInstance(withScaledUvs2(1.0, texturedQuad(-1.6, 1.6, -2.0, 2.0, 0.0, 0.0, 1.0)),
+                                       Mat4.mul(Mat4.translate(Vec3.v3(4.2, 0.0, 12.0)), Mat4.rotateX(0.5)))
+            |> Scene3d.withMaterial(arm) |> Scene3d.withLightmap(Scene3d.lightmap(Texture3d.name(baked)));
+        let sky = Scene3d.gradientSky(c8(70, 110, 200), c8(220, 200, 170), c8(60, 50, 40));
+        let base = pbrLit(plate :: box :: lit :: Nil, tex :: checker :: baked :: Nil);
+        let scene = { sky = Some(sky), pointLights = List.map(l -> { intensity = 0.4 | l }, base#pointLights), spotLights = List.map(l -> { intensity = 0.3 | l }, base#spotLights),
+                      environment = { background = None, ambient = c8(170, 170, 180), hemisphere = 0.4 | base#environment } | base };
+        { name = "pbrOcclusion3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
             Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
 
     // ── scene 53〜54: 環境マップ（Scene3d.environmentMap → GL は uEnvMap を textureLod で読む・CPU は SoftRaster3d.Internal.environmentColorAt）。B 段階 ──

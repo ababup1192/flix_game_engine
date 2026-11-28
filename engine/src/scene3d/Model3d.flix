@@ -51,10 +51,13 @@ pub mod Model3d {
     /// - metallic・roughness = pbrMetallicRoughness の metallicFactor・roughnessFactor（書いていなければ glTF の既定の 1。材質に付いたかは part#material を
     ///   Scene3d.metallicRoughnessOf で見る — pbrMetallicRoughness が無い・baseColorFactor だけの材質は付かない）
     /// - metallicRoughnessTexture = 読めた metallicRoughnessTexture の絵の名前（Texture3d.name。読めなかった絵は None）
+    /// - occlusionTexture = 読めた occlusionTexture の絵の名前（project.json の "gltf": { "pbr": true, "occlusion": true } で metallic・roughness の付いた材質だけ読む。
+    ///   ほかは None。ARM の絵なら metallicRoughnessTexture と同じ名前）・occlusionStrength = occlusionTexture の strength（書いていなければ glTF の既定の 1）
     pub type alias GltfMaterial = { name = String, alphaMode = AlphaMode, alphaCutoff = Float64, doubleSided = Bool,
                                     baseColorTexture = Option[String], normalTexture = Option[String],
                                     emissiveTexture = Option[String], emissive = { r = Float64, g = Float64, b = Float64 },
-                                    metallic = Float64, roughness = Float64, metallicRoughnessTexture = Option[String] }
+                                    metallic = Float64, roughness = Float64, metallicRoughnessTexture = Option[String],
+                                    occlusionTexture = Option[String], occlusionStrength = Float64 }
 
     /// 名前が name のノード（同じ名前が複数あれば nodes の並びの前）。たくさん引く時は nodesByName を 1 回作って引く。
     pub def findNode(name: String, model: Model3d): Option[ModelNode] =
@@ -113,7 +116,7 @@ pub mod Model3d {
     pub type alias Loader = LoaderData
 
     /// 読み込みの頭（ループが回る前）で 1 回作り、並列の仕事や BackgroundLoad の decode へ渡す。
-    /// 選択肢は project.json の任意キー "gltf"（{"pbr": Bool, "vertexColors": Bool, "maxTextureSide": Int, "maxNormalSide": Int}・欄の意味は Gltf.LoadOptions・
+    /// 選択肢は project.json の任意キー "gltf"（{"pbr": Bool, "vertexColors": Bool, "occlusion": Bool, "maxTextureSide": Int, "maxNormalSide": Int}・欄の意味は Gltf.LoadOptions・
     /// 無い欄は Gltf.defaultLoadOptions）。LoadProgress.runNoop の下では imageDecoder で止まるので、画面なしは HeadlessLoad.handle で包む。
     // WhyNot: 選択肢を引数で受けない — 鍵の有無・PBR・頂点の色を読み込みのたびにゲームが選ぶと、同じ glb の色が場所によって変わる。
     pub def loader(): Loader \ LoadProgress + Fs.FileRead =
@@ -121,7 +124,14 @@ pub mod Model3d {
             case Ok(p)  => p#gltf
             case Err(e) => Log.fellBackThen("scene3d", "Model3d.loader の project.json", "Gltf.defaultLoadOptions()", e, Gltf.defaultLoadOptions())
         };
-        LoaderData.LoaderData(LoadProgress.imageDecoder(), options, LoadProgress.downloads()#preparsedOf)
+        LoaderData.LoaderData(LoadProgress.imageDecoder(), withOcclusionNotice(options), LoadProgress.downloads()#preparsedOf)
+
+    /// options のまま（occlusion が真で pbr が偽なら、AO の絵を読まないことを 1 行知らせる）。
+    // WhyNot: occlusion だけで pbr を真にしない — pbr は色を線形で読み、材質のある part を増やす（Gltf.LoadOptions の WhyNot）。AO のために見た目の選択を勝手に替えない。
+    def withOcclusionNotice(options: Gltf.LoadOptions): Gltf.LoadOptions =
+        if (options#occlusion and not options#pbr)
+            Log.warnThen("scene3d: project.json の \"gltf\" の occlusion は pbr が偽なので効かない（AO の絵は metallic・roughness を読む材質だけ読む）— \"pbr\": true も書く", options)
+        else options
 
     /// 道 path の glb を読む（読み込みの頭でも、並列の仕事の中でも呼べる）。読めない・壊れている時は Err（道つき）。
     pub def load(loader: Loader, path: String): Result[String, Model3d] \ Fs.FileRead + IO =

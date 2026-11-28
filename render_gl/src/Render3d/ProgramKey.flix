@@ -87,7 +87,7 @@ pub mod Render3d.ProgramKey {
     /// 変種 v の光の式の木の変種（点光源の影・光の量の読み方・景色の拡散の光）。
     pub def lightVariantOf(v: ShaderVariant): LightModel3d.LightVariant =
         { pointShadows = v#pointShadows, lightUnits = Some(if (v#physicalUnits) Scene3d.LightUnits.Physical else Scene3d.LightUnits.Legacy),
-          skyIrradiance = v#skyIrradiance, ambientOcclusion = v#ambientOcclusion }
+          skyIrradiance = v#skyIrradiance, ambientOcclusion = v#ambientOcclusion, materialOcclusion = false }
 
     /// 変種 v の鍵の字（表の key を並べた物。既定は空）。
     pub def variantKeyOf(v: ShaderVariant): String = rowsOf(v) |> List.map(row -> row#key) |> String.flatten
@@ -101,11 +101,12 @@ pub mod Render3d.ProgramKey {
     /// coverage = cutout を discard でなく alpha to coverage で抜く（isCoverageCutout が真の時だけ）・
     /// metallicRoughness = metallic と roughness を持つ材質（鏡面ハイライトと空の映り込みを足す式のプログラム。持たない材質の GLSL は変わらない）・
     /// screenAoOnBlend = 半透明でも画面の上の SSAO の mask を読む（screenAoOnBlendOf が真の時だけ）・
+    /// occlusion = 材質の AO の絵を環境の光と映り込みに掛ける（Scene3d.hasMaterialOcclusion。metallicRoughness が真の時だけ真）・
     /// variant = 場面のシェーダーの変種。
-    // WhyNot: blend・doubleSided・coverage・metallicRoughness・screenAoOnBlend と変種を uniform で切り替えない — 使わない材質の GLSL の字が変わり、
+    // WhyNot: blend・doubleSided・coverage・metallicRoughness・screenAoOnBlend・materialOcclusion と変種を uniform で切り替えない — 使わない材質の GLSL の字が変わり、
     //   どの GPU でも同じ絵になる保証が崩れる。どれも偽の版は、それらを足す前と 1 字も同じ GLSL を組む。
     pub type alias ProgramKind = { skinned = Bool, uv = Bool, normalMap = Bool, lightmap = Bool, blend = Bool, doubleSided = Bool, coverage = Bool,
-                                   metallicRoughness = Bool, screenAoOnBlend = Bool, variant = ShaderVariant }
+                                   metallicRoughness = Bool, screenAoOnBlend = Bool, materialOcclusion = Bool, variant = ShaderVariant }
 
     /// 材質 m を変種 v で描く時に、半透明でも SSAO の mask を読むか（Scene3d.MaterialFields#screenAoOnBlend）。
     // WhyNot: 材質の欄をそのまま版に入れない — +ao の無い場面で同じ字のプログラムを 2 回組み、記録の行も増える。
@@ -118,6 +119,6 @@ pub mod Render3d.ProgramKey {
     pub def materialKey(m: Scene3d.MaterialFields, kind: ProgramKind): String =
         "3d" + (if (kind#skinned) "+skin" else "") + (if (kind#uv) "+uv" else "") + (if (kind#normalMap) "+nm" else "") + (if (kind#lightmap) "+lm" else "")
             + (if (kind#blend) "+bl" else "") + (if (kind#doubleSided) "+ds" else "") + (if (kind#coverage) "+cov" else "")
-            + (if (kind#metallicRoughness) "+mr" else "") + (if (kind#screenAoOnBlend) "+ab" else "") + variantKeyOf(kind#variant)
+            + (if (kind#metallicRoughness) "+mr" else "") + (if (kind#screenAoOnBlend) "+ab" else "") + (if (kind#materialOcclusion) "+occ" else "") + variantKeyOf(kind#variant)
             + ":" + Int64.toString(force m#shaderHash)
 }

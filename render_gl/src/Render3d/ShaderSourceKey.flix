@@ -22,7 +22,7 @@ mod Render3d.ShaderSourceKey {
         case ShaderSourceKey.MaterialFragmentTemplate(kind, readsTextures) =>
             "material.fs" + flag(kind#skinned, "+skin") + flag(kind#uv, "+uv") + flag(kind#normalMap, "+nm") + flag(kind#lightmap, "+lm")
                 + flag(kind#blend, "+bl") + flag(kind#doubleSided, "+ds") + flag(kind#coverage, "+cov") + flag(kind#metallicRoughness, "+mr") + flag(kind#screenAoOnBlend, "+ab")
-                + flag(readsTextures, "+tex") + "/" + variantKeyOf(kind#variant)
+                + flag(kind#materialOcclusion, "+occ") + flag(readsTextures, "+tex") + "/" + variantKeyOf(kind#variant)
         case ShaderSourceKey.ScreenPassFragment(kind)       => "screen.fs." + screenPassName(kind)
     }
 

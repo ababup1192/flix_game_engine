@@ -158,7 +158,8 @@ pub mod Texture3d {
     /// 3D の描き手が絵を貼る使い方（段の平均の仕方を決める）。MaterialTexture = 材質の色の絵（Srgb として平均する）・
     /// NormalMap = 法線マップ（Linear）・Lightmap = ベイクした光（その色空間）。
     // WhyNot: 絵ごとに色空間を持たせない — 材質の色は Spec の出口でまとめて線形へ戻すので、絵ごとの色空間を読むのは段の平均と lightmap だけ。
-    //   数の絵（mask・ノイズ）を材質に貼った時は遠くの段が少し変わる。Linear で平均したい使い手が出たら、ここに使い方を足す。
+    //   数の絵（mask・ノイズ・metallicRoughnessTexture・材質の AO の絵）を材質に貼った時は遠くの段が少し変わる（AO は遠くで少し明るい側へ寄る）。
+    //   Linear で平均したい使い手が出たら、ここに使い方を足す。
     pub enum TextureUse with Eq, Order, Hash, ToString {
         case MaterialTexture
         case NormalMap

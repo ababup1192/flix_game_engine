@@ -49,7 +49,7 @@ mod SoftRaster3d.TestLightAnalytic {
     /// 原点の上向きの面に、真上から color × intensity = e の太陽を当てた光の量（r）。環境光・半球光は 0。
     def sunAboveLight(e: Float64): Float64 =
         let (r, _, _) = SoftRaster3dLight.lightAt(0, noLights(), noLights(), None, SoftRaster3d.PointShadows.allLit(), 0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
-                                                  0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, e, e, e, 1.0, 0.0, 1.0, Scene3d.Internal.SkyIrradiance.zeros(), 0.0, 1.0, 1.0);
+                                                  0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, e, e, e, 1.0, 0.0, 1.0, Scene3d.Internal.SkyIrradiance.zeros(), 0.0, 1.0, 1.0, 1.0);
         r
 
     /// 同じ面を、反射率 albedo・metallic 0・roughness 1 の PBR の材質で塗った色（r・かすみの前）。空と環境は 0。
@@ -58,14 +58,14 @@ mod SoftRaster3d.TestLightAnalytic {
         let (r, _, _) = SoftRaster3dLight.pbrAt(noLights(), noLights(), None, SoftRaster3d.PointShadows.allLit(), 0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
                                                 albedo, albedo, albedo, light, light, light, 0.0, 1.0, 0.0,
                                                 0.0, 10.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-                                                0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, e, e, e, 1.0, 0.0, 1.0);
+                                                0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, e, e, e, 1.0, 0.0, 1.0, 1.0);
         r
 
     /// 原点の白・強さ 1・range の点光源の、真下 d の上向きの面が受ける光の量（r）。
     def pointBelowLight(d: Float64, range: Float64): Float64 =
         let points = LightModel3d.packPointLights({ position = Vec3.zero(), color = Color.rgb(1.0, 1.0, 1.0), intensity = 1.0, range = range } :: Nil);
         let (r, _, _) = SoftRaster3dLight.lightAt(0, points, noLights(), None, SoftRaster3d.PointShadows.allLit(), 0.0, 0.0 - d, 0.0, 0.0, 1.0, 0.0,
-                                                  0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, Scene3d.Internal.SkyIrradiance.zeros(), 0.0, 1.0, 1.0);
+                                                  0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, Scene3d.Internal.SkyIrradiance.zeros(), 0.0, 1.0, 1.0, 1.0);
         r
 
     def emptyEnvironment(): Scene3d.Environment3d =
@@ -157,7 +157,7 @@ mod SoftRaster3d.TestLightAnalytic {
         let normals = Vec3.v3(0.0, 1.0, 0.0) :: Vec3.v3(0.0, -1.0, 0.0) :: Vec3.normalized(Vec3.v3(0.3, 0.5, -0.8)) :: Vec3.normalized(Vec3.v3(-0.7, -0.2, 0.4)) :: Nil;
         let worst = normals |> List.map(n -> {
             let (r, g, b) = SoftRaster3dLight.lightAt(0, noLights(), noLights(), None, SoftRaster3d.PointShadows.allLit(), 0.0, 0.0, 0.0, n#x, n#y, n#z,
-                                                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, packed, 1.0, 1.0, 1.0);
+                                                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, packed, 1.0, 1.0, 1.0, 1.0);
             let (er, eg, eb) = SphericalHarmonics.irradianceAt(sh, n);
             Float64.max(Float64.abs(r - er), Float64.max(Float64.abs(g - eg), Float64.abs(b - eb)))
         }) |> List.foldLeft(Float64.max, 0.0);
@@ -168,7 +168,7 @@ mod SoftRaster3d.TestLightAnalytic {
     def testZeroContributionKeepsAmbient(): Unit \ Assert =
         let packed = Vector.repeat(27, 5.0);
         let (r, _, _) = SoftRaster3dLight.lightAt(0, noLights(), noLights(), None, SoftRaster3d.PointShadows.allLit(), 0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
-                                                  0.3, 0.3, 0.3, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, packed, 0.0, 1.0, 1.0);
+                                                  0.3, 0.3, 0.3, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, packed, 0.0, 1.0, 1.0, 1.0);
         Assert.assertEq(expected = 0.3, r)
 
 }

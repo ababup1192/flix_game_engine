@@ -1,4 +1,4 @@
-<!-- engine v0.118.0 / 生成: 2026-11-27 -->
+<!-- engine v0.118.0 / 生成: 2026-11-28 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine
@@ -645,8 +645,8 @@
 - 上限なし。ほかの値は { normal = 1024 | Gltf.noTextureLimits() } の形で替える。
   `pub def noTextureLimits(): TextureLimits`
 - 読み方の選択肢。limits = 材質の絵の大きさの上限（場面の絵の上限に収める・近くで見ない法線マップを小さくする）・
-  `pub type alias LoadOptions = { limits = TextureLimits, pbr = Bool, vertexColors = Bool }`
-- 上限なし・metallic・roughness を読まない・COLOR_0 を読まない。欄を書き替えて使う: `{ vertexColors = true | Gltf.defaultLoadOptions() }`。
+  `pub type alias LoadOptions = { limits = TextureLimits, pbr = Bool, vertexColors = Bool, occlusion = Bool }`
+- 上限なし・metallic・roughness を読まない・COLOR_0 を読まない・AO の絵を読まない。欄を書き替えて使う: `{ vertexColors = true | Gltf.defaultLoadOptions() }`。
   `pub def defaultLoadOptions(): LoadOptions`
 - .glb のバイトから、絵と材質つきで作る。ゲームは Model3d.loader / load / decode を使う（engine のテストと bench が選択肢を直に渡す時の API）。
   `pub def decodeWith(decoder: ImageData.ImageDecoder, options: LoadOptions, key: Option[String], bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO`
@@ -707,7 +707,7 @@
 - Select の条件。
   `pub enum Cond with Eq { case Greater(ScalarExpr, ScalarExpr) case AtLeast(ScalarExpr, ScalarExpr) case And(Cond, Cond) }`
 - 画素ごと・場面ごとのスカラーの入力。
-  `pub enum ScalarInput with Eq, Order { case Hemisphere case ShadowLit case SunLit case FogNear case FogFar case SkyCurve case LightmapSrgb case LightmapIntensity case EnvironmentOn case EnvironmentBoxOn case PointShadowLit case PhysicalUnits case InverseUnitsPerMeterSquared case SkyContribution case ScreenAmbientOcclusion case ScreenAmbientOcclusionDirect }`
+  `pub enum ScalarInput with Eq, Order { case Hemisphere case ShadowLit case SunLit case FogNear case FogFar case SkyCurve case LightmapSrgb case LightmapIntensity case EnvironmentOn case EnvironmentBoxOn case PointShadowLit case PhysicalUnits case InverseUnitsPerMeterSquared case SkyContribution case ScreenAmbientOcclusion case ScreenAmbientOcclusionDirect case MaterialOcclusion }`
 - 画素ごと・場面ごとの vec3 の入力。
   `pub enum Vec3Input with Eq, Order { case Position case Normal case Eye case Ambient case LightmapColor case Color case FogColor case SkyDirection case SkyZenith case SkyHorizon case SkyGround case Albedo case Light case MetallicRoughness case EnvironmentColor case EnvironmentBoxMin case EnvironmentBoxMax case EnvironmentBoxCenter case SunDirection case SunColor case IrradianceSh(Int32) }`
 - 光のループの中で読めるスカラーの欄。
@@ -715,12 +715,12 @@
 - 光のループの中で読める vec3 の欄。
   `pub enum Vec3LightField with Eq { case Position case Color case Direction }`
 - 木の変種（Unity の shader variant に当たる）。pointShadows = 点光源の光に影の割合（ScalarInput.PointShadowLit）を掛けるか・
-  `pub type alias LightVariant = { pointShadows = Bool, lightUnits = Option[Scene3d.LightUnits], skyIrradiance = Bool, ambientOcclusion = Bool }`
+  `pub type alias LightVariant = { pointShadows = Bool, lightUnits = Option[Scene3d.LightUnits], skyIrradiance = Bool, ambientOcclusion = Bool, materialOcclusion = Bool }`
 - 点光源の影なし・Legacy の変種（lightingModel() などと同じ木）。
   `pub def legacyVariant(): LightVariant`
 - CPU の描き手が回す変種（点光源の影の割合を読み・光の量の読み方を入力で選ぶ・景色の拡散の光は SkyContribution が 0 なら ambient のまま・
   `pub def cpuVariant(): LightVariant`
-- 場面 scene に使う GPU の変種（pointShadows が Some なら影の割合を読む・光の量の読み方は場面のまま）。
+- 場面 scene に使う GPU の変種（pointShadows が Some なら影の割合を読む・光の量の読み方は場面のまま。materialOcclusion は材質のプログラムが足す）。
   `pub def variantOf(scene: Scene3d.Scene3dCmd): LightVariant`
 - lightmap の無い面に当たる光（ファイルの頭の light）。
   `pub def lightingModel(): Vec3Expr`
@@ -979,7 +979,7 @@
 - glTF の材質の alphaMode。Opaque = 不透明・Mask = alphaCutoff で抜く・Blend = 半透明。
   `pub enum AlphaMode with Eq, ToString { case Opaque case Mask case Blend }`
 - glTF の材質の情報（読むだけ。描き方を決めるのは part#material）。
-  `pub type alias GltfMaterial = { name = String, alphaMode = AlphaMode, alphaCutoff = Float64, doubleSided = Bool, baseColorTexture = Option[String], normalTexture = Option[String], emissiveTexture = Option[String], emissive = { r = Float64, g = Float64, b = Float64 }, metallic = Float64, roughness = Float64, metallicRoughnessTexture = Option[String] }`
+  `pub type alias GltfMaterial = { name = String, alphaMode = AlphaMode, alphaCutoff = Float64, doubleSided = Bool, baseColorTexture = Option[String], normalTexture = Option[String], emissiveTexture = Option[String], emissive = { r = Float64, g = Float64, b = Float64 }, metallic = Float64, roughness = Float64, metallicRoughnessTexture = Option[String], occlusionTexture = Option[String], occlusionStrength = Float64 }`
 - 名前が name のノード（同じ名前が複数あれば nodes の並びの前）。たくさん引く時は nodesByName を 1 回作って引く。
   `pub def findNode(name: String, model: Model3d): Option[ModelNode]`
 - 名前 → ノード（同じ名前が複数あれば nodes の並びの前）。
@@ -1508,7 +1508,9 @@
 - 法線マップ。texture = 絵の名前（タンジェント空間・緑が絵の上）・strength = でこぼこの強さ（1 で絵のまま）。
   `pub type alias NormalMap = { texture = String, strength = Float64 }`
 - 材質の中身。spec の Out の色 = 光を当てる前の色・params = spec の Param・
-  `pub type alias MaterialFields = { spec = ShaderDoc.Spec, params = Map[String, Float64], cutout = Bool, emission = Option[ShaderDoc.Shade], normalMap = Option[NormalMap], wrap = Wrap, blend = Bool, doubleSided = Bool, emissionIntensity = Float64, metallicRoughness = Option[MetallicRoughness], metallicRoughnessShade = Option[ShaderDoc.Shade], shaderHash = Lazy[Int64], texReads = Lazy[List[(String, ShaderDoc.FilterMode)]], maxMipLevels = Int32, screenAoOnBlend = Bool }`
+  `pub type alias MaterialFields = { spec = ShaderDoc.Spec, params = Map[String, Float64], cutout = Bool, emission = Option[ShaderDoc.Shade], normalMap = Option[NormalMap], wrap = Wrap, blend = Bool, doubleSided = Bool, emissionIntensity = Float64, metallicRoughness = Option[MetallicRoughness], metallicRoughnessShade = Option[ShaderDoc.Shade], shaderHash = Lazy[Int64], texReads = Lazy[List[(String, ShaderDoc.FilterMode)]], maxMipLevels = Int32, screenAoOnBlend = Bool, occlusion = Option[Occlusion] }`
+- 材質の AO の絵（glTF の occlusionTexture と同じ決まり: R = 光の届く割合・掛ける値 = 1 + strength × (R − 1)）。
+  `pub type alias Occlusion = { texture = String, strength = Float64 }`
 - 材質の金属っぽさ（metallic・0 で絶縁体・1 で金属）と粗さ（roughness・0 で鏡・1 でざらざら）。どちらも 0..1。
   `pub type alias MetallicRoughness = { metallic = Float64, roughness = Float64, texture = Option[String] }`
 - 材質（閉じた型 — 欄を後から足しても、ゲームの書いた値が壊れない）。material から作り、with… で足す。
@@ -1545,10 +1547,18 @@
   `pub def withMetallicRoughnessTexture(texture: String, m: Material3d): Material3d`
 - metallic と roughness を色の場 shade で付ける（r = metallic・g = roughness・b は使わない。Godot の ShaderMaterial で METALLIC・ROUGHNESS を書くのに当たる）。
   `pub def withMetallicRoughnessShade(shade: ShaderDoc.Shade, m: Material3d): Material3d`
-- metallic と roughness を外す（glb の材質を今までのマットな絵に戻す時）。
+- metallic と roughness を外す（glb の材質を今までのマットな絵に戻す時）。AO の絵（withOcclusionTexture）も描かなくなる（欄は残り、また付ければ描く）。
   `pub def withoutMetallicRoughness(m: Material3d): Material3d`
 - 付いている metallic と roughness（無ければ None）。
   `pub def metallicRoughnessOf(m: Material3d): Option[MetallicRoughness]`
+- AO の絵 texture（R = 光の届く割合）を付ける（glTF の occlusionTexture。strength は 0..1 に丸める）。metallicRoughness を持つ材質の時だけ描き
+  `pub def withOcclusionTexture(texture: String, strength: Float64, m: Material3d): Material3d`
+- 付いている AO の絵（無ければ None。metallicRoughness が無くて描かない時も返す）。
+  `pub def occlusionOf(m: Material3d): Option[Occlusion]`
+- 材質の AO を描くか（AO の絵と metallicRoughness の両方を持つ）。真なら metallicRoughnessShade の b が AO の値（描き手は b を読む）。
+  `pub def hasMaterialOcclusion(f: MaterialFields): Bool`
+- metallicRoughnessShade の b に AO を入れる時の strength の Param の名前。
+  `pub def pbrParamOcclusion(): String`
 - metallicRoughnessShade の中の Param の名前（ほかの Param と重ならない字）。
   `pub def pbrParamMetallic(): String`
 - `pub def pbrParamRoughness(): String`
@@ -1999,7 +2009,7 @@
 - Spec を面 1 枚ぶん組み直す。texEnv の名前もここで引いておく（画素ごとに Map を引かない）。
   `pub def compile(spec: ShaderDoc.Spec, texEnv: Map[String, TexImage]): CompiledSpec`
 - 3D の材質を組み直す材料。textures = tex / blur の読み先の絵の段の列（名前 → Mip.build の段。段 0 が元の絵。
-  `pub type alias MaterialInput = { spec = ShaderDoc.Spec, emission = Option[ShaderDoc.Shade], metallicRoughness = Option[ShaderDoc.Shade], params = Map[String, Float64], textures = Map[String, Vector[TexData]], repeat = Bool }`
+  `pub type alias MaterialInput = { spec = ShaderDoc.Spec, emission = Option[ShaderDoc.Shade], metallicRoughness = Option[ShaderDoc.Shade], readsMaterialOcclusion = Bool, params = Map[String, Float64], textures = Map[String, Vector[TexData]], repeat = Bool }`
 - 3D の材質（Scene3d.Material3d の spec・emission・metallicRoughness・params）を組み直す。Param は params の値の Const に置き換える
   `pub def compileMaterial(input: MaterialInput): CompiledSpec`
 - 画素 1 つ（uv = (u, v)・時刻 t）の (r, g, b, α)。値は evalPixelAlphaTex と同じ。
@@ -2009,7 +2019,7 @@
 - 3D のメッシュの画素 1 つ（時刻 t）の (r, g, b, α)。色は光を当てる前の色（albedo）。
   `pub def evalCompiled3(compiled: CompiledSpec, point: SurfacePoint, t: Float64): (Float64, Float64, Float64, Float64)`
 - 3D の材質の画素 1 つ: 光を当てる前の色（albedo）・α・自分で光る色（emission。無ければ黒）。
-  `pub type alias MaterialSample = { albedo = Color, alpha = Float64, emission = Color, metallicRoughness = Option[(Float64, Float64)] }`
+  `pub type alias MaterialSample = { albedo = Color, alpha = Float64, emission = Color, metallicRoughness = Option[(Float64, Float64)], materialOcclusion = Float64 }`
 - evalCompiled3 に emission を足した版（bindings の評価を色・α・emission で共有する）。
   `pub def evalMaterial3(compiled: CompiledSpec, point: SurfacePoint, t: Float64): MaterialSample`
 - evalMaterial3 の、段つきの絵を lod で読む版。nextX・nextY = 右隣・下隣の画素の入力（隣が三角形の外でも、重みを外へ延ばした値）。
@@ -2039,7 +2049,9 @@
 - 3D の材質を GLSL にした部品。render_gl の 3D の frag が、自分の光の計算の前に差し込む。
   `pub type alias MaterialGlsl = { uniforms = String, functions = String, paramNames = List[String], texReads = List[(String, ShaderDoc.FilterMode)], cutoutAlpha = String }`
 - 3D の材質（spec・自分で光る色 emission・metallic と roughness を RGB の r と g に入れた色 metallicRoughness）の GLSL の部品。World / Normal / VertexColor は varying の vWorld / vNormal / vColor を、
-  `pub def compile3d(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], metallicRoughness: Option[ShaderDoc.Shade]): MaterialGlsl`
+  `pub def compile3d(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], metallicRoughness: Option[ShaderDoc.Shade], materialOcclusion: Bool): MaterialGlsl`
+- materialEval の metalRough の成分の数（materialOcclusion なら 3 = metallic・roughness・AO・ほかは 2）。GLSL・WGSL の部品と、それを呼ぶ frag が同じ数を使う。
+  `pub def metalRoughWidth(materialOcclusion: Bool): Int32`
 - 3D の材質の段つきの読み。c = 読む座標（Spec の変換の後・REPEAT で 0..1 に戻す前）・levels = 段の数（1 なら段 0）。
   `pub def texMipSource(): String`
 - `pub def compileBody(spec: ShaderDoc.Spec): String`
@@ -2056,7 +2068,7 @@
 - 3D の材質の WGSL の部品。declarations = `SgValues` と絵の宣言（`@group(group)`）・functions = ノイズの関数と
   `pub type alias MaterialWgsl = { declarations = String, functions = String, slots = List[UniformSlot], paramNames = List[String], texReads = List[(String, ShaderDoc.FilterMode)], cutoutAlpha = String }`
 - 3D の材質の WGSL（式は ShaderGen.compile3d と同じ木から作る）。group = `sg` と絵を置く bind group の番号。
-  `pub def compile3d(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], metallicRoughness: Option[ShaderDoc.Shade], group: Int32): MaterialWgsl`
+  `pub def compile3d(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], metallicRoughness: Option[ShaderDoc.Shade], materialOcclusion: Bool, group: Int32): MaterialWgsl`
 - 欄の WGSL の名前（GLSL の uniform と同じ名前）。
   `pub def slotName(slot: UniformSlot): String`
 - 3D の材質の mip のレベルを選ぶ読み（ShaderGen.texMipSource と同じ式。上下は返さない）。

@@ -18,7 +18,7 @@
 //     "sounds":   [{"name": String, "path": String, "looping": Bool}, ...],
 //     "web": { "portraitDesign": {"width": Int, "minHeight": Int, "maxHeight": Int} }
 //                                      （任意。縦に持って開いた時の design。Project#portraitDesign へ。ほかの web の欄は書き出しの道具が読む）
-//     "gltf": {"pbr": Bool, "vertexColors": Bool, "maxTextureSide": Int, "maxNormalSide": Int}
+//     "gltf": {"pbr": Bool, "vertexColors": Bool, "occlusion": Bool, "maxTextureSide": Int, "maxNormalSide": Int}
 //                                      （任意。glb の読み方。Project#gltf へ。無い欄は Gltf.defaultLoadOptions）
 //   }
 //
@@ -323,10 +323,11 @@ pub mod ProjectLoader {
                     m            <- matchObject(json, "gltf");
                     pbr          <- optionalBool(m, "pbr", base#pbr);
                     vertexColors <- optionalBool(m, "vertexColors", base#vertexColors);
+                    occlusion    <- optionalBool(m, "occlusion", base#occlusion);
                     baseSide     <- optionalInt(m, "maxTextureSide", base#limits#baseColor);
                     normalSide   <- optionalInt(m, "maxNormalSide", base#limits#normal);
                     _            <- if (baseSide >= 1 and normalSide >= 1) Ok(()) else Err(err("gltf の maxTextureSide と maxNormalSide は 1 以上"))
-                ) yield { limits = { baseColor = baseSide, normal = normalSide }, pbr = pbr, vertexColors = vertexColors }
+                ) yield { limits = { baseColor = baseSide, normal = normalSide }, pbr = pbr, vertexColors = vertexColors, occlusion = occlusion }
         }
 
     def optionalBool(map: Map[String, Util.Json.Json], key: String, fallback: Bool): Result[JsonError, Bool] =

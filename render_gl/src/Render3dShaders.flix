@@ -78,16 +78,18 @@ pub mod Render3dShaders {
                                    deps = Nil, derivative = false })
 
     /// 光の式の木の字が読みうる定義（spot = スポット i の光に掛ける割合の関数）。
-    def lightReads(spot: Definition): List[Definition] = spot :: sunLit() :: pointLit() :: screenAo() :: screenAoDirect() :: colorSpace()
+    def lightReads(spot: Definition): List[Definition] = spot :: sunLit() :: pointLit() :: screenAo() :: screenAoDirect() :: materialOcclusionValue() :: colorSpace()
 
-    /// 変種 v の光の式の木を見分ける字（光の式の木を変える欄の +ps・+pu・+sh・+ao だけで決める）。
-    def lightKeyOf(v: Render3d.ProgramKey.ShaderVariant): String =
-        "/ps=${v#pointShadows}/pu=${v#physicalUnits}/sh=${v#skyIrradiance}" + (if (v#ambientOcclusion) "/ao" else "")
+    /// 光の式の木の変種 lv を見分ける字（木を変える欄の +ps・+pu・+sh・+ao と、材質の AO だけで決める）。
+    def lightKeyOf(lv: LightModel3d.LightVariant): String =
+        let physical = lv#lightUnits == Some(Scene3d.LightUnits.Physical);
+        "/ps=${lv#pointShadows}/pu=${physical}/sh=${lv#skyIrradiance}" + (if (lv#ambientOcclusion) "/ao" else "") + (if (lv#materialOcclusion) "/occ" else "")
 
-    /// 変種 v の光の式 lightAt(点, 法線)（spot = スポットの影の割合の関数）。
-    pub def lightAt(v: Render3d.ProgramKey.ShaderVariant, spot: Definition): Definition =
-        treeFunction("lightAt", lightKeyOf(v), LightModel3d.Vec3Input.Position :: LightModel3d.Vec3Input.Normal :: Nil,
-                     LightModel3d.lightingModelFor(Render3d.ProgramKey.lightVariantOf(v)), lightReads(spot))
+    /// 光の式の木の変種 lv の光の式 lightAt(点, 法線)（lv は Render3d.ProgramKey.lightVariantOf・材質の AO を掛けるなら materialOcclusion を真に。
+    /// spot = スポットの影の割合の関数）。
+    pub def lightAt(lv: LightModel3d.LightVariant, spot: Definition): Definition =
+        treeFunction("lightAt", lightKeyOf(lv), LightModel3d.Vec3Input.Position :: LightModel3d.Vec3Input.Normal :: Nil,
+                     LightModel3d.lightingModelFor(lv), lightReads(spot))
 
     /// かすみの式 fogAt(点, 色)。
     pub def fogAt(): Definition =
@@ -296,6 +298,10 @@ pub mod Render3dShaders {
     /// 光の式の木が読む直接光の SSAO の値 1 − lightAffect × (1 − r3d_ao)。
     pub def screenAoDirect(): Definition = ShaderAst.privateVar("r3d_aoDirect", Float.Float, None, Some(f("1.0")), None)
 
+    /// 光の式の木が読む材質の AO の絵の値（+occ の材質の frag の main が materialEval の metalRough.z を先に代入する）。
+    // WhyNot: SSAO の r3d_ao に掛けて済ませない — SSAO の無い場面でも直接光の × r3d_aoDirect が木に乗り、映り込みにも掛けられない。
+    pub def materialOcclusionValue(): Definition = ShaderAst.privateVar("r3d_materialOcclusion", Float.Float, None, Some(f("1.0")), None)
+
     /// 場面の描き先の今の画素が読む SSAO の mask の値 r3d_screenAoAt()（Render3d.ScreenPasses.screenMaskAt。描き先の大きさは uAo.xy）。
     pub def screenAoAt(): Definition =
         let values = u(Vec4.Vec4, R3dUniform.AoValues);
@@ -362,10 +368,10 @@ pub mod Render3dShaders {
                                add(mul(uv2, ShaderAst.zw(rect)), ShaderAst.xy(rect)));
         ShaderAst.function("lightmapColor", ShaderAst.Ty.Vec3, pu :: Nil, ret(ShaderAst.rgb(texel)) :: Nil)
 
-    /// lightmap のある面の光の式 lightmapLightAt(p, n, lightmap の色)（変種 v の LightModel3d の木から作る。spot = スポットの影の割合の関数）。
-    pub def lightmapLightAt(v: Render3d.ProgramKey.ShaderVariant, spot: Definition): Definition =
-        treeFunction("lightmapLightAt", lightKeyOf(v), LightModel3d.Vec3Input.Position :: LightModel3d.Vec3Input.Normal :: LightModel3d.Vec3Input.LightmapColor :: Nil,
-                     LightModel3d.lightmapLightingModelFor(Render3d.ProgramKey.lightVariantOf(v)), lightReads(spot))
+    /// lightmap のある面の光の式 lightmapLightAt(p, n, lightmap の色)（木の変種 lv の LightModel3d の木から作る。lv と spot は lightAt と同じ）。
+    pub def lightmapLightAt(lv: LightModel3d.LightVariant, spot: Definition): Definition =
+        treeFunction("lightmapLightAt", lightKeyOf(lv), LightModel3d.Vec3Input.Position :: LightModel3d.Vec3Input.Normal :: LightModel3d.Vec3Input.LightmapColor :: Nil,
+                     LightModel3d.lightmapLightingModelFor(lv), lightReads(spot))
 
     /// 跳ね返りの向き environmentDirectionAt(p, n, albedo, metalRough)（LightModel3d.environmentDirection の木から作る）。
     pub def environmentDirectionAt(): Definition =
@@ -374,11 +380,11 @@ pub mod Render3dShaders {
                      LightModel3d.environmentDirection(), Nil)
 
     /// metallic と roughness を持つ材質の色 pbrAt(p, n, albedo × tint, 拡散の光, vec3(metallic, roughness, 0), 映り込み)（変種 v の LightModel3d.pbrModel の木から作る。
-    /// spot = スポットの影の割合の関数）。
-    pub def pbrAt(v: Render3d.ProgramKey.ShaderVariant, spot: Definition): Definition =
-        treeFunction("pbrAt", lightKeyOf(v), LightModel3d.Vec3Input.Position :: LightModel3d.Vec3Input.Normal :: LightModel3d.Vec3Input.Albedo :: LightModel3d.Vec3Input.Light ::
+    /// lv と spot は lightAt と同じ）。
+    pub def pbrAt(lv: LightModel3d.LightVariant, spot: Definition): Definition =
+        treeFunction("pbrAt", lightKeyOf(lv), LightModel3d.Vec3Input.Position :: LightModel3d.Vec3Input.Normal :: LightModel3d.Vec3Input.Albedo :: LightModel3d.Vec3Input.Light ::
                               LightModel3d.Vec3Input.MetallicRoughness :: LightModel3d.Vec3Input.EnvironmentColor :: Nil,
-                     LightModel3d.pbrModelFor(Render3d.ProgramKey.lightVariantOf(v)), lightReads(spot))
+                     LightModel3d.pbrModelFor(lv), lightReads(spot))
 
     /// 跳ね返りの向きで環境マップの絵を読む environmentColorAt(p, n, albedo × tint, vec3(metallic, roughness, 0))（線形の量・強さを掛けた色。
     /// CPU の描き手は SoftRaster3d.Internal.environmentColorAt）。絵は向き → 座標（environmentUv）で、段は roughness × (段の数 − 1)（LightModel3d.environmentLodOf）を明示して読む。
@@ -557,11 +563,11 @@ pub mod Render3dShaders {
 
     /// 光の式と、それと一緒に置く定義（太陽の影の割合 sunLitAt・かすみ・色を作る最後の組み立て。feature の declarations を足す）。
     pub def lightDefinitions(v: Render3d.ProgramKey.ShaderVariant, feature: ShaderFeature): List[Definition] =
-        feature#declarations(sunLitAt() :: lightAt(v, feature#spotShadow(spotShadow())) :: fogged() :: surfaceOut() :: Nil)
+        feature#declarations(sunLitAt() :: lightAt(Render3d.ProgramKey.lightVariantOf(v), feature#spotShadow(spotShadow())) :: fogged() :: surfaceOut() :: Nil)
 
     /// metallic と roughness を持つ材質の色 pbrAt と、それと一緒に置く定義（環境マップの読み・かすみ → emission の組み立て）。
     pub def metallicRoughnessDefinitions(v: Render3d.ProgramKey.ShaderVariant, feature: ShaderFeature): List[Definition] =
-        environmentColorAt() :: pbrAt(v, feature#spotShadow(spotShadow())) :: surfaceOutLit() :: Nil
+        environmentColorAt() :: pbrAt(Render3d.ProgramKey.lightVariantOf(v), feature#spotShadow(spotShadow())) :: surfaceOutLit() :: Nil
 
     /// 光の計算の前に影の割合を埋める文（r3d_sunLit と feature の beforeLight）。
     def shadowsBeforeLight(feature: ShaderFeature, at: LightPoint): List[ShaderAst.Statement] =
@@ -586,14 +592,15 @@ pub mod Render3dShaders {
         named ::: uv :: Nil
 
     /// 材質の部品の materialEval を呼び、albedo・emission（metallicRoughness なら metalRough も）を局所の値に置く文（GLSL は out の引数・WGSL は struct を返す）。
+    /// metalRough の成分の数は ShaderGen.metalRoughWidth（materialOcclusion なら 3 = z が材質の AO）。
     // WhyNot: 木の call で書かない — ShaderGen の部品の materialEval は GLSL では out の引数で返し、WGSL では struct を返すので、1 つの呼び方の形にならない。
-    def materialEval(metallicRoughness: Bool): ShaderAst.Statement =
+    def materialEval(metallicRoughness: Bool, materialOcclusion: Bool): ShaderAst.Statement =
+        let head = "vec4 albedo;\nvec3 emission;\n";
+        let wgslHead = "let material = materialEval(vUv, vWorld, vNormal, vColor);\nlet albedo = material.albedo;\nlet emission = material.emission;";
         if (metallicRoughness)
-            ShaderAst.rawStatement("vec4 albedo;\nvec3 emission;\nvec2 metalRough;\nmaterialEval(albedo, emission, metalRough);",
-                                   "let material = materialEval(vUv, vWorld, vNormal, vColor);\nlet albedo = material.albedo;\nlet emission = material.emission;\nlet metalRough = material.metalRough;")
-        else
-            ShaderAst.rawStatement("vec4 albedo;\nvec3 emission;\nmaterialEval(albedo, emission);",
-                                   "let material = materialEval(vUv, vWorld, vNormal, vColor);\nlet albedo = material.albedo;\nlet emission = material.emission;")
+            ShaderAst.rawStatement(head + "vec${ShaderGen.metalRoughWidth(materialOcclusion)} metalRough;\nmaterialEval(albedo, emission, metalRough);",
+                                   wgslHead + "\nlet metalRough = material.metalRough;")
+        else ShaderAst.rawStatement(head + "materialEval(albedo, emission);", wgslHead)
 
     /// 材質の frag の main の本文（材質の値 → cutout の discard → uDepthOut の枝 → 表裏 → 法線 → 影 → 光 → PBR → 出口）。
     /// 光の式は頂点の色のプログラムと同じで、頂点の色の代わりに materialEval の albedo を使う（頂点の色は材質の Spec が VertexColor で読む）。
@@ -622,11 +629,16 @@ pub mod Render3dShaders {
                      arg(faceNormal) :: arg(ShaderAst.ref(Vec2.Vec2, "vUv")) :: arg(ShaderAst.varying(Vec4.Vec4, tangentVarying())) :: Nil)
             else faceNormal;
         let (declN, n) = let_("n", bent);
+        let occluded = surface#metallicRoughness and surface#materialOcclusion;
+        let lv = { materialOcclusion = occluded | Render3d.ProgramKey.lightVariantOf(v) };
+        let occlusionStatements =
+            if (occluded) assign(ShaderAst.readGlobal(Float.Float, materialOcclusionValue()), ShaderAst.z(ShaderAst.ref(Vec3.Vec3, "metalRough"))) :: Nil
+            else Nil;
         let lightOf =
             if (surface#lightmap)
-                call(Vec3.Vec3, lightmapLightAt(v, spot),
+                call(Vec3.Vec3, lightmapLightAt(lv, spot),
                      arg(world) :: arg(n) :: arg(call(Vec3.Vec3, lightmapColor(part), arg(ShaderAst.varying(Vec2.Vec2, uv2Varying())) :: Nil)) :: Nil)
-            else call(Vec3.Vec3, lightAt(v, spot), arg(world) :: arg(n) :: Nil);
+            else call(Vec3.Vec3, lightAt(lv, spot), arg(world) :: arg(n) :: Nil);
         let (declLight, light) = let_("light", lightOf);
         // WhyNot: alpha to coverage に絵の α をそのまま渡さない — ぼけた α の絵では縁が数画素の幅で透け、cutout の固い縁に見えない。
         let outAlpha =
@@ -637,20 +649,20 @@ pub mod Render3dShaders {
         let shade =
             if (surface#metallicRoughness) {
                 let (declBase, base) = let_("base", mul(toLinear3(ShaderAst.rgb(albedo)), tint));
-                let metalRough = ShaderAst.vec3FromVec2(ShaderAst.ref(Vec2.Vec2, "metalRough"), f("0.0"));
+                let metalRough = if (occluded) ShaderAst.ref(Vec3.Vec3, "metalRough") else ShaderAst.vec3FromVec2(ShaderAst.ref(Vec2.Vec2, "metalRough"), f("0.0"));
                 let (declEnv, env) = var_("envColor", ShaderAst.vec3Splat(f("0.0")));
                 let readEnv = ifInline(ShaderAst.eq(u(Int.Int, R3dUniform.EnvOn), i(1)),
                                        assign(env, call(Vec3.Vec3, environmentColorAt(), arg(world) :: arg(n) :: arg(base) :: arg(metalRough) :: Nil)));
-                let (declLit, lit) = let_("lit", call(Vec3.Vec3, pbrAt(v, spot), arg(world) :: arg(n) :: arg(base) :: arg(light) :: arg(metalRough) :: arg(env) :: Nil));
+                let (declLit, lit) = let_("lit", call(Vec3.Vec3, pbrAt(lv, spot), arg(world) :: arg(n) :: arg(base) :: arg(light) :: arg(metalRough) :: arg(env) :: Nil));
                 declBase :: declEnv :: readEnv :: declLit ::
                 toScreen(call(Vec3.Vec3, surfaceOutLit(), arg(lit) :: arg(emission) :: arg(intensity) :: arg(world) :: Nil)) :: Nil
             }
             else
                 toScreen(call(Vec3.Vec3, surfaceOut(),
                               arg(toLinear3(ShaderAst.rgb(albedo))) :: arg(tint) :: arg(light) :: arg(emission) :: arg(intensity) :: arg(world) :: arg(ShaderAst.bool(true)) :: Nil)) :: Nil;
-        materialNames(surface) ::: (materialEval(surface#metallicRoughness) :: Nil) ::: cutout ::: (depthOut :: Nil) :::
+        materialNames(surface) ::: (materialEval(surface#metallicRoughness, occluded) :: Nil) ::: cutout ::: (depthOut :: Nil) :::
         (if (surface#doubleSided) declFacing :: Nil else Nil) ::: (declN :: Nil) ::: shadowsBeforeLight(feature, { point = world, shift = faceNormal, normal = n, screenAo = not surface#blend or surface#screenAoOnBlend }) :::
-        (declLight :: Nil) ::: shade
+        occlusionStatements ::: (declLight :: Nil) ::: shade
 
     /// 頂点の色のプログラムの frag の main の本文（vColor は頂点シェーダーが線形へ戻し済み）。
     pub def litFragmentBody(v: Render3d.ProgramKey.ShaderVariant): List[ShaderAst.Statement] =
@@ -659,7 +671,7 @@ pub mod Render3dShaders {
         let (declN, n) = let_("n", normalize(ShaderAst.varying(Vec3.Vec3, normalVarying())));
         let color = call(Vec3.Vec3, surfaceOut(),
                          arg(ShaderAst.varying(Vec3.Vec3, colorVarying())) :: arg(ShaderAst.varying(Vec3.Vec3, tintVarying())) ::
-                         arg(call(Vec3.Vec3, lightAt(v, feature#spotShadow(spotShadow())), arg(world) :: arg(n) :: Nil)) :: arg(ShaderAst.vec3Splat(f("0.0"))) :: arg(f("1.0")) ::
+                         arg(call(Vec3.Vec3, lightAt(Render3d.ProgramKey.lightVariantOf(v), feature#spotShadow(spotShadow())), arg(world) :: arg(n) :: Nil)) :: arg(ShaderAst.vec3Splat(f("0.0"))) :: arg(f("1.0")) ::
                          arg(world) :: arg(ShaderAst.bool(true)) :: Nil);
         (declN :: Nil) ::: shadowsBeforeLight(feature, { point = world, shift = n, normal = n, screenAo = true }) :::
         (ShaderAst.emit(ShaderAst.vec4FromVec3(feature#colorOut(color), f("1.0"))) :: Nil)
@@ -783,7 +795,7 @@ pub mod Render3dShaders {
                  ifInline(ShaderAst.eq(lit, i(2)), assign(ShaderAst.readGlobal(Float.Float, sunLit()), call(Float.Float, sunLitAt(), arg(shadowPoint) :: arg(sunDir) :: arg(facing) :: Nil))) ::
                  declLight ::
                  feature#beforeLight({ point = world, shift = facing, normal = facing, screenAo = true }, Nil) :::
-                 ifInline(litOn, assign(light, call(Vec3.Vec3, lightAt(bv, feature#spotShadow(spotShadow())), arg(world) :: arg(facing) :: Nil))) ::
+                 ifInline(litOn, assign(light, call(Vec3.Vec3, lightAt(Render3d.ProgramKey.lightVariantOf(bv), feature#spotShadow(spotShadow())), arg(world) :: arg(facing) :: Nil))) ::
                  ShaderAst.emit(ShaderAst.vec4FromVec3(feature#colorOut(color), f("1.0"))) :: Nil }
 
     /// ビルボードを影の地図へ描く frag の入口（色を出さず、絵の α < 0.5 の画素を捨てるだけ。WGSL だけ。GL は billboardFragment の uDepthOut の枝で同じ事をする）。

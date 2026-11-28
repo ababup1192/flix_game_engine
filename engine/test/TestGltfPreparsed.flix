@@ -5,7 +5,7 @@ mod TestGltfPreparsed {
     import java.io.PrintStream
     import java.lang.System
 
-    def options(): Gltf.LoadOptions = { limits = Gltf.noTextureLimits(), pbr = true, vertexColors = true }
+    def options(): Gltf.LoadOptions = { limits = Gltf.noTextureLimits(), pbr = true, vertexColors = true, occlusion = true }
 
     def bytesOf(path: String): Vector[Int8] \ Fs.FileRead =
         Fs.FileRead.readBytes(path) |> Result.getWithDefault(Vector.empty())
@@ -66,24 +66,27 @@ mod TestGltfPreparsed {
         }) |> ToString.toString
 
     def textureInfoKey(t: Gltf.Internal.Parse.TextureInfo): String =
-        "${t#index},${t#texCoord},${t#transform},${t#source},${t#nearest},${t#clamp},${t#mirrored}"
+        "${t#index},${t#texCoord},${t#transform |> Option.map(x -> "${x#offsetU},${x#offsetV},${x#rotation},${x#scaleU},${x#scaleV},${x#texCoord}")},${t#source},${t#nearest},${t#clamp},${t#mirrored}"
 
     def materialSpecKey(m: Gltf.Internal.Parse.MaterialSpec): String =
         "${m#name}|${m#alphaMode}|${m#alphaCutoff}|${m#doubleSided}|${textureInfoKey(m#base)}|${textureInfoKey(m#normal)}|${m#normalScale}|" +
         "${textureInfoKey(m#emissive)}|${m#emissiveFactor#r},${m#emissiveFactor#g},${m#emissiveFactor#b}|${m#emissiveFactorError}|${m#emissiveStrength}|" +
-        "${textureInfoKey(m#metalRough)}|${m#hasPbr}|${m#hasMetallic}|${m#hasRoughness}|${m#metallicFactor}|${m#roughnessFactor}"
+        "${textureInfoKey(m#metalRough)}|${m#hasPbr}|${m#hasMetallic}|${m#hasRoughness}|${m#metallicFactor}|${m#roughnessFactor}|" +
+        "${textureInfoKey(m#occlusion)}|${m#occlusionStrength}"
 
     def materialKey(m: Option[Scene3d.Material3d]): Option[String] = m |> Option.map(mat -> {
         let f = Scene3d.materialFieldsOf(mat);
         let normal = f#normalMap |> Option.map(n -> "${n#texture},${n#strength}");
         let metal = f#metallicRoughness |> Option.map(r -> "${r#metallic},${r#roughness},${r#texture}");
+        let occlusion = f#occlusion |> Option.map(o -> "${o#texture},${o#strength}");
         "${force f#shaderHash}|${f#spec#name}|${f#params}|${f#cutout}|${f#wrap == Scene3d.Wrap.Clamp}|${f#blend}|${f#doubleSided}|" +
-        "${f#emissionIntensity}|${normal}|${metal}|${f#maxMipLevels}|${force f#texReads |> List.map(fst)}"
+        "${f#emissionIntensity}|${normal}|${metal}|${occlusion}|${f#maxMipLevels}|${force f#texReads |> List.map(fst)}"
     })
 
     def gltfMaterialKey(m: Option[Model3d.GltfMaterial]): Option[String] = m |> Option.map(g ->
         "${g#name}|${g#alphaMode}|${g#alphaCutoff}|${g#doubleSided}|${g#baseColorTexture}|${g#normalTexture}|${g#emissiveTexture}|" +
-        "${g#emissive#r},${g#emissive#g},${g#emissive#b}|${g#metallic}|${g#roughness}|${g#metallicRoughnessTexture}")
+        "${g#emissive#r},${g#emissive#g},${g#emissive#b}|${g#metallic}|${g#roughness}|${g#metallicRoughnessTexture}|" +
+        "${g#occlusionTexture}|${g#occlusionStrength}")
 
     /// parse の結果 a と b の欄のうち違う物の名前。
     def parsedDifferences(a: Gltf.Internal.Parse.Parsed, b: Gltf.Internal.Parse.Parsed): List[String] =
@@ -183,6 +186,21 @@ mod TestGltfPreparsed {
     @Test
     def testAssembledWarningsMatchDecodeWith(): Unit \ {Assert, IO} =
         Assert.assertEq(expected = Nil, assembledDifferences(None, TestGltf.skinnedGlb()))
+
+    /// 同じ KHR_texture_transform（書き込む）を全部の絵に書き、strength 0.3 の occlusionTexture（ARM）と TANGENT を持つ glb。
+    def occludedTransformedGlb(): Vector[Int8] \ IO =
+        let t = ",\"extensions\":{\"KHR_texture_transform\":{\"offset\":[0.25,0.5],\"rotation\":0.3,\"scale\":[2,1]}}";
+        TestGltf.materialTriangleGlb("{\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0${t}},\"metallicRoughnessTexture\":{\"index\":1${t}}}," +
+                                     "\"occlusionTexture\":{\"index\":1,\"strength\":0.3${t}}}", true)
+
+    @Test
+    def testRoundTripKeepsOcclusionAndTransform(): Unit \ {Assert, IO} =
+        let p = parsedOf(occludedTransformedGlb());
+        Assert.assertEq(expected = Nil, parsedDifferences(p, roundTrip(p)))
+
+    @Test
+    def testAssembledOcclusionAndTransformMatchesDecodeWith(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = Nil, assembledDifferences(None, occludedTransformedGlb()))
 
     @Test
     def testWarmUpCodecRoundTrips(): Unit \ Assert =

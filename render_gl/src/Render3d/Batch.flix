@@ -51,7 +51,7 @@ mod Render3d.Batch {
     /// 鍵に入るプログラムの版（lightmap と blend は batch にしないので入らない）。
     def kindBits(kind: ProgramKind): Int32 =
         let bit = (on, value) -> if (on) value else 0;
-        bit(kind#skinned, 1) + bit(kind#uv, 2) + bit(kind#normalMap, 4) + bit(kind#doubleSided, 8) + bit(kind#coverage, 16) + bit(kind#metallicRoughness, 32)
+        bit(kind#skinned, 1) + bit(kind#uv, 2) + bit(kind#normalMap, 4) + bit(kind#doubleSided, 8) + bit(kind#coverage, 16) + bit(kind#metallicRoughness, 32) + bit(kind#materialOcclusion, 64)
 
     // ── 答え合わせの見本（groupInOrder・groupByTextures・batchOf・shapeBatches）──
     // WhyNot: 計画の本番（Render3d.ScenePlan.groupWith）から呼ばない・消さない — 本番は材質の値ごとの控えと配列で同じ並びを作り、

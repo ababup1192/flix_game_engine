@@ -18,8 +18,8 @@ pub mod SoftRaster3dLight {
             Float64.floor(x * s + 0.5) / s
         }
 
-    /// lightingModel の光の量（toon の丸めまで済ませた値。sunLit = 太陽の影の割合・sh と skyContribution = Scene3d.Internal.SkyIrradiance.valuesOf の係数と割合・ao と aoDirect = SSAO の値（無ければ 1））。
-    pub def lightAt(steps: Int32, points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pointLit: Vector[Float64], pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, ambientX: Float64, ambientY: Float64, ambientZ: Float64, hemisphere: Float64, sunDirX: Float64, sunDirY: Float64, sunDirZ: Float64, sunColorX: Float64, sunColorY: Float64, sunColorZ: Float64, sunLit: Float64, physicalUnits: Float64, inverseUnitsPerMeterSquared: Float64, sh: Vector[Float64], skyContribution: Float64, ao: Float64, aoDirect: Float64): (Float64, Float64, Float64) =
+    /// lightingModel の光の量（toon の丸めまで済ませた値。sunLit = 太陽の影の割合・sh と skyContribution = Scene3d.Internal.SkyIrradiance.valuesOf の係数と割合・ao と aoDirect = SSAO の値（無ければ 1）・materialOcclusion = 材質の AO の絵の値（無ければ 1））。
+    pub def lightAt(steps: Int32, points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pointLit: Vector[Float64], pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, ambientX: Float64, ambientY: Float64, ambientZ: Float64, hemisphere: Float64, sunDirX: Float64, sunDirY: Float64, sunDirZ: Float64, sunColorX: Float64, sunColorY: Float64, sunColorZ: Float64, sunLit: Float64, physicalUnits: Float64, inverseUnitsPerMeterSquared: Float64, sh: Vector[Float64], skyContribution: Float64, ao: Float64, aoDirect: Float64, materialOcclusion: Float64): (Float64, Float64, Float64) =
         let sky_0 = (hemisphere * Float64.max(0.0, nY));
         let (t_9X, t_9Y, t_9Z) = if ((skyContribution > 0.0)) {
             let t_1 = (0.488603 * nY);
@@ -38,17 +38,17 @@ pub mod SoftRaster3dLight {
         let (spots_11X, spots_11Y, spots_11Z) = lightAtSpots(spots, 0, shadow, pX, pY, pZ, nX, nY, nZ, physicalUnits, inverseUnitsPerMeterSquared, 0.0, 0.0, 0.0);
         let sunFacing_12 = clamp01((0.0 + (((nX * sunDirX) + (nY * sunDirY)) + (nZ * sunDirZ))));
         let t_13 = (if ((physicalUnits > 0.0)) 0.3183098861837907 else 1.0);
-        (toon(steps, (((((t_9X + sky_0) * ao) + (points_10X * aoDirect)) + (spots_11X * aoDirect)) + ((((sunColorX * sunFacing_12) * sunLit) * t_13) * aoDirect))), toon(steps, (((((t_9Y + sky_0) * ao) + (points_10Y * aoDirect)) + (spots_11Y * aoDirect)) + ((((sunColorY * sunFacing_12) * sunLit) * t_13) * aoDirect))), toon(steps, (((((t_9Z + sky_0) * ao) + (points_10Z * aoDirect)) + (spots_11Z * aoDirect)) + ((((sunColorZ * sunFacing_12) * sunLit) * t_13) * aoDirect))))
+        (toon(steps, ((((((t_9X + sky_0) * ao) * materialOcclusion) + (points_10X * aoDirect)) + (spots_11X * aoDirect)) + ((((sunColorX * sunFacing_12) * sunLit) * t_13) * aoDirect))), toon(steps, ((((((t_9Y + sky_0) * ao) * materialOcclusion) + (points_10Y * aoDirect)) + (spots_11Y * aoDirect)) + ((((sunColorY * sunFacing_12) * sunLit) * t_13) * aoDirect))), toon(steps, ((((((t_9Z + sky_0) * ao) * materialOcclusion) + (points_10Z * aoDirect)) + (spots_11Z * aoDirect)) + ((((sunColorZ * sunFacing_12) * sunLit) * t_13) * aoDirect))))
 
     /// lightmapLightingModel の光の量（lightmap は段つきで読んだ後の rgb を渡す）。
-    pub def lightmapLightAt(steps: Int32, points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pointLit: Vector[Float64], pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, lightmapX: Float64, lightmapY: Float64, lightmapZ: Float64, lightmapSrgb: Float64, lightmapIntensity: Float64, physicalUnits: Float64, inverseUnitsPerMeterSquared: Float64, ao: Float64, aoDirect: Float64): (Float64, Float64, Float64) =
+    pub def lightmapLightAt(steps: Int32, points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pointLit: Vector[Float64], pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, lightmapX: Float64, lightmapY: Float64, lightmapZ: Float64, lightmapSrgb: Float64, lightmapIntensity: Float64, physicalUnits: Float64, inverseUnitsPerMeterSquared: Float64, ao: Float64, aoDirect: Float64, materialOcclusion: Float64): (Float64, Float64, Float64) =
         let c_1 = (lightmapSrgb > 0.0);
         let t_0X = (if (c_1) Texture3d.srgbToLinear(lightmapX) else lightmapX);
         let t_0Y = (if (c_1) Texture3d.srgbToLinear(lightmapY) else lightmapY);
         let t_0Z = (if (c_1) Texture3d.srgbToLinear(lightmapZ) else lightmapZ);
         let (points_2X, points_2Y, points_2Z) = lightAtPoints(points, 0, pointLit, pX, pY, pZ, nX, nY, nZ, physicalUnits, inverseUnitsPerMeterSquared, 0.0, 0.0, 0.0);
         let (spots_3X, spots_3Y, spots_3Z) = lightAtSpots(spots, 0, shadow, pX, pY, pZ, nX, nY, nZ, physicalUnits, inverseUnitsPerMeterSquared, 0.0, 0.0, 0.0);
-        (toon(steps, (((Float64.max(0.0, (t_0X * lightmapIntensity)) * ao) + (points_2X * aoDirect)) + (spots_3X * aoDirect))), toon(steps, (((Float64.max(0.0, (t_0Y * lightmapIntensity)) * ao) + (points_2Y * aoDirect)) + (spots_3Y * aoDirect))), toon(steps, (((Float64.max(0.0, (t_0Z * lightmapIntensity)) * ao) + (points_2Z * aoDirect)) + (spots_3Z * aoDirect))))
+        (toon(steps, ((((Float64.max(0.0, (t_0X * lightmapIntensity)) * ao) * materialOcclusion) + (points_2X * aoDirect)) + (spots_3X * aoDirect))), toon(steps, ((((Float64.max(0.0, (t_0Y * lightmapIntensity)) * ao) * materialOcclusion) + (points_2Y * aoDirect)) + (spots_3Y * aoDirect))), toon(steps, ((((Float64.max(0.0, (t_0Z * lightmapIntensity)) * ao) * materialOcclusion) + (points_2Z * aoDirect)) + (spots_3Z * aoDirect))))
 
     /// fogModel の色（fog が無い場面では呼ばない）。
     pub def fogAt(pX: Float64, pY: Float64, pZ: Float64, eyeX: Float64, eyeY: Float64, eyeZ: Float64, colorX: Float64, colorY: Float64, colorZ: Float64, fogColorX: Float64, fogColorY: Float64, fogColorZ: Float64, fogNear: Float64, fogFar: Float64): (Float64, Float64, Float64) =
@@ -67,8 +67,8 @@ pub mod SoftRaster3dLight {
         let t_2 = Float64.min(1.0, Float64.pow(base = Float64.max(dirY, (0.0 - dirY)), skyCurve));
         ((horizonX + ((t_0X - horizonX) * t_2)), (horizonY + ((t_0Y - horizonY) * t_2)), (horizonZ + ((t_0Z - horizonZ) * t_2)))
 
-    /// pbrModel の、かすみの前の色（light = lightAt か lightmapLightAt の値・metalRough の x = metallic・y = roughness・z は使わない）。
-    pub def pbrAt(points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pointLit: Vector[Float64], pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, albedoX: Float64, albedoY: Float64, albedoZ: Float64, lightX: Float64, lightY: Float64, lightZ: Float64, metalRoughX: Float64, metalRoughY: Float64, _metalRoughZ: Float64, eyeX: Float64, eyeY: Float64, eyeZ: Float64, zenithX: Float64, zenithY: Float64, zenithZ: Float64, horizonX: Float64, horizonY: Float64, horizonZ: Float64, groundX: Float64, groundY: Float64, groundZ: Float64, skyCurve: Float64, envColorX: Float64, envColorY: Float64, envColorZ: Float64, envOn: Float64, sunDirX: Float64, sunDirY: Float64, sunDirZ: Float64, sunColorX: Float64, sunColorY: Float64, sunColorZ: Float64, sunLit: Float64, physicalUnits: Float64, inverseUnitsPerMeterSquared: Float64): (Float64, Float64, Float64) =
+    /// pbrModel の、かすみの前の色（light = lightAt か lightmapLightAt の値・metalRough の x = metallic・y = roughness・z は使わない・materialOcclusion = 材質の AO の絵の値（無ければ 1））。
+    pub def pbrAt(points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pointLit: Vector[Float64], pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, albedoX: Float64, albedoY: Float64, albedoZ: Float64, lightX: Float64, lightY: Float64, lightZ: Float64, metalRoughX: Float64, metalRoughY: Float64, _metalRoughZ: Float64, eyeX: Float64, eyeY: Float64, eyeZ: Float64, zenithX: Float64, zenithY: Float64, zenithZ: Float64, horizonX: Float64, horizonY: Float64, horizonZ: Float64, groundX: Float64, groundY: Float64, groundZ: Float64, skyCurve: Float64, envColorX: Float64, envColorY: Float64, envColorZ: Float64, envOn: Float64, sunDirX: Float64, sunDirY: Float64, sunDirZ: Float64, sunColorX: Float64, sunColorY: Float64, sunColorZ: Float64, sunLit: Float64, physicalUnits: Float64, inverseUnitsPerMeterSquared: Float64, materialOcclusion: Float64): (Float64, Float64, Float64) =
         let metallic_0 = metalRoughX;
         let roughness_1 = metalRoughY;
         let alpha_2 = Float64.max(0.002, (roughness_1 * roughness_1));
@@ -133,7 +133,7 @@ pub mod SoftRaster3dLight {
         let t_39 = (1.0 - roughness_1);
         let base_40 = (1.0 - nv_9);
         let t_41 = (((base_40 * base_40) * (base_40 * base_40)) * base_40);
-        (((((albedoX * lightX) * t_12) + ((points_13X + spots_14X) + t_26X)) + (t_38X * (fZero_4X + ((Float64.max(t_39, fZero_4X) - fZero_4X) * t_41)))), ((((albedoY * lightY) * t_12) + ((points_13Y + spots_14Y) + t_26Y)) + (t_38Y * (fZero_4Y + ((Float64.max(t_39, fZero_4Y) - fZero_4Y) * t_41)))), ((((albedoZ * lightZ) * t_12) + ((points_13Z + spots_14Z) + t_26Z)) + (t_38Z * (fZero_4Z + ((Float64.max(t_39, fZero_4Z) - fZero_4Z) * t_41)))))
+        (((((albedoX * lightX) * t_12) + ((points_13X + spots_14X) + t_26X)) + ((t_38X * (fZero_4X + ((Float64.max(t_39, fZero_4X) - fZero_4X) * t_41))) * materialOcclusion)), ((((albedoY * lightY) * t_12) + ((points_13Y + spots_14Y) + t_26Y)) + ((t_38Y * (fZero_4Y + ((Float64.max(t_39, fZero_4Y) - fZero_4Y) * t_41))) * materialOcclusion)), ((((albedoZ * lightZ) * t_12) + ((points_13Z + spots_14Z) + t_26Z)) + ((t_38Z * (fZero_4Z + ((Float64.max(t_39, fZero_4Z) - fZero_4Z) * t_41))) * materialOcclusion)))
 
     /// environmentDirection の、環境マップを読む向き（長さ 1。metalRough の x は使わない）。
     pub def environmentDirectionAt(pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, _albedoX: Float64, _albedoY: Float64, _albedoZ: Float64, _metalRoughX: Float64, metalRoughY: Float64, _metalRoughZ: Float64, eyeX: Float64, eyeY: Float64, eyeZ: Float64, envBoxMinX: Float64, envBoxMinY: Float64, envBoxMinZ: Float64, envBoxMaxX: Float64, envBoxMaxY: Float64, envBoxMaxZ: Float64, envBoxCenterX: Float64, envBoxCenterY: Float64, envBoxCenterZ: Float64, envBoxOn: Float64): (Float64, Float64, Float64) =

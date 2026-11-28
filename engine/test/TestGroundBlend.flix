@@ -22,7 +22,7 @@ mod TestGroundBlend {
     def sampleAt(green: Float64): ShaderEval.MaterialSample =
         let textures = Map#{ "dirt" => Vector#{ { width = 1, height = 1, pixels = Vector#{ argb(200, 100, 50) } } },
                              "grass" => Vector#{ { width = 1, height = 1, pixels = Vector#{ argb(50, 150, 50) } } } };
-        let compiled = ShaderEval.compileMaterial({ spec = groundSpec(), emission = None, metallicRoughness = Some(roughShade()), params = Map.empty(),
+        let compiled = ShaderEval.compileMaterial({ spec = groundSpec(), emission = None, metallicRoughness = Some(roughShade()), readsMaterialOcclusion = false, params = Map.empty(),
                                                     textures = textures, repeat = true });
         ShaderEval.evalMaterial3(compiled, { world = Vec3.zero(), normal = Vec3.v3(0.0, 1.0, 0.0), uv = Vec2.zero(), color = Color.rgb(0.0, green, 0.0) }, 0.0)
 

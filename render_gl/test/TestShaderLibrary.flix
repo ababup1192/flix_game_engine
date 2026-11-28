@@ -26,13 +26,17 @@ mod Render3d.TestShaderLibrary {
         fill("textured", Shade.Rgb({ r = tex(TexChan.R), g = tex(TexChan.G), b = tex(TexChan.B) }), tex(TexChan.A)) :: Nil
 
     def kindsOf(v: Render3d.ProgramKey.ShaderVariant): List[Render3d.ProgramKey.ProgramKind] =
+        let kinds = plainKindsOf(v);
+        kinds ::: (kinds |> List.filter(k -> k#metallicRoughness) |> List.map(k -> { materialOcclusion = true | k }))
+
+    def plainKindsOf(v: Render3d.ProgramKey.ShaderVariant): List[Render3d.ProgramKey.ProgramKind] =
         let surfaces = (false, false) :: (true, false) :: (true, true) :: Nil;
         surfaces |> List.flatMap(un -> {
             let (uv, normalMap) = un;
             flags() |> List.flatMap(lightmap -> flags() |> List.flatMap(blend -> flags() |> List.flatMap(doubleSided ->
                 flags() |> List.flatMap(coverage -> flags() |> List.map(metallic ->
                     { skinned = false, uv = uv, normalMap = normalMap, lightmap = lightmap, blend = blend, doubleSided = doubleSided,
-                      coverage = coverage, metallicRoughness = metallic, screenAoOnBlend = false, variant = v })))))
+                      coverage = coverage, metallicRoughness = metallic, screenAoOnBlend = false, materialOcclusion = false, variant = v })))))
         })
 
     def metalOf(k: Render3d.ProgramKey.ProgramKind): Option[Shade] =
@@ -45,8 +49,8 @@ mod Render3d.TestShaderLibrary {
     /// (鍵, 直に print した字, 部品を入れた字) の組。
     def materialPairs(): List[(String, String, String)] =
         variants() |> List.flatMap(v -> kindsOf(v) |> List.flatMap(k -> specs() |> List.flatMap(spec -> {
-            let glsl = ShaderGen.compile3d(spec, None, metalOf(k));
-            let wgsl = ShaderGen.Wgsl.compile3d(spec, None, metalOf(k), 1);
+            let glsl = ShaderGen.compile3d(spec, None, metalOf(k), k#materialOcclusion);
+            let wgsl = ShaderGen.Wgsl.compile3d(spec, None, metalOf(k), k#materialOcclusion, 1);
             let name = spec#name + ":" + Render3d.ShaderSourceKey.toKeyString(Render3d.ShaderSourceKey.MaterialFragmentTemplate(k, false));
             ("glsl:" + name, Render3dGlsl.materialFragmentSource(glsl, k),
              Render3d.ShaderLibrary.withMaterialPart(Render3dGlsl.materialFragmentTemplate(k, not List.isEmpty(glsl#texReads)), Render3d.ShaderLibrary.glslPartText(glsl), glsl#cutoutAlpha)) ::
@@ -82,7 +86,7 @@ mod Render3d.TestShaderLibrary {
 
     def sampleCollection(): CollectionKeys =
         let kind = { skinned = false, uv = true, normalMap = false, lightmap = false, blend = false, doubleSided = true, coverage = false,
-                     metallicRoughness = false, screenAoOnBlend = false, variant = { psx = true | Render3d.ProgramKey.defaultShaderVariant() } };
+                     metallicRoughness = false, screenAoOnBlend = false, materialOcclusion = false, variant = { psx = true | Render3d.ProgramKey.defaultShaderVariant() } };
         unionCollection(Render3d.ShaderLibrary.shapeKeys(kind, true, true), variantKeys({ pointShadows = true | Render3d.ProgramKey.defaultShaderVariant() }))
 
     def keysOf(c: CollectionKeys): (Set[String], Set[String]) = (Map.keysOf(c#variants), Map.keysOf(c#materialShapes))
@@ -112,7 +116,7 @@ mod Render3d.TestShaderLibrary {
 
     def decalCollection(): CollectionKeys =
         let kind = { skinned = false, uv = true, normalMap = false, lightmap = false, blend = true, doubleSided = false, coverage = false,
-                     metallicRoughness = false, screenAoOnBlend = true, variant = { ambientOcclusion = true | Render3d.ProgramKey.defaultShaderVariant() } };
+                     metallicRoughness = false, screenAoOnBlend = true, materialOcclusion = false, variant = { ambientOcclusion = true | Render3d.ProgramKey.defaultShaderVariant() } };
         Render3d.ShaderLibrary.shapeKeys(kind, false, true)
 
     /// 記録に SSAO を受ける半透明の形（デカールの板）があれば、書き出しはその +ab の frag を作る。
@@ -125,6 +129,27 @@ mod Render3d.TestShaderLibrary {
     @Test
     def testScreenAoOnBlendShapeRoundTrips(): Unit \ Assert =
         Assert.assertEq(expected = Ok(keysOf(decalCollection())), collectionOfJson(collectionToJson(decalCollection())) |> Result.map(keysOf))
+
+    def occlusionCollection(): CollectionKeys =
+        let kind = { skinned = false, uv = true, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false,
+                     metallicRoughness = true, screenAoOnBlend = false, materialOcclusion = true, variant = Render3d.ProgramKey.defaultShaderVariant() };
+        Render3d.ShaderLibrary.shapeKeys(kind, false, true)
+
+    /// 記録に材質の AO の形があれば、書き出しはその +occ の frag を作る。
+    @Test
+    def testOcclusionShapeExpandsToOccFragment(): Unit \ Assert =
+        let names = Render3d.ShaderLibrary.requiredKeysOf(occlusionCollection()) |> List.map(Render3d.ShaderSourceKey.toKeyString) |> List.toSet;
+        Assert.assertTrue(Set.memberOf("material.fs+uv+mr+occ+tex/", names))
+
+    /// 材質の AO の形は記録のファイルを通しても残る。
+    @Test
+    def testOcclusionShapeRoundTrips(): Unit \ Assert =
+        Assert.assertEq(expected = Ok(keysOf(occlusionCollection())), collectionOfJson(collectionToJson(occlusionCollection())) |> Result.map(keysOf))
+
+    /// 材質の AO の無い形の記録の字には materialOcclusion の欄が出ない（AO を使わないゲームの記録が変わらない）。
+    @Test
+    def testPlainShapeJsonOmitsOcclusion(): Unit \ Assert =
+        Assert.assertFalse(String.contains(substr = "materialOcclusion", collectionToJson(sampleCollection())))
 
     /// SSAO を受けない形の記録の字には screenAoOnBlend の欄が出ない（デカールを使わないゲームの記録が変わらない）。
     @Test

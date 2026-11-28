@@ -22,16 +22,18 @@ pub mod Gltf {
     /// 読み方の選択肢。limits = 材質の絵の大きさの上限（場面の絵の上限に収める・近くで見ない法線マップを小さくする）・
     /// pbr = 材質の metallic・roughness も読み、baseColorFactor と emissiveFactor を線形の値として読む（付く条件・既定値・絵の読み方は materialOf の説明。
     /// metallicRoughnessTexture の画像もデコードする・上限は limits#baseColor）・
-    /// vertexColors = 頂点の色 COLOR_0 を読み、線形の値 → 画面の値にして baseColorFactor に掛ける（Gltf.Internal.colorsOf。白は 1 のまま）。偽なら COLOR_0 は読まない。
+    /// vertexColors = 頂点の色 COLOR_0 を読み、線形の値 → 画面の値にして baseColorFactor に掛ける（Gltf.Internal.colorsOf。白は 1 のまま）。偽なら COLOR_0 は読まない・
+    /// occlusion = metallic・roughness の付く材質の occlusionTexture も読み、材質の AO にする（Scene3d.withOcclusionTexture。pbr が偽なら読まない・上限は limits#baseColor）。
     /// ゲームは project.json の任意キー "gltf" に書く。
     // WhyNot: pbr を既定で真にしない — Blender の書き出しは絵も emissive も無い材質にも metallic・roughness を書くので、読むと今まで頂点の色だけだった
     //   part が材質を持つ物になり、part を束ねるゲームの条件（material が None）が外れて draw が増える。鏡面のプログラムも使う。ゲームが選んで読む。
     // WhyNot: vertexColors を既定で真にしない — Blender の書き出しは頂点の色の層があると COLOR_0 を書くので、
     //   今まで捨てていた白でない COLOR_0 を持つゲームの glb の色が engine を上げただけで変わる。読みたいゲームが選ぶ。
-    pub type alias LoadOptions = { limits = TextureLimits, pbr = Bool, vertexColors = Bool }
+    // WhyNot: occlusion を既定で真にしない — 環境の光が当たる所の明るさが engine を上げただけで変わり、AO をベイクした lightmap と重ねると 2 回効く。読みたいゲームが選ぶ。
+    pub type alias LoadOptions = { limits = TextureLimits, pbr = Bool, vertexColors = Bool, occlusion = Bool }
 
-    /// 上限なし・metallic・roughness を読まない・COLOR_0 を読まない。欄を書き替えて使う: `{ vertexColors = true | Gltf.defaultLoadOptions() }`。
-    pub def defaultLoadOptions(): LoadOptions = { limits = noTextureLimits(), pbr = false, vertexColors = false }
+    /// 上限なし・metallic・roughness を読まない・COLOR_0 を読まない・AO の絵を読まない。欄を書き替えて使う: `{ vertexColors = true | Gltf.defaultLoadOptions() }`。
+    pub def defaultLoadOptions(): LoadOptions = { limits = noTextureLimits(), pbr = false, vertexColors = false, occlusion = false }
 
     /// .glb のバイトから、絵と材質つきで作る。ゲームは Model3d.loader / load / decode を使う（engine のテストと bench が選択肢を直に渡す時の API）。
     /// 壊れている・読まない物を含む時は Err。TEXCOORD_0・TANGENT が読めない（数が頂点の数と違う・NaN か無限）時は、その欄を使わずに読んで 1 行知らせる。
@@ -55,14 +57,13 @@ pub mod Gltf {
     def assembleBy(decode: (Int32, Int32, Vector[Int8]) -> Result[String, Texture3d.Texture3d] \ IO, options: LoadOptions,
                    bytes: Vector[Int8], parsed: Gltf.Internal.Parse.Parsed): Model3d.Model3d \ IO =
         let p = Log.warnAllThen(parsed#lines, parsed);
-        let pbr = options#pbr;
-        let used = usedImages(options#limits, pbr, p#materials);
+        let used = usedImages(options, p#materials);
         let images = p#images |> Vector.mapWithIndex((k, source) -> match Map.get(k, used) {
             case Some(maxSide) => decodeImage(decode(k, maxSide), bytes, source) |> (decoded -> (Option.map(Texture3d.limitSize(maxSide), fst(decoded)), snd(decoded)))
             case None          => (None, Nil)
         });
         let decoded = images |> Vector.map(fst);
-        let materials = p#materials |> Vector.mapWithIndex(materialOf(decoded, pbr));
+        let materials = p#materials |> Vector.mapWithIndex((k, m) -> materialOf(decoded, options, k, withoutBakedTransform(m)));
         let (parts, attachLines) = attachMaterials(p#parts, materials);
         let lines = List.flatten((Vector.toList(images) |> List.flatMap(snd)) :: attachLines :: Nil) |> List.distinct;
         Log.warnAllThen(List.append(p#droppedLines, lines),
@@ -90,25 +91,30 @@ pub mod Gltf {
         let lines = if (hasUv) Nil else build |> Option.map(b -> b#noUvLines) |> Option.getWithDefault(Nil);
         ({ material = material, gltfMaterial = Option.map(b -> b#info, build) | part }, lines)
 
-    /// emissive が 0 でなく texCoord が 0 の emissiveTexture（光らせるのに読む絵）と、その上限。
-    def emissiveImageOf(limits: TextureLimits, material: Gltf.Internal.Parse.MaterialSpec): List[(Gltf.Internal.Parse.TextureInfo, Int32)] =
-        if (isZeroColor(emissiveOf(material)) or material#emissive#texCoord != 0) Nil
-        else (material#emissive, limits#baseColor) :: Nil
+    /// 材質の uv で読む絵の口 1 つ（読み方 options で読む物だけ）。field = glTF の欄の名前・info = 絵・
+    /// isRead = 読めたか（TextureNames の欄）・noUv = TEXCOORD_0 の無い形での扱い（知らせの字）。
+    type alias UvTextureSlot = { field = String, info = Gltf.Internal.Parse.TextureInfo, isRead = TextureNames -> Bool, noUv = String }
 
-    /// metallic・roughness を付ける材質の texCoord が 0 の metallicRoughnessTexture（読む絵）と、その上限（baseColor と同じ）。
-    def metallicRoughnessImageOf(limits: TextureLimits, pbr: Bool, material: Gltf.Internal.Parse.MaterialSpec): List[(Gltf.Internal.Parse.TextureInfo, Int32)] =
-        if (not pbr or not wantsMetallicRoughness(material) or material#metalRough#texCoord != 0) Nil
-        else (material#metalRough, limits#baseColor) :: Nil
+    /// 材質の emissiveTexture（emissive が 0 でない材質だけ）・metallicRoughnessTexture と occlusionTexture（options の pbr が真で metallic・roughness の付く材質だけ・
+    /// occlusionTexture は options の occlusion も真の時だけ）の口。上限はどれも limits#baseColor。
+    // WhyNot: AO の絵を metallic・roughness の無い材質で読まない — AO は metallic・roughness の色の b で運び、そのプログラムの中で掛ける（Scene3d.withOcclusionTexture）。
+    def uvTextureSlotsOf(options: LoadOptions, material: Gltf.Internal.Parse.MaterialSpec): List[UvTextureSlot] =
+        let emissive = if (isZeroColor(emissiveOf(material))) Nil
+                       else { field = "emissiveTexture", info = material#emissive, isRead = n -> Option.nonEmpty(n#emissive), noUv = "光らせない" } :: Nil;
+        let occlusion = if (options#occlusion) { field = "occlusionTexture", info = material#occlusion, isRead = n -> Option.nonEmpty(n#occlusion), noUv = "読まない" } :: Nil else Nil;
+        let pbr = if (not options#pbr or not wantsMetallicRoughness(material)) Nil
+                  else { field = "metallicRoughnessTexture", info = material#metalRough, isRead = n -> Option.nonEmpty(n#metallicRoughness), noUv = "読まず値だけにする" } :: occlusion;
+        emissive ::: pbr
 
-    /// 材質の baseColorTexture・normalTexture・emissiveTexture（emissive が 0 でない材質だけ）・metallicRoughnessTexture（metallic・roughness を付ける材質だけ）が指す画像の番号 → その絵の長い辺の上限
-    /// （2 つ以上から指されたら大きい方）。
-    // WhyNot: 全部の画像を decode しない — occlusion の絵は描くのに使わず、2048² なら 1 枚 16 MB をヒープに持つ。metallicRoughnessTexture は
-    //   metallic・roughness を付ける材質（wantsMetallicRoughness）だけ読む。
-    def usedImages(limits: TextureLimits, pbr: Bool, materials: Vector[Gltf.Internal.Parse.MaterialSpec]): Map[Int32, Int32] =
-        materials |> Vector.toList
+    /// 材質の baseColorTexture・normalTexture と uvTextureSlotsOf の口（texCoord が 0 の物）が指す画像の番号 → その絵の長い辺の上限
+    /// （2 つ以上から指されたら大きい方）。KHR_texture_transform を uv に書き込む材質は、書き込んだ後の絵の読み方で選ぶ。
+    // WhyNot: 全部の画像を decode しない — 2048² なら 1 枚 16 MB をヒープに持つ。
+    def usedImages(options: LoadOptions, materials: Vector[Gltf.Internal.Parse.MaterialSpec]): Map[Int32, Int32] =
+        let limits = options#limits;
+        materials |> Vector.toList |> List.map(withoutBakedTransform)
             |> List.flatMap(material -> (material#base, limits#baseColor)
                                         :: (material#normal, limits#normal)
-                                        :: List.append(emissiveImageOf(limits, material), metallicRoughnessImageOf(limits, pbr, material)))
+                                        :: (uvTextureSlotsOf(options, material) |> List.filter(slot -> slot#info#texCoord == 0) |> List.map(slot -> (slot#info, limits#baseColor))))
             |> List.filterMap(entry -> { let (info, maxSide) = entry; info#source |> Option.map(src -> (src, maxSide)) })
             |> List.foldLeft((acc, entry) -> { let (src, maxSide) = entry; Map.insertWith((a, b) -> Int32.max(a, b), src, maxSide, acc) }, Map.empty())
 
@@ -147,15 +153,17 @@ pub mod Gltf {
     /// 0.5 でなければ 1 行知らせる）・OPAQUE → そのまま。doubleSided は材質のある物にそのまま当てる（Blender の書き出しは全部の材質を真にする。
     /// 裏を描きたくない物は、ゲームが読んだ model#parts の material を Scene3d.withDoubleSided(false, ..) に替える）。
     // WhyNot: 材質の無い物（頂点の色で描く）に当てるため材質を作らない — 材質を作ると batch の鍵と tint の掛け方が替わり、絵が変わる。
-    def materialOf(images: Vector[Option[Texture3d.Texture3d]], readPbr: Bool, index: Int32, material: Gltf.Internal.Parse.MaterialSpec): MaterialBuild =
+    def materialOf(images: Vector[Option[Texture3d.Texture3d]], options: LoadOptions, index: Int32, material: Gltf.Internal.Parse.MaterialSpec): MaterialBuild =
+        let readPbr = options#pbr;
         let base = textureRefOf(images, material#base);
         let normal = textureRefOf(images, material#normal);
         let emission = emissionOf(images, readPbr, index, material);
-        let metal = metallicRoughnessOf(images, readPbr, material);
+        let metal = metallicRoughnessOf(images, readPbr, material) |> Option.map(b -> withOcclusionBuild(images, options#occlusion, material, b));
         let names = { base = fst(base) |> Option.map(r -> Texture3d.name(r#texture)),
                       normal = fst(normal) |> Option.map(r -> Texture3d.name(r#texture)),
                       emissive = emission#texture |> Option.map(r -> Texture3d.name(r#texture)),
-                      metallicRoughness = metal |> Option.flatMap(b -> b#texture) |> Option.map(r -> Texture3d.name(r#texture)) };
+                      metallicRoughness = metal |> Option.flatMap(b -> b#texture) |> Option.map(r -> Texture3d.name(r#texture)),
+                      occlusion = metal |> Option.flatMap(b -> b#occlusion) |> Option.map(o -> Texture3d.name(fst(o)#texture)) };
         let surface = fst(base) |> Option.map(ref -> {
             let textured = Scene3d.texturedMaterial(Texture3d.name(ref#texture), ref#filter) |> Scene3d.withWrap(ref#wrap);
             match fst(normal) {
@@ -173,25 +181,34 @@ pub mod Gltf {
             case (None, Some(b))    => Some(vertexColorMaterial("gltf:${baseName}:${b#name}") |> Scene3d.withEmission(b#shade) |> Scene3d.withEmissionIntensity(b#strength) |> Scene3d.withWrap(b#wrap))
         };
         let usesTexture = Option.nonEmpty(emission#texture);
-        let usesMetalTexture = Option.nonEmpty(names#metallicRoughness);
         let info = gltfMaterialOf(names, material);
         let withAlpha = (m: Option[Scene3d.Material3d]) -> m |> Option.map(withAlphaModeOf(info#alphaMode) >> Scene3d.withDoubleSided(info#doubleSided));
-        let withUv = withAlpha(lit(emission#build) |> Option.map(withMetallicRoughnessOf(metal, true)));
+        let withUv = withAlpha(lit(emission#build) |> Option.map(withPbrOf(metal, true)));
         // WhyNot: 材質の無い（頂点の色で描く）物の alphaCutoff を知らせない — α を持たないので抜く所が無い。
         let cutoffLine = if (Option.isEmpty(withUv)) Nil else alphaCutoffLine(index, material, info);
-        let emissiveNoUv = if (usesTexture) "glTF: 材質 ${materialLabel(index, material)} の emissiveTexture を、TEXCOORD_0 の無い形では光らせない（uv で読む絵）" :: Nil else Nil;
-        let metalNoUv = if (usesMetalTexture) "glTF: 材質 ${materialLabel(index, material)} の metallicRoughnessTexture を、TEXCOORD_0 の無い形では読まず値だけにする（uv で読む絵）" :: Nil else Nil;
-        { withUv = withUv, withoutUv = withAlpha(lit(if (usesTexture) None else emission#build) |> Option.map(withMetallicRoughnessOf(metal, false))),
+        let noUvLines = uvTextureSlotsOf(options, material) |> List.filter(slot -> slot#isRead(names))
+            |> List.map(slot -> "glTF: 材質 ${materialLabel(index, material)} の ${slot#field} を、TEXCOORD_0 の無い形では${slot#noUv}（uv で読む絵）");
+        { withUv = withUv, withoutUv = withAlpha(lit(if (usesTexture) None else emission#build) |> Option.map(withPbrOf(metal, false))),
           info = info,
           lines = List.flatten(snd(base) :: snd(normal) :: emission#lines :: metalLines(index, material, metal) :: emissiveFactorLine(index, material) :: cutoffLine :: Nil),
-          noUvLines = List.append(emissiveNoUv, metalNoUv) }
+          noUvLines = noUvLines }
 
     /// metallic・roughness の付く材質か（式は materialOf の説明）。
     def wantsMetallicRoughness(material: Gltf.Internal.Parse.MaterialSpec): Bool =
         material#hasPbr and (material#hasMetallic or material#hasRoughness or Option.nonEmpty(material#metalRough#index))
 
     /// 材質に付ける metallic・roughness。metallic・roughness = metallicFactor・roughnessFactor（既定 1）・texture = 読めた metallicRoughnessTexture。
-    type alias MetalBuild = { metallic = Float64, roughness = Float64, texture = Option[TextureRef], unreadable = Bool, lines = List[String] }
+    /// occlusion = 読めた occlusionTexture と strength（LoadOptions の occlusion が真の時だけ）。
+    type alias MetalBuild = { metallic = Float64, roughness = Float64, texture = Option[TextureRef], unreadable = Bool, lines = List[String],
+                              occlusion = Option[(TextureRef, Float64)] }
+
+    /// b に occlusionTexture を足した物（読まない・読めない時は b のまま。読めない時の知らせは textureRefOf の行）。
+    def withOcclusionBuild(images: Vector[Option[Texture3d.Texture3d]], enabled: Bool, material: Gltf.Internal.Parse.MaterialSpec, b: MetalBuild): MetalBuild =
+        if (not enabled) b
+        else {
+            let (ref, lines) = textureRefOf(images, material#occlusion);
+            { occlusion = Option.map(r -> (r, material#occlusionStrength), ref), lines = List.append(b#lines, lines) | b }
+        }
 
     /// material の metallic・roughness（付けない材質は None）。絵を指しているのに読めない時は texture = None・unreadable = true。
     def metallicRoughnessOf(images: Vector[Option[Texture3d.Texture3d]], enabled: Bool, material: Gltf.Internal.Parse.MaterialSpec): Option[MetalBuild] =
@@ -201,21 +218,22 @@ pub mod Gltf {
             let (ref, lines) = textureRefOf(images, info);
             Some({ metallic = material#metallicFactor |> Option.getWithDefault(1.0),
                    roughness = material#roughnessFactor |> Option.getWithDefault(1.0),
-                   texture = ref, unreadable = Option.nonEmpty(info#index) and Option.isEmpty(ref), lines = lines })
+                   texture = ref, unreadable = Option.nonEmpty(info#index) and Option.isEmpty(ref), lines = lines, occlusion = None })
         }
 
     /// 絵の無い材質（頂点の色の土台）の wrap は metallicRoughnessTexture の sampler に合わせる。
     def metalWrapOf(b: MetalBuild): Scene3d.Wrap = b#texture |> Option.map(r -> r#wrap) |> Option.getWithDefault(Scene3d.Wrap.Repeat)
 
-    /// 材質 m に metal の metallic・roughness を付ける（metal が None なら m のまま）。useTexture が偽なら絵は付けず値だけ。
-    def withMetallicRoughnessOf(metal: Option[MetalBuild], useTexture: Bool, m: Scene3d.Material3d): Scene3d.Material3d = match metal {
+    /// 材質 m に metal の metallic・roughness と AO の絵を付ける（metal が None なら m のまま）。useTexture が偽なら絵（metallicRoughnessTexture・AO）は付けず値だけ。
+    def withPbrOf(metal: Option[MetalBuild], useTexture: Bool, m: Scene3d.Material3d): Scene3d.Material3d = match metal {
         case None    => m
         case Some(b) =>
             let valued = m |> Scene3d.withMetallicRoughness(b#metallic, b#roughness);
-            match b#texture {
-                case Some(ref) if useTexture => valued |> Scene3d.withMetallicRoughnessTexture(Texture3d.name(ref#texture))
-                case _                       => valued
-            }
+            let textured = b#texture |> Option.filter(_ -> useTexture)
+                |> Option.map(ref -> Scene3d.withMetallicRoughnessTexture(Texture3d.name(ref#texture), valued)) |> Option.getWithDefault(valued);
+            b#occlusion |> Option.filter(_ -> useTexture)
+                |> Option.map(o -> { let (ref, strength) = o; Scene3d.withOcclusionTexture(Texture3d.name(ref#texture), strength, textured) })
+                |> Option.getWithDefault(textured)
     }
 
     /// metallicRoughnessTexture が読めない時の知らせと、絵の読み飛ばしの知らせ。
@@ -302,7 +320,8 @@ pub mod Gltf {
     def isZeroColor(c: { r = Float64, g = Float64, b = Float64 }): Bool = c#r <= 0.0 and c#g <= 0.0 and c#b <= 0.0
 
     /// GltfMaterial の絵の名前の欄（読めた絵の Texture3d.name）。
-    type alias TextureNames = { base = Option[String], normal = Option[String], emissive = Option[String], metallicRoughness = Option[String] }
+    type alias TextureNames = { base = Option[String], normal = Option[String], emissive = Option[String], metallicRoughness = Option[String],
+                                occlusion = Option[String] }
 
     /// glTF の材質の欄を読む（alphaMode は MASK・BLEND の他は Opaque・alphaCutoff 既定 0.5・doubleSided 既定 偽）。
     def gltfMaterialOf(names: TextureNames, material: Gltf.Internal.Parse.MaterialSpec): Model3d.GltfMaterial =
@@ -313,13 +332,23 @@ pub mod Gltf {
           emissive = emissiveOf(material),
           metallic = material#metallicFactor |> Option.getWithDefault(1.0),
           roughness = material#roughnessFactor |> Option.getWithDefault(1.0),
-          metallicRoughnessTexture = names#metallicRoughness }
+          metallicRoughnessTexture = names#metallicRoughness,
+          occlusionTexture = names#occlusion, occlusionStrength = material#occlusionStrength }
 
     /// textureInfo（{ index, texCoord, extensions }）が指す絵と、sampler の読み方。
     type alias TextureRef = { texture = Texture3d.Texture3d, filter = ShaderDoc.FilterMode, wrap = Scene3d.Wrap }
 
+    /// parse が頂点の uv に焼き込んだ transform（Gltf.Internal.Parse.bakedTransformOf）を、材質の絵から外した物（読み飛ばしの知らせを出さない。
+    /// 書き込むのは実際に読む uv が 0 番の時だけなので、texCoord も 0 にそろえる）。
+    def withoutBakedTransform(m: Gltf.Internal.Parse.MaterialSpec): Gltf.Internal.Parse.MaterialSpec =
+        if (Option.isEmpty(Gltf.Internal.Parse.bakedTransformOf(m))) m
+        else {
+            let clear = (t: Gltf.Internal.Parse.TextureInfo) -> { transform = None, texCoord = 0 | t };
+            { base = clear(m#base), normal = clear(m#normal), emissive = clear(m#emissive), metalRough = clear(m#metalRough), occlusion = clear(m#occlusion) | m }
+        }
+
     def textureRefOf(images: Vector[Option[Texture3d.Texture3d]], info: Gltf.Internal.Parse.TextureInfo): (Option[TextureRef], List[String]) =
-        let transformLine = if (info#transform)
+        let transformLine = if (Option.nonEmpty(info#transform))
             "glTF: KHR_texture_transform を読み飛ばした（uv をずらさず・回さずに読む）" :: Nil else Nil;
         match info#index {
             case None => (None, Nil)

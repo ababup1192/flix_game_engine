@@ -22,6 +22,8 @@
 ///   lightmap つき: toon(baked + Σ 点光源 + Σ スポット)・baked = linearToSrgb(max(0, toLinear(s) × intensity))
 ///   変種 ambientOcclusion（画面の上の SSAO・ScreenEffects3d）: 環境の光（ambient + hemisphere・lightmap は baked）に ao を、
 ///     直接光（Σ 点光源・Σ スポット・太陽）に aoDirect = 1 − lightAffect × (1 − ao) を掛ける（toon の内側。ao と aoDirect は木の外で画素ごとに 1 回）
+///   変種 materialOcclusion（材質の AO の絵・Scene3d.withOcclusionTexture）: 環境の光（ambient + hemisphere・lightmap は baked）に MaterialOcclusion を掛ける（SSAO の後・toon の内側）。
+///     直接光には掛けない。pbrModel の映り込みにも掛ける（下）
 ///   fog    = c + (fogColor − c) × clamp01((|点 − 目| − near) / max(far − near, 1e−6))（fog が無い時は呼ぶ側が c のまま返す）
 ///   空     = horizon + (toward − horizon) × min(1, |dir.y|^curve)・toward = dir.y ≥ 0 なら zenith、ほかは ground
 ///
@@ -36,6 +38,7 @@
 ///   環境マップがあれば（ScalarInput.EnvironmentOn = 1）、映り込みの「空(…)」は環境マップの色 EnvironmentColor に替わる:
 ///     EnvironmentColor = toLinear(絵(environmentUvOf(d), 段 = roughness × (段の数 − 1))) × 強さ・d = environmentDirection
 ///     d = 箱が無ければ normalize(mix(r, n, roughness²))・箱があれば p + t × (その向き) の box.center からの向き（t = 向かう側の面までの距離を軸ごとに測った最小・0 以上）
+///   変種 materialOcclusion なら 映り込み × MaterialOcclusion（環境から来る光なので。点光源・スポット・太陽の鏡面には掛けない）。
 ///   toon は light だけに掛かり、鏡面と映り込みは段付けしない。lightmap の面も鏡面と映り込みは同じに足す（ベイクした光は拡散の側）。
 ///
 /// 木の外に置く物（2 つの描き手がそれぞれ書く）: 絵を読む所（lightmap の段つきの読み・法線マップの絵・環境マップの絵）・法線マップの TBN・
@@ -149,6 +152,8 @@ pub mod LightModel3d {
         case ScreenAmbientOcclusion
         /// 直接光に掛ける SSAO の値 1 − lightAffect × (1 − ScreenAmbientOcclusion)（変種 ambientOcclusion の時だけ読む）。
         case ScreenAmbientOcclusionDirect
+        /// 材質の AO の絵の値（0..1・環境の光と映り込みに掛ける。変種 materialOcclusion の時だけ読む・絵の無い材質は 1。木の外で画素ごとに 1 回）。
+        case MaterialOcclusion
     }
 
     /// 画素ごと・場面ごとの vec3 の入力。
@@ -218,21 +223,24 @@ pub mod LightModel3d {
     /// 木の変種（Unity の shader variant に当たる）。pointShadows = 点光源の光に影の割合（ScalarInput.PointShadowLit）を掛けるか・
     /// lightUnits = 光の量の読み方（Some なら木に書き込む・None なら ScalarInput.PhysicalUnits で画素ごとに選ぶ）・
     /// skyIrradiance = ambient に景色の拡散の光を混ぜる（ScalarInput.SkyContribution と Vec3Input.IrradianceSh を読む）・
-    /// ambientOcclusion = 画面の上の SSAO を掛ける（ScalarInput.ScreenAmbientOcclusion と ScreenAmbientOcclusionDirect を読む）。
+    /// ambientOcclusion = 画面の上の SSAO を掛ける（ScalarInput.ScreenAmbientOcclusion と ScreenAmbientOcclusionDirect を読む）・
+    /// materialOcclusion = 材質の AO の絵を掛ける（ScalarInput.MaterialOcclusion を読む。場面でなく材質で決まる）。
     /// GL と WebGPU は場面ごとに Some の変種のプログラムを組み、CPU は cpuVariant() の木 1 本を回す（Legacy では Select と × 1.0 だけが増え、値は同じ）。
-    pub type alias LightVariant = { pointShadows = Bool, lightUnits = Option[Scene3d.LightUnits], skyIrradiance = Bool, ambientOcclusion = Bool }
+    pub type alias LightVariant = { pointShadows = Bool, lightUnits = Option[Scene3d.LightUnits], skyIrradiance = Bool, ambientOcclusion = Bool,
+                                    materialOcclusion = Bool }
 
     /// 点光源の影なし・Legacy の変種（lightingModel() などと同じ木）。
-    pub def legacyVariant(): LightVariant = { pointShadows = false, lightUnits = Some(Scene3d.LightUnits.Legacy), skyIrradiance = false, ambientOcclusion = false }
+    pub def legacyVariant(): LightVariant =
+        { pointShadows = false, lightUnits = Some(Scene3d.LightUnits.Legacy), skyIrradiance = false, ambientOcclusion = false, materialOcclusion = false }
 
     /// CPU の描き手が回す変種（点光源の影の割合を読み・光の量の読み方を入力で選ぶ・景色の拡散の光は SkyContribution が 0 なら ambient のまま・
-    /// SSAO の無い画素は 1 を渡す）。
-    pub def cpuVariant(): LightVariant = { pointShadows = true, lightUnits = None, skyIrradiance = true, ambientOcclusion = true }
+    /// SSAO の無い画素と AO の絵の無い材質は 1 を渡す）。
+    pub def cpuVariant(): LightVariant = { pointShadows = true, lightUnits = None, skyIrradiance = true, ambientOcclusion = true, materialOcclusion = true }
 
-    /// 場面 scene に使う GPU の変種（pointShadows が Some なら影の割合を読む・光の量の読み方は場面のまま）。
+    /// 場面 scene に使う GPU の変種（pointShadows が Some なら影の割合を読む・光の量の読み方は場面のまま。materialOcclusion は材質のプログラムが足す）。
     pub def variantOf(scene: Scene3d.Scene3dCmd): LightVariant =
         { pointShadows = Option.nonEmpty(scene#pointShadows), lightUnits = Some(scene#lightUnits), skyIrradiance = Scene3d.Internal.SkyIrradiance.isOn(scene),
-          ambientOcclusion = Scene3d.preloadVariantOf(scene)#ambientOcclusion }
+          ambientOcclusion = Scene3d.preloadVariantOf(scene)#ambientOcclusion, materialOcclusion = false }
 
     /// lightmap の無い面に当たる光（ファイルの頭の light）。
     pub def lightingModel(): Vec3Expr = lightingModelFor(legacyVariant())
@@ -246,10 +254,15 @@ pub mod LightModel3d {
                                                     occludedDirect(v, Vec3Expr.SumPoints(pointLight(v)))),
                                        occludedDirect(v, Vec3Expr.SumSpots(spotLight(v)))), occludedDirect(v, sunLight(v)))))
 
-    /// 環境の光 light に SSAO の値を掛けた物（変種 ambientOcclusion でなければ light のまま）。
+    /// 環境の光 light に SSAO の値と材質の AO を掛けた物（変種 ambientOcclusion・materialOcclusion でない方は掛けない）。
     // WhyNot: SSAO の無い場面でも × 1 を通さない — 変種で分けると、SSAO を使わない場面の GPU のプログラムの字が変わらない（CPU は 1 を掛けて値はビットで同じ）。
     def occluded(v: LightVariant, light: Vec3Expr): Vec3Expr =
-        if (v#ambientOcclusion) Vec3Expr.Scale(light, ScalarExpr.In(ScalarInput.ScreenAmbientOcclusion)) else light
+        let screen = if (v#ambientOcclusion) Vec3Expr.Scale(light, ScalarExpr.In(ScalarInput.ScreenAmbientOcclusion)) else light;
+        materialOccluded(v, screen)
+
+    /// light に材質の AO を掛けた物（変種 materialOcclusion でなければ light のまま）。
+    def materialOccluded(v: LightVariant, light: Vec3Expr): Vec3Expr =
+        if (v#materialOcclusion) Vec3Expr.Scale(light, ScalarExpr.In(ScalarInput.MaterialOcclusion)) else light
 
     /// 直接光 light に SSAO の直接光の値を掛けた物（変種 ambientOcclusion でなければ light のまま）。
     def occludedDirect(v: LightVariant, light: Vec3Expr): Vec3Expr =
@@ -319,7 +332,7 @@ pub mod LightModel3d {
         let light = Vec3Expr.In(Vec3Input.Light);
         let diffuse = Vec3Expr.Scale(Vec3Expr.Mul(Vec3Expr.In(Vec3Input.Albedo), light), ScalarExpr.Sub(ScalarExpr.Num(1.0), ScalarExpr.Ref("metallic")));
         withSurface(Vec3Expr.Add(Vec3Expr.Add(diffuse, Vec3Expr.Add(Vec3Expr.Add(Vec3Expr.SumPoints(pointSpecular(v)), Vec3Expr.SumSpots(spotSpecular(v))), sunSpecular())),
-                                 skyReflection()))
+                                 materialOccluded(v, skyReflection())))
 
     /// 面の値（metallic・roughness・α・α²・F0・目への向き v・n·v・見る側の項 viewTerm・分布の係数 dScale）を body の中で使えるようにする。
     /// 光のループの中の式は、これらをループの外で 1 回だけ計算した値として読む（光 1 本ごとに計算し直さない）。

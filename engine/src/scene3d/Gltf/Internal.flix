@@ -129,7 +129,7 @@ pub mod Gltf.Internal {
             options <- ProjectLoader.Internal.gltfOptionsOf(gltfText);
             parsed <- Gltf.Internal.Parse.parse(Gltf.Internal.Parse.readOptionsOf(options), bytes)
         ) yield {
-            let used = Gltf.usedImages(options#limits, options#pbr, parsed#materials);
+            let used = Gltf.usedImages(options, parsed#materials);
             let ranges = parsed#images |> Vector.toList |> List.zipWithIndex |> List.filterMap(entry -> match entry {
                 case (k, Gltf.Internal.Parse.ImageSource.InBin(start, length)) if Map.memberOf(k, used) => Some((k, start, length))
                 case _ => None
@@ -152,10 +152,12 @@ pub mod Gltf.Internal {
                      inverseBinds = Some(Vector#{ Mat4.identity() }), rootTransform = Mat4.identity() };
         let clip = { name = "a", channels = { joint = 0, path = AnimationClip3d.Path.Rotation, times = Vector#{ 0.0, 1.0 },
                                               values = Vector#{ 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0 }, interpolation = AnimationClip3d.Interpolation.Linear } :: Nil };
-        let info = { index = Some(0), texCoord = 0, transform = false, source = Some(0), nearest = false, clamp = false, mirrored = false };
+        let info = { index = Some(0), texCoord = 0, transform = Some({ offsetU = 0.0, offsetV = 0.0, rotation = 0.0, scaleU = 1.0, scaleV = 1.0, texCoord = Some(0) }),
+                     source = Some(0), nearest = false, clamp = false, mirrored = false };
         let material = { name = Some("m"), alphaMode = Model3d.AlphaMode.Mask, alphaCutoff = 0.5, doubleSided = true, base = info, normal = info, normalScale = Some(1.0),
                          emissive = info, emissiveFactor = { r = 1.0, g = 1.0, b = 1.0 }, emissiveFactorError = Some("e"), emissiveStrength = 1.0, metalRough = info,
-                         hasPbr = true, hasMetallic = true, hasRoughness = true, metallicFactor = Some(1.0), roughnessFactor = Some(1.0) };
+                         hasPbr = true, hasMetallic = true, hasRoughness = true, metallicFactor = Some(1.0), roughnessFactor = Some(1.0),
+                         occlusion = info, occlusionStrength = 1.0 };
         let built = forM (
             mesh <- tri;
             skin <- Skin3d.make(spec);

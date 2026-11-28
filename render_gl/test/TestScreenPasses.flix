@@ -48,7 +48,7 @@ mod Render3d.TestScreenPasses {
     /// 絵を一番多く読む材質（絵 6 枚・法線マップ・lightmap・PBR の環境マップ）の +ps+ao の版。
     def heaviestKind(): Render3d.ProgramKey.ProgramKind =
         { skinned = false, uv = true, normalMap = true, lightmap = true, blend = false, doubleSided = false, coverage = false, metallicRoughness = true,
-          screenAoOnBlend = false, variant = { pointShadows = true, physicalUnits = true, psx = true, skyIrradiance = true, ambientOcclusion = true } }
+          screenAoOnBlend = false, materialOcclusion = false, variant = { pointShadows = true, physicalUnits = true, psx = true, skyIrradiance = true, ambientOcclusion = true } }
 
     def sixTextures(): ShaderDoc.Spec =
         let tex = (i: Int32) -> ShaderDoc.Field.Tex({ name = "t${i}", chan = ShaderDoc.TexChan.R });
@@ -58,16 +58,16 @@ mod Render3d.TestScreenPasses {
 
     @Test
     def testHeaviestWgslMaterialStaysWithinSixteenTextures(): Unit \ Assert =
-        let source = Render3dWgsl.materialFragmentSource(ShaderGen.Wgsl.compile3d(sixTextures(), None, None, 1), heaviestKind());
+        let source = Render3dWgsl.materialFragmentSource(ShaderGen.Wgsl.compile3d(sixTextures(), None, None, false, 1), heaviestKind());
         Assert.assertTrue(count("texture_2d", source) + count("texture_depth_2d", source) <= 16)
 
     @Test
     def testHeaviestWgslMaterialStaysWithinSixteenSamplers(): Unit \ Assert =
-        let source = Render3dWgsl.materialFragmentSource(ShaderGen.Wgsl.compile3d(sixTextures(), None, None, 1), heaviestKind());
+        let source = Render3dWgsl.materialFragmentSource(ShaderGen.Wgsl.compile3d(sixTextures(), None, None, false, 1), heaviestKind());
         Assert.assertTrue(count(": sampler;", source) <= 16)
 
     @Test
     def testHeaviestGlslMaterialStaysWithinSixteenSamplers(): Unit \ Assert =
-        let source = Render3dGlsl.materialFragmentSource(ShaderGen.compile3d(sixTextures(), None, None), heaviestKind());
+        let source = Render3dGlsl.materialFragmentSource(ShaderGen.compile3d(sixTextures(), None, None, false), heaviestKind());
         Assert.assertTrue(count("uniform sampler2D", source) <= 16)
 }

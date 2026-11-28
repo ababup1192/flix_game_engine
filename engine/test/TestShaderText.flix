@@ -26,12 +26,12 @@ mod TestShaderText {
     @Test
     def testGlslCutoutAlphaIsAlwaysAtom(): Unit \ Assert =
         let alphas = specs() |> List.flatMap(spec -> shades() |> List.flatMap(emission -> shades() |> List.map(metal ->
-            ShaderGen.compile3d(spec, emission, metal)#cutoutAlpha)));
+            ShaderGen.compile3d(spec, emission, metal, false)#cutoutAlpha)));
         Assert.assertEq(expected = Nil, alphas |> List.filter(a -> not ShaderText.isAtomText(a)))
 
     @Test
     def testWgslCutoutAlphaIsAlwaysAtom(): Unit \ Assert =
         let alphas = specs() |> List.flatMap(spec -> shades() |> List.flatMap(emission -> shades() |> List.map(metal ->
-            ShaderGen.Wgsl.compile3d(spec, emission, metal, 1)#cutoutAlpha)));
+            ShaderGen.Wgsl.compile3d(spec, emission, metal, false, 1)#cutoutAlpha)));
         Assert.assertEq(expected = Nil, alphas |> List.filter(a -> not ShaderText.isAtomText(a)))
 }

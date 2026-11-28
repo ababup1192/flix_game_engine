@@ -98,7 +98,7 @@ pub mod Render3dGlsl {
 
     /// 変種 v の lightmapLightSource。
     pub def lightmapLightSourceFor(v: Render3d.ProgramKey.ShaderVariant): String =
-        ShaderAst.Glsl.print(Render3dShaders.lightmapLightAt(v, Render3dShaders.featureOf(v)#spotShadow(Render3dShaders.spotShadow())) :: Nil)
+        ShaderAst.Glsl.print(Render3dShaders.lightmapLightAt(Render3d.ProgramKey.lightVariantOf(v), Render3dShaders.featureOf(v)#spotShadow(Render3dShaders.spotShadow())) :: Nil)
 
     /// 外向きの法線 n をタンジェント（xyz と w）と法線マップの rgb c で傾けた applyNormalMap(n, tangent, strength, c)（式は Render3d.flix の頭。
     /// CPU の描き手は SoftRaster3d.applyNormalMap）。

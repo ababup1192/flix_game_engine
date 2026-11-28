@@ -97,7 +97,7 @@ pub mod Render3dWgsl {
         Render3dShaders.wgslDeclarations("r3d_bindings", sceneDeclarations() + variantDeclarations(v) + more) :: Nil
 
     /// 材質の frag（本文は Render3dShaders.materialFragmentBody）。入口は fs_main・varying の struct は R3dIn。
-    /// 材質の部品は group 1 で作った物（ShaderGen.Wgsl.compile3d(…, 1)）を渡す。materialEval と cutoutAlpha は vUv・vWorld・vNormal・vColor を名前で読む（本文が局所の値に置く）。
+    /// 材質の部品は group 1 で作った物（ShaderGen.Wgsl.compile3d(…, materialOcclusion, 1)）を渡す。materialEval と cutoutAlpha は vUv・vWorld・vNormal・vColor を名前で読む（本文が局所の値に置く）。
     pub def materialFragmentSource(m: ShaderGen.Wgsl.MaterialWgsl, surface: Render3d.ProgramKey.ProgramKind): String =
         let bindings = sceneBindings(surface#variant, drawDeclarations(Render3dShaders.isNormalMapped(surface), surface#lightmap));
         ShaderAst.Wgsl.fragment(Render3dShaders.materialFragment(surface, Render3dShaders.wgslMaterialPart(m), bindings))

@@ -248,7 +248,13 @@ pub mod Scene3d {
     pub type alias MaterialFields = { spec = ShaderDoc.Spec, params = Map[String, Float64], cutout = Bool, emission = Option[ShaderDoc.Shade],
                                       normalMap = Option[NormalMap], wrap = Wrap, blend = Bool, doubleSided = Bool, emissionIntensity = Float64,
                                       metallicRoughness = Option[MetallicRoughness], metallicRoughnessShade = Option[ShaderDoc.Shade], shaderHash = Lazy[Int64],
-                                      texReads = Lazy[List[(String, ShaderDoc.FilterMode)]], maxMipLevels = Int32, screenAoOnBlend = Bool }
+                                      texReads = Lazy[List[(String, ShaderDoc.FilterMode)]], maxMipLevels = Int32, screenAoOnBlend = Bool,
+                                      occlusion = Option[Occlusion] }
+
+    /// 材質の AO の絵（glTF の occlusionTexture と同じ決まり: R = 光の届く割合・掛ける値 = 1 + strength × (R − 1)）。
+    /// 環境の光（ambient・hemisphere・lightmap・景色の拡散の光）と映り込み（空・環境マップ）に掛かり、直接光（太陽・点光源・スポット）には掛からない。
+    /// metallicRoughness（withMetallicRoughness・withMetallicRoughnessTexture）を持つ材質の時だけ描く（hasMaterialOcclusion）。
+    pub type alias Occlusion = { texture = String, strength = Float64 }
 
     /// 材質の金属っぽさ（metallic・0 で絶縁体・1 で金属）と粗さ（roughness・0 で鏡・1 でざらざら）。どちらも 0..1。
     /// texture = 絵の名前（glTF の metallicRoughnessTexture と同じ決まり: B = metallic・G = roughness。絵の値に metallic・roughness を掛ける）・None なら値だけ。
@@ -264,7 +270,7 @@ pub mod Scene3d {
         MaterialData.MaterialData({ spec = spec, params = Map.empty(), cutout = false, emission = None, normalMap = None, wrap = Wrap.Repeat,
                                     blend = false, doubleSided = false, emissionIntensity = 1.0,
                                     metallicRoughness = None, metallicRoughnessShade = None, shaderHash = lazy 0i64, texReads = lazy Nil,
-                                    maxMipLevels = Int32.maxValue(), screenAoOnBlend = false } |> withShaderKeys)
+                                    maxMipLevels = Int32.maxValue(), screenAoOnBlend = false, occlusion = None } |> withShaderKeys)
 
     /// spec の Tex の絵を読む mip のレベルの数を levels までにする（1 以上に直す。1 なら縮んでも元の絵だけを読む）。
     /// ドット絵のアトラスを貼る材質で、遠くや斜めで 1 つのタイルが 1 画素より小さく縮んだ所に隣のタイルの色が混ざるのを止める（atlasMipLevelsFor）。
@@ -374,7 +380,7 @@ pub mod Scene3d {
         let MaterialData.MaterialData(r) = m;
         MaterialData.MaterialData(withShaderKeys({ metallicRoughness = None, metallicRoughnessShade = Some(shade), params = withoutPbrParams(r#params) | r }))
 
-    /// metallic と roughness を外す（glb の材質を今までのマットな絵に戻す時）。
+    /// metallic と roughness を外す（glb の材質を今までのマットな絵に戻す時）。AO の絵（withOcclusionTexture）も描かなくなる（欄は残り、また付ければ描く）。
     pub def withoutMetallicRoughness(m: Material3d): Material3d =
         let MaterialData.MaterialData(r) = m;
         MaterialData.MaterialData(withShaderKeys({ metallicRoughness = None, metallicRoughnessShade = None, params = withoutPbrParams(r#params) | r }))
@@ -383,8 +389,36 @@ pub mod Scene3d {
     pub def metallicRoughnessOf(m: Material3d): Option[MetallicRoughness] = materialFieldsOf(m)#metallicRoughness
 
     def withMetallicRoughnessOf(mr: MetallicRoughness, r: MaterialFields): Material3d =
-        let shade = metallicRoughnessShadeOf(mr#texture);
-        MaterialData.MaterialData(withShaderKeys({ metallicRoughness = Some(mr), metallicRoughnessShade = Some(shade), params = withPbrParams(Some(mr), r#params) | r }))
+        let shade = metallicRoughnessShadeOf(mr#texture, r#occlusion);
+        let params = withOcclusionParam(r#occlusion, withPbrParams(Some(mr), r#params));
+        MaterialData.MaterialData(withShaderKeys({ metallicRoughness = Some(mr), metallicRoughnessShade = Some(shade), params = params | r }))
+
+    /// AO の絵 texture（R = 光の届く割合）を付ける（glTF の occlusionTexture。strength は 0..1 に丸める）。metallicRoughness を持つ材質の時だけ描き
+    /// （持たない材質は欄だけ残り、withMetallicRoughness を後に呼べば描く）、絵は metallicRoughnessTexture と同じ名前なら同じ 1 枚を読む（ARM の絵）。
+    /// 付けた材質は別のプログラム（+occ）を使う。毎コマ strength を変えてもプログラムは組み直さない（params の値）。
+    // WhyNot: metallicRoughness の無い材質にも描かない — AO の値を運ぶのは metallicRoughness の色の b で、無い材質に足すと材質の部品の形（GLSL の out の引数・
+    //   WGSL の struct）が 1 つ増える。glTF の書き出し（Blender）はどの材質にも roughness を書くので、読んだ glb の材質はいつも描く側に入る。
+    pub def withOcclusionTexture(texture: String, strength: Float64, m: Material3d): Material3d =
+        let MaterialData.MaterialData(r) = m;
+        let withAo = { occlusion = Some({ texture = texture, strength = unitOf(strength) }) | r };
+        match r#metallicRoughness {
+            case Some(mr) => withMetallicRoughnessOf(mr, withAo)
+            case None     => MaterialData.MaterialData(withAo)
+        }
+
+    /// 付いている AO の絵（無ければ None。metallicRoughness が無くて描かない時も返す）。
+    pub def occlusionOf(m: Material3d): Option[Occlusion] = materialFieldsOf(m)#occlusion
+
+    /// 材質の AO を描くか（AO の絵と metallicRoughness の両方を持つ）。真なら metallicRoughnessShade の b が AO の値（描き手は b を読む）。
+    pub def hasMaterialOcclusion(f: MaterialFields): Bool = Option.nonEmpty(f#occlusion) and Option.nonEmpty(f#metallicRoughness)
+
+    /// metallicRoughnessShade の b に AO を入れる時の strength の Param の名前。
+    pub def pbrParamOcclusion(): String = "pbr:occlusion"
+
+    def withOcclusionParam(o: Option[Occlusion], params: Map[String, Float64]): Map[String, Float64] = match o {
+        case None    => params
+        case Some(v) => Map.insert(pbrParamOcclusion(), v#strength, params)
+    }
 
     /// 0..1 に丸める（NaN は 0）。
     def unitOf(x: Float64): Float64 = if (Float64.isNan(x)) 0.0 else Float64.max(0.0, Float64.min(1.0, x))
@@ -394,9 +428,12 @@ pub mod Scene3d {
 
     pub def pbrParamRoughness(): String = "pbr:roughness"
 
-    /// r = metallic・g = roughness の色。形は絵の名前だけで決まる（値は Param なので、値を替えても GLSL は同じ）。
+    /// r = metallic・g = roughness・b = AO の色。形は絵の名前だけで決まる（値は Param なので、値を替えても GLSL は同じ）。
+    /// b は occlusion があれば 1 − strength × (1 − 絵の R)・無ければ Const 0（描き手は hasMaterialOcclusion が偽なら b を読まない）。
     // WhyNot: 値を Const で書かない — Const は GLSL の字に入り、値ごとに別のプログラムを組む（球を粗さで 10 個並べると 10 本）。
-    def metallicRoughnessShadeOf(texture: Option[String]): ShaderDoc.Shade =
+    // WhyNot: AO を別の Shade の欄にしない — 欄を足すと材質を比べる所（eqMaterial・hashMaterial・limitMaterialTexReads・batch の鍵）を全部増やすことになる。
+    //   ARM の絵は名前が同じなので、ShaderDoc.materialTexReads が 1 組にまとめる。
+    def metallicRoughnessShadeOf(texture: Option[String], occlusion: Option[Occlusion]): ShaderDoc.Shade =
         let factor = (name: String) -> ShaderDoc.Field.Param({ name = name });
         let read = (name: String, chan: ShaderDoc.TexChan) -> match texture {
             case None    => factor(name)
@@ -405,8 +442,16 @@ pub mod Scene3d {
                                       b = ShaderDoc.Field.Sampler({ filter = ShaderDoc.FilterMode.Linear,
                                                                    of = ShaderDoc.Field.Tex({ name = t, chan = chan }) }) })
         };
-        ShaderDoc.Shade.Rgb({ r = read(pbrParamMetallic(), ShaderDoc.TexChan.B), g = read(pbrParamRoughness(), ShaderDoc.TexChan.G),
-                              b = ShaderDoc.Field.Const(0.0) })
+        let one = ShaderDoc.Field.Const(1.0);
+        let ao = match occlusion {
+            case None    => ShaderDoc.Field.Const(0.0)
+            case Some(o) =>
+                let red = ShaderDoc.Field.Sampler({ filter = ShaderDoc.FilterMode.Linear, of = ShaderDoc.Field.Tex({ name = o#texture, chan = ShaderDoc.TexChan.R }) });
+                ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Sub, a = one,
+                                      b = ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Mul, a = factor(pbrParamOcclusion()),
+                                                                b = ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Sub, a = one, b = red }) }) })
+        };
+        ShaderDoc.Shade.Rgb({ r = read(pbrParamMetallic(), ShaderDoc.TexChan.B), g = read(pbrParamRoughness(), ShaderDoc.TexChan.G), b = ao })
 
     /// params に metallic・roughness の値を入れた物（mr が None なら入れない）。
     def withPbrParams(mr: Option[MetallicRoughness], params: Map[String, Float64]): Map[String, Float64] = match mr {
@@ -415,7 +460,7 @@ pub mod Scene3d {
     }
 
     def withoutPbrParams(params: Map[String, Float64]): Map[String, Float64] =
-        Map.remove(pbrParamRoughness(), Map.remove(pbrParamMetallic(), params))
+        Map.remove(pbrParamOcclusion(), Map.remove(pbrParamRoughness(), Map.remove(pbrParamMetallic(), params)))
 
     pub def withNormalMap(n: NormalMap, m: Material3d): Material3d =
         let MaterialData.MaterialData(r) = m;

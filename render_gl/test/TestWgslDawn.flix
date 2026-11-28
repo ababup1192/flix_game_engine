@@ -223,7 +223,7 @@ mod TestWgslDawn {
         compileErrors(gpu, label, materialHarness(spec, emission, metallicRoughness))
 
     def materialHarness(spec: ShaderDoc.Spec, emission: Option[Shade], metallicRoughness: Option[Shade]): String =
-        let m = ShaderGen.Wgsl.compile3d(spec, emission, metallicRoughness, 1);
+        let m = ShaderGen.Wgsl.compile3d(spec, emission, metallicRoughness, false, 1);
         m#declarations + m#functions +
             "@fragment fn fs_main(@location(0) vUv: vec2f, @location(1) vWorld: vec3f, @location(2) vNormal: vec3f, @location(3) vColor: vec3f) -> @location(0) vec4f {\n" +
             "    let material = materialEval(vUv, vWorld, vNormal, vColor);\n" +
@@ -241,7 +241,7 @@ mod TestWgslDawn {
             flags |> List.flatMap(lightmap -> flags |> List.flatMap(blend -> flags |> List.flatMap(doubleSided ->
                 flags |> List.flatMap(coverage -> flags |> List.map(metallic ->
                     { skinned = false, uv = uv, normalMap = normalMap, lightmap = lightmap, blend = blend, doubleSided = doubleSided,
-                      coverage = coverage, metallicRoughness = metallic, screenAoOnBlend = false, variant = { pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false, ambientOcclusion = false } })))))
+                      coverage = coverage, metallicRoughness = metallic, screenAoOnBlend = false, materialOcclusion = false, variant = { pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false, ambientOcclusion = false } })))))
         })
 
     def kindLabel(k: Render3d.ProgramKey.ProgramKind): String =
@@ -256,11 +256,15 @@ mod TestWgslDawn {
         let few = kinds |> List.filter(k -> (not k#blend) and (not k#coverage) and (not k#lightmap));
         materialVariants() |> List.flatMap(v -> {
             let (name, spec, glow, metal) = v;
-            let m = ShaderGen.Wgsl.compile3d(spec, glow, metal, 1);
+            let m = ShaderGen.Wgsl.compile3d(spec, glow, metal, false, 1);
             let chosen = if (name == "scene3d-field" or name == "textured-metal") kinds else few;
             let variants = if (name == "textured-metal") few |> List.flatMap(k -> { variant = { ambientOcclusion = true | k#variant } | k } :: { variant = { pointShadows = true | k#variant } | k } :: { variant = { physicalUnits = true | k#variant } | k } :: { variant = { pointShadows = true, physicalUnits = true | k#variant } | k } :: { variant = { psx = true | k#variant } | k } :: { variant = { pointShadows = true, psx = true | k#variant } | k }
-                :: { blend = true, screenAoOnBlend = true, variant = { ambientOcclusion = true | k#variant } | k } :: Nil) else Nil;
-            (chosen ::: variants) |> List.map(k -> ("frag ${name} ${kindLabel(k)}", Render3dWgsl.materialFragmentSource(m, k)))
+                :: { blend = true, screenAoOnBlend = true, materialOcclusion = false, variant = { ambientOcclusion = true | k#variant } | k } :: Nil) else Nil;
+            let occluded = if (name == "textured-metal") few |> List.filter(k -> k#metallicRoughness) |> List.flatMap(k -> { materialOcclusion = true | k } :: { materialOcclusion = true, lightmap = true | k }
+                :: { materialOcclusion = true, variant = { ambientOcclusion = true | k#variant } | k } :: Nil) else Nil;
+            let mo = ShaderGen.Wgsl.compile3d(spec, glow, metal, true, 1);
+            ((chosen ::: variants) |> List.map(k -> ("frag ${name} ${kindLabel(k)}", Render3dWgsl.materialFragmentSource(m, k)))) :::
+            (occluded |> List.map(k -> ("frag ${name} ${kindLabel(k)}+occ", Render3dWgsl.materialFragmentSource(mo, k))))
         })
 
     /// 手で書いた 2D の面の WGSL（組めない面の単色の代わり）。
@@ -397,6 +401,6 @@ mod TestWgslDawn {
     @Test
     def testNormalMappedFragmentDoesNotFlipRows(): Unit \ Assert =
         let textured = fill("textured", 0.0, Nil, Shade.Solid(red()), Field.Tex({ name = "albedo", chan = TexChan.A }));
-        let kind = { skinned = false, uv = true, normalMap = true, lightmap = true, blend = false, doubleSided = false, coverage = false, metallicRoughness = false, screenAoOnBlend = false, variant = { pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false, ambientOcclusion = false } };
-        Assert.assertFalse(String.contains(substr = "Flip", Render3dWgsl.materialFragmentSource(ShaderGen.Wgsl.compile3d(textured, None, None, 1), kind)))
+        let kind = { skinned = false, uv = true, normalMap = true, lightmap = true, blend = false, doubleSided = false, coverage = false, metallicRoughness = false, screenAoOnBlend = false, materialOcclusion = false, variant = { pointShadows = false, physicalUnits = false, psx = false, skyIrradiance = false, ambientOcclusion = false } };
+        Assert.assertFalse(String.contains(substr = "Flip", Render3dWgsl.materialFragmentSource(ShaderGen.Wgsl.compile3d(textured, None, None, false, 1), kind)))
 }

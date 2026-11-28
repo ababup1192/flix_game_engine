@@ -124,7 +124,7 @@ pub mod SoftRaster.Internal.Texture {
     def warnTooManyMaterialTextures(warnLog: TexWarnLog, specName: String, count: Int32): Unit \ IO =
         if (count <= Scene3d.maxMaterialTextures()) ()
         else warnSceneOnce(warnLog, "@material-textures:" + specName,
-            "scene3d: 材質 '${specName}' が読む絵の組が ${count} 組ある — ${Scene3d.maxMaterialTextures()} 組目より後ろは 0 で描く")
+            "scene3d: 材質 '${specName}' が読む絵の組が ${count} 組ある — ${Scene3d.maxMaterialTextures()} 組目より後ろは 0 で描く（材質の AO の絵が落ちると AO は 1 − strength の暗さになる）")
 
     /// 組み込みの放射テクスチャ（Render.lightAt / darkAt が引く）の表。作るのは
     /// drawables がその名前を実際に使うときだけ — 256×256 の画素計算を毎フレームの

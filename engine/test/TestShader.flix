@@ -1394,7 +1394,7 @@ def testBlurBindingsInRepeatMaterialEqualOneByOne(): Unit \ Assert =
     let one = ShaderDoc.Field.Const(1.0);
     let at = spacer -> {
         let compiled = ShaderEval.compileMaterial({ spec = rgbBlurBindings(0.4, (one, one, one), spacer), emission = None,
-                                                    metallicRoughness = None, params = Map.empty(),
+                                                    metallicRoughness = None, readsMaterialOcclusion = false, params = Map.empty(),
                                                     textures = Map#{ "t" => Vector#{ mottled4x3() } }, repeat = true });
         ((0.05, 0.95) :: (1.4, -0.3) :: (0.5, 0.5) :: Nil) |> List.map(p ->
             ShaderEval.evalCompiled3(compiled, { world = Vec3.zero(), normal = Vec3.zero(), uv = { x = fst(p), y = snd(p) },
@@ -1729,7 +1729,7 @@ def testTexSizeEqSpecComparesByIndexAndAxis(): Unit \ Assert =
 @Test
 def testTexSizeInMaterialIsLevelZero(): Unit \ Assert =
     let level = (n: Int32) -> ({ width = n, height = n, pixels = List.toVector(List.repeat(n * n, -1)) }: ShaderEval.TexData);
-    let compiled = ShaderEval.compileMaterial({ spec = alphaSpec(texSizeOf("t", ShaderDoc.Axis.U)), emission = None, metallicRoughness = None, params = Map.empty(),
+    let compiled = ShaderEval.compileMaterial({ spec = alphaSpec(texSizeOf("t", ShaderDoc.Axis.U)), emission = None, metallicRoughness = None, readsMaterialOcclusion = false, params = Map.empty(),
                                                 textures = Map#{ "t" => Vector#{ level(4), level(2) } }, repeat = false });
     let point = { world = Vec3.zero(), normal = Vec3.zero(), uv = { x = 0.5, y = 0.5 }, color = { r = 1.0, g = 1.0, b = 1.0 } };
     Assert.assertEq(expected = 4.0, ShaderEval.evalMaterial3(compiled, point, 0.0)#alpha)

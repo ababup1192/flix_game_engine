@@ -325,7 +325,7 @@ let model = Model3d.load(Model3d.loader(), "assets/room.glb") |> Result.map(Mode
     暗い所が持ち上がって明るく白っぽく出る（0.5 → 約 0.74）。書き出す前に線形へ直す（スクリプトで数を直に入れる時は sRGB → 線形の式を通す）
 - 選ばなければ COLOR_0 は読まない（今までと同じ。baseColorFactor だけ）。`COLOR_0` の無い glb は選んでも baseColorFactor だけ
   - WhyNot（既定で読まない）: Blender の書き出しは頂点の色の層があると COLOR_0 を書くので、白でない COLOR_0 を持つ既存のゲームの glb の色が engine を上げただけで変わる
-- `"gltf"` のほかの欄: `maxTextureSide`・`maxNormalSide` = 絵の大きさの上限・`pbr` = metallic・roughness も読む（欄の意味は `Gltf.LoadOptions`）
+- `"gltf"` のほかの欄: `maxTextureSide`・`maxNormalSide` = 絵の大きさの上限・`pbr` = metallic・roughness も読む・`occlusion` = AO の絵も読む（欄の意味は `Gltf.LoadOptions`）
 - `Model3d.scaleVertexColors(k, model)` = 形と全部の parts の頂点の色に k を掛ける（`Mesh3d.scaleColors`。既定の読み込みは 1 倍・中身の鍵も変わる）。
   今の色に掛けるので 2 回呼ぶと k × k 倍。k が NaN・負・無限の時は 1 として扱い、1 行知らせる。
   頂点の色の 1 を超える値はそのまま描き手へ渡り、絵 × 頂点の色の後に画面の値で切れる（PS1 の 2 倍の掛け算と同じ）
@@ -369,7 +369,44 @@ Scene3d.withMetallicRoughnessTexture("tex3d:orm", gold)                         
   params で渡すので、値だけ違う材質は同じプログラムを使い回す（batch は値ごとに分かれる）。絵の有無は別のプログラム
 - **`"pbr": true` にするゲームの注意**: 上のとおり `None` だった part が材質を持つ。`None` を目印に part を束ねているなら、束ねる条件を `part#material` が `None` か
   spec の名前が `gltf:vc` の材質まで広げ、`Scene3d.metallicRoughnessOf` の値ごとに束ねる。鏡面が要らない材質は `Scene3d.withoutMetallicRoughness`
-- やらない事: キューブマップ・反射プローブ・スクリーン空間の反射・異方性・クリアコート・occlusionTexture
+- やらない事: キューブマップ・反射プローブ・スクリーン空間の反射・異方性・クリアコート
+
+### 材質の AO の絵（glTF の occlusionTexture）
+
+隙間・角・くぼみの暗さを絵で持つ材質（glTF の `occlusionTexture`・Blender の Ambient Occlusion のベイク・ORM / ARM の絵の R）を、環境から来る光にだけ掛ける
+（Unity の Occlusion Map・Godot の AO と同じ扱い）。
+
+```flix
+// project.json に "gltf": { "occlusion": true, "pbr": true }
+let model = Model3d.load(Model3d.loader(), "assets/helmet.glb");     // 材質に AO が付く（part#gltfMaterial の occlusionTexture・occlusionStrength）
+let m = Scene3d.texturedMaterial("tex3d:base", ShaderDoc.FilterMode.Linear)
+    |> Scene3d.withMetallicRoughnessTexture("tex3d:arm")
+    |> Scene3d.withOcclusionTexture("tex3d:arm", 1.0)                  // R = 光の届く割合・strength は 0..1
+Scene3d.occlusionOf(m)                                                 // Option[{ texture, strength }]
+```
+
+- **既定は読まない**: `"occlusion"` を書かなければ AO の絵は decode もせず、材質・プログラム・絵は今までと 1 字も同じ。`pbr` と一緒に書く
+- **掛かる所**: 環境の光（ambient・hemisphere・景色の拡散の光・lightmap にベイクした光）と映り込み（空・環境マップ）に `1 + strength × (R − 1)` を掛ける（glTF の勧め）。
+  直接光（太陽・点光源・スポット）とその鏡面ハイライトには掛けない。SSAO（`ambientOcclusion`）とも重ねて掛かる（SSAO の後に掛ける）
+- **lightmap と重ねる時の注意**: ベイクした光に AO が入っている（Blender の Combined のベイクなど）と、AO が 2 回効いて隅が暗くなりすぎる。その時は `occlusion` を入れない
+- **metallic・roughness を持つ材質だけ**: AO の値は metallic・roughness の色の b で運ぶので、`withMetallicRoughness`・`withMetallicRoughnessTexture` の付いた材質だけが描く
+  （`Scene3d.hasMaterialOcclusion`）。glb で metallic・roughness の付かない材質（`pbrMetallicRoughness` が無い・baseColor だけ）は AO の絵も読まない。
+  Blender の書き出しはどの材質にも roughness を書くので、Blender の glb の材質はいつも描く側に入る。`withMetallicRoughnessShade` で色の場を書いた材質は AO を描かない
+- **ARM / ORM の 1 枚**: AO と metallicRoughness が同じ画像なら、decode 1 回・sampler 1 つ・絵の読み 1 回（材質の絵の上限の 1 組）。別の画像なら 1 組増える
+- **重さ**: AO の付いた材質は別のプログラム（`+occ`）。strength は params なので値だけ違う材質はプログラムを使い回す
+- **読まない物**: occlusionTexture が TEXCOORD_1 を読む glb（AO を 2 本目の uv に置く書き出しは多い）は読まずに知らせる。TEXCOORD_0 の無い形にも AO を付けず 1 行知らせる。`"occlusion"` だけで `"pbr"` の無い project.json も読まずに 1 行知らせる
+- **絵の上限を超えた材質**: 読む絵の組が上限（`Scene3d.maxMaterialTextures()`）を超えて AO の絵が落ちると、AO は `1 − strength` の暗さになる（知らせの行に書く）
+- 3 つの描き手（GL・WebGPU・CPU）は同じ光の木（`LightModel3d` の変種 `materialOcclusion`）から作る
+
+### glb の KHR_texture_transform
+
+材質の index のある絵（baseColor・normal・emissive・metallicRoughness・occlusion）が全部同じ `KHR_texture_transform` で、実際に読む uv（transform の `texCoord` の上書き、無ければ textureInfo の `texCoord`）が全部 0 番なら、
+読み込みの時に TEXCOORD_0 へ焼き込む（シェーダーは変えない）。回転の向きは KHR_texture_transform の README の行列（Khronos の TextureTransformTest で確かめた向き）。
+
+- 絵ごとに違う transform・TEXCOORD_1 を読む transform は書き込まずに今までどおり読み飛ばし、1 行知らせる（uv は 1 本なので、どれか 1 枚の絵がずれる）
+- project.json の旗は無い（読み飛ばすのは作者の置いた絵と違う絵を出す誤りで、`pbr`・`vertexColors` のような見た目の選択ではない）
+- 回転のある・倍率が 0 以下の transform を書き込んだ形は、ファイルの `TANGENT` を使わず書き込んだ uv からタンジェントを求め直す（法線マップの傾く向きを合わせる）。ずらすだけ・正の倍率は `TANGENT` のまま
+- 同じメッシュを別の transform の材質で使っても壊れない（primitive ごとに書き込む）
 
 ## 周りの景色を映す（環境マップと箱の補正）
 

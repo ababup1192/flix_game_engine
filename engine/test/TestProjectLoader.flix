@@ -118,6 +118,13 @@ mod TestProjectLoader {
         Assert.assertEq(expected = Ok((false, true, 512, base#limits#normal)),
                         projectOf(projectJson(", \"gltf\": {\"vertexColors\": true, \"maxTextureSide\": 512}")) |> Result.map(p -> gltfShapeOf(p#gltf)))
 
+    /// occlusion は既定で偽・書けば読む（pbr と一緒に書く）。
+    @Test
+    def testGltfReadsOcclusion(): Unit \ Assert =
+        Assert.assertEq(expected = (Ok(false), Ok(true)),
+                        (projectOf(projectJson(", \"gltf\": {\"pbr\": true}")) |> Result.map(p -> p#gltf#occlusion),
+                         projectOf(projectJson(", \"gltf\": {\"pbr\": true, \"occlusion\": true}")) |> Result.map(p -> p#gltf#occlusion)))
+
     /// 型の違う欄・1 未満の上限・オブジェクトでない gltf は読めない。
     @Test
     def testGltfRejectsBadShape(): Unit \ Assert =

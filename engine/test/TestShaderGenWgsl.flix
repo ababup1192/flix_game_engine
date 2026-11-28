@@ -59,18 +59,18 @@ mod TestShaderGenWgsl {
     @Test
     def testMaterialSlotsAreTimeThenLevelsThenParams(): Unit \ Assert =
         let spec = fill(("k", Field.Param({ name = "k" })) :: Nil, Field.Tex({ name = "a", chan = TexChan.A }));
-        let m = ShaderGen.Wgsl.compile3d(spec, None, None, 1);
+        let m = ShaderGen.Wgsl.compile3d(spec, None, None, false, 1);
         Assert.assertEq(expected = ShaderGen.Wgsl.UniformSlot.Time :: ShaderGen.Wgsl.UniformSlot.TexLevels(0) :: ShaderGen.Wgsl.UniformSlot.Param(0) :: Nil, m#slots)
 
     @Test
     def testMaterialMetalRoughnessClampsWithVectorBounds(): Unit \ Assert =
-        let m = ShaderGen.Wgsl.compile3d(fill(Nil, Field.Const(1.0)), None, Some(Shade.Solid({ r = 0.5, g = 0.25, b = 0.0 })), 1);
+        let m = ShaderGen.Wgsl.compile3d(fill(Nil, Field.Const(1.0)), None, Some(Shade.Solid({ r = 0.5, g = 0.25, b = 0.0 })), false, 1);
         Assert.assertTrue(String.contains(substr = "metalRough = clamp((vec3(0.5, 0.25, 0.0)).xy, vec2(0.0), vec2(1.0));", m#functions))
 
     /// 材質の mip のレベルを選ぶ読みの微分（dpdx）は sg_texMip の中だけ（materialEval の頭から呼ばれる）。
     @Test
     def testMaterialDerivativesOnlyInsideTexMip(): Unit \ Assert =
-        let m = ShaderGen.Wgsl.compile3d(fill(Nil, Field.Tex({ name = "a", chan = TexChan.A })), None, None, 1);
+        let m = ShaderGen.Wgsl.compile3d(fill(Nil, Field.Tex({ name = "a", chan = TexChan.A })), None, None, false, 1);
         Assert.assertEq(expected = 1, List.length(String.splitOn({ substr = "dpdx(" }, m#functions)) - 1)
 
     @Test

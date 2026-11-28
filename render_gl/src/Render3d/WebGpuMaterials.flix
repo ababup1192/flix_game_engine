@@ -306,7 +306,7 @@ pub mod Render3d.WebGpuMaterials {
     def compileProgram(m: Materials, fields: Scene3d.MaterialFields, kind: ProgramKind): Option[Program] \ IO =
         let MaterialsData.MaterialsData(s) = m;
         let (spec, emission, metallicRoughness) = ShaderDoc.limitMaterialTexReads(Scene3d.maxMaterialTextures(), fields#spec, fields#emission, fields#metallicRoughnessShade);
-        let wgsl = ShaderGen.Wgsl.compile3d(spec, emission, metallicRoughness, 1);
+        let wgsl = ShaderGen.Wgsl.compile3d(spec, emission, metallicRoughness, kind#materialOcclusion, 1);
         let fragment = Render3d.ShaderLibrary.materialWgsl(s#shaders, kind, fields#cutout, wgsl);
         let vertex = Render3d.ShaderLibrary.optionalWgsl(s#shaders, vertexKeyOf(kind#uv, kind#lightmap, kind#skinned, kind#variant#psx));
         match (fragment, vertex) {

@@ -240,11 +240,14 @@ pub mod ShaderGen {
     /// uv は vUv を読む。tex / blur は uTexN を読む（unit の数に収めるのは呼ぶ側 — ShaderDoc.limitMaterialTexReads）。
     /// tex は読む座標の画面の微分から段を選んで読む（sg_texMip。式は Mip.lodOf と同じ）。blur と cutout の α は段 0 で読む。
     /// emission と metallicRoughness の場は spec の bindings を Ref で読める。cycleRate は emission の色には掛かり、metallicRoughness には掛からない。
-    pub def compile3d(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], metallicRoughness: Option[ShaderDoc.Shade]): MaterialGlsl =
+    /// materialOcclusion = metallicRoughness の色の b が材質の AO（Scene3d.hasMaterialOcclusion）で、真なら materialEval の metalRough は vec3（z = AO）・
+    /// 偽なら vec2（b は読まない。metalRoughWidth）。metallicRoughness が None なら materialOcclusion は見ない。
+    pub def compile3d(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], metallicRoughness: Option[ShaderDoc.Shade], materialOcclusion: Bool): MaterialGlsl =
         let reads = ShaderDoc.materialTexReads(spec, emission, metallicRoughness);
         let params = ShaderDoc.materialParamNames(spec, emission, metallicRoughness);
         let readsTextures = not List.isEmpty(reads);
-        let stmts = materialStatements(spec, emission, metallicRoughness, withParamScope(params, texScopeFrom(reads)), readsTextures);
+        let width = metalRoughWidth(materialOcclusion);
+        let stmts = materialStatements(spec, emission, metallicRoughness, width, withParamScope(params, texScopeFrom(reads)), readsTextures);
         let indent = (lines: List[String]) -> lines |> List.map(st -> "    " + st + "\n") |> joinParts;
         let cutoutFunction = match stmts#cutout {
             case None => ""
@@ -261,7 +264,7 @@ pub mod ShaderGen {
               preludeSource() ::
               (if (readsTextures) blurSourceWith(e -> "textureLod(tex, " + e + ", 0.0)") + texMipSource() else "") ::
               divSource() ::
-              "void materialEval(out vec4 albedo, out vec3 emission" + (if (Option.nonEmpty(metallicRoughness)) ", out vec2 metalRough" else "") + ") {\n" ::
+              "void materialEval(out vec4 albedo, out vec3 emission" + (if (Option.nonEmpty(metallicRoughness)) ", out vec${width} metalRough" else "") + ") {\n" ::
               "    vec2 sg_uv = vUv;\n" ::
               "    vec3 sg_normal = normalize(vNormal);\n" ::
               indent(stmts#eval) ::
@@ -273,7 +276,8 @@ pub mod ShaderGen {
 
     /// 材質の文: eval = albedo・emission・metalRough へ代入する文（binding の宣言から）・cutout = 絵を読む材質だけ、mip のレベル 0 で読み直した α を返す文。
     /// tex = 絵と Param の番号の表（wgslModeKey() があれば WGSL の字）・readsTextures = 材質が絵を読むか。
-    def materialStatements(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], metallicRoughness: Option[ShaderDoc.Shade],
+    /// width = metalRough の成分の数（metalRoughWidth）。
+    def materialStatements(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], metallicRoughness: Option[ShaderDoc.Shade], width: Int32,
                            tex: Map[String, Int32], readsTextures: Bool): { eval = List[String], cutout = Option[List[String]] } =
         let mipTex = Map.insert(mipModeKey(), 0, tex);
         let baseEnv = Map#{ worldKey() => "vWorld", normalKey() => "sg_normal", colorKey() => "vColor" };
@@ -288,7 +292,9 @@ pub mod ShaderGen {
             case None        => "emission = vec3(0.0, 0.0, 0.0);"
         };
         let metalStmts = match metallicRoughness {
-            case Some(shade) => ("metalRough = " + clampUnit2(tex, "(" + shadeExpr(0.0, shade, uv, env, mipTex) + ").xy") + ";") :: Nil
+            case Some(shade) =>
+                let swizzle = if (width == 3) ").xyz" else ").xy";
+                ("metalRough = " + clampUnitN(tex, width, "(" + shadeExpr(0.0, shade, uv, env, mipTex) + swizzle) + ";") :: Nil
             case None        => Nil
         };
         let eval = finishReads(vec4BindingHead(tex), List.append(List.reverse(bindingStatements(spec#bindings, uv, baseEnv, mipTex)), albedo :: glowStmt :: metalStmts));
@@ -301,9 +307,12 @@ pub mod ShaderGen {
         };
         { eval = eval, cutout = cutout }
 
-    /// vec2 の式 e を 0..1 に丸める式（WGSL の clamp は端も vec2 で渡す）。
-    def clampUnit2(tex: Map[String, Int32], e: String): String =
-        if (isWgsl(tex)) "clamp(" + e + ", vec2(0.0), vec2(1.0))" else "clamp(" + e + ", 0.0, 1.0)"
+    /// materialEval の metalRough の成分の数（materialOcclusion なら 3 = metallic・roughness・AO・ほかは 2）。GLSL・WGSL の部品と、それを呼ぶ frag が同じ数を使う。
+    pub def metalRoughWidth(materialOcclusion: Bool): Int32 = if (materialOcclusion) 3 else 2
+
+    /// width 成分の式 e を 0..1 に丸める式（WGSL の clamp は端も同じ幅の vec で渡す）。
+    def clampUnitN(tex: Map[String, Int32], width: Int32, e: String): String =
+        if (isWgsl(tex)) "clamp(" + e + ", vec${width}(0.0), vec${width}(1.0))" else "clamp(" + e + ", 0.0, 1.0)"
 
     /// fieldExpr の env で World / Normal の変数名を引く鍵（'@' を含む binding の名前は sg_b_ の変数名として GLSL が通さないので、
     /// 動く Spec の binding とは重ならない）。

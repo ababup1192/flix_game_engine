@@ -62,6 +62,33 @@ mod TestGltf {
         glb(json, List.append(f32s(-1.0 :: 0.0 :: 0.0 :: 1.0 :: 0.0 :: 0.0 :: 0.0 :: 1.0 :: 0.0 :: Nil),
                               f32s(0.0 :: 0.0 :: 1.0 :: 0.0 :: 0.0 :: 1.0 :: 0.0 :: 0.0 :: 1.0 :: Nil)))
 
+    /// 三角 1 枚（uv (0,0)・(1,0)・(0,1)・TANGENT を足すか選ぶ）・材質 1 つ（materialJson）・画像 2 枚の .glb。TANGENT はファイルの値として (0, 1, 0, 1) を 3 頂点に書く。
+    pub def materialTriangleGlb(materialJson: String, tangents: Bool): Vector[Int8] \ IO =
+        let baseImage = padded(0i8, onePixelPng(-65536));
+        let ormImage = padded(0i8, onePixelPng(-16711936));
+        let geometry = List.flatten(f32s(-1.0 :: 0.0 :: 0.0 :: 1.0 :: 0.0 :: 0.0 :: 0.0 :: 1.0 :: 0.0 :: Nil) ::
+                                    f32s(0.0 :: 0.0 :: 1.0 :: 0.0 :: 0.0 :: 1.0 :: 0.0 :: 0.0 :: 1.0 :: Nil) ::
+                                    f32s(0.0 :: 0.0 :: 1.0 :: 0.0 :: 0.0 :: 1.0 :: Nil) ::
+                                    f32s(0.0 :: 1.0 :: 0.0 :: 1.0 :: 0.0 :: 1.0 :: 0.0 :: 1.0 :: 0.0 :: 1.0 :: 0.0 :: 1.0 :: Nil) :: Nil);
+        let baseAt = List.length(geometry);
+        let ormAt = baseAt + List.length(baseImage);
+        let tangentAttribute = if (tangents) ",\"TANGENT\":3" else "";
+        let json = "{\"asset\":{\"version\":\"2.0\"},\"nodes\":[{\"mesh\":0}]," +
+            "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0,\"NORMAL\":1,\"TEXCOORD_0\":2${tangentAttribute}},\"material\":0}]}]," +
+            "\"materials\":[${materialJson}]," +
+            "\"textures\":[{\"source\":0},{\"source\":1}]," +
+            "\"images\":[{\"bufferView\":4,\"mimeType\":\"image/png\"},{\"bufferView\":5,\"mimeType\":\"image/png\"}]," +
+            "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"}," +
+            "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"}," +
+            "{\"bufferView\":2,\"componentType\":5126,\"count\":3,\"type\":\"VEC2\"}," +
+            "{\"bufferView\":3,\"componentType\":5126,\"count\":3,\"type\":\"VEC4\"}]," +
+            "\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},{\"buffer\":0,\"byteOffset\":36,\"byteLength\":36}," +
+            "{\"buffer\":0,\"byteOffset\":72,\"byteLength\":24},{\"buffer\":0,\"byteOffset\":96,\"byteLength\":48}," +
+            "{\"buffer\":0,\"byteOffset\":${baseAt},\"byteLength\":${List.length(baseImage)}}," +
+            "{\"buffer\":0,\"byteOffset\":${ormAt},\"byteLength\":${List.length(ormImage)}}]," +
+            "\"buffers\":[{\"byteLength\":${ormAt + List.length(ormImage)}}]}";
+        glb(json, List.flatten(geometry :: baseImage :: ormImage :: Nil))
+
     /// triangleGlb と同じ三角に、uvs を TEXCOORD_0（VEC2・count = uvs の数 / 2）として足した .glb。
     pub def triangleWithUvsGlb(uvs: List[Float64]): Vector[Int8] =
         let uvCount = List.length(uvs) / 2;

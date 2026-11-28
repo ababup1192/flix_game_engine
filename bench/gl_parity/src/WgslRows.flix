@@ -191,7 +191,7 @@ mod WgslRows {
         "    vColor = vec3(vUv.x, vUv.y, 0.5);\n"
 
     def materialGlsl(uvFn: String, spec: ShaderDoc.Spec, emission: Option[Shade], metal: Option[Shade]): String =
-        let m = ShaderGen.compile3d(spec, emission, metal);
+        let m = ShaderGen.compile3d(spec, emission, metal, false);
         "#version 330 core\nvec2 vUv;\nvec3 vWorld;\nvec3 vNormal;\nvec3 vColor;\nout vec4 fragColor;\n" + rowUvGlsl() + m#uniforms + m#functions +
         "void main() {\n" + varyingsGlsl(uvFn) +
         "    vec4 albedo;\n    vec3 emission;\n    vec2 metalRough = vec2(0.0);\n" +
@@ -200,7 +200,7 @@ mod WgslRows {
         "}\n"
 
     def materialWgsl(uvFn: String, spec: ShaderDoc.Spec, emission: Option[Shade], metal: Option[Shade]): String =
-        let m = ShaderGen.Wgsl.compile3d(spec, emission, metal, 0);
+        let m = ShaderGen.Wgsl.compile3d(spec, emission, metal, false, 0);
         m#declarations + rowUvWgsl() + m#functions +
         "@fragment fn fs_main(@builtin(position) pos: vec4f) -> @location(0) vec4f {\n" +
         "    let vUv = " + uvFn + "(pos.x);\n" +
@@ -234,7 +234,7 @@ mod WgslRows {
         });
         let mats = materials() |> List.map(entry -> {
             let (name, spec, glow, metal) = entry;
-            let m = ShaderGen.Wgsl.compile3d(spec, glow, metal, 0);
+            let m = ShaderGen.Wgsl.compile3d(spec, glow, metal, false, 0);
             { name = "material " + name, glsl = materialGlsl("sg_rowUv", spec, glow, metal), wgsl = materialWgsl("sg_rowUv", spec, glow, metal),
               glUniforms = materialGlUniforms(spec, glow, metal), values = packSlots(1, m#slots), textures = texturesOf(m#texReads), mustVary = false }
         });
@@ -243,7 +243,7 @@ mod WgslRows {
     /// 2 つのレベルの色が違う（レベル 0 = 暗い赤・レベル 1 = 明るい赤）絵を、mip のレベルが行の中で 0 から 1 へ移る座標で読む材質の行。
     def mipRow(): Row =
         let spec = fill("mip", 0.0, Shade.Rgb({ r = Field.Tex({ name = "albedo", chan = TexChan.R }), g = c(0.0), b = c(0.0) }), c(1.0));
-        let m = ShaderGen.Wgsl.compile3d(spec, None, None, 0);
+        let m = ShaderGen.Wgsl.compile3d(spec, None, None, false, 0);
         let solid = (size: Int32, red: Int32) -> { width = size, height = size,
                                                    texels = RowTexels.Argb8(Vector.repeat(size * size, Int32.bitwiseOr(Int32.leftShift(255, 24), Int32.leftShift(red, 16)))) };
         let chain = { sampler = "uTex0", levels = solid(8, 40) :: solid(4, 220) :: Nil, linear = true };
